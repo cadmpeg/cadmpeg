@@ -658,6 +658,9 @@ fn decode_local_system_slot_prefix(
     variant: LocalSystemVariant,
 ) -> Option<([f64; 12], usize)> {
     if matches!(variant, LocalSystemVariant::PlaneSupport) {
+        if let Some(frame) = decode_normal_x_plane_support(body, cache) {
+            return Some(frame);
+        }
         if let Some(frame) = decode_compact_axis_plane_support(body, cache) {
             return Some(frame);
         }
@@ -839,6 +842,24 @@ fn decode_positional_cylinder_support_coordinate(
         decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
     }
     .or_else(|| decode_in_row_lane(body, cursor, cache))
+}
+
+const NORMAL_X_PLANE_SUPPORT_PREFIXES: [&[u8]; 2] = [
+    &[0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18],
+    &[0x18, 0xe4, 0x10, 0xe4, 0x18, 0xe5, 0x0f, 0x18],
+];
+
+fn decode_normal_x_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
+    let prefix = NORMAL_X_PLANE_SUPPORT_PREFIXES
+        .into_iter()
+        .find(|prefix| body.starts_with(prefix))?;
+    let (origin, cursor) = decode_plane_support_origin(body, prefix.len(), cache)?;
+    Some((
+        [
+            0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, origin[0], origin[1], origin[2],
+        ],
+        cursor,
+    ))
 }
 
 fn decode_compact_axis_plane_support(
@@ -1403,6 +1424,38 @@ mod tests {
             decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
             Some([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0])
         );
+    }
+
+    #[test]
+    fn normal_x_plane_support_prefixes_decode_rank_and_origin() {
+        let origin = [0x2f, 0x02, 0x00, 0x2a, 0xe8, 0x00, 0x2f, 0x26, 0x00];
+
+        for prefix in NORMAL_X_PLANE_SUPPORT_PREFIXES {
+            let body = [prefix, &origin].concat();
+            assert_eq!(
+                decode_plane_support_local_system_slots(&body, &ScalarCache::default()),
+                Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.25, 0.75, 11.0])
+            );
+        }
+    }
+
+    #[test]
+    fn normal_x_plane_support_requires_a_complete_bounded_origin() {
+        for prefix in NORMAL_X_PLANE_SUPPORT_PREFIXES {
+            let mut truncated = prefix.to_vec();
+            truncated.extend([0x18, 0x18]);
+            assert!(
+                decode_plane_support_local_system_slots(&truncated, &ScalarCache::default())
+                    .is_none()
+            );
+
+            let mut trailing = prefix.to_vec();
+            trailing.extend([0x18, 0x18, 0x18, 0x18]);
+            assert!(
+                decode_plane_support_local_system_slots(&trailing, &ScalarCache::default())
+                    .is_none()
+            );
+        }
     }
 
     #[test]

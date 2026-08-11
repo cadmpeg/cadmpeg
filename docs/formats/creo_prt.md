@@ -490,6 +490,10 @@ component. The resulting support directions are `(a, 0, b)` and
 The compact axis form begins `18 0f 18 e5 0f e4 18 e4`; that prefix defines
 support directions `(1, 0, 0)` and `(0, 0, -1)` with a zero middle rank. Its
 three following scalars are the origin coordinates.
+The prefixes `0f 18 e6 0f 18 10 18` and
+`18 e4 10 e4 18 e5 0f 18` each define support directions `(0, 1, 0)` and
+`(0, 0, 1)` with a zero middle rank. Their three following scalars are the
+origin coordinates. The resulting plane normal is `(1, 0, 0)`.
 A trailing-rank orthogonal form stores `a, 0, b, e4, 0, m`, a zero-rank
 triple, and three origin coordinates. It has the same `a² + b² = 1`,
 `|m| = |a|`, copied-`b`, and negated-`a` semantics as the prefixed form.

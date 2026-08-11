@@ -267,6 +267,10 @@ fixtures, claims above L1 remain unproven.
 - Positional `ActDatums` outlines require exactly one held coordinate. Outlines
   with zero or multiple held coordinate pairs remain unresolved instead of
   selecting an arbitrary plane normal.
+- Bounded plane-support prefixes `0f 18 e6 0f 18 10 18` and
+  `18 e4 10 e4 18 e5 0f 18` transfer their X-normal rank-two charts and three
+  following origin coordinates. Incomplete frames and frames with trailing
+  bytes remain unresolved.
 - Named and positional `ActDatums` outlines decode their shared bounded
   model-coordinate forms, including `73`, `9f`, `a5`, and `bb`, into complete
   corner coordinates. Both forms retain `45` and `5c` tokens as bounded slots
