@@ -2201,6 +2201,40 @@ fn positional_skamp_table_replays_counted_nested_items() {
 }
 
 #[test]
+fn positional_skamp_table_skips_row_auxiliary_frames() {
+    let payload = b"\xf8\x03\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
+            \x06\x03\xf1\xf7\x60\xe2\x07\x02\xf3\xf7\x58\xe2\
+            \x02\x04\x00\x22\xe0\x02aux\0\xf8\x02\x0a\x0b\xf7\x60\
+            \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00\xf3\xf7\x58\xe2\
+            \x03\x02\x00\x23\xf7\x60\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x09\x00";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 3);
+    assert_eq!(skamps[1].id, 2);
+    assert_eq!(skamps[1].kind, 4);
+    assert_eq!(skamps[1].items[0].entity_id, 8);
+    assert_eq!(skamps[2].id, 3);
+    assert_eq!(skamps[2].kind, 2);
+    assert_eq!(skamps[2].items[0].entity_id, 9);
+}
+
+#[test]
+fn positional_skamp_table_rejects_ambiguous_nested_item_arrays() {
+    let payload = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
+            \xf3\xf7\x58\xe2\x02\x04\x00\x22\
+            \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x07\x00\
+            \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 1);
+    assert_eq!(skamps[0].id, 1);
+}
+
+#[test]
 fn positional_solver_tables_retain_complete_prefix_rows() {
     let skamps = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\

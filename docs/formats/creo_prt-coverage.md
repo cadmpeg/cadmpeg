@@ -336,6 +336,10 @@ fixtures, claims above L1 remain unproven.
   relation-incidence join rows. A zero relation allocation count is counted
   separately. Diagnostics report every nonzero row shortfall, malformed
   relation allocation, and active native discriminator.
+- Positional solver-incidence rows retain their nested items when an auxiliary
+  frame occurs between solver status and the item array. Matching item-table
+  and item-row classes delimit the auxiliary body and prevent an embedded
+  counted value from becoming the item array.
 - Every decoded non-null `segtab.verhor` field transfers as a distinct source
   constraint. Values zero and one on a line use the defined neutral vertical
   and horizontal forms; other segment families and selector values retain the

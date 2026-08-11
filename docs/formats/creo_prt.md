@@ -3598,6 +3598,14 @@ class in `f8 <count> f7 <table-class> fb e2`. Each row replays `id`, `type`,
 array repeats its own table and row classes and stores ordered `ent_id`/`sense`
 pairs. `f1 f7 <item-table-class> e2` separates nested items, and
 `f3 f7 <table-class> e2` separates incidence rows.
+An incidence row can store an auxiliary frame between `status` and the nested
+item array. The first such frame uses the labelled `aux` counted form; later
+rows replay the auxiliary body positionally. The nested item array retains the
+same item-table and item-row classes across these rows. A repeated item-table
+class reference can immediately precede the array opener. The auxiliary frame
+does not replace or reorder `id`, `type`, `flags`, `status`, or the incidence
+items. Exactly one matching nested item array must occur before the incidence
+row separator.
 
 The positional relation-join table repeats the labelled `triples_ptr` table
 class and stores exactly its `f8` count of `rel_id`, `eqn_id`, and `skamp_id`
