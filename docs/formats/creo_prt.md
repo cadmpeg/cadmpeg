@@ -2831,6 +2831,18 @@ and signed delta supply the hole entry coordinate and direction as in the
 complementary form. Pairs whose non-shared bounds do not differ by the bore
 diameter do not supply placement.
 
+A clipped radial cylinder-patch pair has the blind depth as its unique common
+axial span, one adjacent-union radial span equal to the bore diameter, and one
+common nonzero radial span that is not the bore diameter. Its two corresponding
+cone rows each have a compound-close parameter body with exactly seven scalar
+tokens. In generated order, the final three cone tokens equal the corresponding
+cylinder envelope's second radial coordinates and first axial coordinate. The
+cone coordinate on the clipped radial axis must be equal in both rows. That
+coordinate is the missing hole-axis coordinate. The adjacent-union midpoint is
+the other radial coordinate. The first axial coordinate and the common signed
+axial delta supply the entry coordinate and direction. This cross-record form
+does not make other cone terminal triples model-space origins.
+
 When the cylinder envelope is available, complete three-row class-911 tables
 whose diameter and depth do not match it do not participate in template
 selection. All participating tables must supply one equal tuple. When the

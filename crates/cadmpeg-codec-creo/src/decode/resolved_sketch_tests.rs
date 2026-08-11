@@ -2384,6 +2384,42 @@ fn one_sided_drilled_hole_envelopes_define_the_missing_radial_coordinate() {
 }
 
 #[test]
+fn drill_tip_cone_points_define_a_clipped_radial_coordinate() {
+    let corners = [
+        [[0.461_241_074, 749.0, -25.0], [-144.0, 755.0, 0.0]],
+        [[0.461_241_074, 755.0, -25.0], [-144.0, 761.0, 0.0]],
+    ];
+    let cone_points = [[-144.0, 755.0, -25.0], [-144.0, 761.0, -25.0]];
+    assert_eq!(
+        clipped_drilled_hole_placement_from_cone_points(corners, cone_points, 12.0, 25.0),
+        Some((
+            Point3::new(-144.0, 755.0, -25.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+
+    let mut wrong_entry = cone_points;
+    wrong_entry[1][2] = 0.0;
+    assert!(
+        clipped_drilled_hole_placement_from_cone_points(corners, wrong_entry, 12.0, 25.0,)
+            .is_none()
+    );
+    let mut wrong_radial_corner = cone_points;
+    wrong_radial_corner[0][0] = -143.0;
+    assert!(clipped_drilled_hole_placement_from_cone_points(
+        corners,
+        wrong_radial_corner,
+        12.0,
+        25.0,
+    )
+    .is_none());
+    assert!(
+        clipped_drilled_hole_placement_from_cone_points(corners, cone_points, 10.0, 25.0,)
+            .is_none()
+    );
+}
+
+#[test]
 fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features

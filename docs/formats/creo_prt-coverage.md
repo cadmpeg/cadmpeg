@@ -245,7 +245,9 @@ fixtures, claims above L1 remain unproven.
   supply the hole position and signed direction. A one-sided pair with one
   common radial diameter and one common blind-depth span supplies the other
   radial coordinate when the patches share exactly one normalized bound and
-  their two non-shared bounds differ by the bore diameter.
+  their two non-shared bounds differ by the bore diameter. A seven-token
+  compound-close cone pair supplies a fully clipped radial coordinate only when
+  each terminal triple exactly cross-binds the corresponding cylinder corner.
 - Class-911 counterbore recipes bind complete four- or five-row depth,
   bore-radius, and counterbore-radius tuples when the two source cylinder pairs
   uniquely match the two diameters on two axes and the counterbore depth on the

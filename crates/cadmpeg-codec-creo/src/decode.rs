@@ -22069,6 +22069,35 @@ fn simple_drilled_hole_corner_envelopes(
     Some([*first, *second])
 }
 
+fn simple_drilled_hole_cone_terminal_points(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+) -> Option<[[f64; 3]; 2]> {
+    let feature_id = table.feature_id?;
+    let points = table
+        .surface_ids
+        .iter()
+        .filter_map(|surface_id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
+                .filter(|row| row.feature_id == feature_id)
+                .filter(|row| row.kind == crate::surface::SurfaceKind::Cone)
+        })
+        .map(|row| {
+            let record = unique_surface_parameter_record(scan, row)?;
+            (record.boundary == crate::surface::SurfaceBodyBoundary::CompoundClose
+                && record.scalar_tokens.len() == 7)
+                .then_some(())?;
+            record.scalar_tokens[4..]
+                .iter()
+                .map(|slot| slot.value.filter(|value| value.is_finite()))
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    points.try_into().ok()
+}
+
 fn simple_drilled_hole_placement(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
@@ -22076,7 +22105,14 @@ fn simple_drilled_hole_placement(
     depth: f64,
 ) -> Option<(Point3, Vector3)> {
     let corners = simple_drilled_hole_corner_envelopes(scan, table)?;
-    drilled_hole_placement_from_corner_envelopes(corners, diameter, depth)
+    drilled_hole_placement_from_corner_envelopes(corners, diameter, depth).or_else(|| {
+        clipped_drilled_hole_placement_from_cone_points(
+            corners,
+            simple_drilled_hole_cone_terminal_points(scan, table)?,
+            diameter,
+            depth,
+        )
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -22265,6 +22301,81 @@ fn drilled_hole_placement_from_corner_envelopes(
             f64::midpoint(
                 layout.intervals[0][radial_axis][0],
                 layout.intervals[0][radial_axis][1],
+            )
+        }
+    });
+    Some(drilled_hole_layout_placement(&layout, radial_coordinates))
+}
+
+fn clipped_drilled_hole_placement_from_cone_points(
+    corners: [[[f64; 3]; 2]; 2],
+    cone_points: [[f64; 3]; 2],
+    diameter: f64,
+    depth: f64,
+) -> Option<(Point3, Vector3)> {
+    let layout = drilled_hole_envelope_layout(corners, diameter, depth)?;
+    cone_points
+        .iter()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    let adjacent_diameter = layout
+        .radial
+        .iter()
+        .copied()
+        .filter(|axis| {
+            drilled_hole_layout_adjacent(&layout, *axis)
+                && drilled_hole_layout_close(
+                    &layout,
+                    drilled_hole_layout_span(&layout, *axis),
+                    diameter,
+                )
+        })
+        .collect::<Vec<_>>();
+    let [diameter_axis] = adjacent_diameter.as_slice() else {
+        return None;
+    };
+    let clipped_axis = layout
+        .radial
+        .iter()
+        .copied()
+        .find(|axis| axis != diameter_axis)?;
+    (drilled_hole_layout_shared(&layout, clipped_axis)
+        && drilled_hole_layout_span(&layout, clipped_axis) > 0.0
+        && !drilled_hole_layout_close(
+            &layout,
+            drilled_hole_layout_span(&layout, clipped_axis),
+            diameter,
+        ))
+    .then_some(())?;
+    (0..2)
+        .all(|patch| {
+            drilled_hole_layout_close(
+                &layout,
+                cone_points[patch][layout.axis],
+                corners[patch][0][layout.axis],
+            ) && layout.radial.iter().all(|axis| {
+                drilled_hole_layout_close(
+                    &layout,
+                    cone_points[patch][*axis],
+                    corners[patch][1][*axis],
+                )
+            })
+        })
+        .then_some(())?;
+    drilled_hole_layout_close(
+        &layout,
+        cone_points[0][clipped_axis],
+        cone_points[1][clipped_axis],
+    )
+    .then_some(())?;
+    let radial_coordinates = layout.radial.map(|axis| {
+        if axis == clipped_axis {
+            f64::midpoint(cone_points[0][axis], cone_points[1][axis])
+        } else {
+            f64::midpoint(
+                layout.intervals[0][axis][0].min(layout.intervals[1][axis][0]),
+                layout.intervals[0][axis][1].max(layout.intervals[1][axis][1]),
             )
         }
     });

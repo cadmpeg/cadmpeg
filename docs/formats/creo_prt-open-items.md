@@ -567,8 +567,10 @@ the complete tables that match those spans on distinct axes. All matching
 tables must define one equal tuple. Complementary envelopes define placement
 directly. A one-sided envelope pair defines the second radial coordinate when
 the patches share exactly one normalized bound and their non-shared bounds
-differ by the bore diameter. The neutral hole bottom retains no depth-to-tip
-state.
+differ by the bore diameter. A clipped envelope pair defines its missing radial
+coordinate when the corresponding seven-token compound-close cone bodies
+cross-bind the cylinder corners in generated order. The neutral hole bottom
+retains no depth-to-tip state.
 
 **Need.** We must identify the per-feature replay join when competing tuples
 have equal bore-radius and blind-depth envelopes, and identify the depth
