@@ -98,18 +98,22 @@ fixtures, claims above L1 remain unproven.
   are preserved as source metadata. Legacy `@Toc` rows enumerate exact
   banner-relative named-section extents; monolithic framing markers are not
   exposed as sections. Attribute declarations, locally resolved depth/value
-  rows, and immediate `$` continuations are structurally enumerated without
-  copying their raw payload bytes. A unique legacy type-10
-  `principal_sys_units` scalar transfers the active length system and its
-  canonical millimeter scale. Complete finite type-2 scalars and dimensioned
-  run-length arrays transfer as exact typed native records without expanding
-  repeated elements. Complete type-1 signed-integer scalars and arrays transfer
-  with the same scoped identity and retained run representation. Declared
-  type-1 arrays without stored elements remain unresolved and are counted as
-  typed-record losses; the decoder does not synthesize zero elements. Type-0
-  null, arrow, inline, and array nodes transfer with depth-defined parent links
-  and direct array-element identities. Incomplete object arrays retain their
-  headers and existing elements and produce a typed-record loss.
+  rows, and immediate `$` continuations are structurally enumerated. A unique
+  legacy type-10 `principal_sys_units` scalar transfers the active length
+  system and its canonical millimeter scale. Complete finite type-2 scalars and
+  dimensioned run-length arrays transfer as exact typed native records without
+  expanding repeated elements. Complete type-1 signed-integer scalars and
+  arrays transfer with the same scoped identity and retained run
+  representation. Declared type-1 arrays without stored elements remain
+  unresolved and are counted as typed-record losses; the decoder does not
+  synthesize zero elements. Type-0 null, arrow, inline, and array nodes transfer
+  with depth-defined parent links and direct array-element identities.
+  Incomplete object arrays retain their
+  headers and existing elements and produce a typed-record loss. Type-10 null,
+  UTF-8, opaque-byte, and direct-row array values transfer as exact native
+  records. Incomplete string arrays retain their headers and present elements.
+  Non-UTF-8 values retain their exact bytes and report the missing character
+  encoding.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle

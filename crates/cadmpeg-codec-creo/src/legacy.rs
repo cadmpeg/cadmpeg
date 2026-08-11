@@ -7,8 +7,8 @@ use std::ops::Range;
 use serde::{Serialize, Serializer};
 
 const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
-const MILLIMETER_NEWTON_SECOND: &[u8] = b"millimeter Newton Second (mmNs)";
-const INCH_POUND_MASS_SECOND: &[u8] = b"Inch lbm Second (Pro/E Default)";
+const MILLIMETER_NEWTON_SECOND: &str = "millimeter Newton Second (mmNs)";
+const INCH_POUND_MASS_SECOND: &str = "Inch lbm Second (Pro/E Default)";
 
 /// Active coordinate-unit system selected by a model-level persistence field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,9 +101,9 @@ impl<T> NumericPayload<T> {
     }
 }
 
-/// One completely decoded numeric legacy attribute value.
+/// One typed legacy attribute value in the scoped object tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct NumericRecord<T> {
+pub struct ValueRecord<T> {
     /// Globally unique native record identity.
     pub id: String,
     /// Declared attribute name.
@@ -116,11 +116,14 @@ pub struct NumericRecord<T> {
     pub parent: Option<String>,
     /// Object-tree nesting depth of the scalar or array header.
     pub depth: u32,
-    /// Complete typed value.
-    pub payload: NumericPayload<T>,
+    /// Typed value payload.
+    pub payload: T,
     /// Byte offset of the scalar row or array header.
     pub offset: usize,
 }
+
+/// One completely decoded numeric legacy attribute value.
+pub type NumericRecord<T> = ValueRecord<NumericPayload<T>>;
 
 /// One run in a type-2 real array.
 pub type RealRun = NumericRun<Real>;
@@ -181,6 +184,67 @@ pub struct ObjectRecord {
     /// Byte offset of the value row.
     pub offset: usize,
 }
+
+/// One type-10 byte string or null element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub enum StringValue {
+    /// The `NULL` token.
+    Null,
+    /// A byte string that is valid UTF-8.
+    Utf8 {
+        /// Decoded text. An empty string is a stored empty value.
+        text: String,
+    },
+    /// A byte string whose character encoding is not UTF-8.
+    Bytes {
+        /// Exact uninterpreted source bytes.
+        bytes: Vec<u8>,
+    },
+}
+
+/// Semantic payload of one legacy type-10 value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub enum StringPayload {
+    /// One string or null value.
+    Scalar {
+        /// Stored value.
+        value: StringValue,
+    },
+    /// A dimensioned string array and its direct elements.
+    Array {
+        /// Declared array dimensions.
+        dimensions: Vec<u32>,
+        /// Direct string elements in source order.
+        values: Vec<StringValue>,
+        /// Whether the element count equals the first extent.
+        complete: bool,
+    },
+}
+
+impl StringPayload {
+    /// Number of logical string elements represented by this payload.
+    pub fn element_count(&self) -> usize {
+        match self {
+            Self::Scalar { .. } => 1,
+            Self::Array { values, .. } => values.len(),
+        }
+    }
+
+    /// Number of elements whose character encoding remains uninterpreted.
+    pub fn undecoded_encoding_count(&self) -> usize {
+        let undecoded =
+            |value: &StringValue| usize::from(matches!(value, StringValue::Bytes { .. }));
+        match self {
+            Self::Scalar { value } => undecoded(value),
+            Self::Array { values, .. } => values.iter().map(undecoded).sum(),
+        }
+    }
+}
+
+/// One decoded legacy type-10 byte-string value.
+pub type StringRecord = ValueRecord<StringPayload>;
 
 /// One unique `@<name> <id> <type-code>` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,6 +310,12 @@ pub struct Persistence {
     pub incomplete_object_array_count: usize,
     /// Type-0 value rows outside the defined object forms.
     pub unresolved_object_value_count: usize,
+    /// Type-10 byte-string scalars and arrays in source order.
+    pub string_values: Vec<StringRecord>,
+    /// Type-10 arrays whose direct element count differs from the first extent.
+    pub incomplete_string_array_count: usize,
+    /// Type-10 rows that use an undefined continuation form.
+    pub unresolved_string_value_count: usize,
 }
 
 impl Persistence {
@@ -288,34 +358,29 @@ impl Persistence {
     }
 
     /// Resolve one unambiguous legacy principal-unit string.
-    pub fn principal_unit_system(&self, data: &[u8]) -> Option<PrincipalUnitSystem> {
+    pub fn principal_unit_system(&self) -> Option<PrincipalUnitSystem> {
         let mut candidate = None;
-        for scope in &self.scopes {
-            for declaration in scope
-                .declarations
-                .iter()
-                .filter(|declaration| declaration.name == PRINCIPAL_UNIT_NAME)
-            {
-                for value in scope
-                    .values
-                    .iter()
-                    .filter(|value| value.attribute_id == declaration.id)
-                {
-                    if candidate.is_some()
-                        || declaration.type_code != 10
-                        || value.continuation_count != 0
-                    {
-                        return None;
-                    }
-                    candidate = match data.get(value.payload.clone())? {
-                        MILLIMETER_NEWTON_SECOND => {
-                            Some(PrincipalUnitSystem::MillimeterNewtonSecond)
-                        }
-                        INCH_POUND_MASS_SECOND => Some(PrincipalUnitSystem::InchPoundMassSecond),
-                        _ => return None,
-                    };
-                }
+        for record in self
+            .string_values
+            .iter()
+            .filter(|record| record.name == PRINCIPAL_UNIT_NAME)
+        {
+            if candidate.is_some() {
+                return None;
             }
+            candidate = match &record.payload {
+                StringPayload::Scalar {
+                    value: StringValue::Utf8 { text },
+                } if text == MILLIMETER_NEWTON_SECOND => {
+                    Some(PrincipalUnitSystem::MillimeterNewtonSecond)
+                }
+                StringPayload::Scalar {
+                    value: StringValue::Utf8 { text },
+                } if text == INCH_POUND_MASS_SECOND => {
+                    Some(PrincipalUnitSystem::InchPoundMassSecond)
+                }
+                _ => return None,
+            };
         }
         candidate
     }
@@ -582,6 +647,132 @@ fn object_records(
     (records, incomplete_arrays, unresolved)
 }
 
+fn string_value(bytes: &[u8]) -> StringValue {
+    if bytes == b"NULL" {
+        StringValue::Null
+    } else if let Ok(text) = std::str::from_utf8(bytes) {
+        StringValue::Utf8 {
+            text: text.to_string(),
+        }
+    } else {
+        StringValue::Bytes {
+            bytes: bytes.to_vec(),
+        }
+    }
+}
+
+fn string_records(
+    data: &[u8],
+    scopes: &[Scope],
+    parents: &BTreeMap<usize, usize>,
+) -> (Vec<StringRecord>, usize, usize) {
+    let mut records = Vec::new();
+    let mut incomplete_arrays = 0usize;
+    let mut unresolved = 0usize;
+    for scope in scopes {
+        let declarations = scope
+            .declarations
+            .iter()
+            .map(|declaration| (declaration.id, declaration))
+            .collect::<BTreeMap<_, _>>();
+        let values_by_offset = scope
+            .values
+            .iter()
+            .map(|value| (value.offset, value))
+            .collect::<BTreeMap<_, _>>();
+        let mut active_arrays = BTreeMap::<u32, (usize, u32)>::new();
+        let mut array_children = BTreeMap::<usize, Vec<usize>>::new();
+        let mut array_element_offsets = BTreeSet::new();
+        for value in &scope.values {
+            drop(active_arrays.split_off(&value.depth));
+            let array_parent = value.depth.checked_sub(1).and_then(|depth| {
+                active_arrays
+                    .get(&depth)
+                    .filter(|(_, attribute_id)| *attribute_id == value.attribute_id)
+                    .map(|(offset, _)| *offset)
+            });
+            if let Some(parent_offset) = array_parent {
+                array_children
+                    .entry(parent_offset)
+                    .or_default()
+                    .push(value.offset);
+                array_element_offsets.insert(value.offset);
+                continue;
+            }
+            if declarations
+                .get(&value.attribute_id)
+                .is_some_and(|declaration| declaration.type_code == 10)
+                && array_dimensions(&data[value.payload.clone()]).is_some()
+            {
+                active_arrays.insert(value.depth, (value.offset, value.attribute_id));
+            }
+        }
+
+        for value in &scope.values {
+            if array_element_offsets.contains(&value.offset) {
+                continue;
+            }
+            let Some(declaration) = declarations
+                .get(&value.attribute_id)
+                .filter(|declaration| declaration.type_code == 10)
+            else {
+                continue;
+            };
+            let bytes = &data[value.payload.clone()];
+            let payload = if let Some(dimensions) = array_dimensions(bytes) {
+                let children = array_children
+                    .get(&value.offset)
+                    .map_or(&[][..], Vec::as_slice);
+                let mut values = Vec::new();
+                for child in children
+                    .iter()
+                    .filter_map(|offset| values_by_offset.get(offset).copied())
+                {
+                    if child.continuation_count == 0 {
+                        values.push(string_value(&data[child.payload.clone()]));
+                    } else {
+                        unresolved += 1;
+                    }
+                }
+                let expected = dimensions
+                    .first()
+                    .and_then(|dimension| usize::try_from(*dimension).ok());
+                let complete = value.continuation_count == 0
+                    && expected.is_some_and(|count| count == children.len())
+                    && values.len() == children.len();
+                unresolved += usize::from(value.continuation_count != 0);
+                incomplete_arrays += usize::from(!complete);
+                StringPayload::Array {
+                    dimensions,
+                    values,
+                    complete,
+                }
+            } else {
+                if value.continuation_count != 0 {
+                    unresolved += 1;
+                    continue;
+                }
+                StringPayload::Scalar {
+                    value: string_value(bytes),
+                }
+            };
+            records.push(ValueRecord {
+                id: format!("creo:legacy_ascii:string#{}", value.offset),
+                name: declaration.name.clone(),
+                attribute_id: value.attribute_id,
+                scope_offset: scope.range.start,
+                parent: parents
+                    .get(&value.offset)
+                    .map(|offset| object_node_id(*offset)),
+                depth: value.depth,
+                payload,
+                offset: value.offset,
+            });
+        }
+    }
+    (records, incomplete_arrays, unresolved)
+}
+
 fn numeric_records<T>(
     data: &[u8],
     scopes: &[Scope],
@@ -676,7 +867,7 @@ fn numeric_records<T>(
                     index + 1,
                 )
             };
-            records.push(NumericRecord {
+            records.push(ValueRecord {
                 id: format!("creo:legacy_ascii:{identity_kind}#{}", value.offset),
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
@@ -793,6 +984,8 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
     let parents = parent_object_offsets(&scopes);
     let (objects, incomplete_object_array_count, unresolved_object_value_count) =
         object_records(data, &scopes, &parents);
+    let (string_values, incomplete_string_array_count, unresolved_string_value_count) =
+        string_records(data, &scopes, &parents);
     let (real_values, unresolved_real_value_count) =
         numeric_records(data, &scopes, 2, "real", compact_real, &parents);
     let (integer_values, unresolved_integer_value_count) =
@@ -806,6 +999,9 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         objects,
         incomplete_object_array_count,
         unresolved_object_value_count,
+        string_values,
+        incomplete_string_array_count,
+        unresolved_string_value_count,
     }
 }
 
@@ -860,12 +1056,12 @@ mod tests {
         let millimeter = b"@principal_sys_units 25 10\n2 25 millimeter Newton Second (mmNs)\n";
         let persistence = scan(millimeter, std::iter::once(0..millimeter.len()));
         assert_eq!(
-            persistence.principal_unit_system(millimeter),
+            persistence.principal_unit_system(),
             Some(PrincipalUnitSystem::MillimeterNewtonSecond)
         );
         assert_eq!(
             persistence
-                .principal_unit_system(millimeter)
+                .principal_unit_system()
                 .and_then(PrincipalUnitSystem::length_scale_mm),
             Some(1.0)
         );
@@ -873,12 +1069,12 @@ mod tests {
         let inch = b"@principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n";
         let persistence = scan(inch, std::iter::once(0..inch.len()));
         assert_eq!(
-            persistence.principal_unit_system(inch),
+            persistence.principal_unit_system(),
             Some(PrincipalUnitSystem::InchPoundMassSecond)
         );
         assert_eq!(
             persistence
-                .principal_unit_system(inch)
+                .principal_unit_system()
                 .and_then(PrincipalUnitSystem::length_scale_mm),
             Some(25.4)
         );
@@ -886,7 +1082,7 @@ mod tests {
         let mut repeated = millimeter.to_vec();
         repeated.extend_from_slice(millimeter);
         let persistence = scan(&repeated, std::iter::once(0..repeated.len()));
-        assert_eq!(persistence.principal_unit_system(&repeated), None);
+        assert_eq!(persistence.principal_unit_system(), None);
     }
 
     #[test]
@@ -1002,6 +1198,97 @@ mod tests {
 
         assert!(persistence.integer_values.is_empty());
         assert_eq!(persistence.unresolved_integer_value_count, 2);
+    }
+
+    #[test]
+    fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
+        let data = b"@root 1 0\n@label 2 10\n@empty 3 10\n@missing 4 10\n\
+            @encoded 5 10\n@names 6 10\n0 1 ->\n1 2 alpha beta\n1 3 \n1 4 NULL\n\
+            1 5 \xE9\n1 6 [2][81]\n2 6 first\n2 6 \n";
+        let root_offset = data
+            .windows(b"0 1 ->".len())
+            .position(|window| window == b"0 1 ->")
+            .expect("root offset");
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert_eq!(persistence.string_values.len(), 5);
+        assert_eq!(persistence.incomplete_string_array_count, 0);
+        assert_eq!(persistence.unresolved_string_value_count, 0);
+        assert_eq!(
+            persistence.string_values[0].payload,
+            StringPayload::Scalar {
+                value: StringValue::Utf8 {
+                    text: "alpha beta".to_string()
+                }
+            }
+        );
+        assert_eq!(
+            persistence.string_values[1].payload,
+            StringPayload::Scalar {
+                value: StringValue::Utf8 {
+                    text: String::new()
+                }
+            }
+        );
+        assert_eq!(
+            persistence.string_values[2].payload,
+            StringPayload::Scalar {
+                value: StringValue::Null
+            }
+        );
+        assert_eq!(
+            persistence.string_values[3].payload,
+            StringPayload::Scalar {
+                value: StringValue::Bytes { bytes: vec![0xe9] }
+            }
+        );
+        assert_eq!(
+            persistence.string_values[4].payload,
+            StringPayload::Array {
+                dimensions: vec![2, 81],
+                values: vec![
+                    StringValue::Utf8 {
+                        text: "first".to_string()
+                    },
+                    StringValue::Utf8 {
+                        text: String::new()
+                    },
+                ],
+                complete: true,
+            }
+        );
+        assert_eq!(persistence.string_values[4].payload.element_count(), 2);
+        assert_eq!(
+            persistence.string_values[3]
+                .payload
+                .undecoded_encoding_count(),
+            1
+        );
+        assert_eq!(
+            persistence.string_values[4].parent.as_deref(),
+            Some(object_node_id(root_offset).as_str())
+        );
+    }
+
+    #[test]
+    fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
+        let data = b"@names 1 10\n0 1 [2]\n1 1 only\n\
+            @continued 2 10\n0 2 first\n$second\n";
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert_eq!(persistence.string_values.len(), 1);
+        assert_eq!(persistence.incomplete_string_array_count, 1);
+        assert_eq!(persistence.unresolved_string_value_count, 1);
+        assert_eq!(
+            persistence.string_values[0].payload,
+            StringPayload::Array {
+                dimensions: vec![2],
+                values: vec![StringValue::Utf8 {
+                    text: "only".to_string()
+                }],
+                complete: false,
+            }
+        );
     }
 
     #[test]

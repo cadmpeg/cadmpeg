@@ -32781,6 +32781,22 @@ fn emit_legacy_arenas(
                 Exactness::ByteExact,
             );
         },
+    )?;
+    emit_arena(
+        ir,
+        annotations,
+        "legacy_string_values",
+        &legacy.persistence.string_values,
+        |annotations, record| {
+            annotate(
+                annotations,
+                &record.id,
+                source_stream(record.offset),
+                record.offset as u64,
+                "legacy_type_10_string",
+                Exactness::ByteExact,
+            );
+        },
     )
 }
 
@@ -35914,6 +35930,51 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
                 "unresolved_legacy_real_value_count".to_string(),
                 legacy.persistence.unresolved_real_value_count,
             );
+            let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
+                legacy.persistence.string_values.iter().fold(
+                    (0usize, 0usize, 0usize, 0usize),
+                    |(scalars, arrays, elements, undecoded_encodings), record| {
+                        (
+                            scalars
+                                + usize::from(matches!(
+                                    record.payload,
+                                    crate::legacy::StringPayload::Scalar { .. }
+                                )),
+                            arrays
+                                + usize::from(matches!(
+                                    record.payload,
+                                    crate::legacy::StringPayload::Array { .. }
+                                )),
+                            elements.saturating_add(record.payload.element_count()),
+                            undecoded_encodings
+                                .saturating_add(record.payload.undecoded_encoding_count()),
+                        )
+                    },
+                );
+            coverage.insert(
+                "decoded_legacy_string_scalar_count".to_string(),
+                string_scalars,
+            );
+            coverage.insert(
+                "decoded_legacy_string_array_count".to_string(),
+                string_arrays,
+            );
+            coverage.insert(
+                "decoded_legacy_string_element_count".to_string(),
+                string_elements,
+            );
+            coverage.insert(
+                "incomplete_legacy_string_array_count".to_string(),
+                legacy.persistence.incomplete_string_array_count,
+            );
+            coverage.insert(
+                "unresolved_legacy_string_value_count".to_string(),
+                legacy.persistence.unresolved_string_value_count,
+            );
+            coverage.insert(
+                "undecoded_legacy_string_encoding_count".to_string(),
+                undecoded_encodings,
+            );
         }
     }
     coverage.insert(
@@ -36728,6 +36789,42 @@ fn build_report(
             message: format!(
                 "{unresolved_legacy_objects} legacy type-0 value row(s) use an undefined object \
                  payload form."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_legacy_string_arrays = count("incomplete_legacy_string_array_count");
+    if incomplete_legacy_string_arrays != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_legacy_string_arrays} legacy type-10 string array(s) have a direct \
+                 element count that differs from their first extent."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_legacy_strings = count("unresolved_legacy_string_value_count");
+    if unresolved_legacy_strings != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_strings} legacy type-10 value row(s) use an undefined \
+                 continuation form."
+            ),
+            provenance: None,
+        });
+    }
+    let undecoded_legacy_string_encodings = count("undecoded_legacy_string_encoding_count");
+    if undecoded_legacy_string_encodings != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{undecoded_legacy_string_encodings} legacy type-10 string element(s) retain \
+                 exact source bytes because their character encoding is not UTF-8."
             ),
             provenance: None,
         });

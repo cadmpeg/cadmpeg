@@ -2140,12 +2140,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     };
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
-    let principal_unit = binary_principal_unit(&data).or_else(|| {
-        legacy_ascii
-            .as_ref()?
-            .persistence
-            .principal_unit_system(&data)
-    });
+    let principal_unit = binary_principal_unit(&data)
+        .or_else(|| legacy_ascii.as_ref()?.persistence.principal_unit_system());
     let family_table = family_table(&data, &sections);
     let nonvisible_geometry_sections = sections
         .iter()

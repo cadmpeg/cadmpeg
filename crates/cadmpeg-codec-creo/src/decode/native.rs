@@ -31,6 +31,7 @@ const CREO_ARENAS: &[&str] = &[
     "legacy_integer_values",
     "legacy_objects",
     "legacy_real_values",
+    "legacy_string_values",
     "double_xar_tables",
     "primitive_scalar_arrays",
     "reference_lines",

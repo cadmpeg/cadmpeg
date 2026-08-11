@@ -9906,6 +9906,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         @principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n\
         @rel_accuracy 26 2\n2 26 3FF\n\
         @feat_id 27 1\n2 27 42\n\
+        @encoded 29 10\n2 29 \xE9\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
 
     let result = CreoCodec
@@ -9932,6 +9933,18 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     );
     assert_eq!(
         result.report.coverage["decoded_legacy_object_arrow_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_string_scalar_count"],
+        2
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_string_element_count"],
+        2
+    );
+    assert_eq!(
+        result.report.coverage["undecoded_legacy_string_encoding_count"],
         1
     );
     let reals = &result
@@ -9975,6 +9988,47 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         integers[0].field("parent"),
         Some(serde_json::json!(objects[0].id()))
     );
+    let strings = &result
+        .ir
+        .native
+        .namespace("creo")
+        .expect("Creo namespace")
+        .arenas["legacy_string_values"];
+    assert_eq!(strings.len(), 2);
+    let principal = strings
+        .iter()
+        .find(|record| record.field("name") == Some(serde_json::json!("principal_sys_units")))
+        .expect("principal-unit string");
+    let encoded = strings
+        .iter()
+        .find(|record| record.field("name") == Some(serde_json::json!("encoded")))
+        .expect("encoded string");
+    assert_eq!(
+        principal.field("payload"),
+        Some(serde_json::json!({
+            "form": "scalar",
+            "value": {
+                "form": "utf8",
+                "text": "Inch lbm Second (Pro/E Default)"
+            }
+        }))
+    );
+    assert_eq!(
+        encoded.field("payload"),
+        Some(serde_json::json!({
+            "form": "scalar",
+            "value": {"form": "bytes", "bytes": [233]}
+        }))
+    );
+    assert_eq!(
+        result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| { loss.code == cadmpeg_ir::report::LossKind::AttributesNotTransferred })
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -9984,6 +10038,8 @@ fn incomplete_legacy_values_are_reported() {
         @ids 8 1\n0 8 [2]\n$1\n\
         @objects 9 0\n0 9 [2]\n\
         @future 10 0\n0 10 token\n\
+        @names 11 10\n0 11 [2]\n1 11 only\n\
+        @continued 12 10\n0 12 first\n$second\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
 
     let result = CreoCodec
@@ -10006,13 +10062,21 @@ fn incomplete_legacy_values_are_reported() {
         1
     );
     assert_eq!(
+        result.report.coverage["incomplete_legacy_string_array_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["unresolved_legacy_string_value_count"],
+        1
+    );
+    assert_eq!(
         result
             .report
             .losses
             .iter()
             .filter(|loss| loss.code == cadmpeg_ir::report::LossKind::RecordNotTyped)
             .count(),
-        4
+        6
     );
 }
 

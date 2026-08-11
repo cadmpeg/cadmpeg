@@ -87,8 +87,8 @@ objects.
 Within one attribute scope, a row at depth `d > 0` is owned by the most recent
 preceding type-0 row at depth `d - 1`. A row at depth zero has no parent. A new
 row at a depth closes the prior node at that depth and all of its deeper
-descendants. Object and numeric native records retain this scoped parent
-identity.
+descendants. This parent relation applies independently of the row's value
+type.
 
 A type-1 scalar payload is a signed decimal 32-bit integer. A type-1 array uses
 the positive decimal extent header, continuation rows, comma separators,
@@ -114,6 +114,18 @@ run counts must equal the product of the extents. A one-element `[1]` array can
 instead store its compact-real token in the immediately following value row at
 depth one greater and with the same attribute identifier. An incomplete array
 does not produce a typed value.
+
+A type-10 scalar stores the remaining line payload as a byte string. The exact
+token `NULL` is a null string, while an empty payload is a stored zero-length
+string. The payload has no in-band character-set selector or normalization
+marker; its byte sequence is authoritative.
+
+A type-10 array header is one or more positive decimal extents. The first
+extent gives the number of direct string elements. Later extents do not
+multiply the element-row count. The direct elements are the following rows at
+depth one greater with the same attribute identifier. Each direct row stores
+one scalar type-10 value. An incomplete array retains its declared dimensions
+and present elements; missing rows do not supply default strings.
 
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB

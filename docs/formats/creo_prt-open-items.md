@@ -836,8 +836,13 @@ arrays. Type 2 selects finite IEEE-754 binary64 scalars and dimensioned
 run-length arrays with the compact hexadecimal grammar in `creo_prt.md` §1.
 Type 0 selects null, arrow, inline, and dimensioned-array object nodes; row
 depth supplies their scoped ownership tree.
+Type 10 selects null and byte-string scalars and direct-row arrays. The first
+array extent gives the number of string rows; later extents do not multiply
+that count. Valid UTF-8 strings transfer as text, and other encodings retain
+their exact bytes.
 
 **Need.** We must know the remaining type codes and payload grammars,
-the semantic axis order of multidimensional type-2 arrays, geometry and
-design-history graph joins, and non-attribute section grammar to transfer the
-rest of legacy persistence.
+the semantic axis order of multidimensional type-2 arrays, the character-set
+selection for non-UTF-8 type-10 strings, type-10 continuation semantics,
+geometry and design-history graph joins, and non-attribute section grammar to
+transfer the rest of legacy persistence.
