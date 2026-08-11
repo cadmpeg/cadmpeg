@@ -92,6 +92,7 @@ struct OwnershipPlan {
     body_kind: BodyKind,
     components: Vec<Vec<usize>>,
     face_components: Vec<usize>,
+    loop_owners: HashMap<u32, usize>,
 }
 
 struct OrientedLoop {
@@ -324,12 +325,8 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         if loop_.pcurves.len() != loop_.edges.len() || loop_.pcurves.is_empty() {
             return None;
         }
-        if graph
-            .faces
-            .iter()
-            .filter(|face| face.loops.contains(&loop_.object_id))
-            .any(|face| face.surface != loop_.surface)
-        {
+        let owner = ownership.loop_owners.get(&loop_.object_id).copied()?;
+        if graph.faces.get(owner)?.surface != loop_.surface {
             return None;
         }
         if !loop_chain_closes(loop_, &graph.edge_vertices) {
@@ -2008,6 +2005,8 @@ mod tests {
         assert_eq!(ownership.face_components, vec![0, 1]);
         assert_eq!(ownership.components.len(), 2);
         assert_eq!(ownership.body_kind, BodyKind::Sheet);
+        assert_eq!(ownership.loop_owners.get(&2), Some(&0));
+        assert_eq!(ownership.loop_owners.get(&6), Some(&1));
 
         graph
             .loops
