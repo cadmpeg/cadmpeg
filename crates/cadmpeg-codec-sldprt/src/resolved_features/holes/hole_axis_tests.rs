@@ -2150,6 +2150,116 @@ fn source_intervals_supply_legacy_hole_profiles() {
 }
 
 #[test]
+fn serialized_position_successor_owns_legacy_hole_profile() {
+    let mut history = native_history();
+    let mut position = history.features[0].clone();
+    position.id = "native-position-sketch".into();
+    position.source_id = Some("12".into());
+    position.ordinal = 5;
+    position.xml_tag = "Sketch".into();
+    position.kind = "Sketch".into();
+    position.input_class = Some("moProfileFeature_c".into());
+    position.parameters.clear();
+    position.content.clear();
+    history.features.push(position);
+    let profile = crate::records::Feature {
+        id: "native-profile-sketch".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: Some("58".into()),
+        parent_source_id: None,
+        ordinal: 9,
+        name: "Profile".into(),
+        kind: "Sketch".into(),
+        input_class: Some("moProfileFeature_c".into()),
+        suppressed: false,
+        parameters: [
+            ("bore".into(), "<MOD-DIAM>9".into()),
+            ("depth".into(), "30".into()),
+        ]
+        .into(),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: vec![
+            crate::records::FeatureContent::Dimension("bore".into()),
+            crate::records::FeatureContent::Dimension("depth".into()),
+        ],
+    };
+    history.features.push(profile.clone());
+
+    let mut lane = lane_with_position_reference(12);
+    lane.native_payload.resize(300, 0);
+    lane.names.extend([
+        FeatureInputName {
+            id: "position-name".into(),
+            parent: "lane".into(),
+            ordinal: 1,
+            offset: 100,
+            value: "Position".into(),
+            object_id: Some(12),
+        },
+        FeatureInputName {
+            id: "profile-name".into(),
+            parent: "lane".into(),
+            ordinal: 2,
+            offset: 200,
+            value: "Profile".into(),
+            object_id: Some(58),
+        },
+    ]);
+
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane.clone()]);
+    assert_eq!(
+        history.features[0]
+            .properties
+            .get("DissectableChildren")
+            .map(String::as_str),
+        Some("58")
+    );
+
+    history.features[0].properties.remove("DissectableChildren");
+    let mut alternate_profile = profile;
+    alternate_profile.id = "alternate-profile-sketch".into();
+    alternate_profile.source_id = Some("59".into());
+    alternate_profile.ordinal = 10;
+    history.features.push(alternate_profile);
+    let mut alternate_lane = lane_with_position_reference(12);
+    alternate_lane.native_payload.resize(300, 0);
+    alternate_lane.names.extend([
+        FeatureInputName {
+            id: "alternate-position-name".into(),
+            parent: "lane".into(),
+            ordinal: 1,
+            offset: 100,
+            value: "Position".into(),
+            object_id: Some(12),
+        },
+        FeatureInputName {
+            id: "alternate-profile-name".into(),
+            parent: "lane".into(),
+            ordinal: 2,
+            offset: 150,
+            value: "Alternate profile".into(),
+            object_id: Some(59),
+        },
+        FeatureInputName {
+            id: "later-profile-name".into(),
+            parent: "lane".into(),
+            ordinal: 3,
+            offset: 200,
+            value: "Profile".into(),
+            object_id: Some(58),
+        },
+    ]);
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane]);
+    assert!(!history.features[0]
+        .properties
+        .contains_key("DissectableChildren"));
+}
+
+#[test]
 fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
     let mut history = native_history();
     let mut position = history.features[0].clone();

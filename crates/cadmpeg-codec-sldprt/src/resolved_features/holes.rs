@@ -213,6 +213,59 @@ pub(crate) fn enrich_history_hole_constructions(
                     let [position_source] = position_sources.as_slice() else {
                         return None;
                     };
+                    let unique_position = || {
+                        let mut positions = history.features.iter().filter(|candidate| {
+                            (candidate
+                                .source_id
+                                .as_deref()
+                                .and_then(|source| source.parse::<u32>().ok())
+                                == Some(*position_source)
+                                || candidate.ordinal == *position_source)
+                                && classify(candidate) == Some(FeatureClass::Sketch)
+                        });
+                        let position = positions.next()?;
+                        positions.next().is_none().then_some(position)
+                    };
+                    // Legacy holes serialize the generated axial profile
+                    // immediately after their inline position-sketch object.
+                    let serialized_successor_profile = || {
+                        let position = unique_position()?;
+                        let mut profiles = Vec::new();
+                        for lane in lanes.iter().filter(|lane| {
+                            hole_position_sketch_source(feature, lane) == Some(*position_source)
+                        }) {
+                            let position_offset = feature_object_name(position, lane)?.offset;
+                            let minimum_offset = history
+                                .features
+                                .iter()
+                                .filter_map(|candidate| {
+                                    let offset = feature_object_name(candidate, lane)?.offset;
+                                    (offset > position_offset).then_some(offset)
+                                })
+                                .min()?;
+                            let mut successors = history.features.iter().filter(|candidate| {
+                                feature_object_name(candidate, lane)
+                                    .is_some_and(|name| name.offset == minimum_offset)
+                            });
+                            let successor = successors.next()?;
+                            if successors.next().is_some()
+                                || classify(successor) != Some(FeatureClass::Sketch)
+                                || !crate::history::is_hole_profile_construction(successor)
+                            {
+                                return None;
+                            }
+                            profiles.push(successor);
+                        }
+                        profiles.sort_by_key(|profile| profile.id.as_str());
+                        profiles.dedup_by_key(|profile| profile.id.as_str());
+                        let [profile] = profiles.as_slice() else {
+                            return None;
+                        };
+                        Some((*profile, 4_u8))
+                    };
+                    if let Some(profile) = serialized_successor_profile() {
+                        return Some(profile);
+                    }
                     let adjacent_sources = [
                         position_source.checked_sub(1),
                         position_source.checked_add(1),
@@ -261,19 +314,7 @@ pub(crate) fn enrich_history_hole_constructions(
                     if let Some(profile) = bounded_profile {
                         return Some((profile, 2_u8));
                     }
-                    let mut positions = history.features.iter().filter(|candidate| {
-                        (candidate
-                            .source_id
-                            .as_deref()
-                            .and_then(|source| source.parse::<u32>().ok())
-                            == Some(*position_source)
-                            || candidate.ordinal == *position_source)
-                            && classify(candidate) == Some(FeatureClass::Sketch)
-                    });
-                    let position = positions.next()?;
-                    if positions.next().is_some() {
-                        return None;
-                    }
+                    let position = unique_position()?;
                     let adjacent_ordinals = [
                         position.ordinal.checked_sub(1),
                         position.ordinal.checked_add(1),
