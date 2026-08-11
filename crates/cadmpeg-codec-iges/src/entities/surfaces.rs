@@ -823,6 +823,7 @@ pub(super) fn project(
                     axis_origin: procedural_axis_origin,
                     axis_direction: procedural_axis_direction,
                     angular_interval: [start_angle, end_angle],
+                    angular_parameter_interval: None,
                     parameter_interval: Some(parameter_interval),
                     transposed: false,
                     revision_form: None,

@@ -1,6 +1,8 @@
 //! Byte-level parsing for standard nested CATIA V5 B-rep (`FBB`) streams:
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
+use cadmpeg_core::decode::WorkBudget;
+
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
     CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology, TrimRecord,
@@ -293,12 +295,14 @@ pub fn prune_edge_candidates_by_port_domains(
 /// geometrically valid endpoint pairs. Candidate pairs and edge rows use their
 /// serialized order as the stable gauge when equivalent assignments permute
 /// indistinguishable line rows. The selected assignment must close every face
-/// cycle and satisfy radial orientation.
+/// cycle and satisfy radial orientation. Search charges the supplied topology
+/// phase budget.
 #[must_use]
 pub fn parse_standard_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
+    budget: &WorkBudget<'_>,
 ) -> Option<StandardTopology> {
     let (_, face_count, after_faces) = selected_standard_run(bytes)?;
     let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
@@ -322,17 +326,20 @@ pub fn parse_standard_endpoint_candidates(
         edge_candidates,
         None,
         face_count,
+        budget,
     )
 }
 
 /// Reconstruct standard topology from geometric endpoint candidates while
 /// enforcing the serialized endpoint-port equality quotient during search.
+/// Search charges the supplied topology phase budget.
 #[must_use]
 pub fn parse_standard_port_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_ports: &[[u32; 2]],
+    budget: &WorkBudget<'_>,
 ) -> Option<StandardTopology> {
     let (_, face_count, after_faces) = selected_standard_run(bytes)?;
     let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
@@ -356,6 +363,7 @@ pub fn parse_standard_port_endpoint_candidates(
         edge_candidates,
         Some(edge_ports),
         face_count,
+        budget,
     )
 }
 

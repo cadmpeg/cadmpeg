@@ -5094,7 +5094,7 @@ mod tests {
         assert_eq!(result.ir.model.configurations[0].ordinal, 0);
         assert_eq!(result.ir.model.configurations[0].source_index, Some(0));
         assert_eq!(result.ir.model.configurations[0].name, "Model");
-        assert!(result.ir.model.configurations[0].active);
+        assert!(result.ir.model.configurations[0].active.is_active());
         assert_eq!(
             result.ir.model.configurations[0].bodies.resolved(),
             Some(
@@ -5110,7 +5110,7 @@ mod tests {
         );
         assert_eq!(result.ir.model.configurations[1].ordinal, 1);
         assert_eq!(result.ir.model.configurations[1].name, "Exploded");
-        assert!(!result.ir.model.configurations[1].active);
+        assert!(result.ir.model.configurations[1].active.is_inactive());
         assert!(result.ir.model.configurations[1].bodies.is_unresolved());
         let uses = result
             .ir
@@ -5158,15 +5158,13 @@ mod tests {
                 .arena_as::<super::Configuration>("configurations")
                 .expect("required invariant");
             assert!(native[0].is_default);
-            assert!(
-                result
-                    .ir
-                    .model
-                    .configurations
-                    .iter()
-                    .all(|configuration| !configuration.active
-                        && configuration.bodies.is_unresolved())
-            );
+            assert!(result
+                .ir
+                .model
+                .configurations
+                .iter()
+                .all(|configuration| configuration.active.is_inactive()
+                    && configuration.bodies.is_unresolved()));
         }
     }
 
@@ -5291,7 +5289,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         assert_eq!(result.ir.model.configurations.len(), 1);
-        assert!(!result.ir.model.configurations[0].active);
+        assert!(result.ir.model.configurations[0].active.is_inactive());
         assert!(result.ir.model.configurations[0].bodies.is_unresolved());
         assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
             namespace

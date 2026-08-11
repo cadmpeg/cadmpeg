@@ -1043,9 +1043,9 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                     .unwrap_or(&configuration.id)
             )),
             ordinal: configuration.ordinal,
-            active: false,
+            active: false.into(),
             source_index: configuration.source_index,
-            name: configuration.name.clone(),
+            name: configuration.name.clone().into(),
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
             bodies: ConfigurationBodies::Unresolved,
@@ -3323,7 +3323,7 @@ mod history_reference_tests {
             .push(cadmpeg_ir::features::DesignConfiguration {
                 id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
                 ordinal: 0,
-                active: true,
+                active: true.into(),
                 source_index: None,
                 name: "configuration".into(),
                 material: None,
@@ -4934,7 +4934,7 @@ mod history_reference_tests {
         DesignConfiguration {
             id: ConfigurationId(id.into()),
             ordinal,
-            active: false,
+            active: false.into(),
             source_index,
             name: id.into(),
             material: None,
@@ -5332,7 +5332,7 @@ mod history_reference_tests {
         .into();
         let mut configuration =
             design_configuration("configuration", 0, Some(0), Some("native-configuration"));
-        configuration.active = true;
+        configuration.active = true.into();
         sync_neutral_configurations(&[configuration], &mut native);
 
         let native = native.expect("required invariant");
@@ -5525,7 +5525,7 @@ mod history_reference_tests {
             if let Some(id) = id {
                 configuration = with_configuration_id(configuration, id);
             }
-            configuration.active = true;
+            configuration.active = true.into();
             sync_neutral_configurations(&[configuration], &mut native);
 
             assert_eq!(
@@ -5633,7 +5633,7 @@ mod history_reference_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Default".into(),
             material: None,
@@ -5869,9 +5869,9 @@ mod history_reference_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: cadmpeg_ir::features::ConfigurationId(format!("configuration-{ordinal}")),
                 ordinal,
-                active: ordinal == 0,
+                active: (ordinal == 0).into(),
                 source_index: Some(ordinal),
-                name: format!("Configuration {ordinal}"),
+                name: format!("Configuration {ordinal}").into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: ConfigurationBodies::Resolved(Vec::new()),
@@ -5982,7 +5982,7 @@ mod history_reference_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(1),
             name: "Default".into(),
             material: None,
@@ -6178,7 +6178,7 @@ mod history_reference_tests {
             native_ref: None,
         });
         let mut configuration = design_configuration("configuration", 0, Some(0), None);
-        configuration.active = true;
+        configuration.active = true.into();
         configuration.feature_states.insert(
             id.clone(),
             ConfigurationFeatureState {
@@ -6317,7 +6317,7 @@ mod history_reference_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("test:model:configuration#default".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Default".into(),
             material: None,
@@ -13020,6 +13020,9 @@ fn sync_neutral_configurations(
     }
     let mut lane_configuration_remaps = HashMap::<String, String>::new();
     for configuration in configurations {
+        let Some(configuration_name) = configuration.name.resolved() else {
+            continue;
+        };
         let existing = native
             .feature_histories
             .iter_mut()
@@ -13030,7 +13033,7 @@ fn sync_neutral_configurations(
             let previous_slot = configuration_slot(&existing.properties, existing.ordinal);
             existing.ordinal = configuration.ordinal;
             existing.source_index = configuration.source_index;
-            existing.name.clone_from(&configuration.name);
+            existing.name = configuration_name.to_string();
             existing.material.clone_from(&configuration.material);
             existing.properties.clone_from(&configuration.properties);
             let configuration_slot =
@@ -13055,7 +13058,7 @@ fn sync_neutral_configurations(
                     parent,
                     ordinal: configuration.ordinal,
                     source_index: configuration.source_index,
-                    name: configuration.name.clone(),
+                    name: configuration_name.to_string(),
                     material: configuration.material.clone(),
                     properties: configuration.properties.clone(),
                 });

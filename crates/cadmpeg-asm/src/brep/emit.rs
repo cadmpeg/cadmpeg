@@ -275,6 +275,7 @@ fn emit_carrier_surface(
                     axis_origin,
                     axis_direction,
                     angular_interval,
+                    angular_parameter_interval: None,
                     parameter_interval: Some(parameter_interval),
                     transposed: false,
                     revision_form,

@@ -111,7 +111,7 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active);
+        .filter(|configuration| configuration.active.is_active());
     let Some(configuration) = active.next() else {
         return false;
     };
@@ -1029,9 +1029,9 @@ mod tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("active".to_string()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
-            name: "Model".to_string(),
+            name: "Model".into(),
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
@@ -1566,7 +1566,7 @@ mod tests {
             FeatureDefinition::DatumCoordinateSystemUnresolved,
         ));
         attach_complete_active_configuration(&mut ir);
-        ir.model.configurations[0].active = false;
+        ir.model.configurations[0].active = false.into();
         ir.model.configurations[0].bodies = ConfigurationBodies::Unresolved;
 
         assert_eq!(

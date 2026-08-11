@@ -252,9 +252,9 @@ pub(crate) fn attach(
             ir.model.configurations.push(DesignConfiguration {
                 id,
                 ordinal: ordinal as u32,
-                active: active_attribute_use.is_some(),
+                active: active_attribute_use.is_some().into(),
                 source_index: Some(ordinal as u32),
-                name: configuration.name.clone(),
+                name: configuration.name.clone().into(),
                 material: None,
                 properties: active_attribute_use
                     .map(|relation| {
@@ -933,7 +933,7 @@ fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> 
     let active = configurations
         .iter()
         .enumerate()
-        .filter_map(|(index, configuration)| configuration.active.then_some(index))
+        .filter_map(|(index, configuration)| configuration.active.is_active().then_some(index))
         .collect::<Vec<_>>();
     let [index] = active.as_slice() else {
         return None;
@@ -8298,7 +8298,7 @@ mod tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("active".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Model".into(),
             material: None,
@@ -8347,7 +8347,7 @@ mod tests {
         let configuration = || DesignConfiguration {
             id: ConfigurationId("active".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Model".into(),
             material: None,
@@ -8444,7 +8444,7 @@ mod tests {
             feature.ordinal = ordinal as u64;
         }
         ir.model.configurations = vec![configuration(
-            true,
+            true.into(),
             ConfigurationBodies::Resolved(vec![body]),
         )];
         let mut annotations = AnnotationBuilder::new();
@@ -8563,7 +8563,7 @@ mod tests {
         missing_dependency.model.features = vec![producer("missing")];
         missing_dependency.model.configurations = vec![configuration(
             "active",
-            true,
+            true.into(),
             ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
         )];
         let mut annotations = AnnotationBuilder::new();
@@ -8581,7 +8581,7 @@ mod tests {
         unresolved_bodies.model.features[0].dependencies.clear();
         unresolved_bodies.model.configurations = vec![configuration(
             "active",
-            true,
+            true.into(),
             ConfigurationBodies::Unresolved,
         )];
         super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
@@ -8596,7 +8596,7 @@ mod tests {
         contradicted.model.features[0].suppressed = Some(true);
         contradicted.model.configurations = vec![configuration(
             "active",
-            true,
+            true.into(),
             ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
         )];
         super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
@@ -8611,12 +8611,12 @@ mod tests {
         ambiguous.model.configurations = vec![
             configuration(
                 "first",
-                true,
+                true.into(),
                 ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
             ),
             configuration(
                 "second",
-                true,
+                true.into(),
                 ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
             ),
         ];

@@ -46,6 +46,54 @@ pub enum NumericPairSlot {
     },
 }
 
+/// Prefix atom of one complete schema-selected `Range` interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum RangeIntervalPrefix {
+    /// One compact atom with its exact serialized width.
+    Compact {
+        /// Decoded compact-atom value.
+        value: u32,
+        /// Stored width, one or two bytes.
+        width: u8,
+    },
+    /// Exact fixed-width `80 <word:u32le>` form.
+    EscapedWord {
+        /// Stored little-endian word.
+        word: u32,
+    },
+}
+
+/// One slot in a complete schema-selected `Range` interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum RangeIntervalSlot {
+    /// `E6` followed by one finite IEEE-754 binary64 value.
+    Binary64 {
+        /// Exact stored bits.
+        bits: u64,
+        /// Byte offset of `E6` within the complete `7C07` payload.
+        offset: usize,
+    },
+    /// Zero-payload `E8` state.
+    Unset {
+        /// Byte offset of `E8` within the complete `7C07` payload.
+        offset: usize,
+    },
+}
+
+/// Complete encoded value selected by a source-schema entry named `Range`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct RangeInterval {
+    /// Atom preceding the fixed range type frame.
+    pub prefix: RangeIntervalPrefix,
+    /// Source-ordered lower and upper slots. An absent pair uses the shorter
+    /// no-slot production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slots: Option<[RangeIntervalSlot; 2]>,
+}
+
 /// One item in an embedded numeric value packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -326,6 +374,15 @@ pub enum EntityValuePacket {
         /// Byte offset of the layout code within the value payload.
         layout_offset: usize,
     },
+    /// Exact `83 E9 C0 07 01 E1 E6 <f64le> 88 81{5} 82 E7 81 FE` packet.
+    E9Scalar {
+        /// Byte offset of the leading `83` atom within the value payload.
+        offset: usize,
+        /// Byte offset of the scalar's `E6` opcode within the value payload.
+        scalar_offset: usize,
+        /// Exact stored finite binary64 bits.
+        bits: u64,
+    },
 }
 
 impl EntityValuePacket {
@@ -346,6 +403,7 @@ impl EntityValuePacket {
             }
             Self::Compact { offset, .. } => Some(*offset..offset.checked_add(6)?),
             Self::Layout { offset, .. } => Some(*offset..offset.checked_add(7)?),
+            Self::E9Scalar { offset, .. } => Some(*offset..offset.checked_add(25)?),
         }
     }
 }
@@ -383,6 +441,7 @@ pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<
         .collect::<HashSet<_>>();
     let mut packets =
         numeric_value_packets(payload, &e8_opcode_offsets, &marker_offsets, &atom_offsets);
+    packets.extend(e9_scalar_packets(payload, &opcode_offsets, &atom_offsets));
     packets.extend(
         (0..payload.len())
             .filter(|index| opcode_offsets.contains(index))
@@ -409,9 +468,49 @@ pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<
     packets.sort_by_key(|packet| match packet {
         EntityValuePacket::Numeric { offset, .. }
         | EntityValuePacket::Compact { offset, .. }
-        | EntityValuePacket::Layout { offset, .. } => *offset,
+        | EntityValuePacket::Layout { offset, .. }
+        | EntityValuePacket::E9Scalar { offset, .. } => *offset,
     });
     packets
+}
+
+fn e9_scalar_packets(
+    payload: &[u8],
+    opcode_offsets: &HashSet<usize>,
+    atom_offsets: &HashSet<usize>,
+) -> Vec<EntityValuePacket> {
+    const PREFIX: [u8; 7] = [0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+    const TRAILER: [u8; 10] = [0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe];
+
+    (0..payload.len())
+        .filter(|offset| {
+            atom_offsets.contains(offset)
+                && offset
+                    .checked_add(1)
+                    .is_some_and(|opcode| opcode_offsets.contains(&opcode))
+        })
+        .filter_map(|offset| {
+            let scalar_offset = offset.checked_add(6)?;
+            let scalar_end = scalar_offset.checked_add(9)?;
+            let packet_end = offset.checked_add(25)?;
+            (payload.get(offset..scalar_offset + 1) == Some(PREFIX.as_slice())
+                && payload.get(scalar_end..packet_end) == Some(TRAILER.as_slice()))
+            .then_some(())?;
+            let bits = u64::from_le_bytes(
+                payload
+                    .get(scalar_offset + 1..scalar_end)?
+                    .try_into()
+                    .ok()?,
+            );
+            f64::from_bits(bits)
+                .is_finite()
+                .then_some(EntityValuePacket::E9Scalar {
+                    offset,
+                    scalar_offset,
+                    bits,
+                })
+        })
+        .collect()
 }
 
 fn numeric_value_packets(
@@ -515,6 +614,9 @@ pub struct EntityRecord {
     pub total_len: usize,
     /// Byte between the `7C05` length and nested `7C06` marker.
     pub lead: u8,
+    /// Complete alternate inline body, including its lead byte, when nested
+    /// `7C06` and `7C07` frames are absent.
+    pub inline_body: Option<Vec<u8>>,
     /// Stored nested `7C06` length.
     pub definition_len: u32,
     /// Exact definition prefix before the `0xEA` identity delimiter.
@@ -604,11 +706,19 @@ struct EntityRecordCandidates {
     pos: usize,
     total_len: usize,
     lead: u8,
-    definition_len: u32,
-    definition_end: usize,
-    value_len: u32,
-    value_end: usize,
+    layout: EntityRecordLayout,
     identities: Vec<EntityIdentityCandidate>,
+}
+
+#[derive(Clone, Copy)]
+enum EntityRecordLayout {
+    Nested {
+        definition_len: u32,
+        definition_end: usize,
+        value_len: u32,
+        value_end: usize,
+    },
+    Inline,
 }
 
 #[derive(Clone, Copy)]
@@ -683,15 +793,27 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
 fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandidates> {
     let total_len = usize::try_from(u32_le(data, pos.checked_add(2)?)?).ok()?;
     let end = pos.checked_add(total_len)?;
-    if total_len < 19
-        || end > data.len()
-        || data.get(pos.checked_add(6)?)? > &0x02
-        || data.get(pos.checked_add(7)?..pos.checked_add(9)?)? != [0x7c, 0x06]
-    {
+    if total_len < 12 || end > data.len() {
         return None;
     }
 
     let lead = *data.get(pos + 6)?;
+    if lead == 0x03 && data.get(pos + 7..pos + 9) != Some(&[0x7c, 0x06]) {
+        let identities = identity_candidates(data, pos + 7, end, false);
+        return (!identities.is_empty()).then_some(EntityRecordCandidates {
+            pos,
+            total_len,
+            lead,
+            layout: EntityRecordLayout::Inline,
+            identities,
+        });
+    }
+    if total_len < 19
+        || lead > 0x02
+        || data.get(pos.checked_add(7)?..pos.checked_add(9)?)? != [0x7c, 0x06]
+    {
+        return None;
+    }
     let definition_len = u32_le(data, pos + 9)?;
     let definition_len_usize = usize::try_from(definition_len).ok()?;
     let definition_end = pos.checked_add(7)?.checked_add(definition_len_usize)?;
@@ -705,13 +827,42 @@ fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandi
     if value_len_usize < 6 || value_end > end {
         return None;
     }
+    let identities = identity_candidates(data, definition_start, definition_end, true);
+    if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
+        return None;
+    }
+    (!identities.is_empty()).then_some(EntityRecordCandidates {
+        pos,
+        total_len,
+        lead,
+        layout: EntityRecordLayout::Nested {
+            definition_len,
+            definition_end,
+            value_len,
+            value_end,
+        },
+        identities,
+    })
+}
+
+fn identity_candidates(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    fixed_definition_fields: bool,
+) -> Vec<EntityIdentityCandidate> {
     let mut identities = Vec::new();
-    let mut at = definition_start;
-    while at < definition_end {
+    let mut at = start;
+    while at < end {
         match data[at] {
             0xea => {
-                if at.checked_add(5).is_some_and(|end| end <= definition_end) {
-                    let entity_id = u32_le(data, at + 1)?;
+                if at
+                    .checked_add(5)
+                    .is_some_and(|candidate_end| candidate_end <= end)
+                {
+                    let Some(entity_id) = u32_le(data, at + 1) else {
+                        break;
+                    };
                     if entity_id != 0 {
                         identities.push(EntityIdentityCandidate {
                             delimiter: at,
@@ -721,23 +872,22 @@ fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandi
                 }
                 at += 1;
             }
-            0x32 if at.checked_add(5).is_some_and(|end| end <= definition_end) => at += 5,
+            0x32 if at
+                .checked_add(5)
+                .is_some_and(|candidate_end| candidate_end <= end) =>
+            {
+                at += 5;
+            }
+            0xfe if fixed_definition_fields
+                && at.checked_add(1).and_then(|next| data.get(next)) == Some(&0xf6)
+                && at.checked_add(18).is_some_and(|frame_end| frame_end <= end) =>
+            {
+                at += 18;
+            }
             _ => at += 1,
         }
     }
-    if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
-        return None;
-    }
-    (!identities.is_empty()).then_some(EntityRecordCandidates {
-        pos,
-        total_len,
-        lead,
-        definition_len,
-        definition_end,
-        value_len,
-        value_end,
-        identities,
-    })
+    identities
 }
 
 fn materialize_record(
@@ -745,25 +895,53 @@ fn materialize_record(
     candidate: &EntityRecordCandidates,
     identity: EntityIdentityCandidate,
 ) -> Option<EntityRecord> {
-    let definition_start = candidate.pos.checked_add(13)?;
     let record_end = candidate.pos.checked_add(candidate.total_len)?;
+    if matches!(candidate.layout, EntityRecordLayout::Inline) {
+        return Some(EntityRecord {
+            pos: candidate.pos,
+            total_len: candidate.total_len,
+            lead: candidate.lead,
+            inline_body: Some(data.get(candidate.pos + 6..record_end)?.to_vec()),
+            definition_len: 0,
+            definition_prefix: Vec::new(),
+            definition_schema_selectors: Vec::new(),
+            entity_id: identity.entity_id,
+            definition_suffix: Vec::new(),
+            value_len: 0,
+            value_payload: Vec::new(),
+            numeric_pair: None,
+            reference_signature: None,
+            record_suffix: Vec::new(),
+        });
+    }
+    let EntityRecordLayout::Nested {
+        definition_len,
+        definition_end,
+        value_len,
+        value_end,
+    } = candidate.layout
+    else {
+        unreachable!("inline entity returned before nested materialization")
+    };
+    let definition_start = candidate.pos.checked_add(13)?;
     let identity_end = identity.delimiter.checked_add(5)?;
-    let value_payload = data.get(candidate.definition_end + 6..candidate.value_end)?;
+    let value_payload = data.get(definition_end + 6..value_end)?;
     let prefix = data.get(definition_start..identity.delimiter)?;
     Some(EntityRecord {
         pos: candidate.pos,
         total_len: candidate.total_len,
         lead: candidate.lead,
-        definition_len: candidate.definition_len,
+        inline_body: None,
+        definition_len,
         definition_prefix: prefix.to_vec(),
         definition_schema_selectors: parse_definition_schema_selectors(prefix),
         entity_id: identity.entity_id,
-        definition_suffix: data.get(identity_end..candidate.definition_end)?.to_vec(),
-        value_len: candidate.value_len,
+        definition_suffix: data.get(identity_end..definition_end)?.to_vec(),
+        value_len,
         value_payload: value_payload.to_vec(),
         numeric_pair: parse_numeric_pair(value_payload),
         reference_signature: parse_reference_signature(value_payload),
-        record_suffix: data.get(candidate.value_end..record_end)?.to_vec(),
+        record_suffix: data.get(value_end..record_end)?.to_vec(),
     })
 }
 
@@ -936,6 +1114,69 @@ fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
     }
 }
 
+/// Parse one complete encoded value selected by a source-schema `Range`
+/// entry. `start` begins after the selector word and `end` is the next
+/// catalog-valid selector or the `7C07` payload end.
+#[must_use]
+pub fn parse_range_interval(payload: &[u8], start: usize, end: usize) -> Option<RangeInterval> {
+    let bytes = payload.get(start..end)?;
+    let (prefix, mut at) = if bytes.first() == Some(&0x80) && bytes.get(5) == Some(&0xe8) {
+        (
+            RangeIntervalPrefix::EscapedWord {
+                word: u32_le(bytes, 1)?,
+            },
+            5,
+        )
+    } else {
+        let (value, next) = compact_atom(bytes, 0)?;
+        (
+            RangeIntervalPrefix::Compact {
+                value,
+                width: u8::try_from(next).ok()?,
+            },
+            next,
+        )
+    };
+    (bytes.get(at) == Some(&0xe8)).then_some(())?;
+    let (type_atom, next) = compact_atom(bytes, at + 1)?;
+    (type_atom == 3848 && bytes.get(next) == Some(&0x37)).then_some(())?;
+    let (layout, next) = one_byte_atom(bytes, next + 1)?;
+    at = next;
+    let slots = match layout {
+        1 => None,
+        3 => {
+            let (value, next) = one_byte_atom(bytes, at)?;
+            (value == 1).then_some(())?;
+            at = next;
+            let mut slots = Vec::with_capacity(2);
+            for _ in 0..2 {
+                match *bytes.get(at)? {
+                    0xe6 => {
+                        let scalar_end = at.checked_add(9)?;
+                        let bits =
+                            u64::from_le_bytes(bytes.get(at + 1..scalar_end)?.try_into().ok()?);
+                        f64::from_bits(bits).is_finite().then_some(())?;
+                        slots.push(RangeIntervalSlot::Binary64 {
+                            bits,
+                            offset: start + at,
+                        });
+                        at = scalar_end;
+                    }
+                    0xe8 => {
+                        slots.push(RangeIntervalSlot::Unset { offset: start + at });
+                        at += 1;
+                    }
+                    _ => return None,
+                }
+            }
+            Some(slots.try_into().ok()?)
+        }
+        _ => return None,
+    };
+    (!bytes[at..].is_empty() && bytes[at..].iter().all(|byte| *byte == 0xfe)).then_some(())?;
+    Some(RangeInterval { prefix, slots })
+}
+
 fn compact_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
     let byte = *data.get(at)?;
     match byte {
@@ -959,21 +1200,29 @@ mod tests {
     use super::*;
     use crate::value_block;
 
-    fn record(prefix: &[u8], entity_id: u32) -> Vec<u8> {
+    fn record_with_definition_suffix(
+        prefix: &[u8],
+        entity_id: u32,
+        definition_suffix: &[u8],
+    ) -> Vec<u8> {
         let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0, 0x7c, 0x06];
         bytes.extend_from_slice(
-            &u32::try_from(prefix.len() + 12)
+            &u32::try_from(prefix.len() + definition_suffix.len() + 11)
                 .expect("bounded test definition")
                 .to_le_bytes(),
         );
         bytes.extend_from_slice(prefix);
         bytes.push(0xea);
         bytes.extend_from_slice(&entity_id.to_le_bytes());
-        bytes.push(0xaa);
+        bytes.extend_from_slice(definition_suffix);
         bytes.extend_from_slice(&[0x7c, 0x07, 7, 0, 0, 0, 0xfe, 0xbb]);
         let len = u32::try_from(bytes.len()).expect("bounded test record");
         bytes[2..6].copy_from_slice(&len.to_le_bytes());
         bytes
+    }
+
+    fn record(prefix: &[u8], entity_id: u32) -> Vec<u8> {
+        record_with_definition_suffix(prefix, entity_id, &[0xaa])
     }
 
     #[test]
@@ -1017,6 +1266,32 @@ mod tests {
             [89, 90, 91]
         );
         assert_eq!(run[1].definition_prefix, [0xe9, 0xea]);
+    }
+
+    #[test]
+    fn fixed_frame_payload_does_not_create_an_identity_delimiter() {
+        let mut first_frame = [0; 18];
+        first_frame[..2].copy_from_slice(&[0xfe, 0xf6]);
+        first_frame[2] = 0xea;
+        first_frame[3..7].copy_from_slice(&100_u32.to_le_bytes());
+        let mut second_frame = first_frame;
+        second_frame[3..7].copy_from_slice(&101_u32.to_le_bytes());
+
+        let mut records = record_with_definition_suffix(&[0x11], 1, &first_frame);
+        records.extend(record_with_definition_suffix(&[0x12], 2, &second_frame));
+
+        let runs = parse_runs(&records);
+        let [run] = runs.as_slice() else {
+            panic!("one frame-aware entity-table run");
+        };
+        assert_eq!(
+            run.iter()
+                .map(|record| record.entity_id)
+                .collect::<Vec<_>>(),
+            [1, 2]
+        );
+        assert_eq!(run[0].definition_suffix, first_frame);
+        assert_eq!(run[1].definition_suffix, second_frame);
     }
 
     #[test]
@@ -1108,6 +1383,73 @@ mod tests {
         ];
 
         assert_eq!(parse_numeric_pair(&opaque), None);
+    }
+
+    #[test]
+    fn range_interval_decodes_nullable_bounds_and_exact_offsets() {
+        let mut payload = vec![
+            0x32, 0x23, 1, 0, 0, 0x87, 0xe8, 0xe0, 0x07, 0x37, 0x83, 0x81,
+        ];
+        payload.push(0xe6);
+        payload.extend_from_slice(&(-0.2032_f64).to_bits().to_le_bytes());
+        payload.push(0xe6);
+        payload.extend_from_slice(&0.2032_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xfe, 0xfe]);
+
+        assert_eq!(
+            parse_range_interval(&payload, 5, payload.len()),
+            Some(RangeInterval {
+                prefix: RangeIntervalPrefix::Compact { value: 7, width: 1 },
+                slots: Some([
+                    RangeIntervalSlot::Binary64 {
+                        bits: (-0.2032_f64).to_bits(),
+                        offset: 12,
+                    },
+                    RangeIntervalSlot::Binary64 {
+                        bits: 0.2032_f64.to_bits(),
+                        offset: 21,
+                    },
+                ]),
+            })
+        );
+    }
+
+    #[test]
+    fn range_interval_decodes_escaped_prefix_and_unset_bounds() {
+        let payload = [
+            0x32, 0x23, 1, 0, 0, 0x80, 0x6e, 0x89, 1, 0, 0xe8, 0xe0, 0x07, 0x37, 0x83, 0x81, 0xe8,
+            0xe8, 0xfe, 0xfe,
+        ];
+
+        assert_eq!(
+            parse_range_interval(&payload, 5, payload.len()),
+            Some(RangeInterval {
+                prefix: RangeIntervalPrefix::EscapedWord { word: 100_718 },
+                slots: Some([
+                    RangeIntervalSlot::Unset { offset: 16 },
+                    RangeIntervalSlot::Unset { offset: 17 },
+                ]),
+            })
+        );
+    }
+
+    #[test]
+    fn range_interval_requires_the_complete_selected_value() {
+        let valid = [0x82, 0xe8, 0xe0, 0x07, 0x37, 0x81, 0xfe];
+        assert_eq!(
+            parse_range_interval(&valid, 0, valid.len()),
+            Some(RangeInterval {
+                prefix: RangeIntervalPrefix::Compact { value: 2, width: 1 },
+                slots: None,
+            })
+        );
+        for malformed in [
+            &valid[..6],
+            &[0x82, 0xe8, 0xe0, 0x08, 0x37, 0x81, 0xfe],
+            &[0x82, 0xe8, 0xe0, 0x07, 0x37, 0x82, 0xfe],
+        ] {
+            assert_eq!(parse_range_interval(malformed, 0, malformed.len()), None);
+        }
     }
 
     #[test]
@@ -1284,6 +1626,57 @@ mod tests {
                 layout_offset: 3,
             }]
         );
+    }
+
+    #[test]
+    fn e9_scalar_packet_preserves_the_finite_value_and_offsets() {
+        let mut payload = vec![0xaa, 0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+        payload.extend_from_slice(&5.5_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[
+            0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe, 0xbb,
+        ]);
+        let fields = value_block::tokenize(&payload);
+
+        assert_eq!(
+            value_packets(&payload, &fields),
+            [EntityValuePacket::E9Scalar {
+                offset: 1,
+                scalar_offset: 7,
+                bits: 5.5_f64.to_bits(),
+            }]
+        );
+    }
+
+    #[test]
+    fn e9_scalar_packet_requires_the_exact_finite_production() {
+        let mut valid = vec![0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+        valid.extend_from_slice(&5.5_f64.to_bits().to_le_bytes());
+        valid.extend_from_slice(&[0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe]);
+        for (offset, replacement) in [(0, 0x84), (2, 0xc1), (4, 0x02), (15, 0x89), (23, 0xe8)] {
+            let mut malformed = valid.clone();
+            malformed[offset] = replacement;
+            let fields = value_block::tokenize(&malformed);
+            assert!(value_packets(&malformed, &fields).is_empty());
+        }
+
+        let fields = value_block::tokenize(&valid[..24]);
+        assert!(value_packets(&valid[..24], &fields).is_empty());
+
+        let mut non_finite = valid;
+        non_finite[7..15].copy_from_slice(&f64::NAN.to_bits().to_le_bytes());
+        let fields = value_block::tokenize(&non_finite);
+        assert!(value_packets(&non_finite, &fields).is_empty());
+    }
+
+    #[test]
+    fn e9_scalar_bytes_inside_a_byte_string_do_not_create_a_packet() {
+        let mut payload = vec![0xe5, 25, 0, 0, 0, 0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+        payload.extend_from_slice(&5.5_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe]);
+        payload.push(0xfe);
+        let fields = value_block::tokenize(&payload);
+
+        assert!(value_packets(&payload, &fields).is_empty());
     }
 
     #[test]

@@ -25,7 +25,22 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 271;
+pub const CATIA_NATIVE_VERSION: u32 = 276;
+/// Native schema version associating exact scalar nominals with `Range` intervals.
+#[cfg(test)]
+pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
+/// Native schema version admitting the `81 93` entity-suffix value trailer.
+#[cfg(test)]
+pub(crate) const CATIA_SUFFIX_TRAILER_8193_VERSION: u32 = 275;
+/// Native schema version retaining complete source-schema `Range` intervals.
+#[cfg(test)]
+pub(crate) const CATIA_RANGE_INTERVAL_VERSION: u32 = 273;
+/// Native schema version retaining incoming incidences for every `Range` interval.
+#[cfg(test)]
+pub(crate) const CATIA_RANGE_INTERVAL_INCIDENCE_VERSION: u32 = 274;
+/// Native schema version using schema-configuration names and derived identities.
+#[cfg(test)]
+pub(crate) const CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION: u32 = 272;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -47,9 +62,9 @@ pub(crate) const CATIA_RELATION_PROGRAM_CONTEXT_VERSION: u32 = 231;
 pub(crate) const CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION: u32 = 229;
 #[cfg(test)]
 const CATIA_CONFIGURATION_INCIDENCE_VERSION: u32 = 230;
-/// Native schema version separating configuration schema and entity references.
+/// Native schema version separating schema-configuration selectors and entity references.
 #[cfg(test)]
-pub(crate) const CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION: u32 = 232;
+pub(crate) const CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION: u32 = 232;
 /// Native schema version retaining selected entity classes on typed incidences.
 #[cfg(test)]
 pub(crate) const CATIA_TYPED_INCIDENCE_CLASS_VERSION: u32 = 233;
@@ -68,9 +83,9 @@ pub(crate) const CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION: u32 = 237;
 /// Native namespace version that types formula dependency candidate incidences.
 #[cfg(test)]
 pub(crate) const CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION: u32 = 238;
-/// Native schema version retaining complete ordered configuration-row chains.
+/// Native schema version retaining complete ordered schema-configuration-row chains.
 #[cfg(test)]
-pub(crate) const CATIA_CONFIGURATION_ROW_CHAIN_VERSION: u32 = 239;
+pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_CHAIN_VERSION: u32 = 239;
 /// Native schema version retaining terminal-null state on every typed incidence.
 #[cfg(test)]
 pub(crate) const CATIA_TYPED_INCIDENCE_NULL_VERSION: u32 = 240;
@@ -83,9 +98,9 @@ pub(crate) const CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION: u32 = 242;
 /// Native schema version retaining complete ordered relation-program inputs.
 #[cfg(test)]
 pub(crate) const CATIA_RELATION_PROGRAM_INPUT_VERSION: u32 = 243;
-/// Native schema version retaining entities between configuration-row successors.
+/// Native schema version retaining entities between schema-configuration-row successors.
 #[cfg(test)]
-pub(crate) const CATIA_CONFIGURATION_ROW_INTERVAL_VERSION: u32 = 244;
+pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_INTERVAL_VERSION: u32 = 244;
 /// Native schema version retaining constraint-range storage incidences.
 #[cfg(test)]
 pub(crate) const CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION: u32 = 245;
@@ -116,9 +131,9 @@ pub(crate) const CATIA_SUFFIX_SCHEMA_OFFSET_VERSION: u32 = 253;
 /// Native schema version retaining suffix evaluation-opcode offsets.
 #[cfg(test)]
 pub(crate) const CATIA_SUFFIX_EVALUATION_OFFSET_VERSION: u32 = 254;
-/// Native schema version retaining ordered configuration-row link incidences.
+/// Native schema version retaining ordered schema-configuration-row link incidences.
 #[cfg(test)]
-pub(crate) const CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION: u32 = 255;
+pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION: u32 = 255;
 /// Native schema version retaining parallel-reference cell offsets.
 #[cfg(test)]
 pub(crate) const CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION: u32 = 256;
@@ -192,7 +207,6 @@ pub(crate) const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_spheres",
     "consolidated_tori",
     "consolidated_vertex_identities",
-    "configuration_row_chains",
     "design_objects",
     "entity_records",
     "external_references",
@@ -202,6 +216,7 @@ pub(crate) const CATIA_ARENA_NAMES: &[&str] = &[
     "object_graphs",
     "preview_images",
     "reference_signature_cohorts",
+    "schema_configuration_row_chains",
     "value_blocks",
     "value_schema_selections",
     "zero_entity_edge_strides",
@@ -1412,6 +1427,10 @@ pub enum CatiaEntitySuffixTrailer {
     Token814A,
     /// Exact trailer token `81 52`.
     Token8152,
+    /// Exact trailer token `81 DB`.
+    Token81DB,
+    /// Exact trailer token `81 93`.
+    Token8193,
     /// Exact fixed trailer `FE F6 00{16}`.
     FixedZeroFrame,
 }
@@ -1549,6 +1568,48 @@ pub struct CatiaParameterValue {
     pub evaluation_opcode_offset: u64,
 }
 
+/// One complete source-schema `Range` interval carried by an entity value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaRangeInterval {
+    /// Exact source-schema selector naming `Range`.
+    pub range: CatiaEntitySchemaValue,
+    /// Complete selected interval framing and nullable slots.
+    pub interval: entity_table::RangeInterval,
+    /// Finite nominal carried by an admitted scalar suffix dialect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nominal: Option<CatiaRangeNominal>,
+    /// Exact same-graph payload-reference occurrences selecting this interval.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incoming_references: Vec<CatiaEntityIncomingReference>,
+    /// Exact same-graph object-head storage selectors selecting this interval.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incoming_storage_references: Vec<CatiaEntityIncomingStorageReference>,
+}
+
+/// Exact scalar-suffix dialect associating a nominal with a `Range` interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum CatiaRangeNominalFraming {
+    /// Prefix code `D8` and trailer `81 93`.
+    D8Token8193,
+    /// Prefix code `DC` and trailer `81 DB`.
+    DCToken81DB,
+}
+
+/// One finite nominal associated with a complete `Range` interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaRangeNominal {
+    /// Exact scalar-suffix dialect.
+    pub framing: CatiaRangeNominalFraming,
+    /// Exact finite binary64 nominal bits.
+    pub bits: u64,
+    /// Byte offset of `E6` within the record suffix.
+    #[serde(default)]
+    pub evaluation_opcode_offset: u64,
+}
+
 /// Exact framing of one complete constraint-range value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1557,6 +1618,8 @@ pub enum CatiaConstraintRangeFraming {
     DimensionB8,
     /// `CstAttr_Dimension` selected with prefix code `C1`.
     DimensionC1,
+    /// `CstAttr_Dimension` selected with prefix code `DC`.
+    DimensionDC,
     /// `ComplexCst` selected with prefix code `C9`.
     ComplexC9,
 }
@@ -1578,16 +1641,16 @@ pub struct CatiaConstraintRange {
     pub evaluation_opcode_offset: u64,
     /// Exact same-graph payload-reference occurrences selecting this range.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub incoming_references: Vec<CatiaConstraintRangeIncomingReference>,
+    pub incoming_references: Vec<CatiaEntityIncomingReference>,
     /// Exact same-graph object-head storage selectors selecting this range.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub incoming_storage_references: Vec<CatiaConstraintRangeIncomingStorageReference>,
+    pub incoming_storage_references: Vec<CatiaEntityIncomingStorageReference>,
 }
 
-/// One exact payload-reference occurrence selecting a constraint range.
+/// One exact payload-reference occurrence selecting an entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConstraintRangeIncomingReference {
+pub struct CatiaEntityIncomingReference {
     /// Object record carrying the reference occurrence.
     pub object_record: String,
     /// Entity paired with the source object record when that record has an identity.
@@ -1599,10 +1662,10 @@ pub struct CatiaConstraintRangeIncomingReference {
     pub source: CatiaObjectRecordReferenceSource,
 }
 
-/// One exact object-head storage selector selecting a constraint range.
+/// One exact object-head storage selector selecting an entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConstraintRangeIncomingStorageReference {
+pub struct CatiaEntityIncomingStorageReference {
     /// Object record carrying the storage selector.
     pub object_record: String,
     /// Entity paired with the source object record when that record has an identity.
@@ -1875,10 +1938,10 @@ pub struct CatiaReferenceSignatureSchemaSelection {
     pub name: String,
 }
 
-/// One exact self-defining `Configuration` object production.
+/// One exact self-defining schema-configuration `Configuration` object production.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConfigurationRecord {
+pub struct CatiaSchemaConfigurationRecord {
     /// Byte offset of the schema reference within the object payload.
     #[serde(default)]
     pub schema_payload_offset: u64,
@@ -1893,10 +1956,10 @@ pub struct CatiaConfigurationRecord {
     pub entity_reference: CatiaPayloadEntityReference,
 }
 
-/// One exact `configrow` successor-link production.
+/// One exact schema-configuration `configrow` successor-link production.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConfigurationRowLink {
+pub struct CatiaSchemaConfigurationRowLink {
     /// Stored class identity whose catalog name is `configrow`.
     pub class_reference: CatiaEntityReference,
     /// Byte offset of the successor atom within the object payload.
@@ -1906,23 +1969,23 @@ pub struct CatiaConfigurationRowLink {
     pub successor: CatiaEntityReference,
 }
 
-/// One complete ordered chain formed by exact `configrow` successor links.
+/// One complete ordered schema-configuration chain formed by exact `configrow` links.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConfigurationRowChain {
+pub struct CatiaSchemaConfigurationRowChain {
     /// Stable identity derived from the graph and stored class identity.
     pub id: String,
     /// Object graph containing every row link.
     pub object_graph: String,
     /// Successor incidences in chain order from the root row.
     #[serde(default)]
-    pub links: Vec<CatiaConfigurationRowChainLink>,
+    pub links: Vec<CatiaSchemaConfigurationRowChainLink>,
 }
 
-/// One ordered edge in a complete configuration-row successor chain.
+/// One ordered edge in a complete schema-configuration-row successor chain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConfigurationRowChainLink {
+pub struct CatiaSchemaConfigurationRowChainLink {
     /// Row entity carrying the successor occurrence.
     pub row: CatiaEntityReference,
     /// Byte offset of the successor atom within the row object's payload.
@@ -1975,6 +2038,11 @@ pub struct CatiaEntityRecord {
     pub byte_len: u64,
     /// Byte between the `7C05` length and nested `7C06` marker.
     pub lead: u8,
+    /// Complete alternate inline body, including its lead byte, when nested
+    /// definition and value frames are absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+    pub inline_body: Option<Vec<u8>>,
     /// Stored nested `7C06` length.
     pub definition_len: u32,
     /// Exact definition prefix before the `0xEA` identity delimiter.
@@ -2008,6 +2076,9 @@ pub struct CatiaEntityRecord {
     /// Complete named parameter-value production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_value: Option<CatiaParameterValue>,
+    /// Complete source-schema `Range` interval production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range_interval: Option<CatiaRangeInterval>,
     /// Complete constraint-range production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraint_range: Option<CatiaConstraintRange>,
@@ -2020,12 +2091,20 @@ pub struct CatiaEntityRecord {
     /// Complete compound relation-program instance frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_program_instance: Option<CatiaRelationProgramInstance>,
-    /// Exact self-defining `Configuration` object production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub configuration_record: Option<CatiaConfigurationRecord>,
+    /// Exact self-defining schema-configuration `Configuration` object production.
+    #[serde(
+        default,
+        alias = "configuration_record",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub schema_configuration_record: Option<CatiaSchemaConfigurationRecord>,
     /// Exact `configrow` successor-link production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub configuration_row_link: Option<CatiaConfigurationRowLink>,
+    #[serde(
+        default,
+        alias = "configuration_row_link",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub schema_configuration_row_link: Option<CatiaSchemaConfigurationRowLink>,
     /// Complete formula-to-expression and formula-to-parameter relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_relation: Option<CatiaFormulaRelation>,
@@ -2745,6 +2824,29 @@ fn resolved_storage_link(
 
 #[cfg(test)]
 fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
+    if let Some(body) = &record.inline_body {
+        return record.lead == 0x03
+            && body.first() == Some(&record.lead)
+            && u64::try_from(body.len())
+                .ok()
+                .and_then(|len| len.checked_add(6))
+                == Some(record.byte_len)
+            && record.definition_len == 0
+            && record.definition_prefix.is_empty()
+            && record.definition_schema_selections.is_empty()
+            && record.definition_suffix.is_empty()
+            && record.value_len == 0
+            && record.value_payload.is_empty()
+            && record.value_fields.is_empty()
+            && record.value_schema_selections.is_empty()
+            && record.value_packets.is_empty()
+            && record.numeric_pair.is_none()
+            && record.reference_signature.is_none()
+            && record.record_suffix.is_empty()
+            && record.suffix_value.is_none()
+            && record.suffix_framing.is_none()
+            && record.suffix_schema_selection.is_none();
+    }
     let Some(definition_body_len) = u64::try_from(record.definition_prefix.len())
         .ok()
         .and_then(|prefix_len| prefix_len.checked_add(5))
@@ -3133,16 +3235,26 @@ fn constraint_range(
         return None;
     }
     let suffix_value = suffix_value?;
-    if suffix_value.prefix_atoms != [4, 22, 2]
-        || suffix_value.prefix_atom_widths != [1, 1, 1]
-        || suffix_value.trailer != CatiaEntitySuffixTrailer::Empty
-    {
+    if suffix_value.prefix_atoms != [4, 22, 2] || suffix_value.prefix_atom_widths != [1, 1, 1] {
         return None;
     }
-    let framing = match (constraint.name.as_str(), suffix_value.prefix_code) {
-        ("CstAttr_Dimension", 0xb8) => CatiaConstraintRangeFraming::DimensionB8,
-        ("CstAttr_Dimension", 0xc1) => CatiaConstraintRangeFraming::DimensionC1,
-        ("ComplexCst", 0xc9) => CatiaConstraintRangeFraming::ComplexC9,
+    let framing = match (
+        constraint.name.as_str(),
+        suffix_value.prefix_code,
+        suffix_value.trailer,
+    ) {
+        ("CstAttr_Dimension", 0xb8, CatiaEntitySuffixTrailer::Empty) => {
+            CatiaConstraintRangeFraming::DimensionB8
+        }
+        ("CstAttr_Dimension", 0xc1, CatiaEntitySuffixTrailer::Empty) => {
+            CatiaConstraintRangeFraming::DimensionC1
+        }
+        ("CstAttr_Dimension", 0xdc, CatiaEntitySuffixTrailer::Token81DB) => {
+            CatiaConstraintRangeFraming::DimensionDC
+        }
+        ("ComplexCst", 0xc9, CatiaEntitySuffixTrailer::Empty) => {
+            CatiaConstraintRangeFraming::ComplexC9
+        }
         _ => return None,
     };
     let CatiaEntitySuffixPayload::Evaluation {
@@ -3174,13 +3286,13 @@ fn constraint_range(
     })
 }
 
-fn constraint_range_incidences(
+fn entity_incidences(
     records: &[CatiaObjectRecord],
     graph_id: &str,
     entity_id: u32,
 ) -> (
-    Vec<CatiaConstraintRangeIncomingReference>,
-    Vec<CatiaConstraintRangeIncomingStorageReference>,
+    Vec<CatiaEntityIncomingReference>,
+    Vec<CatiaEntityIncomingStorageReference>,
 ) {
     let mut incoming_references = Vec::new();
     let mut incoming_storage_references = Vec::new();
@@ -3190,7 +3302,7 @@ fn constraint_range_incidences(
                 .references
                 .iter()
                 .filter(|reference| reference.entity_id == entity_id)
-                .map(|reference| CatiaConstraintRangeIncomingReference {
+                .map(|reference| CatiaEntityIncomingReference {
                     object_record: record.id.clone(),
                     source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
                         entity_id,
@@ -3203,7 +3315,7 @@ fn constraint_range_incidences(
                 }),
         );
         if record.storage_ref == Some(entity_id) {
-            incoming_storage_references.push(CatiaConstraintRangeIncomingStorageReference {
+            incoming_storage_references.push(CatiaEntityIncomingStorageReference {
                 object_record: record.id.clone(),
                 source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
                     entity_id,
@@ -3217,6 +3329,67 @@ fn constraint_range_incidences(
     (incoming_references, incoming_storage_references)
 }
 
+fn range_interval(
+    payload: &[u8],
+    values: &[CatiaEntityValueSchemaSelection],
+    suffix_value: Option<&CatiaEntitySuffixValue>,
+    records: &[CatiaObjectRecord],
+    graph_id: &str,
+    entity_id: u32,
+) -> Option<CatiaRangeInterval> {
+    let mut matches = values
+        .iter()
+        .enumerate()
+        .filter(|(_, selection)| selection.name == "Range");
+    let (index, range) = matches.next()?;
+    matches.next().is_none().then_some(())?;
+    let start = usize::try_from(range.offset).ok()?.checked_add(5)?;
+    let end = match values.get(index + 1) {
+        Some(selection) => usize::try_from(selection.offset).ok()?,
+        None => payload.len(),
+    };
+    let interval = entity_table::parse_range_interval(payload, start, end)?;
+    let (incoming_references, incoming_storage_references) =
+        entity_incidences(records, graph_id, entity_id);
+    Some(CatiaRangeInterval {
+        range: CatiaEntitySchemaValue {
+            offset: range.offset,
+            ordinal: range.ordinal,
+            entry: range.entry.clone(),
+            value: range.name.clone(),
+        },
+        interval,
+        nominal: range_nominal(suffix_value),
+        incoming_references,
+        incoming_storage_references,
+    })
+}
+
+fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaRangeNominal> {
+    let suffix = suffix_value?;
+    if suffix.prefix_atoms != [4, 22, 2] || suffix.prefix_atom_widths != [1, 1, 1] {
+        return None;
+    }
+    let framing = match (suffix.prefix_code, suffix.trailer) {
+        (0xd8, CatiaEntitySuffixTrailer::Token8193) => CatiaRangeNominalFraming::D8Token8193,
+        (0xdc, CatiaEntitySuffixTrailer::Token81DB) => CatiaRangeNominalFraming::DCToken81DB,
+        _ => return None,
+    };
+    let CatiaEntitySuffixPayload::Evaluation {
+        opcode_offset,
+        evaluation: CatiaEntityEvaluation::Scalar { bits },
+        encoding: CatiaEntityEvaluationEncoding::Direct,
+    } = suffix.payload
+    else {
+        return None;
+    };
+    Some(CatiaRangeNominal {
+        framing,
+        bits,
+        evaluation_opcode_offset: opcode_offset,
+    })
+}
+
 fn resolved_constraint_range(
     lead: u8,
     values: &[CatiaEntityValueSchemaSelection],
@@ -3227,7 +3400,7 @@ fn resolved_constraint_range(
 ) -> Option<CatiaConstraintRange> {
     let mut range = constraint_range(lead, values, suffix_value)?;
     (range.incoming_references, range.incoming_storage_references) =
-        constraint_range_incidences(records, graph_id, entity_id);
+        entity_incidences(records, graph_id, entity_id);
     Some(range)
 }
 
@@ -3459,6 +3632,8 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         [0x81, 0x49] => CatiaEntitySuffixTrailer::Token8149,
         [0x81, 0x4a] => CatiaEntitySuffixTrailer::Token814A,
         [0x81, 0x52] => CatiaEntitySuffixTrailer::Token8152,
+        [0x81, 0xdb] => CatiaEntitySuffixTrailer::Token81DB,
+        [0x81, 0x93] => CatiaEntitySuffixTrailer::Token8193,
         [0xfe, 0xf6, rest @ ..] if rest.len() == 16 && rest.iter().all(|byte| *byte == 0) => {
             CatiaEntitySuffixTrailer::FixedZeroFrame
         }
@@ -3826,14 +4001,14 @@ fn derive_reference_signature_cohorts(
     cohorts
 }
 
-fn configuration_record(
+fn schema_configuration_record(
     entity_id: u32,
     object: &CatiaObjectRecord,
     value_schema_selections: &[CatiaEntityValueSchemaSelection],
     entities: &HashMap<(String, u32), String>,
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Option<CatiaConfigurationRecord> {
+) -> Option<CatiaSchemaConfigurationRecord> {
     if object.entity_id != Some(entity_id)
         || object.lead != 0x12
         || object.owner_entity_id().is_none()
@@ -3861,7 +4036,7 @@ fn configuration_record(
     if matching_selections.next().is_some() {
         return None;
     }
-    Some(CatiaConfigurationRecord {
+    Some(CatiaSchemaConfigurationRecord {
         schema_payload_offset: u64::try_from(*schema_offset).ok()?,
         schema_ordinal: *schema_ordinal,
         schema_entry: selection.entry.clone(),
@@ -3879,13 +4054,13 @@ fn configuration_record(
     })
 }
 
-fn configuration_row_link(
+fn schema_configuration_row_link(
     entity_id: u32,
     object: &CatiaObjectRecord,
     entities: &HashMap<(String, u32), String>,
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Option<CatiaConfigurationRowLink> {
+) -> Option<CatiaSchemaConfigurationRowLink> {
     if object.entity_id != Some(entity_id)
         || object.lead != 0x12
         || object.owner_entity_id().is_none()
@@ -3902,7 +4077,7 @@ fn configuration_row_link(
     else {
         return None;
     };
-    Some(CatiaConfigurationRowLink {
+    Some(CatiaSchemaConfigurationRowLink {
         class_reference: entity_reference(
             &object.parent,
             class_entity_id,
@@ -3921,20 +4096,20 @@ fn configuration_row_link(
     })
 }
 
-fn derive_configuration_row_chains(
+fn derive_schema_configuration_row_chains(
     records: &[CatiaEntityRecord],
     entities: &HashMap<(String, u32), String>,
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Vec<CatiaConfigurationRowChain> {
+) -> Vec<CatiaSchemaConfigurationRowChain> {
     let row_ids = records
         .iter()
-        .filter(|entity| entity.configuration_row_link.is_some())
+        .filter(|entity| entity.schema_configuration_row_link.is_some())
         .map(|entity| (entity.object_graph.as_str(), entity.entity_id))
         .collect::<HashSet<_>>();
-    let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaConfigurationRowLink)>>::new();
+    let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
     for entity in records {
-        let Some(link) = &entity.configuration_row_link else {
+        let Some(link) = &entity.schema_configuration_row_link else {
             continue;
         };
         groups
@@ -3974,7 +4149,7 @@ fn derive_configuration_row_chains(
                 .map(|row_id| {
                     let link = successors[&row_id];
                     let successor_id = link.successor.entity_id;
-                    CatiaConfigurationRowChainLink {
+                    CatiaSchemaConfigurationRowChainLink {
                         row: entity_reference(
                             graph,
                             row_id,
@@ -4006,8 +4181,12 @@ fn derive_configuration_row_chains(
                     }
                 })
                 .collect();
-            Some(CatiaConfigurationRowChain {
-                id: object_graph_derived_id(graph, "configuration-row-chain", &root.to_string())?,
+            Some(CatiaSchemaConfigurationRowChain {
+                id: object_graph_derived_id(
+                    graph,
+                    "schema-configuration-row-chain",
+                    &root.to_string(),
+                )?,
                 object_graph: graph.to_string(),
                 links,
             })
@@ -5206,9 +5385,6 @@ pub struct CatiaNative {
     /// Global endpoint identities and their consolidated edge incidence.
     #[serde(default)]
     pub consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity>,
-    /// Complete configuration-row successor chains.
-    #[serde(default)]
-    pub configuration_row_chains: Vec<CatiaConfigurationRowChain>,
     /// Design objects grouped by their serialized owner entity identity.
     #[serde(default)]
     pub design_objects: Vec<CatiaDesignObject>,
@@ -5233,6 +5409,9 @@ pub struct CatiaNative {
     /// Source-ordered descriptor cohorts grouped by exact reference pair.
     #[serde(default)]
     pub reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort>,
+    /// Complete schema-configuration-row successor chains.
+    #[serde(default)]
+    pub schema_configuration_row_chains: Vec<CatiaSchemaConfigurationRowChain>,
     /// Framed value blocks adjacent to source-schema catalogs.
     #[serde(default)]
     pub value_blocks: Vec<CatiaValueBlock>,
@@ -5284,7 +5463,6 @@ pub(crate) struct CatiaArenaProjection {
     consolidated_spheres: Vec<CatiaConsolidatedSphere>,
     consolidated_tori: Vec<CatiaConsolidatedTorus>,
     consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity>,
-    configuration_row_chains: Vec<CatiaConfigurationRowChain>,
     design_objects: Vec<CatiaDesignObject>,
     entity_records: Vec<CatiaEntityRecord>,
     external_references: Vec<CatiaExternalReference>,
@@ -5293,6 +5471,7 @@ pub(crate) struct CatiaArenaProjection {
     object_graphs: Vec<CatiaObjectGraph>,
     preview_images: Vec<CatiaPreviewImage>,
     reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort>,
+    schema_configuration_row_chains: Vec<CatiaSchemaConfigurationRowChain>,
     value_blocks: Vec<CatiaValueBlock>,
     zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride>,
     zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair>,
@@ -5346,7 +5525,6 @@ impl From<&CatiaNative> for CatiaArenaProjection {
             consolidated_spheres: native.consolidated_spheres.clone(),
             consolidated_tori: native.consolidated_tori.clone(),
             consolidated_vertex_identities: native.consolidated_vertex_identities.clone(),
-            configuration_row_chains: native.configuration_row_chains.clone(),
             design_objects: native.design_objects.clone(),
             entity_records: native.entity_records.clone(),
             external_references: native.external_references.clone(),
@@ -5355,6 +5533,7 @@ impl From<&CatiaNative> for CatiaArenaProjection {
             object_graphs,
             preview_images: native.preview_images.clone(),
             reference_signature_cohorts: native.reference_signature_cohorts.clone(),
+            schema_configuration_row_chains: native.schema_configuration_row_chains.clone(),
             value_blocks,
             zero_entity_edge_strides: native.zero_entity_edge_strides.clone(),
             zero_entity_oriented_use_pairs: native.zero_entity_oriented_use_pairs.clone(),
@@ -5414,7 +5593,6 @@ impl From<CatiaNative> for CatiaArenaProjection {
             consolidated_spheres: native.consolidated_spheres,
             consolidated_tori: native.consolidated_tori,
             consolidated_vertex_identities: native.consolidated_vertex_identities,
-            configuration_row_chains: native.configuration_row_chains,
             design_objects: native.design_objects,
             entity_records: native.entity_records,
             external_references: native.external_references,
@@ -5423,6 +5601,7 @@ impl From<CatiaNative> for CatiaArenaProjection {
             object_graphs: native.object_graphs,
             preview_images: native.preview_images,
             reference_signature_cohorts: native.reference_signature_cohorts,
+            schema_configuration_row_chains: native.schema_configuration_row_chains,
             value_blocks: native.value_blocks,
             zero_entity_edge_strides: native.zero_entity_edge_strides,
             zero_entity_oriented_use_pairs: native.zero_entity_oriented_use_pairs,
@@ -5692,18 +5871,6 @@ pub(crate) const CATIA_FAMILIES: &[CatiaFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     CatiaFamilyRow {
-        arena: "configuration_row_chains",
-        tag: None,
-        exactness: (),
-        phase: Phase::ArenaOnly,
-        note: None,
-        emit: |projection, row, namespace| {
-            namespace.set_arena(row.arena, &projection.configuration_row_chains)
-        },
-        len: |projection| projection.configuration_row_chains.len(),
-        counts_toward_emptiness: true,
-    },
-    CatiaFamilyRow {
         arena: "design_objects",
         tag: None,
         exactness: (),
@@ -5797,6 +5964,18 @@ pub(crate) const CATIA_FAMILIES: &[CatiaFamilyRow] = &[
             namespace.set_arena(row.arena, &projection.reference_signature_cohorts)
         },
         len: |projection| projection.reference_signature_cohorts.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "schema_configuration_row_chains",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.schema_configuration_row_chains)
+        },
+        len: |projection| projection.schema_configuration_row_chains.len(),
         counts_toward_emptiness: true,
     },
     CatiaFamilyRow {
@@ -5994,7 +6173,6 @@ impl Default for CatiaNative {
             consolidated_spheres: Vec::new(),
             consolidated_tori: Vec::new(),
             consolidated_vertex_identities: Vec::new(),
-            configuration_row_chains: Vec::new(),
             design_objects: Vec::new(),
             entity_records: Vec::new(),
             external_references: Vec::new(),
@@ -6003,6 +6181,7 @@ impl Default for CatiaNative {
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
             reference_signature_cohorts: Vec::new(),
+            schema_configuration_row_chains: Vec::new(),
             value_blocks: Vec::new(),
             zero_entity_edge_strides: Vec::new(),
             zero_entity_oriented_use_pairs: Vec::new(),
@@ -7394,8 +7573,8 @@ fn zero_entity_endpoint_locus_candidates(
         .collect()
 }
 
-fn zero_entity_edge_strides(bytes: &[u8]) -> Vec<CatiaZeroEntityEdgeStride> {
-    crate::families::zero_entity::records::zero_entity_edge_strides(bytes)
+fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityEdgeStride> {
+    crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range)
         .into_iter()
         .enumerate()
         .map(|(index, record)| CatiaZeroEntityEdgeStride {
@@ -7409,8 +7588,11 @@ fn zero_entity_edge_strides(bytes: &[u8]) -> Vec<CatiaZeroEntityEdgeStride> {
         .collect()
 }
 
-fn zero_entity_oriented_use_pairs(bytes: &[u8]) -> Vec<CatiaZeroEntityOrientedUsePair> {
-    crate::families::zero_entity::records::zero_entity_oriented_use_pairs(bytes)
+fn zero_entity_oriented_use_pairs(
+    bytes: &[u8],
+    range: Range<usize>,
+) -> Vec<CatiaZeroEntityOrientedUsePair> {
+    crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(bytes, range)
         .into_iter()
         .enumerate()
         .map(|(index, pair)| CatiaZeroEntityOrientedUsePair {
@@ -7428,8 +7610,11 @@ fn zero_entity_oriented_use_pairs(bytes: &[u8]) -> Vec<CatiaZeroEntityOrientedUs
         .collect()
 }
 
-fn zero_entity_ownership_roots(bytes: &[u8]) -> Vec<CatiaZeroEntityOwnershipRoot> {
-    crate::families::zero_entity::records::zero_entity_ownership_root(bytes)
+fn zero_entity_ownership_roots(
+    bytes: &[u8],
+    range: Range<usize>,
+) -> Vec<CatiaZeroEntityOwnershipRoot> {
+    crate::families::zero_entity::records::zero_entity_ownership_root_in_range(bytes, range)
         .into_iter()
         .map(|root| CatiaZeroEntityOwnershipRoot {
             id: "catia:zero-entity:ownership-root#0".to_string(),
@@ -7446,9 +7631,10 @@ fn zero_entity_ownership_roots(bytes: &[u8]) -> Vec<CatiaZeroEntityOwnershipRoot
 
 fn zero_entity_vertex_incidences(
     bytes: &[u8],
+    range: Range<usize>,
     records: &[CatiaZeroEntityRecord],
 ) -> Vec<CatiaZeroEntityVertexIncidence> {
-    crate::families::zero_entity::records::zero_entity_vertex_incidences(bytes)
+    crate::families::zero_entity::records::zero_entity_vertex_incidences_in_range(bytes, range)
         .into_iter()
         .enumerate()
         .map(|(index, record)| {
@@ -7466,8 +7652,8 @@ fn zero_entity_vertex_incidences(
         .collect()
 }
 
-fn zero_entity_records(bytes: &[u8]) -> Vec<CatiaZeroEntityRecord> {
-    crate::families::zero_entity::records::zero_entity_record_inventory(bytes)
+fn zero_entity_records(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityRecord> {
+    crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range)
         .into_iter()
         .map(|record| CatiaZeroEntityRecord {
             id: format!("catia:zero-entity:record#{}", record.record_ordinal),
@@ -9991,11 +10177,19 @@ impl CatiaNative {
             .collect::<Vec<_>>();
         let mut parsed_catalogs = catalog::parse(bytes);
         let entity_runs = entity_table::parse_runs(bytes);
+        let paired_object_graph_roots = entity_runs
+            .iter()
+            .filter_map(|run| {
+                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
+            })
+            .collect::<HashMap<_, _>>();
         let mut alias_rows = object_graph::surface_aliases(bytes)
             .into_iter()
             .map(CatiaAliasRow::from)
             .collect::<Vec<_>>();
-        let mut parsed_object_graphs = object_graph::parse_all(bytes);
+        let mut parsed_object_graphs =
+            object_graph::parse_all_with_paired_roots(bytes, &paired_object_graph_roots);
         let mut parsed_value_blocks = value_block::parse(bytes);
         parsed_value_blocks.retain(|block| {
             !parsed_object_graphs.iter().any(|graph| {
@@ -10100,6 +10294,14 @@ impl CatiaNative {
                     &entity.value_schema_selections,
                     entity.suffix_value.as_ref(),
                 );
+                entity.range_interval = range_interval(
+                    &entity.value_payload,
+                    &entity.value_schema_selections,
+                    entity.suffix_value.as_ref(),
+                    &graph.records,
+                    &graph.id,
+                    entity.entity_id,
+                );
                 entity.constraint_range = resolved_constraint_range(
                     entity.lead,
                     &entity.value_schema_selections,
@@ -10165,7 +10367,7 @@ impl CatiaNative {
                 &relation_expression_entities,
                 &parameter_bindings,
             );
-            entity.configuration_record = configuration_record(
+            entity.schema_configuration_record = schema_configuration_record(
                 entity.entity_id,
                 object,
                 &entity.value_schema_selections,
@@ -10173,7 +10375,7 @@ impl CatiaNative {
                 &entity_classes_by_graph_identity,
                 &terminal_nulls_by_graph,
             );
-            entity.configuration_row_link = configuration_row_link(
+            entity.schema_configuration_row_link = schema_configuration_row_link(
                 entity.entity_id,
                 object,
                 &entities_by_graph_identity,
@@ -10190,7 +10392,7 @@ impl CatiaNative {
             );
         }
         let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
-        let configuration_row_chains = derive_configuration_row_chains(
+        let schema_configuration_row_chains = derive_schema_configuration_row_chains(
             &entity_records,
             &entities_by_graph_identity,
             &entity_classes_by_graph_identity,
@@ -10288,12 +10490,24 @@ impl CatiaNative {
             consolidated_revolutions(bytes, consolidated_records, &consolidated_circles);
         let consolidated_spheres = consolidated_spheres(bytes, consolidated_records);
         let consolidated_tori = consolidated_tori(bytes, consolidated_records);
-        let zero_entity_records = zero_entity_records(bytes);
-        let zero_entity_edge_strides = zero_entity_edge_strides(bytes);
-        let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
-        let zero_entity_ownership_roots = zero_entity_ownership_roots(bytes);
+        let zero_entity_range = container::outer_preamble_range(bytes).unwrap_or_else(|| {
+            if bytes.starts_with(container::OUTER_MAGIC) {
+                0..0
+            } else {
+                0..bytes.len()
+            }
+        });
+        let zero_entity_records = zero_entity_records(bytes, zero_entity_range.clone());
+        let zero_entity_edge_strides = zero_entity_edge_strides(bytes, zero_entity_range.clone());
+        let zero_entity_oriented_use_pairs =
+            zero_entity_oriented_use_pairs(bytes, zero_entity_range.clone());
+        let zero_entity_ownership_roots =
+            zero_entity_ownership_roots(bytes, zero_entity_range.clone());
         let parsed_zero_entity_support_runs =
-            crate::families::zero_entity::records::zero_entity_support_runs(bytes);
+            crate::families::zero_entity::records::zero_entity_support_runs_in_range(
+                bytes,
+                zero_entity_range.clone(),
+            );
         let parsed_zero_entity_endpoint_pairs =
             crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
                 &parsed_zero_entity_support_runs,
@@ -10311,7 +10525,7 @@ impl CatiaNative {
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
-            zero_entity_vertex_incidences(bytes, &zero_entity_records);
+            zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records);
         let mut consolidated_edge_nodes =
             consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles);
         let consolidated_edge_runs = consolidated_edge_runs(
@@ -10345,7 +10559,6 @@ impl CatiaNative {
             consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
-            configuration_row_chains,
             design_objects,
             entity_records,
             external_references,
@@ -10354,6 +10567,7 @@ impl CatiaNative {
             object_graphs,
             preview_images,
             reference_signature_cohorts,
+            schema_configuration_row_chains,
             value_blocks,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
@@ -10431,8 +10645,16 @@ impl CatiaNative {
                 entity.numeric_pair = entity_table::parse_numeric_pair(&entity.value_payload);
             }
         }
-        let mut configuration_row_chains: Vec<CatiaConfigurationRowChain> =
-            namespace.arena_as("configuration_row_chains")?;
+        let row_chain_arena = if namespace
+            .arenas
+            .contains_key("schema_configuration_row_chains")
+        {
+            "schema_configuration_row_chains"
+        } else {
+            "configuration_row_chains"
+        };
+        let mut schema_configuration_row_chains: Vec<CatiaSchemaConfigurationRowChain> =
+            namespace.arena_as(row_chain_arena)?;
         let mut reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort> =
             namespace.arena_as("reference_signature_cohorts")?;
         if namespace.version < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
@@ -10489,7 +10711,9 @@ impl CatiaNative {
                 );
             }
         }
-        if namespace.version < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION {
+        if namespace.version < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION
+            || namespace.version < CATIA_SUFFIX_TRAILER_8193_VERSION
+        {
             for graph in &graphs {
                 let catalog = graph.catalog.as_deref().and_then(|catalog_id| {
                     catalogs.iter().find(|catalog| catalog.id == catalog_id)
@@ -10529,6 +10753,18 @@ impl CatiaNative {
                         entity.suffix_schema_selection.as_ref(),
                     );
                 }
+            }
+        }
+        if namespace.version < CATIA_RANGE_NOMINAL_VERSION {
+            for entity in &mut entity_records {
+                entity.range_interval = range_interval(
+                    &entity.value_payload,
+                    &entity.value_schema_selections,
+                    entity.suffix_value.as_ref(),
+                    &records,
+                    &entity.object_graph,
+                    entity.entity_id,
+                );
             }
         }
         let graph_ids = graphs
@@ -10727,16 +10963,12 @@ impl CatiaNative {
             for entity in &mut entity_records {
                 if let Some(range) = &mut entity.constraint_range {
                     (range.incoming_references, range.incoming_storage_references) =
-                        constraint_range_incidences(
-                            &records,
-                            &entity.object_graph,
-                            entity.entity_id,
-                        );
+                        entity_incidences(&records, &entity.object_graph, entity.entity_id);
                 }
             }
         }
         if namespace.version < CATIA_CONFIGURATION_INCIDENCE_VERSION
-            || namespace.version < CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION
+            || namespace.version < CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_CLASS_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
             || namespace.version < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION
@@ -10746,10 +10978,10 @@ impl CatiaNative {
                 .map(|record| (record.id.as_str(), record))
                 .collect::<HashMap<_, _>>();
             for entity in &mut entity_records {
-                entity.configuration_record = records_by_id
+                entity.schema_configuration_record = records_by_id
                     .get(entity.object_record.as_str())
                     .and_then(|object| {
-                        configuration_record(
+                        schema_configuration_record(
                             entity.entity_id,
                             object,
                             &entity.value_schema_selections,
@@ -10758,10 +10990,10 @@ impl CatiaNative {
                             &terminal_nulls_by_graph,
                         )
                     });
-                entity.configuration_row_link = records_by_id
+                entity.schema_configuration_row_link = records_by_id
                     .get(entity.object_record.as_str())
                     .and_then(|object| {
-                        configuration_row_link(
+                        schema_configuration_row_link(
                             entity.entity_id,
                             object,
                             &entities_by_graph_identity,
@@ -10771,17 +11003,19 @@ impl CatiaNative {
                     });
             }
         }
-        let expected_configuration_row_chains = derive_configuration_row_chains(
+        let expected_schema_configuration_row_chains = derive_schema_configuration_row_chains(
             &entity_records,
             &entities_by_graph_identity,
             &entity_classes_by_graph_identity,
             &terminal_nulls_by_graph,
         );
-        if namespace.version < CATIA_DERIVED_NATIVE_ID_VERSION {
-            configuration_row_chains = expected_configuration_row_chains;
-        } else if configuration_row_chains != expected_configuration_row_chains {
+        if namespace.version < CATIA_DERIVED_NATIVE_ID_VERSION
+            || namespace.version < CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION
+        {
+            schema_configuration_row_chains = expected_schema_configuration_row_chains;
+        } else if schema_configuration_row_chains != expected_schema_configuration_row_chains {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                "configuration-row chains do not match their successor links".to_string(),
+                "schema-configuration-row chains do not match their successor links".to_string(),
             ));
         }
         for graph in &mut graphs {
@@ -10871,6 +11105,17 @@ impl CatiaNative {
                             )
                     })
                     || graph_entities.iter().any(|entity| {
+                        entity.range_interval
+                            != range_interval(
+                                &entity.value_payload,
+                                &entity.value_schema_selections,
+                                entity.suffix_value.as_ref(),
+                                &graph.records,
+                                &graph.id,
+                                entity.entity_id,
+                            )
+                    })
+                    || graph_entities.iter().any(|entity| {
                         entity.constraint_range
                             != resolved_constraint_range(
                                 entity.lead,
@@ -10926,9 +11171,9 @@ impl CatiaNative {
                             .records
                             .iter()
                             .find(|record| record.id == entity.object_record);
-                        entity.configuration_record
+                        entity.schema_configuration_record
                             != object.and_then(|object| {
-                                configuration_record(
+                                schema_configuration_record(
                                     entity.entity_id,
                                     object,
                                     &entity.value_schema_selections,
@@ -10943,9 +11188,9 @@ impl CatiaNative {
                             .records
                             .iter()
                             .find(|record| record.id == entity.object_record);
-                        entity.configuration_row_link
+                        entity.schema_configuration_row_link
                             != object.and_then(|object| {
-                                configuration_row_link(
+                                schema_configuration_row_link(
                                     entity.entity_id,
                                     object,
                                     &entities_by_graph_identity,
@@ -11058,8 +11303,8 @@ impl CatiaNative {
                     || record.repeated_reference_suffix
                         != object_graph::repeated_reference_suffix(&record.payload)
                     || record.inline_body.as_ref().is_some_and(|body| {
-                        !object_graph::is_inline_body(body)
-                            || record.lead != 0x10
+                        (graph_entities.is_empty() && !object_graph::is_inline_body(body))
+                            || body.first() != Some(&record.lead)
                             || !record.head.is_empty()
                             || record.owner.is_some()
                             || record.class_ref.is_some()
@@ -11486,7 +11731,6 @@ impl CatiaNative {
             consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
-            configuration_row_chains,
             design_objects,
             entity_records,
             external_references,
@@ -11495,6 +11739,7 @@ impl CatiaNative {
             object_graphs: graphs,
             preview_images,
             reference_signature_cohorts,
+            schema_configuration_row_chains,
             value_blocks,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
@@ -11747,6 +11992,7 @@ fn native_object_graph(
                 byte_len: u64::try_from(entity.total_len)
                     .expect("bounded entity-table length fits u64"),
                 lead: entity.lead,
+                inline_body: entity.inline_body,
                 definition_len: entity.definition_len,
                 definition_prefix: entity.definition_prefix,
                 definition_schema_selections: Vec::new(),
@@ -11758,12 +12004,13 @@ fn native_object_graph(
                 value_schema_selections: Vec::new(),
                 relation_expression: None,
                 parameter_value: None,
+                range_interval: None,
                 constraint_range: None,
                 definition_value: None,
                 definition_chain_value: None,
                 relation_program_instance: None,
-                configuration_record: None,
-                configuration_row_link: None,
+                schema_configuration_record: None,
+                schema_configuration_row_link: None,
                 formula_relation: None,
                 value_packets,
                 numeric_pair: entity.numeric_pair,

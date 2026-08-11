@@ -1652,7 +1652,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: configuration_id.clone(),
         ordinal: 0,
-        active: false,
+        active: false.into(),
         source_index: Some(7),
         name: "Default".into(),
         material: None,
@@ -1830,7 +1830,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states.clear();
     ir.model.configurations[0].suppressed_features.clear();
 
-    ir.model.configurations[0].active = true;
+    ir.model.configurations[0].active = true.into();
     ir.model.features[0].suppressed = Some(true);
     let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
@@ -1838,7 +1838,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             && finding.message
                 == "active configuration suppression disagrees with current feature state"
     }));
-    ir.model.configurations[0].active = false;
+    ir.model.configurations[0].active = false.into();
     ir.model.features[0].suppressed = Some(false);
 
     ir.model.configurations[0].feature_states = BTreeMap::from([(
@@ -1904,7 +1904,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("synthetic:test:configuration#1".into()),
         ordinal: 0,
-        active: false,
+        active: false.into(),
         source_index: Some(7),
         name: "Alternate".into(),
         material: None,
@@ -1916,8 +1916,8 @@ fn configuration_body_membership_round_trips_and_validates() {
         feature_states: BTreeMap::new(),
         native_ref: None,
     });
-    ir.model.configurations[0].active = true;
-    ir.model.configurations[1].active = true;
+    ir.model.configurations[0].active = true.into();
+    ir.model.configurations[1].active = true.into();
     ir.finalize();
     let report = validate(&ir, Vec::new());
     assert!(report
@@ -1931,6 +1931,27 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("repeats configuration source index")));
+}
+
+#[test]
+fn configuration_name_and_activation_preserve_resolution_state() {
+    use crate::features::{ConfigurationActivation, ConfigurationName, DesignConfiguration};
+
+    let mut configuration: DesignConfiguration = serde_json::from_value(serde_json::json!({
+        "id": "synthetic:test:configuration#0"
+    }))
+    .expect("legacy configuration");
+    assert_eq!(configuration.name, ConfigurationName::Unresolved);
+    assert_eq!(configuration.active.resolved(), Some(false));
+
+    configuration.active = ConfigurationActivation::Unresolved;
+    let encoded = serde_json::to_value(&configuration).expect("unresolved configuration");
+    assert!(encoded.get("name").is_none());
+    assert_eq!(encoded.get("active"), Some(&serde_json::Value::Null));
+    let round_trip: DesignConfiguration =
+        serde_json::from_value(encoded).expect("round-trip unresolved configuration");
+    assert_eq!(round_trip.name, ConfigurationName::Unresolved);
+    assert_eq!(round_trip.active, ConfigurationActivation::Unresolved);
 }
 
 #[test]
@@ -2595,6 +2616,7 @@ fn revolution_rejects_equal_intervals() {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 1.0),
             angular_interval: [1.0, 1.0],
+            angular_parameter_interval: None,
             parameter_interval: Some([0.0, 1.0]),
             transposed: false,
             revision_form: None,
@@ -3511,6 +3533,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
                 axis_direction: Vector3::new(0.0, 0.0, 1.0),
                 angular_interval: [0.0, std::f64::consts::TAU],
+                angular_parameter_interval: None,
                 parameter_interval: Some([0.0, 1.0]),
                 transposed: false,
                 revision_form: None,
@@ -3965,7 +3988,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("synthetic:test:configuration#vertex".into()),
         ordinal: 0,
-        active: false,
+        active: false.into(),
         source_index: None,
         name: "Vertex".into(),
         material: None,
@@ -4347,7 +4370,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("synthetic:test:configuration#offset-plane".into()),
         ordinal: 0,
-        active: false,
+        active: false.into(),
         source_index: None,
         name: "Offset".into(),
         material: None,

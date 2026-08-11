@@ -141,7 +141,9 @@ Procedural entities retain construction semantics either as a surface or curve c
 Procedural surface definitions are:
 
 - `extrusion`: directrix and sweep direction;
-- `revolution`: directrix, axis, `angular_interval`, optional source-carried `parameter_interval`, and `transposed`;
+- `revolution`: directrix, axis, radian `angular_interval`, optional source-carried
+  `angular_parameter_interval` mapped affinely to that angular interval, optional
+  source-carried directrix `parameter_interval`, and `transposed`;
 - `sum`: ordered curves `first` and `second` with `basepoint`; the surface is `basepoint + first(u) + second(v)`;
 - `sweep`: profile and spine;
 - `offset`: support surface, signed distance, and optional source-carried U/V sense enums;

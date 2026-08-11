@@ -391,33 +391,52 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 /// selection.
 #[must_use]
 pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
-    let segments = finjpl_segments(data, 0, data.len());
-    e5_record_stream_in_segments(data, &segments)
+    let body = outer_body_range(data)?;
+    let segments = finjpl_segments(data, body.start, body.end);
+    e5_record_stream_in_segments(data, body, &segments)
 }
 
-fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Option<Range<usize>> {
-    if !data.starts_with(OUTER_MAGIC) {
-        return None;
-    }
+fn outer_body_range(data: &[u8]) -> Option<Range<usize>> {
+    data.starts_with(OUTER_MAGIC).then_some(())?;
     let directory_offset = usize::try_from(u32_be(data, 8)?).ok()?;
     let directory_length = usize::try_from(u32_be(data, 12)?).ok()?;
-    if directory_offset.checked_add(directory_length)? != data.len()
-        || directory_length >= data.len()
-    {
-        return None;
-    }
-    let first_finjpl = data[directory_length..]
+    (directory_offset.checked_add(directory_length)? == data.len()
+        && directory_length <= directory_offset)
+        .then_some(directory_length..directory_offset)
+}
+
+/// Return the outer-preamble byte range before the first bounded FINJPL segment.
+///
+/// The trailing stream directory and every FINJPL segment are outside this
+/// range. Zero-entity records and the preferred E5 record stream can use the
+/// preamble as an authoritative physical ownership boundary.
+/// A zeroed directory pair has no declared directory, so its bytes after the
+/// 16-byte prefix form the fallback preamble.
+pub(crate) fn outer_preamble_range(data: &[u8]) -> Option<Range<usize>> {
+    let body = outer_body_range(data).or_else(|| {
+        (data.starts_with(OUTER_MAGIC) && u32_be(data, 8) == Some(0) && u32_be(data, 12) == Some(0))
+            .then_some(OUTER_MAGIC.len() + 8..data.len())
+    })?;
+    let end = data[body.clone()]
         .windows(FINJPL_MARKER.len())
         .position(|bytes| bytes == FINJPL_MARKER)
-        .map_or(data.len(), |relative| directory_length + relative);
-    let preamble = directory_length..first_finjpl;
+        .map_or(body.end, |relative| body.start + relative);
+    Some(body.start..end)
+}
+
+fn e5_record_stream_in_segments(
+    data: &[u8],
+    body: Range<usize>,
+    segments: &[FinjplSegment],
+) -> Option<Range<usize>> {
+    let preamble = outer_preamble_range(data)?;
     if coherent_e5_record_count(&data[preamble.clone()]) >= 10 {
         return Some(preamble);
     }
 
     let candidates = segments
         .iter()
-        .filter(|segment| segment.range.start >= directory_length)
+        .filter(|segment| segment.range.start >= body.start && segment.range.end <= body.end)
         .filter_map(|segment| {
             let count = coherent_e5_record_count(&data[segment.range.clone()]);
             (count >= 10).then_some((
@@ -556,7 +575,6 @@ fn vertex_row_at(data: &[u8], position: usize) -> bool {
 /// Standard-nested BREP-spine markers used for variant identification.
 const EDGE_DELIMITER: &[u8; 8] = &[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
-const A9_MARKER: &[u8; 2] = &[0xa9, 0x03];
 pub(crate) const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
@@ -618,9 +636,9 @@ pub struct Census {
     pub edge_delimiters: usize,
     /// `05 08 01` vertex-record signatures in the BREP stream.
     pub vertex_markers: usize,
-    /// `a9 03` record-family markers in the whole file.
-    pub a9_markers: usize,
-    /// `e5 0d 03` record-family markers in the whole file.
+    /// Complete `a9 03` records in the outer preamble.
+    pub a9_records: usize,
+    /// `e5 0d 03` record-family markers in the outer body.
     pub e5_markers: usize,
 }
 
@@ -706,6 +724,30 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
     ranges.sort_by_key(|range| (range.start, range.end));
     ranges.dedup();
     ranges
+}
+
+/// Reconstruct each catalogued logical stream as an independent record source.
+///
+/// Records cannot establish adjacency or one object-id namespace across two
+/// descriptors. A container without a parsed directory has one unnamed source:
+/// its bounded outer preamble.
+pub(crate) fn logical_record_streams(scan: &ContainerScan<'_>) -> Vec<Vec<u8>> {
+    let mut streams = [scan.outer.as_ref(), scan.inner.as_ref()]
+        .into_iter()
+        .flatten()
+        .flat_map(|directory| {
+            directory.descriptors.iter().filter_map(|descriptor| {
+                let stream = reconstruct_logical_stream(&scan.data, descriptor, directory.inner);
+                (!stream.is_empty()).then_some(stream)
+            })
+        })
+        .collect::<Vec<_>>();
+    if streams.is_empty() {
+        if let Some(range) = outer_preamble_range(&scan.data) {
+            streams.push(scan.data[range].to_vec());
+        }
+    }
+    streams
 }
 
 /// Whether a byte prefix is a `.CATPart`: the `V5_CFV2\0` outer magic is unique
@@ -1180,18 +1222,22 @@ fn find_subslice(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 /// FBB spine plus the standard edge-table delimiter; FBB-only requires an FBB
 /// spine without that delimiter; zero-entity requires no nested container and an
 /// `a9 03` family; the object-stream / E5 families are named from their record
-/// census when no FBB spine is present. Anything that matches no invariant is
-/// [`Variant::Unknown`].
+/// census. A coherent E5 walk owns its bounded stream before the weaker
+/// container and marker fallbacks are considered. Anything that matches no
+/// invariant is [`Variant::Unknown`].
 fn identify_variant(
     inner: Option<&InnerDir>,
     brep: Option<&[u8]>,
     census: &Census,
     coherent_e5: bool,
 ) -> Variant {
+    if coherent_e5 {
+        return Variant::E5Stream;
+    }
     match (inner, brep) {
         // No nested container at all.
         (None, _) => {
-            if census.a9_markers > 0 {
+            if census.a9_records > 0 {
                 Variant::ZeroEntity
             } else {
                 Variant::Unknown
@@ -1200,9 +1246,7 @@ fn identify_variant(
         // Nested container, but its directory catalogues no BREP body.
         (Some(_), None) => Variant::InnerNoDirectory,
         (Some(_), Some(_)) => {
-            if coherent_e5 {
-                Variant::E5Stream
-            } else if census.fbb_runs > 0 {
+            if census.fbb_runs > 0 {
                 if census.edge_delimiters > 0 {
                     Variant::StandardNested
                 } else {
@@ -1225,7 +1269,10 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let inner = parse_stream_directory(&data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
     let main_data_stream = inner.as_ref().and_then(|dir| main_data_stream(&data, dir));
-    let finjpl_segments = finjpl_segments(&data, 0, data.len());
+    let outer_body = outer_body_range(&data);
+    let finjpl_segments = outer_body.as_ref().map_or_else(Vec::new, |body| {
+        finjpl_segments(&data, body.start, body.end)
+    });
     let previews = preview_images_in_segments(&data, &finjpl_segments);
     let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
     let external_references = external_references_in_segments(&data, &finjpl_segments);
@@ -1234,8 +1281,15 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     });
 
     let mut census = Census {
-        a9_markers: count_subslice(&data, A9_MARKER),
-        e5_markers: count_subslice(&data, E5_MARKER),
+        a9_records: outer_preamble_range(&data).map_or(0, |range| {
+            crate::families::zero_entity::records::zero_entity_record_inventory_in_range(
+                &data, range,
+            )
+            .len()
+        }),
+        e5_markers: outer_body
+            .as_ref()
+            .map_or(0, |body| count_subslice(&data[body.clone()], E5_MARKER)),
         ..Default::default()
     };
     if let Some(b) = main_data_stream.as_deref() {
@@ -1253,7 +1307,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         inner.as_ref(),
         brep.as_deref(),
         &census,
-        e5_record_stream_in_segments(&data, &finjpl_segments).is_some(),
+        outer_body.is_some_and(|body| {
+            e5_record_stream_in_segments(&data, body, &finjpl_segments).is_some()
+        }),
     );
 
     ContainerScan {
@@ -1429,10 +1485,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             scan.census.edge_delimiters
         ));
     }
-    if scan.census.a9_markers > 0 || scan.census.e5_markers > 0 {
+    if scan.census.a9_records > 0 || scan.census.e5_markers > 0 {
         notes.push(format!(
             "record-family census: {} a9 03, {} e5 0d 03",
-            scan.census.a9_markers, scan.census.e5_markers
+            scan.census.a9_records, scan.census.e5_markers
         ));
     }
     if let Some(version) = &scan.last_save_version {
@@ -1520,6 +1576,41 @@ mod tests {
     }
 
     #[test]
+    fn coherent_e5_stream_overrides_zero_entity_markers() {
+        let census = Census {
+            a9_records: 1,
+            ..Census::default()
+        };
+        assert_eq!(
+            identify_variant(None, None, &census, true),
+            Variant::E5Stream
+        );
+    }
+
+    #[test]
+    fn scan_selects_a_coherent_e5_walk_over_a_zero_entity_record() {
+        let mut body = vec![0xa9, 0x03, 0x10, 0x00, 0, 0, 0, 0, 0, 0, 0, 0];
+        for id in 0..10 {
+            append_e5_test_record(&mut body, id);
+        }
+        let scan = scan_bytes(outer_with_preamble(&body));
+        assert_eq!(scan.census.a9_records, 1);
+        assert_eq!(scan.variant, Variant::E5Stream);
+    }
+
+    #[test]
+    fn coherent_e5_stream_overrides_an_inner_body_without_brep_streams() {
+        let inner = InnerDir {
+            inner: 0,
+            descriptors: Vec::new(),
+        };
+        assert_eq!(
+            identify_variant(Some(&inner), None, &Census::default(), true),
+            Variant::E5Stream
+        );
+    }
+
+    #[test]
     fn e5_stream_requires_declared_stride_or_coordinate_rows_between_records() {
         let mut body = Vec::new();
         for id in 0..10 {
@@ -1549,6 +1640,32 @@ mod tests {
             append_e5_test_record(&mut body, id);
         }
         assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    }
+
+    #[test]
+    fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
+        let directory_length = 192usize;
+        let directory_offset = 512usize;
+        let mut bytes = vec![0u8; directory_length];
+        bytes[..super::OUTER_MAGIC.len()].copy_from_slice(super::OUTER_MAGIC);
+        bytes[8..12].copy_from_slice(&(directory_offset as u32).to_be_bytes());
+        bytes[12..16].copy_from_slice(&(directory_length as u32).to_be_bytes());
+        bytes.resize(directory_offset, 0);
+
+        let mut directory = vec![0u8; super::DIR_MAGIC.len()];
+        directory[..super::DIR_MAGIC.len()].copy_from_slice(super::DIR_MAGIC);
+        directory.extend_from_slice(super::FINJPL_MARKER);
+        directory.extend_from_slice(&0x0000_008eu32.to_be_bytes());
+        for id in 0..10 {
+            append_e5_test_record(&mut directory, id);
+        }
+        directory.resize(directory_length, 0);
+        bytes.extend_from_slice(&directory);
+
+        assert!(super::e5_record_stream(&bytes).is_none());
+        let scan = super::scan_bytes(bytes);
+        assert!(scan.finjpl_segments.is_empty());
+        assert_eq!(scan.census.e5_markers, 0);
     }
 
     #[test]

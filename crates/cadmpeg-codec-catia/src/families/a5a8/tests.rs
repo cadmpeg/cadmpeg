@@ -32,6 +32,48 @@ fn a8_surface_parser_reads_common_form_nurbs() {
 }
 
 #[test]
+fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
+    let inner = a8_surface_stream();
+    let inner_object_id = u32::from_le_bytes(inner[7..11].try_into().unwrap());
+    let mut bytes = vec![0xa8, 0x03, 0x62];
+    bytes.extend_from_slice(&u32::try_from(inner.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(&0x1234_u32.to_le_bytes());
+    let inner_start = bytes.len();
+    bytes.extend_from_slice(&inner);
+    let inner_end = bytes.len();
+
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+    let header = crate::families::a5a8::records::a8_surface_header_from_object_frame(
+        &bytes,
+        inner_start,
+        inner_end,
+        inner_object_id,
+    )
+    .expect("selected nested surface header");
+    assert_eq!((header.u_count, header.v_count), (3, 3));
+    let surface = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+        &bytes,
+        inner_start,
+        inner_end,
+        inner_object_id,
+    )
+    .expect("selected nested surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[8].x, 8.0);
+    assert!(
+        crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+            &bytes,
+            inner_start,
+            inner_end - 1,
+            inner_object_id,
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
     let surfaces =
         crate::families::a5a8::records::a8_surfaces(&a8_surface_stream_with_u_count(20_001));
@@ -95,6 +137,66 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
         panic!("NURBS surface");
     };
     assert_eq!(surface.weights, Some(vec![2.0; 9]));
+}
+
+#[test]
+fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
+    let surface_with_tail = |tail: &[u8]| {
+        let mut bytes = a8_surface_stream();
+        bytes.extend_from_slice(tail);
+        let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+        bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+        bytes
+    };
+    let mut finite_continuation = a8_surface_tail();
+    for (index, value) in [2.0, -3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = 71 + index * 8;
+        finite_continuation[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    let mut alternate_suffix = finite_continuation.clone();
+    alternate_suffix[135..141].copy_from_slice(&[0x09, 0x00, 0x09, 0x00, 0x07, 0x07]);
+    let mut extrapolated = alternate_suffix.clone();
+    extrapolated.resize(142, 0);
+    extrapolated[135..142].copy_from_slice(&[0x09, 0x00, 0x09, 0x01, 0x05, 0x07, 0x07]);
+    let mut alternate_extrapolated = extrapolated.clone();
+    alternate_extrapolated[68..71].copy_from_slice(&[0x05, 0x05, 0x01]);
+    alternate_extrapolated[135] = 0x0d;
+
+    for tail in [
+        &finite_continuation,
+        &alternate_suffix,
+        &extrapolated,
+        &alternate_extrapolated,
+    ] {
+        let bytes = surface_with_tail(tail);
+        let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+            .try_into()
+            .expect("one inline-tail surface");
+        assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+        let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+            .try_into()
+            .expect("one inline-tail header");
+        assert_eq!(
+            header.parameter_tail.unwrap().continuation,
+            [2.0, -3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0]
+        );
+    }
+}
+
+#[test]
+fn a8_elided_surface_requires_the_fixed_zero_continuation() {
+    let mut bytes = a8_elided_surface_stream();
+    let tail_start = 59;
+    bytes[tail_start + 71..tail_start + 79].copy_from_slice(&le_f64(2.0));
+
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        .try_into()
+        .expect("one parameter lattice");
+    assert!(!header.poles_elided);
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
 }
 
 #[test]

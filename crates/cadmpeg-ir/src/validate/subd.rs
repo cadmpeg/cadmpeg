@@ -126,16 +126,21 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
     for procedural in &ir.model.procedural_surfaces {
         if let crate::geometry::ProceduralSurfaceDefinition::Revolution {
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             ..
         } = &procedural.definition
         {
-            let valid = [Some(angular_interval), parameter_interval.as_ref()]
-                .into_iter()
-                .flatten()
-                .all(|interval| {
-                    interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
-                });
+            let valid = [
+                Some(angular_interval),
+                angular_parameter_interval.as_ref(),
+                parameter_interval.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .all(|interval| {
+                interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
+            });
             if !valid {
                 bounds_err(
                     findings,

@@ -9853,7 +9853,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active)
+        .filter(|configuration| configuration.active.is_active())
         .count();
     let current_bodies = ir
         .model
@@ -9868,12 +9868,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|configuration| {
             configuration.bodies.is_unresolved()
                 || active_configuration_count != 1
-                || (configuration.active
+                || (configuration.active.is_active()
                     && configuration.bodies.resolved().is_none_or(|bodies| {
                         bodies.len() != current_bodies.len()
                             || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
                     }))
-                || (configuration.active
+                || (configuration.active.is_active()
                     && active_configuration_state_is_incomplete(ir, configuration))
         })
         .count();

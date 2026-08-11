@@ -495,6 +495,7 @@ fn framing_name(framing: crate::native::CatiaConstraintRangeFraming) -> &'static
     match framing {
         crate::native::CatiaConstraintRangeFraming::DimensionB8 => "DimensionB8",
         crate::native::CatiaConstraintRangeFraming::DimensionC1 => "DimensionC1",
+        crate::native::CatiaConstraintRangeFraming::DimensionDC => "DimensionDC",
         crate::native::CatiaConstraintRangeFraming::ComplexC9 => "ComplexC9",
     }
 }
@@ -564,7 +565,7 @@ mod tests {
 
     use crate::design_feature::DesignFeatureTransfer;
     use crate::native::{
-        CatiaConstraintRangeFraming, CatiaConstraintRangeIncomingReference, CatiaEntityEvaluation,
+        CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityIncomingReference,
         CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReference,
         CatiaObjectRecordReferenceSource,
     };
@@ -636,6 +637,7 @@ mod tests {
             byte_offset: 0,
             byte_len: 0,
             lead: 0,
+            inline_body: None,
             definition_len: 0,
             definition_prefix: Vec::new(),
             definition_schema_selections: Vec::new(),
@@ -647,12 +649,13 @@ mod tests {
             value_schema_selections: Vec::new(),
             relation_expression: None,
             parameter_value: None,
+            range_interval: None,
             constraint_range: None,
             definition_value: None,
             definition_chain_value: None,
             relation_program_instance: None,
-            configuration_record: None,
-            configuration_row_link: None,
+            schema_configuration_record: None,
+            schema_configuration_row_link: None,
             formula_relation: None,
             value_packets: Vec::new(),
             numeric_pair: None,
@@ -700,17 +703,15 @@ mod tests {
                 .as_mut()
                 .expect("constraint range")
                 .incoming_storage_references
-                .push(
-                    crate::native::CatiaConstraintRangeIncomingStorageReference {
-                        object_record: "source-record".to_string(),
-                        source_entity: Some(crate::native::CatiaEntityReference {
-                            entity_id: 11,
-                            is_null: false,
-                            entity: Some("catia:outer:entity-record#source".to_string()),
-                            class_name: Some("ConstraintField".to_string()),
-                        }),
-                    },
-                );
+                .push(crate::native::CatiaEntityIncomingStorageReference {
+                    object_record: "source-record".to_string(),
+                    source_entity: Some(crate::native::CatiaEntityReference {
+                        entity_id: 11,
+                        is_null: false,
+                        entity: Some("catia:outer:entity-record#source".to_string()),
+                        class_name: Some("ConstraintField".to_string()),
+                    }),
+                });
             source_record.storage_ref = Some(10);
         } else {
             range_entity
@@ -718,7 +719,7 @@ mod tests {
                 .as_mut()
                 .expect("constraint range")
                 .incoming_references
-                .push(CatiaConstraintRangeIncomingReference {
+                .push(CatiaEntityIncomingReference {
                     object_record: "source-record".to_string(),
                     source_entity: Some(crate::native::CatiaEntityReference {
                         entity_id: 11,

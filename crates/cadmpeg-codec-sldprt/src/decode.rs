@@ -317,7 +317,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active)
+        .filter(|configuration| configuration.active.is_active())
         .count();
     if !ir.model.configurations.is_empty() && active_configurations != 1 {
         report.losses.push(SldprtLossCode::ConfigActiveIdentityUnresolved.note(format!(
@@ -335,7 +335,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         ir.model
             .configurations
             .iter()
-            .find(|configuration| configuration.active)
+            .find(|configuration| configuration.active.is_active())
             .is_some_and(|configuration| {
                 configuration.source_index.as_ref() != Some(active_partition)
             })
@@ -392,7 +392,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.name.is_empty())
+        .filter(|configuration| configuration.name.resolved().is_none_or(str::is_empty))
         .count();
     let mut configuration_name_counts = BTreeMap::new();
     let mut configuration_ordinal_counts = BTreeMap::new();
@@ -405,7 +405,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .configurations
         .iter()
-        .map(|configuration| configuration.name.as_str())
+        .filter_map(|configuration| configuration.name.resolved())
         .filter(|name| !name.is_empty())
     {
         *configuration_name_counts.entry(name).or_insert(0usize) += 1;
@@ -3381,7 +3381,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
             .configurations
             .iter()
             .enumerate()
-            .filter(|(_, configuration)| &configuration.name == name)
+            .filter(|(_, configuration)| configuration.name.resolved() == Some(name.as_str()))
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
         (matches.len() == 1).then(|| matches[0])
@@ -3408,7 +3408,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
         None
     };
     for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
-        configuration.active = selected == Some(position);
+        configuration.active = (selected == Some(position)).into();
     }
 }
 
@@ -3418,7 +3418,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| configuration.active)
+        .filter(|(_, configuration)| configuration.active.is_active())
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
         return;
@@ -3482,7 +3482,7 @@ fn sync_active_configuration_face_selections(ir: &mut CadIr) {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| configuration.active)
+        .filter(|(_, configuration)| configuration.active.is_active())
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
         return;
@@ -3698,7 +3698,8 @@ fn assign_configuration_bodies(
             .iter()
             .enumerate()
             .filter(|(_, configuration)| {
-                configuration.source_index.is_none() && &configuration.name == active_name
+                configuration.source_index.is_none()
+                    && configuration.name.resolved() == Some(active_name.as_str())
             })
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
@@ -3726,9 +3727,9 @@ fn assign_configuration_bodies(
                     "sldprt:model:configuration#partition:{source_index}"
                 )),
                 ordinal,
-                active: false,
+                active: false.into(),
                 source_index: Some(source_index),
-                name: format!("Config-{source_index}"),
+                name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
@@ -4202,9 +4203,9 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration-{ordinal}")),
                 ordinal,
-                active: ordinal == 0,
+                active: (ordinal == 0).into(),
                 source_index: Some(ordinal),
-                name: format!("Configuration {ordinal}"),
+                name: format!("Configuration {ordinal}").into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
@@ -4282,7 +4283,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Configuration".into(),
             material: None,
@@ -4369,7 +4370,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Configuration".into(),
             material: None,
@@ -4451,9 +4452,9 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration-{ordinal}")),
                 ordinal,
-                active,
+                active: active.into(),
                 source_index: Some(ordinal),
-                name: format!("Configuration {ordinal}"),
+                name: format!("Configuration {ordinal}").into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
@@ -5753,7 +5754,7 @@ mod design_loss_tests {
         let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
             id: ConfigurationId(id.into()),
             ordinal,
-            active: false,
+            active: false.into(),
             source_index,
             name: id.into(),
             material: None,
@@ -5805,9 +5806,9 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration:{ordinal}")),
                 ordinal,
-                active: false,
+                active: false.into(),
                 source_index: Some(5),
-                name: format!("Configuration {ordinal}"),
+                name: format!("Configuration {ordinal}").into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
@@ -5849,7 +5850,7 @@ mod design_loss_tests {
 
         assert_eq!(ir.model.configurations.len(), 1);
         let configuration = &ir.model.configurations[0];
-        assert!(!configuration.active);
+        assert!(configuration.active.is_inactive());
         assert_eq!(configuration.source_index, Some(3));
         assert_eq!(configuration.bodies, vec![body]);
 
@@ -5876,7 +5877,7 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(id.into()),
                 ordinal: ir.model.configurations.len() as u32,
-                active: false,
+                active: false.into(),
                 source_index: Some(5),
                 name: id.into(),
                 material: None,
@@ -5917,7 +5918,7 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration:{position}")),
                 ordinal,
-                active: position == 1,
+                active: (position == 1).into(),
                 source_index: Some(position as u32),
                 name: name.into(),
                 material: None,
@@ -5961,7 +5962,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(5),
             name: "Default".into(),
             material: None,
@@ -5998,7 +5999,7 @@ mod design_loss_tests {
         let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
             id: ConfigurationId(id.into()),
             ordinal,
-            active: ordinal == 0,
+            active: (ordinal == 0).into(),
             source_index: Some(ordinal),
             name: id.into(),
             material: None,
@@ -6060,7 +6061,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Default".into(),
             material: None,
@@ -6118,7 +6119,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Default".into(),
             material: None,
