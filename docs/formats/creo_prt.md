@@ -2791,8 +2791,10 @@ the counterbore dimensions are evaluable.
 A class-911 table-class-29 simple-drilled recipe has exactly four source
 section entity groups among its class-200 entries. One group generates two
 cone rows, one group generates two cylinder rows, and the other two groups
-each generate two rowless face uses. A complete three-row class-911 dimension
-table assigns external ID `0` to the bore radius, ID `1` to the included
+each generate two rowless face uses. A separate source-zero group contains one
+rowless bottom entry when present and does not participate in the recipe
+groups. A complete three-row class-911 dimension table assigns external ID `0`
+to the bore radius, ID `1` to the included
 drill-point angle, and ID `2` to the blind depth. IDs `0` and `2` have
 dimension type `2` and millimetre units. ID `1` has dimension type `10` and
 radian units. The bore radius is positive, the depth is nonzero, and the
@@ -2802,8 +2804,9 @@ an orientation state and does not change that length.
 
 Each materialized cylinder row in this recipe has a type-24 compound-close
 parameter record. The last six scalar slots in the final frame are two
-three-coordinate envelope corners. Normalize the two endpoint values on each
-axis independently. When the two cylinder rows have equal normalized
+three-coordinate envelope corners. An entity-reference suffix or exact
+`f7 17` compound-close suffix terminates this frame. Normalize the two endpoint
+values on each axis independently. When the two cylinder rows have equal normalized
 intervals on an axis, their common nonzero interval length is a candidate
 span. When one normalized interval ends where the other starts, the nonzero
 length of their union is a candidate span. A dimension tuple matches the

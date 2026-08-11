@@ -21993,17 +21993,26 @@ fn simple_drilled_hole_recipe_table<'a>(
             else {
                 return false;
             };
+            let recipe_groups = generated_by_source
+                .iter()
+                .filter(|(source_id, _)| **source_id != 0)
+                .map(|(_, entries)| entries)
+                .collect::<Vec<_>>();
             let paired = |kind| {
-                generated_by_source
-                    .values()
+                recipe_groups
+                    .iter()
                     .filter(|entries| entries.as_slice() == [Some(kind), Some(kind)])
                     .count()
             };
-            generated_by_source.len() == 4
+            let valid_bottom = generated_by_source
+                .get(&0)
+                .is_none_or(|entries| entries.as_slice() == [None]);
+            recipe_groups.len() == 4
+                && valid_bottom
                 && paired(crate::surface::SurfaceKind::Cone) == 1
                 && paired(crate::surface::SurfaceKind::Cylinder) == 1
-                && generated_by_source
-                    .values()
+                && recipe_groups
+                    .iter()
                     .filter(|entries| entries.as_slice() == [None, None])
                     .count()
                     == 2

@@ -830,7 +830,15 @@ impl SurfaceParameterRecord {
     pub fn type24_terminal_corner_envelope(&self, type_byte: u8) -> Option<[[f64; 3]; 2]> {
         (type_byte == 0x24 && self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
         let terminal = self.scalar_frames.last()?;
-        self.terminal_scalar_frame_has_owned_end(terminal)?;
+        if self.terminal_scalar_frame_has_owned_end(terminal).is_none() {
+            let terminal_end = terminal
+                .slots
+                .iter()
+                .try_fold(terminal.offset, |cursor, slot| {
+                    (slot.offset == cursor).then(|| cursor + slot.length)
+                })?;
+            (self.body.get(terminal_end..) == Some(&[0xf7, 0x17][..])).then_some(())?;
+        }
         let corners = terminal.slots.get(terminal.slots.len().checked_sub(6)?..)?;
         let values = corners
             .iter()
@@ -7459,6 +7467,12 @@ mod tests {
         assert!(replay_record
             .type24_terminal_corner_envelope(0x22)
             .is_none());
+        let mut compound_close = replay_separated;
+        *compound_close.last_mut().expect("trailer") = 0x17;
+        assert_eq!(
+            record(&compound_close).type24_terminal_corner_envelope(0x24),
+            replay_record.type24_terminal_corner_envelope(0x24)
+        );
         let replay_frame = replay_record
             .positional_cylinder_frame
             .expect("replay-trailed repeated-diameter carrier");

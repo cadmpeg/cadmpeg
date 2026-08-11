@@ -2193,12 +2193,26 @@ fn simple_drilled_recipe_surface_rows(feature_id: u32) -> Vec<crate::surface::Su
 
 #[test]
 fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
-    let table = simple_drilled_recipe_table(9);
+    let mut table = simple_drilled_recipe_table(9);
     let mut rows = simple_drilled_recipe_surface_rows(9);
 
     assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows,).is_some());
     assert!(simple_drilled_hole_recipe_table(9, &[table.clone(), table.clone()], &rows,).is_none());
 
+    let mut bottom = table.entries[0].clone();
+    bottom.entity_id = 20;
+    bottom.source_entity_id = Some(0);
+    table.entry_ids.insert(0, bottom.entity_id);
+    table.non_surface_entity_ids.push(bottom.entity_id);
+    table.entries.insert(0, bottom.clone());
+    assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows).is_some());
+    bottom.entity_id = 21;
+    table.entry_ids.insert(1, bottom.entity_id);
+    table.non_surface_entity_ids.push(bottom.entity_id);
+    table.entries.insert(1, bottom);
+    assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows).is_none());
+
+    let table = simple_drilled_recipe_table(9);
     rows[1].kind = crate::surface::SurfaceKind::Cylinder;
     assert!(simple_drilled_hole_recipe_table(9, &[table], &rows).is_none());
 }
