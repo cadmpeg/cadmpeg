@@ -2375,7 +2375,7 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
 }
 
 #[test]
-fn paired_corner_envelopes_expose_shared_and_union_spans() {
+fn paired_corner_envelopes_expose_dimension_candidate_spans() {
     assert_eq!(
         paired_corner_envelope_axis_spans(
             [[0.0, 0.0, -10.0], [25.0, 8.38, 100.0]],
@@ -2389,6 +2389,27 @@ fn paired_corner_envelopes_expose_shared_and_union_spans() {
             [[0.0, 0.0, 0.125], [6.375, 0.5, 0.25]],
         ),
         Some([[Some(6.375), None], [Some(0.5), None], [None, Some(0.25)],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[1.9375, 0.75, 0.6875], [2.5625, 1.25, 0.0]],
+            [[1.9375, 0.75, 0.0], [2.5625, 1.25, 1.3125]],
+        ),
+        Some([[Some(0.625), None], [Some(0.5), None], [None, Some(0.625)],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, -15.0, 0.0], [10.0, 20.0, 30.0]],
+            [[0.0, 20.0, 0.0], [10.0, -25.0, 30.0]],
+        ),
+        Some([[Some(10.0), None], [None, Some(10.0)], [Some(30.0), None],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]],
+            [[0.0, 4.0, 0.0], [1.0, 6.0, 3.0]],
+        ),
+        Some([[Some(1.0), None], [None, None], [Some(3.0), None],])
     );
     assert_eq!(
         paired_corner_envelope_axis_spans(
@@ -2817,6 +2838,18 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         counterbore_envelope_dimension_values(
             std::iter::once(&shifted_four_row),
             &[None, Some(counterbore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let one_sided_counterbore_spans = paired_corner_envelope_axis_spans(
+        [[0.0, 0.0, 68.0], [120.0, 8.0, 0.0]],
+        [[0.0, 0.0, 0.0], [120.0, 8.0, 188.0]],
+    )
+    .expect("finite one-sided envelope pair");
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&shifted_four_row),
+            &[None, Some(one_sided_counterbore_spans)],
         ),
         Some((40.0, 120.0, 8.0))
     );

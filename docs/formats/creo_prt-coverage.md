@@ -237,15 +237,16 @@ fixtures, claims above L1 remain unproven.
 - Class-911 table-class-29 simple-drilled recipes transfer complete
   bore-radius, drill-point-angle, and blind-depth tuples. Paired cylinder
   type-24 terminal envelopes select among distinct document-level tuples by
-  matching the bore diameter and depth to common or adjacent-union spans on
-  distinct axes. An optional rowless source-zero bottom precedes the four
-  recipe groups, and exact `f7 17` compound-close trailers terminate the
-  corner frame. Complementary half-cylinder envelopes with one common radial
-  diameter, one adjacent-union radial diameter, and one common blind-depth span
-  supply the hole position and signed direction. A one-sided pair with one
-  common radial diameter and one common blind-depth span supplies the other
-  radial coordinate when the patches share exactly one normalized bound and
-  their two non-shared bounds differ by the bore diameter. A seven-token
+  matching the bore diameter and depth to common, adjacent-union, or one-sided
+  non-shared-bound spans on distinct axes. An optional rowless source-zero
+  bottom precedes the four recipe groups, and exact `f7 17` compound-close
+  trailers terminate the corner frame. Complementary half-cylinder envelopes
+  with one common radial diameter, one adjacent-union radial diameter, and one
+  common blind-depth span supply the hole position and signed direction. A
+  one-sided pair with one common radial diameter and one common blind-depth
+  span supplies the other radial coordinate when the patches share exactly one
+  normalized bound and their two non-shared bounds differ by the bore diameter.
+  A seven-token
   compound-close cone pair supplies a fully clipped radial coordinate only when
   each terminal triple exactly cross-binds the corresponding cylinder corner.
   Complete dimension-matched positional cylinder frames on the paired rows

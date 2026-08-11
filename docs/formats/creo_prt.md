@@ -2835,10 +2835,11 @@ three-coordinate envelope corners. An entity-reference suffix or exact
 values on each axis independently. When the two cylinder rows have equal
 normalized intervals on an axis, their common nonzero interval length is a
 candidate span. When one normalized interval ends where the other starts, the
-nonzero length of their union is a candidate span. A dimension tuple matches
-the generated cylinders when its bore diameter and blind-depth magnitude match
-candidate spans on two distinct axes. The matched candidate may be either the
-common span or the adjacent-interval union for its axis.
+nonzero length of their union is a candidate span. When the intervals share
+exactly one lower or upper bound, the nonzero difference between their other
+bounds is a candidate span. A dimension tuple matches the generated cylinders
+when its bore diameter and blind-depth magnitude match candidate spans on two
+distinct axes.
 
 When the blind depth is the unique common span on one axis, the two remaining
 axes define the bore cross-section only if one has a common diameter span and
@@ -2912,16 +2913,18 @@ than the bore radius, and a present included angle is strictly between zero and
 π.
 
 Each of the two cylinder source groups has two type-24 terminal corner
-envelopes. One group has the bore diameter as a common or adjacent-union span
-on exactly two axes. The other has the counterbore diameter on exactly two axes
-and the counterbore depth on the remaining axis. When both groups have complete
-envelopes, the source assignment must be unique. When exactly one group has
-complete envelopes, it must match exactly one of these two roles. Exactly one
-class-29 entity table contains materialized source-bound cylinders. Additional
-class-29 tables without materialized source-bound cylinders do not participate.
-Tables whose dimensions do not match the available patch spans do not
-participate, and all participating tables supply one equal diameter and depth
-tuple. Placement distance does not participate in this envelope binding.
+envelopes. One group has the bore diameter as a candidate span on exactly two
+axes. The other has the counterbore diameter on exactly two axes and the
+counterbore depth on the remaining axis. Candidate spans are common spans,
+adjacent-union spans, and one-sided non-shared-bound differences. When both
+groups have complete envelopes, the source assignment must be unique. When
+exactly one group has complete envelopes, it must match exactly one of these
+two roles. Exactly one class-29 entity table contains materialized source-bound
+cylinders. Additional class-29 tables without materialized source-bound
+cylinders do not participate. Tables whose dimensions do not match the
+available patch spans do not participate, and all participating tables supply
+one equal diameter and depth tuple. Placement distance does not participate in
+this envelope binding.
 
 When neither cylinder source group supplies complete terminal corner envelopes,
 every complete four-row or five-row class-911 table must have this exact

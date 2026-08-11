@@ -22558,8 +22558,9 @@ fn paired_corner_envelope_axis_spans(
     let first = intervals(first);
     let second = intervals(second);
     let spans = std::array::from_fn::<_, 3, _>(|axis| {
-        let shared = approximately_equal(first[axis][0], second[axis][0])
-            && approximately_equal(first[axis][1], second[axis][1]);
+        let common_lower = approximately_equal(first[axis][0], second[axis][0]);
+        let common_upper = approximately_equal(first[axis][1], second[axis][1]);
+        let shared = common_lower && common_upper;
         let shared_span = shared.then(|| {
             f64::midpoint(
                 first[axis][1] - first[axis][0],
@@ -22569,10 +22570,17 @@ fn paired_corner_envelope_axis_spans(
         let shared_span = shared_span.filter(|span| *span > 0.0);
         let adjacent = approximately_equal(first[axis][1], second[axis][0])
             || approximately_equal(second[axis][1], first[axis][0]);
-        let union_span = adjacent
-            .then(|| first[axis][1].max(second[axis][1]) - first[axis][0].min(second[axis][0]))
-            .filter(|span| *span > 0.0);
-        [shared_span, union_span]
+        let adjacent_span = adjacent
+            .then(|| first[axis][1].max(second[axis][1]) - first[axis][0].min(second[axis][0]));
+        let one_sided_span = (common_lower != common_upper).then(|| {
+            if common_lower {
+                (first[axis][1] - second[axis][1]).abs()
+            } else {
+                (first[axis][0] - second[axis][0]).abs()
+            }
+        });
+        let paired_span = adjacent_span.or(one_sided_span).filter(|span| *span > 0.0);
+        [shared_span, paired_span]
     });
     Some(spans)
 }
