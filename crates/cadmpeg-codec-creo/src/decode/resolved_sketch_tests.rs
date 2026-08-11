@@ -5210,7 +5210,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
 }
 
 #[test]
-fn compact_hole_table_establishes_the_simple_form_without_metric_geometry() {
+fn compact_hole_materialized_core_establishes_the_simple_form() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id,
@@ -5262,8 +5262,67 @@ fn compact_hole_table_establishes_the_simple_form_without_metric_geometry() {
     )
     .is_none());
     table.entries[2].source_entity_id = Some(0);
+    table.table_class_id = 28;
+    assert!(compact_simple_hole_cylinder_id(
+        107,
+        std::slice::from_ref(&table),
+        std::slice::from_ref(&row),
+    )
+    .is_none());
+    table.table_class_id = 29;
     table.entries[3].class_id = 201;
-    assert!(compact_simple_hole_cylinder_id(107, std::slice::from_ref(&table), &[row]).is_none());
+    assert!(compact_simple_hole_cylinder_id(
+        107,
+        std::slice::from_ref(&table),
+        std::slice::from_ref(&row),
+    )
+    .is_none());
+    table.entries[3].class_id = 200;
+    table.surface_ids.push(109);
+    assert!(compact_simple_hole_cylinder_id(
+        107,
+        std::slice::from_ref(&table),
+        std::slice::from_ref(&row),
+    )
+    .is_none());
+
+    let mut extended = crate::feature::FeatureEntityTable {
+        feature_id: Some(107),
+        table_class_id: 29,
+        entry_ids: vec![109, 112, 120, 121, 115, 117],
+        entries: vec![
+            entry(109, 204, None),
+            entry(112, 203, None),
+            entry(120, 204, None),
+            entry(121, 203, None),
+            entry(115, 200, Some(0)),
+            entry(117, 200, None),
+        ],
+        surface_ids: vec![109, 117],
+        non_surface_entity_ids: vec![112, 120, 121, 115],
+        offset: 0,
+    };
+    for (index, entry) in extended.entries.iter_mut().enumerate() {
+        entry.offset = index;
+        entry.end_offset = index + 1;
+    }
+    let plane = crate::surface::SurfaceRow {
+        id: 109,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 107,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let rows = [plane, row];
+    assert_eq!(
+        compact_simple_hole_cylinder_id(107, std::slice::from_ref(&extended), &rows),
+        Some(117)
+    );
+    extended.surface_ids.push(120);
+    assert!(compact_simple_hole_cylinder_id(107, std::slice::from_ref(&extended), &rows).is_none());
 }
 
 #[test]

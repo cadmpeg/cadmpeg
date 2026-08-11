@@ -2858,13 +2858,21 @@ cylinder axis, the plane origin fixes its axial coordinate, the square
 midpoint fixes its radial center, and half the square span is the radius. The
 two rows are complementary patches of that carrier.
 
-A compact class-911 simple-hole table contains class-204 and class-203 topology
-entries followed by two class-200 generated-geometry entries. The first
-class-200 entry has source section entity zero and no surface row; it is the
-rowless bottom. The second has no source section entity and uniquely names an
-owned cylinder row; it is the hole side. This structure establishes the simple
+A compact class-911 simple-hole table has class `29`. Its exact four-entry form
+has rowless class-204 and class-203 topology entries, a rowless class-200 entry
+whose source section entity is zero, and a materialized class-200 entry with no
+source section entity. The class-200 entries are the bottom and hole side,
+respectively. The side uniquely names an owned cylinder row and is the table's
+only materialized surface. An extended form has one materialized class-204
+plane immediately followed by a rowless class-203 topology entry. It can retain
+other non-materialized regeneration states. The plane and cylinder are its
+only materialized surfaces, and the bottom and side are the unique class-200
+entries with their respective source states. In both forms, the ordered table
+identifiers equal the entry identifiers. This structure establishes the simple
 cylindrical form independently of whether the cylinder parameters are
-evaluable.
+evaluable. A complete positional cylinder frame supplies the stored hole-axis
+position, axis, blind length, and diameter. The table does not identify a
+placement face.
 
 A class-917 circular section sweep uses the same four-entry order: first cap
 plane, second cap plane, first cylinder use, and second cylinder use. The cap

@@ -227,6 +227,12 @@ fixtures, claims above L1 remain unproven.
 - Class-911 hole cap planes retain their stored surface-row order. The first
   complete outline-backed plane is the placement face, and the second defines
   the signed blind direction and depth.
+- Compact class-911 simple holes select the materialized cylinder in exact
+  four-entry tables and the unique materialized plane-and-cylinder core in
+  extended tables that retain non-materialized regeneration rows. The
+  positional cylinder frame supplies the simple-hole position, direction,
+  blind extent, and diameter. This structure does not identify a placement
+  face.
 - Class-911 table-class-29 simple-drilled recipes transfer complete
   bore-radius, drill-point-angle, and blind-depth tuples. Paired cylinder
   type-24 terminal envelopes select among distinct document-level tuples by

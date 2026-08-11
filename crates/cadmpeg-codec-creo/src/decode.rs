@@ -20745,6 +20745,10 @@ fn schema_feature_definition(
                     faces: vec![face],
                     native,
                 }
+            } else if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
+                .is_some_and(|row| row.feature_id == feature_id)
+            {
+                FaceSelection::Native(native)
             } else if let Some(faces) = generated_surface_face_refs(
                 &[surface_id],
                 &scan.surfaces.rows,
@@ -22713,48 +22717,114 @@ fn compact_simple_hole_cylinder_id(
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<u32> {
-    let ids = tables
+    let candidates = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
         .filter_map(|table| {
-            let [topology_a, topology_b, bottom, side] = table.entries.as_slice() else {
-                return None;
-            };
-            (table.entry_ids
-                == [
-                    topology_a.entity_id,
-                    topology_b.entity_id,
-                    bottom.entity_id,
-                    side.entity_id,
-                ]
-                && [
+            let entry_ids = table
+                .entries
+                .iter()
+                .map(|entry| entry.entity_id)
+                .collect::<Vec<_>>();
+            (table.entry_ids == entry_ids).then_some(())?;
+
+            if let [topology_a, topology_b, bottom, side] = table.entries.as_slice() {
+                let valid = [
                     topology_a.class_id,
                     topology_b.class_id,
                     bottom.class_id,
                     side.class_id,
                 ] == [204, 203, 200, 200]
-                && topology_a.source_entity_id.is_none()
-                && topology_b.source_entity_id.is_none()
-                && bottom.source_entity_id == Some(0)
-                && side.source_entity_id.is_none()
-                && !rows.iter().any(|row| {
-                    row.id == topology_a.entity_id
-                        || row.id == topology_b.entity_id
-                        || row.id == bottom.entity_id
+                    && topology_a.source_entity_id.is_none()
+                    && topology_b.source_entity_id.is_none()
+                    && bottom.source_entity_id == Some(0)
+                    && side.source_entity_id.is_none()
+                    && table.surface_ids.iter().copied().collect::<BTreeSet<_>>()
+                        == BTreeSet::from([side.entity_id])
+                    && !rows.iter().any(|row| {
+                        row.id == topology_a.entity_id
+                            || row.id == topology_b.entity_id
+                            || row.id == bottom.entity_id
+                    })
+                    && rows.iter().filter(|row| row.id == side.entity_id).count() == 1
+                    && rows.iter().any(|row| {
+                        row.id == side.entity_id
+                            && row.feature_id == feature_id
+                            && row.kind == crate::surface::SurfaceKind::Cylinder
+                    });
+                return valid.then_some(side.entity_id);
+            }
+
+            let entry_candidates = table
+                .entries
+                .windows(2)
+                .filter_map(|pair| {
+                    let [entry, topology] = pair else {
+                        unreachable!("two-entry window")
+                    };
+                    (entry.class_id == 204
+                        && topology.class_id == 203
+                        && entry.source_entity_id.is_none()
+                        && topology.source_entity_id.is_none()
+                        && table.surface_ids.contains(&entry.entity_id)
+                        && !rows.iter().any(|row| row.id == topology.entity_id)
+                        && rows.iter().filter(|row| row.id == entry.entity_id).count() == 1
+                        && rows.iter().any(|row| {
+                            row.id == entry.entity_id
+                                && row.feature_id == feature_id
+                                && row.kind == crate::surface::SurfaceKind::Plane
+                        }))
+                    .then_some(entry)
                 })
-                && rows.iter().filter(|row| row.id == side.entity_id).count() == 1
-                && rows.iter().any(|row| {
-                    row.id == side.entity_id
-                        && row.feature_id == feature_id
-                        && row.kind == crate::surface::SurfaceKind::Cylinder
-                }))
-            .then_some(side.entity_id)
+                .collect::<Vec<_>>();
+            let [entry] = entry_candidates.as_slice() else {
+                return None;
+            };
+            let bottoms = table
+                .entries
+                .iter()
+                .filter(|candidate| {
+                    candidate.class_id == 200
+                        && candidate.source_entity_id == Some(0)
+                        && !rows.iter().any(|row| row.id == candidate.entity_id)
+                })
+                .collect::<Vec<_>>();
+            let [bottom] = bottoms.as_slice() else {
+                return None;
+            };
+            let sides = table
+                .entries
+                .iter()
+                .filter(|candidate| {
+                    candidate.class_id == 200
+                        && candidate.source_entity_id.is_none()
+                        && table.surface_ids.contains(&candidate.entity_id)
+                        && rows
+                            .iter()
+                            .filter(|row| row.id == candidate.entity_id)
+                            .count()
+                            == 1
+                        && rows.iter().any(|row| {
+                            row.id == candidate.entity_id
+                                && row.feature_id == feature_id
+                                && row.kind == crate::surface::SurfaceKind::Cylinder
+                        })
+                })
+                .collect::<Vec<_>>();
+            let [side] = sides.as_slice() else {
+                return None;
+            };
+            let materialized = table.surface_ids.iter().copied().collect::<BTreeSet<_>>();
+            (materialized == BTreeSet::from([entry.entity_id, side.entity_id])
+                && entry.offset < bottom.offset
+                && bottom.offset < side.offset)
+                .then_some(side.entity_id)
         })
         .collect::<Vec<_>>();
-    let [id] = ids.as_slice() else {
+    let [cylinder_id] = candidates.as_slice() else {
         return None;
     };
-    Some(*id)
+    Some(*cylinder_id)
 }
 
 fn compact_simple_hole_geometry(
