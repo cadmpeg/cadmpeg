@@ -5095,11 +5095,28 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> 
 }
 
 fn number(value: f64) -> String {
+    let value = stabilize_real(value);
     if value == 0.0 {
         "0".into()
     } else {
         format!("{value:.16e}").replace('e', "D")
     }
+}
+
+/// Quantize a real so Fixed ASCII card layout does not depend on platform libm.
+///
+/// Near-zeros within [`cadmpeg_core::compare::FLOAT_TOLERANCE`] collapse to
+/// `0`. Other values round-trip through twelve significant digits before the
+/// sixteen-digit write format runs, absorbing last-place disagreement that
+/// would otherwise change token width and reflow parameter cards.
+fn stabilize_real(value: f64) -> f64 {
+    if !value.is_finite() {
+        return value;
+    }
+    if value.abs() <= cadmpeg_core::compare::FLOAT_TOLERANCE {
+        return 0.0;
+    }
+    format!("{value:.12e}").parse().unwrap_or(value)
 }
 
 #[cfg(test)]
@@ -5116,6 +5133,18 @@ mod tests {
             generation_timestamp(UNIX_EPOCH + std::time::Duration::from_secs(951_827_696))
                 .expect("leap-day timestamp is representable"),
             "20000229.123456"
+        );
+    }
+
+    #[test]
+    fn number_collapses_libm_near_zeros_and_near_ones() {
+        // cos(π/2)-class near-zeros and 1-ε near-ones must share one Fixed ASCII
+        // spelling so parameter cards do not reflow across platforms.
+        assert_eq!(number(6.123_233_995_736_766e-17), "0");
+        assert_eq!(number(9.999_999_999_999_998e-1), number(1.0));
+        assert_eq!(
+            number(1.802_581_857_082_682),
+            number(1.802_581_857_082_681_5)
         );
     }
 
@@ -5185,14 +5214,12 @@ mod tests {
     }
 
     #[test]
-    fn generated_reals_round_trip_at_f64_precision() {
+    fn generated_reals_round_trip_after_writer_stabilization() {
         for value in [
-            f64::MIN_POSITIVE,
-            f64::from_bits(1),
-            1.0e-20,
             -std::f64::consts::PI,
             1.0,
             f64::MAX,
+            1.234_567_890_123_456_7e50,
         ] {
             let encoded = number(value);
             assert!(encoded.contains('D'), "{value}: {encoded}");
@@ -5200,7 +5227,15 @@ mod tests {
                 .replace('D', "E")
                 .parse::<f64>()
                 .expect("generated real must parse");
-            assert_eq!(decoded.to_bits(), value.to_bits(), "{value}: {encoded}");
+            assert_eq!(
+                decoded.to_bits(),
+                stabilize_real(value).to_bits(),
+                "{value}: {encoded}"
+            );
+        }
+        // Sub-tolerance magnitudes collapse so Fixed ASCII layout stays portable.
+        for value in [f64::MIN_POSITIVE, f64::from_bits(1), 1.0e-20] {
+            assert_eq!(number(value), "0", "{value}");
         }
         assert_eq!(number(0.0), "0");
         assert_eq!(number(-0.0), "0");
