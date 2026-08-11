@@ -1285,8 +1285,10 @@ fn resolved_feature_payload(
         &lane.classes,
         &expected_lane.scalars,
     );
-    expected_lane.references =
-        crate::resolved_features::markers::reference_cells(&expected_lane.scalars);
+    expected_lane.references = crate::resolved_features::markers::reference_cells(
+        &expected_lane.scalars,
+        &expected_lane.classes,
+    );
     crate::resolved_features::bindings::bind_scalar_operands(
         histories,
         std::slice::from_mut(&mut expected_lane),

@@ -16,6 +16,48 @@ Parasolid payload words are big-endian. Where a §1 field states no endianness
 the table says `unstated` and says so in the field note.
 """
 
+[[record]]
+name = "feature_input_operand_cell12"
+kind = "byte"
+section = "2"
+anchor = "Each cell stores its little-endian u16 tag at +0"
+size = 12
+endianness = "little"
+note = "Primary and legacy named-scalar operand cell. A lane-local class declaration can begin immediately after this cell."
+
+[[record.field]]
+name = "class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "little-endian u16 tag at +0"
+
+[[record.field]]
+name = "marker_address"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "u16 marker address at +2"
+
+[[record.field]]
+name = "reference_sentinel"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff` at +4"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 8
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at +8"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
+contains = "let cell = payload.get(offset..offset + 12)?;"
+note = "The scalar parser reads the primary and legacy operand as one 12-byte cell."
+
 # --- Container envelopes ---------------------------------------------------
 
 [[record]]

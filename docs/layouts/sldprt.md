@@ -29,6 +29,23 @@ the table says `unstated` and says so in the field note.
 | `00 12` | vertex-use | 24 B | magic at body +16 | §4 |
 | `00 1d` | world point | 38 B | no magic; four references at body +6 and xyz as three f64 BE at body +14 | §4 |
 
+## `feature_input_operand_cell12`
+
+Spec §2 · layout: byte offsets · size: 12 B
+
+Primary and legacy named-scalar operand cell. A lane-local class declaration can begin immediately after this cell.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | little-endian u16 tag at +0 |
+| 2 | 2 | `marker_address` | `u16` | little | spec | u16 marker address at +2 |
+| 4 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at +4 |
+| 8 | 4 | `zero_trailer` | `bytes[4]` | little | spec | four zero bytes at +8 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs` — The scalar parser reads the primary and legacy operand as one 12-byte cell.
+
 ## `outer_header`
 
 Spec §1.1 · layout: byte offsets · size: 8 B

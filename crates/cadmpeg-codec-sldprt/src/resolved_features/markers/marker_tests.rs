@@ -13,6 +13,60 @@ use crate::records::{
 use cadmpeg_ir::math::Point3;
 
 #[test]
+fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
+    let parent = "sldprt:feature-input:resolved-features#synthetic";
+    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let reference = |offset| FeatureInputOperand {
+        offset,
+        reference_ref: format!("sldprt:feature-input:reference#synthetic:{offset}"),
+        kind,
+        entity_index: 0,
+        entity_ref: None,
+    };
+    let scalars = [FeatureInputScalar {
+        id: "scalar".into(),
+        parent: parent.into(),
+        feature_ref: None,
+        ordinal: 0,
+        offset: 100,
+        object_id: 1,
+        name: "name".into(),
+        value: 1.0,
+        role: FeatureInputScalarRole::Driving,
+        entity_indices: Vec::new(),
+        operands: vec![reference(143), reference(287)],
+    }];
+    let classes = [FeatureInputClass {
+        id: "sldprt:feature-input:class#synthetic:155".into(),
+        parent: parent.into(),
+        ordinal: 0,
+        offset: 155,
+        name: "sgEntHandle".into(),
+        role: FeatureInputClassRole::SketchEntity,
+    }];
+
+    let references = reference_cells(&scalars, &classes);
+
+    assert_eq!(references.len(), 2);
+    assert!(references
+        .iter()
+        .all(|reference| { reference.class_ref.as_deref() == Some(classes[0].id.as_str()) }));
+
+    let mut ambiguous_classes = classes.to_vec();
+    ambiguous_classes.push(FeatureInputClass {
+        id: "sldprt:feature-input:class#synthetic:299".into(),
+        parent: parent.into(),
+        ordinal: 1,
+        offset: 299,
+        name: "sgArcHandle".into(),
+        role: FeatureInputClassRole::SketchEntity,
+    });
+    assert!(reference_cells(&scalars, &ambiguous_classes)
+        .iter()
+        .all(|reference| reference.class_ref.is_none()));
+}
+
+#[test]
 fn current_spatial_point_marker_decodes_model_coordinates() {
     let mut payload = vec![0; 90];
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);

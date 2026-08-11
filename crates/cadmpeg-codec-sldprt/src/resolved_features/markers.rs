@@ -20,8 +20,8 @@ use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SPATIAL_VERTEX_PREFIX,
 };
 use crate::records::{
-    FeatureInputClass, FeatureInputLane, FeatureInputReference, FeatureInputRelationBinding,
-    FeatureInputScalar, SketchInputEntity, SketchInputKind,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
+    FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::Point3;
@@ -703,7 +703,10 @@ pub(crate) fn relation_bindings_scoped(
         .collect()
 }
 
-pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInputReference> {
+pub(crate) fn reference_cells(
+    scalars: &[FeatureInputScalar],
+    classes: &[FeatureInputClass],
+) -> Vec<FeatureInputReference> {
     let mut cells = scalars
         .iter()
         .flat_map(|scalar| {
@@ -714,6 +717,7 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
                 ordinal: 0,
                 offset: operand.offset,
                 kind: operand.kind,
+                class_ref: None,
                 object_index: operand.entity_index,
             })
         })
@@ -722,6 +726,23 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
     cells.dedup_by_key(|cell| cell.offset);
     for (ordinal, cell) in cells.iter_mut().enumerate() {
         cell.ordinal = ordinal as u32;
+    }
+    let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
+    for cell in &cells {
+        for class in classes.iter().filter(|class| {
+            class.parent == cell.parent && class.offset.checked_sub(cell.offset) == Some(12)
+        }) {
+            declarations.entry(cell.kind).or_default().push(class);
+        }
+    }
+    for declared in declarations.values_mut() {
+        declared.sort_unstable_by_key(|class| class.offset);
+        declared.dedup_by_key(|class| class.id.as_str());
+    }
+    for cell in &mut cells {
+        if let Some([class]) = declarations.get(&cell.kind).map(Vec::as_slice) {
+            cell.class_ref = Some(class.id.clone());
+        }
     }
     cells
 }

@@ -584,7 +584,7 @@
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "237c532d1974c77784adb388e4416886ac36798b2119d7bc9a9406dda543f0fb",
+        "sldprt_native_sketch_sha256": "8bab8dc36165bbe39d4b7ab12cfc0e29e59b52f50be554645f2723cb146135e6",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
