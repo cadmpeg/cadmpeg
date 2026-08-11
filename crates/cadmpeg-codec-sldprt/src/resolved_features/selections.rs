@@ -1030,8 +1030,8 @@ pub(super) fn compact_sketch_surface_component_path_at(
     let selector = u32::from_le_bytes(payload.get(marker - 4..marker)?.try_into().ok()?);
     let (components, end) = compact_heterogeneous_component_path(payload, marker + 18, 3)?;
     match kind {
-        [0, 3, 0, 0] => Some(components),
-        [0, 2, 0, 0] if selector != 0 => {
+        [_, 3, 0, 0] => Some(components),
+        [_, 2, 0, 0] if selector != 0 => {
             let extended = payload.get(end..end + 44).is_some_and(|trailer| {
                 trailer[..20] == [0; 20]
                     && trailer[20..24] == 1u32.to_le_bytes()
@@ -1316,7 +1316,7 @@ pub(super) fn counted_surface_component_path_at(
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     let header = marker.checked_sub(12)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 8..marker - 4)? != [0, 2, 0, 0]
+        || payload.get(marker - 7..marker - 4)? != [2, 0, 0]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
@@ -1611,7 +1611,7 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
     let count_start = marker.checked_sub(12)?;
     let kind_start = marker.checked_sub(8)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(kind_start..kind_start + 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0x00, 0x00]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
@@ -1661,7 +1661,7 @@ pub(crate) fn compact_edge_component_path_at(
     let count_start = marker.checked_sub(12)?;
     let kind_start = marker.checked_sub(8)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(kind_start..kind_start + 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0x00, 0x00]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
@@ -1692,9 +1692,17 @@ pub(crate) fn compact_component_reference_list_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<Vec<FeatureInputComponentPathEntry>>> {
+    compact_component_reference_list(payload, marker, true)
+}
+
+fn compact_component_reference_list(
+    payload: &[u8],
+    marker: usize,
+    require_distinct_framing: bool,
+) -> Option<Vec<Vec<FeatureInputComponentPathEntry>>> {
     let count_start = marker.checked_sub(12)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 8..marker - 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(marker - 7..marker - 4)? != [0x02, 0x00, 0x00]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
@@ -1704,6 +1712,12 @@ pub(crate) fn compact_component_reference_list_at(
     ))
     .ok()
     .filter(|count| (1..=64).contains(count))?;
+    let signature_prefix: [u8; 4] = payload.get(marker + 22..marker + 26)?.try_into().ok()?;
+    let prefix_token = u16::from_le_bytes(signature_prefix[..2].try_into().ok()?);
+    let prefix_variant = u16::from_le_bytes(signature_prefix[2..].try_into().ok()?);
+    if prefix_token & 0x8000 == 0 || prefix_token == u16::MAX || prefix_variant == 0 {
+        return None;
+    }
     let hop_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
         let instance = u16::from_le_bytes(payload.get(offset..offset + 2)?.try_into().ok()?);
         if instance & 0x8000 == 0
@@ -1713,7 +1727,7 @@ pub(crate) fn compact_component_reference_list_at(
             return None;
         }
         let type_signature: [u8; 12] = payload.get(offset + 4..offset + 16)?.try_into().ok()?;
-        (type_signature[..4] == [0x38, 0x80, 0x3b, 0]
+        (type_signature[..4] == signature_prefix
             && type_signature[4..8] != [0; 4]
             && type_signature[8..12] != [0; 4])
             .then_some(FeatureInputComponentPathEntry {
@@ -1734,6 +1748,7 @@ pub(crate) fn compact_component_reference_list_at(
 
     let mut cursor = marker + 18;
     let mut references = Vec::with_capacity(count);
+    let mut has_reference_framing = false;
     for index in 0..count {
         let mut reference = Vec::new();
         while let Some(hop) = hop_at(cursor) {
@@ -1743,6 +1758,7 @@ pub(crate) fn compact_component_reference_list_at(
         if reference.is_empty() && index + 1 == count && terminal_null_at(cursor) {
             return (!references.is_empty()).then_some(references);
         }
+        has_reference_framing |= reference.len() > 1;
         let last = reference.last_mut()?;
         last.local_id = Some(u32::from_le_bytes(
             payload.get(cursor..cursor + 4)?.try_into().ok()?,
@@ -1750,6 +1766,7 @@ pub(crate) fn compact_component_reference_list_at(
         cursor += 4;
         if payload.get(cursor..cursor + 4) == Some(&[0xff; 4]) {
             cursor += 4;
+            has_reference_framing = true;
         }
         references.push(reference);
         if index + 2 == count && terminal_null_at(cursor) {
@@ -1766,7 +1783,7 @@ pub(crate) fn compact_component_reference_list_at(
         })?;
         cursor += gap;
     }
-    Some(references)
+    (!require_distinct_framing || has_reference_framing).then_some(references)
 }
 
 pub(crate) fn variable_fillet_control_vertices(
@@ -1787,7 +1804,7 @@ pub(crate) fn variable_fillet_control_vertices(
                 == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
         })
         .filter_map(|marker| {
-            let references = compact_component_reference_list_at(&lane.native_payload, marker)?;
+            let references = compact_component_reference_list(&lane.native_payload, marker, false)?;
             (references.len() == 3).then_some(())?;
             let vertices = references
                 .iter()
@@ -1842,7 +1859,7 @@ pub(super) fn compact_component_path_end_at(payload: &[u8], marker: usize) -> Op
     let count_start = marker.checked_sub(12)?;
     let kind_start = marker.checked_sub(8)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(kind_start..kind_start + 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0x00, 0x00]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;

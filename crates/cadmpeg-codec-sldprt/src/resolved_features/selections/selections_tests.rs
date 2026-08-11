@@ -731,6 +731,17 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
         [None, Some(12)]
     );
 
+    payload[4] = 0x06;
+    for prefix_offset in [34, 50, 70] {
+        payload[prefix_offset..prefix_offset + 4].copy_from_slice(&[0xa7, 0x81, 0xa9, 0x01]);
+    }
+    assert_eq!(
+        compact_component_reference_list_at(&payload, marker)
+            .unwrap()
+            .len(),
+        2
+    );
+
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
     payload.extend([0; 10]);
     payload.extend([0xff, 0xfe, 0xff]);
