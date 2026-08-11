@@ -4134,23 +4134,40 @@ fn section_equation_scalar_equality_components(
         .rows
         .iter()
         .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
-        .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
     {
-        let [Some(first), Some(second)] = equation.arguments.as_slice() else {
-            continue;
+        let (first, second, selector) = match (equation.function_id, equation.arguments.as_slice())
+        {
+            (2, [Some(first), Some(second)]) => (*first, *second, None),
+            (5, [Some(first), Some(second), Some(selector)]) => (*first, *second, Some(*selector)),
+            _ => continue,
         };
-        let Some(first) = usize::try_from(*first)
+        let Some(first) = usize::try_from(first)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
         else {
             continue;
         };
-        let Some(second) = usize::try_from(*second)
+        let Some(second) = usize::try_from(second)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
         else {
             continue;
         };
+        if let Some(selector) = selector {
+            let Some(selector) = usize::try_from(selector)
+                .ok()
+                .and_then(|ordinal| variables.rows.get(ordinal))
+            else {
+                continue;
+            };
+            if first.variable_type != 6
+                || second.variable_type != 6
+                || selector.variable_type != 5
+                || selector.value != Some(0.0)
+            {
+                continue;
+            }
+        }
         if first.variable_type != second.variable_type
             || matches!(first.variable_type, 1 | 2)
             || first.key == second.key
