@@ -1,0 +1,497 @@
+# generated at dbbb6f9e0
+pub mod cadmpeg_codec_step
+pub mod cadmpeg_codec_step::lex
+#[non_exhaustive] pub enum cadmpeg_codec_step::lex::TokenKind
+pub cadmpeg_codec_step::lex::TokenKind::Binary(cadmpeg_codec_step::lex::BinaryValue)
+pub cadmpeg_codec_step::lex::TokenKind::Colon
+pub cadmpeg_codec_step::lex::TokenKind::Comma
+pub cadmpeg_codec_step::lex::TokenKind::ConstantEntity(alloc::string::String)
+pub cadmpeg_codec_step::lex::TokenKind::ConstantValue(alloc::string::String)
+pub cadmpeg_codec_step::lex::TokenKind::Derived
+pub cadmpeg_codec_step::lex::TokenKind::Enumeration(alloc::string::String)
+pub cadmpeg_codec_step::lex::TokenKind::Equals
+pub cadmpeg_codec_step::lex::TokenKind::Instance(u64)
+pub cadmpeg_codec_step::lex::TokenKind::Integer(i64)
+pub cadmpeg_codec_step::lex::TokenKind::LBrace
+pub cadmpeg_codec_step::lex::TokenKind::LParen
+pub cadmpeg_codec_step::lex::TokenKind::Name(alloc::string::String)
+pub cadmpeg_codec_step::lex::TokenKind::Omitted
+pub cadmpeg_codec_step::lex::TokenKind::RBrace
+pub cadmpeg_codec_step::lex::TokenKind::RParen
+pub cadmpeg_codec_step::lex::TokenKind::Real(f64)
+pub cadmpeg_codec_step::lex::TokenKind::Resource(alloc::string::String)
+pub cadmpeg_codec_step::lex::TokenKind::Semicolon
+pub cadmpeg_codec_step::lex::TokenKind::String(alloc::vec::Vec<u8>)
+pub cadmpeg_codec_step::lex::TokenKind::TagName(alloc::string::String)
+pub cadmpeg_codec_step::lex::TokenKind::UserName(alloc::string::String)
+pub cadmpeg_codec_step::lex::TokenKind::ValueInstance(u64)
+impl core::clone::Clone for cadmpeg_codec_step::lex::TokenKind
+pub fn cadmpeg_codec_step::lex::TokenKind::clone(&self) -> cadmpeg_codec_step::lex::TokenKind
+impl core::cmp::PartialEq for cadmpeg_codec_step::lex::TokenKind
+pub fn cadmpeg_codec_step::lex::TokenKind::eq(&self, &cadmpeg_codec_step::lex::TokenKind) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::lex::TokenKind
+pub fn cadmpeg_codec_step::lex::TokenKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::lex::TokenKind
+impl core::marker::Freeze for cadmpeg_codec_step::lex::TokenKind
+impl core::marker::Send for cadmpeg_codec_step::lex::TokenKind
+impl core::marker::Sync for cadmpeg_codec_step::lex::TokenKind
+impl core::marker::Unpin for cadmpeg_codec_step::lex::TokenKind
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::lex::TokenKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::lex::TokenKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::lex::TokenKind
+pub struct cadmpeg_codec_step::lex::BinaryValue
+pub cadmpeg_codec_step::lex::BinaryValue::bit_len: usize
+pub cadmpeg_codec_step::lex::BinaryValue::data: alloc::vec::Vec<u8>
+impl core::clone::Clone for cadmpeg_codec_step::lex::BinaryValue
+pub fn cadmpeg_codec_step::lex::BinaryValue::clone(&self) -> cadmpeg_codec_step::lex::BinaryValue
+impl core::cmp::Eq for cadmpeg_codec_step::lex::BinaryValue
+impl core::cmp::PartialEq for cadmpeg_codec_step::lex::BinaryValue
+pub fn cadmpeg_codec_step::lex::BinaryValue::eq(&self, &cadmpeg_codec_step::lex::BinaryValue) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::lex::BinaryValue
+pub fn cadmpeg_codec_step::lex::BinaryValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::lex::BinaryValue
+impl core::marker::Freeze for cadmpeg_codec_step::lex::BinaryValue
+impl core::marker::Send for cadmpeg_codec_step::lex::BinaryValue
+impl core::marker::Sync for cadmpeg_codec_step::lex::BinaryValue
+impl core::marker::Unpin for cadmpeg_codec_step::lex::BinaryValue
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::lex::BinaryValue
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::lex::BinaryValue
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::lex::BinaryValue
+pub struct cadmpeg_codec_step::lex::LexError
+pub cadmpeg_codec_step::lex::LexError::message: alloc::string::String
+pub cadmpeg_codec_step::lex::LexError::offset: usize
+impl core::clone::Clone for cadmpeg_codec_step::lex::LexError
+pub fn cadmpeg_codec_step::lex::LexError::clone(&self) -> cadmpeg_codec_step::lex::LexError
+impl core::cmp::Eq for cadmpeg_codec_step::lex::LexError
+impl core::cmp::PartialEq for cadmpeg_codec_step::lex::LexError
+pub fn cadmpeg_codec_step::lex::LexError::eq(&self, &cadmpeg_codec_step::lex::LexError) -> bool
+impl core::convert::From<cadmpeg_codec_step::lex::LexError> for cadmpeg_codec_step::parse::ParseError
+pub fn cadmpeg_codec_step::parse::ParseError::from(cadmpeg_codec_step::lex::LexError) -> Self
+impl core::error::Error for cadmpeg_codec_step::lex::LexError
+impl core::fmt::Debug for cadmpeg_codec_step::lex::LexError
+pub fn cadmpeg_codec_step::lex::LexError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_codec_step::lex::LexError
+pub fn cadmpeg_codec_step::lex::LexError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::lex::LexError
+impl core::marker::Freeze for cadmpeg_codec_step::lex::LexError
+impl core::marker::Send for cadmpeg_codec_step::lex::LexError
+impl core::marker::Sync for cadmpeg_codec_step::lex::LexError
+impl core::marker::Unpin for cadmpeg_codec_step::lex::LexError
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::lex::LexError
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::lex::LexError
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::lex::LexError
+pub struct cadmpeg_codec_step::lex::Token
+pub cadmpeg_codec_step::lex::Token::kind: cadmpeg_codec_step::lex::TokenKind
+pub cadmpeg_codec_step::lex::Token::span: core::ops::range::Range<usize>
+impl core::clone::Clone for cadmpeg_codec_step::lex::Token
+pub fn cadmpeg_codec_step::lex::Token::clone(&self) -> cadmpeg_codec_step::lex::Token
+impl core::cmp::PartialEq for cadmpeg_codec_step::lex::Token
+pub fn cadmpeg_codec_step::lex::Token::eq(&self, &cadmpeg_codec_step::lex::Token) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::lex::Token
+pub fn cadmpeg_codec_step::lex::Token::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::lex::Token
+impl core::marker::Freeze for cadmpeg_codec_step::lex::Token
+impl core::marker::Send for cadmpeg_codec_step::lex::Token
+impl core::marker::Sync for cadmpeg_codec_step::lex::Token
+impl core::marker::Unpin for cadmpeg_codec_step::lex::Token
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::lex::Token
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::lex::Token
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::lex::Token
+pub fn cadmpeg_codec_step::lex::lex(&[u8]) -> core::result::Result<alloc::vec::Vec<cadmpeg_codec_step::lex::Token>, cadmpeg_codec_step::lex::LexError>
+pub mod cadmpeg_codec_step::parse
+#[non_exhaustive] pub enum cadmpeg_codec_step::parse::ParseDiagnosticKind
+pub cadmpeg_codec_step::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical
+pub cadmpeg_codec_step::parse::ParseDiagnosticKind::OmittedEntityName
+impl core::clone::Clone for cadmpeg_codec_step::parse::ParseDiagnosticKind
+pub fn cadmpeg_codec_step::parse::ParseDiagnosticKind::clone(&self) -> cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::cmp::Eq for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::ParseDiagnosticKind
+pub fn cadmpeg_codec_step::parse::ParseDiagnosticKind::eq(&self, &cadmpeg_codec_step::parse::ParseDiagnosticKind) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::ParseDiagnosticKind
+pub fn cadmpeg_codec_step::parse::ParseDiagnosticKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::marker::Freeze for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::marker::Send for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::marker::Sync for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::marker::Unpin for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::ParseDiagnosticKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::ParseDiagnosticKind
+pub enum cadmpeg_codec_step::parse::ParseError
+pub cadmpeg_codec_step::parse::ParseError::Lex(cadmpeg_codec_step::lex::LexError)
+pub cadmpeg_codec_step::parse::ParseError::Resource(cadmpeg_core::error::CodecError)
+pub cadmpeg_codec_step::parse::ParseError::Syntax
+pub cadmpeg_codec_step::parse::ParseError::Syntax::message: alloc::string::String
+pub cadmpeg_codec_step::parse::ParseError::Syntax::offset: usize
+impl core::convert::From<cadmpeg_codec_step::lex::LexError> for cadmpeg_codec_step::parse::ParseError
+pub fn cadmpeg_codec_step::parse::ParseError::from(cadmpeg_codec_step::lex::LexError) -> Self
+impl core::convert::From<cadmpeg_core::error::CodecError> for cadmpeg_codec_step::parse::ParseError
+pub fn cadmpeg_codec_step::parse::ParseError::from(cadmpeg_core::error::CodecError) -> Self
+impl core::error::Error for cadmpeg_codec_step::parse::ParseError
+pub fn cadmpeg_codec_step::parse::ParseError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for cadmpeg_codec_step::parse::ParseError
+pub fn cadmpeg_codec_step::parse::ParseError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_codec_step::parse::ParseError
+pub fn cadmpeg_codec_step::parse::ParseError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_step::parse::ParseError
+impl core::marker::Send for cadmpeg_codec_step::parse::ParseError
+impl core::marker::Sync for cadmpeg_codec_step::parse::ParseError
+impl core::marker::Unpin for cadmpeg_codec_step::parse::ParseError
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::ParseError
+impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::ParseError
+impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::ParseError
+#[non_exhaustive] pub enum cadmpeg_codec_step::parse::Value
+pub cadmpeg_codec_step::parse::Value::Binary(cadmpeg_codec_step::lex::BinaryValue)
+pub cadmpeg_codec_step::parse::Value::ConstantEntity(alloc::string::String)
+pub cadmpeg_codec_step::parse::Value::ConstantValue(alloc::string::String)
+pub cadmpeg_codec_step::parse::Value::Derived
+pub cadmpeg_codec_step::parse::Value::Enumeration(alloc::string::String)
+pub cadmpeg_codec_step::parse::Value::Integer(i64)
+pub cadmpeg_codec_step::parse::Value::List(alloc::vec::Vec<cadmpeg_codec_step::parse::Value>)
+pub cadmpeg_codec_step::parse::Value::Omitted
+pub cadmpeg_codec_step::parse::Value::Real(f64)
+pub cadmpeg_codec_step::parse::Value::Reference(u64)
+pub cadmpeg_codec_step::parse::Value::Resource(alloc::string::String)
+pub cadmpeg_codec_step::parse::Value::String(alloc::vec::Vec<u8>)
+pub cadmpeg_codec_step::parse::Value::Typed(alloc::string::String, alloc::boxed::Box<cadmpeg_codec_step::parse::Value>)
+pub cadmpeg_codec_step::parse::Value::ValueReference(u64)
+impl core::clone::Clone for cadmpeg_codec_step::parse::Value
+pub fn cadmpeg_codec_step::parse::Value::clone(&self) -> cadmpeg_codec_step::parse::Value
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::Value
+pub fn cadmpeg_codec_step::parse::Value::eq(&self, &cadmpeg_codec_step::parse::Value) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::Value
+pub fn cadmpeg_codec_step::parse::Value::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::Value
+impl core::marker::Freeze for cadmpeg_codec_step::parse::Value
+impl core::marker::Send for cadmpeg_codec_step::parse::Value
+impl core::marker::Sync for cadmpeg_codec_step::parse::Value
+impl core::marker::Unpin for cadmpeg_codec_step::parse::Value
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::Value
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::Value
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::Value
+#[non_exhaustive] pub struct cadmpeg_codec_step::parse::AnchorEntry
+pub cadmpeg_codec_step::parse::AnchorEntry::name: alloc::string::String
+pub cadmpeg_codec_step::parse::AnchorEntry::tags: alloc::vec::Vec<cadmpeg_codec_step::parse::AnchorTag>
+pub cadmpeg_codec_step::parse::AnchorEntry::value: cadmpeg_codec_step::parse::Value
+impl core::clone::Clone for cadmpeg_codec_step::parse::AnchorEntry
+pub fn cadmpeg_codec_step::parse::AnchorEntry::clone(&self) -> cadmpeg_codec_step::parse::AnchorEntry
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::AnchorEntry
+pub fn cadmpeg_codec_step::parse::AnchorEntry::eq(&self, &cadmpeg_codec_step::parse::AnchorEntry) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::AnchorEntry
+pub fn cadmpeg_codec_step::parse::AnchorEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::AnchorEntry
+impl core::marker::Freeze for cadmpeg_codec_step::parse::AnchorEntry
+impl core::marker::Send for cadmpeg_codec_step::parse::AnchorEntry
+impl core::marker::Sync for cadmpeg_codec_step::parse::AnchorEntry
+impl core::marker::Unpin for cadmpeg_codec_step::parse::AnchorEntry
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::AnchorEntry
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::AnchorEntry
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::AnchorEntry
+#[non_exhaustive] pub struct cadmpeg_codec_step::parse::AnchorTag
+pub cadmpeg_codec_step::parse::AnchorTag::name: alloc::string::String
+pub cadmpeg_codec_step::parse::AnchorTag::value: cadmpeg_codec_step::parse::Value
+impl core::clone::Clone for cadmpeg_codec_step::parse::AnchorTag
+pub fn cadmpeg_codec_step::parse::AnchorTag::clone(&self) -> cadmpeg_codec_step::parse::AnchorTag
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::AnchorTag
+pub fn cadmpeg_codec_step::parse::AnchorTag::eq(&self, &cadmpeg_codec_step::parse::AnchorTag) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::AnchorTag
+pub fn cadmpeg_codec_step::parse::AnchorTag::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::AnchorTag
+impl core::marker::Freeze for cadmpeg_codec_step::parse::AnchorTag
+impl core::marker::Send for cadmpeg_codec_step::parse::AnchorTag
+impl core::marker::Sync for cadmpeg_codec_step::parse::AnchorTag
+impl core::marker::Unpin for cadmpeg_codec_step::parse::AnchorTag
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::AnchorTag
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::AnchorTag
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::AnchorTag
+pub struct cadmpeg_codec_step::parse::DataSection
+pub cadmpeg_codec_step::parse::DataSection::parameters: alloc::vec::Vec<cadmpeg_codec_step::parse::Value>
+pub cadmpeg_codec_step::parse::DataSection::records: alloc::vec::Vec<u64>
+impl core::clone::Clone for cadmpeg_codec_step::parse::DataSection
+pub fn cadmpeg_codec_step::parse::DataSection::clone(&self) -> cadmpeg_codec_step::parse::DataSection
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::DataSection
+pub fn cadmpeg_codec_step::parse::DataSection::eq(&self, &cadmpeg_codec_step::parse::DataSection) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::DataSection
+pub fn cadmpeg_codec_step::parse::DataSection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::DataSection
+impl core::marker::Freeze for cadmpeg_codec_step::parse::DataSection
+impl core::marker::Send for cadmpeg_codec_step::parse::DataSection
+impl core::marker::Sync for cadmpeg_codec_step::parse::DataSection
+impl core::marker::Unpin for cadmpeg_codec_step::parse::DataSection
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::DataSection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::DataSection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::DataSection
+pub struct cadmpeg_codec_step::parse::Exchange
+pub cadmpeg_codec_step::parse::Exchange::anchors: alloc::vec::Vec<cadmpeg_codec_step::parse::AnchorEntry>
+pub cadmpeg_codec_step::parse::Exchange::data: alloc::vec::Vec<cadmpeg_codec_step::parse::DataSection>
+pub cadmpeg_codec_step::parse::Exchange::header: alloc::vec::Vec<cadmpeg_codec_step::parse::HeaderRecord>
+pub cadmpeg_codec_step::parse::Exchange::records: alloc::collections::btree::map::BTreeMap<u64, cadmpeg_codec_step::parse::RawRecord>
+pub cadmpeg_codec_step::parse::Exchange::references: alloc::vec::Vec<cadmpeg_codec_step::parse::ReferenceEntry>
+pub cadmpeg_codec_step::parse::Exchange::signature_sections: alloc::vec::Vec<cadmpeg_codec_step::parse::SignatureSection>
+pub cadmpeg_codec_step::parse::Exchange::signatures: alloc::vec::Vec<core::ops::range::Range<usize>>
+impl core::clone::Clone for cadmpeg_codec_step::parse::Exchange
+pub fn cadmpeg_codec_step::parse::Exchange::clone(&self) -> cadmpeg_codec_step::parse::Exchange
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::Exchange
+pub fn cadmpeg_codec_step::parse::Exchange::eq(&self, &cadmpeg_codec_step::parse::Exchange) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::Exchange
+pub fn cadmpeg_codec_step::parse::Exchange::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::Exchange
+impl !core::marker::Freeze for cadmpeg_codec_step::parse::Exchange
+impl core::marker::Send for cadmpeg_codec_step::parse::Exchange
+impl core::marker::Sync for cadmpeg_codec_step::parse::Exchange
+impl core::marker::Unpin for cadmpeg_codec_step::parse::Exchange
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::Exchange
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::Exchange
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::Exchange
+pub struct cadmpeg_codec_step::parse::HeaderRecord
+pub cadmpeg_codec_step::parse::HeaderRecord::name: alloc::string::String
+pub cadmpeg_codec_step::parse::HeaderRecord::parameters: alloc::vec::Vec<cadmpeg_codec_step::parse::Value>
+impl core::clone::Clone for cadmpeg_codec_step::parse::HeaderRecord
+pub fn cadmpeg_codec_step::parse::HeaderRecord::clone(&self) -> cadmpeg_codec_step::parse::HeaderRecord
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::HeaderRecord
+pub fn cadmpeg_codec_step::parse::HeaderRecord::eq(&self, &cadmpeg_codec_step::parse::HeaderRecord) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::HeaderRecord
+pub fn cadmpeg_codec_step::parse::HeaderRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::HeaderRecord
+impl core::marker::Freeze for cadmpeg_codec_step::parse::HeaderRecord
+impl core::marker::Send for cadmpeg_codec_step::parse::HeaderRecord
+impl core::marker::Sync for cadmpeg_codec_step::parse::HeaderRecord
+impl core::marker::Unpin for cadmpeg_codec_step::parse::HeaderRecord
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::HeaderRecord
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::HeaderRecord
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::HeaderRecord
+pub struct cadmpeg_codec_step::parse::ParseDiagnostic
+pub cadmpeg_codec_step::parse::ParseDiagnostic::kind: cadmpeg_codec_step::parse::ParseDiagnosticKind
+pub cadmpeg_codec_step::parse::ParseDiagnostic::message: alloc::string::String
+pub cadmpeg_codec_step::parse::ParseDiagnostic::offset: usize
+impl core::clone::Clone for cadmpeg_codec_step::parse::ParseDiagnostic
+pub fn cadmpeg_codec_step::parse::ParseDiagnostic::clone(&self) -> cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::cmp::Eq for cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::ParseDiagnostic
+pub fn cadmpeg_codec_step::parse::ParseDiagnostic::eq(&self, &cadmpeg_codec_step::parse::ParseDiagnostic) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::ParseDiagnostic
+pub fn cadmpeg_codec_step::parse::ParseDiagnostic::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::marker::Freeze for cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::marker::Send for cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::marker::Sync for cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::marker::Unpin for cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::ParseDiagnostic
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::ParseDiagnostic
+pub struct cadmpeg_codec_step::parse::PartialRecord
+pub cadmpeg_codec_step::parse::PartialRecord::name: alloc::string::String
+pub cadmpeg_codec_step::parse::PartialRecord::parameters: alloc::vec::Vec<cadmpeg_codec_step::parse::Value>
+impl core::clone::Clone for cadmpeg_codec_step::parse::PartialRecord
+pub fn cadmpeg_codec_step::parse::PartialRecord::clone(&self) -> cadmpeg_codec_step::parse::PartialRecord
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::PartialRecord
+pub fn cadmpeg_codec_step::parse::PartialRecord::eq(&self, &cadmpeg_codec_step::parse::PartialRecord) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::PartialRecord
+pub fn cadmpeg_codec_step::parse::PartialRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::PartialRecord
+impl core::marker::Freeze for cadmpeg_codec_step::parse::PartialRecord
+impl core::marker::Send for cadmpeg_codec_step::parse::PartialRecord
+impl core::marker::Sync for cadmpeg_codec_step::parse::PartialRecord
+impl core::marker::Unpin for cadmpeg_codec_step::parse::PartialRecord
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::PartialRecord
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::PartialRecord
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::PartialRecord
+pub struct cadmpeg_codec_step::parse::RawRecord
+pub cadmpeg_codec_step::parse::RawRecord::id: u64
+pub cadmpeg_codec_step::parse::RawRecord::partials: alloc::vec::Vec<cadmpeg_codec_step::parse::PartialRecord>
+pub cadmpeg_codec_step::parse::RawRecord::span: core::ops::range::Range<usize>
+impl core::clone::Clone for cadmpeg_codec_step::parse::RawRecord
+pub fn cadmpeg_codec_step::parse::RawRecord::clone(&self) -> cadmpeg_codec_step::parse::RawRecord
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::RawRecord
+pub fn cadmpeg_codec_step::parse::RawRecord::eq(&self, &cadmpeg_codec_step::parse::RawRecord) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::RawRecord
+pub fn cadmpeg_codec_step::parse::RawRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::RawRecord
+impl core::marker::Freeze for cadmpeg_codec_step::parse::RawRecord
+impl core::marker::Send for cadmpeg_codec_step::parse::RawRecord
+impl core::marker::Sync for cadmpeg_codec_step::parse::RawRecord
+impl core::marker::Unpin for cadmpeg_codec_step::parse::RawRecord
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::RawRecord
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::RawRecord
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::RawRecord
+pub struct cadmpeg_codec_step::parse::ReferenceEntry
+pub cadmpeg_codec_step::parse::ReferenceEntry::name: alloc::string::String
+pub cadmpeg_codec_step::parse::ReferenceEntry::uri: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_step::parse::ReferenceEntry
+pub fn cadmpeg_codec_step::parse::ReferenceEntry::clone(&self) -> cadmpeg_codec_step::parse::ReferenceEntry
+impl core::cmp::Eq for cadmpeg_codec_step::parse::ReferenceEntry
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::ReferenceEntry
+pub fn cadmpeg_codec_step::parse::ReferenceEntry::eq(&self, &cadmpeg_codec_step::parse::ReferenceEntry) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::ReferenceEntry
+pub fn cadmpeg_codec_step::parse::ReferenceEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::ReferenceEntry
+impl core::marker::Freeze for cadmpeg_codec_step::parse::ReferenceEntry
+impl core::marker::Send for cadmpeg_codec_step::parse::ReferenceEntry
+impl core::marker::Sync for cadmpeg_codec_step::parse::ReferenceEntry
+impl core::marker::Unpin for cadmpeg_codec_step::parse::ReferenceEntry
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::ReferenceEntry
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::ReferenceEntry
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::ReferenceEntry
+pub struct cadmpeg_codec_step::parse::SignatureSection
+pub cadmpeg_codec_step::parse::SignatureSection::cms: alloc::vec::Vec<u8>
+pub cadmpeg_codec_step::parse::SignatureSection::payload: core::ops::range::Range<usize>
+pub cadmpeg_codec_step::parse::SignatureSection::signed: core::ops::range::Range<usize>
+pub cadmpeg_codec_step::parse::SignatureSection::span: core::ops::range::Range<usize>
+impl cadmpeg_codec_step::parse::SignatureSection
+pub fn cadmpeg_codec_step::parse::SignatureSection::signed_alphabet_bytes(&self, &[u8]) -> core::option::Option<alloc::vec::Vec<u8>>
+impl core::clone::Clone for cadmpeg_codec_step::parse::SignatureSection
+pub fn cadmpeg_codec_step::parse::SignatureSection::clone(&self) -> cadmpeg_codec_step::parse::SignatureSection
+impl core::cmp::Eq for cadmpeg_codec_step::parse::SignatureSection
+impl core::cmp::PartialEq for cadmpeg_codec_step::parse::SignatureSection
+pub fn cadmpeg_codec_step::parse::SignatureSection::eq(&self, &cadmpeg_codec_step::parse::SignatureSection) -> bool
+impl core::fmt::Debug for cadmpeg_codec_step::parse::SignatureSection
+pub fn cadmpeg_codec_step::parse::SignatureSection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::parse::SignatureSection
+impl core::marker::Freeze for cadmpeg_codec_step::parse::SignatureSection
+impl core::marker::Send for cadmpeg_codec_step::parse::SignatureSection
+impl core::marker::Sync for cadmpeg_codec_step::parse::SignatureSection
+impl core::marker::Unpin for cadmpeg_codec_step::parse::SignatureSection
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::parse::SignatureSection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::parse::SignatureSection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::parse::SignatureSection
+pub fn cadmpeg_codec_step::parse::parse(&[u8]) -> core::result::Result<(cadmpeg_codec_step::parse::Exchange, alloc::vec::Vec<cadmpeg_codec_step::parse::ParseDiagnostic>), cadmpeg_codec_step::parse::ParseError>
+pub fn cadmpeg_codec_step::parse::parse_with_context(&[u8], &cadmpeg_core::decode::context::DecodeContext<'_>) -> core::result::Result<(cadmpeg_codec_step::parse::Exchange, alloc::vec::Vec<cadmpeg_codec_step::parse::ParseDiagnostic>), cadmpeg_core::error::CodecError>
+pub mod cadmpeg_codec_step::strings
+pub struct cadmpeg_codec_step::strings::StringError
+pub cadmpeg_codec_step::strings::StringError::message: alloc::string::String
+pub cadmpeg_codec_step::strings::StringError::offset: usize
+impl core::clone::Clone for cadmpeg_codec_step::strings::StringError
+pub fn cadmpeg_codec_step::strings::StringError::clone(&self) -> cadmpeg_codec_step::strings::StringError
+impl core::cmp::Eq for cadmpeg_codec_step::strings::StringError
+impl core::cmp::PartialEq for cadmpeg_codec_step::strings::StringError
+pub fn cadmpeg_codec_step::strings::StringError::eq(&self, &cadmpeg_codec_step::strings::StringError) -> bool
+impl core::error::Error for cadmpeg_codec_step::strings::StringError
+impl core::fmt::Debug for cadmpeg_codec_step::strings::StringError
+pub fn cadmpeg_codec_step::strings::StringError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_codec_step::strings::StringError
+pub fn cadmpeg_codec_step::strings::StringError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::strings::StringError
+impl core::marker::Freeze for cadmpeg_codec_step::strings::StringError
+impl core::marker::Send for cadmpeg_codec_step::strings::StringError
+impl core::marker::Sync for cadmpeg_codec_step::strings::StringError
+impl core::marker::Unpin for cadmpeg_codec_step::strings::StringError
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::strings::StringError
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::strings::StringError
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::strings::StringError
+pub fn cadmpeg_codec_step::strings::decode(&[u8]) -> core::result::Result<alloc::string::String, cadmpeg_codec_step::strings::StringError>
+pub fn cadmpeg_codec_step::strings::decode_utf8(&[u8]) -> core::result::Result<alloc::string::String, cadmpeg_codec_step::strings::StringError>
+pub fn cadmpeg_codec_step::strings::encode(&str) -> alloc::string::String
+pub enum cadmpeg_codec_step::StepError
+pub cadmpeg_codec_step::StepError::Io(core::io::error::Error)
+pub cadmpeg_codec_step::StepError::Unsupported(alloc::string::String)
+impl core::convert::From<cadmpeg_codec_step::StepError> for cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::error::CodecError::from(cadmpeg_codec_step::StepError) -> Self
+impl core::convert::From<core::io::error::Error> for cadmpeg_codec_step::StepError
+pub fn cadmpeg_codec_step::StepError::from(core::io::error::Error) -> Self
+impl core::error::Error for cadmpeg_codec_step::StepError
+pub fn cadmpeg_codec_step::StepError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for cadmpeg_codec_step::StepError
+pub fn cadmpeg_codec_step::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_codec_step::StepError
+pub fn cadmpeg_codec_step::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_step::StepError
+impl core::marker::Send for cadmpeg_codec_step::StepError
+impl core::marker::Sync for cadmpeg_codec_step::StepError
+impl core::marker::Unpin for cadmpeg_codec_step::StepError
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepError
+impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepError
+impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepError
+pub enum cadmpeg_codec_step::StepSchema
+pub cadmpeg_codec_step::StepSchema::Ap203Edition1
+pub cadmpeg_codec_step::StepSchema::Ap203Edition2
+pub cadmpeg_codec_step::StepSchema::Ap214
+pub cadmpeg_codec_step::StepSchema::Ap242Edition1
+pub cadmpeg_codec_step::StepSchema::Ap242Edition2
+pub cadmpeg_codec_step::StepSchema::Ap242Edition3
+impl cadmpeg_codec_step::StepSchema
+pub const fn cadmpeg_codec_step::StepSchema::file_schema(self) -> &'static str
+impl core::clone::Clone for cadmpeg_codec_step::StepSchema
+pub fn cadmpeg_codec_step::StepSchema::clone(&self) -> cadmpeg_codec_step::StepSchema
+impl core::cmp::Eq for cadmpeg_codec_step::StepSchema
+impl core::cmp::PartialEq for cadmpeg_codec_step::StepSchema
+pub fn cadmpeg_codec_step::StepSchema::eq(&self, &cadmpeg_codec_step::StepSchema) -> bool
+impl core::default::Default for cadmpeg_codec_step::StepSchema
+pub fn cadmpeg_codec_step::StepSchema::default() -> cadmpeg_codec_step::StepSchema
+impl core::fmt::Debug for cadmpeg_codec_step::StepSchema
+pub fn cadmpeg_codec_step::StepSchema::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_step::StepSchema
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::StepSchema
+impl core::marker::Freeze for cadmpeg_codec_step::StepSchema
+impl core::marker::Send for cadmpeg_codec_step::StepSchema
+impl core::marker::Sync for cadmpeg_codec_step::StepSchema
+impl core::marker::Unpin for cadmpeg_codec_step::StepSchema
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepSchema
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepSchema
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepSchema
+pub enum cadmpeg_codec_step::StepUnsupportedPolicy
+pub cadmpeg_codec_step::StepUnsupportedPolicy::Reject
+pub cadmpeg_codec_step::StepUnsupportedPolicy::Report
+impl core::clone::Clone for cadmpeg_codec_step::StepUnsupportedPolicy
+pub fn cadmpeg_codec_step::StepUnsupportedPolicy::clone(&self) -> cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::cmp::Eq for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::cmp::PartialEq for cadmpeg_codec_step::StepUnsupportedPolicy
+pub fn cadmpeg_codec_step::StepUnsupportedPolicy::eq(&self, &cadmpeg_codec_step::StepUnsupportedPolicy) -> bool
+impl core::default::Default for cadmpeg_codec_step::StepUnsupportedPolicy
+pub fn cadmpeg_codec_step::StepUnsupportedPolicy::default() -> cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::fmt::Debug for cadmpeg_codec_step::StepUnsupportedPolicy
+pub fn cadmpeg_codec_step::StepUnsupportedPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::marker::StructuralPartialEq for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::marker::Freeze for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::marker::Send for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::marker::Sync for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::marker::Unpin for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepUnsupportedPolicy
+pub struct cadmpeg_codec_step::StepCodec
+pub cadmpeg_codec_step::StepCodec::options: cadmpeg_codec_step::StepWriteOptions
+impl cadmpeg_ir::codec::Codec for cadmpeg_codec_step::StepCodec
+pub fn cadmpeg_codec_step::StepCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_step::StepCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
+pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
+pub fn cadmpeg_codec_step::StepCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_step::StepCodec
+pub fn cadmpeg_codec_step::StepCodec::id(&self) -> &'static str
+pub fn cadmpeg_codec_step::StepCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+impl core::clone::Clone for cadmpeg_codec_step::StepCodec
+pub fn cadmpeg_codec_step::StepCodec::clone(&self) -> cadmpeg_codec_step::StepCodec
+impl core::default::Default for cadmpeg_codec_step::StepCodec
+pub fn cadmpeg_codec_step::StepCodec::default() -> cadmpeg_codec_step::StepCodec
+impl core::fmt::Debug for cadmpeg_codec_step::StepCodec
+pub fn cadmpeg_codec_step::StepCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_step::StepCodec
+impl core::marker::Send for cadmpeg_codec_step::StepCodec
+impl core::marker::Sync for cadmpeg_codec_step::StepCodec
+impl core::marker::Unpin for cadmpeg_codec_step::StepCodec
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepCodec
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepCodec
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepCodec
+pub struct cadmpeg_codec_step::StepWriteOptions
+pub cadmpeg_codec_step::StepWriteOptions::author: alloc::string::String
+pub cadmpeg_codec_step::StepWriteOptions::organization: alloc::string::String
+pub cadmpeg_codec_step::StepWriteOptions::originating_system: alloc::string::String
+pub cadmpeg_codec_step::StepWriteOptions::product_name: alloc::string::String
+pub cadmpeg_codec_step::StepWriteOptions::schema: cadmpeg_codec_step::StepSchema
+pub cadmpeg_codec_step::StepWriteOptions::timestamp: alloc::string::String
+pub cadmpeg_codec_step::StepWriteOptions::unsupported: cadmpeg_codec_step::StepUnsupportedPolicy
+impl core::clone::Clone for cadmpeg_codec_step::StepWriteOptions
+pub fn cadmpeg_codec_step::StepWriteOptions::clone(&self) -> cadmpeg_codec_step::StepWriteOptions
+impl core::default::Default for cadmpeg_codec_step::StepWriteOptions
+pub fn cadmpeg_codec_step::StepWriteOptions::default() -> Self
+impl core::fmt::Debug for cadmpeg_codec_step::StepWriteOptions
+pub fn cadmpeg_codec_step::StepWriteOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_step::StepWriteOptions
+impl core::marker::Send for cadmpeg_codec_step::StepWriteOptions
+impl core::marker::Sync for cadmpeg_codec_step::StepWriteOptions
+impl core::marker::Unpin for cadmpeg_codec_step::StepWriteOptions
+impl core::marker::UnsafeUnpin for cadmpeg_codec_step::StepWriteOptions
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_step::StepWriteOptions
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_step::StepWriteOptions
+pub fn cadmpeg_codec_step::write_step(&cadmpeg_ir::document::CadIr, &mut impl std::io::Write + ?core::marker::Sized, &cadmpeg_codec_step::StepWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_codec_step::StepError>
