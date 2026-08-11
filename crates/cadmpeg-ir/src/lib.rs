@@ -136,4 +136,6 @@ pub fn cadir_json_schema() -> schemars::Schema {
 }
 
 #[cfg(test)]
+mod proptests;
+#[cfg(test)]
 mod tests;
