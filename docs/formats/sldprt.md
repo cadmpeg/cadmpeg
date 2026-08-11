@@ -924,6 +924,15 @@ the unrounded evaluated geometry. A compound stack containing different
 diameters remains unresolved; the decoder does not select one contributor by
 position or magnitude.
 
+A `GdtDiameter` on a multi-diameter counterbore pattern pairs with a
+`GdtCounterBore` annotation whose non-cylinder feature-reference set equals the
+diameter annotation's feature-reference set. The counterbore annotation's
+direct cylinder defines the counterbore diameter. Contributors equal to that
+diameter are removed from the diameter annotation's reachable geometry. At
+least one contributor must be removed, and every remaining contributor must
+agree. Their common value is the hole diameter. The rule does not depend on
+cylinder order or relative magnitude.
+
 An omitted `GdtDepth.Nominal` uses the same rendered-literal binding. Each
 reachable `GdtCylinder` contributes the axial distance from its `NomBottom`
 plane origin to its `NomTop` plane origin. `NomCylinder.I`, `J`, and `K` must

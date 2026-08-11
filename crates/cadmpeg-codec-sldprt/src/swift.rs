@@ -561,7 +561,7 @@ fn enrich_implicit_nominals(
         let (dimension_kind, source) = match short_class(&entity.class) {
             "GdtDiameter" => (
                 DimensionKind::Diameter,
-                diameter_nominal(entity, &feature_index),
+                diameter_nominal(root, entity, &feature_index),
             ),
             "GdtDepth" => (
                 DimensionKind::Size,
@@ -671,16 +671,106 @@ fn diameter_from_applied_geometry(
 }
 
 fn diameter_nominal(
+    root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<ImplicitNominal> {
-    diameter_from_applied_geometry(annotation, feature_index).map(|geometry| {
-        ImplicitNominal::RenderedOrExact {
-            kind: RenderedDimensionKind::Diameter,
-            geometry,
-            exact: geometry,
-        }
+    let geometry = diameter_from_applied_geometry(annotation, feature_index)
+        .or_else(|| hole_diameter_excluding_counterbore(root, annotation, feature_index))?;
+    Some(ImplicitNominal::RenderedOrExact {
+        kind: RenderedDimensionKind::Diameter,
+        geometry,
+        exact: geometry,
     })
+}
+
+fn hole_diameter_excluding_counterbore(
+    root: &Entity,
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    let context = annotation
+        .features
+        .references
+        .iter()
+        .map(|reference| reference.id.clone())
+        .collect::<BTreeSet<_>>();
+    if context.is_empty() {
+        return None;
+    }
+    let counterbore_diameters = root
+        .annotations
+        .entities
+        .iter()
+        .filter(|candidate| {
+            !suppressed(candidate) && short_class(&candidate.class) == "GdtCounterBore"
+        })
+        .filter(|candidate| {
+            direct_feature_context(candidate, feature_index, "GdtCylinder").as_ref()
+                == Some(&context)
+        })
+        .filter_map(|candidate| counterbore_from_direct_geometry(candidate, feature_index))
+        .collect::<Vec<_>>();
+    let counterbore_diameter = unique_measurement(&counterbore_diameters)?;
+    let contributors = diameter_contributors(annotation, feature_index);
+    let remaining = contributors
+        .iter()
+        .copied()
+        .filter(|value| !approximately_equal(*value, counterbore_diameter))
+        .collect::<Vec<_>>();
+    (remaining.len() < contributors.len())
+        .then(|| unique_measurement(&remaining))
+        .flatten()
+}
+
+fn diameter_contributors(annotation: &Entity, feature_index: &BTreeMap<&str, &Entity>) -> Vec<f64> {
+    let mut values = Vec::new();
+    for reference in &annotation.features.references {
+        collect_diameter_contributors(
+            &reference.id,
+            feature_index,
+            &mut BTreeSet::new(),
+            0,
+            &mut values,
+        );
+    }
+    values
+}
+
+fn collect_diameter_contributors(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    visited: &mut BTreeSet<String>,
+    depth: usize,
+    values: &mut Vec<f64>,
+) {
+    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
+        return;
+    }
+    let Some(feature) = feature_index.get(id) else {
+        return;
+    };
+    let radius = match short_class(&feature.class) {
+        "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
+        "GdtSphere" => nominal_radius(feature, "NomSphere"),
+        _ => None,
+    };
+    if let Some(diameter) = radius.and_then(|radius| finite_positive(radius * 2.0)) {
+        values.push(diameter);
+        return;
+    }
+    let Some(next_depth) = depth.checked_add(1) else {
+        return;
+    };
+    for child in child_feature_ids(feature) {
+        collect_diameter_contributors(
+            child,
+            feature_index,
+            &mut visited.clone(),
+            next_depth,
+            values,
+        );
+    }
 }
 
 fn depth_from_applied_geometry(
@@ -2128,6 +2218,86 @@ mod tests {
             panic!("dimension definition");
         };
         assert_eq!(*nominal, Some(length(5.0)));
+    }
+
+    #[test]
+    fn counterbore_pattern_supplies_distinct_hole_diameter() {
+        let mut root = semantic_root();
+        *root
+            .features
+            .entities
+            .get_mut(1)
+            .expect("counterbore cylinder") = cylinder_with_radius(5.0);
+        *root.features.entities.get_mut(2).expect("hole cylinder") = cylinder_with_radius(3.0);
+        root.annotations
+            .entities
+            .get_mut(2)
+            .expect("diameter")
+            .features
+            .references = vec![reference("FP", "GdtPattern")];
+
+        let mut counterbore = entity("GdtCounterBore");
+        counterbore.doubles.insert("Nominal".into(), 0.0);
+        counterbore.features.references = vec![
+            reference("FP", "GdtPattern"),
+            reference("F20", "GdtCylinder"),
+        ];
+        root.annotations
+            .references
+            .push(reference("A50", "GdtCounterBore"));
+        root.annotations.entities.push(counterbore);
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A30"))
+            .expect("pattern diameter")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(6.0)));
+    }
+
+    #[test]
+    fn unrelated_counterbore_size_does_not_select_a_pattern_diameter() {
+        let mut root = semantic_root();
+        *root.features.entities.get_mut(1).expect("first cylinder") = cylinder_with_radius(5.0);
+        *root.features.entities.get_mut(2).expect("second cylinder") = cylinder_with_radius(3.0);
+        root.annotations
+            .entities
+            .get_mut(2)
+            .expect("diameter")
+            .features
+            .references = vec![reference("FP", "GdtPattern")];
+        root.features
+            .references
+            .push(reference("FCB", "GdtCylinder"));
+        root.features.entities.push(cylinder_with_radius(4.0));
+
+        let mut counterbore = entity("GdtCounterBore");
+        counterbore.doubles.insert("Nominal".into(), 0.0);
+        counterbore.features.references = vec![
+            reference("FP", "GdtPattern"),
+            reference("FCB", "GdtCylinder"),
+        ];
+        root.annotations
+            .references
+            .push(reference("A50", "GdtCounterBore"));
+        root.annotations.entities.push(counterbore);
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A30"))
+            .expect("pattern diameter")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, None);
     }
 
     #[test]
