@@ -2151,8 +2151,9 @@ fn bind_native_vertices(
         .map(|(vertex, point)| (vertex, points[point]))
         .collect();
     logical_coordinates.extend(native_coordinates);
-    let mut endpoint_candidates = HashMap::<u32, Vec<(u32, [f64; 3])>>::new();
-    let mut invalid_edges = HashSet::new();
+    // Native vertex identity fixes topology even when incident lifted endpoints
+    // are separated. Keep the first deterministic finite lift as the logical
+    // coordinate; the pass below records every separation in vertex tolerance.
     for loop_ in loops.values() {
         for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
             let (Some(vertices), Some(lifted)) = (
@@ -2166,34 +2167,13 @@ fn bind_native_vertices(
                 .flatten()
                 .any(|coordinate| !coordinate.is_finite())
             {
-                invalid_edges.insert(edge);
                 continue;
             }
             for lane in 0..2 {
-                if let Some(existing) = logical_coordinates.get(&vertices[lane]) {
-                    if !endpoint_matches(*existing, lifted[lane]) {
-                        invalid_edges.insert(edge);
-                    }
-                } else {
-                    endpoint_candidates
-                        .entry(vertices[lane])
-                        .or_default()
-                        .push((edge, lifted[lane]));
-                }
+                logical_coordinates
+                    .entry(vertices[lane])
+                    .or_insert(lifted[lane]);
             }
-        }
-    }
-    for (vertex, candidates) in endpoint_candidates {
-        let Some((_, point)) = candidates.first().copied() else {
-            continue;
-        };
-        if candidates
-            .iter()
-            .all(|(_, candidate)| endpoint_matches(point, *candidate))
-        {
-            logical_coordinates.insert(vertex, point);
-        } else {
-            invalid_edges.extend(candidates.into_iter().map(|(edge, _)| edge));
         }
     }
     let mut logical_vertices: Vec<_> = logical_coordinates.into_iter().collect();
@@ -2207,11 +2187,7 @@ fn bind_native_vertices(
         logical_vertices.iter().map(|(_, point)| *point).collect();
     let logical_vertex_refs = logical_vertices.iter().map(|(vertex, _)| *vertex).collect();
     let mut edge_vertices = geometric_edges.clone();
-    edge_vertices.retain(|edge, _| !invalid_edges.contains(edge));
     for (&edge, vertices) in native_edges {
-        if invalid_edges.contains(&edge) {
-            continue;
-        }
         if let (Some(&start), Some(&end)) = (
             logical_vertex_indices.get(&vertices[0]),
             logical_vertex_indices.get(&vertices[1]),
@@ -2561,11 +2537,6 @@ fn canonical_point(
 
 fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
     (left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2)
-}
-
-fn endpoint_matches(left: [f64; 3], right: [f64; 3]) -> bool {
-    let residual = distance_squared(left, right);
-    residual.is_finite() && residual <= POINT_TOLERANCE * POINT_TOLERANCE
 }
 
 fn direction_is_unit(direction: [f64; 3]) -> bool {
@@ -6205,7 +6176,7 @@ mod tests {
     }
 
     #[test]
-    fn finite_large_lifted_endpoints_bind_native_vertices() {
+    fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         let endpoints = [[1.0e8, 2.0e8, 3.0e8], [1.0e8 + 5.0, 2.0e8, 3.0e8]];
         let pcurves = BTreeMap::from([(
             2,
@@ -6265,7 +6236,11 @@ mod tests {
             &BTreeMap::from([(10, endpoints[1])]),
             &[],
         );
-        assert!(mismatched.edges.is_empty());
+        assert_eq!(mismatched.edges, BTreeMap::from([(3, [0, 1])]));
+        assert_eq!(mismatched.refs, vec![10, 11]);
+        assert_eq!(mismatched.points, [endpoints[1], endpoints[1]]);
+        assert_eq!(mismatched.tolerances.len(), 1);
+        assert!((mismatched.tolerances[&0] - (5.0 + 1e-9)).abs() < f64::EPSILON);
     }
 
     #[test]
