@@ -238,9 +238,10 @@ fixtures, claims above L1 remain unproven.
 - Positional `ActDatums` outlines require exactly one held coordinate. Outlines
   with zero or multiple held coordinate pairs remain unresolved instead of
   selecting an arbitrary plane normal.
-- Named `ActDatums` outlines decode their bounded model-coordinate DICT forms,
-  including `a5`, `9f`, `5c`, and `45`, into complete corner coordinates while
-  retaining positional `a5`/`9f` tokens as opaque held-coordinate values.
+- Named and positional `ActDatums` outlines decode their shared `a5` and `9f`
+  model-coordinate DICT forms into complete corner coordinates. Named `45`
+  and `5c` tokens and positional `73` and `bb` tokens retain their bounded
+  slots with unresolved numeric values.
 - Unique feature-owned `crv_array` topology rows now emit feature-result edge
   identities. Fillet and chamfer affected-edge selections use generated edge
   references only when the topology row is unique and its producer result

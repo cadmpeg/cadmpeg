@@ -384,15 +384,18 @@ pub fn decode_tabulated_cylinder_second_coordinate(
 
 /// Decode a model-space coordinate in a named `ActDatums` outline.
 ///
-/// Named datum outlines use the same bounded positive/negative DICT lattice as
-/// the second coordinate of a tabulated-cylinder directrix. Keeping this
-/// entry point separate from the tabulated-cylinder API makes the shared byte
-/// grammar explicit at the call site.
+/// Named datum outlines use the backed subset of the bounded positive/negative
+/// DICT lattice for the second coordinate of a tabulated-cylinder directrix.
+/// The unresolved `45` and `5c` forms are excluded here so the datum walker can
+/// retain their seven-byte slot boundaries without assigning numeric values.
 pub(crate) fn decode_named_datum_outline_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
+    if matches!(data.get(offset), Some(0x45 | 0x5c)) {
+        return None;
+    }
     decode_second_coordinate_lane(data, offset, cache)
 }
 

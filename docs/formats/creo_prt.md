@@ -3371,26 +3371,29 @@ contiguous and consume the bounded field body. A complete outline with
 exactly one equal coordinate pair defines the corresponding axis-aligned plane
 and offset.
 
-The positional datum scalar lane treats `a5` and `9f` as seven-byte opaque
-tokens. Their numeric values are not required by the held-coordinate rule:
-identical raw tokens compare equal and distinct raw tokens compare unequal.
+The positional datum scalar lane decodes `a5 <tail6>` as
+`[bf d0 <tail6>]` and `9f <tail6>` as `[40 14 <tail6>]`. These forms use the
+same reconstruction in named datum outlines. The positional `73` and `bb`
+forms remain seven-byte opaque tokens. Identical opaque tokens compare equal
+and distinct opaque tokens compare unequal.
 
 In a named datum outline, exactly one pair of standalone-zero slots at
 positions `k` and `k+3` identifies coordinate axis `k` and plane offset zero.
 Zero pairs or multiple pairs do not define a plane equation.
-Named-outline coordinates use the bounded model-coordinate DICT lane. `5c`
-and `5e..a3` set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
+Named-outline coordinates use the bounded model-coordinate DICT lane. `5e..a3`
+set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
 `a7..b1`, `b2..cf`, `d0..dc`, `dd`, and `de..df` set it to
 `0xbf2b + prefix`, `0xbf2c + prefix`, `0xbf2d + prefix`, `0xbf2e + prefix`,
 `0xbf2f + prefix`, and `0xbf32 + prefix`, respectively. Each prefix is
 followed by `tail6`.
-`45` reconstructs `[bf, tail6, 00]`. The `28` and `41` forms reconstruct
-`[3f, tail7]`; the fixed `2c`, `4c..4d`, `50`, and `54` forms reconstruct
+The `28` and `41` forms reconstruct `[3f, tail7]`; the fixed `2c`, `4c..4d`,
+`50`, and `54` forms reconstruct
 `[3f, tail6, 00]`. The `46` and `2d` forms retain their eight-byte
 `[40, tail7]` and `[c0, tail7]` forms. Each complete token consumes one
 coordinate slot; a missing or incomplete token leaves the outline unresolved.
 The `41` scalar form therefore occupies eight bytes: the prefix followed by
-seven payload bytes.
+seven payload bytes. The seven-byte `45` and `5c` tokens consume one slot but
+retain an unresolved numeric value.
 
 `ref_planes` stores an outer reference followed by a nested `plane_id`. The nested identifier is the geometric datum identifier and joins `ActDatums.srf_array.geom_id`. A referenced datum normal orients a sketch in-plane axis only when it is perpendicular to the sketch-plane normal.
 
