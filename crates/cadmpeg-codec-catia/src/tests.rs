@@ -16985,6 +16985,56 @@ fn dimension_constraint_ranges_accept_db_terminated_dc_frames() {
 }
 
 #[test]
+fn entity_suffix_values_accept_8193_trailers() {
+    use crate::native::{
+        CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,
+        CatiaEntitySuffixTrailer,
+    };
+
+    let bits = 11.0_f64.to_bits();
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xd8, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0x93]);
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
+        "Range",
+        "CstAttr_Dimension",
+        &suffix,
+    ));
+    let suffix_value = native.entity_records[0]
+        .suffix_value
+        .as_ref()
+        .expect("81 93-terminated suffix value");
+    assert_eq!(suffix_value.prefix_code, 0xd8);
+    assert_eq!(suffix_value.trailer, CatiaEntitySuffixTrailer::Token8193);
+    assert_eq!(
+        suffix_value.payload,
+        CatiaEntitySuffixPayload::Evaluation {
+            opcode_offset: 4,
+            evaluation: CatiaEntityEvaluation::Scalar { bits },
+            encoding: CatiaEntityEvaluationEncoding::Direct,
+        }
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store 81 93-terminated suffix value");
+    namespace.version = crate::native::CATIA_SUFFIX_TRAILER_8193_VERSION - 1;
+    namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields_mut()
+        .remove("suffix_value");
+    let migrated = crate::native::CatiaNative::load(&namespace)
+        .expect("migrate 81 93-terminated suffix value");
+    assert_eq!(
+        migrated.entity_records[0].suffix_value.as_ref(),
+        Some(suffix_value)
+    );
+}
+
+#[test]
 fn constraint_range_requires_an_exact_role_and_framing_pair() {
     use crate::native::CatiaConstraintRangeFraming;
 

@@ -25,7 +25,10 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 274;
+pub const CATIA_NATIVE_VERSION: u32 = 275;
+/// Native schema version admitting the `81 93` entity-suffix value trailer.
+#[cfg(test)]
+pub(crate) const CATIA_SUFFIX_TRAILER_8193_VERSION: u32 = 275;
 /// Native schema version retaining complete source-schema `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_INTERVAL_VERSION: u32 = 273;
@@ -1423,6 +1426,8 @@ pub enum CatiaEntitySuffixTrailer {
     Token8152,
     /// Exact trailer token `81 DB`.
     Token81DB,
+    /// Exact trailer token `81 93`.
+    Token8193,
     /// Exact fixed trailer `FE F6 00{16}`.
     FixedZeroFrame,
 }
@@ -3572,6 +3577,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         [0x81, 0x4a] => CatiaEntitySuffixTrailer::Token814A,
         [0x81, 0x52] => CatiaEntitySuffixTrailer::Token8152,
         [0x81, 0xdb] => CatiaEntitySuffixTrailer::Token81DB,
+        [0x81, 0x93] => CatiaEntitySuffixTrailer::Token8193,
         [0xfe, 0xf6, rest @ ..] if rest.len() == 16 && rest.iter().all(|byte| *byte == 0) => {
             CatiaEntitySuffixTrailer::FixedZeroFrame
         }
@@ -10659,7 +10665,9 @@ impl CatiaNative {
                 );
             }
         }
-        if namespace.version < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION {
+        if namespace.version < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION
+            || namespace.version < CATIA_SUFFIX_TRAILER_8193_VERSION
+        {
             for graph in &graphs {
                 let catalog = graph.catalog.as_deref().and_then(|catalog_id| {
                     catalogs.iter().find(|catalog| catalog.id == catalog_id)
