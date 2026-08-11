@@ -269,25 +269,23 @@ fn loop_metadata_counts<'a>(
 }
 
 pub(crate) fn try_decode_freeform_surfaces(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
     let logical_streams = container::logical_record_streams(scan);
-    let census_object_records = logical_streams
-        .iter()
-        .flat_map(|stream| {
-            let frames = crate::families::b5::graph::object_stream_frames(stream);
-            crate::families::b5::graph::records_from_frames(stream, &frames)
-        })
-        .collect::<Vec<_>>();
-    let object_selection =
-        crate::families::b5::graph::select_object_stream_population(&logical_streams);
+    let selection_budget =
+        ctx.work_budget(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK as u64);
+    let object_selection = crate::families::b5::graph::select_object_stream_population(
+        &logical_streams,
+        Some(&selection_budget),
+    );
     let object_stream_run_count = object_selection.run_count;
     let selected_object_stream_run_count = usize::from(object_selection.selected);
+    let object_stream_selection_exhausted = object_selection.exhausted;
     let object_source = object_selection.source;
-    let object_frames = crate::families::b5::graph::object_stream_frames(&object_source);
-    let selected_object_records =
-        crate::families::b5::graph::records_from_frames(&object_source, &object_frames);
+    let object_frames = object_selection.frames;
+    let selected_object_records = object_selection.records;
+    let census_object_records = object_selection.census_records;
     let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
         &scan.data,
         container::consolidated_record_ranges(scan),
@@ -593,6 +591,14 @@ pub(crate) fn try_decode_freeform_surfaces(
                 .to_string(),
             provenance: None,
         }]
+    } else if object_stream_selection_exhausted {
+        vec![LossNote {
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            severity: Severity::Blocking,
+            message: "The object-stream graph exceeds the bounded frame-index and record-materialization work slice; its topology remains native."
+                .to_string(),
+            provenance: None,
+        }]
     } else {
         vec![LossNote {
             code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
@@ -617,6 +623,10 @@ pub(crate) fn try_decode_freeform_surfaces(
     coverage.insert(
         "unselected_object_stream_run_count".to_string(),
         object_stream_run_count - selected_object_stream_run_count,
+    );
+    coverage.insert(
+        "exhausted_object_stream_selection_count".to_string(),
+        usize::from(object_stream_selection_exhausted),
     );
     coverage.insert(
         "decoded_b2_nurbs_curve_count".to_string(),
@@ -2599,10 +2609,10 @@ mod tests {
         unrelated.extend_from_slice(&99u32.to_le_bytes());
         unrelated.push(0x00);
 
-        let selection = crate::families::b5::graph::select_object_stream_population(&[
-            unrelated,
-            topology.clone(),
-        ]);
+        let selection = crate::families::b5::graph::select_object_stream_population(
+            &[unrelated, topology.clone()],
+            None,
+        );
         assert_eq!(selection.run_count, 2);
         assert!(selection.selected);
         assert_eq!(selection.source, topology);
@@ -2611,14 +2621,30 @@ mod tests {
     #[test]
     fn object_stream_selection_refuses_multiple_topology_root_runs() {
         let topology = crate::tests::b5_closed_triangle_stream();
-        let selection = crate::families::b5::graph::select_object_stream_population(&[
-            topology.clone(),
-            topology,
-        ]);
+        let selection = crate::families::b5::graph::select_object_stream_population(
+            &[topology.clone(), topology],
+            None,
+        );
 
         assert_eq!(selection.run_count, 2);
         assert!(!selection.selected);
         assert!(selection.source.is_empty());
+    }
+
+    #[test]
+    fn object_stream_selection_stops_before_materializing_over_budget_records() {
+        let topology = crate::tests::b5_closed_triangle_stream();
+        let budget = cadmpeg_core::decode::WorkBudget::new(1);
+
+        let selection =
+            crate::families::b5::graph::select_object_stream_population(&[topology], Some(&budget));
+
+        assert_eq!(selection.run_count, 1);
+        assert!(!selection.selected);
+        assert!(selection.source.is_empty());
+        assert!(selection.records.is_empty());
+        assert!(selection.exhausted);
+        assert!(budget.exhausted());
     }
 
     #[test]

@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::le::f64_at;
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry};
@@ -12,6 +13,10 @@ use cadmpeg_ir::math::Point2;
 use super::vecmath::{add, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::wire;
+
+/// Maximum frame-index, record-materialization, census, and graph-selection
+/// operations admitted for one free-form object population.
+pub(crate) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 1_000_000;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
@@ -4720,52 +4725,188 @@ pub(crate) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u8>> {
 /// Unique object population selected across reconstructed logical streams.
 pub(crate) struct ObjectStreamSelection {
     pub(crate) source: Vec<u8>,
+    pub(crate) frames: Vec<ObjectFrame>,
+    pub(crate) records: Vec<B5Record>,
+    pub(crate) census_records: Vec<B5Record>,
     pub(crate) run_count: usize,
     pub(crate) selected: bool,
+    pub(crate) exhausted: bool,
+}
+
+struct IndexedObjectRun {
+    stream_index: usize,
+    range: Range<usize>,
+    frames: Vec<ObjectFrame>,
+    records: Vec<B5Record>,
 }
 
 /// Select one topology-root population, or one unrooted run when it is the
 /// only object run in the reconstructed logical streams.
-pub(crate) fn select_object_stream_population(streams: &[Vec<u8>]) -> ObjectStreamSelection {
-    let runs = streams
+pub(crate) fn select_object_stream_population(
+    streams: &[Vec<u8>],
+    budget: Option<&WorkBudget<'_>>,
+) -> ObjectStreamSelection {
+    let stream_ranges = streams
         .iter()
-        .enumerate()
-        .flat_map(|(stream_index, stream)| {
-            object_stream_run_ranges(stream)
-                .into_iter()
-                .map(move |range| (stream_index, range))
-        })
+        .map(|stream| object_stream_run_ranges(stream))
         .collect::<Vec<_>>();
-    let topology_runs = streams
+    let run_count = stream_ranges.iter().map(Vec::len).sum();
+    let exhausted = || ObjectStreamSelection {
+        source: Vec::new(),
+        frames: Vec::new(),
+        records: Vec::new(),
+        census_records: Vec::new(),
+        run_count,
+        selected: false,
+        exhausted: true,
+    };
+    let mut runs = Vec::new();
+    for (stream_index, (stream, ranges)) in streams.iter().zip(stream_ranges).enumerate() {
+        let frames = object_stream_frames(stream);
+        if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
+            return exhausted();
+        }
+        for range in ranges {
+            let run_frames = frames
+                .iter()
+                .copied()
+                .filter(|frame| frame.start >= range.start && frame.end <= range.end)
+                .collect::<Vec<_>>();
+            // Reserve run indexing before any frame payload is cloned.
+            if budget.is_some_and(|budget| !budget.charge_by(run_frames.len())) {
+                return exhausted();
+            }
+            let records = records_from_frames(stream, &run_frames);
+            // Census and population selection each inspect every admitted
+            // typed record.
+            if budget.is_some_and(|budget| !budget.charge_by(records.len().saturating_mul(2))) {
+                return exhausted();
+            }
+            runs.push(IndexedObjectRun {
+                stream_index,
+                range,
+                frames: run_frames,
+                records,
+            });
+        }
+    }
+    let topology_runs = runs
         .iter()
         .enumerate()
-        .flat_map(|(stream_index, stream)| {
-            topology_root_run_ranges(stream)
-                .into_iter()
-                .map(move |range| (stream_index, range))
+        .filter(|(_, run)| {
+            run.records
+                .iter()
+                .any(|record| matches!(record.class, 0x5f | 0x62))
         })
+        .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let selected_run = match topology_runs.as_slice() {
-        [(stream_index, range)] => Some((*stream_index, range.clone(), true)),
-        [] if runs.len() == 1 => {
-            let (stream_index, range) = &runs[0];
-            Some((*stream_index, range.clone(), false))
-        }
+        [index] => Some((*index, true)),
+        [] if runs.len() == 1 => Some((0, false)),
         _ => None,
     };
+    let census_records = runs
+        .iter()
+        .flat_map(|run| run.records.iter().cloned())
+        .collect::<Vec<_>>();
+    let Some((selected_index, topology)) = selected_run else {
+        return ObjectStreamSelection {
+            source: Vec::new(),
+            frames: Vec::new(),
+            records: Vec::new(),
+            census_records,
+            run_count,
+            selected: false,
+            exhausted: false,
+        };
+    };
+    let selected = &runs[selected_index];
+    let selected_stream = &streams[selected.stream_index];
+    let mut source = selected_stream[selected.range.clone()].to_vec();
+    let mut frames = selected
+        .frames
+        .iter()
+        .copied()
+        .map(|mut frame| {
+            frame.start -= selected.range.start;
+            frame.end -= selected.range.start;
+            frame
+        })
+        .collect::<Vec<_>>();
+    let mut records = selected
+        .records
+        .iter()
+        .cloned()
+        .map(|mut record| {
+            record.offset -= selected.range.start;
+            record
+        })
+        .collect::<Vec<_>>();
+    if topology {
+        let referenced = topology_surface_references(&selected.records);
+        let owned_ids = selected
+            .records
+            .iter()
+            .map(|record| record.object_id)
+            .collect::<HashSet<_>>();
+        let mut isolated = HashMap::<u32, Option<usize>>::new();
+        for (index, run) in runs.iter().enumerate() {
+            if index == selected_index || run.stream_index != selected.stream_index {
+                continue;
+            }
+            let stream = &streams[run.stream_index];
+            let Some((end, family, class, object_id)) = object_frame(stream, run.range.start)
+            else {
+                continue;
+            };
+            if end != run.range.end
+                || owned_ids.contains(&object_id)
+                || !referenced.contains(&object_id)
+                || !is_referenced_geometry_class(family, class)
+            {
+                continue;
+            }
+            isolated
+                .entry(object_id)
+                .and_modify(|stored| {
+                    if stored.is_some_and(|stored| {
+                        let stored = &runs[stored];
+                        streams[stored.stream_index][stored.range.clone()]
+                            != stream[run.range.clone()]
+                    }) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(index));
+        }
+        let mut isolated = isolated.into_values().flatten().collect::<Vec<_>>();
+        isolated.sort_unstable_by_key(|index| {
+            let run = &runs[*index];
+            (run.stream_index, run.range.start)
+        });
+        for index in isolated {
+            let run = &runs[index];
+            let stream = &streams[run.stream_index];
+            let destination = source.len();
+            source.extend_from_slice(&stream[run.range.clone()]);
+            frames.extend(run.frames.iter().copied().map(|mut frame| {
+                frame.start = destination + frame.start - run.range.start;
+                frame.end = destination + frame.end - run.range.start;
+                frame
+            }));
+        }
+        if source.len() != selected.range.len() {
+            records = records_from_frames(&source, &frames);
+        }
+    }
     ObjectStreamSelection {
-        source: selected_run
-            .as_ref()
-            .map(|(stream_index, range, topology)| {
-                if *topology {
-                    owned_object_stream_population(&streams[*stream_index], range.clone())
-                } else {
-                    streams[*stream_index][range.clone()].to_vec()
-                }
-            })
-            .unwrap_or_default(),
-        run_count: runs.len(),
-        selected: selected_run.is_some(),
+        source,
+        frames,
+        records,
+        census_records,
+        run_count,
+        selected: true,
+        exhausted: false,
     }
 }
 
