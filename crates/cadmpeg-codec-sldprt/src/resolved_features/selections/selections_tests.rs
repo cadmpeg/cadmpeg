@@ -506,6 +506,7 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         feature_ref: "consumer".into(),
         local_edge_ids: vec![4, 4, 0],
         components,
+        references: Vec::new(),
         producer_feature_refs: vec!["producer".into()],
         terminal_feature_ref: Some("producer".into()),
     };
@@ -605,6 +606,55 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
 }
 
 #[test]
+fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
+    let class_name = "moVertDim_c";
+    let direct_record = 40;
+    let class_offset = direct_record + 4;
+    let class_body = class_offset + 6 + class_name.len();
+    let repeated_record = 104;
+    let class_token = 0x87d3_u16;
+    let mut payload = vec![0; 144];
+    payload[direct_record..direct_record + 4].copy_from_slice(&[0x20, 0x81, 0x08, 0x00]);
+    payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..class_body].copy_from_slice(class_name.as_bytes());
+    payload[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
+    payload[repeated_record..repeated_record + 4].copy_from_slice(&[0x20, 0x81, 0x10, 0x00]);
+    payload[repeated_record + 4..repeated_record + 6].copy_from_slice(&0x8123_u16.to_le_bytes());
+    payload[repeated_record + 6..repeated_record + 8].copy_from_slice(&class_token.to_le_bytes());
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "vertex-dimension-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Dimension,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    assert_eq!(fillet_edge_roster_end(&lane, 0, 80), Some(direct_record));
+    assert_eq!(
+        fillet_edge_roster_end(&lane, 80, 144),
+        Some(repeated_record)
+    );
+}
+
+#[test]
 fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
     let marker = 12;
     let mut payload = vec![0; 160];
@@ -634,6 +684,61 @@ fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
     assert_eq!(
         compact_edge_component_path_at(&payload, marker).map(|components| components.len()),
         Some(3)
+    );
+}
+
+#[test]
+fn compact_reference_list_preserves_reference_and_hop_boundaries() {
+    let marker = 12;
+    let mut payload = Vec::new();
+    payload.extend(2u32.to_le_bytes());
+    payload.extend([0, 2, 0, 0]);
+    payload.extend(17u32.to_le_bytes());
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+    let append_hop = |payload: &mut Vec<u8>, instance: u16, serial: u32, timestamp: u32| {
+        payload.extend(instance.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0x38, 0x80, 0x3b, 0]);
+        payload.extend(serial.to_le_bytes());
+        payload.extend(timestamp.to_le_bytes());
+    };
+    append_hop(&mut payload, 0x8036, 4, 40);
+    append_hop(&mut payload, 0x8041, 5, 50);
+    payload.extend(12u32.to_le_bytes());
+    append_hop(&mut payload, 0x8083, 9, 90);
+    payload.extend(0u32.to_le_bytes());
+    payload.extend([0xff; 4]);
+    payload.extend([0; 6]);
+
+    let references = compact_component_reference_list_at(&payload, marker).unwrap();
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].len(), 2);
+    assert_eq!(references[0][0].local_id, None);
+    assert_eq!(references[0][1].local_id, Some(12));
+    assert_eq!(references[1][0].instance, Some(0x8083));
+    assert_eq!(references[1][0].local_id, Some(0));
+    assert_eq!(
+        compact_edge_selection_at(&payload, marker),
+        Some(vec![12, 0])
+    );
+    assert_eq!(
+        compact_edge_component_path_at(&payload, marker)
+            .unwrap()
+            .iter()
+            .map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [None, Some(12)]
+    );
+
+    payload[..4].copy_from_slice(&3u32.to_le_bytes());
+    payload.extend([0; 10]);
+    payload.extend([0xff, 0xfe, 0xff]);
+    assert_eq!(
+        compact_component_reference_list_at(&payload, marker)
+            .unwrap()
+            .len(),
+        2
     );
 }
 

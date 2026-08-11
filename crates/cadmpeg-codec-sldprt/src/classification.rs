@@ -294,7 +294,12 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moDelFace_c" => operation_class(FeatureClass::DeleteFace),
         "moMoveFace_c" => operation_class(FeatureClass::MoveFace),
         "moMoveCopyBody_c" => operation_class(FeatureClass::MoveBody),
-        "VarFillet_c" => operation_class(FeatureClass::Fillet),
+        "VarFillet_c" => (
+            NativeClassKind::Fillet,
+            Feature,
+            Some(FeatureClass::Fillet),
+            None,
+        ),
         "moRefPoint_c" => operation_class(FeatureClass::ReferencePoint),
         "moCoordSys_c" => operation_class(FeatureClass::CoordinateSystem),
 
@@ -963,6 +968,7 @@ mod tests {
             "moICE_c",
             "moCut_c",
             "Fillet_c",
+            "VarFillet_c",
             "Chamfer_c",
             "moOriginProfileFeature_c",
             "moProfileFeature_c",

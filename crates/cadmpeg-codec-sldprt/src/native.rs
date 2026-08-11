@@ -798,6 +798,16 @@ impl SldprtNative {
                         != record.components
                     || usize::try_from(record.offset)
                         .ok()
+                        .and_then(|offset| {
+                            crate::resolved_features::selections::compact_component_reference_list_at(
+                                &lane.native_payload,
+                                offset,
+                            )
+                        })
+                        .unwrap_or_default()
+                        != record.references
+                    || usize::try_from(record.offset)
+                        .ok()
                         .map(|offset| {
                             crate::resolved_features::selections::compact_edge_producer_features_at(
                                 &lane.native_payload,

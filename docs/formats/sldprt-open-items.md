@@ -538,6 +538,14 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must define nonidentity `NominalTransform` semantics and the other `ComputeAnswerBy`, `Direction`, and `NormalTo` modes before those forms can supply a nominal.
 
+### DI-35. Endpoint-less variable-fillet edge groups
+
+**Question.** How does a selected-edge reference-list vector without `8083` endpoint references select its radius profile when the same `VarFillet_c` object contains more than one ordered endpoint-radius pair?
+
+**Known.** `sldprt.md` §2 defines the reference-list grammar, variable-fillet input-edge boundary, vertex-control join, and grouping of endpoint-bearing selected edges by their ordered endpoint radii. A single ordered pair is the feature-wide profile and applies to endpoint-less selected-edge vectors.
+
+**Need.** We must identify the native association between an endpoint-less selected-edge vector and one of several distinct radius profiles.
+
 ## 6. Write-path evidence
 
 ### EV-03. Regenerated `SWObjects` record content

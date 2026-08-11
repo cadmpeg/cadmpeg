@@ -20159,6 +20159,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
                 feature_ref,
                 local_edge_ids: vec![7],
                 components,
+                references: Vec::new(),
                 producer_feature_refs: Vec::new(),
                 terminal_feature_ref: None,
             });

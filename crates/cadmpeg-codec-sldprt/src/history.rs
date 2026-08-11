@@ -2880,6 +2880,28 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn variable_fillet_d_dimensions_require_native_vertex_associations() {
+        let mut feature = feature("variable-fillet", Some("61"), 0);
+        feature.kind = "VarFillet".into();
+        feature.input_class = Some("VarFillet_c".into());
+        feature.parameters = BTreeMap::from([
+            ("D0".into(), "R2mm".into()),
+            ("D01".into(), "R3mm".into()),
+            ("D02".into(), "R2mm".into()),
+            ("D03".into(), "R3mm".into()),
+        ]);
+
+        assert!(matches!(
+            project_fillet(&feature),
+            FeatureDefinition::Fillet { groups }
+                if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+                    radius: RadiusSpec::Unresolved { .. },
+                    ..
+                }])
+        ));
+    }
+
+    #[test]
     fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
         let mut reference = feature("sldprt:history:feature#0:0", None, 0);
         reference.input_class = Some("moRefPlane_c".into());
@@ -6016,6 +6038,7 @@ mod history_reference_tests {
                 feature_ref: "consumer-native".into(),
                 local_edge_ids: vec![7],
                 components: Vec::new(),
+                references: Vec::new(),
                 producer_feature_refs: vec!["producer-native".into()],
                 terminal_feature_ref: Some("producer-native".into()),
             });
@@ -8506,9 +8529,12 @@ pub(crate) fn fillet_radius_parameter_has_native_display(
     name: &str,
     expression: &str,
 ) -> bool {
-    name == "D1"
-        && is_fillet(feature)
-        && !variable_fillet(feature)
+    is_fillet(feature)
+        && if variable_fillet(feature) {
+            crate::resolved_features::selections::variable_fillet_dimension_index(name).is_some()
+        } else {
+            name == "D1"
+        }
         && dimension_display(expression).is_some()
 }
 
@@ -10889,7 +10915,9 @@ pub(crate) fn project_compact_and_generated(
     crate::resolved_features::terminations::project_compact_combine_paths(
         features, projection, lanes,
     );
-    crate::resolved_features::projections::project_compact_edge_selections(features, lanes);
+    crate::resolved_features::projections::project_compact_edge_selections(
+        features, projection, lanes,
+    );
     crate::resolved_features::projections::project_compact_surface_selections(
         features, projection, lanes,
     );
@@ -11039,6 +11067,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         }
         crate::resolved_features::projections::project_compact_edge_selections(
             &mut features,
+            &[],
             std::slice::from_ref(lane),
         );
         let states = &mut ir.model.configurations[configuration_index].feature_states;

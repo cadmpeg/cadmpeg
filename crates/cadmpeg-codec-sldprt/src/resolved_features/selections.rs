@@ -263,19 +263,22 @@ pub(super) fn compact_edge_selections(
         ))
     });
     for (object_index, &(name, feature)) in objects.iter().enumerate() {
-        if !matches!(
-            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind,
-            NativeClassKind::Fillet | NativeClassKind::Chamfer
-        ) {
+        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
+        if !matches!(kind, NativeClassKind::Fillet | NativeClassKind::Chamfer) {
             continue;
         }
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
         };
-        let end = objects
+        let object_end = objects
             .get(object_index + 1)
             .and_then(|(next, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
+        let end = if kind == NativeClassKind::Fillet {
+            fillet_edge_roster_end(lane, start, object_end).unwrap_or(object_end)
+        } else {
+            object_end
+        };
         let direct_child = compact_edge_class
             .and_then(|class| usize::try_from(class.offset).ok())
             .filter(|offset| (start..end).contains(offset));
@@ -307,6 +310,8 @@ pub(super) fn compact_edge_selections(
         let feature_selections = selections
             .into_iter()
             .map(|(offset, local_edge_ids)| {
+                let references = compact_component_reference_list_at(&lane.native_payload, offset)
+                    .unwrap_or_default();
                 let components = compact_edge_component_path_at(&lane.native_payload, offset)
                     .unwrap_or_default();
                 let terminal_feature_ref = compact_edge_owner_feature_at(
@@ -332,6 +337,7 @@ pub(super) fn compact_edge_selections(
                     feature_ref: feature.id.clone(),
                     local_edge_ids,
                     components,
+                    references,
                     producer_feature_refs,
                     terminal_feature_ref,
                 }
@@ -343,6 +349,74 @@ pub(super) fn compact_edge_selections(
         }
     }
     result
+}
+
+fn fillet_edge_roster_end(lane: &FeatureInputLane, start: usize, end: usize) -> Option<usize> {
+    ["moEdgeDim_c", "moVertDim_c"]
+        .into_iter()
+        .filter_map(|class_name| first_class_object_in_interval(lane, start, end, class_name))
+        .min()
+}
+
+fn first_class_object_in_interval(
+    lane: &FeatureInputLane,
+    start: usize,
+    end: usize,
+    class_name: &str,
+) -> Option<usize> {
+    let direct = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == class_name)
+        .filter_map(|class| usize::try_from(class.offset).ok())
+        .filter(|offset| (start..end).contains(offset))
+        .map(|offset| {
+            offset
+                .checked_sub(4)
+                .filter(|record_start| {
+                    lane.native_payload.get(*record_start..*record_start + 2) == Some(&[0x20, 0x81])
+                })
+                .unwrap_or(offset)
+        })
+        .min();
+
+    let mut tokens = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == class_name)
+        .filter_map(|class| {
+            usize::try_from(class.offset)
+                .ok()?
+                .checked_add(6 + class.name.len())
+        })
+        .filter_map(|offset| {
+            Some(u16::from_le_bytes(
+                lane.native_payload
+                    .get(offset..offset + 2)?
+                    .try_into()
+                    .ok()?,
+            ))
+        })
+        .filter(|token| token & 0x8000 != 0 && *token != u16::MAX)
+        .collect::<Vec<_>>();
+    tokens.sort_unstable();
+    tokens.dedup();
+    let repeated = match tokens.as_slice() {
+        [token] => (start..end.saturating_sub(7)).find(|offset| {
+            lane.native_payload.get(*offset..*offset + 2) == Some(&[0x20, 0x81])
+                && lane.native_payload.get(*offset + 2..*offset + 4) == Some(&[0x10, 0x00])
+                && lane
+                    .native_payload
+                    .get(*offset + 4..*offset + 6)
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .map(u16::from_le_bytes)
+                    .is_some_and(|instance| instance & 0x8000 != 0 && instance != u16::MAX)
+                && lane.native_payload.get(*offset + 6..*offset + 8)
+                    == Some(token.to_le_bytes().as_slice())
+        }),
+        _ => None,
+    };
+    direct.into_iter().chain(repeated).min()
 }
 
 pub(super) fn input_owned_edge_selections(
@@ -1549,6 +1623,14 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
     if !(1..=64).contains(&count) {
         return None;
     }
+    if let Some(references) = compact_component_reference_list_at(payload, marker) {
+        return Some(
+            references
+                .iter()
+                .filter_map(|reference| reference.last()?.local_id)
+                .collect(),
+        );
+    }
     let mut candidates = Vec::new();
     if let Some(ids) = compact_homogeneous_edge_ids(payload, marker + 18, count) {
         candidates.push(ids);
@@ -1589,7 +1671,171 @@ pub(crate) fn compact_edge_component_path_at(
     ))
     .ok()
     .filter(|count| (1..=64).contains(count))?;
-    compact_edge_component_path(payload, marker, count).map(|(components, _)| components)
+    compact_component_reference_list_at(payload, marker)
+        .map(|references| {
+            references
+                .into_iter()
+                .filter(|reference| {
+                    !reference
+                        .iter()
+                        .any(|component| component.instance == Some(0x8083))
+                })
+                .flatten()
+                .collect()
+        })
+        .or_else(|| {
+            compact_edge_component_path(payload, marker, count).map(|(components, _)| components)
+        })
+}
+
+pub(crate) fn compact_component_reference_list_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<Vec<FeatureInputComponentPathEntry>>> {
+    let count_start = marker.checked_sub(12)?;
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker - 8..marker - 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(count_start..count_start + 4)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| (1..=64).contains(count))?;
+    let hop_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
+        let instance = u16::from_le_bytes(payload.get(offset..offset + 2)?.try_into().ok()?);
+        if instance & 0x8000 == 0
+            || instance == u16::MAX
+            || payload.get(offset + 2..offset + 4)? != [0, 0]
+        {
+            return None;
+        }
+        let type_signature: [u8; 12] = payload.get(offset + 4..offset + 16)?.try_into().ok()?;
+        (type_signature[..4] == [0x38, 0x80, 0x3b, 0]
+            && type_signature[4..8] != [0; 4]
+            && type_signature[8..12] != [0; 4])
+            .then_some(FeatureInputComponentPathEntry {
+                instance: Some(instance),
+                type_signature,
+                local_id: None,
+            })
+    };
+    let terminal_null_at = |offset: usize| {
+        (16..=18).any(|zero_count| {
+            payload
+                .get(offset..offset + zero_count)
+                .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+                && payload.get(offset + zero_count..offset + zero_count + 3)
+                    == Some(&[0xff, 0xfe, 0xff])
+        })
+    };
+
+    let mut cursor = marker + 18;
+    let mut references = Vec::with_capacity(count);
+    for index in 0..count {
+        let mut reference = Vec::new();
+        while let Some(hop) = hop_at(cursor) {
+            reference.push(hop);
+            cursor += 16;
+        }
+        if reference.is_empty() && index + 1 == count && terminal_null_at(cursor) {
+            return (!references.is_empty()).then_some(references);
+        }
+        let last = reference.last_mut()?;
+        last.local_id = Some(u32::from_le_bytes(
+            payload.get(cursor..cursor + 4)?.try_into().ok()?,
+        ));
+        cursor += 4;
+        if payload.get(cursor..cursor + 4) == Some(&[0xff; 4]) {
+            cursor += 4;
+        }
+        references.push(reference);
+        if index + 2 == count && terminal_null_at(cursor) {
+            return Some(references);
+        }
+        if index + 1 == count {
+            continue;
+        }
+        let gap = (0..=10).find(|gap| {
+            payload
+                .get(cursor..cursor + *gap)
+                .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
+                && hop_at(cursor + *gap).is_some()
+        })?;
+        cursor += gap;
+    }
+    Some(references)
+}
+
+pub(crate) fn variable_fillet_control_vertices(
+    feature: &crate::records::Feature,
+    lane: &FeatureInputLane,
+    object_end: usize,
+) -> Option<Vec<(String, [u8; 12])>> {
+    if !feature.kind.eq_ignore_ascii_case("VarFillet") {
+        return None;
+    }
+    let object_start = feature_object_name(feature, lane)?.offset.try_into().ok()?;
+    let control_start = fillet_edge_roster_end(lane, object_start, object_end)?;
+    let mut controls = (control_start.saturating_add(12)
+        ..object_end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+        .filter(|marker| {
+            lane.native_payload
+                .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        })
+        .filter_map(|marker| {
+            let references = compact_component_reference_list_at(&lane.native_payload, marker)?;
+            (references.len() == 3).then_some(())?;
+            let vertices = references
+                .iter()
+                .flat_map(|reference| reference.iter())
+                .filter(|component| component.instance == Some(0x8083))
+                .collect::<Vec<_>>();
+            let [vertex] = vertices.as_slice() else {
+                return None;
+            };
+            Some((marker, vertex.type_signature))
+        })
+        .collect::<Vec<_>>();
+    controls.sort_unstable_by_key(|(marker, _)| *marker);
+    let mut result = Vec::with_capacity(controls.len());
+    for (index, &(marker, signature)) in controls.iter().enumerate() {
+        let start = index
+            .checked_sub(1)
+            .and_then(|previous| controls.get(previous))
+            .map_or(control_start, |(previous, _)| *previous);
+        let names = lane
+            .names
+            .iter()
+            .filter(|name| {
+                usize::try_from(name.offset).is_ok_and(|offset| start < offset && offset < marker)
+            })
+            .filter(|name| variable_fillet_dimension_index(&name.value).is_some())
+            .collect::<Vec<_>>();
+        let [name] = names.as_slice() else {
+            return None;
+        };
+        result.push((name.value.clone(), signature));
+    }
+    (!result.is_empty()).then_some(result)
+}
+
+pub(crate) fn variable_fillet_dimension_index(name: &str) -> Option<usize> {
+    let suffix = name.strip_prefix("D0")?;
+    let index = if suffix.is_empty() {
+        0
+    } else {
+        suffix.parse().ok()?
+    };
+    let canonical = if index == 0 {
+        "D0".to_string()
+    } else {
+        format!("D0{index}")
+    };
+    (name == canonical).then_some(index)
 }
 
 pub(super) fn compact_component_path_end_at(payload: &[u8], marker: usize) -> Option<usize> {
@@ -1712,7 +1958,11 @@ pub(crate) fn compact_edge_owner_feature_at(
             .ok()?,
     ))
     .ok()?;
-    let (_, owner_source) = compact_edge_component_path(payload, marker, count)?;
+    let owner_source = if compact_component_reference_list_at(payload, marker).is_some() {
+        None
+    } else {
+        compact_edge_component_path(payload, marker, count)?.1
+    };
     owner_source
         .and_then(|source| {
             features.iter().find(|feature| {
