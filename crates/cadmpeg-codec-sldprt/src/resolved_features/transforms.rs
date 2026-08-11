@@ -22,7 +22,8 @@ use super::dimensions::{project_dimensioned_sketch_geometry, project_marker_dime
 use super::endpoints::inferred_point_coordinates_by_index;
 #[cfg(test)]
 use super::profiles::{
-    bind_sketch_profiles, nested_profile_contains_declared_circles, project_marker_backed_sketches,
+    bind_sketch_profiles, nested_profile_contains_declared_circular_carriers,
+    project_marker_backed_sketches,
 };
 #[cfg(test)]
 use super::projections::{

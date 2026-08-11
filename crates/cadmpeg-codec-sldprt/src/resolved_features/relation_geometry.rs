@@ -827,7 +827,7 @@ pub(super) fn implicit_circle_marker<'a>(
     same_dimension_length(radius, expected_radius).then_some((*center, radius))
 }
 
-pub(super) fn declared_entity_handle_circle_marker<'a>(
+pub(super) fn declared_entity_handle_circular_marker<'a>(
     lanes: &'a [FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
@@ -859,7 +859,10 @@ pub(super) fn declared_entity_handle_circle_marker<'a>(
         .filter(|marker| {
             matches!(
                 marker.kind,
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                SketchInputKind::Point
+                    | SketchInputKind::ConstrainedPoint
+                    | SketchInputKind::LineOrCircle
+                    | SketchInputKind::Arc
             )
         })
         .collect::<Vec<_>>();
@@ -868,6 +871,12 @@ pub(super) fn declared_entity_handle_circle_marker<'a>(
         let [center, radial] = pair else {
             unreachable!("slice windows have the requested length")
         };
+        if !matches!(
+            radial.kind,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        ) {
+            return None;
+        }
         let center_local_id = center.local_id?;
         if center_local_id == 0
             || radial.object_index != Some(center_local_id)

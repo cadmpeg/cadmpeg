@@ -39,7 +39,7 @@ use super::markers::{
 };
 use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
-use super::relation_geometry::{declared_entity_handle_circle_marker, owned_relation_parameters};
+use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform};
@@ -77,7 +77,7 @@ pub(crate) fn bind_sketch_profiles(
     lanes: &[FeatureInputLane],
     annotations: &mut Annotations,
 ) {
-    let declared_circles = declared_entity_handle_circles(features, parameters, lanes);
+    let declared_carriers = declared_entity_handle_circular_carriers(features, parameters, lanes);
     let mut superseded = HashSet::new();
     let native_features = histories
         .iter()
@@ -114,10 +114,14 @@ pub(crate) fn bind_sketch_profiles(
             if enclosed.next().is_some() {
                 continue;
             }
-            if declared_circles
+            if declared_carriers
                 .get(native_feature.id.as_str())
-                .is_some_and(|circles| {
-                    !nested_profile_contains_declared_circles(sketch, sketch_entities, circles)
+                .is_some_and(|carriers| {
+                    !nested_profile_contains_declared_circular_carriers(
+                        sketch,
+                        sketch_entities,
+                        carriers,
+                    )
                 })
             {
                 superseded.insert(sketch.id.clone());
@@ -176,7 +180,7 @@ pub(crate) fn bind_sketch_profiles(
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
 }
 
-fn declared_entity_handle_circles(
+fn declared_entity_handle_circular_carriers(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
@@ -186,7 +190,7 @@ fn declared_entity_handle_circles(
         .iter()
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
-    let mut circles = HashMap::<String, Vec<([f64; 2], f64)>>::new();
+    let mut carriers = HashMap::<String, Vec<([f64; 2], f64)>>::new();
     for lane in lanes {
         for relation in lane
             .relation_instances
@@ -211,7 +215,7 @@ fn declared_entity_handle_circles(
                 Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
                 None => continue,
             };
-            let Some((center, encoded_radius)) = declared_entity_handle_circle_marker(
+            let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
                 lanes,
                 relation.feature_ref.as_str(),
                 operand,
@@ -222,16 +226,16 @@ fn declared_entity_handle_circles(
             let Some(coordinates) = center.coordinates_m else {
                 continue;
             };
-            circles
+            carriers
                 .entry(relation.feature_ref.clone())
                 .or_default()
                 .push((coordinates, encoded_radius));
         }
     }
-    circles
+    carriers
 }
 
-pub(super) fn nested_profile_contains_declared_circles(
+pub(super) fn nested_profile_contains_declared_circular_carriers(
     sketch: &Sketch,
     entities: &[SketchEntity],
     declared: &[([f64; 2], f64)],
@@ -250,14 +254,21 @@ pub(super) fn nested_profile_contains_declared_circles(
         let center = (center_u, center_v);
         entities.iter().any(|entity| {
             entity.sketch == sketch.id
-                && matches!(
-                    &entity.geometry,
+                && match &entity.geometry {
                     SketchGeometry::Circle {
                         center: existing,
                         radius: existing_radius,
-                    } if quantize(*existing, QUANTUM) == center
-                        && same_dimension_length(existing_radius.0, *radius)
-                )
+                    }
+                    | SketchGeometry::Arc {
+                        center: existing,
+                        radius: existing_radius,
+                        ..
+                    } => {
+                        quantize(*existing, QUANTUM) == center
+                            && same_dimension_length(existing_radius.0, *radius)
+                    }
+                    _ => false,
+                }
         })
     })
 }

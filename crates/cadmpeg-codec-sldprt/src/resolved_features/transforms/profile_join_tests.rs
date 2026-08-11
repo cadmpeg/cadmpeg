@@ -8,7 +8,7 @@ use crate::records::{
     FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
     SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use crate::resolved_features::relation_geometry::declared_entity_handle_circle_marker;
+use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
 use cadmpeg_ir::annotations::{Annotations, ExactnessNote, Provenance};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
@@ -6496,7 +6496,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         sketch_entities: vec![center, radial],
     };
 
-    let (resolved, radius) = declared_entity_handle_circle_marker(
+    let (resolved, radius) = declared_entity_handle_circular_marker(
         std::slice::from_ref(&lane),
         "feature-native",
         &operand,
@@ -6506,6 +6506,27 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
 
     assert_eq!(resolved.id, "center");
     assert!((radius - 5.0).abs() < 1.0e-12);
+
+    for kind in [SketchInputKind::LineOrCircle, SketchInputKind::Arc] {
+        let mut lane = lane.clone();
+        lane.sketch_entities[0].kind = kind;
+        assert!(declared_entity_handle_circular_marker(
+            std::slice::from_ref(&lane),
+            "feature-native",
+            &operand,
+            5.0,
+        )
+        .is_some());
+    }
+    let mut invalid_radial = lane.clone();
+    invalid_radial.sketch_entities[1].kind = SketchInputKind::Arc;
+    assert!(declared_entity_handle_circular_marker(
+        std::slice::from_ref(&invalid_radial),
+        "feature-native",
+        &operand,
+        5.0,
+    )
+    .is_none());
 
     let mut ambiguous = lane;
     let mut second_center = marker("second-center", Some([0.020, 0.030]));
@@ -6519,7 +6540,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     ambiguous
         .sketch_entities
         .extend([second_center, second_radial]);
-    assert!(declared_entity_handle_circle_marker(
+    assert!(declared_entity_handle_circular_marker(
         std::slice::from_ref(&ambiguous),
         "feature-native",
         &operand,
@@ -6529,7 +6550,7 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
 }
 
 #[test]
-fn nested_profile_must_contain_its_declared_entity_handle_circle() {
+fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
     let sketch_id = SketchId("nested".into());
     let sketch = Sketch {
         id: sketch_id.clone(),
@@ -6557,12 +6578,24 @@ fn nested_profile_must_contain_its_declared_entity_handle_circle() {
     };
     let declared = [([0.010, 0.020], 5.0)];
 
-    assert!(nested_profile_contains_declared_circles(
+    assert!(nested_profile_contains_declared_circular_carriers(
         &sketch,
         std::slice::from_ref(&circle),
         &declared,
     ));
-    assert!(!nested_profile_contains_declared_circles(
+    let mut arc = circle;
+    arc.geometry = SketchGeometry::Arc {
+        center: Point2::new(10.0, 20.0),
+        radius: Length(5.0),
+        start_angle: Angle(0.0),
+        end_angle: Angle(std::f64::consts::PI),
+    };
+    assert!(nested_profile_contains_declared_circular_carriers(
+        &sketch,
+        std::slice::from_ref(&arc),
+        &declared,
+    ));
+    assert!(!nested_profile_contains_declared_circular_carriers(
         &sketch,
         &[],
         &declared,
@@ -6570,7 +6603,7 @@ fn nested_profile_must_contain_its_declared_entity_handle_circle() {
 }
 
 #[test]
-fn declared_entity_handle_circle_replaces_nested_support_geometry() {
+fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     let native_feature = NativeFeature {
         id: "feature-native".into(),
         parent: "history".into(),
