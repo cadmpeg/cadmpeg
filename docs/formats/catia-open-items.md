@@ -162,7 +162,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field selects the active configuration state?
 
-**Known.** `catia.md` §7.3 "A self-defining configuration record is" and `catia.md` §7.3 "A configuration-row link is" defines `Configuration` records, `configrow` successor chains, selected value schemas, and the source-ordered open intervals between rows. These incidences do not assign active state.
+**Known.** `catia.md` §7.3 "A self-defining configuration record is" and `catia.md` §7.3 "A configuration-row link is" defines `Configuration` records, `configrow` successor chains, selected value schemas, and the source-ordered open intervals between rows. Each unambiguous modeling-scope record transfers a neutral configuration identity with unresolved active state. These incidences do not assign active state.
 
 **Need.** We must know the selector to transfer the active configuration.
 

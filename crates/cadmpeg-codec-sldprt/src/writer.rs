@@ -283,8 +283,7 @@ fn assign_configuration_indices(
         }
         if !names.insert(name) {
             return Err(CodecError::Malformed(format!(
-                "SLDPRT repeats configuration name {:?}",
-                name
+                "SLDPRT repeats configuration name {name:?}"
             )));
         }
         if let Some(index) = configuration.source_index {
