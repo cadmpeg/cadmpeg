@@ -379,3 +379,5 @@ mod golden_tests;
 mod spatial_write_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod writer_roundtrip_tests;

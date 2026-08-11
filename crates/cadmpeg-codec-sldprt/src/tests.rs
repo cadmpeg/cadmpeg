@@ -1282,7 +1282,7 @@ fn suffix_prefixed_edge_triangle_body() -> Vec<u8> {
 
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
 /// forming a closed ring, three edge-uses, three vertex-uses, and three points.
-fn triangle_body() -> Vec<u8> {
+pub(crate) fn triangle_body() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(plane_carrier(
         100,
@@ -1402,7 +1402,7 @@ fn untyped_triangle(x: f64) -> Vec<u8> {
 }
 
 /// A `.sldprt` whose partition block carries `triangle_body`.
-fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
+pub(crate) fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
     let mut f = outer_header();
     f.extend_from_slice(&make_block(
         0x20,

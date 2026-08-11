@@ -187,3 +187,5 @@ impl Encoder for IgesEncoder {
 mod golden_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod write_roundtrip_tests;
