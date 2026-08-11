@@ -228,14 +228,22 @@ pub(crate) fn write_semantic_with_records(
         &active_partition_section,
         retain_native_brep,
     )?;
-    if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
+    if let Some(active) = ir
+        .model
+        .configurations
+        .iter()
+        .find(|value| value.active.is_active())
+    {
+        let active_name = active.name.resolved().ok_or_else(|| {
+            CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
+        })?;
         let has_document_envelope = opaque
             .iter()
             .any(|(_, payload)| payload.windows(12).any(|window| window == b"swSolidWorks"));
         if !has_document_envelope {
             sections.push((
                 "Contents/SolidWorks".into(),
-                generated_solidworks_xml(ir, &active.name),
+                generated_solidworks_xml(ir, active_name),
             ));
         }
     }
@@ -263,15 +271,20 @@ fn assign_configuration_indices(
     let mut used = HashSet::new();
     let mut names = HashSet::new();
     for configuration in configurations.iter() {
-        if configuration.name.trim().is_empty() {
+        let Some(name) = configuration.name.resolved() else {
+            return Err(CodecError::Malformed(
+                "SLDPRT configuration has no resolved name".into(),
+            ));
+        };
+        if name.trim().is_empty() {
             return Err(CodecError::Malformed(
                 "SLDPRT configuration has an empty name".into(),
             ));
         }
-        if !names.insert(configuration.name.as_str()) {
+        if !names.insert(name) {
             return Err(CodecError::Malformed(format!(
                 "SLDPRT repeats configuration name {:?}",
-                configuration.name
+                name
             )));
         }
         if let Some(index) = configuration.source_index {
@@ -568,7 +581,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         .model
         .configurations
         .iter()
-        .all(|configuration| !configuration.active)
+        .all(|configuration| !configuration.active.is_active())
     {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writing requires an active partition identity for a multi-partition source"
@@ -580,7 +593,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             .model
             .configurations
             .iter()
-            .filter(|configuration| configuration.active)
+            .filter(|configuration| configuration.active.is_active())
             .count()
             != 1
     {
@@ -923,8 +936,18 @@ fn opaque_blocks(
                     return Some(Err(error));
                 }
             }
-            if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
-                match patch_active_configuration_xml(&payload, &active.name) {
+            if let Some(active) = ir
+                .model
+                .configurations
+                .iter()
+                .find(|value| value.active.is_active())
+            {
+                let Some(active_name) = active.name.resolved() else {
+                    return Some(Err(CodecError::Malformed(
+                        "active SLDPRT configuration has no resolved name".into(),
+                    )));
+                };
+                match patch_active_configuration_xml(&payload, active_name) {
                     Ok(Some(patched)) => payload = patched,
                     Ok(None) => {}
                     Err(error) => return Some(Err(error)),

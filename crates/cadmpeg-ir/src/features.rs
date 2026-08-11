@@ -47,6 +47,114 @@ pub struct ConfigurationId(
     #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
 );
 
+/// Resolution state of a configuration's source display name.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(untagged)]
+pub enum ConfigurationName {
+    /// Source display name.
+    Resolved(String),
+    /// Source configuration exists but its display name is not established.
+    #[default]
+    Unresolved,
+}
+
+impl ConfigurationName {
+    /// Return the source display name when resolved.
+    pub fn resolved(&self) -> Option<&str> {
+        match self {
+            Self::Resolved(value) => Some(value),
+            Self::Unresolved => None,
+        }
+    }
+
+    /// Return the mutable source display name when resolved.
+    pub fn resolved_mut(&mut self) -> Option<&mut String> {
+        match self {
+            Self::Resolved(value) => Some(value),
+            Self::Unresolved => None,
+        }
+    }
+
+    /// Whether the source display name remains unresolved.
+    pub fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved)
+    }
+}
+
+impl From<String> for ConfigurationName {
+    fn from(value: String) -> Self {
+        Self::Resolved(value)
+    }
+}
+
+impl From<&str> for ConfigurationName {
+    fn from(value: &str) -> Self {
+        Self::Resolved(value.to_string())
+    }
+}
+
+impl PartialEq<str> for ConfigurationName {
+    fn eq(&self, other: &str) -> bool {
+        self.resolved() == Some(other)
+    }
+}
+
+impl PartialEq<&str> for ConfigurationName {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+
+impl PartialEq<String> for ConfigurationName {
+    fn eq(&self, other: &String) -> bool {
+        self == other.as_str()
+    }
+}
+
+/// Resolution state of a configuration's active-model status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(untagged)]
+pub enum ConfigurationActivation {
+    /// Whether this configuration supplies the document's active model state.
+    Resolved(bool),
+    /// Source configuration exists but its active-model status is not established.
+    Unresolved,
+}
+
+impl Default for ConfigurationActivation {
+    fn default() -> Self {
+        Self::Resolved(false)
+    }
+}
+
+impl ConfigurationActivation {
+    /// Return the active-model status when resolved.
+    pub fn resolved(&self) -> Option<bool> {
+        match self {
+            Self::Resolved(value) => Some(*value),
+            Self::Unresolved => None,
+        }
+    }
+
+    /// Whether this configuration is known to supply the active model state.
+    pub fn is_active(&self) -> bool {
+        self.resolved() == Some(true)
+    }
+
+    /// Whether this configuration is known not to supply the active model state.
+    pub fn is_inactive(&self) -> bool {
+        self.resolved() == Some(false)
+    }
+}
+
+impl From<bool> for ConfigurationActivation {
+    fn from(value: bool) -> Self {
+        Self::Resolved(value)
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged)]
@@ -109,13 +217,14 @@ pub struct DesignConfiguration {
     #[serde(default)]
     pub ordinal: u32,
     /// Whether this configuration supplies the document's active model state.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub active: bool,
+    #[serde(default, skip_serializing_if = "ConfigurationActivation::is_inactive")]
+    pub active: ConfigurationActivation,
     /// Format-native configuration slot, when distinct from list order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_index: Option<u32>,
-    /// Source display name.
-    pub name: String,
+    /// Source display name, when established.
+    #[serde(default, skip_serializing_if = "ConfigurationName::is_unresolved")]
+    pub name: ConfigurationName,
     /// Material override, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,

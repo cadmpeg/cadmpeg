@@ -432,9 +432,9 @@ pub fn project_configurations(
             projected.push(NeutralConfiguration {
                 id: neutral_configuration_id(&table.entry_name, name),
                 ordinal,
-                active: active == Some(name.as_str()),
+                active: (active == Some(name.as_str())).into(),
                 source_index: None,
-                name: name.clone(),
+                name: name.clone().into(),
                 material,
                 properties,
                 parameter_overrides: BTreeMap::new(),
@@ -652,7 +652,9 @@ mod tests {
         let projected = project_configurations(std::slice::from_ref(&table)).unwrap();
         let mut authored = projected
             .iter()
-            .map(|configuration| (configuration.name.as_str(), configuration.ordinal))
+            .filter_map(|configuration| {
+                Some((configuration.name.resolved()?, configuration.ordinal))
+            })
             .collect::<Vec<_>>();
         authored.sort_by_key(|(_, ordinal)| *ordinal);
         assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);

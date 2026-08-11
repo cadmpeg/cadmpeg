@@ -6251,7 +6251,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .model
         .configurations
         .iter()
-        .map(|configuration| (configuration.name.as_str(), configuration.ordinal))
+        .filter_map(|configuration| Some((configuration.name.resolved()?, configuration.ordinal)))
         .collect::<Vec<_>>();
     authored.sort_by_key(|(_, ordinal)| *ordinal);
     assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
@@ -6262,7 +6262,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .iter()
         .find(|configuration| configuration.name == "Medium")
         .expect("active medium configuration");
-    assert!(medium.active);
+    assert!(medium.active.is_active());
     assert_eq!(medium.properties["parameter:width"], "25 mm");
     assert_eq!(medium.properties["suppressed:slot"], "true");
     assert_eq!(
@@ -6328,7 +6328,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .iter_mut()
         .find(|configuration| configuration.name == "Medium")
         .expect("active medium configuration")
-        .active = false;
+        .active = false.into();
     let error = F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &inconsistent,

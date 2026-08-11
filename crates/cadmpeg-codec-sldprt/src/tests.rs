@@ -5384,7 +5384,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
         ordinal: 0,
-        active: true,
+        active: true.into(),
         source_index: None,
         name: "Metric".into(),
         material: Some("Steel".into()),
@@ -5399,7 +5399,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:a".into()),
         ordinal: 1,
-        active: false,
+        active: false.into(),
         source_index: None,
         name: "Empty".into(),
         material: None,
@@ -5439,7 +5439,7 @@ fn encoder_writes_source_less_neutral_configurations() {
             .model
             .configurations
             .iter()
-            .map(|configuration| configuration.name.as_str())
+            .filter_map(|configuration| configuration.name.resolved())
             .collect::<Vec<_>>(),
         vec!["Metric", "Empty"]
     );
@@ -5461,7 +5461,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert_eq!(configuration.properties["Finish"], "Ground");
-    assert!(configuration.active);
+    assert!(configuration.active.is_active());
     assert_eq!(
         configuration.bodies,
         decoded
@@ -5479,7 +5479,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         .model
         .configurations
         .iter_mut()
-        .for_each(|configuration| configuration.active = false);
+        .for_each(|configuration| configuration.active = false.into());
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(&inactive, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
@@ -5504,11 +5504,11 @@ fn semantic_writer_round_trips_active_configuration() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir.model.configurations[0].active);
-    assert!(!decoded.ir.model.configurations[1].active);
+    assert!(decoded.ir.model.configurations[0].active.is_active());
+    assert!(decoded.ir.model.configurations[1].active.is_inactive());
 
-    decoded.ir.model.configurations[0].active = false;
-    decoded.ir.model.configurations[1].active = true;
+    decoded.ir.model.configurations[0].active = false.into();
+    decoded.ir.model.configurations[1].active = true.into();
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
@@ -5516,8 +5516,8 @@ fn semantic_writer_round_trips_active_configuration() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert!(!regenerated.ir.model.configurations[0].active);
-    assert!(regenerated.ir.model.configurations[1].active);
+    assert!(regenerated.ir.model.configurations[0].active.is_inactive());
+    assert!(regenerated.ir.model.configurations[1].active.is_active());
     assert_eq!(
         regenerated.ir.source.as_ref().unwrap().attributes["sw_configuration_name"],
         "Manufacturing & QA"
@@ -5551,7 +5551,7 @@ fn decode_preserves_unresolved_active_configuration() {
         .model
         .configurations
         .iter()
-        .all(|configuration| !configuration.active));
+        .all(|configuration| configuration.active.is_inactive()));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
@@ -5646,9 +5646,9 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|(index, body)| DesignConfiguration {
             id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
             ordinal: index as u32,
-            active: false,
+            active: false.into(),
             source_index: None,
-            name: format!("Config {index}"),
+            name: format!("Config {index}").into(),
             material: None,
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
@@ -5659,7 +5659,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             native_ref: None,
         })
         .collect();
-    ir.model.configurations[1].active = true;
+    ir.model.configurations[1].active = true.into();
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -5693,7 +5693,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     assert_eq!(decoded.ir.model.bodies.len(), 2);
     assert_eq!(decoded.ir.model.configurations[0].bodies.len(), 1);
     assert_eq!(decoded.ir.model.configurations[1].bodies.len(), 1);
-    assert!(decoded.ir.model.configurations[1].active);
+    assert!(decoded.ir.model.configurations[1].active.is_active());
     assert_ne!(
         decoded.ir.model.configurations[0].bodies,
         decoded.ir.model.configurations[1].bodies
@@ -5721,7 +5721,7 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.configurations.len(), 1);
-    assert!(decoded.ir.model.configurations[0].active);
+    assert!(decoded.ir.model.configurations[0].active.is_active());
     assert_eq!(
         decoded.ir.model.configurations[0].bodies,
         decoded
@@ -5770,7 +5770,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let configuration = &decoded.ir.model.configurations[0];
     assert_eq!(configuration.ordinal, 0);
     assert_eq!(configuration.source_index, Some(3));
-    assert!(configuration.active);
+    assert!(configuration.active.is_active());
     assert_eq!(configuration.name, "Config-3");
     assert_eq!(
         configuration.bodies,
@@ -5827,7 +5827,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.configurations[0].source_index, Some(3));
-    assert!(decoded.ir.model.configurations[0].active);
+    assert!(decoded.ir.model.configurations[0].active.is_active());
 
     decoded.ir.model.configurations[0].source_index = Some(5);
     let mut written = Vec::new();
@@ -5942,7 +5942,11 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
     let mut duplicate = decoded.ir.model.configurations[0].clone();
     duplicate.id.0.push_str("-duplicate");
     duplicate.ordinal += 1;
-    duplicate.name.push_str(" Duplicate");
+    duplicate
+        .name
+        .resolved_mut()
+        .expect("resolved configuration name")
+        .push_str(" Duplicate");
     duplicate.native_ref = None;
     decoded.ir.model.configurations.push(duplicate);
 
@@ -5969,7 +5973,11 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.configurations[0].name.clear();
+    decoded.ir.model.configurations[0]
+        .name
+        .resolved_mut()
+        .expect("resolved configuration name")
+        .clear();
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
             &decoded.ir,
@@ -5985,7 +5993,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
     duplicate.ordinal += 1;
     duplicate.source_index = None;
     duplicate.native_ref = None;
-    duplicate.active = false;
+    duplicate.active = false.into();
     decoded.ir.model.configurations.push(duplicate);
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -14493,7 +14501,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature_id = decoded.ir.model.features[0].id.clone();
-    assert!(decoded.ir.model.configurations[0].active);
+    assert!(decoded.ir.model.configurations[0].active.is_active());
     assert_eq!(decoded.ir.model.configurations[0].source_index, Some(1));
     assert!(matches!(
         &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
