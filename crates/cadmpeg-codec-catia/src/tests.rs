@@ -14325,6 +14325,12 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     assert_eq!(
         decoded
             .report
+            .coverage_count(crate::coverage::DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
             .coverage_count(crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT),
         0
     );

@@ -412,6 +412,7 @@
       "decoded_design_same_object_relation_count": 0,
       "decoded_design_unowned_field_relation_count": 0,
       "decoded_dimension_constraint_range_count": 0,
+      "decoded_distinct_relation_program_input_entity_count": 0,
       "decoded_entity_value_field_count": 0,
       "decoded_entity_value_schema_selection_count": 0,
       "decoded_escaped_word_entity_suffix_count": 0,

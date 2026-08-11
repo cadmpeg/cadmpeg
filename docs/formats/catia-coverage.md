@@ -201,7 +201,8 @@ current scores require those matrices and representative fixtures.
   uniquely bind all distinct declared inputs, the instance retains complete
   inputs in signature order with declared types and selected entity incidences.
   Coverage partitions typed instances with complete and incomplete input
-  bindings and counts resolved inputs.
+  bindings, resolved input occurrences, and distinct selected input entity
+  identities.
   Each complete input whose selected entity carries a compatible finite or unset
   evaluation transfers as a typed document parameter independently of program
   output binding. Conflicting type assignments prevent transfer.

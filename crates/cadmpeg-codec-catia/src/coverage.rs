@@ -103,6 +103,8 @@ pub(crate) const DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT: CoverageKey =
     CoverageKey("decoded_design_unowned_field_relation_count");
 pub(crate) const DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("decoded_dimension_constraint_range_count");
+pub(crate) const DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT: CoverageKey =
+    CoverageKey("decoded_distinct_relation_program_input_entity_count");
 pub(crate) const DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("decoded_evaluated_constraint_range_count");
 pub(crate) const DECODED_EVALUATED_DEFINITION_CHAIN_COUNT: CoverageKey =
@@ -643,6 +645,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT,
     DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT,
     DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT,
+    DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT,
     DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT,
     DECODED_EVALUATED_DEFINITION_CHAIN_COUNT,
     DECODED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT,
