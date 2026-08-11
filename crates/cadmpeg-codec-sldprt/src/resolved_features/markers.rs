@@ -139,6 +139,7 @@ pub(crate) fn spatial_sketches(
                 } else {
                     None
                 },
+                visible: None,
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             });
@@ -204,6 +205,7 @@ pub(crate) fn spatial_sketches(
             id: sketch_id.clone(),
             name: feature.name.clone(),
             configuration: lane.configuration.clone(),
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some(lane.id.clone()),
         });

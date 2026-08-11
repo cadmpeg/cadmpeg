@@ -314,6 +314,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
+                visible: None,
                 placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                     origin,
                     normal,
@@ -717,6 +718,7 @@ pub(crate) fn project_marker_backed_sketches(
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
+                visible: None,
                 placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                     origin,
                     normal,
@@ -1807,6 +1809,7 @@ fn assemble_sketch_block_profile(
             id: input.sketch_id.clone(),
             name: Some(input.native_profile.name.clone()),
             configuration: input.configuration.map(str::to_string),
+            visible: None,
             placement: SketchPlacement::Resolved {
                 origin: placement.origin,
                 normal: placement.normal,
@@ -2098,6 +2101,7 @@ fn project_detached_legacy_config_sketches(
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
+                visible: None,
                 placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                     origin,
                     normal,
@@ -2470,6 +2474,7 @@ mod detached_legacy_sketch_tests {
             id: SketchId("sketch".into()),
             name: Some("profile".into()),
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2684,6 +2689,7 @@ mod detached_legacy_sketch_tests {
             id: block_sketch_id.clone(),
             name: Some("block".into()),
             configuration: None,
+            visible: None,
             placement: SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),

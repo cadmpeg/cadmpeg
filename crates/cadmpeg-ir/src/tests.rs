@@ -633,6 +633,7 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -725,6 +726,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         id: sketch.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -803,6 +805,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         id: sketch.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1081,6 +1084,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         id: sketch.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1156,6 +1160,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         id,
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -4989,6 +4994,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -5075,6 +5081,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -5234,6 +5241,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -5282,6 +5290,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         id: sketch.clone(),
         name: Some("3D path".into()),
         configuration: None,
+        visible: Some(false),
         profiles: vec![SpatialSketchProfile {
             origin: Point3::new(1.0, 2.0, 3.0),
             normal: Vector3::new(0.0, 1.0, 0.0),

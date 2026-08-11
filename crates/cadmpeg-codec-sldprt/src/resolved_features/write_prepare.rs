@@ -1439,6 +1439,7 @@ mod source_less_lane_tests {
             id: SketchId("sketch".into()),
             name: Some("Sketch".into()),
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),

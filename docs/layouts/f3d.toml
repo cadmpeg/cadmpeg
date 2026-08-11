@@ -16,7 +16,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Decal` scope and image-record prefixes. ASM stream records are tabulated in `docs/layouts/asm.toml`.
+(§3.1), plus the `Decal` scope, image-record prefixes, and current sketch-container visibility member. ASM stream records are tabulated in `docs/layouts/asm.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 """
@@ -56,6 +56,75 @@ anchor = "then `u32 record_index`"
 path = "docs/formats/f3d.md"
 contains = "Its eleven-byte indexed header"
 note = "The 11-byte total is stated independently in the companion-record paragraph of the same section."
+
+[[record]]
+name = "sketch_container_visibility_member_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The current sketch entity container has type GUID"
+size = 37
+note = "Offsets are relative to the typed Geometry member's indexed header."
+
+[[record.field]]
+name = "class_tag_length"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The member starts with `u32 3`"
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "its three-digit dynamic class tag"
+
+[[record.field]]
+name = "entity_suffix"
+offset = 7
+type = "u64"
+source = "spec"
+anchor = "the owning u64 sketch entity suffix"
+
+[[record.field]]
+name = "zero_run"
+offset = 15
+type = "bytes[4]"
+source = "spec"
+anchor = "Four zero bytes and one same-segment marked owner reference follow"
+
+[[record.field]]
+name = "owner_reference"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "one same-segment marked owner reference follow"
+
+[[record.field]]
+name = "state_prefix"
+offset = 30
+type = "bytes[5]"
+source = "spec"
+anchor = "Member offsets 30 through 34 are `01 00 00 00 00`"
+
+[[record.field]]
+name = "visible"
+offset = 35
+type = "u8"
+source = "spec"
+anchor = "visibility flag is at member offset 35"
+
+[[record.field]]
+name = "tail_marker"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "byte 36 is `01`"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
+contains = "const SKETCH_CONTAINER_MEMBER_TYPE_GUID"
+note = "The decoder selects the member by its stable type registration before reading this prefix."
 
 [[record]]
 name = "design_decal_scope_prefix"

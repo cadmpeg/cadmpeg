@@ -5605,6 +5605,7 @@ mod history_reference_tests {
             id: sketch_id.clone(),
             name: Some("sketch-native".into()),
             configuration: Some("0".into()),
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -5629,6 +5630,7 @@ mod history_reference_tests {
             id: spatial_sketch_id.clone(),
             name: Some("spatial-native".into()),
             configuration: Some("0".into()),
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         });
@@ -5857,6 +5859,7 @@ mod history_reference_tests {
             id: sketch_id.clone(),
             name: Some("spatial".into()),
             configuration: None,
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("first-lane".into()),
         });
@@ -5864,6 +5867,7 @@ mod history_reference_tests {
             id: planar_sketch_id.clone(),
             name: Some("planar-state".into()),
             configuration: None,
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("first-lane".into()),
         });

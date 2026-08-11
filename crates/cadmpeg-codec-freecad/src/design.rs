@@ -1184,6 +1184,7 @@ fn parse_sketch(
             id,
             name: Some(object.name.clone()),
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin,
                 normal,

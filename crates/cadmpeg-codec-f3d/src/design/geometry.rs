@@ -3299,6 +3299,7 @@ mod tests {
             id: sketch_id,
             name: None,
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3387,6 +3388,7 @@ mod tests {
             id: sketch_id,
             name: None,
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(10.0, 20.0, 5.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3486,6 +3488,7 @@ mod tests {
             id: sketch_id,
             name: None,
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3614,6 +3617,7 @@ mod tests {
             id: sketch_id,
             name: None,
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3678,6 +3682,7 @@ mod tests {
             id: sketch_id,
             name: None,
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3804,6 +3809,7 @@ mod tests {
             id: sketch_id,
             name: None,
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),

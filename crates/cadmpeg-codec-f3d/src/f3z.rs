@@ -721,6 +721,7 @@ mod tests {
             scope_record_index: None,
             entity_id: "Sketch_1".into(),
             entity_suffix: 1,
+            visibility: None,
             byte_offset: 42,
             class_tag: "001".into(),
             record_index: 7,

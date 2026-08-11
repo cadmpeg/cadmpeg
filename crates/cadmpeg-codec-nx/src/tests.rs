@@ -9254,6 +9254,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),

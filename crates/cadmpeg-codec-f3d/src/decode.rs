@@ -5154,6 +5154,7 @@ mod tests {
             scope_record_index: Some(10),
             entity_id: "Sketch_1".into(),
             entity_suffix: 1,
+            visibility: None,
             byte_offset: 0,
             class_tag: "000".into(),
             record_index: 10,
@@ -5417,6 +5418,7 @@ mod tests {
             id: SketchId("sketch".into()),
             name: None,
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),

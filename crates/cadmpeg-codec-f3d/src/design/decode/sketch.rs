@@ -7,10 +7,11 @@ use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
     DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
-    SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
-    SketchRelation, SketchRelationOperand, SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
+    DesignSketchVisibility, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+    SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
+    SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
+    DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_core::le::{f32_at, f64_at, f64s_at, take_f32, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_core::CodecError;
@@ -83,15 +84,31 @@ pub fn decode_sketch_placements(
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
     let mut record_offsets = HashMap::new();
+    let mut visibilities = HashMap::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
+        let bytes = scan.entry_bytes(&entry.name)?;
         record_offsets.insert(
             ids::native_scope(&entry.name),
-            IndexedRecordOffsets::build(scan.entry_bytes(&entry.name)?),
+            IndexedRecordOffsets::build(bytes),
         );
+        let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(bytes, &metadata)? {
+            if visibilities
+                .insert((ids::native_scope(&entry.name), entity_suffix), visibility)
+                .is_some()
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
+                    entry.name
+                )));
+            }
+        }
     }
     for scope in scopes
         .iter()
@@ -205,8 +222,189 @@ pub fn decode_sketch_placements(
         placement.id = ids::native_design_sketch_placement_id(entry_name, placement.byte_offset);
         out.push(placement);
     }
+    for placement in &mut out {
+        let Some(stream) = native_stream(&placement.id) else {
+            continue;
+        };
+        placement.visibility = visibilities
+            .get(&(stream.to_owned(), placement.entity_suffix))
+            .cloned();
+    }
     out.sort_by_key(|placement| placement.id.clone());
     Ok(out)
+}
+
+const CURRENT_SKETCH_CONTAINER_VERSION: u32 = 18;
+const SKETCH_CONTAINER_MEMBER_TYPE_GUID: &str = "37AD519C-AFB3-4CE2-9E6D-E3269FC6CDB9";
+const SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
+const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
+
+/// Decode the direct display flag in every current sketch container's typed
+/// Geometry member. Other sketch-container versions do not expose this member
+/// layout and therefore leave neutral visibility unknown.
+fn decode_sketch_visibilities_in_stream(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+    let mut out = Vec::new();
+    for frame in super::meta::typed_primary_frames(
+        bytes,
+        metadata,
+        SKETCH_CONTAINER_TYPE_GUID,
+        "sketch-container",
+    )? {
+        if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
+            continue;
+        }
+        if frame.design_type.module != DESIGN_MODULE_SKETCH
+            || !frame
+                .design_type
+                .base_type_guid
+                .as_deref()
+                .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch container {} has incompatible registration metadata",
+                frame.entity_id
+            )));
+        }
+        let Some((entity_suffix, _, _, header_end)) =
+            parse_genesis_entity_header(&bytes[..frame.end], frame.start)
+        else {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch container {} has an invalid entity header",
+                frame.entity_id
+            )));
+        };
+        if entity_suffix != frame.entity_id {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch container {} disagrees with its entity header {entity_suffix}",
+                frame.entity_id
+            )));
+        }
+        let Some(member_at) = next_indexed_record_offset(&bytes[..frame.end], header_end) else {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch container {entity_suffix} has no typed Geometry member"
+            )));
+        };
+        let Some((class_tag, after_tag)) =
+            lp_ascii_filtered(bytes, member_at, 3..=3, u8::is_ascii_digit)
+        else {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
+            )));
+        };
+        let member_type = class_tag
+            .parse::<usize>()
+            .ok()
+            .and_then(|tag| tag.checked_sub(256))
+            .and_then(|ordinal| metadata.types.get(ordinal));
+        if after_tag != member_at + 7
+            || !member_type.is_some_and(|member_type| {
+                member_type
+                    .type_guid
+                    .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
+                    && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
+                    && member_type.module == "Geometry"
+                    && member_type.base_type_guid.as_deref().is_some_and(|base| {
+                        base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                    })
+            })
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch container {entity_suffix} has an incompatible Geometry member"
+            )));
+        }
+        let Some(visibility) =
+            decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
+        else {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch container {entity_suffix} has an invalid visibility member"
+            )));
+        };
+        out.push((entity_suffix, visibility));
+    }
+    Ok(out)
+}
+
+fn decode_sketch_visibility_member(
+    bytes: &[u8],
+    member_at: usize,
+    entity_suffix: u64,
+) -> Option<DesignSketchVisibility> {
+    let record_index = read_u64(bytes, member_at + 7)?;
+    if record_index != entity_suffix || bytes.get(member_at + 15..member_at + 19) != Some(&[0; 4]) {
+        return None;
+    }
+    let mut cursor = member_at + 19;
+    let owner = take_reference(bytes, &mut cursor)?;
+    if cursor != member_at + 30
+        || owner.target == Some(0)
+        || owner.target.is_none()
+        || owner.segment.is_some()
+        || owner.link_name.is_some()
+        || owner.inline_type_guid.is_some()
+        || bytes.get(cursor..cursor + 5) != Some(&[1, 0, 0, 0, 0])
+    {
+        return None;
+    }
+    let visible_offset = cursor + 5;
+    let visible = match bytes.get(visible_offset) {
+        Some(0) => false,
+        Some(1) => true,
+        _ => return None,
+    };
+    if bytes.get(visible_offset + 1) != Some(&1) {
+        return None;
+    }
+    Some(DesignSketchVisibility {
+        visible_offset: visible_offset as u64,
+        visible,
+    })
+}
+
+#[cfg(test)]
+mod sketch_visibility_member_tests {
+    use super::decode_sketch_visibility_member;
+
+    const ENTITY_SUFFIX: u64 = 201;
+
+    fn member(visible: u8) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"256");
+        bytes.extend_from_slice(&ENTITY_SUFFIX.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.push(1);
+        bytes.extend_from_slice(&203u64.to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&[1, 0, 0, 0, 0]);
+        bytes.push(visible);
+        bytes.push(1);
+        bytes
+    }
+
+    #[test]
+    fn sketch_visibility_member_decodes_both_boolean_values() {
+        let hidden =
+            decode_sketch_visibility_member(&member(0), 0, ENTITY_SUFFIX).expect("hidden member");
+        assert_eq!(hidden.visible_offset, 35);
+        assert!(!hidden.visible);
+
+        let visible =
+            decode_sketch_visibility_member(&member(1), 0, ENTITY_SUFFIX).expect("visible member");
+        assert!(visible.visible);
+    }
+
+    #[test]
+    fn sketch_visibility_member_rejects_invalid_state_or_owner() {
+        assert!(decode_sketch_visibility_member(&member(2), 0, ENTITY_SUFFIX).is_none());
+        assert!(decode_sketch_visibility_member(&member(1), 0, ENTITY_SUFFIX + 1).is_none());
+
+        let mut external_owner = member(1);
+        external_owner[28] = 1;
+        assert!(decode_sketch_visibility_member(&external_owner, 0, ENTITY_SUFFIX).is_none());
+    }
 }
 
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
@@ -281,6 +479,7 @@ pub(crate) fn parse_member_run_head_placement(
         scope_record_index: None,
         entity_id: entity.entity_id.clone(),
         entity_suffix: entity.entity_suffix,
+        visibility: None,
         byte_offset: head_at as u64,
         class_tag,
         record_index: head_index,
@@ -394,6 +593,7 @@ pub(crate) fn parse_sketch_placement_candidates(
             scope_record_index: Some(scope_record_index),
             entity_id: entity_id.to_owned(),
             entity_suffix,
+            visibility: None,
             byte_offset: start as u64,
             class_tag,
             record_index,

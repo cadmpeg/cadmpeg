@@ -4451,6 +4451,16 @@ pub struct DesignFaceRecipeStructure {
     pub postlude: Vec<i32>,
 }
 
+/// Typed sketch-container visibility bound to a Design sketch entity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSketchVisibility {
+    /// Byte offset of the native visibility flag.
+    pub visible_offset: u64,
+    /// Direct display visibility.
+    pub visible: bool,
+}
+
 /// Local-to-model placement frame referenced by a Design sketch scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4466,6 +4476,9 @@ pub struct DesignSketchPlacement {
     pub entity_id: String,
     /// Numeric suffix of `entity_id`.
     pub entity_suffix: u64,
+    /// Typed sketch-container visibility for the placed sketch entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<DesignSketchVisibility>,
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.

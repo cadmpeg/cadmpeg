@@ -2322,6 +2322,7 @@ mod tests {
             scope_record_index: Some(7),
             entity_id: "Sketch:42".into(),
             entity_suffix: 42,
+            visibility: None,
             byte_offset: 0,
             class_tag: "277".into(),
             record_index: 20,
@@ -2429,6 +2430,7 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: vec![
                 spatial_profile(&sketch_id, &[100, 101, 102]),
                 spatial_profile(&sketch_id, &[200, 201, 202]),
@@ -2605,6 +2607,7 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: vec![
                 spatial_profile(&sketch_id, &[100, 101, 102]),
                 spatial_profile(&sketch_id, &[200, 201, 202]),
@@ -2756,6 +2759,7 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: vec![
                 spatial_profile(&sketch_id, &[100, 101, 102]),
                 SpatialSketchProfile {
@@ -2828,6 +2832,7 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: vec![profile(100), profile(200), profile(201)],
             native_ref: None,
         }];
@@ -2972,6 +2977,7 @@ mod tests {
             id: sketch.clone(),
             name: None,
             configuration: None,
+            visible: None,
             placement: SketchPlacement::Unresolved,
             profiles: Vec::new(),
             native_ref: None,
@@ -3049,6 +3055,7 @@ mod tests {
             id: spatial_sketch.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some(placement.id.clone()),
         }];
@@ -3119,6 +3126,7 @@ mod tests {
             id: sketch.clone(),
             name: None,
             configuration: None,
+            visible: None,
             placement: SketchPlacement::Unresolved,
             profiles: vec![
                 Vec::new(),

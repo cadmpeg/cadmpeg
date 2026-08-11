@@ -1294,6 +1294,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),

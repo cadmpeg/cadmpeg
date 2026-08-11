@@ -261,6 +261,7 @@ fn project_brep(
             id: sketch_id,
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
             configuration: configuration.map(str::to_string),
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: *origin,
                 normal: *normal,

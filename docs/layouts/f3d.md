@@ -17,7 +17,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Decal` scope and image-record prefixes. ASM stream records are tabulated in `docs/layouts/asm.toml`.
+(§3.1), plus the `Decal` scope, image-record prefixes, and current sketch-container visibility member. ASM stream records are tabulated in `docs/layouts/asm.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
@@ -36,6 +36,27 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 Cross-checked against code:
 
 - `docs/formats/f3d.md` — The 11-byte total is stated independently in the companion-record paragraph of the same section.
+
+## `sketch_container_visibility_member_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 37 B
+
+Offsets are relative to the typed Geometry member's indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `class_tag_length` | `u32` | little | spec | The member starts with `u32 3` |
+| 4 | 3 | `class_tag` | `bytes[3]` | little | spec | its three-digit dynamic class tag |
+| 7 | 8 | `entity_suffix` | `u64` | little | spec | the owning u64 sketch entity suffix |
+| 15 | 4 | `zero_run` | `bytes[4]` | little | spec | Four zero bytes and one same-segment marked owner reference follow |
+| 19 | 11 | `owner_reference` | `bytes[11]` | little | spec | one same-segment marked owner reference follow |
+| 30 | 5 | `state_prefix` | `bytes[5]` | little | spec | Member offsets 30 through 34 are `01 00 00 00 00` |
+| 35 | 1 | `visible` | `u8` | little | spec | visibility flag is at member offset 35 |
+| 36 | 1 | `tail_marker` | `u8` | little | spec | byte 36 is `01` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs` — The decoder selects the member by its stable type registration before reading this prefix.
 
 ## `design_decal_scope_prefix`
 

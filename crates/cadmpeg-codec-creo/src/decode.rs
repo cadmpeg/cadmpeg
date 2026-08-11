@@ -16901,6 +16901,7 @@ fn transfer_sketches(
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             placement: transform.map_or(
                 cadmpeg_ir::sketches::SketchPlacement::Unresolved,
                 |transform| cadmpeg_ir::sketches::SketchPlacement::Resolved {

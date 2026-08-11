@@ -519,10 +519,10 @@ impl_entity_schema!(
     suppressed_features, bodies, parameter_values, feature_states, native_ref
 );
 impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id.0; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
-impl_entity_schema!(crate::sketches::Sketch, Sketch, id.0; id, name, configuration, placement, profiles, native_ref);
+impl_entity_schema!(crate::sketches::Sketch, Sketch, id.0; id, name, configuration, visible, placement, profiles, native_ref);
 impl_entity_schema!(crate::sketches::SketchEntity, SketchEntity, id.0; id, sketch, construction, native_ref, geometry_ref, endpoint_refs, geometry);
 impl_entity_schema!(crate::sketches::SketchConstraint, SketchConstraint, id.0; id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref);
-impl_entity_schema!(crate::sketches::SpatialSketch, SpatialSketch, id.0; id, name, configuration, profiles, native_ref);
+impl_entity_schema!(crate::sketches::SpatialSketch, SpatialSketch, id.0; id, name, configuration, visible, profiles, native_ref);
 impl_entity_schema!(
     crate::sketches::SpatialSketchEntity,
     SpatialSketchEntity,

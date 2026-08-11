@@ -6640,6 +6640,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let scopes_by_index = &ctx.scopes_by_index;
     let mut placement_records = HashSet::new();
     let mut placement_scopes = HashSet::new();
+    let mut visibility_offsets = HashSet::new();
     for placement in &native.design_sketch_placements {
         let native_stream = design_stream(&placement.id);
         let unique_record = placement_records.insert((native_stream, placement.record_index));
@@ -6671,6 +6672,12 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && identity)
             || (placement.frame_length == 162
                 && placement.transform_offset == Some(placement.byte_offset.saturating_add(22)));
+        let visibility_valid = placement.visibility.as_ref().is_none_or(|visibility| {
+            ctx.entities_by_suffix
+                .get(&(native_stream, placement.entity_suffix))
+                .is_some_and(|entity| visibility.visible_offset > entity.byte_offset)
+                && visibility_offsets.insert((native_stream, visibility.visible_offset))
+        });
         let frame_valid = if placement.member_run_head {
             // The paired member-run record precedes the head record; the
             // frame length covers the head record alone.
@@ -6703,7 +6710,8 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && frame_valid
             && design::decode::sketch::valid_sketch_transform(&placement.transform)
             && unique_record
-            && unique_scope;
+            && unique_scope
+            && visibility_valid;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

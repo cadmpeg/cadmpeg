@@ -2882,6 +2882,7 @@ fn encoder_writes_source_less_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3251,6 +3252,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
         configuration: Some("0".into()),
+        visible: None,
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -3393,6 +3395,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3622,6 +3625,7 @@ fn encoder_writes_source_less_curved_sketches() {
         id: sketch_id.clone(),
         name: Some("Curves".into()),
         configuration: Some("Main".into()),
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -4261,6 +4265,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             id: sketch_id.clone(),
             name: Some(name.into()),
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, ordinal as f64),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -22186,6 +22191,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
