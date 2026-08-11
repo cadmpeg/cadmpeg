@@ -60,8 +60,8 @@ use crate::design::dimensions::{
     null_locus_dimension_definition, offset_parameter_factor,
     owner_scoped_angular_dimension_definition, owner_scoped_line_length_dimension_definition,
     owner_scoped_radial_dimension_definition, point_lies_on_sketch_geometry,
-    radial_dimension_definition, radial_locus_dimension_definition,
-    remove_dimension_frame_relations, repeated_linear_dimension,
+    radial_dimension_definition, radial_extension_annotation_group,
+    radial_locus_dimension_definition, remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_counted_offset_dimension_definition, spatial_parallel_line_distance_matches,
     spatial_point_distance_matches, two_locus_distance_dimension,
     unique_point_class_dimension_definition, unresolved_parameter_expression_dependency_count,
@@ -4369,6 +4369,64 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             &parameter,
         ),
         Some(SketchConstraintDefinition::Diameter { entity, .. }) if entity == measured.id
+    ));
+}
+
+#[test]
+fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
+    let sketch = SketchId("f3d:model:sketch#radial-extension".into());
+    let entity = |id: &str, geometry| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let line = entity(
+        "line",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(6.0, 0.0),
+        },
+    );
+    let extension_point = entity(
+        "extension-point",
+        SketchGeometry::Point {
+            position: Point2::new(6.5, 0.0),
+        },
+    );
+    let off_carrier = entity(
+        "off-carrier",
+        SketchGeometry::Point {
+            position: Point2::new(6.5, 0.25),
+        },
+    );
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "5 mm",
+        "Radial Dimension-2",
+        Some("mm"),
+        "d1",
+        0.5,
+    ))
+    .expect("radial parameter");
+
+    assert!(radial_extension_annotation_group(
+        &[&extension_point, &line],
+        &parameter,
+    ));
+    assert!(!radial_extension_annotation_group(
+        &[&off_carrier, &line],
+        &parameter,
+    ));
+
+    let mut linear = parameter;
+    linear.source_kind = "Linear Dimension-2".into();
+    assert!(!radial_extension_annotation_group(
+        &[&extension_point, &line],
+        &linear,
     ));
 }
 
@@ -17679,9 +17737,13 @@ fn counted_offset_return_run_pairs_sources_and_results() {
     );
 
     let entities = HashMap::from([(1, &bottom), (2, &top), (3, &inset_top), (4, &inset_bottom)]);
-    let definition =
-        exact_counted_offset(&[(1, 3), (2, 2), (3, 0), (4, 0)], &[1, 4, 2, 3], &entities)
-            .expect("counted offset graph");
+    let definition = exact_counted_offset(
+        &[(1, 3), (2, 2), (3, 0), (4, 0)],
+        &[1, 4, 2, 3],
+        &entities,
+        &HashMap::new(),
+    )
+    .expect("counted offset graph");
     let SketchConstraintDefinition::Offset {
         pairs,
         distance,
@@ -17702,7 +17764,47 @@ fn counted_offset_return_run_pairs_sources_and_results() {
 }
 
 #[test]
-fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
+fn counted_offset_accepts_primary_to_generated_identity_partition() {
+    let entity = |id: &str, y| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, y),
+            end: Point2::new(8.0, y),
+        },
+    };
+    let source = entity("generated:line#source", 0.0);
+    let result = entity("generated:line#result", 2.75);
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+    let secondary_ids = HashMap::from([(1, 0), (2, 42)]);
+
+    assert!(matches!(
+        exact_counted_offset(
+            &[(1, 4), (2, 1)],
+            &[1, 2],
+            &entities,
+            &secondary_ids,
+        ),
+        Some(SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        }) if pairs.len() == 1
+            && pairs[0].source == source.id
+            && pairs[0].result == result.id
+            && (distance - 2.75).abs() <= 1.0e-9
+    ));
+
+    let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
+    assert!(exact_counted_offset(&[(1, 4), (2, 1)], &[1, 2], &entities, &ambiguous_ids,).is_none());
+}
+
+#[test]
+fn counted_offset_accepts_trimmed_concentric_arcs() {
     let arc = |id: &str, radius| cadmpeg_ir::sketches::SketchEntity {
         id: SketchEntityId(id.into()),
         sketch: SketchId("generated:sketch#0".into()),
@@ -17718,11 +17820,17 @@ fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
         },
     };
     let source = arc("generated:arc#source", 2.0);
-    let result = arc("generated:arc#result", 5.0);
+    let mut result = arc("generated:arc#result", 5.0);
+    result.geometry = SketchGeometry::Arc {
+        center: Point2::new(3.0, -4.0),
+        radius: Length(5.0),
+        start_angle: Angle(0.1),
+        end_angle: Angle(1.4),
+    };
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
-    let definition =
-        exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).expect("concentric arc offset");
+    let definition = exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities, &HashMap::new())
+        .expect("concentric arc offset");
     assert!(matches!(
         definition,
         SketchConstraintDefinition::Offset {
@@ -17740,11 +17848,13 @@ fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
     mismatched.geometry = SketchGeometry::Arc {
         center: Point2::new(3.0, -4.0),
         radius: Length(5.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        start_angle: Angle(std::f64::consts::PI),
+        end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
     };
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
-    assert!(exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).is_none());
+    assert!(
+        exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities, &HashMap::new(),).is_none()
+    );
 }
 
 #[test]
@@ -18353,6 +18463,116 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     );
     assert!(matches!(
         radial_constraints.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::Radius {
+                entity,
+                parameter: actual_parameter,
+            },
+            ..
+        }] if entity == &circle.id
+            && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
+    ));
+
+    let annotation_point = SketchPoint {
+        id: format!("{stream}:sketch-point#50"),
+        record_index: 50,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        coordinate_offset: 0,
+        entity_genesis: None,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(50),
+        paired_reference: 0,
+        flags: [0; 8],
+        coordinates: Point2::new(4.5, 0.0),
+        depth: 0.0,
+        closure: None,
+        companion: None,
+    };
+    let annotation_curve = SketchCurveIdentity {
+        id: format!("{stream}:sketch-curve#51"),
+        record_index: 51,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: 51,
+        secondary_id: 0,
+        geometry: None,
+    };
+    let annotation_point_entity = SketchEntity {
+        id: SketchEntityId("radial-extension-point".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(annotation_point.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: annotation_point.coordinates,
+        },
+    };
+    let mut annotation_line_entity = entities[0].clone();
+    annotation_line_entity.native_ref = Some(annotation_curve.id.clone());
+    let annotation_group = DesignDimensionLocusGroup {
+        id: format!("{stream}:design-dimension-locus-group#60"),
+        companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: "292".into(),
+        record_index: 60,
+        frame_length: 100,
+        loci: vec![
+            DesignDimensionLocus {
+                geometry_record_index: 50,
+                geometry_reference_offset: 0,
+                role: 2,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 51,
+                geometry_reference_offset: 0,
+                role: 2,
+                role_offset: 0,
+            },
+        ],
+        owner_reference: 100,
+        owner_reference_offset: 0,
+        owner_role: 1,
+        owner_role_offset: 0,
+        state: 0,
+        state_offset: 0,
+        constraint_kinds: vec![SketchConstraintKind::Coincident],
+        unknown_constraint_bits: 0,
+        return_members: vec![50, 51],
+        return_member_offsets: vec![0, 0],
+        next_class_tag: "300".into(),
+        next_record_index: 61,
+        next_byte_offset: 100,
+    };
+    let extension_constraints = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&radial_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&annotation_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: std::slice::from_ref(&annotation_point),
+            curves: std::slice::from_ref(&annotation_curve),
+            entities: &[
+                circle.clone(),
+                annotation_point_entity,
+                annotation_line_entity,
+            ],
+        },
+        &[],
+    );
+    assert!(matches!(
+        extension_constraints.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
             definition: SketchConstraintDefinition::Radius {
                 entity,

@@ -227,6 +227,15 @@ fn project_all_dimension_constraints(
                 .map(|key| (*key, entity))
         })
         .collect::<HashMap<_, _>>();
+    let curve_secondary_ids = curves
+        .iter()
+        .filter_map(|curve| {
+            Some((
+                (native_stream(&curve.id)?, curve.record_index),
+                curve.secondary_id,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
 
     let parameter_for = |scope: &str, companion_record_index: u32| {
         let record_index = *parameter_by_companion.get(&(scope, companion_record_index))?;
@@ -444,8 +453,22 @@ fn project_all_dimension_constraints(
                     .zip(&locus_entities)
                     .map(|(locus, entity)| (locus.geometry_record_index, *entity))
                     .collect::<HashMap<_, _>>();
-                let mut definition =
-                    exact_counted_offset(&loci, &group.return_members, &entities_by_record)?;
+                let secondary_ids = group
+                    .loci
+                    .iter()
+                    .filter_map(|locus| {
+                        curve_secondary_ids
+                            .get(&(scope, locus.geometry_record_index))
+                            .copied()
+                            .map(|secondary_id| (locus.geometry_record_index, secondary_id))
+                    })
+                    .collect::<HashMap<_, _>>();
+                let mut definition = exact_counted_offset(
+                    &loci,
+                    &group.return_members,
+                    &entities_by_record,
+                    &secondary_ids,
+                )?;
                 let Definition::Offset {
                     distance,
                     parameter: driving_parameter,
@@ -476,6 +499,48 @@ fn project_all_dimension_constraints(
         }
         None
     };
+    let radial_extension_annotation_groups = groups
+        .iter()
+        .filter_map(|group| {
+            let scope = native_stream(&group.id)?;
+            if group.state != 0 || group.unknown_constraint_bits != 0 {
+                return None;
+            }
+            let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
+            if exact_group_definition(scope, group, parameter, parameter_id.clone()).is_some() {
+                return None;
+            }
+            let locus_entities = group
+                .loci
+                .iter()
+                .map(|locus| {
+                    projected
+                        .get(&(scope, locus.geometry_record_index))
+                        .copied()
+                })
+                .collect::<Option<Vec<_>>>()?;
+            if !radial_extension_annotation_group(&locus_entities, parameter) {
+                return None;
+            }
+            let locus_indices = group
+                .loci
+                .iter()
+                .map(|locus| locus.geometry_record_index)
+                .collect::<Vec<_>>();
+            let sketch = sketches
+                .get(&(scope, group.owner_reference))
+                .cloned()
+                .or_else(|| sketch_for_geometry(scope, &locus_indices))?;
+            owner_scoped_radial_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            )?;
+            Some((scope.to_owned(), group.record_index))
+        })
+        .collect::<HashSet<_>>();
     let exact_pair_companions = pairs
         .iter()
         .filter_map(|pair| {
@@ -528,6 +593,9 @@ fn project_all_dimension_constraints(
         .collect::<HashSet<_>>();
     projected_dimension_companions.extend(groups.iter().filter_map(|group| {
         let scope = native_stream(&group.id)?;
+        if radial_extension_annotation_groups.contains(&(scope.to_owned(), group.record_index)) {
+            return None;
+        }
         let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
         let definition = exact_group_definition(scope, group, parameter, parameter_id.clone());
         (definition
@@ -579,6 +647,10 @@ fn project_all_dimension_constraints(
         })
         .chain(groups.iter().filter_map(|group| {
             let scope = native_stream(&group.id)?;
+            if radial_extension_annotation_groups.contains(&(scope.to_owned(), group.record_index))
+            {
+                return None;
+            }
             if exact_pair_companions.contains(&(scope.to_owned(), group.companion_record_index)) {
                 return None;
             }
@@ -3056,6 +3128,44 @@ pub(crate) fn radial_locus_dimension_definition(
     unique(candidates)
 }
 
+/// Identify a point-and-line radial annotation whose point lies on the
+/// line's infinite carrier. The pair locates a virtual sharp corner and does
+/// not itself identify the governed circular entity.
+pub(crate) fn radial_extension_annotation_group(
+    loci: &[&cadmpeg_ir::sketches::SketchEntity],
+    parameter: &DesignParameter,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    if !design_dimension_unit(parameter)
+        || !(parameter.source_kind.starts_with("Radius Dimension")
+            || parameter.source_kind.starts_with("Radial Dimension")
+            || parameter.source_kind.starts_with("Diameter Dimension"))
+    {
+        return false;
+    }
+    let [first, second] = loci else {
+        return false;
+    };
+    let (point, start, end) = match (&first.geometry, &second.geometry) {
+        (SketchGeometry::Point { position }, SketchGeometry::Line { start, end })
+        | (SketchGeometry::Line { start, end }, SketchGeometry::Point { position }) => {
+            (*position, *start, *end)
+        }
+        _ => return false,
+    };
+    let du = end.u - start.u;
+    let dv = end.v - start.v;
+    let length = du.hypot(dv);
+    if length <= 1.0e-12 {
+        return false;
+    }
+    let relative_u = point.u - start.u;
+    let relative_v = point.v - start.v;
+    relative_u.mul_add(dv, -relative_v * du).abs()
+        <= 1.0e-9 * (1.0 + length + relative_u.abs().max(relative_v.abs()))
+}
+
 /// Remove generic relation parses whose exact stream position is owned by a
 /// typed dimension frame.
 pub fn remove_dimension_frame_relations(
@@ -4345,6 +4455,7 @@ pub(crate) fn exact_counted_offset(
     loci: &[(u32, u32)],
     return_members: &[u32],
     entities: &HashMap<u32, &cadmpeg_ir::sketches::SketchEntity>,
+    secondary_ids: &HashMap<u32, u64>,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::features::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
@@ -4357,16 +4468,30 @@ pub(crate) fn exact_counted_offset(
     {
         return None;
     }
-    let source_count = loci.iter().position(|(_, role)| *role == 0)?;
-    if source_count == 0
-        || source_count * 2 != loci.len()
-        || loci[..source_count].iter().any(|(_, role)| *role == 0)
-        || loci[source_count..].iter().any(|(_, role)| *role != 0)
-    {
+    let source_count = loci.len() / 2;
+    let role_partition = loci[..source_count].iter().all(|(_, role)| *role != 0)
+        && loci[source_count..].iter().all(|(_, role)| *role == 0);
+    let identity_partition = loci.iter().all(|(_, role)| *role != 0)
+        && loci[..source_count]
+            .iter()
+            .all(|(record_index, _)| secondary_ids.get(record_index).copied() == Some(0))
+        && loci[source_count..].iter().all(|(record_index, _)| {
+            secondary_ids
+                .get(record_index)
+                .is_some_and(|secondary_id| *secondary_id != 0)
+        });
+    if !role_partition && !identity_partition {
         return None;
     }
-    let roles = loci.iter().copied().collect::<HashMap<_, _>>();
-    if roles.len() != loci.len() {
+    let source_records = loci[..source_count]
+        .iter()
+        .map(|(record_index, _)| *record_index)
+        .collect::<HashSet<_>>();
+    let result_records = loci[source_count..]
+        .iter()
+        .map(|(record_index, _)| *record_index)
+        .collect::<HashSet<_>>();
+    if source_records.len() != source_count || result_records.len() != source_count {
         return None;
     }
     let mut used_members = HashSet::new();
@@ -4376,8 +4501,8 @@ pub(crate) fn exact_counted_offset(
         let [source_record_index, result_record_index] = members else {
             unreachable!("chunks_exact(2) always yields pairs")
         };
-        if roles.get(source_record_index).copied()? == 0
-            || roles.get(result_record_index).copied()? != 0
+        if !source_records.contains(source_record_index)
+            || !result_records.contains(result_record_index)
             || !used_members.insert(*source_record_index)
             || !used_members.insert(*result_record_index)
         {
@@ -4577,15 +4702,23 @@ fn sketch_curve_offset(
                     .max(result_center.v.abs())
                     .max(source_radius.0)
                     .max(result_radius.0);
-            let sweep = source_end.0 - source_start.0;
+            let source_sweep = source_end.0 - source_start.0;
+            let result_sweep = result_end.0 - result_start.0;
+            let angular_overlap = [source_start.0, source_end.0]
+                .into_iter()
+                .any(|angle| angle_in_sweep(angle, result_start.0, result_end.0, 1.0e-9))
+                || [result_start.0, result_end.0]
+                    .into_iter()
+                    .any(|angle| angle_in_sweep(angle, source_start.0, source_end.0, 1.0e-9));
             (source_radius.0 > 0.0
                 && result_radius.0 > 0.0
-                && sweep.abs() > 1.0e-12
+                && source_sweep.abs() > 1.0e-12
+                && result_sweep.abs() > 1.0e-12
+                && source_sweep.signum() == result_sweep.signum()
+                && angular_overlap
                 && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
-                && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale
-                && (source_start.0 - result_start.0).abs() <= 1.0e-9
-                && (source_end.0 - result_end.0).abs() <= 1.0e-9)
-                .then_some(sweep.signum() * (source_radius.0 - result_radius.0))
+                && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale)
+                .then_some(source_sweep.signum() * (source_radius.0 - result_radius.0))
         }
         _ => parallel_line_offset(source, result),
     }
