@@ -422,7 +422,19 @@ pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
 
 /// Parse every length-closed `7C08` object graph in source order.
 #[must_use]
+#[cfg(any(test, feature = "fuzzing"))]
 pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
+    parse_all_with_paired_roots(data, &std::collections::HashMap::new())
+}
+
+/// Parse every length-closed object graph, admitting opaque childless records
+/// only when a preceding entity-table run selects the exact root and record
+/// cardinality.
+#[must_use]
+pub(crate) fn parse_all_with_paired_roots(
+    data: &[u8],
+    paired_roots: &std::collections::HashMap<usize, usize>,
+) -> Vec<ObjectGraph> {
     let catalogs = catalog::parse(data);
     let value_blocks = value_block::parse(data);
     let mut roots = Vec::<ObjectGraph>::new();
@@ -442,7 +454,12 @@ pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let Some(graph) = parse_candidate(data, pos) else {
+        let graph = parse_candidate(data, pos, false).or_else(|| {
+            let expected_count = *paired_roots.get(&pos)?;
+            let graph = parse_candidate(data, pos, true)?;
+            (graph.records.len() == expected_count).then_some(graph)
+        });
+        let Some(graph) = graph else {
             continue;
         };
         if let Some(graph_end) = graph.pos.checked_add(graph.total_len) {
@@ -489,7 +506,11 @@ fn bind_catalog(
     }
 }
 
-fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
+fn parse_candidate(
+    data: &[u8],
+    pos: usize,
+    allow_opaque_childless_records: bool,
+) -> Option<ObjectGraph> {
     let total_len = usize::try_from(u32_le(data, pos + 2)?).ok()?;
     let end = pos.checked_add(total_len)?;
     if total_len < 15 || end > data.len() {
@@ -528,6 +549,14 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 decode_payload(&data[child + 6..record_end])?,
             ),
             None if is_inline_body(body) => (
+                &[][..],
+                Some(body.to_vec()),
+                ObjectPayload {
+                    size: 0,
+                    fields: Vec::new(),
+                },
+            ),
+            None if allow_opaque_childless_records && !body.is_empty() => (
                 &[][..],
                 Some(body.to_vec()),
                 ObjectPayload {
@@ -1081,13 +1110,17 @@ fn tagged_value(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     atom(bytes, at)
 }
 
+fn is_final_terminator_run(bytes: &[u8], at: usize) -> bool {
+    bytes.get(at) == Some(&0xfe) && bytes[at..].iter().all(|byte| *byte == 0xfe)
+}
+
 fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
     let mut fields = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
         let offset = at;
         match bytes[at] {
-            0xfe => {
+            0xfe if is_final_terminator_run(bytes, at) => {
                 while bytes.get(at) == Some(&0xfe) {
                     fields.push(PayloadField::Terminator);
                     at += 1;
@@ -1146,7 +1179,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 at += 1;
             }
             0x3b => {
-                if bytes.get(at + 1) == Some(&0xfe) {
+                if is_final_terminator_run(bytes, at + 1) {
                     fields.push(PayloadField::Atom {
                         value: 0x3b,
                         offset,
@@ -1165,16 +1198,21 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 at += 1 + advance;
                 let mut items = Vec::new();
                 for _ in 0..declared_count {
-                    if at >= bytes.len() || bytes[at] == 0xfe {
+                    if at >= bytes.len() || is_final_terminator_run(bytes, at) {
                         break;
                     }
                     let item_offset = at;
                     let tagged_reference = bytes[at] == 0x81;
                     let tagged_atom = bytes[at] == 0x80;
                     let fixed_reference = bytes[at] == 0x32;
-                    let value_at = at + usize::from(tagged_reference || tagged_atom);
+                    let fixed_atom = tagged_atom
+                        && at
+                            .checked_add(5)
+                            .is_some_and(|fixed_end| fixed_end < bytes.len());
+                    let value_at =
+                        at + usize::from(tagged_reference || (tagged_atom && !fixed_atom));
                     if (tagged_reference || tagged_atom)
-                        && (value_at >= bytes.len() || bytes[value_at] == 0xfe)
+                        && (value_at >= bytes.len() || is_final_terminator_run(bytes, value_at))
                     {
                         at = value_at;
                         break;
@@ -1218,7 +1256,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
             }
             0x81 | 0x3a | 0x39 | 0x7a => {
                 let tag = bytes[at];
-                if bytes.get(at + 1) == Some(&0xfe) {
+                if is_final_terminator_run(bytes, at + 1) {
                     fields.push(PayloadField::Atom {
                         value: u32::from(tag),
                         offset,

@@ -515,6 +515,9 @@ pub struct EntityRecord {
     pub total_len: usize,
     /// Byte between the `7C05` length and nested `7C06` marker.
     pub lead: u8,
+    /// Complete alternate inline body, including its lead byte, when nested
+    /// `7C06` and `7C07` frames are absent.
+    pub inline_body: Option<Vec<u8>>,
     /// Stored nested `7C06` length.
     pub definition_len: u32,
     /// Exact definition prefix before the `0xEA` identity delimiter.
@@ -604,11 +607,19 @@ struct EntityRecordCandidates {
     pos: usize,
     total_len: usize,
     lead: u8,
-    definition_len: u32,
-    definition_end: usize,
-    value_len: u32,
-    value_end: usize,
+    layout: EntityRecordLayout,
     identities: Vec<EntityIdentityCandidate>,
+}
+
+#[derive(Clone, Copy)]
+enum EntityRecordLayout {
+    Nested {
+        definition_len: u32,
+        definition_end: usize,
+        value_len: u32,
+        value_end: usize,
+    },
+    Inline,
 }
 
 #[derive(Clone, Copy)]
@@ -683,15 +694,27 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
 fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandidates> {
     let total_len = usize::try_from(u32_le(data, pos.checked_add(2)?)?).ok()?;
     let end = pos.checked_add(total_len)?;
-    if total_len < 19
-        || end > data.len()
-        || data.get(pos.checked_add(6)?)? > &0x02
-        || data.get(pos.checked_add(7)?..pos.checked_add(9)?)? != [0x7c, 0x06]
-    {
+    if total_len < 12 || end > data.len() {
         return None;
     }
 
     let lead = *data.get(pos + 6)?;
+    if lead == 0x03 && data.get(pos + 7..pos + 9) != Some(&[0x7c, 0x06]) {
+        let identities = identity_candidates(data, pos + 7, end);
+        return (!identities.is_empty()).then_some(EntityRecordCandidates {
+            pos,
+            total_len,
+            lead,
+            layout: EntityRecordLayout::Inline,
+            identities,
+        });
+    }
+    if total_len < 19
+        || lead > 0x02
+        || data.get(pos.checked_add(7)?..pos.checked_add(9)?)? != [0x7c, 0x06]
+    {
+        return None;
+    }
     let definition_len = u32_le(data, pos + 9)?;
     let definition_len_usize = usize::try_from(definition_len).ok()?;
     let definition_end = pos.checked_add(7)?.checked_add(definition_len_usize)?;
@@ -705,13 +728,37 @@ fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandi
     if value_len_usize < 6 || value_end > end {
         return None;
     }
+    let identities = identity_candidates(data, definition_start, definition_end);
+    if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
+        return None;
+    }
+    (!identities.is_empty()).then_some(EntityRecordCandidates {
+        pos,
+        total_len,
+        lead,
+        layout: EntityRecordLayout::Nested {
+            definition_len,
+            definition_end,
+            value_len,
+            value_end,
+        },
+        identities,
+    })
+}
+
+fn identity_candidates(data: &[u8], start: usize, end: usize) -> Vec<EntityIdentityCandidate> {
     let mut identities = Vec::new();
-    let mut at = definition_start;
-    while at < definition_end {
+    let mut at = start;
+    while at < end {
         match data[at] {
             0xea => {
-                if at.checked_add(5).is_some_and(|end| end <= definition_end) {
-                    let entity_id = u32_le(data, at + 1)?;
+                if at
+                    .checked_add(5)
+                    .is_some_and(|candidate_end| candidate_end <= end)
+                {
+                    let Some(entity_id) = u32_le(data, at + 1) else {
+                        break;
+                    };
                     if entity_id != 0 {
                         identities.push(EntityIdentityCandidate {
                             delimiter: at,
@@ -721,23 +768,16 @@ fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandi
                 }
                 at += 1;
             }
-            0x32 if at.checked_add(5).is_some_and(|end| end <= definition_end) => at += 5,
+            0x32 if at
+                .checked_add(5)
+                .is_some_and(|candidate_end| candidate_end <= end) =>
+            {
+                at += 5;
+            }
             _ => at += 1,
         }
     }
-    if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
-        return None;
-    }
-    (!identities.is_empty()).then_some(EntityRecordCandidates {
-        pos,
-        total_len,
-        lead,
-        definition_len,
-        definition_end,
-        value_len,
-        value_end,
-        identities,
-    })
+    identities
 }
 
 fn materialize_record(
@@ -745,25 +785,53 @@ fn materialize_record(
     candidate: &EntityRecordCandidates,
     identity: EntityIdentityCandidate,
 ) -> Option<EntityRecord> {
-    let definition_start = candidate.pos.checked_add(13)?;
     let record_end = candidate.pos.checked_add(candidate.total_len)?;
+    if matches!(candidate.layout, EntityRecordLayout::Inline) {
+        return Some(EntityRecord {
+            pos: candidate.pos,
+            total_len: candidate.total_len,
+            lead: candidate.lead,
+            inline_body: Some(data.get(candidate.pos + 6..record_end)?.to_vec()),
+            definition_len: 0,
+            definition_prefix: Vec::new(),
+            definition_schema_selectors: Vec::new(),
+            entity_id: identity.entity_id,
+            definition_suffix: Vec::new(),
+            value_len: 0,
+            value_payload: Vec::new(),
+            numeric_pair: None,
+            reference_signature: None,
+            record_suffix: Vec::new(),
+        });
+    }
+    let EntityRecordLayout::Nested {
+        definition_len,
+        definition_end,
+        value_len,
+        value_end,
+    } = candidate.layout
+    else {
+        unreachable!("inline entity returned before nested materialization")
+    };
+    let definition_start = candidate.pos.checked_add(13)?;
     let identity_end = identity.delimiter.checked_add(5)?;
-    let value_payload = data.get(candidate.definition_end + 6..candidate.value_end)?;
+    let value_payload = data.get(definition_end + 6..value_end)?;
     let prefix = data.get(definition_start..identity.delimiter)?;
     Some(EntityRecord {
         pos: candidate.pos,
         total_len: candidate.total_len,
         lead: candidate.lead,
-        definition_len: candidate.definition_len,
+        inline_body: None,
+        definition_len,
         definition_prefix: prefix.to_vec(),
         definition_schema_selectors: parse_definition_schema_selectors(prefix),
         entity_id: identity.entity_id,
-        definition_suffix: data.get(identity_end..candidate.definition_end)?.to_vec(),
-        value_len: candidate.value_len,
+        definition_suffix: data.get(identity_end..definition_end)?.to_vec(),
+        value_len,
         value_payload: value_payload.to_vec(),
         numeric_pair: parse_numeric_pair(value_payload),
         reference_signature: parse_reference_signature(value_payload),
-        record_suffix: data.get(candidate.value_end..record_end)?.to_vec(),
+        record_suffix: data.get(value_end..record_end)?.to_vec(),
     })
 }
 

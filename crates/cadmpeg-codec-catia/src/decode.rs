@@ -731,7 +731,8 @@ fn finish_decode(
             |(total, dimensions, complex, evaluated, unset), range| {
                 let (dimensions, complex) = match range.framing {
                     crate::native::CatiaConstraintRangeFraming::DimensionB8
-                    | crate::native::CatiaConstraintRangeFraming::DimensionC1 => {
+                    | crate::native::CatiaConstraintRangeFraming::DimensionC1
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDC => {
                         (dimensions + 1, complex)
                     }
                     crate::native::CatiaConstraintRangeFraming::ComplexC9 => {

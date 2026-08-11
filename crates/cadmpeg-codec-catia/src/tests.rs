@@ -9846,6 +9846,135 @@ fn outer_object_graph_rejects_unassigned_childless_records() {
 }
 
 #[test]
+fn paired_entity_table_admits_an_opaque_childless_object_record() {
+    let body = [0x00, 0x90, 0x32, 0x01, 0x00, 0x00, 0x00, 0x81, 0x81, 0x00];
+    let bytes = object_graph_from_records(&[inline_object_graph_record(&body)]);
+    let paired_roots = std::collections::HashMap::from([(0, 1)]);
+
+    let [graph] = crate::object_graph::parse_all_with_paired_roots(&bytes, &paired_roots)
+        .try_into()
+        .expect("one entity-paired object graph");
+    assert_eq!(graph.records[0].lead, 0x00);
+    assert_eq!(
+        graph.records[0].inline_body.as_deref(),
+        Some(body.as_slice())
+    );
+    assert!(graph.records[0].head.is_empty());
+
+    assert!(crate::object_graph::parse_all_with_paired_roots(
+        &bytes,
+        &std::collections::HashMap::from([(0, 2)]),
+    )
+    .is_empty());
+}
+
+#[test]
+fn inline_entity_and_object_records_pair_by_extent_and_cardinality() {
+    let mut entity = vec![0x7c, 0x05, 12, 0, 0, 0, 0x03, 0xea];
+    entity.extend_from_slice(&1_u32.to_le_bytes());
+    let graph_offset = entity.len() + 1;
+    entity.push(0xde);
+    entity.extend(object_graph_from_records(&[inline_object_graph_record(&[
+        0x00, 0x90, 0x81, 0x81, 0x00,
+    ])]));
+
+    let native = crate::native::CatiaNative::decode(&entity);
+    let graph = native
+        .object_graphs
+        .iter()
+        .find(|graph| graph.byte_offset == graph_offset as u64)
+        .expect("entity-paired graph");
+    assert_eq!(graph.records.len(), 1);
+    assert_eq!(graph.records[0].entity_id, Some(1));
+    let record = native
+        .entity_records
+        .iter()
+        .find(|record| record.object_graph == graph.id)
+        .expect("paired inline entity");
+    assert_eq!(
+        record.inline_body.as_deref(),
+        Some(&[0x03, 0xea, 1, 0, 0, 0][..])
+    );
+    assert_eq!(record.object_record, graph.records[0].id);
+}
+
+#[test]
+fn object_graph_payload_lists_keep_direct_fixed_width_atoms() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x81],
+        &[0x3b, 0x81, 0x80, 0x78, 0x56, 0x34, 0x12, 0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("fixed-width list atom");
+
+    assert!(matches!(
+        graph.records[0].payload.fields.as_slice(),
+        [
+            crate::object_graph::PayloadField::List {
+                declared_count: 1,
+                items,
+                ..
+            },
+            crate::object_graph::PayloadField::Terminator,
+        ] if items == &[crate::object_graph::ListItem::Atom {
+            value: 0x1234_5678,
+            offset: 2,
+        }]
+    ));
+}
+
+#[test]
+fn object_graph_payload_preserves_nonterminal_fe_atoms() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x81],
+        &[0x85, 0x81, 0xfe, 0x81, 0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("interior FE atom");
+
+    assert!(matches!(
+        graph.records[0].payload.fields.as_slice(),
+        [
+            crate::object_graph::PayloadField::Atom { value: 5, .. },
+            crate::object_graph::PayloadField::Reference {
+                value: 0xfe,
+                offset: 1,
+            },
+            crate::object_graph::PayloadField::Atom { value: 0x81, .. },
+            crate::object_graph::PayloadField::Terminator,
+        ]
+    ));
+}
+
+#[test]
+fn object_graph_payload_lists_preserve_nonterminal_fe_atoms() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x81],
+        &[0x3b, 0x82, 0xfe, 0x85, 0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("interior FE list atom");
+
+    assert!(matches!(
+        graph.records[0].payload.fields.as_slice(),
+        [
+            crate::object_graph::PayloadField::List {
+                declared_count: 2,
+                items,
+                ..
+            },
+            crate::object_graph::PayloadField::Terminator,
+        ] if items == &[
+            crate::object_graph::ListItem::Atom {
+                value: 0xfe,
+                offset: 2,
+            },
+            crate::object_graph::ListItem::Atom {
+                value: 5,
+                offset: 3,
+            },
+        ]
+    ));
+}
+
+#[test]
 fn outer_object_graph_keeps_adjacent_compact_head_references_separate() {
     let bytes = object_graph_from_records(&[object_graph_record(
         &[0x04, 0x01, 0x81, 0x83, 0x84],
@@ -16558,6 +16687,56 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .expect("source constraint range")
             .incoming_storage_references
     );
+}
+
+#[test]
+fn dimension_constraint_ranges_accept_db_terminated_dc_frames() {
+    use crate::native::{
+        CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntitySuffixTrailer,
+    };
+
+    let bits = 15.875_f64.to_bits();
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xdc, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0xdb]);
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
+        "Range",
+        "CstAttr_Dimension",
+        &suffix,
+    ));
+    let entity = &native.entity_records[0];
+    let range = entity
+        .constraint_range
+        .as_ref()
+        .expect("DB-terminated dimension range");
+    assert_eq!(range.framing, CatiaConstraintRangeFraming::DimensionDC);
+    assert_eq!(range.evaluation, CatiaEntityEvaluation::Scalar { bits });
+    assert_eq!(
+        entity
+            .suffix_value
+            .as_ref()
+            .expect("DB-terminated suffix value")
+            .trailer,
+        CatiaEntitySuffixTrailer::Token81DB
+    );
+
+    for suffix in [
+        {
+            let mut suffix = vec![0x84, 0x96, 0x82, 0xd8, 0xe6];
+            suffix.extend_from_slice(&bits.to_le_bytes());
+            suffix.extend_from_slice(&[0x81, 0xdb]);
+            suffix
+        },
+        vec![0x84, 0x96, 0x82, 0xdc, 0xe7],
+        vec![0x84, 0x96, 0x82, 0xc1, 0xe7, 0x81, 0xdb],
+    ] {
+        let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
+            "Range",
+            "CstAttr_Dimension",
+            &suffix,
+        ));
+        assert!(native.entity_records[0].constraint_range.is_none());
+    }
 }
 
 #[test]

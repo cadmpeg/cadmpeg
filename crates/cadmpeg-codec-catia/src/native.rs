@@ -1415,6 +1415,8 @@ pub enum CatiaEntitySuffixTrailer {
     Token814A,
     /// Exact trailer token `81 52`.
     Token8152,
+    /// Exact trailer token `81 DB`.
+    Token81DB,
     /// Exact fixed trailer `FE F6 00{16}`.
     FixedZeroFrame,
 }
@@ -1560,6 +1562,8 @@ pub enum CatiaConstraintRangeFraming {
     DimensionB8,
     /// `CstAttr_Dimension` selected with prefix code `C1`.
     DimensionC1,
+    /// `CstAttr_Dimension` selected with prefix code `DC`.
+    DimensionDC,
     /// `ComplexCst` selected with prefix code `C9`.
     ComplexC9,
 }
@@ -1978,6 +1982,11 @@ pub struct CatiaEntityRecord {
     pub byte_len: u64,
     /// Byte between the `7C05` length and nested `7C06` marker.
     pub lead: u8,
+    /// Complete alternate inline body, including its lead byte, when nested
+    /// definition and value frames are absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+    pub inline_body: Option<Vec<u8>>,
     /// Stored nested `7C06` length.
     pub definition_len: u32,
     /// Exact definition prefix before the `0xEA` identity delimiter.
@@ -2756,6 +2765,29 @@ fn resolved_storage_link(
 
 #[cfg(test)]
 fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
+    if let Some(body) = &record.inline_body {
+        return record.lead == 0x03
+            && body.first() == Some(&record.lead)
+            && u64::try_from(body.len())
+                .ok()
+                .and_then(|len| len.checked_add(6))
+                == Some(record.byte_len)
+            && record.definition_len == 0
+            && record.definition_prefix.is_empty()
+            && record.definition_schema_selections.is_empty()
+            && record.definition_suffix.is_empty()
+            && record.value_len == 0
+            && record.value_payload.is_empty()
+            && record.value_fields.is_empty()
+            && record.value_schema_selections.is_empty()
+            && record.value_packets.is_empty()
+            && record.numeric_pair.is_none()
+            && record.reference_signature.is_none()
+            && record.record_suffix.is_empty()
+            && record.suffix_value.is_none()
+            && record.suffix_framing.is_none()
+            && record.suffix_schema_selection.is_none();
+    }
     let Some(definition_body_len) = u64::try_from(record.definition_prefix.len())
         .ok()
         .and_then(|prefix_len| prefix_len.checked_add(5))
@@ -3144,16 +3176,26 @@ fn constraint_range(
         return None;
     }
     let suffix_value = suffix_value?;
-    if suffix_value.prefix_atoms != [4, 22, 2]
-        || suffix_value.prefix_atom_widths != [1, 1, 1]
-        || suffix_value.trailer != CatiaEntitySuffixTrailer::Empty
-    {
+    if suffix_value.prefix_atoms != [4, 22, 2] || suffix_value.prefix_atom_widths != [1, 1, 1] {
         return None;
     }
-    let framing = match (constraint.name.as_str(), suffix_value.prefix_code) {
-        ("CstAttr_Dimension", 0xb8) => CatiaConstraintRangeFraming::DimensionB8,
-        ("CstAttr_Dimension", 0xc1) => CatiaConstraintRangeFraming::DimensionC1,
-        ("ComplexCst", 0xc9) => CatiaConstraintRangeFraming::ComplexC9,
+    let framing = match (
+        constraint.name.as_str(),
+        suffix_value.prefix_code,
+        suffix_value.trailer,
+    ) {
+        ("CstAttr_Dimension", 0xb8, CatiaEntitySuffixTrailer::Empty) => {
+            CatiaConstraintRangeFraming::DimensionB8
+        }
+        ("CstAttr_Dimension", 0xc1, CatiaEntitySuffixTrailer::Empty) => {
+            CatiaConstraintRangeFraming::DimensionC1
+        }
+        ("CstAttr_Dimension", 0xdc, CatiaEntitySuffixTrailer::Token81DB) => {
+            CatiaConstraintRangeFraming::DimensionDC
+        }
+        ("ComplexCst", 0xc9, CatiaEntitySuffixTrailer::Empty) => {
+            CatiaConstraintRangeFraming::ComplexC9
+        }
         _ => return None,
     };
     let CatiaEntitySuffixPayload::Evaluation {
@@ -3470,6 +3512,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         [0x81, 0x49] => CatiaEntitySuffixTrailer::Token8149,
         [0x81, 0x4a] => CatiaEntitySuffixTrailer::Token814A,
         [0x81, 0x52] => CatiaEntitySuffixTrailer::Token8152,
+        [0x81, 0xdb] => CatiaEntitySuffixTrailer::Token81DB,
         [0xfe, 0xf6, rest @ ..] if rest.len() == 16 && rest.iter().all(|byte| *byte == 0) => {
             CatiaEntitySuffixTrailer::FixedZeroFrame
         }
@@ -10013,11 +10056,19 @@ impl CatiaNative {
             .collect::<Vec<_>>();
         let mut parsed_catalogs = catalog::parse(bytes);
         let entity_runs = entity_table::parse_runs(bytes);
+        let paired_object_graph_roots = entity_runs
+            .iter()
+            .filter_map(|run| {
+                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
+            })
+            .collect::<HashMap<_, _>>();
         let mut alias_rows = object_graph::surface_aliases(bytes)
             .into_iter()
             .map(CatiaAliasRow::from)
             .collect::<Vec<_>>();
-        let mut parsed_object_graphs = object_graph::parse_all(bytes);
+        let mut parsed_object_graphs =
+            object_graph::parse_all_with_paired_roots(bytes, &paired_object_graph_roots);
         let mut parsed_value_blocks = value_block::parse(bytes);
         parsed_value_blocks.retain(|block| {
             !parsed_object_graphs.iter().any(|graph| {
@@ -11102,8 +11153,8 @@ impl CatiaNative {
                     || record.repeated_reference_suffix
                         != object_graph::repeated_reference_suffix(&record.payload)
                     || record.inline_body.as_ref().is_some_and(|body| {
-                        !object_graph::is_inline_body(body)
-                            || record.lead != 0x10
+                        (graph_entities.is_empty() && !object_graph::is_inline_body(body))
+                            || body.first() != Some(&record.lead)
                             || !record.head.is_empty()
                             || record.owner.is_some()
                             || record.class_ref.is_some()
@@ -11791,6 +11842,7 @@ fn native_object_graph(
                 byte_len: u64::try_from(entity.total_len)
                     .expect("bounded entity-table length fits u64"),
                 lead: entity.lead,
+                inline_body: entity.inline_body,
                 definition_len: entity.definition_len,
                 definition_prefix: entity.definition_prefix,
                 definition_schema_selections: Vec::new(),

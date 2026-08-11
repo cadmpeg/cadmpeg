@@ -495,6 +495,7 @@ fn framing_name(framing: crate::native::CatiaConstraintRangeFraming) -> &'static
     match framing {
         crate::native::CatiaConstraintRangeFraming::DimensionB8 => "DimensionB8",
         crate::native::CatiaConstraintRangeFraming::DimensionC1 => "DimensionC1",
+        crate::native::CatiaConstraintRangeFraming::DimensionDC => "DimensionDC",
         crate::native::CatiaConstraintRangeFraming::ComplexC9 => "ComplexC9",
     }
 }
@@ -636,6 +637,7 @@ mod tests {
             byte_offset: 0,
             byte_len: 0,
             lead: 0,
+            inline_body: None,
             definition_len: 0,
             definition_prefix: Vec::new(),
             definition_schema_selections: Vec::new(),

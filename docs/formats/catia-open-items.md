@@ -54,7 +54,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each reference in an inline `7C09` body select?
 
-**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" defines the inline body boundary and retains each reference identity.
+**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" defines the complete inline production. An exact paired entity-table boundary and equal entity/object cardinality admit other nonempty childless bodies as opaque bytes without reference-role assignment.
 
 **Need.** We must know the reference roles to bind objects and fields.
 
@@ -174,7 +174,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which individual constraint owns each complete `Range`/`CstAttr_Dimension` or `Range`/`ComplexCst` value?
 
-**Known.** `catia.md` §7.3 "A lead-`2` constraint-range entity has exactly two value selectors" defines both range forms and retains incoming payload references and object-head storage selectors as distinct incidences. `ListAggregator` references can include unrelated and repeated identities. A range transfers as one opaque sketch constraint only when exactly one total incoming incidence resolves to its same-graph paired source entity and object record, and that source object's complete owner chain reaches one transferred `Sketch` before another transferred feature. The source object record is retained as one unresolved native operand; neutral sketch entities, loci, parameters, and dimensional roles remain unresolved.
+**Known.** `catia.md` §7.3 "A lead-`2` constraint-range entity has exactly two value selectors" defines the four exact role/code/trailer tuples and retains incoming payload references and object-head storage selectors as distinct incidences. `ListAggregator` references can include unrelated and repeated identities. Dimension ranges can share one structural design-object owner whose field vocabulary contains feature, geometry, and presentation classes; their incoming source classes can also differ. These incidences do not distinguish sketch ownership from product-manufacturing-information ownership. A range transfers as one opaque sketch constraint only when exactly one total incoming incidence resolves to its same-graph paired source entity and object record, and that source object's complete owner chain reaches one transferred `Sketch` before another transferred feature. The source object record is retained as one unresolved native operand; neutral sketch entities, loci, parameters, and dimensional roles remain unresolved.
 
 **Need.** We must know the owner to assign a range to a neutral constraint.
 
@@ -216,7 +216,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do operation fields, definition-bound values, and structurally owned operand objects form one feature instance?
 
-**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for an admitted operation class, with matching class entry, owner entity, and structural owner, establishes one opaque feature identity and its source order; it does not assign the operation's semantic inputs.
+**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. Paired entity tables admit opaque childless object records and preserve their complete bodies, but do not assign roles inside those bodies. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for an admitted operation class, with matching class entry, owner entity, and structural owner, establishes one opaque feature identity and its source order; it does not assign the operation's semantic inputs.
 
 **Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and regeneration dependencies for each admitted feature family.
 

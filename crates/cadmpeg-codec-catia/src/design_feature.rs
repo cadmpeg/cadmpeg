@@ -1196,6 +1196,7 @@ mod tests {
             byte_offset,
             byte_len: 0,
             lead: 0,
+            inline_body: None,
             definition_len: 0,
             definition_prefix: Vec::new(),
             definition_schema_selections: Vec::new(),
