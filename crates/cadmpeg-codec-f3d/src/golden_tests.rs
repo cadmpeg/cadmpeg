@@ -599,8 +599,6 @@ fn golden_snapshots_are_byte_identical() {
             std::fs::write(&fixture_path, &builder_bytes)
                 .unwrap_or_else(|error| panic!("write fixture {name}: {error}"));
         }
-        // Always snapshot the committed bytes, never the builder's, so an
-        // artifact is pinned to the input a reviewer can read off disk.
         let input = match read_fixture(name) {
             Ok(value) => value,
             Err(message) => {

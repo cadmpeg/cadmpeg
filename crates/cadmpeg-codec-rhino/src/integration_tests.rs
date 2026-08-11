@@ -270,8 +270,6 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     let result = decode(native_retention_archive());
     let losses = &result.report.losses;
 
-    // Neither record is "decoded": the only entity carrying their construction
-    // state is a native feature blob.
     assert!(losses.iter().any(|loss| {
         loss.code == LossKind::ObjectRecordsUntransferred
             && loss.message.contains("decoded 0/2 Rhino object records")

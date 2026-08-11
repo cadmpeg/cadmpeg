@@ -2060,8 +2060,6 @@ fn decode_indexed_sketch_text_record_tail(payload: &[u8], cursor: usize) -> Opti
     closed
 }
 
-// Keep source identity, raw bytes, and the independently parsed head and tail
-// explicit at this native-record assembly boundary.
 #[allow(clippy::too_many_arguments)]
 fn assemble_sketch_text(
     payload: &[u8],

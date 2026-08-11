@@ -992,9 +992,6 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     let dir = tempdir().unwrap();
     let lossy = geometryless_creo(dir.path(), "lossy.prt");
 
-    // `--reject-lossy` turns a lossy decode into a model refusal (exit 1),
-    // distinct from a decode error (exit 2). It is checked before the
-    // empty-geometry gate, so `--allow-empty` does not suppress it.
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -1451,9 +1448,6 @@ fn validate_report_writes_versioned_result_to_file() {
 
 #[test]
 fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
-    // The overwrite refusal names `--force`, so every command that can hit it
-    // must accept `--force`. `-o` and `--output` name the report path for the
-    // commands whose only output is a report.
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
     let report = dir.path().join("report.json");
@@ -1492,8 +1486,6 @@ fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
 
 #[test]
 fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
-    // A dangling surface reference must reach all three channels and agree
-    // across them: exit 1, the printed error count, and the error-severity
     // findings under `.validation_report.findings` in the written report.
     let dir = tempdir().unwrap();
     let mut ir = unit_cube();
@@ -1573,8 +1565,6 @@ fn diff_input_format_forces_the_reader_per_input() {
         .success()
         .stdout(predicate::str::contains("identical"));
 
-    // Forcing only the first input through the Rhino reader bypasses CADIR
-    // parsing and fails to decode the JSON bytes as a 3DM archive.
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -1603,9 +1593,6 @@ fn diff_input_format_forces_the_reader_per_input() {
 
 #[test]
 fn report_to_an_unwritable_path_is_an_operational_error() {
-    // A `--report` destination whose parent directory does not exist cannot be
-    // written atomically. The command that produced the report succeeds, but the
-    // report write fails as an operational error (exit 2), not a semantic one,
     // and leaves no file behind.
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());

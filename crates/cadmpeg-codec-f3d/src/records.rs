@@ -2505,10 +2505,6 @@ pub enum DesignEdgeWidthMode {
 #[cfg(test)]
 impl DesignParameterScope {
     /// Build a scope carrying only its identity, kind, and record index.
-    ///
-    /// Sheet-metal and other projection tests set the few typed members their
-    /// family reads and leave the rest empty, so a new member does not require
-    /// an edit in every test that constructs a scope.
     pub(crate) fn empty(id: &str, kind: &str, record_index: u32) -> Self {
         Self {
             id: id.to_string(),

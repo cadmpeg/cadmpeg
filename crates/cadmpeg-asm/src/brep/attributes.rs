@@ -163,9 +163,6 @@ fn attribute_value(token: &Token, format: IdFormat<'_>) -> AttributeValue {
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
         Token::Position(value) | Token::Vector3(value) => AttributeValue::Vector(value.to_vec()),
         Token::Vector2(value) => AttributeValue::Vector(value.to_vec()),
-        // Not reachable through `source_attribute`, which maps chunks; kept
-        // total so a payload identifier still carries its name if a future
-        // caller maps raw tokens.
         Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(value.clone()),
     }
 }

@@ -26277,8 +26277,6 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
 
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
-    // Both the analytic face and the unknown-surface face are present and each
-    // references a surface that exists in the arena.
     assert_eq!(result.ir.model.surfaces.len(), 2);
 }
 

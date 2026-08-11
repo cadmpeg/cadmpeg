@@ -569,7 +569,6 @@ fn kernel_carrier_fixture() -> Vec<u8> {
     bytes
 }
 
-// Keep this helper aligned with the serialized CFB directory-node fields.
 #[allow(clippy::too_many_arguments)]
 fn directory_node(
     directory: &mut [u8],

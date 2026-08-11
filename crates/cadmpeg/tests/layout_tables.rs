@@ -1135,8 +1135,6 @@ fn layout_tables_are_internally_consistent() {
 
 #[test]
 fn layout_validator_rejects_broken_tables() {
-    // Each fixture violates exactly one rule. The expected substring pins which
-    // rule fired, so a fixture cannot pass by tripping an unrelated check.
     let cases: &[(&str, &str)] = &[
         ("overlapping-fields.toml", "overlaps the preceding span"),
         ("uncovered-gap.toml", "uncovered byte ranges"),

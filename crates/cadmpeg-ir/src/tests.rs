@@ -3015,8 +3015,6 @@ fn sketch_constraint_native_ref_must_resolve() {
 
 #[test]
 fn unresolved_unknown_record_link_is_reported_once() {
-    // The `unknowns` arena is one of the native namespace arenas, so the
-    // generic native-record loop is the only thing that needs to walk it.
     let mut ir = unit_cube();
     ir.set_native_unknowns(
         "test",
@@ -6429,8 +6427,6 @@ fn document_local_sha256_matches_the_cloned_normalization() {
         crate::hash::document_local_sha256(&ir, "synthetic", source_image),
         cloned_local_digest(&ir, "synthetic", source_image)
     );
-    // A format the document has no namespace for still hashes the same way:
-    // both paths add the empty unknown arena the codecs have always added.
     assert_eq!(
         crate::hash::document_local_sha256(&ir, "absent", source_image),
         cloned_local_digest(&ir, "absent", source_image)

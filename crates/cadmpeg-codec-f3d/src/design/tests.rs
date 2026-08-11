@@ -9396,8 +9396,6 @@ fn edge_flange_scope_reads_the_shifted_header_form() {
 
 #[test]
 fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
-    // Record 254 is the edge group's operand. Without it the table has no entry
-    // three after the group, so the frame is refused rather than half-bound.
     let references = [201, 204, 207, 218, 240, 243, 251, 255];
     let frame = edge_flange_frame(&EdgeFlangeFixture {
         header_shift: 0,
@@ -9988,8 +9986,6 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         bend_position: DesignBendPosition::Inside,
     });
 
-    // The symmetric mode needs one `EdgeWidth` parameter. Without it the scope
-    // has no complete width, so no partial neutral flange is reported.
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &[],
         owners: &[],
@@ -10460,8 +10456,6 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
 
 #[test]
 fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
-    // The rolled form places its owner references at other offsets, so the
-    // gap-and-length reader must refuse a frame whose owner slot does not agree.
     let references = [240, 243, 251, 254, 301, 304, 308, 311];
     let mut frame = hem_frame(&HemFixture {
         header_shift: 0,

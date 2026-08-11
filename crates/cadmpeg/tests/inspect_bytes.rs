@@ -209,8 +209,6 @@ fn find_rejects_a_positional_pattern_and_names_the_three_flags() {
     let dir = tempdir().unwrap();
     let file = write(dir.path(), "hits.bin", b"prefix");
 
-    // A bare word does not say how to encode it, so the positional form stays
-    // an error. The error names the flag that carries each encoding.
     cadmpeg()
         .args(["inspect", "find", file.to_str().unwrap(), "prefix"])
         .assert()
@@ -825,8 +823,6 @@ fn inspect_input_flag_positional_and_subcommand_interplay() {
     let file = write(dir.path(), "plain.bin", b"not a container");
     let path = file.to_str().unwrap();
 
-    // `inspect --input FILE` reaches the container summary (which then
-    // rejects this non-container file with its own operational error).
     cadmpeg()
         .args(["inspect", "--input", path])
         .assert()
