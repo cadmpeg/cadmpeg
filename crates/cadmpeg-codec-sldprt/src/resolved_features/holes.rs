@@ -1592,7 +1592,6 @@ pub(crate) fn project_spatial_hole_position_sketches(
             .filter(|marker| {
                 marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
                     && marker.object_index.is_some()
-                    && marker.kind == SketchInputKind::Point
             })
             .collect::<Vec<_>>();
         if authored_markers.is_empty() {
@@ -1650,37 +1649,14 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     axes.push((point, *axis));
                 }
             }
-            axes.sort_by_key(|(origin, axis)| {
-                [
-                    origin.x.to_bits(),
-                    origin.y.to_bits(),
-                    origin.z.to_bits(),
-                    axis.x.to_bits(),
-                    axis.y.to_bits(),
-                    axis.z.to_bits(),
-                ]
-            });
-            axes.dedup_by_key(|(origin, axis)| {
-                [
-                    origin.x.to_bits(),
-                    origin.y.to_bits(),
-                    origin.z.to_bits(),
-                    axis.x.to_bits(),
-                    axis.y.to_bits(),
-                    axis.z.to_bits(),
-                ]
-            });
-            let [(origin, axis)] = axes.as_slice() else {
-                if axes.is_empty() {
-                    continue;
-                }
+            let Some(axes) = carrier_placements(axes) else {
+                continue;
+            };
+            let [placement] = axes.as_slice() else {
                 ambiguous = true;
                 break;
             };
-            resolved.push(HolePlacement::Axis {
-                origin: *origin,
-                axis: *axis,
-            });
+            resolved.push(placement.clone());
         }
         resolved.sort_by_key(|placement| match placement {
             HolePlacement::Axis { origin, axis } => [
@@ -1844,8 +1820,8 @@ pub(crate) fn project_generated_hole_axes(
 /// Counterbores require identical primary and counterbore axis sets. Flat
 /// blind holes require a finite cylinder span equal to the declared depth.
 /// Drilled holes additionally require a coaxial cone with the declared angle.
-/// Ownership must be unique, or an otherwise placed identical counterbore
-/// family must claim every axis outside the inferred residual set.
+/// Ownership must be unique, or exact seed placements must partition the
+/// remaining carrier set without a shared or unowned direction.
 pub(crate) fn project_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     topology: &HoleTopology<'_>,
@@ -1983,7 +1959,7 @@ pub(crate) fn project_hole_topology_axes(
 
     let cylinders = cylindrical_bore_face_spans(topology);
     project_flat_blind_topology_axes(features, &cylinders);
-    project_drilled_hole_topology_axes(features, &cylinders, topology.surfaces);
+    project_drilled_hole_topology_axes(features, &cylinders, topology);
 }
 
 fn project_flat_blind_topology_axes(
@@ -2047,8 +2023,9 @@ fn project_flat_blind_topology_axes(
 fn project_drilled_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     cylinders: &[(Point3, Vector3, f64, f64, bool)],
-    surfaces: &[Surface],
+    topology: &HoleTopology<'_>,
 ) {
+    expand_seeded_drilled_hole_topology_axes(features, cylinders, topology);
     let unresolved = features
         .iter()
         .enumerate()
@@ -2090,49 +2067,15 @@ fn project_drilled_hole_topology_axes(
         if !hole_construction_is_unique(features, index) {
             continue;
         }
-        let radius = diameter * 0.5;
-        let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
-        let length_tolerance = (length.abs() * 1.0e-9).max(1.0e-8);
-        let cone_keys = surfaces
-            .iter()
-            .filter_map(|surface| match surface.geometry {
-                SurfaceGeometry::Cone {
-                    origin,
-                    axis,
-                    radius: candidate_radius,
-                    ratio,
-                    half_angle,
-                    ..
-                } if (candidate_radius - radius).abs() <= radius_tolerance
-                    && (ratio - 1.0).abs() <= 1.0e-9
-                    && (half_angle - drill_point_angle * 0.5).abs() <= 1.0e-9 =>
-                {
-                    hole_axis_key(&HolePlacement::Axis { origin, axis })
-                }
-                _ => None,
-            })
-            .collect::<HashSet<_>>();
-        if cone_keys.is_empty() {
-            continue;
-        }
-        let Some(placements) = carrier_placements(cylinders.iter().filter_map(
-            |(origin, axis, candidate_radius, candidate_span, _)| {
-                ((candidate_radius - radius).abs() <= radius_tolerance
-                    && (candidate_span - length).abs() <= length_tolerance)
-                    .then_some((*origin, *axis))
-            },
-        )) else {
+        let Some(placements) = drilled_hole_topology_candidates(
+            diameter,
+            length,
+            drill_point_angle,
+            cylinders,
+            topology.surfaces,
+        ) else {
             continue;
         };
-        let placements = placements
-            .into_iter()
-            .filter(|placement| {
-                hole_axis_key(placement).is_some_and(|key| cone_keys.contains(&key))
-            })
-            .collect::<Vec<_>>();
-        if placements.is_empty() {
-            continue;
-        }
         let FeatureDefinition::Hole {
             placements: hole_placements,
             ..
@@ -2141,6 +2084,245 @@ fn project_drilled_hole_topology_axes(
             unreachable!("drilled topology selection requires a hole feature");
         };
         *hole_placements = placements;
+    }
+}
+
+fn drilled_hole_topology_candidates(
+    diameter: f64,
+    length: f64,
+    drill_point_angle: f64,
+    cylinders: &[(Point3, Vector3, f64, f64, bool)],
+    surfaces: &[Surface],
+) -> Option<Vec<HolePlacement>> {
+    let radius = diameter * 0.5;
+    let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let length_tolerance = (length.abs() * 1.0e-9).max(1.0e-8);
+    let cone_keys = surfaces
+        .iter()
+        .filter_map(|surface| match surface.geometry {
+            SurfaceGeometry::Cone {
+                origin,
+                axis,
+                radius: candidate_radius,
+                ratio,
+                half_angle,
+                ..
+            } if (candidate_radius - radius).abs() <= radius_tolerance
+                && (ratio - 1.0).abs() <= 1.0e-9
+                && (half_angle - drill_point_angle * 0.5).abs() <= 1.0e-9 =>
+            {
+                hole_axis_key(&HolePlacement::Axis { origin, axis })
+            }
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    if cone_keys.is_empty() {
+        return None;
+    }
+    let placements = carrier_placements(cylinders.iter().filter_map(
+        |(origin, axis, candidate_radius, candidate_span, _)| {
+            ((candidate_radius - radius).abs() <= radius_tolerance
+                && (candidate_span - length).abs() <= length_tolerance)
+                .then_some((*origin, *axis))
+        },
+    ))?;
+    let placements = placements
+        .into_iter()
+        .filter(|placement| hole_axis_key(placement).is_some_and(|key| cone_keys.contains(&key)))
+        .collect::<Vec<_>>();
+    (!placements.is_empty()).then_some(placements)
+}
+
+fn expand_seeded_drilled_hole_topology_axes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    cylinders: &[(Point3, Vector3, f64, f64, bool)],
+    topology: &HoleTopology<'_>,
+) {
+    let mut visited = HashSet::new();
+    for index in 0..features.len() {
+        if visited.contains(&index) || features[index].suppressed == Some(true) {
+            continue;
+        }
+        let FeatureDefinition::Hole {
+            placements,
+            kind:
+                HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(drill_point_angle),
+                },
+            diameter: Some(Length(diameter)),
+            extent: Some(Termination::Blind {
+                length: Length(length),
+            }),
+            bottom:
+                Some(HoleBottom::Angled {
+                    included_angle: Angle(bottom_angle),
+                    depth_to_tip: false,
+                }),
+            ..
+        } = &features[index].definition
+        else {
+            continue;
+        };
+        if placements.is_empty()
+            || !diameter.is_finite()
+            || *diameter <= 0.0
+            || !length.is_finite()
+            || *length <= 0.0
+            || !drill_point_angle.is_finite()
+            || *drill_point_angle <= 0.0
+            || (bottom_angle - drill_point_angle).abs() > 1.0e-9
+        {
+            continue;
+        }
+        let siblings = features
+            .iter()
+            .enumerate()
+            .filter(|(_, feature)| feature.suppressed != Some(true))
+            .filter(|(_, feature)| {
+                same_hole_construction(&features[index].definition, &feature.definition)
+            })
+            .map(|(sibling, _)| sibling)
+            .collect::<Vec<_>>();
+        visited.extend(siblings.iter().copied());
+        if siblings.len() < 2
+            || siblings.iter().any(|&sibling| {
+                matches!(
+                    &features[sibling].definition,
+                    FeatureDefinition::Hole { placements, .. } if placements.is_empty()
+                )
+            })
+        {
+            continue;
+        }
+        let candidates = drilled_hole_topology_candidates(
+            *diameter,
+            *length,
+            *drill_point_angle,
+            cylinders,
+            topology.surfaces,
+        )
+        .and_then(|candidates| {
+            unclaimed_seeded_hole_candidates(features, &siblings, *diameter, candidates)
+        })
+        .or_else(|| seeded_drilled_bore_candidates(features, &siblings, *diameter, topology));
+        let Some(candidates) = candidates else {
+            continue;
+        };
+        partition_seeded_hole_axes(features, &siblings, &candidates);
+    }
+}
+
+fn seeded_drilled_bore_candidates(
+    features: &[cadmpeg_ir::features::Feature],
+    siblings: &[usize],
+    diameter: f64,
+    topology: &HoleTopology<'_>,
+) -> Option<Vec<HolePlacement>> {
+    let candidates = bore_carrier_placements(diameter * 0.5, topology)?;
+    unclaimed_seeded_hole_candidates(features, siblings, diameter, candidates)
+}
+
+fn unclaimed_seeded_hole_candidates(
+    features: &[cadmpeg_ir::features::Feature],
+    siblings: &[usize],
+    diameter: f64,
+    candidates: Vec<HolePlacement>,
+) -> Option<Vec<HolePlacement>> {
+    let sibling_set = siblings.iter().copied().collect::<HashSet<_>>();
+    let same_diameter = features
+        .iter()
+        .enumerate()
+        .filter(|(_, feature)| feature.suppressed != Some(true))
+        .filter_map(|(index, feature)| match &feature.definition {
+            FeatureDefinition::Hole {
+                diameter: Some(Length(candidate)),
+                placements,
+                ..
+            } if candidate.to_bits() == diameter.to_bits() => Some((index, placements)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if same_diameter
+        .iter()
+        .any(|(index, placements)| !sibling_set.contains(index) && placements.is_empty())
+    {
+        return None;
+    }
+    let claimed = same_diameter
+        .iter()
+        .filter(|(index, _)| !sibling_set.contains(index))
+        .flat_map(|(_, placements)| placements.iter())
+        .map(hole_axis_key)
+        .collect::<Option<HashSet<_>>>()?;
+    let candidates = candidates
+        .into_iter()
+        .filter(|placement| hole_axis_key(placement).is_some_and(|key| !claimed.contains(&key)))
+        .collect::<Vec<_>>();
+    (!candidates.is_empty()).then_some(candidates)
+}
+
+fn partition_seeded_hole_axes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    siblings: &[usize],
+    candidates: &[HolePlacement],
+) {
+    let candidate_keys = candidates
+        .iter()
+        .filter_map(hole_axis_key)
+        .collect::<HashSet<_>>();
+    if candidate_keys.len() != candidates.len() {
+        return;
+    }
+    let mut seed_directions = Vec::with_capacity(siblings.len());
+    for &sibling in siblings {
+        let FeatureDefinition::Hole { placements, .. } = &features[sibling].definition else {
+            return;
+        };
+        let mut axes = placements.iter().filter_map(|placement| match placement {
+            HolePlacement::Axis { axis, .. } => Some(canonical_axis(*axis)),
+            HolePlacement::Directed { .. } => None,
+        });
+        let Some(direction) = axes.next() else {
+            return;
+        };
+        if axes.any(|axis| dot(axis, direction) < 1.0 - 1.0e-9)
+            || placements.iter().any(|placement| {
+                hole_axis_key(placement).is_none_or(|key| !candidate_keys.contains(&key))
+            })
+            || seed_directions
+                .iter()
+                .any(|candidate| dot(*candidate, direction) >= 1.0 - 1.0e-9)
+        {
+            return;
+        }
+        seed_directions.push(direction);
+    }
+
+    let mut partitions = vec![Vec::new(); siblings.len()];
+    for placement in candidates {
+        let HolePlacement::Axis { axis, .. } = placement else {
+            return;
+        };
+        let direction = canonical_axis(*axis);
+        let matches = seed_directions
+            .iter()
+            .enumerate()
+            .filter(|(_, seed)| dot(**seed, direction) >= 1.0 - 1.0e-9)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let [partition] = matches.as_slice() else {
+            return;
+        };
+        partitions[*partition].push(placement.clone());
+    }
+    if partitions.iter().any(Vec::is_empty) {
+        return;
+    }
+    for (&sibling, partition) in siblings.iter().zip(partitions) {
+        let FeatureDefinition::Hole { placements, .. } = &mut features[sibling].definition else {
+            unreachable!("seed partition requires hole features");
+        };
+        *placements = partition;
     }
 }
 

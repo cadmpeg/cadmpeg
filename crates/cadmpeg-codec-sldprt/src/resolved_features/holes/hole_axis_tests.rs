@@ -759,6 +759,178 @@ fn hole_topology_uses_exact_cylinder_spans() {
     );
 }
 
+#[test]
+fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
+    let placement = |x, y, axis| HolePlacement::Axis {
+        origin: Point3::new(x, y, 0.0),
+        axis,
+    };
+    let x_axis = Vector3::new(1.0, 0.0, 0.0);
+    let y_axis = Vector3::new(0.0, 1.0, 0.0);
+    let mut horizontal = model_hole();
+    horizontal.id = FeatureId("horizontal".into());
+    let FeatureDefinition::Hole {
+        placements,
+        kind,
+        extent,
+        bottom,
+        ..
+    } = &mut horizontal.definition
+    else {
+        unreachable!();
+    };
+    *kind = HoleKind::SimpleDrilled {
+        drill_point_angle: Angle(2.0),
+    };
+    *extent = Some(Termination::Blind {
+        length: Length(10.0),
+    });
+    *bottom = Some(HoleBottom::Angled {
+        included_angle: Angle(2.0),
+        depth_to_tip: false,
+    });
+    placements.push(placement(0.0, 30.0, x_axis));
+    let mut vertical = horizontal.clone();
+    vertical.id = FeatureId("vertical".into());
+    let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
+        unreachable!();
+    };
+    *placements = vec![placement(-20.0, 0.0, y_axis)];
+    let candidates = vec![
+        placement(0.0, -10.0, x_axis),
+        placement(0.0, 30.0, x_axis),
+        placement(0.0, 50.0, x_axis),
+        placement(-20.0, 0.0, y_axis),
+        placement(20.0, 0.0, y_axis),
+    ];
+    let mut features = [horizontal.clone(), vertical.clone()];
+
+    partition_seeded_hole_axes(&mut features, &[0, 1], &candidates);
+
+    let FeatureDefinition::Hole {
+        placements: horizontal_placements,
+        ..
+    } = &features[0].definition
+    else {
+        unreachable!();
+    };
+    let FeatureDefinition::Hole {
+        placements: vertical_placements,
+        ..
+    } = &features[1].definition
+    else {
+        unreachable!();
+    };
+    assert_eq!(horizontal_placements.len(), 3);
+    assert_eq!(vertical_placements.len(), 2);
+
+    let mut incomplete = [horizontal.clone(), vertical.clone()];
+    let mut candidates_with_unowned_direction = candidates;
+    candidates_with_unowned_direction.push(placement(0.0, 0.0, Vector3::new(0.0, 0.0, 1.0)));
+    partition_seeded_hole_axes(&mut incomplete, &[0, 1], &candidates_with_unowned_direction);
+    let FeatureDefinition::Hole { placements, .. } = &incomplete[0].definition else {
+        unreachable!();
+    };
+    assert_eq!(placements.len(), 1);
+
+    let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
+        unreachable!();
+    };
+    *placements = vec![placement(20.0, 0.0, x_axis)];
+    let mut ambiguous = [horizontal, vertical];
+    partition_seeded_hole_axes(&mut ambiguous, &[0, 1], &candidates_with_unowned_direction);
+    let FeatureDefinition::Hole { placements, .. } = &ambiguous[0].definition else {
+        unreachable!();
+    };
+    assert_eq!(placements.len(), 1);
+}
+
+#[test]
+fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitors() {
+    let axes = [
+        (Point3::new(0.0, -10.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+        (Point3::new(0.0, 30.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+        (Point3::new(-20.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+        (Point3::new(70.0, 80.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+    ];
+    let surfaces = axes
+        .iter()
+        .enumerate()
+        .map(|(index, (origin, axis))| Surface {
+            id: SurfaceId(format!("seed-surface-{index}")),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: *origin,
+                axis: *axis,
+                ref_direction: if axis.z.abs() == 1.0 {
+                    Vector3::new(1.0, 0.0, 0.0)
+                } else {
+                    Vector3::new(0.0, 0.0, 1.0)
+                },
+                radius: 2.0,
+            },
+            source_object: None,
+        })
+        .collect::<Vec<_>>();
+    let faces = surfaces
+        .iter()
+        .enumerate()
+        .map(|(index, surface)| Face {
+            id: FaceId(format!("seed-face-{index}")),
+            shell: ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: Sense::Reversed,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        })
+        .collect::<Vec<_>>();
+    let topology = HoleTopology {
+        surfaces: &surfaces,
+        faces: &faces,
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let placement = |origin, axis| HolePlacement::Axis { origin, axis };
+    let mut horizontal = model_hole();
+    horizontal.id = FeatureId("horizontal".into());
+    let FeatureDefinition::Hole { placements, .. } = &mut horizontal.definition else {
+        unreachable!();
+    };
+    placements.push(placement(axes[0].0, axes[0].1));
+    let mut vertical = model_hole();
+    vertical.id = FeatureId("vertical".into());
+    let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
+        unreachable!();
+    };
+    placements.push(placement(axes[2].0, axes[2].1));
+    let mut other = model_hole();
+    other.id = FeatureId("other".into());
+    let FeatureDefinition::Hole { placements, .. } = &mut other.definition else {
+        unreachable!();
+    };
+    placements.push(placement(axes[3].0, axes[3].1));
+    let mut features = [horizontal, vertical, other];
+
+    let candidates = seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology)
+        .expect("complete competing ownership");
+
+    assert_eq!(candidates.len(), 3);
+    let claimed = hole_axis_key(&placement(axes[3].0, axes[3].1)).unwrap();
+    assert!(candidates
+        .iter()
+        .all(|candidate| hole_axis_key(candidate) != Some(claimed)));
+
+    let FeatureDefinition::Hole { placements, .. } = &mut features[2].definition else {
+        unreachable!();
+    };
+    placements.clear();
+    assert!(seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology).is_none());
+}
+
 fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
     SketchEntity {
         id: SketchEntityId(format!("profile-line-{ordinal}")),
@@ -2352,7 +2524,112 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     assert_eq!(
         placements,
         &[cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3::new(12.0, 23.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        }]
+    );
+}
+
+#[test]
+fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
+    let hole = model_hole();
+    let sketch_id = SpatialSketchId("position-geometry".into());
+    let sketch_feature = cadmpeg_ir::features::Feature {
+        id: FeatureId("position-sketch".into()),
+        ordinal: 1,
+        name: Some("Position".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: Some("native-position-sketch".into()),
+    };
+    let mut history = native_history();
+    history.features.push(crate::records::Feature {
+        id: "native-position-sketch".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: Some("6".into()),
+        parent_source_id: None,
+        ordinal: 1,
+        name: "Position".into(),
+        kind: "3DSketch".into(),
+        input_class: Some("mo3DProfileFeature_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::default(),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: Vec::new(),
+    });
+    let mut lane = lane_with_position_reference(6);
+    lane.sketch_entities.push(SketchInputEntity {
+        id: "relation-handle".into(),
+        parent: "lane".into(),
+        feature_ref: Some("native-position-sketch".into()),
+        ordinal: 0,
+        offset: 80,
+        object_index: Some(1),
+        local_id: None,
+        kind: SketchInputKind::Relation(SketchRelationKind::Vertical),
+        state_value: Some(1.0),
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    });
+    let sketch = SpatialSketch {
+        id: sketch_id.clone(),
+        name: Some("Position".into()),
+        configuration: None,
+        profiles: Vec::new(),
+        native_ref: Some("lane".into()),
+    };
+    let locus = Point3::new(12.0, 23.0, 30.0);
+    let entity = SpatialSketchEntity {
+        id: SpatialSketchEntityId("relation-locus".into()),
+        sketch: sketch_id,
+        construction: false,
+        native_ref: Some("relation-handle".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point { position: locus },
+    };
+    let surface = Surface {
+        id: SurfaceId("bore".into()),
+        geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(12.0, 23.0, 10.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        },
+        source_object: None,
+    };
+    let mut features = vec![hole, sketch_feature];
+
+    project_spatial_hole_position_sketches(
+        &mut features,
+        &[sketch],
+        &[entity],
+        &[surface],
+        &[history],
+        &[lane],
+    );
+
+    let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
+        panic!("expected hole");
+    };
+    assert_eq!(
+        placements,
+        &[HolePlacement::Axis {
+            origin: Point3::new(12.0, 23.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
         }]
     );

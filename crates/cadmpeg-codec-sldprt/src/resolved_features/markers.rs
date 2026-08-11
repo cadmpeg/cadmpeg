@@ -266,6 +266,16 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 (offset.checked_add(66)?, true)
             }
             prefix
+                if prefix == SKETCH_MARKER
+                    && matches!(marker_native_code(payload, offset), Some(1..=85))
+                    && locus == [0x04, 0x00, 0x02, 0x00]
+                    && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+                    && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(66)?, true)
+            }
+            prefix
                 if prefix == LEGACY_SKETCH_MARKER
                     && marker_native_code(payload, offset).is_some()
                     && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])

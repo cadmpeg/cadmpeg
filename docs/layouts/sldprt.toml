@@ -5468,6 +5468,93 @@ path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
 contains = "const EXTENDED_DIRECTION_OFFSET: usize = 129;"
 note = "The parser reads the extended-form pull direction only after the nine-byte zero discriminator."
 
+[[record]]
+name = "current_spatial_marker_coordinate_prefix"
+kind = "byte"
+section = "2"
+anchor = "In the second form, the native kind is at marker +17"
+size = 90
+endianness = "little"
+note = "The fixed coordinate prefix is shared by point and relation-handle markers. The record trailer follows the third coordinate."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An object-indexed marker-backed spatial point begins with `ff ff 07 00 01` or `ff ff 1f 00 03`"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes"
+
+[[record.field]]
+name = "sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "little-endian f32 `-1.0`"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "the native kind is at marker +17"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "Reserved bytes before the profile locus."
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "role bytes `04 00 02 00`"
+
+[[record.field]]
+name = "profile_role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "profile role u16 `1`"
+
+[[record.gap]]
+offset = 29
+size = 19
+note = "Marker state, selector, and reserved bytes precede the state value."
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "marker +48 stores f64 `1`"
+
+[[record.gap]]
+offset = 56
+size = 8
+note = "Zero bytes before the coordinate tag."
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "marker +64 contains `0e 00`"
+
+[[record.field]]
+name = "coordinates"
+offset = 66
+type = "f64[3]"
+source = "spec"
+anchor = "the coordinates begin at marker +66"
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]

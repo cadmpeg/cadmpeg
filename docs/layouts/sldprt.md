@@ -1501,6 +1501,30 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser reads the extended-form pull direction only after the nine-byte zero discriminator.
 
+## `current_spatial_marker_coordinate_prefix`
+
+Spec §2 · layout: byte offsets · size: 90 B
+
+The fixed coordinate prefix is shared by point and relation-handle markers. The record trailer follows the third coordinate.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An object-indexed marker-backed spatial point begins with `ff ff 07 00 01` or `ff ff 1f 00 03` |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes |
+| 13 | 4 | `sentinel` | `f32` | little | spec | little-endian f32 `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | the native kind is at marker +17 |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | role bytes `04 00 02 00` |
+| 27 | 2 | `profile_role` | `u16` | little | spec | profile role u16 `1` |
+| 48 | 8 | `state_value` | `f64` | little | spec | marker +48 stores f64 `1` |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | marker +64 contains `0e 00` |
+| 66 | 24 | `coordinates` | `f64[3]` | little | spec | the coordinates begin at marker +66 |
+
+Unstated regions:
+
+- `21..23` (2 B): Reserved bytes before the profile locus.
+- `29..48` (19 B): Marker state, selector, and reserved bytes precede the state value.
+- `56..64` (8 B): Zero bytes before the coordinate tag.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

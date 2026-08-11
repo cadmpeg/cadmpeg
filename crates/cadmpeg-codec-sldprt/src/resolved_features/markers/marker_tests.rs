@@ -121,6 +121,7 @@ fn legacy_spatial_point_marker_decodes_model_coordinates() {
 #[test]
 fn relation_backed_spatial_point_markers_decode_model_coordinates() {
     for (marker, sentinel, coordinates) in [
+        (SKETCH_MARKER, 64, 66),
         (LEGACY_SKETCH_MARKER, 64, 66),
         (LEGACY_EXTENDED_SKETCH_MARKER, 56, 58),
     ] {
@@ -133,6 +134,7 @@ fn relation_backed_spatial_point_markers_decode_model_coordinates() {
         payload[offset + 17..offset + 21].copy_from_slice(&3u32.to_le_bytes());
         payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+        payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
         payload[offset + sentinel..offset + sentinel + 2].copy_from_slice(&[0x0e, 0x00]);
         for (index, value) in [-0.08_f64, 0.075, 0.0055].into_iter().enumerate() {
             let start = offset + coordinates + index * 8;
@@ -143,6 +145,13 @@ fn relation_backed_spatial_point_markers_decode_model_coordinates() {
             marker_spatial_coordinates(&payload, offset),
             Some(Point3::new(-80.0, 75.0, 5.5))
         );
+        if marker == SKETCH_MARKER {
+            payload[offset + 17..offset + 21].copy_from_slice(&86u32.to_le_bytes());
+            assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+            payload[offset + 17..offset + 21].copy_from_slice(&3u32.to_le_bytes());
+            payload[offset + 56] = 1;
+            assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+        }
     }
 }
 
