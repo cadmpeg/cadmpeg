@@ -301,7 +301,7 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
     }
 }
 
-fn loft_profile_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
+fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
     use cadmpeg_ir::features::ProfileRef;
 
     match profile {
@@ -348,6 +348,45 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::FreeformSurfaceUnresolved
         | FeatureDefinition::BoundarySurfaceUnresolved
         | FeatureDefinition::DraftUnresolved => true,
+        FeatureDefinition::Extrude {
+            profile,
+            start,
+            extent,
+            ..
+        } => {
+            use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart, Termination, VertexSelection};
+
+            let termination_is_resolved = |termination: &Termination| match termination {
+                Termination::Unresolved | Termination::Angle { .. } => false,
+                Termination::ToFace { face, .. }
+                | Termination::OffsetFromFace { face, .. }
+                | Termination::ToShape { target: face } => face_selection_is_resolved(face),
+                Termination::ToVertex { vertex } => matches!(
+                    vertex,
+                    VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
+                ),
+                Termination::Blind { .. }
+                | Termination::ThroughAll
+                | Termination::ThroughNext
+                | Termination::ToFirst
+                | Termination::ToLast => true,
+            };
+            let start_is_resolved = match start {
+                ExtrudeStart::Unresolved => false,
+                ExtrudeStart::FromFace { face, .. } => face_selection_is_resolved(face),
+                ExtrudeStart::ProfilePlane | ExtrudeStart::OffsetProfilePlane { .. } => true,
+            };
+            let extent_is_resolved = match extent {
+                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                    termination_is_resolved(&side.termination)
+                }
+                ExtrudeExtent::TwoSided { first, second } => {
+                    termination_is_resolved(&first.termination)
+                        && termination_is_resolved(&second.termination)
+                }
+            };
+            !profile_ref_is_resolved(profile) || !start_is_resolved || !extent_is_resolved
+        }
         // The draft angle remains available when face recipes fail, but replay
         // also requires resolved selections and the material-side convention.
         FeatureDefinition::Draft {
@@ -421,7 +460,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             sections.len() < 2
                 || sections.iter().any(|section| match section {
                     cadmpeg_ir::features::LoftSection::Profile(profile) => {
-                        !loft_profile_is_resolved(profile)
+                        !profile_ref_is_resolved(profile)
                     }
                     cadmpeg_ir::features::LoftSection::Point(
                         cadmpeg_ir::features::LoftPointSection::Native(_),
@@ -1042,7 +1081,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         matches!(
                             section,
                             cadmpeg_ir::features::LoftSection::Profile(profile)
-                                if !loft_profile_is_resolved(profile)
+                                if !profile_ref_is_resolved(profile)
                         )
                     })
                     .count();
@@ -4828,6 +4867,53 @@ mod tests {
     }
 
     #[test]
+    fn extrude_completeness_requires_resolved_profile_start_and_termination() {
+        let extrude = |profile: serde_json::Value,
+                       start: serde_json::Value,
+                       termination: serde_json::Value| {
+            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(serde_json::json!({
+                "definition": "extrude",
+                "profile": profile,
+                "start": start,
+                "extent": {
+                    "kind": "one_sided",
+                    "side": {"termination": termination}
+                },
+                "solid": true,
+                "op": "new_body"
+            }))
+            .expect("Extrude definition")
+        };
+        let sketch_profile = serde_json::json!({
+            "kind": "sketch_profiles",
+            "value": {"sketch": "sketch:1", "profiles": [0]}
+        });
+        let profile_start = serde_json::json!({"kind": "profile_plane"});
+        let blind = serde_json::json!({"kind": "blind", "length": 10.0});
+
+        assert!(!feature_definition_is_incomplete(&extrude(
+            sketch_profile.clone(),
+            profile_start.clone(),
+            blind.clone(),
+        )));
+        assert!(feature_definition_is_incomplete(&extrude(
+            serde_json::json!({"kind": "native", "value": "native:profile"}),
+            profile_start.clone(),
+            blind.clone(),
+        )));
+        assert!(feature_definition_is_incomplete(&extrude(
+            sketch_profile.clone(),
+            serde_json::json!({"kind": "unresolved"}),
+            blind,
+        )));
+        assert!(feature_definition_is_incomplete(&extrude(
+            sketch_profile,
+            profile_start,
+            serde_json::json!({"kind": "to_face", "face": {"kind": "unresolved"}}),
+        )));
+    }
+
+    #[test]
     fn draft_completeness_requires_material_side() {
         let complete: cadmpeg_ir::features::FeatureDefinition =
             serde_json::from_value(serde_json::json!({
@@ -5358,7 +5444,7 @@ mod tests {
             design_projection_gaps(&ir, &native),
             DesignProjectionGaps {
                 unresolved_body_bindings: 0,
-                incomplete_features: 2,
+                incomplete_features: 3,
                 native_reference_images: 0,
                 native_decals: 0,
                 unprojected_feature_scopes: 1,
