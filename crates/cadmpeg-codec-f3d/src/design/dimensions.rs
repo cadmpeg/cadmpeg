@@ -932,6 +932,7 @@ fn project_all_dimension_constraints(
                 Vec::default()
             };
             let repeated = repeated_linear_dimension(&linear_candidates, parameter_id.clone());
+            let extension = recipe_extension_point_dimension(&linear_candidates, entities, &sketch);
             let radial = owner_scoped_radial_dimension_definition(
                 entities,
                 &sketch,
@@ -942,9 +943,16 @@ fn project_all_dimension_constraints(
             let concentric =
                 concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id);
             let definition = radial.unwrap_or_else(|| {
-                match (linear_candidates.as_slice(), repeated, concentric) {
-                    ([definition], _, _) => definition.clone(),
-                    (_, Some(definition), _) | (_, _, Some(definition)) => definition,
+                match (
+                    linear_candidates.as_slice(),
+                    repeated,
+                    extension,
+                    concentric,
+                ) {
+                    ([definition], _, _, _) => definition.clone(),
+                    (_, Some(definition), _, _)
+                    | (_, _, Some(definition), _)
+                    | (_, _, _, Some(definition)) => definition,
                     _ => Definition::Native {
                         native_kind: parameter.source_kind.clone(),
                         native_state: None,
@@ -3989,6 +3997,108 @@ pub(crate) fn recipe_dimension_candidate_entities(
         }
     }
     entities
+}
+
+/// Resolve an ambiguous recipe-backed directional distance through one
+/// detached point on the extension of an axis-aligned bounded line. The other
+/// measured point must be an endpoint of that same line.
+pub(crate) fn recipe_extension_point_dimension(
+    candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinition],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    let sketch_entities = entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch)
+        .collect::<Vec<_>>();
+    let lines = sketch_entities
+        .iter()
+        .copied()
+        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .collect::<Vec<_>>();
+    let point = |id: &cadmpeg_ir::sketches::SketchEntityId| {
+        sketch_entities.iter().copied().find(|entity| {
+            entity.id == *id && matches!(entity.geometry, SketchGeometry::Point { .. })
+        })
+    };
+    let is_any_line_endpoint = |position: Point2| {
+        lines.iter().any(|line| {
+            sketch_entity_endpoints(line).is_some_and(|[start, end]| {
+                sketch_points_close(position, start) || sketch_points_close(position, end)
+            })
+        })
+    };
+    let mut matched = None;
+    for candidate in candidates {
+        let (first_id, second_id, horizontal) = match candidate {
+            Definition::HorizontalDistance { first, second, .. } => {
+                (locus_entity_id(first), locus_entity_id(second), true)
+            }
+            Definition::VerticalDistance { first, second, .. } => {
+                (locus_entity_id(first), locus_entity_id(second), false)
+            }
+            _ => continue,
+        };
+        let first = point(first_id)?;
+        let second = point(second_id)?;
+        let SketchGeometry::Point {
+            position: first_position,
+        } = first.geometry
+        else {
+            unreachable!("point lookup returns only point entities")
+        };
+        let SketchGeometry::Point {
+            position: second_position,
+        } = second.geometry
+        else {
+            unreachable!("point lookup returns only point entities")
+        };
+        let qualifies = [
+            (first_position, second_position),
+            (second_position, first_position),
+        ]
+        .into_iter()
+        .any(|(detached, endpoint)| {
+            !is_any_line_endpoint(detached)
+                && lines.iter().any(|line| {
+                    let SketchGeometry::Line { start, end } = line.geometry else {
+                        unreachable!("line candidates contain only line entities")
+                    };
+                    let du = end.u - start.u;
+                    let dv = end.v - start.v;
+                    let norm_squared = du * du + dv * dv;
+                    let axis_aligned = if horizontal {
+                        dv.abs() <= 1.0e-9 * (1.0 + du.abs())
+                    } else {
+                        du.abs() <= 1.0e-9 * (1.0 + dv.abs())
+                    };
+                    if norm_squared <= 1.0e-18 || !axis_aligned {
+                        return false;
+                    }
+                    if !sketch_points_close(endpoint, start) && !sketch_points_close(endpoint, end)
+                    {
+                        return false;
+                    }
+                    let relative_u = detached.u - start.u;
+                    let relative_v = detached.v - start.v;
+                    let carrier_error = relative_u.mul_add(dv, -relative_v * du).abs();
+                    let carrier_tolerance = 1.0e-9
+                        * (1.0 + norm_squared.sqrt() + relative_u.abs().max(relative_v.abs()));
+                    let projection = (relative_u * du + relative_v * dv) / norm_squared;
+                    carrier_error <= carrier_tolerance
+                        && !(-1.0e-9..=1.0 + 1.0e-9).contains(&projection)
+                })
+        });
+        if qualifies {
+            if matched.is_some() {
+                return None;
+            }
+            matched = Some(candidate.clone());
+        }
+    }
+    matched
 }
 
 pub(crate) fn parallel_line_separation(

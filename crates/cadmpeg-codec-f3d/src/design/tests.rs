@@ -19766,6 +19766,84 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
 }
 
 #[test]
+fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
+    let sketch = SketchId("sketch".into());
+    let parameter = cadmpeg_ir::features::ParameterId("parameter".into());
+    let point = |name: &str, u, v| SketchEntity {
+        id: SketchEntityId(name.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(u, v),
+        },
+    };
+    let entities = vec![
+        SketchEntity {
+            id: SketchEntityId("carrier".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(2.0, 0.0),
+                end: Point2::new(0.0, 0.0),
+            },
+        },
+        point("carrier-start", 2.0, 0.0),
+        point("carrier-end", 0.0, 0.0),
+        point("extension", 4.0, 0.0),
+        point("off-carrier-horizontal", 2.0, 3.0),
+        point("off-carrier-vertical", 4.0, 2.0),
+    ];
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        &entities, &sketch, 2.0, &parameter,
+    );
+    assert!(candidates.len() > 2);
+    assert!(matches!(
+        crate::design::dimensions::recipe_extension_point_dimension(
+            &candidates,
+            &entities,
+            &sketch,
+        ),
+        Some(SketchConstraintDefinition::HorizontalDistance { first, second, parameter: actual })
+            if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("carrier-start".into()))
+                && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("extension".into()))
+                && actual == parameter
+    ));
+
+    let mut ambiguous = entities;
+    ambiguous.extend([
+        point("second-carrier-start", 12.0, 5.0),
+        point("second-extension", 14.0, 5.0),
+        SketchEntity {
+            id: SketchEntityId("second-carrier".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(12.0, 5.0),
+                end: Point2::new(10.0, 5.0),
+            },
+        },
+    ]);
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        &ambiguous, &sketch, 2.0, &parameter,
+    );
+    assert!(crate::design::dimensions::recipe_extension_point_dimension(
+        &candidates,
+        &ambiguous,
+        &sketch,
+    )
+    .is_none());
+}
+
+#[test]
 fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
     let sketch = SketchId("sketch".into());
     let parameter = DesignParameter {
