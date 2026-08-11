@@ -20715,19 +20715,23 @@ fn schema_feature_definition(
             && stepped_directed.is_none())
         .then(|| counterbore_axis_placement(scan, ir, feature_id))
         .flatten();
-        let drilled_table = simple_drilled_hole_recipe_table(
+        let drilled_recipe = simple_drilled_hole_recipe(
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         );
-        let drilled_dimensions = drilled_table.and_then(|table| {
-            simple_drilled_hole_dimensions(scan, simple_drilled_hole_envelope_spans(scan, table))
+        let drilled_dimensions = drilled_recipe.and_then(|recipe| {
+            simple_drilled_hole_dimensions(
+                scan,
+                simple_drilled_hole_envelope_spans(scan, recipe.table),
+                recipe.dimension_family,
+            )
         });
         let drilled_placement =
-            drilled_table
+            drilled_recipe
                 .zip(drilled_dimensions)
-                .and_then(|(table, (diameter, _, depth))| {
-                    simple_drilled_hole_placement(scan, table, diameter, depth)
+                .and_then(|(recipe, (diameter, _, depth))| {
+                    simple_drilled_hole_placement(scan, recipe.table, diameter, depth)
                 });
         let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
@@ -22039,20 +22043,38 @@ fn paired_hole_replay_surfaces_by_source(
     Some(paired_by_source)
 }
 
-fn simple_drilled_hole_recipe_table<'a>(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SimpleDrilledDimensionFamily {
+    ExternalId2Depth,
+    ExternalId4Depth,
+}
+
+impl SimpleDrilledDimensionFamily {
+    fn depth_external_id(self) -> u32 {
+        match self {
+            Self::ExternalId2Depth => 2,
+            Self::ExternalId4Depth => 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SimpleDrilledHoleRecipe<'a> {
+    table: &'a crate::feature::FeatureEntityTable,
+    dimension_family: SimpleDrilledDimensionFamily,
+}
+
+fn simple_drilled_hole_recipe<'a>(
     feature_id: u32,
     tables: &'a [crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
-) -> Option<&'a crate::feature::FeatureEntityTable> {
+) -> Option<SimpleDrilledHoleRecipe<'a>> {
     let candidates = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .filter(|table| {
-            let Some(generated_by_source) =
-                paired_hole_replay_surfaces_by_source(feature_id, table, rows)
-            else {
-                return false;
-            };
+        .filter_map(|table| {
+            let generated_by_source =
+                paired_hole_replay_surfaces_by_source(feature_id, table, rows)?;
             let recipe_groups = generated_by_source.values().collect::<Vec<_>>();
             let paired = |kind| {
                 recipe_groups
@@ -22064,16 +22086,24 @@ fn simple_drilled_hole_recipe_table<'a>(
                 .iter()
                 .filter(|entries| entries.as_slice() == [None, None])
                 .count();
-            paired(crate::surface::SurfaceKind::Cone) == 1
+            let dimension_family = match rowless {
+                2 => SimpleDrilledDimensionFamily::ExternalId2Depth,
+                3 => SimpleDrilledDimensionFamily::ExternalId4Depth,
+                _ => return None,
+            };
+            (paired(crate::surface::SurfaceKind::Cone) == 1
                 && paired(crate::surface::SurfaceKind::Cylinder) == 1
-                && rowless >= 2
-                && recipe_groups.len() == rowless + 2
+                && recipe_groups.len() == rowless + 2)
+                .then_some(SimpleDrilledHoleRecipe {
+                    table,
+                    dimension_family,
+                })
         })
         .collect::<Vec<_>>();
-    let [table] = candidates.as_slice() else {
+    let [recipe] = candidates.as_slice() else {
         return None;
     };
-    Some(*table)
+    Some(*recipe)
 }
 
 fn simple_drilled_hole_envelope_spans(
@@ -22462,6 +22492,7 @@ fn paired_corner_envelope_axis_spans(
 fn simple_drilled_hole_dimensions(
     scan: &ContainerScan,
     observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
+    family: SimpleDrilledDimensionFamily,
 ) -> Option<(f64, f64, f64)> {
     simple_drilled_hole_dimension_values(
         scan.features
@@ -22470,21 +22501,28 @@ fn simple_drilled_hole_dimensions(
             .filter(|definition| definition.id == 911)
             .filter_map(|definition| definition.dimensions.as_ref()),
         observed_envelope_spans,
+        family,
     )
 }
 
 fn simple_drilled_hole_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
     observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
+    family: SimpleDrilledDimensionFamily,
 ) -> Option<(f64, f64, f64)> {
     let tables = tables
         .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
         .collect::<Vec<_>>();
+    let depth_external_id = family.depth_external_id();
     let has_simple_drilled_signature = |table: &crate::feature::FeatureDimensionTable| {
         [
             (0, 2, crate::feature::DimensionUnit::Millimeters),
             (1, 10, crate::feature::DimensionUnit::Radians),
-            (2, 2, crate::feature::DimensionUnit::Millimeters),
+            (
+                depth_external_id,
+                2,
+                crate::feature::DimensionUnit::Millimeters,
+            ),
         ]
         .into_iter()
         .all(|(external_id, dimension_type, unit)| {
@@ -22500,13 +22538,6 @@ fn simple_drilled_hole_dimension_values<'a>(
                 == 1
         })
     };
-    if observed_envelope_spans.is_none()
-        && tables
-            .iter()
-            .any(|table| !has_simple_drilled_signature(table))
-    {
-        return None;
-    }
     let candidates =
         tables
             .into_iter()
@@ -22528,7 +22559,11 @@ fn simple_drilled_hole_dimension_values<'a>(
                     row.value.filter(|value| value.is_finite())
                 };
                 let bore_radius = value(0, 2, crate::feature::DimensionUnit::Millimeters)?;
-                let signed_depth = value(2, 2, crate::feature::DimensionUnit::Millimeters)?;
+                let signed_depth = value(
+                    depth_external_id,
+                    2,
+                    crate::feature::DimensionUnit::Millimeters,
+                )?;
                 let bore_diameter = 2.0 * bore_radius;
                 (bore_diameter.is_finite() && bore_diameter > 0.0 && signed_depth != 0.0)
                     .then_some(())?;

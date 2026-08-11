@@ -2206,8 +2206,12 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let mut table = simple_drilled_recipe_table(9);
     let mut rows = simple_drilled_recipe_surface_rows(9);
 
-    assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows,).is_some());
-    assert!(simple_drilled_hole_recipe_table(9, &[table.clone(), table.clone()], &rows,).is_none());
+    assert_eq!(
+        simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows)
+            .map(|recipe| recipe.dimension_family),
+        Some(SimpleDrilledDimensionFamily::ExternalId2Depth)
+    );
+    assert!(simple_drilled_hole_recipe(9, &[table.clone(), table.clone()], &rows,).is_none());
 
     let mut extended = table.clone();
     let mut extra = extended.entries[3].clone();
@@ -2220,7 +2224,23 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     extended.entry_ids.insert(14, extra.entity_id);
     extended.non_surface_entity_ids.push(extra.entity_id);
     extended.entries.insert(14, extra);
-    assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&extended), &rows).is_some());
+    assert_eq!(
+        simple_drilled_hole_recipe(9, std::slice::from_ref(&extended), &rows)
+            .map(|recipe| recipe.dimension_family),
+        Some(SimpleDrilledDimensionFamily::ExternalId4Depth)
+    );
+    let mut unknown_family = extended;
+    let mut extra = unknown_family.entries[7].clone();
+    extra.entity_id = 28;
+    extra.source_entity_id = Some(6);
+    unknown_family.entry_ids.insert(8, extra.entity_id);
+    unknown_family.non_surface_entity_ids.push(extra.entity_id);
+    unknown_family.entries.insert(8, extra.clone());
+    extra.entity_id = 29;
+    unknown_family.entry_ids.insert(16, extra.entity_id);
+    unknown_family.non_surface_entity_ids.push(extra.entity_id);
+    unknown_family.entries.insert(16, extra);
+    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&unknown_family), &rows).is_none());
 
     let mut bottom = table.entries[2].clone();
     bottom.entity_id = 20;
@@ -2228,16 +2248,16 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     table.entry_ids.insert(2, bottom.entity_id);
     table.non_surface_entity_ids.push(bottom.entity_id);
     table.entries.insert(2, bottom.clone());
-    assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows).is_some());
+    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_some());
     bottom.entity_id = 25;
     table.entry_ids.insert(3, bottom.entity_id);
     table.non_surface_entity_ids.push(bottom.entity_id);
     table.entries.insert(3, bottom);
-    assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows).is_none());
+    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_none());
 
     let table = simple_drilled_recipe_table(9);
     rows[1].kind = crate::surface::SurfaceKind::Cylinder;
-    assert!(simple_drilled_hole_recipe_table(9, &[table], &rows).is_none());
+    assert!(simple_drilled_hole_recipe(9, &[table], &rows).is_none());
 }
 
 #[test]
@@ -2270,22 +2290,24 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
         offset: 0,
     };
     let angle = 118.0_f64.to_radians();
+    let id2 = SimpleDrilledDimensionFamily::ExternalId2Depth;
     let first = table(4.2, angle, -25.0);
     let second = table(4.2, angle, -25.0);
 
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &second].into_iter(), None),
+        simple_drilled_hole_dimension_values([&first, &second].into_iter(), None, id2),
         Some((8.4, angle, 25.0))
     );
     let conflicting = table(5.0, angle, -25.0);
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &conflicting].into_iter(), None),
+        simple_drilled_hole_dimension_values([&first, &conflicting].into_iter(), None, id2),
         None
     );
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&first, &conflicting].into_iter(),
             Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            id2,
         ),
         Some((8.4, angle, 25.0))
     );
@@ -2293,31 +2315,42 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
         simple_drilled_hole_dimension_values(
             [&first, &conflicting].into_iter(),
             Some([[Some(12.0), None], [Some(30.0), None], [Some(100.0), None],]),
+            id2,
         ),
         None
     );
     let mut other_layout = table(5.0, angle, -30.0);
     other_layout.rows[2].external_id = 4;
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &other_layout].into_iter(), None),
-        None
+        simple_drilled_hole_dimension_values([&first, &other_layout].into_iter(), None, id2),
+        Some((8.4, angle, 25.0))
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &other_layout].into_iter(),
+            None,
+            SimpleDrilledDimensionFamily::ExternalId4Depth,
+        ),
+        Some((10.0, angle, 30.0))
     );
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&first, &other_layout].into_iter(),
             Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            id2,
         ),
         Some((8.4, angle, 25.0))
     );
     let invalid_angle = table(4.2, std::f64::consts::PI, -25.0);
     assert_eq!(
-        simple_drilled_hole_dimension_values([&invalid_angle].into_iter(), None),
+        simple_drilled_hole_dimension_values([&invalid_angle].into_iter(), None, id2),
         None
     );
     assert_eq!(
         simple_drilled_hole_dimension_values(
             [&first, &invalid_angle].into_iter(),
             Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            id2,
         ),
         None
     );
@@ -2326,6 +2359,7 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
         simple_drilled_hole_dimension_values(
             [&first, &invalid_other_angle].into_iter(),
             Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            id2,
         ),
         Some((8.4, angle, 25.0))
     );
@@ -2334,6 +2368,7 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
         simple_drilled_hole_dimension_values(
             [&adjacent_diameter].into_iter(),
             Some([[Some(6.375), None], [Some(0.5), None], [None, Some(0.25)],]),
+            id2,
         ),
         Some((0.25, angle, 0.5))
     );

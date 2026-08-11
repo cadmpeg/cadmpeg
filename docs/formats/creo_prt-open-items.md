@@ -564,7 +564,9 @@ defines the generated-surface recipe and the bore-radius, included-angle, and
 blind-depth dimension roles. The paired cylinder parameter records provide
 per-axis common and adjacent-union spans. Bore diameter and blind depth select
 the complete tables that match those spans on distinct axes. All matching
-tables must define one equal tuple. Complementary envelopes define placement
+tables must define one equal tuple. Two rowless materialization-source pairs
+select the external-ID-2 depth family; three select the external-ID-4 depth
+family. Complementary envelopes define placement
 directly. A one-sided envelope pair defines the second radial coordinate when
 the patches share exactly one normalized bound and their non-shared bounds
 differ by the bore diameter. A clipped envelope pair defines its missing radial

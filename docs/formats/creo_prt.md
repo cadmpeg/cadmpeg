@@ -2801,18 +2801,26 @@ are evaluable.
 
 A class-911 table-class-29 simple-drilled recipe has one paired source that
 materializes two cone rows, one paired source that materializes two cylinder
-rows, and at least two other paired sources that each contain two rowless face
-uses. Every source in the materialization roster has one of these forms. A
-complete three-row class-911 dimension table assigns external ID `0`
-to the bore radius, ID `1` to the included drill-point angle, and ID `2` to the
-blind depth. IDs `0` and `2` have
+rows, and either two or three other paired sources that each contain two
+rowless face uses. Every source in the materialization roster has one of these
+forms. A complete three-row class-911 external-ID-2 dimension table assigns
+external ID `0` to the bore radius, ID `1` to the included drill-point angle,
+and ID `2` to the blind depth. IDs `0` and `2` have
 dimension type `2` and millimetre units. ID `1` has dimension type `10` and
 radian units. The bore radius is positive, the depth is nonzero, and the
 included angle is strictly between zero and π. The neutral bore diameter is
 twice the stored radius. The depth magnitude is the blind length; its sign is
 an orientation state and does not change that length. Only a table with these
-exact three row signatures participates in this dimension family. Other
+exact three row signatures participates in the external-ID-2 family. Other
 three-row layouts are independent template families.
+
+The recipe with exactly two rowless source pairs selects the external-ID-2
+depth family. The recipe with exactly three rowless source pairs selects the
+external-ID-4 depth family. The external-ID-4 family assigns ID `0` to the bore
+radius, ID `1` to the included drill-point angle, and ID `4` to the blind
+depth. Its types, units, value invariants, and neutral conversions are the same
+as the external-ID-2 family. A different rowless-pair count does not define a
+simple-drilled recipe.
 
 Each materialized cylinder row in this recipe has a type-24 compound-close
 parameter record. The last six scalar slots in the final frame are two
@@ -2859,9 +2867,10 @@ When the cylinder envelope is available, complete three-row class-911 tables
 whose diameter and depth do not match it do not participate in template
 selection. All participating tables must supply one equal tuple. When the
 envelope is unavailable, every complete three-row class-911 table in the
-document must supply one equal tuple. The recipe transfers as a simple drilled
-hole with that diameter, angle, and blind depth. The dimension tuple alone does
-not assign the hole axis, entry position, placement face, or depth-to-tip state.
+recipe-selected dimension family must supply one equal tuple. The recipe
+transfers as a simple drilled hole with that diameter, angle, and blind depth.
+The dimension tuple alone does not assign the hole axis, entry position,
+placement face, or depth-to-tip state.
 Unsourced class-200 entries are admitted only when they are rowless
 non-surface entities; they do not create source section entity groups.
 When a feature owns multiple table-class-29 tables, exactly one table must have
