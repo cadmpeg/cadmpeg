@@ -846,7 +846,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         ]
     };
 
-    for (terminal, mirror_wall) in [(-6.0, false), (-6.001, true)] {
+    for (terminal, mirror_wall) in [(-6.0, false), (-6.000_05, false), (-6.001, true)] {
         let construction =
             profiled_hole_construction(&profile, &sketch, &entities(terminal, mirror_wall))
                 .expect("exact profile");

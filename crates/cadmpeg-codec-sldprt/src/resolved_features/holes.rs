@@ -544,7 +544,7 @@ struct ProfiledHoleConstruction {
 }
 
 const DISPLAY_DIMENSION_TOLERANCE_MM: f64 = 1.0e-5;
-const GENERATED_PROFILE_TERMINAL_OVERRUN_MM: [f64; 3] = [0.0, 0.000_025, 0.001];
+const GENERATED_PROFILE_TERMINAL_OVERRUN_MM: [f64; 4] = [0.0, 0.000_025, 0.000_05, 0.001];
 
 fn profiled_hole_construction(
     profile: &crate::records::Feature,
