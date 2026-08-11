@@ -519,9 +519,7 @@ fn project_dimension(
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<PmiAnnotation> {
     let dimension = dimension_kind(short_class(&entity.class))?;
-    let quantity = matches!(dimension, DimensionKind::Angular)
-        .then_some(PmiQuantity::Angle)
-        .unwrap_or(PmiQuantity::Length);
+    let quantity = dimension_quantity(&dimension);
     let nominal = finite(entity.doubles.get("Nominal").copied()?)
         .filter(|value| *value != 0.0 || entity.integers.contains_key("Dimension"));
     let lower_deviation = deviation(entity, nominal, "LowerLimit", "MinusTolerance");
@@ -586,6 +584,21 @@ fn enrich_implicit_nominals(
                 DimensionKind::Size,
                 length_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
             ),
+            "GdtCounterBore" => (
+                DimensionKind::Size,
+                counterbore_from_direct_geometry(entity, &feature_index)
+                    .map(ImplicitNominal::Exact),
+            ),
+            "GdtCounterSinkDiameter" => (
+                DimensionKind::Size,
+                countersink_diameter_from_direct_geometry(entity, &feature_index)
+                    .map(ImplicitNominal::Exact),
+            ),
+            "GdtCounterSinkAngle" => (
+                DimensionKind::Angular,
+                countersink_angle_from_direct_geometry(entity, &feature_index)
+                    .map(ImplicitNominal::Exact),
+            ),
             _ => continue,
         };
         let Some(source) = source else {
@@ -623,13 +636,20 @@ fn enrich_implicit_nominals(
             continue;
         };
         if dimension == &dimension_kind && slot.is_none() {
-            *slot = Some(length(nominal));
-            *lower_deviation =
-                deviation(entity, Some(nominal), "LowerLimit", "MinusTolerance").map(length);
-            *upper_deviation =
-                deviation(entity, Some(nominal), "UpperLimit", "PlusTolerance").map(length);
+            let quantity = dimension_quantity(&dimension_kind);
+            *slot = Some(pmi_value(nominal, quantity));
+            *lower_deviation = deviation(entity, Some(nominal), "LowerLimit", "MinusTolerance")
+                .map(|value| pmi_value(value, quantity));
+            *upper_deviation = deviation(entity, Some(nominal), "UpperLimit", "PlusTolerance")
+                .map(|value| pmi_value(value, quantity));
         }
     }
+}
+
+fn dimension_quantity(dimension: &DimensionKind) -> PmiQuantity {
+    matches!(dimension, DimensionKind::Angular)
+        .then_some(PmiQuantity::Angle)
+        .unwrap_or(PmiQuantity::Length)
 }
 
 fn diameter_from_applied_geometry(
@@ -677,6 +697,34 @@ fn length_from_applied_geometry(
     })
 }
 
+fn counterbore_from_direct_geometry(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    measurement_from_direct_features(annotation, feature_index, "GdtCylinder", |feature| {
+        finite_positive(nominal_radius(feature, "NomCylinder")? * 2.0)
+    })
+}
+
+fn countersink_diameter_from_direct_geometry(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    measurement_from_direct_features(
+        annotation,
+        feature_index,
+        "GdtCone",
+        nominal_cone_top_diameter,
+    )
+}
+
+fn countersink_angle_from_direct_geometry(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    measurement_from_direct_features(annotation, feature_index, "GdtCone", nominal_cone_angle)
+}
+
 fn measurement_from_applied_geometry(
     annotation: &Entity,
     mut measurement: impl FnMut(&str) -> Option<f64>,
@@ -686,6 +734,23 @@ fn measurement_from_applied_geometry(
         .references
         .iter()
         .filter_map(|reference| measurement(&reference.id))
+        .collect::<Vec<_>>();
+    unique_measurement(&candidates)
+}
+
+fn measurement_from_direct_features(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+    class: &str,
+    measurement: impl Fn(&Entity) -> Option<f64>,
+) -> Option<f64> {
+    let candidates = annotation
+        .features
+        .references
+        .iter()
+        .filter_map(|reference| feature_index.get(reference.id.as_str()).copied())
+        .filter(|feature| short_class(&feature.class) == class)
+        .filter_map(measurement)
         .collect::<Vec<_>>();
     unique_measurement(&candidates)
 }
@@ -946,6 +1011,44 @@ fn nominal_cylinder_depth(feature: &Entity) -> Option<f64> {
     approximately_equal(displacement, axial)
         .then_some(axial)
         .and_then(finite_positive)
+}
+
+fn nominal_cone_angle(feature: &Entity) -> Option<f64> {
+    let angle = unique_related(feature, "NomCone")?
+        .entity
+        .doubles
+        .get("FullAngle")
+        .copied()
+        .and_then(finite_positive)?;
+    (angle < std::f64::consts::PI).then_some(angle)
+}
+
+fn nominal_cone_top_diameter(feature: &Entity) -> Option<f64> {
+    let cone = &unique_related(feature, "NomCone")?.entity;
+    let top = &unique_related(feature, "NomTop")?.entity;
+    let angle = nominal_cone_angle(feature)?;
+    let [axis_x, axis_y, axis_z] = vector(cone, ["I", "J", "K"])?;
+    let [apex_x, apex_y, apex_z] = vector(cone, ["X", "Y", "Z"])?;
+    let [top_i, top_j, top_k] = vector(top, ["I", "J", "K"])?;
+    let [top_x, top_y, top_z] = vector(top, ["X", "Y", "Z"])?;
+    if !approximately_equal(axis_x.hypot(axis_y).hypot(axis_z), 1.0)
+        || !approximately_equal(top_i.hypot(top_j).hypot(top_k), 1.0)
+        || !approximately_equal(
+            (axis_x * top_i + axis_y * top_j + axis_z * top_k).abs(),
+            1.0,
+        )
+    {
+        return None;
+    }
+    let dx = top_x - apex_x;
+    let dy = top_y - apex_y;
+    let dz = top_z - apex_z;
+    let displacement = dx.hypot(dy).hypot(dz);
+    let axial = (dx * axis_x + dy * axis_y + dz * axis_z).abs();
+    if !approximately_equal(displacement, axial) {
+        return None;
+    }
+    finite_positive(axial * (angle / 2.0).tan() * 2.0)
 }
 
 fn vector<const N: usize>(entity: &Entity, names: [&str; N]) -> Option<[f64; N]> {
@@ -1610,6 +1713,50 @@ mod tests {
         cylinder
     }
 
+    fn cone_with_angle_and_top(angle: f64, top: f64) -> Entity {
+        let mut cone = entity("GdtCone");
+        let mut geometry = Entity {
+            class: "PrizMetrik.Geometry.GeoCone".into(),
+            ..Entity::default()
+        };
+        for (name, value) in [
+            ("FullAngle", angle),
+            ("I", 0.0),
+            ("J", 0.0),
+            ("K", 1.0),
+            ("X", 0.0),
+            ("Y", 0.0),
+            ("Z", 0.0),
+        ] {
+            geometry.doubles.insert(name.into(), value);
+        }
+        cone.related.push(RelatedObject {
+            name: "NomCone".into(),
+            class: geometry.class.clone(),
+            entity: geometry,
+        });
+        let mut plane = Entity {
+            class: "PrizMetrik.Geometry.GeoPlane".into(),
+            ..Entity::default()
+        };
+        for (name, value) in [
+            ("I", 0.0),
+            ("J", 0.0),
+            ("K", -1.0),
+            ("X", 0.0),
+            ("Y", 0.0),
+            ("Z", top),
+        ] {
+            plane.doubles.insert(name.into(), value);
+        }
+        cone.related.push(RelatedObject {
+            name: "NomTop".into(),
+            class: plane.class.clone(),
+            entity: plane,
+        });
+        cone
+    }
+
     fn feature_with_nominal_measurement(
         feature_class: &str,
         object_name: &str,
@@ -1886,6 +2033,72 @@ mod tests {
         assert!(nominal
             .as_ref()
             .is_some_and(|value| approximately_equal(value.value, 38.1)));
+    }
+
+    #[test]
+    fn compound_hole_dimensions_use_direct_operation_geometry() {
+        let mut root = semantic_root();
+        *root
+            .features
+            .entities
+            .get_mut(1)
+            .expect("first pattern member") = cylinder_with_radius(3.0);
+        *root
+            .features
+            .entities
+            .get_mut(2)
+            .expect("second pattern member") = cylinder_with_radius(3.0);
+        root.features
+            .references
+            .push(reference("FCB", "GdtCylinder"));
+        root.features.entities.push(cylinder_with_radius(7.9375));
+        root.features.references.push(reference("FCS", "GdtCone"));
+        root.features
+            .entities
+            .push(cone_with_angle_and_top(std::f64::consts::FRAC_PI_2, 10.0));
+
+        for (id, class, feature) in [
+            ("ACB", "GdtCounterBore", "FCB"),
+            ("ACSD", "GdtCounterSinkDiameter", "FCS"),
+            ("ACSA", "GdtCounterSinkAngle", "FCS"),
+        ] {
+            let mut annotation = entity(class);
+            annotation.doubles.insert("Nominal".into(), 0.0);
+            annotation
+                .features
+                .references
+                .push(reference("FP", "GdtPattern"));
+            annotation.features.references.push(reference(
+                feature,
+                if feature == "FCB" {
+                    "GdtCylinder"
+                } else {
+                    "GdtCone"
+                },
+            ));
+            root.annotations.references.push(reference(id, class));
+            root.annotations.entities.push(annotation);
+        }
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        for (id, expected, quantity) in [
+            ("ACB", 15.875, PmiQuantity::Length),
+            ("ACSD", 20.0, PmiQuantity::Length),
+            ("ACSA", std::f64::consts::FRAC_PI_2, PmiQuantity::Angle),
+        ] {
+            let PmiDefinition::Dimension { nominal, .. } = &annotations
+                .iter()
+                .find(|annotation| annotation.id == pmi_id(id))
+                .expect("compound-hole annotation")
+                .definition
+            else {
+                panic!("dimension definition");
+            };
+            assert!(nominal.as_ref().is_some_and(|value| {
+                value.quantity == quantity && approximately_equal(value.value, expected)
+            }));
+        }
     }
 
     #[test]

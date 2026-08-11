@@ -941,6 +941,22 @@ An omitted `GdtLength.Nominal` applied to a `GdtCompoundClosedSlot3D` is the
 positive millimetre `NomClosedSlot.Length`. Feature references use the same
 recursive traversal, and all reachable length contributors must agree.
 
+Compound-hole size annotations reference the complete hole feature or pattern
+and the operation-specific nominal geometry as separate direct features. An
+omitted `GdtCounterBore.Nominal` is twice `NomCylinder.R` from its direct
+`GdtCylinder` feature. It does not use cylinders reached through the companion
+pattern. An omitted `GdtCounterSinkAngle.Nominal` is `NomCone.FullAngle` in
+radians from its direct `GdtCone` feature.
+
+An omitted `GdtCounterSinkDiameter.Nominal` is the top diameter of its direct
+`GdtCone`. `NomCone.X`, `Y`, and `Z` define the cone apex, and `NomCone.I`,
+`J`, and `K` define its unit axis. The `NomTop` plane origin lies on that axis,
+and the plane normal is parallel to the axis. If the axial apex-to-plane
+distance is `h` and `NomCone.FullAngle` is `a`, the diameter is
+`2 h tan(a / 2)`. The axis and plane-normal vectors must be unit vectors, the
+complete apex-to-plane displacement must be axial, and `a` must be positive
+and less than pi.
+
 The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtFlatness`, `GdtRoundness`, `GdtCircularity`, `GdtCylindricity`,
 `GdtCoaxiality`, `GdtLineProfile`, `GdtSurfaceProfile`,
