@@ -504,13 +504,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the other codes to construct the sweep result operation.
 
-### DI-31. Native Draft outward flag
+### DI-31. Native neutral-plane Draft outward flag
 
-**Question.** Which native field identifies the outward flag when Keywords omits it?
+**Question.** Which native field identifies the outward flag of a neutral-plane Draft when Keywords omits it?
 
-**Known.** `sldprt.md` §2 "A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token" defines neutral-plane Draft operands. `sldprt.md` §2 "A compact parting-line Draft uses direct duplicated component-vector records" defines parting-line Draft operands and mode. Keywords independently retains an explicit `Outward` Boolean.
+**Known.** `sldprt.md` §2 "A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token" defines neutral-plane Draft operands. `sldprt.md` §2 "A compact parting-line Draft uses direct duplicated component-vector records" defines the parting-line form, which has no outward operand. Keywords independently retains an explicit `Outward` Boolean for a neutral-plane Draft.
 
-**Need.** We must recover the native outward flag when Keywords omits it.
+**Need.** We must recover the native outward flag of a neutral-plane Draft when Keywords omits it.
 
 ### DI-32. Compact line-reference width
 

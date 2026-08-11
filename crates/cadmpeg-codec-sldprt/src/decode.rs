@@ -1464,21 +1464,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 faces,
                 neutral_plane,
                 parting_tool,
-                pull_plane,
+                pull_plane: _,
                 pull_direction,
                 angle,
                 outward,
             } => {
-                parting_tool.is_some()
-                    || pull_plane.is_some()
-                    || incomplete_face_selection(faces)
+                incomplete_face_selection(faces)
                     || parting_tool.as_ref().map_or_else(
                         || incomplete_face_selection(neutral_plane),
                         incomplete_face_selection,
                     )
                     || pull_direction.is_none()
                     || angle.is_none()
-                    || outward.is_none()
+                    || (parting_tool.is_none() && outward.is_none())
             }
             FeatureDefinition::Combine {
                 target, tools, op, ..
@@ -4343,6 +4341,90 @@ mod design_loss_tests {
             loss.message
                 == "1 typed feature(s) retain native or unresolved required operation operands."
         }));
+    }
+
+    #[test]
+    fn complete_parting_line_draft_does_not_require_an_outward_flag() {
+        let faces = FaceSelection::Generated {
+            faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                feature: FeatureId("producer".into()),
+                local_id: "1".into(),
+            }],
+            native: "native".into(),
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("draft".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Draft {
+                faces: faces.clone(),
+                neutral_plane: FaceSelection::Unresolved,
+                parting_tool: Some(faces),
+                pull_direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+                pull_plane: None,
+                angle: Some(Angle(0.1)),
+                outward: None,
+            },
+            native_ref: None,
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("typed feature(s) retain native")));
+
+        let FeatureDefinition::Draft {
+            neutral_plane,
+            parting_tool,
+            ..
+        } = &mut ir.model.features[0].definition
+        else {
+            unreachable!();
+        };
+        *neutral_plane = FaceSelection::Generated {
+            faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                feature: FeatureId("producer".into()),
+                local_id: "2".into(),
+            }],
+            native: "native".into(),
+        };
+        *parting_tool = None;
+        let mut neutral_plane_report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut neutral_plane_report);
+
+        assert!(neutral_plane_report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("typed feature(s) retain native")));
     }
 
     #[test]
