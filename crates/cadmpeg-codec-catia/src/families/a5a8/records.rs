@@ -340,7 +340,8 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<A8SurfacePar
         ),
         (142, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
             suffix.len() == 7
-                && suffix[..4] == [0x09, 0x00, 0x09, 0x01]
+                && suffix[0] % 4 == 1
+                && suffix[1..4] == [0x00, 0x09, 0x01]
                 && suffix[4] % 4 == 1
                 && suffix[5..] == [0x07, 0x07]
         }

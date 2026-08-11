@@ -2010,19 +2010,44 @@ pub(crate) fn standard_object_evidence_from_streams(
         .iter()
         .flat_map(|stream| crate::families::b5::graph::object_stream_populations(stream))
         .collect::<Vec<_>>();
-    let mut population_ids = HashSet::new();
-    let mut ambiguous_population_ids = HashSet::new();
+    let mut population_objects = HashMap::<u32, Option<Vec<u8>>>::new();
+    let mut seen_population_ids = HashSet::new();
+    let mut repeated_population_ids = HashSet::new();
     for population in &populations {
-        let ids = crate::families::b5::graph::object_stream_frames(population)
-            .into_iter()
-            .map(|frame| frame.object_id)
-            .collect::<HashSet<_>>();
-        for object_id in ids {
-            if !population_ids.insert(object_id) {
-                ambiguous_population_ids.insert(object_id);
+        let mut objects = HashMap::<u32, Option<Vec<u8>>>::new();
+        for frame in crate::families::b5::graph::object_stream_frames(population) {
+            let bytes = population[frame.start..frame.end].to_vec();
+            objects
+                .entry(frame.object_id)
+                .and_modify(|stored| {
+                    if stored.as_ref().is_some_and(|stored| *stored != bytes) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(bytes));
+        }
+        for (object_id, bytes) in objects {
+            if !seen_population_ids.insert(object_id) {
+                repeated_population_ids.insert(object_id);
             }
+            population_objects
+                .entry(object_id)
+                .and_modify(|stored| {
+                    if stored
+                        .as_ref()
+                        .zip(bytes.as_ref())
+                        .is_none_or(|(stored, incoming)| stored != incoming)
+                    {
+                        *stored = None;
+                    }
+                })
+                .or_insert(bytes);
         }
     }
+    let conflicting_population_ids = population_objects
+        .into_iter()
+        .filter_map(|(object_id, bytes)| bytes.is_none().then_some(object_id))
+        .collect::<HashSet<_>>();
     for stream in populations {
         let frames = crate::families::b5::graph::object_stream_frames(&stream);
         let face_surfaces =
@@ -2213,21 +2238,21 @@ pub(crate) fn standard_object_evidence_from_streams(
             merge_standard_surface_evidence(&mut surface_candidates, face_id, evidence);
         }
     }
-    surface_candidates.retain(|object_id, _| !ambiguous_population_ids.contains(object_id));
-    support_candidates.retain(|object_id, _| !ambiguous_population_ids.contains(object_id));
+    surface_candidates.retain(|object_id, _| !conflicting_population_ids.contains(object_id));
+    support_candidates.retain(|object_id, _| !conflicting_population_ids.contains(object_id));
     edge_face_candidates.retain(|edge, owners| {
-        !ambiguous_population_ids.contains(edge)
+        !repeated_population_ids.contains(edge)
             && owners
                 .as_ref()
-                .is_none_or(|owners| owners.is_disjoint(&ambiguous_population_ids))
+                .is_none_or(|owners| owners.is_disjoint(&repeated_population_ids))
     });
     edge_support_candidates.retain(|edge, support| {
-        !ambiguous_population_ids.contains(edge)
+        !repeated_population_ids.contains(edge)
             && support.as_ref().is_none_or(|support| {
                 support
                     .surface_object_ids
                     .iter()
-                    .all(|surface| !ambiguous_population_ids.contains(surface))
+                    .all(|surface| !repeated_population_ids.contains(surface))
             })
     });
     StandardObjectEvidence {
@@ -7206,12 +7231,25 @@ mod route_tests {
         append(&mut stream, 0x30, 9, &offset);
         append(&mut stream, 0x5f, 10, &[0x82, 0x89, 0x8b, 0x05]);
 
-        let evidence =
-            standard_object_evidence_from_streams([stream], &HashSet::from([10]), &HashSet::new());
+        let evidence = standard_object_evidence_from_streams(
+            [stream.clone(), stream.clone()],
+            &HashSet::from([10]),
+            &HashSet::new(),
+        );
         assert!(matches!(
             evidence.surface_geometries.get(&10),
             Some(SurfaceGeometry::Plane { origin, .. }) if *origin == Point3::new(0.0, 0.0, 0.0)
         ));
+
+        let mut conflicting = stream.clone();
+        let face_payload = conflicting.len() - 4;
+        conflicting[face_payload + 1] = 0x8d;
+        let evidence = standard_object_evidence_from_streams(
+            [stream, conflicting],
+            &HashSet::from([10]),
+            &HashSet::new(),
+        );
+        assert!(!evidence.surface_geometries.contains_key(&10));
     }
 
     #[test]

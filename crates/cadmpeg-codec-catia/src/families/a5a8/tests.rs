@@ -161,8 +161,16 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
     let mut extrapolated = alternate_suffix.clone();
     extrapolated.resize(142, 0);
     extrapolated[135..142].copy_from_slice(&[0x09, 0x00, 0x09, 0x01, 0x05, 0x07, 0x07]);
+    let mut alternate_extrapolated = extrapolated.clone();
+    alternate_extrapolated[68..71].copy_from_slice(&[0x05, 0x05, 0x01]);
+    alternate_extrapolated[135] = 0x0d;
 
-    for tail in [&finite_continuation, &alternate_suffix, &extrapolated] {
+    for tail in [
+        &finite_continuation,
+        &alternate_suffix,
+        &extrapolated,
+        &alternate_extrapolated,
+    ] {
         let bytes = surface_with_tail(tail);
         let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
             .try_into()
