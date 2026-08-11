@@ -1810,7 +1810,7 @@ fn compact_position_graph_selects_the_unique_bore_loci() {
 }
 
 #[test]
-fn object_indexed_line_handles_select_a_congruent_bore_pattern() {
+fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     let mut lane = lane();
     lane.sketch_entities = [(1, [0.013, 0.007]), (2, [-0.009, 0.007])]
         .into_iter()
@@ -1857,6 +1857,46 @@ fn object_indexed_line_handles_select_a_congruent_bore_pattern() {
         cadmpeg_ir::features::HolePlacement::Axis { origin, .. }
             if origin.x == 13.0 && origin.y == 7.0 && origin.z == 10.0
     )));
+
+    for marker in &mut lane.sketch_entities {
+        marker.kind = SketchInputKind::Arc;
+    }
+    lane.sketch_entities.extend([
+        SketchInputEntity {
+            id: "auxiliary-object-locus".into(),
+            parent: "lane".into(),
+            feature_ref: Some("position".into()),
+            ordinal: 2,
+            offset: 2,
+            object_index: Some(3),
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: Some([1.0, 1.0]),
+            links: Vec::new(),
+            link_selector: None,
+        },
+        SketchInputEntity {
+            id: "auxiliary-anchor".into(),
+            parent: "lane".into(),
+            feature_ref: Some("position".into()),
+            ordinal: 3,
+            offset: 3,
+            object_index: None,
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: Some([0.0, 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        },
+    ]);
+    assert_eq!(
+        marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces, None)
+            .expect("object-indexed arc centers form the exact position roster")
+            .len(),
+        2
+    );
 
     let opposite_side = |id, x| Surface {
         id: SurfaceId(format!("surface-{id}")),

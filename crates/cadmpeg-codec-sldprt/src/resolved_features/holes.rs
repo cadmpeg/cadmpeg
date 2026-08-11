@@ -3316,7 +3316,10 @@ fn marker_pattern_bore_axes(
             .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
             .filter(|marker| marker.object_index.is_some())
             .filter(|marker| {
-                marker.kind == SketchInputKind::LineOrCircle || paired.contains(marker.id.as_str())
+                matches!(
+                    marker.kind,
+                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                ) || paired.contains(marker.id.as_str())
             })
             .filter_map(|marker| {
                 let [u, v] = marker.coordinates_m?;
@@ -3333,15 +3336,18 @@ fn marker_pattern_bore_axes(
         });
         loci
     };
+    let curve_loci = marker_loci(&HashSet::new());
     let complete_loci = marker_loci(&paired_marker_ids);
     let reduced_loci = marker_loci(&reduced_marker_ids);
-    match_marker_loci_to_bore_axes(&complete_loci, radius, surfaces, direction).or_else(|| {
-        if reduced_loci == complete_loci {
-            None
-        } else {
-            match_marker_loci_to_bore_axes(&reduced_loci, radius, surfaces, direction)
-        }
-    })
+    match_marker_loci_to_bore_axes(&curve_loci, radius, surfaces, direction)
+        .or_else(|| match_marker_loci_to_bore_axes(&complete_loci, radius, surfaces, direction))
+        .or_else(|| {
+            if reduced_loci == complete_loci {
+                None
+            } else {
+                match_marker_loci_to_bore_axes(&reduced_loci, radius, surfaces, direction)
+            }
+        })
 }
 
 fn match_marker_loci_to_bore_axes(
@@ -3421,26 +3427,29 @@ fn match_marker_loci_to_bore_axes(
         if candidates.len() < marker_loci.len() {
             continue;
         }
-        let mut combinations = Vec::new();
-        bore_axis_combinations(
+        let candidate_loci = candidates
+            .iter()
+            .map(|([x, y, z], ..)| {
+                Point3::new(
+                    *x as f64 * QUANTUM,
+                    *y as f64 * QUANTUM,
+                    *z as f64 * QUANTUM,
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut subsets = HashSet::new();
+        if congruent_bore_axis_subsets(
             0,
-            marker_loci.len(),
-            &candidates,
+            marker_loci,
+            &candidate_loci,
             &mut Vec::new(),
-            &mut combinations,
-        );
-        for combination in combinations {
-            let points = combination
-                .iter()
-                .map(|index| candidates[*index].0)
-                .map(|[x, y, z]| {
-                    Point3::new(x as f64 * QUANTUM, y as f64 * QUANTUM, z as f64 * QUANTUM)
-                })
-                .collect::<Vec<_>>();
-            if !point_sets_are_congruent(marker_loci, &points) {
-                continue;
-            }
-            let placements = combination
+            &mut HashSet::new(),
+            &mut subsets,
+        ) {
+            return None;
+        }
+        for subset in subsets {
+            let placements = subset
                 .iter()
                 .map(|index| HolePlacement::Axis {
                     origin: candidates[*index].1,
@@ -3482,78 +3491,60 @@ fn canonical_axis(axis: Vector3) -> Vector3 {
     Vector3::new(axis.x * sign, axis.y * sign, axis.z * sign)
 }
 
-fn point_sets_are_congruent(marker_loci: &[Point2], bore_loci: &[Point3]) -> bool {
-    marker_loci.len() == bore_loci.len()
-        && congruent_point_assignment(
-            0,
-            marker_loci,
-            bore_loci,
-            &mut Vec::new(),
-            &mut HashSet::new(),
-        )
-}
-
-fn congruent_point_assignment(
+fn congruent_bore_axis_subsets(
     marker_index: usize,
     marker_loci: &[Point2],
-    bore_loci: &[Point3],
+    candidate_loci: &[Point3],
     assigned: &mut Vec<usize>,
     used: &mut HashSet<usize>,
+    subsets: &mut HashSet<Vec<usize>>,
 ) -> bool {
     if marker_index == marker_loci.len() {
-        return true;
+        let mut subset = assigned.clone();
+        subset.sort_unstable();
+        subsets.insert(subset);
+        return subsets.len() > 1;
     }
-    for bore_index in 0..bore_loci.len() {
-        if !used.insert(bore_index) {
+    for candidate_index in 0..candidate_loci.len() {
+        if !used.insert(candidate_index) {
             continue;
         }
-        let valid = assigned
-            .iter()
-            .copied()
-            .enumerate()
-            .all(|(previous_marker, previous_bore)| {
-                let marker_distance = (marker_loci[marker_index].u
-                    - marker_loci[previous_marker].u)
-                    .hypot(marker_loci[marker_index].v - marker_loci[previous_marker].v);
-                let delta = Vector3::new(
-                    bore_loci[bore_index].x - bore_loci[previous_bore].x,
-                    bore_loci[bore_index].y - bore_loci[previous_bore].y,
-                    bore_loci[bore_index].z - bore_loci[previous_bore].z,
-                );
-                same_dimension_length(marker_distance, dot(delta, delta).sqrt())
-            });
+        let valid =
+            assigned
+                .iter()
+                .copied()
+                .enumerate()
+                .all(|(previous_marker, previous_candidate)| {
+                    let marker_distance = (marker_loci[marker_index].u
+                        - marker_loci[previous_marker].u)
+                        .hypot(marker_loci[marker_index].v - marker_loci[previous_marker].v);
+                    let delta = Vector3::new(
+                        candidate_loci[candidate_index].x - candidate_loci[previous_candidate].x,
+                        candidate_loci[candidate_index].y - candidate_loci[previous_candidate].y,
+                        candidate_loci[candidate_index].z - candidate_loci[previous_candidate].z,
+                    );
+                    same_dimension_length(marker_distance, dot(delta, delta).sqrt())
+                });
         if valid {
-            assigned.push(bore_index);
-            if congruent_point_assignment(marker_index + 1, marker_loci, bore_loci, assigned, used)
-            {
+            assigned.push(candidate_index);
+            let ambiguous = congruent_bore_axis_subsets(
+                marker_index + 1,
+                marker_loci,
+                candidate_loci,
+                assigned,
+                used,
+                subsets,
+            );
+            assigned.pop();
+            used.remove(&candidate_index);
+            if ambiguous {
                 return true;
             }
-            assigned.pop();
+            continue;
         }
-        used.remove(&bore_index);
+        used.remove(&candidate_index);
     }
     false
-}
-
-fn bore_axis_combinations(
-    start: usize,
-    remaining: usize,
-    candidates: &[([i64; 3], Point3, Vector3)],
-    current: &mut Vec<usize>,
-    result: &mut Vec<Vec<usize>>,
-) {
-    if remaining == 0 {
-        result.push(current.clone());
-        return;
-    }
-    if candidates.len().saturating_sub(start) < remaining {
-        return;
-    }
-    for index in start..=candidates.len() - remaining {
-        current.push(index);
-        bore_axis_combinations(index + 1, remaining - 1, candidates, current, result);
-        current.pop();
-    }
 }
 
 pub(super) fn feature_object_byte_ranges<'a>(
