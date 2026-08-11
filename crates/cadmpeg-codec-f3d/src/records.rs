@@ -1898,6 +1898,126 @@ pub struct DesignWorkAxisConstruction {
     pub point_offsets: [u64; 2],
 }
 
+/// One source-record reference used by a `WorkPoint` construction rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignWorkPointInput {
+    /// Referenced Design record index.
+    pub record_index: u32,
+    /// Byte offset of the serialized reference target.
+    pub reference_offset: u64,
+}
+
+/// Construction rule and exact input arity carried by a `WorkPoint` point-data record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignWorkPointRule {
+    /// Center of one selected circular edge.
+    CircleCenter {
+        /// Selected circular-edge carrier.
+        input: DesignWorkPointInput,
+    },
+    /// Intersection of two selected edges.
+    TwoEdgeIntersection {
+        /// Selected edge carriers in source order.
+        inputs: [DesignWorkPointInput; 2],
+    },
+    /// Intersection of three selected planes.
+    ThreePlaneIntersection {
+        /// Selected plane carriers in source order.
+        inputs: [DesignWorkPointInput; 3],
+    },
+    /// One selected B-rep vertex.
+    Vertex {
+        /// Selected vertex carrier.
+        input: DesignWorkPointInput,
+    },
+    /// Intersection of one selected edge and one selected plane, in source order.
+    EdgePlaneIntersection {
+        /// Edge and plane carriers in serialized order.
+        inputs: [DesignWorkPointInput; 2],
+    },
+    /// Point at a specified distance along one selected edge.
+    DistanceOnEdge {
+        /// Selected edge carrier.
+        input: DesignWorkPointInput,
+    },
+    /// Rule code whose operation semantics or input arity is not assigned.
+    Native {
+        /// Serialized `refType` value.
+        reference_type: u32,
+        /// Counted input-reference run in source order.
+        inputs: Vec<DesignWorkPointInput>,
+    },
+}
+
+impl DesignWorkPointRule {
+    pub(crate) fn from_serialized(reference_type: u32, inputs: Vec<DesignWorkPointInput>) -> Self {
+        match (reference_type, inputs.as_slice()) {
+            (5, [input]) => Self::CircleCenter { input: *input },
+            (7, [first, second]) => Self::TwoEdgeIntersection {
+                inputs: [*first, *second],
+            },
+            (8, [first, second, third]) => Self::ThreePlaneIntersection {
+                inputs: [*first, *second, *third],
+            },
+            (10, [input]) => Self::Vertex { input: *input },
+            (14, [first, second]) => Self::EdgePlaneIntersection {
+                inputs: [*first, *second],
+            },
+            (20, [input]) => Self::DistanceOnEdge { input: *input },
+            _ => Self::Native {
+                reference_type,
+                inputs,
+            },
+        }
+    }
+
+    /// Return the serialized `refType` value.
+    pub fn reference_type(&self) -> u32 {
+        match self {
+            Self::CircleCenter { .. } => 5,
+            Self::TwoEdgeIntersection { .. } => 7,
+            Self::ThreePlaneIntersection { .. } => 8,
+            Self::Vertex { .. } => 10,
+            Self::EdgePlaneIntersection { .. } => 14,
+            Self::DistanceOnEdge { .. } => 20,
+            Self::Native { reference_type, .. } => *reference_type,
+        }
+    }
+
+    /// Return the source input references in serialized order.
+    pub fn inputs(&self) -> &[DesignWorkPointInput] {
+        match self {
+            Self::CircleCenter { input }
+            | Self::Vertex { input }
+            | Self::DistanceOnEdge { input } => std::slice::from_ref(input),
+            Self::TwoEdgeIntersection { inputs } | Self::EdgePlaneIntersection { inputs } => inputs,
+            Self::ThreePlaneIntersection { inputs } => inputs,
+            Self::Native { inputs, .. } => inputs,
+        }
+    }
+}
+
+/// Exact solved construction carried by a `WorkPoint` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignWorkPointConstruction {
+    /// Point-data record selected by the scope.
+    pub point_record_index: u32,
+    /// Byte offset of the point-data record header.
+    pub point_record_byte_offset: u64,
+    /// Solved point in source model centimetres.
+    pub position: [f64; 3],
+    /// Byte offset of the first position coordinate.
+    pub position_offset: u64,
+    /// Typed construction rule and its source inputs.
+    pub rule: DesignWorkPointRule,
+    /// Byte offset of the serialized `refType` value.
+    pub reference_type_offset: u64,
+}
+
 /// Exact point-and-direction construction carried by a `Hole` scope.
 ///
 /// The native point carrier stores the coordinates in source centimetres and
@@ -2128,23 +2248,13 @@ pub struct DesignParameterScope {
     /// Byte offset of the `JointOrigin` construction reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_reference_offset: Option<u64>,
-    /// Explicit model-space position carried by a `WorkPoint` construction record.
+    /// Exact solved construction carried by a `WorkPoint` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_point_position: Option<[f64; 3]>,
-    /// Byte offset of the `WorkPoint` position's first f64 coordinate.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_point_position_offset: Option<u64>,
+    pub work_point_construction: Option<DesignWorkPointConstruction>,
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unclosed_construction_operand_groups: Vec<u32>,
-    /// `refType` construction rule carried by the `WorkPoint` point-data record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_point_reference_type: Option<u32>,
-    /// Record indices of the counted reference run closing the `WorkPoint`
-    /// point-data record's base class level.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub work_point_input_record_indices: Vec<u32>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hole_construction: Option<DesignHoleConstruction>,
@@ -2576,11 +2686,8 @@ impl DesignParameterScope {
             joint_origin_transform_offset: None,
             joint_origin_reference: None,
             joint_origin_reference_offset: None,
-            work_point_position: None,
-            work_point_position_offset: None,
+            work_point_construction: None,
             unclosed_construction_operand_groups: Vec::new(),
-            work_point_reference_type: None,
-            work_point_input_record_indices: Vec::new(),
             hole_construction: None,
             extrude_profile: None,
             sweep_profile: None,

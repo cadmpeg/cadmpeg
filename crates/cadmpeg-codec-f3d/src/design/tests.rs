@@ -42,7 +42,7 @@ use crate::design::decode::scopes::{
     exact_ruled_surface_operation, exact_scale_operation, exact_solid_primitive,
     exact_surface_extend_operation, exact_surface_offset_operation, exact_surface_stitch_operation,
     exact_thread_construction, exact_work_axis_construction, exact_work_plane_frame,
-    exact_work_point_position, parse_parameter_scope, parse_thread_payload,
+    exact_work_point_construction, parse_parameter_scope, parse_thread_payload,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -487,7 +487,17 @@ fn dispatcher_projects_datum_feature_scopes() {
 
     let mut work_point =
         DesignParameterScope::empty("f3d:native:parameter-scope#3", "WorkPoint", 3);
-    work_point.work_point_position = Some([4.0, 5.0, 6.0]);
+    work_point.work_point_construction = Some(crate::records::DesignWorkPointConstruction {
+        point_record_index: 4,
+        point_record_byte_offset: 0,
+        position: [4.0, 5.0, 6.0],
+        position_offset: 0,
+        rule: crate::records::DesignWorkPointRule::Native {
+            reference_type: 1,
+            inputs: Vec::new(),
+        },
+        reference_type_offset: 0,
+    });
 
     let scopes = vec![joint_origin, work_plane, work_point];
     let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
@@ -4388,7 +4398,7 @@ fn work_point_direct_record_carries_model_space_position() {
     };
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("WorkPoint scope");
-    let frame = exact_work_point_position(
+    let frame = exact_work_point_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &scope,
@@ -4397,12 +4407,12 @@ fn work_point_direct_record_carries_model_space_position() {
     .expect("work point frame");
     assert_eq!(frame.position, [1.25, -2.5, 3.75]);
     assert_eq!(frame.position_offset, position_at as u64);
-    assert_eq!(frame.reference_type, 7);
-    assert_eq!(frame.input_record_indices, [56, 57]);
+    assert_eq!(frame.rule.reference_type(), 7);
+    assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
     bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
     bytes[point_at + 94..point_at + 98].copy_from_slice(&1u32.to_le_bytes());
     bytes.drain(point_at + 197..point_at + 208);
-    let frame = exact_work_point_position(
+    let frame = exact_work_point_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &scope,
@@ -4411,8 +4421,8 @@ fn work_point_direct_record_carries_model_space_position() {
     .expect("work point frame");
     assert_eq!(frame.position, [1.25, -2.5, 3.75]);
     assert_eq!(frame.position_offset, position_at as u64);
-    assert_eq!(frame.reference_type, 1);
-    assert_eq!(frame.input_record_indices, [56]);
+    assert_eq!(frame.rule.reference_type(), 1);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
 }
 
 #[test]
@@ -4473,27 +4483,34 @@ fn work_point_input_count_frames_the_rule_inputs() {
     };
     let records = IndexedRecordOffsets::build(&bytes);
     let scope = parse_parameter_scope(&bytes, &records, &header).expect("WorkPoint scope");
-    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
-    assert_eq!(frame.reference_type, 18);
-    assert_eq!(frame.input_record_indices, [56, 57]);
+    assert_eq!(frame.rule.reference_type(), 18);
+    assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
 
     bytes[count_at..count_at + 4].copy_from_slice(&1u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
-    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
-    assert_eq!(frame.reference_type, 18);
-    assert_eq!(frame.input_record_indices, [56]);
+    assert_eq!(frame.rule.reference_type(), 18);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
 
     // A rule above the values the shipped range check admitted still names a
     // coordinate when its input arity agrees.
     bytes[position_at + 24..position_at + 28].copy_from_slice(&64u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
-    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
     assert_eq!(frame.position, [4.0, 5.0, 6.0]);
-    assert_eq!(frame.reference_type, 64);
-    assert_eq!(frame.input_record_indices, [56]);
+    assert_eq!(frame.rule.reference_type(), 64);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
+}
+
+fn work_point_input_indices(rule: &crate::records::DesignWorkPointRule) -> Vec<u32> {
+    rule.inputs()
+        .iter()
+        .map(|input| input.record_index)
+        .collect()
 }
 
 #[test]
@@ -10710,11 +10727,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -12283,11 +12297,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -12746,11 +12757,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -19218,11 +19226,8 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -19396,11 +19401,8 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -19599,11 +19601,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: Some(DesignSketchProfileOperand {
             scope_reference_ordinal: 0,
@@ -20836,11 +20835,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -21932,11 +21928,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -22577,11 +22570,8 @@ fn parameter_expressions_project_feature_dependencies() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -22709,11 +22699,8 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -24066,11 +24053,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -24604,11 +24588,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -25982,11 +25963,8 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,

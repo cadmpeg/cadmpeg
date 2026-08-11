@@ -46,13 +46,13 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored.
 
-### DR-13. `WorkPoint` `refType` values
+### DR-13. Other `WorkPoint` `refType` values
 
-**Question.** What construction does each `refType` value of the point-data class select?
+**Question.** What construction does each `refType` value other than `5`, `7`, `8`, `10`, `14`, and `20` select?
 
-**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, and the counted input-reference run. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point. The decoder retains the `refType`, the serialized input count, and every input reference without assigning a rule-specific meaning.
+**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, the counted input-reference run, and the construction rules and input arities for values `5`, `7`, `8`, `10`, `14`, and `20`. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point. The decoder retains every other `refType`, the serialized input count, and every input reference without assigning a rule-specific meaning.
 
-**Need.** A writer must emit the `refType` that matches the inputs it writes, and a neutral model that edits an input must know which rule re-solves the point.
+**Need.** A writer must emit the `refType` that matches every other input form it writes, and a neutral model that edits such an input must know which rule re-solves the point.
 
 ### DR-14. `SurfacePatch` boundary-side and scale values
 

@@ -1174,7 +1174,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 },
                             )
                     } else if scope.kind == "WorkPoint" {
-                        scope.work_point_position.map_or_else(
+                        scope.work_point_construction.as_ref().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind.clone(),
                                 parameters: parameters
@@ -1185,11 +1185,11 @@ pub fn project_parameter_design_with_edge_identities(
                                     .collect(),
                                 properties: native_scope_properties(scope, native_scope),
                             },
-                            |position| FeatureDefinition::DatumPoint {
+                            |construction| FeatureDefinition::DatumPoint {
                                 position: Point3::new(
-                                    position[0] * 10.0,
-                                    position[1] * 10.0,
-                                    position[2] * 10.0,
+                                    construction.position[0] * 10.0,
+                                    construction.position[1] * 10.0,
+                                    construction.position[2] * 10.0,
                                 ),
                             },
                         )
