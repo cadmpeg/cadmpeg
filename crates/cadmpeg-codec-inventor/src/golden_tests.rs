@@ -7,8 +7,8 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::golden::snapshot_text;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_test_support::golden::snapshot_text;
 
 use crate::InventorCodec;
 

@@ -9,14 +9,14 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_core::golden::{elide_local_digests, snapshot_text, snapshots_agree};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, DecodeResult, EncodeInput, Encoder};
 use cadmpeg_ir::examples;
-use cadmpeg_ir::roundtrip::{
+use cadmpeg_ir::{CadIr, WritePath};
+use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
+use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
 };
-use cadmpeg_ir::{CadIr, WritePath};
 
 use super::*;
 
@@ -494,7 +494,7 @@ fn generated_container_snapshot(bytes: &[u8]) -> String {
     if let Some(source) = ir.source.as_mut() {
         for (key, value) in &mut source.attributes {
             if key.ends_with("_sha256") {
-                cadmpeg_core::golden::ELIDED_DIGEST.clone_into(value);
+                cadmpeg_test_support::golden::ELIDED_DIGEST.clone_into(value);
             }
         }
     }

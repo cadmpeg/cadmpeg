@@ -77,7 +77,7 @@ toml.workspace = true
 zip.workspace = true
 # The CLI integration tests build `cadmpeg_ir::examples`; the feature keeps
 # those fixtures out of the normal library build.
-cadmpeg-ir = { workspace = true }
+cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [lints]
 workspace = true

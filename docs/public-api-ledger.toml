@@ -56,43 +56,65 @@ item = "cadmpeg_core::decode::{SpaceDescriptor,SpaceDerivation,ResolvedAddress,r
 reason = "stable space descriptors and sealed-boundary address resolution for inspect replay"
 
 [[change]]
-commit = "PENDING"
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
 crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::math::Aabb"
 reason = "zero production callers"
 
 [[change]]
-commit = "PENDING"
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
 crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::draft::BrepAssembly"
 reason = "zero production callers; assembly tests removed with the type"
 
 [[change]]
-commit = "PENDING"
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
 crate = "cadmpeg-container"
 kind = "deletion"
 item = "cadmpeg_container::compression::{inflate_zlib_prefix,inflate_raw_prefix}"
 reason = "unused outside own tests"
 
 [[change]]
-commit = "PENDING"
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
 crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::{le,be}::take_vec3"
 reason = "unused outside own tests"
 
 [[change]]
-commit = "PENDING"
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
 crate = "cadmpeg-codec-iges"
 kind = "trait_impl"
 item = "Encoder for IgesCodec"
 reason = "duplicate encoder surface; keep IgesEncoder"
 
 [[change]]
-commit = "PENDING"
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
 crate = "cadmpeg"
 kind = "field"
 item = "FormatDescriptor::{display_name,capabilities,detection_priority} and Capabilities"
 reason = "debug-assert-only or all-zero noop; extensions retained"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::golden"
+reason = "re-homed to publish=false cadmpeg-test-support"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-ir"
+kind = "move"
+item = "cadmpeg_ir::roundtrip -> cadmpeg_test_support::roundtrip"
+reason = "test-only round-trip helpers leave the production IR crate"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::examples"
+reason = "gated behind examples feature; manifests already claimed this"
+

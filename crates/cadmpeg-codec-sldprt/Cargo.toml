@@ -34,13 +34,11 @@ schemars = { workspace = true, optional = true }
 rmp.workspace = true
 
 [dev-dependencies]
-# Enables `cadmpeg_core::golden`, the shared snapshot harness.
-# Feature unification applies it to the test build only, so the published
-# library is unchanged.
-cadmpeg-core = { workspace = true, features = ["golden"] }
+# Test-only golden harness and round-trip helpers.
+cadmpeg-test-support = { workspace = true }
 # Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
 # the normal library build.
-cadmpeg-ir = { workspace = true }
+cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [features]
 # `schema` builds the `JsonSchema` derives. It is off by default: the

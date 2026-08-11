@@ -6,10 +6,10 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::golden::Harness;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::SourceFidelity;
+use cadmpeg_test_support::golden::Harness;
 
 use super::{IgesCodec, IgesEncoder};
 

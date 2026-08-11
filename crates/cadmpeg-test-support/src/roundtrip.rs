@@ -35,16 +35,15 @@
 //! can be checked against the edit. `Fusion` needs both: it refuses the first
 //! and patches the second.
 //!
-//! This lives in `cadmpeg-ir` rather than beside the golden harness in
-//! `cadmpeg_core::golden` because it drives [`Encoder`], which
-//! `cadmpeg-core` cannot name: the dependency runs the other way.
+//! This crate also owns the golden harness in [`crate::golden`]. Both helpers
+//! are test-only and must not be depended on by production builds.
 
 use cadmpeg_core::CodecError;
 
-use crate::codec::{Codec, CodecEntry, DecodeOptions, EncodeInput, Encoder, ExportPlan};
-use crate::document::CadIr;
-use crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
-use crate::report::{ExportReport, WritePath};
+use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
+use cadmpeg_ir::report::{ExportReport, WritePath};
 
 /// Encodes an unedited decode of `fixture` and asserts the encoder replayed the
 /// retained bytes verbatim, producing `fixture` again.

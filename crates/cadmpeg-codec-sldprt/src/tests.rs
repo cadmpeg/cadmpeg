@@ -2632,7 +2632,7 @@ fn retained_source_image_round_trips_byte_exactly() {
             .iter()
             .any(|candidate| candidate.id == coedge.radial_next));
     }
-    cadmpeg_ir::roundtrip::verbatim_replay_holds(
+    cadmpeg_test_support::roundtrip::verbatim_replay_holds(
         &SldprtCodec,
         "retained_source_image_round_trips_byte_exactly",
         &source,
@@ -19538,7 +19538,7 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
             ..
         } if profile == &sketch.id
     ));
-    cadmpeg_ir::roundtrip::verbatim_replay_holds(
+    cadmpeg_test_support::roundtrip::verbatim_replay_holds(
         &SldprtCodec,
         "decode_projects_sketch_feature_dependencies",
         &original,

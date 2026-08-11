@@ -17,8 +17,8 @@ use std::path::Path;
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::compare::floats_agree;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::golden::{snapshot_text, Branch, Harness};
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use super::FcstdCodec;
 

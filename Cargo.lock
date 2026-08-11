@@ -197,6 +197,7 @@ version = "0.4.0"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "memchr",
  "schemars",
  "serde",
@@ -210,6 +211,7 @@ version = "0.4.0"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "regex",
  "serde",
  "serde_json",
@@ -225,6 +227,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-protein",
+ "cadmpeg-test-support",
  "lzma-rs",
  "memchr",
  "roxmltree",
@@ -246,6 +249,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "flate2",
  "roxmltree",
  "serde",
@@ -260,6 +264,7 @@ version = "0.4.0"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "serde",
  "serde_json",
  "sha2",
@@ -275,6 +280,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-protein",
+ "cadmpeg-test-support",
  "encoding_rs",
  "flate2",
  "schemars",
@@ -289,6 +295,7 @@ version = "0.4.0"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "flate2",
  "roxmltree",
  "serde",
@@ -302,6 +309,7 @@ version = "0.4.0"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "crc32fast",
  "flate2",
  "serde",
@@ -317,6 +325,7 @@ dependencies = [
  "cadmpeg-asm",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "serde_json",
 ]
 
@@ -327,6 +336,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "crc32fast",
  "flate2",
  "rmp",
@@ -346,6 +356,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "encoding_rs",
  "serde_json",
  "thiserror",
@@ -396,6 +407,15 @@ dependencies = [
  "roxmltree",
  "serde",
  "zip",
+]
+
+[[package]]
+name = "cadmpeg-test-support"
+version = "0.4.0"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "serde_json",
 ]
 
 [[package]]

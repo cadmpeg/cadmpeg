@@ -10534,7 +10534,8 @@ mod golden {
                     continue;
                 }
             };
-            if let Err(mismatch) = cadmpeg_core::golden::snapshots_agree(&expected, &actual) {
+            if let Err(mismatch) = cadmpeg_test_support::golden::snapshots_agree(&expected, &actual)
+            {
                 failures.push(format!(
                     "fixture `{name}`: output diverged from golden {mismatch}"
                 ));

@@ -6,8 +6,6 @@ pub mod compare;
 pub mod container;
 pub mod decode;
 pub mod error;
-#[cfg(feature = "golden")]
-pub mod golden;
 pub mod io;
 pub mod le;
 pub mod read;
