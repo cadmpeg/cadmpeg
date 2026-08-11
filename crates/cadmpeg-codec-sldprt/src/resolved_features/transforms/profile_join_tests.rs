@@ -2036,6 +2036,71 @@ fn axis_relation_expands_intermediate_relation_handle() {
 }
 
 #[test]
+fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
+    let sketch = SketchId("sketch".into());
+    let first_id = SketchEntityId("first-entity".into());
+    let second_id = SketchEntityId("second-entity".into());
+    let mut first = marker("first", Some([0.0, 0.0]));
+    first.kind = SketchInputKind::Point;
+    let mut proxy = marker("proxy", None);
+    proxy.kind = SketchInputKind::Point;
+    let mut relation = marker("horizontal", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.object_index = Some(4);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 4,
+            entity_ref: first.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: proxy.id.clone(),
+        },
+    ];
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (proxy.id.as_str(), &proxy),
+        (relation.id.as_str(), &relation),
+    ]);
+    let second_locus = SketchLocus::Entity(second_id.clone());
+    let loci = HashMap::from([(proxy.id.clone(), vec![second_locus.clone()])]);
+    let point = |id, native_ref, position| SketchEntity {
+        id,
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let entities = vec![
+        point(
+            first_id.clone(),
+            Some(first.id.clone()),
+            Point2::new(0.0, 0.0),
+        ),
+        point(second_id, None, Point2::new(1.0, 2.0)),
+    ];
+
+    let definition =
+        typed_marker_relation_definition_in_sketch(&relation, &sketch, &entities, &markers, &loci)
+            .expect("typed horizontal point relation");
+
+    assert_eq!(
+        definition,
+        SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(first_id),
+            second: second_locus,
+        }
+    );
+    assert!(marker_relation_is_inactive(
+        &relation,
+        &definition,
+        &entities,
+    ));
+}
+
+#[test]
 fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);

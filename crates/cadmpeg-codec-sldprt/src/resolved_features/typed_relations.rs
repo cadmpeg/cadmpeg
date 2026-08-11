@@ -184,7 +184,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             })
             .collect::<Vec<_>>();
         if let [first_link, second_link] = point_links.as_slice() {
-            let point_entity = |link: &SketchInputLink| {
+            let point_locus = |link: &SketchInputLink| {
                 let linked = markers_by_id.get(link.entity_ref.as_str())?;
                 if !matches!(
                     linked.kind,
@@ -197,23 +197,28 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         && entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
                         && matches!(entity.geometry, SketchGeometry::Point { .. })
                 });
-                let entity = candidates.next()?;
-                candidates.next().is_none().then(|| entity.id.clone())
+                match (candidates.next(), candidates.next()) {
+                    (Some(entity), None) => Some(SketchLocus::Entity(entity.id.clone())),
+                    (None, None) => {
+                        let locus =
+                            marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker)?;
+                        sketch_entities
+                            .iter()
+                            .any(|entity| {
+                                entity.sketch == *sketch && entity.id == locus_entity(&locus)
+                            })
+                            .then_some(locus)
+                    }
+                    _ => None,
+                }
             };
-            if let (Some(first), Some(second)) =
-                (point_entity(first_link), point_entity(second_link))
+            if let (Some(first), Some(second)) = (point_locus(first_link), point_locus(second_link))
             {
                 if first != second {
                     return Some(if kind == Horizontal {
-                        SketchConstraintDefinition::HorizontalPoints {
-                            first: SketchLocus::Entity(first),
-                            second: SketchLocus::Entity(second),
-                        }
+                        SketchConstraintDefinition::HorizontalPoints { first, second }
                     } else {
-                        SketchConstraintDefinition::VerticalPoints {
-                            first: SketchLocus::Entity(first),
-                            second: SketchLocus::Entity(second),
-                        }
+                        SketchConstraintDefinition::VerticalPoints { first, second }
                     });
                 }
             }
