@@ -1840,6 +1840,220 @@ pub(crate) fn project_generated_hole_axes(
     }
 }
 
+/// Resolve the sole unplaced member of an otherwise placed, structurally
+/// identical counterbore family from the unclaimed primary-bore axes. The
+/// partition requires identical primary and counterbore axis sets, and every
+/// existing placement must own one distinct axis in that set.
+pub(crate) fn project_partitioned_hole_axes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    topology: &HoleTopology<'_>,
+) {
+    let unresolved = features
+        .iter()
+        .enumerate()
+        .filter(|(_, feature)| feature.suppressed != Some(true))
+        .filter_map(|(index, feature)| match &feature.definition {
+            FeatureDefinition::Hole {
+                placements,
+                diameter: Some(Length(diameter)),
+                ..
+            } if placements.is_empty() && diameter.is_finite() && *diameter > 0.0 => Some(index),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    for unresolved_index in unresolved {
+        let siblings = features
+            .iter()
+            .enumerate()
+            .filter(|(_, feature)| feature.suppressed != Some(true))
+            .filter(|(_, feature)| {
+                same_hole_construction(&features[unresolved_index].definition, &feature.definition)
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if siblings.len() < 2
+            || siblings
+                .iter()
+                .filter(|&&index| {
+                    let FeatureDefinition::Hole { placements, .. } = &features[index].definition
+                    else {
+                        unreachable!("hole construction matching returned a non-hole feature");
+                    };
+                    placements.is_empty()
+                })
+                .count()
+                != 1
+        {
+            continue;
+        }
+
+        let Some(candidates) =
+            partitioned_hole_bore_candidates(&features[unresolved_index].definition, topology)
+        else {
+            continue;
+        };
+        let candidate_keys = candidates
+            .iter()
+            .filter_map(hole_axis_key)
+            .collect::<HashSet<_>>();
+        if candidate_keys.len() != candidates.len() {
+            continue;
+        }
+
+        let mut claimed = HashSet::new();
+        let mut complete = true;
+        for sibling_index in siblings
+            .iter()
+            .copied()
+            .filter(|&index| index != unresolved_index)
+        {
+            let FeatureDefinition::Hole { placements, .. } = &features[sibling_index].definition
+            else {
+                unreachable!("hole construction matching returned a non-hole feature");
+            };
+            if placements.is_empty() {
+                complete = false;
+                break;
+            }
+            for placement in placements {
+                let Some(key) = hole_axis_key(placement) else {
+                    complete = false;
+                    break;
+                };
+                if !candidate_keys.contains(&key) || !claimed.insert(key) {
+                    complete = false;
+                    break;
+                }
+            }
+            if !complete {
+                break;
+            }
+        }
+        if !complete || claimed.is_empty() {
+            continue;
+        }
+
+        let residual = candidates
+            .into_iter()
+            .filter(|placement| hole_axis_key(placement).is_some_and(|key| !claimed.contains(&key)))
+            .collect::<Vec<_>>();
+        if residual.is_empty() {
+            continue;
+        }
+        let FeatureDefinition::Hole { placements, .. } = &mut features[unresolved_index].definition
+        else {
+            unreachable!("unresolved hole selection requires a hole feature");
+        };
+        *placements = residual;
+    }
+}
+
+fn partitioned_hole_bore_candidates(
+    definition: &FeatureDefinition,
+    topology: &HoleTopology<'_>,
+) -> Option<Vec<HolePlacement>> {
+    let FeatureDefinition::Hole {
+        diameter: Some(Length(diameter)),
+        kind:
+            HoleKind::Counterbore {
+                diameter: Length(counterbore_diameter),
+                ..
+            }
+            | HoleKind::CounterboreDrilled {
+                diameter: Length(counterbore_diameter),
+                ..
+            },
+        ..
+    } = definition
+    else {
+        return None;
+    };
+    if !diameter.is_finite()
+        || *diameter <= 0.0
+        || !counterbore_diameter.is_finite()
+        || *counterbore_diameter <= *diameter
+    {
+        return None;
+    }
+    let primary = bore_carrier_placements(*diameter * 0.5, topology)?;
+    let counterbores = bore_carrier_placements(*counterbore_diameter * 0.5, topology)?;
+    let primary_keys = primary
+        .iter()
+        .filter_map(hole_axis_key)
+        .collect::<HashSet<_>>();
+    let counterbore_keys = counterbores
+        .iter()
+        .filter_map(hole_axis_key)
+        .collect::<HashSet<_>>();
+    (primary_keys.len() == primary.len()
+        && counterbore_keys.len() == counterbores.len()
+        && primary_keys == counterbore_keys)
+        .then_some(primary)
+}
+
+fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -> bool {
+    let FeatureDefinition::Hole {
+        kind: left_kind,
+        exit_kind: left_exit_kind,
+        diameter: left_diameter,
+        extent: left_extent,
+        bottom: left_bottom,
+        taper_angle: left_taper_angle,
+        specification: left_specification,
+        allow_multi_profile_faces: left_allow_multi_profile_faces,
+        ..
+    } = left
+    else {
+        return false;
+    };
+    let FeatureDefinition::Hole {
+        kind: right_kind,
+        exit_kind: right_exit_kind,
+        diameter: right_diameter,
+        extent: right_extent,
+        bottom: right_bottom,
+        taper_angle: right_taper_angle,
+        specification: right_specification,
+        allow_multi_profile_faces: right_allow_multi_profile_faces,
+        ..
+    } = right
+    else {
+        return false;
+    };
+    left_kind == right_kind
+        && left_exit_kind == right_exit_kind
+        && left_diameter == right_diameter
+        && left_extent == right_extent
+        && left_bottom == right_bottom
+        && left_taper_angle == right_taper_angle
+        && left_specification == right_specification
+        && left_allow_multi_profile_faces == right_allow_multi_profile_faces
+}
+
+fn hole_axis_key(placement: &HolePlacement) -> Option<[i64; 6]> {
+    const AXIS_QUANTUM: f64 = 1.0e-8;
+    let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
+    let HolePlacement::Axis { origin, axis } = placement else {
+        return None;
+    };
+    let axis = canonical_axis(*axis);
+    let station = dot(Vector3::new(origin.x, origin.y, origin.z), axis);
+    let closest = Point3::new(
+        origin.x - station * axis.x,
+        origin.y - station * axis.y,
+        origin.z - station * axis.z,
+    );
+    Some([
+        quantize(closest.x),
+        quantize(closest.y),
+        quantize(closest.z),
+        quantize(axis.x),
+        quantize(axis.y),
+        quantize(axis.z),
+    ])
+}
+
 fn cylindrical_support_normal(surface: &Surface, point: Point3) -> Option<Vector3> {
     let SurfaceGeometry::Cylinder {
         origin,
