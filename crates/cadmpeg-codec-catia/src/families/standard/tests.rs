@@ -613,16 +613,71 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
         vec![[1, 3]],
         vec![[2, 3]],
     ];
-    let topology =
-        reconstruct_incidence_candidates(&rows, &points, &edge_faces, &candidates, None, 4)
-            .expect("unique face-closing endpoint assignment");
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let topology = reconstruct_incidence_candidates(
+        &rows,
+        &points,
+        &edge_faces,
+        &candidates,
+        None,
+        4,
+        &budget,
+    )
+    .expect("unique face-closing endpoint assignment");
     assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [0, 1]);
 
     let ports = [[11, 10], [11, 12], [10, 12], [13, 10], [11, 13], [13, 12]];
-    let topology =
-        reconstruct_incidence_candidates(&rows, &points, &edge_faces, &candidates, Some(&ports), 4)
-            .expect("unique face-closing assignment with deferred port orientation");
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let topology = reconstruct_incidence_candidates(
+        &rows,
+        &points,
+        &edge_faces,
+        &candidates,
+        Some(&ports),
+        4,
+        &budget,
+    )
+    .expect("unique face-closing assignment with deferred port orientation");
     assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [1, 0]);
+}
+
+#[test]
+fn endpoint_candidate_fallback_honors_caller_budget() {
+    let rows: Vec<_> = (0..6)
+        .map(|edge| EdgeRow {
+            kind: 1,
+            handles: vec![edge * 2, edge * 2 + 1],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        })
+        .collect();
+    let points = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ];
+    let edge_faces = [[0, 1], [0, 2], [0, 3], [1, 3], [1, 2], [2, 3]];
+    let candidates = vec![
+        vec![[0, 2], [0, 1]],
+        vec![[1, 2]],
+        vec![[0, 2]],
+        vec![[0, 3]],
+        vec![[1, 3]],
+        vec![[2, 3]],
+    ];
+    let budget = WorkBudget::new(0);
+
+    assert!(reconstruct_incidence_candidates(
+        &rows,
+        &points,
+        &edge_faces,
+        &candidates,
+        None,
+        4,
+        &budget,
+    )
+    .is_none());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -7438,6 +7493,46 @@ mod record_decoders {
             &records[1],
             StandardSurfaceRecord::Analytic(prefix) if prefix.target == 0x5679
         ));
+    }
+
+    #[test]
+    fn standard_surface_roster_rejects_multiple_complete_chains() {
+        let analytic_record = |tag: [u8; 3]| {
+            let mut record = vec![tag[0], tag[1], tag[2], 0, 0x1a, 0, 0x33, 0x33];
+            record.resize(73, 0);
+            record[72] = 0xff;
+            record
+        };
+        let mut bytes = analytic_record([0x78, 0x56, 0]);
+        bytes.extend(analytic_record([0x79, 0x56, 0]));
+        bytes.push(0x60);
+        bytes.extend(analytic_record([0x7a, 0x56, 0]));
+        bytes.extend(analytic_record([0x7b, 0x56, 0]));
+        bytes.push(0x60);
+
+        assert!(crate::families::standard::records::standard_surface_records(&bytes, 2).is_none());
+    }
+
+    #[test]
+    fn standard_surface_roster_rejects_zero_faces() {
+        assert!(crate::families::standard::records::standard_surface_records(&[0x60], 0).is_none());
+    }
+
+    #[test]
+    fn standard_surface_roster_does_not_stop_at_a_record_tag_byte() {
+        let analytic_record = |tag: [u8; 3]| {
+            let mut record = vec![tag[0], tag[1], tag[2], 0, 0x1a, 0, 0x33, 0x33];
+            record.resize(73, 0);
+            record[72] = 0xff;
+            record
+        };
+        let mut bytes = analytic_record([0x78, 0x56, 0]);
+        bytes.extend(analytic_record([0x60, 0x56, 0]));
+        bytes.push(0x60);
+
+        let records = crate::families::standard::records::standard_surface_records(&bytes, 2)
+            .expect("two-record roster");
+        assert_eq!(records.len(), 2);
     }
 
     #[test]

@@ -900,7 +900,7 @@ impl MeshQuotient {
         )
     }
 
-    fn signature_work(&mut self) -> usize {
+    pub(crate) fn signature_work(&mut self) -> usize {
         let mut work = 0usize;
         for node in 0..self.union.len() {
             if self.union.find(node) == node {

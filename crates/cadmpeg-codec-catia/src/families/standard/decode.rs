@@ -3774,9 +3774,17 @@ fn attach_standard_topology(
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
         missing_edge::standard_mesh_edge_ports(spine)
             .and_then(|ports| {
-                fbb::parse_standard_port_endpoint_candidates(spine, &edge_faces, options, &ports)
+                fbb::parse_standard_port_endpoint_candidates(
+                    spine,
+                    &edge_faces,
+                    options,
+                    &ports,
+                    work_budget,
+                )
             })
-            .or_else(|| fbb::parse_standard_endpoint_candidates(spine, &edge_faces, options))
+            .or_else(|| {
+                fbb::parse_standard_endpoint_candidates(spine, &edge_faces, options, work_budget)
+            })
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
@@ -3784,7 +3792,7 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
-        return Err(if mesh_search_exhausted {
+        return Err(if mesh_search_exhausted || work_budget.exhausted() {
             StandardTopologyFailure::TopologySearchExhausted
         } else if diagnostics.mesh_ambiguity.is_some() {
             StandardTopologyFailure::AmbiguousTopologySolution
