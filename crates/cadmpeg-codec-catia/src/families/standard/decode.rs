@@ -5822,10 +5822,6 @@ pub(crate) fn face_surface<'a>(
     ir.model.surfaces.get(*surface_indices.get(id)?)
 }
 
-pub(crate) fn point_on_known_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
-    matches!(surface, SurfaceGeometry::Unknown { .. }) || point_on_surface(point, surface)
-}
-
 pub(crate) fn point_on_standard_face(
     point: Point3,
     surface: &SurfaceGeometry,
@@ -5833,7 +5829,7 @@ pub(crate) fn point_on_standard_face(
 ) -> bool {
     const TOLERANCE: f64 = 2e-3;
 
-    if !point_on_known_surface(point, surface) {
+    if point_on_surface_if_supported(point, surface) == Some(false) {
         return false;
     }
     bounds.is_none_or(|bounds| {
@@ -6124,6 +6120,10 @@ pub(crate) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, 
 }
 
 pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
+    point_on_surface_if_supported(point, surface).unwrap_or(false)
+}
+
+fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Option<bool> {
     const TOLERANCE: f64 = 1e-3;
     let residual = match surface {
         SurfaceGeometry::Plane { origin, normal, .. } => {
@@ -6172,9 +6172,9 @@ pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => return false,
+        | SurfaceGeometry::Unknown { .. } => return None,
     };
-    residual <= TOLERANCE
+    Some(residual <= TOLERANCE)
 }
 
 pub(crate) fn standard_spline_line(
@@ -7125,11 +7125,10 @@ mod route_tests {
         circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
         corroborate_successor_endpoint_points, emit_standard_topology,
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        native_support_circle_param_range, plane_intersection_line, point_on_known_surface,
-        point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
-        resolve_standard_limit_curve_binding, retry_rejected_mesh_solution,
-        standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_curve_branch_assignment_is_ranked,
+        native_support_circle_param_range, plane_intersection_line, point_on_standard_face,
+        point_on_surface, resolve_standard_endpoint_pairs, resolve_standard_limit_curve_binding,
+        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_curve_branch_assignment_is_ranked,
         standard_curve_branch_candidates_after_partial_assignment, standard_curve_branch_groups,
         standard_limit_curve_bindings, standard_native_support_endpoint_pair,
         standard_object_evidence_from_streams, standard_pcurve_geometry,
@@ -7150,7 +7149,7 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::{pcurve_uv, surface_point};
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurve,
+        Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurve,
         ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
         RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
     };
@@ -9189,10 +9188,33 @@ mod route_tests {
     }
 
     #[test]
-    fn unknown_surface_does_not_reject_endpoint_candidates() {
-        assert!(point_on_known_surface(
+    fn unsupported_surface_membership_does_not_reject_endpoint_candidates() {
+        assert!(point_on_standard_face(
             Point3::new(100.0, -50.0, 7.0),
-            &SurfaceGeometry::Unknown { record: None }
+            &SurfaceGeometry::Unknown { record: None },
+            None,
+        ));
+        let nurbs = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        assert!(point_on_standard_face(
+            Point3::new(100.0, -50.0, 7.0),
+            &nurbs,
+            None,
         ));
     }
 

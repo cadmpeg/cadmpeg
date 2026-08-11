@@ -424,7 +424,7 @@ Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c` or `0x08 0x09`), 
 
 The frame carries no inline persistent object id. Its byte offset in the object stream identifies the consolidated surface carrier.
 
-The A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven finite continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses eight continuation f64 values and suffix `01 00 01 00 07 07` with flags `01 01 01`, or suffix `09 00 09 00 07 07` with flags `05 05 01`. The 142-byte form uses flags `05 05 01`, eight finite continuation f64 values, and suffix `09 00 09 01 <4n+1> 07 07`. The frame ends after the suffix.
+The A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses flags `01 01 01` or `05 05 01`, eight finite continuation f64 values, and suffix `01 00 01 00 07 07` or `09 00 09 00 07 07`. The flag lane and suffix choice are independent. The 142-byte form uses either flag lane, eight finite continuation f64 values, and suffix `09 00 09 01 <4n+1> 07 07`. The frame ends after the suffix.
 
 The 6-byte `b2 03 2e 01 05 05` record following an `a5 03 34` core is a standalone object.
 
@@ -521,7 +521,7 @@ Frame: `a8 <frame_flag> <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <pay
 
 For `a8 <frame_flag> 34`, the lead byte, U degree/flags, finite strictly increasing distinct U knots and multiplicities, V degree/flags, finite strictly increasing distinct V knots and multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
 
-The elided-pole form places the fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. The inline-pole form may place the same tail immediately after its XYZ pole grid and optional rational weight grid. An inline-pole frame may also end after that grid or weight grid without the tail. Its byte layout is:
+The elided-pole form places a fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. This form has the following byte layout:
 
 | Tail offset | Width | Value                                                  |
 | ----------- | ----: | ------------------------------------------------------ |
@@ -550,6 +550,8 @@ U and V limits. The three flag bytes select the extrapolation branch. The
 64-byte continuation is eight zero f64 values in this fixed elided form. The
 decoder retains these fields as one `A8SurfaceParameterTail` rather than
 validating them as unrelated literals.
+
+The inline-pole form ends after its XYZ pole grid and optional rational weight grid, or places a complete 133-byte, 141-byte, or 142-byte structured surface tail after that grid. The inline tail uses the common A5 tail grammar in §6.1: its range and affine lanes are finite and ordered, both affine coefficients are nonzero, its flag lane is `01 01 01` or `05 05 01`, and its continuation and suffix close one of the three defined lengths. The 133-byte form has seven zero continuation values and suffix `01 00 01 00 07 07`. The 141-byte form has eight finite continuation values and either six-byte suffix. The 142-byte form has eight finite continuation values and suffix `09 00 09 01 <4n+1> 07 07`. Flag and suffix choices are independent in the 141-byte and 142-byte forms.
 
 The byte after the tail, or after an inline grid when no tail is present, is the end of the `a8` frame or the first owned A/B-family child record. The elided form carries no inline XYZ pole grid or rational-weight grid. Its external pole allocation is an unframed `nu×nv` XYZ grid, followed by the rational-weight grid when `mode=0x05`, occupying the complete gap between a length-closed `b5 <frame_flag> 21` pcurve and the next A/B-family frame. The pcurve's support reference must equal the surface object id. Grid cardinality comes from the elided surface header. A grid binds only when that support reference, its byte length, finite coordinate payload, and following frame boundary select one allocation.
 

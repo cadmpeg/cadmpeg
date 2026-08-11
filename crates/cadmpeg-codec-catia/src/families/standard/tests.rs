@@ -6128,7 +6128,10 @@ fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
             })
             .collect()],
     };
-    let budget = WorkBudget::new(1_800);
+    // The slice covers the indexed state transitions and the 3 * 45
+    // candidate pairs used to build the three adjacency maps.
+    let adjacency_work = candidates.len() * candidates[0].len();
+    let budget = WorkBudget::new(1_800 + adjacency_work);
 
     assert_eq!(
         crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable_where(
