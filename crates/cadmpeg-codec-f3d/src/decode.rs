@@ -556,6 +556,16 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Pattern { seeds, pattern } => {
             seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
         }
+        FeatureDefinition::Fillet { groups } => {
+            groups.is_empty()
+                || groups
+                    .iter()
+                    .any(|group| !edge_selection_is_resolved(&group.edges))
+        }
+        FeatureDefinition::DeleteFace { faces, .. } => !face_selection_is_resolved(faces),
+        FeatureDefinition::OffsetSurface {
+            faces, distance, ..
+        } => !face_selection_is_resolved(faces) || distance.is_none(),
         FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
             !profile_ref_is_resolved(profile)
         }
@@ -1326,6 +1336,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             }
             FeatureDefinition::CosmeticThread { face, .. } => face_selection(face),
             FeatureDefinition::Decal { faces, .. } => face_selection(faces),
+            FeatureDefinition::DeleteFace { faces, .. }
+            | FeatureDefinition::OffsetSurface { faces, .. } => face_selection(faces),
             FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
                 gaps.profile_selections += usize::from(!profile_ref_is_resolved(profile));
             }
@@ -5310,6 +5322,58 @@ mod tests {
     }
 
     #[test]
+    fn selected_face_and_edge_features_require_neutral_operands() {
+        let definition = |value| {
+            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+                .expect("selected feature definition")
+        };
+        let fillet = |edges| {
+            definition(serde_json::json!({
+                "definition": "fillet",
+                "groups": [{
+                    "edges": edges,
+                    "radius": {"kind": "constant", "radius": 5.0},
+                    "tangency_weight": 1.0
+                }]
+            }))
+        };
+
+        assert!(!feature_definition_is_incomplete(&fillet(
+            serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
+        )));
+        assert!(feature_definition_is_incomplete(&fillet(
+            serde_json::json!({"kind": "native", "value": "native:edges"}),
+        )));
+        assert!(!feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "delete_face",
+                "faces": {"kind": "faces", "value": ["face:1"]},
+                "heal": true
+            }),
+        )));
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "delete_face",
+                "faces": {"kind": "native", "value": "native:faces"},
+                "heal": true
+            }),
+        )));
+        assert!(!feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "offset_surface",
+                "faces": {"kind": "faces", "value": ["face:1"]},
+                "distance": 2.0
+            }),
+        )));
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "offset_surface",
+                "faces": {"kind": "faces", "value": ["face:1"]}
+            }),
+        )));
+    }
+
+    #[test]
     fn datum_point_completeness_requires_a_resolved_construction_rule() {
         let definition = |construction: Option<serde_json::Value>| {
             let mut value = serde_json::json!({
@@ -5993,7 +6057,7 @@ mod tests {
             design_projection_gaps(&ir, &native),
             DesignProjectionGaps {
                 unresolved_body_bindings: 0,
-                incomplete_features: 3,
+                incomplete_features: 5,
                 native_reference_images: 0,
                 native_decals: 0,
                 unprojected_feature_scopes: 1,
