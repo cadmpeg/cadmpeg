@@ -253,9 +253,11 @@ fixtures, claims above L1 remain unproven.
 - Class-911 counterbore recipes bind complete four- or five-row depth,
   bore-radius, and counterbore-radius tuples when the two source cylinder pairs
   uniquely match the two diameters on two axes and the counterbore depth on the
-  remaining axis. The fifth row is the drill-point angle. Nonmatching
-  document-level replays and class-29 tables without materialized source
-  cylinders do not participate. Coaxial radial centers and adjacent
+  remaining axis. One complete source pair can bind the tuple when it matches
+  exactly one bore or stepped-counterbore role. Four-row tables admit both the
+  retained-ID and shifted-ID layouts; the fifth row is the drill-point angle.
+  Nonmatching document-level replays and class-29 tables without materialized
+  source cylinders do not participate. Coaxial radial centers and adjacent
   counterbore and bore intervals supply the entry position, direction, and full
   blind extent without assigning a placement face. A complete frame on the
   recipe's axis-normal step plane supplies an unoriented hole axis without

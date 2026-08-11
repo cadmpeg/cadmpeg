@@ -22763,11 +22763,15 @@ fn counterbore_dimensions(
                 };
                 paired_corner_envelope_axis_spans(envelope(first_id)?, envelope(second_id)?)
             })
-            .collect::<Option<Vec<_>>>();
-        source_spans.map_or_else(
-            || counterbore_unenveloped_dimension_values(dimension_tables()),
-            |source_spans| counterbore_envelope_dimension_values(dimension_tables(), &source_spans),
-        )
+            .collect::<Vec<_>>();
+        let [first_source, second_source] = source_spans.as_slice() else {
+            return None;
+        };
+        if first_source.is_some() || second_source.is_some() {
+            counterbore_envelope_dimension_values(dimension_tables(), &source_spans)
+        } else {
+            counterbore_unenveloped_dimension_values(dimension_tables())
+        }
     })
 }
 
@@ -22828,7 +22832,7 @@ fn counterbore_dimension_values<'a>(
 
 fn counterbore_envelope_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
-    source_spans: &[[[Option<f64>; 2]; 3]],
+    source_spans: &[Option<[[Option<f64>; 2]; 3]>],
 ) -> Option<(f64, f64, f64)> {
     let [first_source, second_source] = source_spans else {
         return None;
@@ -22869,18 +22873,30 @@ fn counterbore_envelope_dimension_values<'a>(
         .filter_map(|table| {
             let (bore_diameter, counterbore_diameter, counterbore_depth) =
                 counterbore_envelope_dimension_tuple(table)?;
-            let source_assignment = [
-                cylinder_diameter_matches(bore_diameter, *first_source)
-                    && counterbore_matches(counterbore_diameter, counterbore_depth, *second_source),
-                cylinder_diameter_matches(bore_diameter, *second_source)
-                    && counterbore_matches(counterbore_diameter, counterbore_depth, *first_source),
-            ];
-            (source_assignment
-                .into_iter()
-                .filter(|matches| *matches)
-                .count()
-                == 1)
-                .then_some((bore_diameter, counterbore_diameter, counterbore_depth))
+            let matches = match (first_source, second_source) {
+                (Some(first), Some(second)) => {
+                    [
+                        cylinder_diameter_matches(bore_diameter, *first)
+                            && counterbore_matches(
+                                counterbore_diameter,
+                                counterbore_depth,
+                                *second,
+                            ),
+                        cylinder_diameter_matches(bore_diameter, *second)
+                            && counterbore_matches(counterbore_diameter, counterbore_depth, *first),
+                    ]
+                    .into_iter()
+                    .filter(|matches| *matches)
+                    .count()
+                        == 1
+                }
+                (Some(spans), None) | (None, Some(spans)) => {
+                    cylinder_diameter_matches(bore_diameter, *spans)
+                        != counterbore_matches(counterbore_diameter, counterbore_depth, *spans)
+                }
+                (None, None) => false,
+            };
+            matches.then_some((bore_diameter, counterbore_diameter, counterbore_depth))
         })
         .collect::<Vec<_>>();
     unique_counterbore_dimension_tuple(&candidates)
@@ -22919,13 +22935,29 @@ fn counterbore_envelope_dimension_tuple(
     };
     let signed_counterbore_depth = value(0, 1, crate::feature::DimensionUnit::Millimeters)?;
     let bore_radius = value(1, 2, crate::feature::DimensionUnit::Millimeters)?;
-    let counterbore_radius = value(3, 2, crate::feature::DimensionUnit::Millimeters)?;
-    value(4, 2, crate::feature::DimensionUnit::Millimeters)?;
-    let drill_point_angle = value(2, 10, crate::feature::DimensionUnit::Radians);
-    ((table.rows.len() == 4 && drill_point_angle.is_none())
-        || (table.rows.len() == 5
-            && drill_point_angle.is_some_and(|angle| angle > 0.0 && angle < std::f64::consts::PI)))
-    .then_some(())?;
+    let (counterbore_radius, _placement_distance) = if table.rows.len() == 4 {
+        let shifted = value(2, 2, crate::feature::DimensionUnit::Millimeters).zip(value(
+            3,
+            2,
+            crate::feature::DimensionUnit::Millimeters,
+        ));
+        let retained = value(3, 2, crate::feature::DimensionUnit::Millimeters).zip(value(
+            4,
+            2,
+            crate::feature::DimensionUnit::Millimeters,
+        ));
+        match (shifted, retained) {
+            (Some(layout), None) | (None, Some(layout)) => layout,
+            _ => return None,
+        }
+    } else {
+        let drill_point_angle = value(2, 10, crate::feature::DimensionUnit::Radians)?;
+        (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI).then_some(())?;
+        (
+            value(3, 2, crate::feature::DimensionUnit::Millimeters)?,
+            value(4, 2, crate::feature::DimensionUnit::Millimeters)?,
+        )
+    };
     (signed_counterbore_depth != 0.0 && bore_radius > 0.0 && counterbore_radius > bore_radius)
         .then_some(())?;
     Some((

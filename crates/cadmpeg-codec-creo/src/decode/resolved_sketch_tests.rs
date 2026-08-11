@@ -2774,7 +2774,7 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
     assert_eq!(
         counterbore_envelope_dimension_values(
             std::iter::once(&first),
-            &[bore_spans, counterbore_spans],
+            &[Some(bore_spans), Some(counterbore_spans)],
         ),
         Some((40.0, 120.0, 8.0))
     );
@@ -2782,7 +2782,7 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
     assert_eq!(
         counterbore_envelope_dimension_values(
             std::iter::once(&signed_depth),
-            &[bore_spans, counterbore_spans],
+            &[Some(bore_spans), Some(counterbore_spans)],
         ),
         Some((40.0, 120.0, 8.0))
     );
@@ -2793,7 +2793,7 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
     assert_eq!(
         counterbore_envelope_dimension_values(
             std::iter::once(&first),
-            &[counterbore_spans, bore_spans],
+            &[Some(counterbore_spans), Some(bore_spans)],
         ),
         Some((40.0, 120.0, 8.0))
     );
@@ -2803,10 +2803,40 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
     assert_eq!(
         counterbore_envelope_dimension_values(
             std::iter::once(&without_drill_angle),
-            &[bore_spans, counterbore_spans],
+            &[Some(bore_spans), Some(counterbore_spans)],
         ),
         Some((40.0, 120.0, 8.0))
     );
+    let mut shifted_four_row = without_drill_angle.clone();
+    for row in &mut shifted_four_row.rows {
+        if row.external_id >= 3 {
+            row.external_id -= 1;
+        }
+    }
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&shifted_four_row),
+            &[None, Some(counterbore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&shifted_four_row),
+            &[Some(bore_spans), None],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let dual_role_spans = [
+        [Some(40.0), Some(120.0)],
+        [Some(40.0), Some(120.0)],
+        [Some(8.0), None],
+    ];
+    assert!(counterbore_envelope_dimension_values(
+        std::iter::once(&shifted_four_row),
+        &[Some(dual_role_spans), None],
+    )
+    .is_none());
     let mut invalid_drill_angle = table(8.0);
     invalid_drill_angle
         .rows
@@ -2816,20 +2846,20 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         .value = Some(std::f64::consts::PI);
     assert!(counterbore_envelope_dimension_values(
         std::iter::once(&invalid_drill_angle),
-        &[bore_spans, counterbore_spans],
+        &[Some(bore_spans), Some(counterbore_spans)],
     )
     .is_none());
     let conflicting = table(9.0);
     assert_eq!(
         counterbore_envelope_dimension_values(
             [&first, &conflicting].into_iter(),
-            &[bore_spans, counterbore_spans],
+            &[Some(bore_spans), Some(counterbore_spans)],
         ),
         Some((40.0, 120.0, 8.0))
     );
     assert!(counterbore_envelope_dimension_values(
         std::iter::once(&conflicting),
-        &[bore_spans, counterbore_spans],
+        &[Some(bore_spans), Some(counterbore_spans)],
     )
     .is_none());
     assert!(
