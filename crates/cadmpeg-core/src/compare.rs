@@ -1,66 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tolerance-aware semantic comparison of decoded values.
 //!
-//! ## Why a tolerance exists
+//! ## Tolerance
 //!
-//! Decoded geometry passes through `f64::cos`, `f64::sin`, and friends, which
-//! resolve to the platform's libm and are not bit-reproducible: glibc, the MSVC
-//! runtime, and Apple's libm disagree in the last one or two units in the last
-//! place. One conical face pins `origin.v` scaled by `cos(half_angle)`, which
-//! serializes as `1.802581857082682` on Linux and `1.8025818570826815` on
-//! Windows and macOS — two units in the last place apart, and identical to
+//! Decoded geometry calls `f64::cos`, `f64::sin`, and other libm functions.
+//! glibc, the MSVC runtime, and Apple's libm disagree by one or two units in
+//! the last place. One conical face pins `origin.v` scaled by
+//! `cos(half_angle)`, which serializes as `1.802581857082682` on Linux and
+//! `1.8025818570826815` on Windows and macOS: two ULPs apart, identical to
 //! fourteen significant digits.
 //!
-//! Exact equality therefore reports a platform as a change. That makes it the
-//! wrong relation for any question of the form "do these two decodes describe
-//! the same model", whether the asker is a snapshot harness or a user running a
-//! semantic comparison over the same file decoded on two machines.
+//! Exact equality therefore treats a platform difference as a model change.
+//! That breaks any check of the form "do these two decodes describe the same
+//! model", whether a snapshot harness or a cross-machine compare of one file.
 //!
-//! ## Why `1e-12` relative with a floor of one
+//! ## `1e-12` relative, floor of one
 //!
-//! Platform libm disagreement is a few units in the last place, near `1e-16`
-//! relative, so [`FLOAT_TOLERANCE`] leaves four decimal orders of headroom
-//! while still catching any change with physical meaning: at millimeter scale
-//! it admits a picometer. The tolerance applies to the larger of the two
-//! magnitudes, floored at one, so values below unit magnitude compare
-//! absolutely rather than demanding ever-finer agreement as they approach zero
-//! — a relative test against zero can never pass, and `0.0` against `1e-30` is
-//! agreement for every purpose this relation serves.
+//! Platform libm disagreement sits near `1e-16` relative. [`FLOAT_TOLERANCE`]
+//! leaves four decimal orders of headroom and still flags a change with
+//! physical meaning: at millimeter scale it admits a picometer. The tolerance
+//! uses the larger of the two magnitudes, floored at one, so values below unit
+//! magnitude compare absolutely. A relative test against zero can never pass,
+//! and `0.0` against `1e-30` agrees for every use of this relation.
 //!
-//! ## Why integers stay exact
+//! ## Exact integers
 //!
 //! Counts, indices, degrees, versions, and identifiers serialize as JSON
-//! integers. Not one of them passes through libm, and a change of one in any of
-//! them is a real change in the model. [`values_agree`] therefore admits a
-//! tolerance only when *both* sides are fractional; an integer pair, and a
-//! value that moved between integer and fractional form, compare exactly.
+//! integers. None of them pass through libm. A change of one is a real model
+//! change. [`values_agree`] admits a tolerance only when both sides are
+//! fractional. An integer pair, and a value that moved between integer and
+//! fractional form, compare exactly.
 //!
-//! String values compare exactly except for embedded fractional tokens (decimal
-//! or `E`/`D` exponent form), which use the same tolerance — encode goldens pin
-//! writer text that still carries platform libm bits.
+//! String values compare exactly except for embedded fractional tokens
+//! (decimal or `E`/`D` exponent form), which use the same tolerance. Encode
+//! goldens pin writer text that still carries platform libm bits.
 //!
-//! ## Tolerant equality is not transitive
+//! ## Non-transitive relation
 //!
-//! `a` agreeing with `b` and `b` agreeing with `c` do not imply that `a` agrees
-//! with `c`: two steps of just under the tolerance sum to just over it. Every
-//! verdict this module produces is therefore strictly about the one pair it was
-//! given. Consequences:
+//! If `a` agrees with `b` and `b` agrees with `c`, `a` need not agree with
+//! `c`: two steps under the tolerance can sum over it. Each verdict covers
+//! only the pair you pass in.
 //!
-//! - The relation cannot back a hash, an equivalence class, a `BTreeMap` key,
-//!   or a deduplication pass, all of which need transitivity to be coherent.
+//! - Do not use this relation for a hash, equivalence class, `BTreeMap` key,
+//!   or deduplication pass. Those need transitivity.
 //! - A digest over tolerantly compared values is a bitwise fingerprint and
-//!   agrees only under exact equality, so no tolerance can rescue one.
-//! - Chaining comparisons through an intermediate proves nothing about the
-//!   endpoints. Compare the two values the question is actually about.
+//!   agrees only under exact equality.
+//! - Chaining through an intermediate proves nothing about the endpoints.
+//!   Compare the two values the question names.
 //!
-//! ## Naming a digest that this relation cannot reconcile
+//! ## Local digests
 //!
-//! A codec still needs bitwise digests over decoded content: the write path asks
-//! "was this document edited since it was decoded?" and only a bitwise digest
-//! answers that cheaply. Such a digest is valid within one machine's decode and
-//! nowhere else, for exactly the reason stated above. It is therefore named with
-//! the [`LOCAL_DIGEST_SUFFIX`] suffix, and [`is_local_digest_attribute`] is the
-//! one place that decides whether a source attribute holds one.
+//! A codec still needs bitwise digests over decoded content: the write path
+//! asks whether the document changed since decode, and only a bitwise digest
+//! answers that cheaply. Such a digest is valid within one machine's decode
+//! and nowhere else, for the libm reason above. Name it with
+//! [`LOCAL_DIGEST_SUFFIX`]. [`is_local_digest_attribute`] is the sole check
+//! for whether a source attribute holds one.
 
 use std::fmt::Write as _;
 
