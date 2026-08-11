@@ -1723,7 +1723,7 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && image.visibility_offset == image.geometry_byte_offset.saturating_add(25)
             && design::decode::canvas::geometry_prologue_visibility(&image.geometry_prologue)
                 == Some(image.visible)
-            && design::decode::canvas::opposite_rectangle_edges(image.boundary_segments)
+            && design::decode::canvas::canvas_mirroring(image.boundary_segments).is_some()
             && !image.geometry_class_tag.is_empty()
             && image
                 .geometry_class_tag

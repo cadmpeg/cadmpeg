@@ -64,6 +64,9 @@ pub fn project_canvas_images(
         else {
             continue;
         };
+        let Some((mirror_u, mirror_v)) = canvas_mirroring(image.boundary_segments) else {
+            continue;
+        };
         let mut u_values = image
             .boundary_segments
             .iter()
@@ -99,6 +102,8 @@ pub fn project_canvas_images(
         feature.definition = FeatureDefinition::ReferenceImage {
             asset: asset_id,
             visible: image.visible,
+            mirror_u,
+            mirror_v,
             origin: image.origin,
             u_axis: image.u_axis,
             v_axis: image.v_axis,
@@ -183,9 +188,7 @@ fn parse_canvas_image(
             Point2::new(coordinates[6], coordinates[7]),
         ],
     ];
-    if !opposite_rectangle_edges(boundary_segments) {
-        return None;
-    }
+    canvas_mirroring(boundary_segments)?;
 
     let plane_at = geometry_at + 58;
     let scope_reference_at = geometry_at + 146;
@@ -316,7 +319,7 @@ pub(crate) fn geometry_prologue_visibility(prologue: &[u8; 15]) -> Option<bool> 
     .then_some(prologue[14] != 0)
 }
 
-pub(crate) fn opposite_rectangle_edges(segments: [[Point2; 2]; 2]) -> bool {
+pub(crate) fn canvas_mirroring(segments: [[Point2; 2]; 2]) -> Option<(bool, bool)> {
     let [[a, b], [c, d]] = segments;
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 64.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
@@ -331,13 +334,19 @@ pub(crate) fn opposite_rectangle_edges(segments: [[Point2; 2]; 2]) -> bool {
         && close(a.v, c.v)
         && close(b.v, d.v)
         && !close(a.u, c.u);
-    horizontal || vertical
+    if horizontal {
+        Some((a.u > b.u, a.v > c.v))
+    } else if vertical {
+        Some((a.u > c.u, a.v > b.v))
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_geometry_payload, geometry_prologue_visibility, opposite_rectangle_edges,
+        canvas_mirroring, decode_geometry_payload, geometry_prologue_visibility,
         valid_geometry_prologue,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -378,29 +387,66 @@ mod tests {
     }
 
     #[test]
-    fn canvas_bounds_require_two_opposite_non_degenerate_edges() {
-        assert!(opposite_rectangle_edges([
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
-        ]));
-        assert!(opposite_rectangle_edges([
-            [Point2::new(-2.0, 4.0), Point2::new(-2.0, -1.0)],
-            [Point2::new(3.0, 4.0), Point2::new(3.0, -1.0)],
-        ]));
-        assert!(opposite_rectangle_edges([
-            [
-                Point2::new(-2.0, 4.0),
-                Point2::new(f64::from_bits((-2.0f64).to_bits() + 4), -1.0),
-            ],
-            [
-                Point2::new(3.0, f64::from_bits(4.0f64.to_bits() + 4)),
-                Point2::new(f64::from_bits(3.0f64.to_bits() + 4), -1.0),
-            ],
-        ]));
-        assert!(!opposite_rectangle_edges([
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            [Point2::new(-2.0, 4.0), Point2::new(2.0, 4.0)],
-        ]));
+    fn canvas_bounds_decode_u_and_v_mirroring_from_endpoint_order() {
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+                [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
+            ]),
+            Some((false, false))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
+                [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
+            ]),
+            Some((true, false))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
+                [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+            ]),
+            Some((false, true))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
+                [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
+            ]),
+            Some((true, true))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, 4.0), Point2::new(-2.0, -1.0)],
+                [Point2::new(3.0, 4.0), Point2::new(3.0, -1.0)],
+            ]),
+            Some((false, true))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(3.0, -1.0), Point2::new(3.0, 4.0)],
+                [Point2::new(-2.0, -1.0), Point2::new(-2.0, 4.0)],
+            ]),
+            Some((true, false))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+                [
+                    Point2::new(f64::from_bits((-2.0f64).to_bits() + 4), 4.0),
+                    Point2::new(f64::from_bits(3.0f64.to_bits() + 4), 4.0),
+                ],
+            ]),
+            Some((false, false))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+                [Point2::new(-2.0, 4.0), Point2::new(2.0, 4.0)],
+            ]),
+            None
+        );
     }
 
     #[test]

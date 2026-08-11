@@ -6568,6 +6568,8 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         definition: FeatureDefinition::ReferenceImage {
             asset: asset_id,
             visible: true,
+            mirror_u: false,
+            mirror_v: false,
             origin: Point3::new(0.0, 0.0, 0.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
             v_axis: Vector3::new(0.0, 1.0, 0.0),

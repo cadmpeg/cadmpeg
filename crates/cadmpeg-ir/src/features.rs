@@ -562,6 +562,12 @@ pub enum FeatureDefinition {
         /// Whether the raster is visible in the source presentation.
         #[serde(default = "default_true")]
         visible: bool,
+        /// Whether image u increases toward decreasing plane-local u.
+        #[serde(default)]
+        mirror_u: bool,
+        /// Whether image v increases toward decreasing plane-local v.
+        #[serde(default)]
+        mirror_v: bool,
         /// Origin of the image plane in model space.
         origin: Point3,
         /// Unit direction of increasing image u coordinate.
