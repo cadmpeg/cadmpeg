@@ -22477,9 +22477,40 @@ fn simple_drilled_hole_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
     observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
 ) -> Option<(f64, f64, f64)> {
+    let tables = tables
+        .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
+        .collect::<Vec<_>>();
+    let has_simple_drilled_signature = |table: &crate::feature::FeatureDimensionTable| {
+        [
+            (0, 2, crate::feature::DimensionUnit::Millimeters),
+            (1, 10, crate::feature::DimensionUnit::Radians),
+            (2, 2, crate::feature::DimensionUnit::Millimeters),
+        ]
+        .into_iter()
+        .all(|(external_id, dimension_type, unit)| {
+            table
+                .rows
+                .iter()
+                .filter(|row| {
+                    row.external_id == external_id
+                        && row.dimension_type == dimension_type
+                        && row.value_unit == unit
+                })
+                .count()
+                == 1
+        })
+    };
+    if observed_envelope_spans.is_none()
+        && tables
+            .iter()
+            .any(|table| !has_simple_drilled_signature(table))
+    {
+        return None;
+    }
     let candidates =
         tables
-            .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
+            .into_iter()
+            .filter(|table| has_simple_drilled_signature(table))
             .map(|table| {
                 let value = |external_id, dimension_type, unit| {
                     let rows = table

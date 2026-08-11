@@ -2296,6 +2296,19 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
         ),
         None
     );
+    let mut other_layout = table(5.0, angle, -30.0);
+    other_layout.rows[2].external_id = 4;
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&first, &other_layout].into_iter(), None),
+        None
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &other_layout].into_iter(),
+            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+        ),
+        Some((8.4, angle, 25.0))
+    );
     let invalid_angle = table(4.2, std::f64::consts::PI, -25.0);
     assert_eq!(
         simple_drilled_hole_dimension_values([&invalid_angle].into_iter(), None),

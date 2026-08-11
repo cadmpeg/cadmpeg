@@ -2810,7 +2810,9 @@ dimension type `2` and millimetre units. ID `1` has dimension type `10` and
 radian units. The bore radius is positive, the depth is nonzero, and the
 included angle is strictly between zero and π. The neutral bore diameter is
 twice the stored radius. The depth magnitude is the blind length; its sign is
-an orientation state and does not change that length.
+an orientation state and does not change that length. Only a table with these
+exact three row signatures participates in this dimension family. Other
+three-row layouts are independent template families.
 
 Each materialized cylinder row in this recipe has a type-24 compound-close
 parameter record. The last six scalar slots in the final frame are two
