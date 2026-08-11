@@ -1840,11 +1840,12 @@ pub(crate) fn project_generated_hole_axes(
     }
 }
 
-/// Resolve counterbore placements when the complete primary and counterbore
-/// axis sets are identical. A globally unique diameter owns the complete set.
-/// An otherwise placed, structurally identical family owns the unclaimed set
-/// only when every existing placement claims one distinct topology axis.
-pub(crate) fn project_counterbore_topology_axes(
+/// Resolve placements from exact dimensional topology matches.
+/// Counterbores require identical primary and counterbore axis sets. Flat
+/// blind holes require a finite cylinder span equal to the declared depth.
+/// Ownership must be unique, or an otherwise placed identical counterbore
+/// family must claim every axis outside the inferred residual set.
+pub(crate) fn project_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     topology: &HoleTopology<'_>,
 ) {
@@ -1977,6 +1978,75 @@ pub(crate) fn project_counterbore_topology_axes(
             unreachable!("unresolved hole selection requires a hole feature");
         };
         *placements = residual;
+    }
+
+    project_flat_blind_topology_axes(features, topology);
+}
+
+fn project_flat_blind_topology_axes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    topology: &HoleTopology<'_>,
+) {
+    let cylinders = cylindrical_bore_face_spans(topology);
+    let unresolved = features
+        .iter()
+        .enumerate()
+        .filter(|(_, feature)| feature.suppressed != Some(true))
+        .filter_map(|(index, feature)| match feature.definition {
+            FeatureDefinition::Hole {
+                placements: ref hole_placements,
+                kind: HoleKind::Simple,
+                diameter: Some(Length(diameter)),
+                extent:
+                    Some(Termination::Blind {
+                        length: Length(length),
+                    }),
+                bottom: Some(HoleBottom::Flat),
+                ..
+            } if hole_placements.is_empty()
+                && diameter.is_finite()
+                && diameter > 0.0
+                && length.is_finite()
+                && length > 0.0 =>
+            {
+                Some((index, diameter, length))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    for (index, diameter, length) in unresolved {
+        if features
+            .iter()
+            .filter(|feature| feature.suppressed != Some(true))
+            .filter(|feature| {
+                same_hole_construction(&features[index].definition, &feature.definition)
+            })
+            .count()
+            != 1
+        {
+            continue;
+        }
+        let radius = diameter * 0.5;
+        let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+        let length_tolerance = (length.abs() * 1.0e-9).max(1.0e-8);
+        let Some(placements) = carrier_placements(cylinders.iter().filter_map(
+            |(origin, axis, candidate_radius, candidate_span, _)| {
+                ((candidate_radius - radius).abs() <= radius_tolerance
+                    && (candidate_span - length).abs() <= length_tolerance)
+                    .then_some((*origin, *axis))
+            },
+        )) else {
+            continue;
+        };
+        let FeatureDefinition::Hole {
+            placements: hole_placements,
+            ..
+        } = &mut features[index].definition
+        else {
+            unreachable!("flat blind topology selection requires a hole feature");
+        };
+        *hole_placements = placements;
     }
 }
 

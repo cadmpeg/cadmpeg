@@ -472,14 +472,14 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     };
 
     let mut unique = [unplaced.clone()];
-    project_counterbore_topology_axes(&mut unique, &topology);
+    project_hole_topology_axes(&mut unique, &topology);
     let FeatureDefinition::Hole { placements, .. } = &unique[0].definition else {
         unreachable!();
     };
     assert_eq!(placements.len(), 3);
 
     let mut features = [placed.clone(), unplaced.clone()];
-    project_counterbore_topology_axes(&mut features, &topology);
+    project_hole_topology_axes(&mut features, &topology);
     let FeatureDefinition::Hole { placements, .. } = &features[1].definition else {
         unreachable!();
     };
@@ -499,7 +499,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 
     let mut ambiguous = [placed.clone(), unplaced.clone(), unplaced.clone()];
     ambiguous[2].id = FeatureId("also-unplaced".into());
-    project_counterbore_topology_axes(&mut ambiguous, &topology);
+    project_hole_topology_axes(&mut ambiguous, &topology);
     let FeatureDefinition::Hole { placements, .. } = &ambiguous[1].definition else {
         unreachable!();
     };
@@ -520,7 +520,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         points: &[],
     };
     let mut unmatched_signature = [placed.clone(), unplaced.clone()];
-    project_counterbore_topology_axes(&mut unmatched_signature, &unmatched_topology);
+    project_hole_topology_axes(&mut unmatched_signature, &unmatched_topology);
     let FeatureDefinition::Hole { placements, .. } = &unmatched_signature[1].definition else {
         unreachable!();
     };
@@ -534,7 +534,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         axis: Vector3::new(0.0, 0.0, 1.0),
     };
     let mut incomplete_topology = [placed, unplaced];
-    project_counterbore_topology_axes(&mut incomplete_topology, &topology);
+    project_hole_topology_axes(&mut incomplete_topology, &topology);
     let FeatureDefinition::Hole { placements, .. } = &incomplete_topology[1].definition else {
         unreachable!();
     };
@@ -542,7 +542,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
 }
 
 #[test]
-fn topological_hole_projection_uses_a_reversed_bore_span() {
+fn hole_topology_uses_exact_cylinder_spans() {
     let surface = Surface {
         id: SurfaceId("surface".into()),
         geometry: SurfaceGeometry::Cylinder {
@@ -617,6 +617,56 @@ fn topological_hole_projection_uses_a_reversed_bore_span() {
 
     let mut bore_face = face;
     bore_face.sense = Sense::Reversed;
+    let surfaces = [surface];
+    let faces = [bore_face];
+    let loops = [loop_];
+    let coedges = [coedge];
+    let edges = [edge];
+    let topology = HoleTopology {
+        surfaces: &surfaces,
+        faces: &faces,
+        loops: &loops,
+        coedges: &coedges,
+        edges: &edges,
+        vertices: &vertices,
+        points: &points,
+    };
+
+    let mut unplaced = model_hole();
+    let FeatureDefinition::Hole { extent, bottom, .. } = &mut unplaced.definition else {
+        unreachable!();
+    };
+    *extent = Some(Termination::Blind {
+        length: Length(10.0),
+    });
+    *bottom = Some(HoleBottom::Flat);
+    let mut exact = [unplaced.clone()];
+    project_hole_topology_axes(&mut exact, &topology);
+    let FeatureDefinition::Hole { placements, .. } = &exact[0].definition else {
+        unreachable!();
+    };
+    assert_eq!(placements.len(), 1);
+
+    let mut ambiguous = [unplaced.clone(), unplaced.clone()];
+    ambiguous[1].id = FeatureId("second-hole".into());
+    project_hole_topology_axes(&mut ambiguous, &topology);
+    let FeatureDefinition::Hole { placements, .. } = &ambiguous[0].definition else {
+        unreachable!();
+    };
+    assert!(placements.is_empty());
+
+    let FeatureDefinition::Hole { extent, .. } = &mut unplaced.definition else {
+        unreachable!();
+    };
+    *extent = Some(Termination::Blind {
+        length: Length(9.0),
+    });
+    project_hole_topology_axes(std::slice::from_mut(&mut unplaced), &topology);
+    let FeatureDefinition::Hole { placements, .. } = &unplaced.definition else {
+        unreachable!();
+    };
+    assert!(placements.is_empty());
+
     let mut hole = model_hole();
     let FeatureDefinition::Hole {
         placements,
@@ -631,18 +681,7 @@ fn topological_hole_projection_uses_a_reversed_bore_span() {
         axis: Vector3::new(0.0, 0.0, 1.0),
     });
     *diameter = None;
-    project_topological_hole_constructions(
-        std::slice::from_mut(&mut hole),
-        &HoleTopology {
-            surfaces: &[surface],
-            faces: &[bore_face],
-            loops: &[loop_],
-            coedges: &[coedge],
-            edges: &[edge],
-            vertices: &vertices,
-            points: &points,
-        },
-    );
+    project_topological_hole_constructions(std::slice::from_mut(&mut hole), &topology);
     let FeatureDefinition::Hole {
         diameter, extent, ..
     } = hole.definition
