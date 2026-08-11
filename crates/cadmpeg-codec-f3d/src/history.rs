@@ -3161,6 +3161,15 @@ pub(crate) fn bind_face_operand_history_candidates(
                 crate::design::face_resolve::resolve_face_operand_history_candidate_from(
                     operand, candidates,
                 )
+                .or_else(|| {
+                    resolve_thread_face_by_transition(
+                        scope,
+                        candidates,
+                        history,
+                        topology,
+                        &changed_faces,
+                    )
+                })
                 .into_iter()
                 .collect();
         }
@@ -3294,6 +3303,65 @@ fn effective_faces(
     } else {
         &reference.candidate_faces
     }
+}
+
+fn resolve_thread_face_by_transition(
+    scope: &crate::records::DesignParameterScope,
+    candidates: &[cadmpeg_ir::ids::FaceId],
+    history: &AsmHistory,
+    topology: &AsmHistoricalTopology,
+    changed_faces: &HashSet<i64>,
+) -> Option<i64> {
+    let construction = scope.thread_construction.as_ref()?;
+    let source = historical_brep_source(&history.id)?;
+    let mut source_candidates = candidates
+        .iter()
+        .filter(|face| active_brep_face_matches_source(face, source));
+    source_candidates.next()?;
+    if source_candidates.next().is_some() {
+        return None;
+    }
+    let minimum_radius = construction.minor_diameter * 5.0;
+    let maximum_radius = construction.major_diameter * 5.0;
+    if !minimum_radius.is_finite()
+        || !maximum_radius.is_finite()
+        || minimum_radius <= 0.0
+        || maximum_radius < minimum_radius
+    {
+        return None;
+    }
+    let tolerance = 1.0e-9 * (1.0 + maximum_radius.abs());
+    let mut matching_faces = topology
+        .faces
+        .iter()
+        .copied()
+        .filter(|face| changed_faces.contains(face))
+        .filter_map(|face| {
+            let mut bindings = topology
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.entity == face);
+            let binding = bindings.next()?;
+            if bindings.next().is_some() {
+                return None;
+            }
+            let mut cylinders = topology
+                .surface_cylinders
+                .iter()
+                .filter(|cylinder| cylinder.surface == binding.carrier);
+            let cylinder = cylinders.next()?;
+            (cylinders.next().is_none()
+                && cylinder.radius + tolerance >= minimum_radius
+                && cylinder.radius <= maximum_radius + tolerance)
+                .then_some(face)
+        })
+        .collect::<Vec<_>>();
+    matching_faces.sort_unstable();
+    matching_faces.dedup();
+    let [face] = matching_faces.as_slice() else {
+        return None;
+    };
+    Some(*face)
 }
 
 fn grouped_reference_face_candidate(
@@ -8499,14 +8567,16 @@ mod tests {
     #[test]
     fn thread_face_group_uses_first_reference_transition_candidates() {
         use crate::history_records::{
-            AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
+            AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCylinder,
+            AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
         };
         use crate::records::{
             ConstructionRecipeKind, DesignConstructionOperandGroup,
             DesignConstructionOperandGroupFrame, DesignFaceOperand, DesignParameterScope,
-            DesignRecipeReference,
+            DesignRecipeReference, DesignThreadConstruction, DesignThreadForm,
         };
         use cadmpeg_ir::ids::FaceId;
+        use cadmpeg_ir::math::{Point3, Vector3};
 
         let face = |slot| FaceId(format!("f3d:brep:entity#{slot}"));
         let scope_id = "f3d:Design/BulkStream.dat:scope#42";
@@ -8647,6 +8717,104 @@ mod tests {
         assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
         assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
         assert_eq!(operands[0].resolved_face_slots, [7]);
+
+        let mut cylinder_scope = scope.clone();
+        cylinder_scope.thread_construction = Some(DesignThreadConstruction {
+            form: DesignThreadForm::Standard,
+            designation_offset: 0,
+            designation: "M4x0.7".into(),
+            nominal_size_text: "4.0".into(),
+            nominal_size: 4.0,
+            profile: "ISO Metric profile".into(),
+            major_diameter: 0.4,
+            minor_diameter: 0.2,
+            pitch: 0.07,
+            pitch_diameter: 0.3,
+            face_group_record_indices: vec![100],
+        });
+        let mut cylinder_operand = operand.clone();
+        cylinder_operand.recipe_references[0].candidate_faces =
+            vec![FaceId("f3d:brep/input/brep:entity#999".into())];
+        cylinder_operand.candidate_faces = cylinder_operand.recipe_references[0]
+            .candidate_faces
+            .clone();
+        let mut cylinder_history = history.clone();
+        cylinder_history.id = "f3d:Breps.BlobParts/BREP.input:asm-history#1".into();
+        let cylinder_topology = cylinder_history.states[1]
+            .topology
+            .as_mut()
+            .expect("preceding topology");
+        cylinder_topology.face_surfaces = vec![
+            AsmHistoricalCarrierBinding {
+                entity: 7,
+                carrier: 70,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 8,
+                carrier: 80,
+            },
+        ];
+        cylinder_topology.surface_cylinders = vec![
+            AsmHistoricalCylinder {
+                surface: 70,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 1.5,
+            },
+            AsmHistoricalCylinder {
+                surface: 80,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 3.0,
+            },
+        ];
+        let mut cylinder_operands = vec![cylinder_operand];
+        bind_face_operand_history_candidates(
+            &mut cylinder_operands,
+            std::slice::from_ref(&cylinder_scope),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&cylinder_history),
+        );
+        assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
+
+        let mut ambiguous_source_operand = cylinder_operands[0].clone();
+        ambiguous_source_operand.recipe_references[0]
+            .candidate_faces
+            .push(FaceId("f3d:brep/input/brep:entity#998".into()));
+        let mut ambiguous_source_operands = vec![ambiguous_source_operand];
+        bind_face_operand_history_candidates(
+            &mut ambiguous_source_operands,
+            std::slice::from_ref(&cylinder_scope),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&cylinder_history),
+        );
+        assert!(ambiguous_source_operands[0].resolved_face_slots.is_empty());
+
+        let mut ambiguous_geometry_history = cylinder_history;
+        ambiguous_geometry_history.states[0]
+            .transition
+            .as_mut()
+            .expect("result transition")
+            .topology
+            .faces
+            .updated
+            .push(8);
+        ambiguous_geometry_history.states[1]
+            .topology
+            .as_mut()
+            .expect("preceding topology")
+            .surface_cylinders[1]
+            .radius = 1.6;
+        let mut ambiguous_geometry_operands = vec![cylinder_operands.remove(0)];
+        bind_face_operand_history_candidates(
+            &mut ambiguous_geometry_operands,
+            &[cylinder_scope],
+            std::slice::from_ref(&group),
+            &[ambiguous_geometry_history],
+        );
+        assert!(ambiguous_geometry_operands[0]
+            .resolved_face_slots
+            .is_empty());
 
         let mut unrelated_group = group;
         unrelated_group.role = 0x0000_0011_0000_0000;
