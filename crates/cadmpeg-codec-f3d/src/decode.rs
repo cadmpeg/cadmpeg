@@ -336,6 +336,26 @@ fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
     }
 }
 
+fn termination_is_resolved(termination: &cadmpeg_ir::features::Termination) -> bool {
+    use cadmpeg_ir::features::{Termination, VertexSelection};
+
+    match termination {
+        Termination::Unresolved | Termination::Angle { .. } => false,
+        Termination::ToFace { face, .. }
+        | Termination::OffsetFromFace { face, .. }
+        | Termination::ToShape { target: face } => face_selection_is_resolved(face),
+        Termination::ToVertex { vertex } => matches!(
+            vertex,
+            VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
+        ),
+        Termination::Blind { .. }
+        | Termination::ThroughAll
+        | Termination::ThroughNext
+        | Termination::ToFirst
+        | Termination::ToLast => true,
+    }
+}
+
 fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
     use cadmpeg_ir::features::PathRef;
 
@@ -370,23 +390,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             extent,
             ..
         } => {
-            use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart, Termination, VertexSelection};
+            use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart};
 
-            let termination_is_resolved = |termination: &Termination| match termination {
-                Termination::Unresolved | Termination::Angle { .. } => false,
-                Termination::ToFace { face, .. }
-                | Termination::OffsetFromFace { face, .. }
-                | Termination::ToShape { target: face } => face_selection_is_resolved(face),
-                Termination::ToVertex { vertex } => matches!(
-                    vertex,
-                    VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
-                ),
-                Termination::Blind { .. }
-                | Termination::ThroughAll
-                | Termination::ThroughNext
-                | Termination::ToFirst
-                | Termination::ToLast => true,
-            };
             let start_is_resolved = match start {
                 ExtrudeStart::Unresolved => false,
                 ExtrudeStart::FromFace { face, .. } => face_selection_is_resolved(face),
@@ -402,6 +407,39 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 }
             };
             !profile_ref_is_resolved(profile) || !start_is_resolved || !extent_is_resolved
+        }
+        FeatureDefinition::Hole {
+            profile,
+            face,
+            position,
+            direction,
+            placements,
+            kind,
+            diameter,
+            extent,
+            ..
+        } => {
+            use cadmpeg_ir::features::{HoleKind, HolePlacement};
+
+            let support_is_resolved = profile.as_ref().is_some_and(profile_ref_is_resolved)
+                || face.as_ref().is_some_and(face_selection_is_resolved);
+            let shared_placement_is_resolved = position.is_some()
+                && direction
+                    .as_ref()
+                    .is_some_and(|direction| direction.unit().is_some());
+            let placements_are_resolved = !placements.is_empty()
+                && placements.iter().all(|placement| match placement {
+                    HolePlacement::Directed { direction, .. } => direction.unit().is_some(),
+                    HolePlacement::Axis { axis, .. } => axis.unit().is_some(),
+                });
+
+            !support_is_resolved
+                || (!shared_placement_is_resolved && !placements_are_resolved)
+                || matches!(kind, HoleKind::Unresolved { .. })
+                || diameter.is_none()
+                || extent
+                    .as_ref()
+                    .is_none_or(|extent| !termination_is_resolved(extent))
         }
         FeatureDefinition::Coil {
             construction,
@@ -4946,6 +4984,52 @@ mod tests {
             profile_start,
             serde_json::json!({"kind": "to_face", "face": {"kind": "unresolved"}}),
         )));
+    }
+
+    #[test]
+    fn hole_completeness_requires_support_placement_size_and_extent() {
+        let complete: cadmpeg_ir::features::FeatureDefinition =
+            serde_json::from_value(serde_json::json!({
+                "definition": "hole",
+                "face": {"kind": "faces", "value": ["face:support"]},
+                "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "direction": {"x": 0.0, "y": 0.0, "z": -1.0},
+                "kind": {"kind": "simple_drilled", "drill_point_angle": 2.0},
+                "diameter": 5.0,
+                "extent": {"kind": "blind", "length": 10.0}
+            }))
+            .expect("complete Hole definition");
+        assert!(!feature_definition_is_incomplete(&complete));
+
+        let mut missing_placement = complete.clone();
+        let cadmpeg_ir::features::FeatureDefinition::Hole {
+            position,
+            direction,
+            ..
+        } = &mut missing_placement
+        else {
+            panic!("Hole definition");
+        };
+        *position = None;
+        *direction = None;
+        assert!(feature_definition_is_incomplete(&missing_placement));
+
+        let mut native_support = complete.clone();
+        let cadmpeg_ir::features::FeatureDefinition::Hole { face, .. } = &mut native_support else {
+            panic!("Hole definition");
+        };
+        *face = Some(cadmpeg_ir::features::FaceSelection::Native(
+            "native:support".into(),
+        ));
+        assert!(feature_definition_is_incomplete(&native_support));
+
+        let mut missing_extent = complete;
+        let cadmpeg_ir::features::FeatureDefinition::Hole { extent, .. } = &mut missing_extent
+        else {
+            panic!("Hole definition");
+        };
+        *extent = None;
+        assert!(feature_definition_is_incomplete(&missing_extent));
     }
 
     #[test]
