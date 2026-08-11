@@ -568,7 +568,10 @@ fn enrich_implicit_nominals(
                     }
                 }),
             ),
-            "GdtDepth" => (DimensionKind::Size, depth_nominal(entity, &feature_index)),
+            "GdtDepth" => (
+                DimensionKind::Size,
+                depth_nominal(root, entity, &feature_index),
+            ),
             "GdtWidth" => (
                 DimensionKind::Size,
                 width_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
@@ -682,6 +685,7 @@ fn depth_from_applied_geometry(
 }
 
 fn depth_nominal(
+    root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<ImplicitNominal> {
@@ -700,12 +704,127 @@ fn depth_nominal(
             exact,
         });
     }
+    if let Some(exact) = counterbore_depth_from_sibling(root, annotation, feature_index) {
+        return Some(ImplicitNominal::RenderedOrExact {
+            kind: RenderedDimensionKind::Depth,
+            geometry: exact,
+            exact,
+        });
+    }
     depth_from_applied_geometry(annotation, feature_index).map(|geometry| {
         ImplicitNominal::Rendered {
             kind: RenderedDimensionKind::Depth,
             geometry,
         }
     })
+}
+
+fn counterbore_depth_from_sibling(
+    root: &Entity,
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    let plane = unique_direct_feature(annotation, feature_index, "GdtPlane")?;
+    let context = direct_feature_context(annotation, feature_index, "GdtPlane")?;
+    let candidates = root
+        .annotations
+        .entities
+        .iter()
+        .filter(|candidate| {
+            !suppressed(candidate) && short_class(&candidate.class) == "GdtCounterBore"
+        })
+        .filter(|candidate| {
+            direct_feature_context(candidate, feature_index, "GdtCylinder").as_ref()
+                == Some(&context)
+        })
+        .filter_map(|candidate| unique_direct_feature(candidate, feature_index, "GdtCylinder"))
+        .filter(|cylinder| plane_terminates_cylinder(plane, cylinder))
+        .filter_map(nominal_cylinder_depth)
+        .collect::<Vec<_>>();
+    unique_measurement(&candidates)
+}
+
+fn unique_direct_feature<'a>(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &'a Entity>,
+    class: &str,
+) -> Option<&'a Entity> {
+    let mut candidates = annotation
+        .features
+        .references
+        .iter()
+        .filter_map(|reference| feature_index.get(reference.id.as_str()).copied())
+        .filter(|feature| short_class(&feature.class) == class);
+    let feature = candidates.next()?;
+    candidates.next().is_none().then_some(feature)
+}
+
+fn direct_feature_context(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+    operation_class: &str,
+) -> Option<BTreeSet<String>> {
+    let context = annotation
+        .features
+        .references
+        .iter()
+        .filter(|reference| {
+            feature_index
+                .get(reference.id.as_str())
+                .is_none_or(|feature| short_class(&feature.class) != operation_class)
+        })
+        .map(|reference| reference.id.clone())
+        .collect::<BTreeSet<_>>();
+    (!context.is_empty()).then_some(context)
+}
+
+fn plane_terminates_cylinder(plane_feature: &Entity, cylinder_feature: &Entity) -> bool {
+    let Some(plane) = unique_related(plane_feature, "NomPlane").map(|object| &object.entity) else {
+        return false;
+    };
+    let Some(origin) = unique_related(plane_feature, "NomOrigin").map(|object| &object.entity)
+    else {
+        return false;
+    };
+    let Some(cylinder) =
+        unique_related(cylinder_feature, "NomCylinder").map(|object| &object.entity)
+    else {
+        return false;
+    };
+    let Some(bottom) = unique_related(cylinder_feature, "NomBottom").map(|object| &object.entity)
+    else {
+        return false;
+    };
+    let Some([plane_i, plane_j, plane_k]) = vector(plane, ["I", "J", "K"]) else {
+        return false;
+    };
+    let Some([plane_x, plane_y, plane_z]) = vector(plane, ["X", "Y", "Z"]) else {
+        return false;
+    };
+    let Some([origin_x, origin_y, origin_z]) = vector(origin, ["X", "Y", "Z"]) else {
+        return false;
+    };
+    let Some([axis_x, axis_y, axis_z]) = vector(cylinder, ["I", "J", "K"]) else {
+        return false;
+    };
+    let Some([bottom_x, bottom_y, bottom_z]) = vector(bottom, ["X", "Y", "Z"]) else {
+        return false;
+    };
+    approximately_equal(plane_i.hypot(plane_j).hypot(plane_k), 1.0)
+        && approximately_equal(axis_x.hypot(axis_y).hypot(axis_z), 1.0)
+        && approximately_equal(
+            (plane_i * axis_x + plane_j * axis_y + plane_k * axis_z).abs(),
+            1.0,
+        )
+        && approximately_equal(
+            (origin_x - plane_x) * plane_i
+                + (origin_y - plane_y) * plane_j
+                + (origin_z - plane_z) * plane_k,
+            0.0,
+        )
+        && approximately_equal(origin_x, bottom_x)
+        && approximately_equal(origin_y, bottom_y)
+        && approximately_equal(origin_z, bottom_z)
 }
 
 fn direct_cylinder_depth(
@@ -1827,6 +1946,42 @@ mod tests {
         cone
     }
 
+    fn plane_with_origin(origin_z: f64) -> Entity {
+        let mut feature = entity("GdtPlane");
+        let mut plane = Entity {
+            class: "PrizMetrik.Geometry.GeoPlane".into(),
+            ..Entity::default()
+        };
+        for (name, value) in [
+            ("I", 0.0),
+            ("J", 0.0),
+            ("K", 1.0),
+            ("X", 5.0),
+            ("Y", 0.0),
+            ("Z", 0.0),
+        ] {
+            plane.doubles.insert(name.into(), value);
+        }
+        feature.related.push(RelatedObject {
+            name: "NomPlane".into(),
+            class: plane.class.clone(),
+            entity: plane,
+        });
+        let mut origin = Entity {
+            class: "PrizMetrik.Geometry.GeoPoint".into(),
+            ..Entity::default()
+        };
+        for (name, value) in [("X", 0.0), ("Y", 0.0), ("Z", origin_z)] {
+            origin.doubles.insert(name.into(), value);
+        }
+        feature.related.push(RelatedObject {
+            name: "NomOrigin".into(),
+            class: origin.class.clone(),
+            entity: origin,
+        });
+        feature
+    }
+
     fn feature_with_nominal_measurement(
         feature_class: &str,
         object_name: &str,
@@ -2067,6 +2222,70 @@ mod tests {
             panic!("dimension definition");
         };
         assert_eq!(*nominal, Some(length(12.0)));
+    }
+
+    #[test]
+    fn counterbore_bottom_plane_resolves_sibling_cylinder_depth() {
+        let mut root = semantic_root();
+        root.features
+            .references
+            .push(reference("FCB", "GdtCylinder"));
+        root.features
+            .entities
+            .push(cylinder_with_radius_and_depth(5.0, 12.7));
+        root.features.references.push(reference("FDP", "GdtPlane"));
+        root.features.entities.push(plane_with_origin(0.0));
+
+        let mut counterbore = entity("GdtCounterBore");
+        counterbore.doubles.insert("Nominal".into(), 0.0);
+        counterbore.features.references = vec![
+            reference("FP", "GdtPattern"),
+            reference("FCB", "GdtCylinder"),
+        ];
+        root.annotations
+            .references
+            .push(reference("ACB", "GdtCounterBore"));
+        root.annotations.entities.push(counterbore);
+        let mut depth = entity("GdtDepth");
+        depth.doubles.insert("Nominal".into(), 0.0);
+        depth.features.references =
+            vec![reference("FP", "GdtPattern"), reference("FDP", "GdtPlane")];
+        root.annotations
+            .references
+            .push(reference("AD", "GdtDepth"));
+        root.annotations.entities.push(depth);
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("AD"))
+            .expect("counterbore depth")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(12.7)));
+
+        root.features
+            .entities
+            .last_mut()
+            .and_then(|plane| plane.related.get_mut(1))
+            .expect("depth-plane origin")
+            .entity
+            .doubles
+            .insert("Z".into(), 1.0);
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("AD"))
+            .expect("counterbore depth")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, None);
     }
 
     #[test]

@@ -931,6 +931,15 @@ A `GdtDepth` with nonzero `IsThreadDepth` uses the positive `ThreadDepth` of
 its direct `GdtCylinder`. The cylinder must have nonzero `IsThreaded`; ordinary
 cylinder depth does not replace the named thread-depth field.
 
+A counterbore-depth annotation can reference the counterbore bottom as a
+direct `GdtPlane` instead of referencing the counterbore cylinder. It pairs
+with a `GdtCounterBore` annotation whose non-operation feature-reference set is
+identical. The counterbore annotation has one direct `GdtCylinder`, and the
+depth annotation has one direct `GdtPlane`. The plane's `NomOrigin` equals the
+cylinder's `NomBottom` origin, the origin lies on `NomPlane`, and the plane
+normal is parallel to the cylinder axis. The cylinder's axial top-to-bottom
+distance supplies the depth. Multiple valid sibling cylinders must agree.
+
 An omitted `GdtWidth.Nominal` is the positive millimetre `Width` field of its
 applied nominal slot geometry. `GdtCompoundWidth` uses
 `NomCompoundWidth.Width`, and `GdtCompoundClosedSlot3D` uses
