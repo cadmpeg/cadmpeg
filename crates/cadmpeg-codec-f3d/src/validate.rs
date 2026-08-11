@@ -6302,6 +6302,11 @@ fn validate_face_operands<'a>(
                                         _ => false,
                                     })
                                 }
+                                Some(design::DesignFeatureFamily::Revolve) => {
+                                    group.is_some_and(|group| group.role == 0x0000_0021_0000_0000)
+                                        && operand.recipe_kind
+                                            == records::ConstructionRecipeKind::Face
+                                }
                                 Some(design::DesignFeatureFamily::CircularPattern) => {
                                     group.is_some_and(|group| group.role == 0x0000_0008_0000_0000)
                                         && operand.recipe_kind
