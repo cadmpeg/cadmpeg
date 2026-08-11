@@ -239,6 +239,11 @@ current scores require those matrices and representative fixtures.
   `rad`, `grad`, and `deg` to radians.
   Complete constraint-range productions are counted separately as dimension or
   complex-constraint ranges and finite or unset evaluations. Coverage retains
+  complete schema-selected `Range` intervals independently of constraint roles.
+  It counts no-slot productions and finite and unset interval slots separately.
+  The native interval retains the exact prefix form, nullable lower and upper
+  slots, scalar bits, and payload-relative offsets.
+  Constraint-range coverage retains
   every exact incoming payload-reference occurrence with its source object,
   paired source entity identity and class when present, payload offset, and
   field or list position. Object-head storage selectors targeting the range are

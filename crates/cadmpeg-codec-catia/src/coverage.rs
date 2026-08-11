@@ -203,6 +203,14 @@ pub(crate) const DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT: CoverageKey =
     CoverageKey("decoded_parser_version_relation_expression_count");
 pub(crate) const DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT: CoverageKey =
     CoverageKey("decoded_program_referenced_relation_expression_count");
+pub(crate) const DECODED_RANGE_INTERVAL_COUNT: CoverageKey =
+    CoverageKey("decoded_range_interval_count");
+pub(crate) const DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT: CoverageKey =
+    CoverageKey("decoded_range_interval_finite_slot_count");
+pub(crate) const DECODED_RANGE_INTERVAL_NO_SLOT_COUNT: CoverageKey =
+    CoverageKey("decoded_range_interval_no_slot_count");
+pub(crate) const DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT: CoverageKey =
+    CoverageKey("decoded_range_interval_unset_slot_count");
 pub(crate) const DECODED_REFERENCE_SIGNATURE_COHORT_COUNT: CoverageKey =
     CoverageKey("decoded_reference_signature_cohort_count");
 pub(crate) const DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT: CoverageKey =
@@ -696,6 +704,10 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_OWNED_DEFINITION_VALUE_COUNT,
     DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT,
     DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT,
+    DECODED_RANGE_INTERVAL_COUNT,
+    DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT,
+    DECODED_RANGE_INTERVAL_NO_SLOT_COUNT,
+    DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT,
     DECODED_REFERENCE_SIGNATURE_COHORT_COUNT,
     DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT,
     DECODED_REFERENCE_SIGNATURE_COUNT,

@@ -3021,6 +3021,32 @@ fn standard_catpart_with_two_selector_value(first: &str, second: &str, suffix: &
     file
 }
 
+fn standard_catpart_with_range_interval(encoded_range: &[u8], suffix: &[u8]) -> Vec<u8> {
+    let mut value = vec![0x32, 4, 0, 0, 0];
+    value.extend_from_slice(encoded_range);
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe])];
+    let mut entity = entity_table_record_with_definition_and_value(1, &[0x01], &value);
+    entity[6] = 2;
+    entity.extend_from_slice(suffix);
+    let entity_len = u32::try_from(entity.len()).expect("bounded entity record");
+    entity[2..6].copy_from_slice(&entity_len.to_le_bytes());
+    let mut stream = entity;
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Range",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_definition_value(
     definition: &[u8],
     value: &[u8],
@@ -15547,7 +15573,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     legacy_named
         .arenas
         .insert("configuration_row_chains".to_string(), row_chains);
-    legacy_named.version = crate::native::CATIA_NATIVE_VERSION - 1;
+    legacy_named.version = crate::native::CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION - 1;
     let chain = legacy_named
         .arenas
         .get_mut("configuration_row_chains")
@@ -16687,6 +16713,144 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .expect("source constraint range")
             .incoming_storage_references
     );
+}
+
+#[test]
+fn native_namespace_types_and_validates_range_intervals_independently_of_constraint_roles() {
+    use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
+
+    let lower_bits = (-0.2032_f64).to_bits();
+    let upper_bits = 0.2032_f64.to_bits();
+    let mut encoded_range = vec![0x87, 0xe8, 0xe0, 0x07, 0x37, 0x83, 0x81, 0xe6];
+    encoded_range.extend_from_slice(&lower_bits.to_le_bytes());
+    encoded_range.push(0xe6);
+    encoded_range.extend_from_slice(&upper_bits.to_le_bytes());
+    encoded_range.extend_from_slice(&[0xfe, 0xfe]);
+    let nominal_bits = 6.35_f64.to_bits();
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xdc, 0xe6];
+    suffix.extend_from_slice(&nominal_bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0xdb]);
+
+    let file = standard_catpart_with_range_interval(&encoded_range, &suffix);
+    let native = crate::native::CatiaNative::decode(&file);
+    let entity = &native.entity_records[0];
+    assert!(entity.constraint_range.is_none());
+    let range = entity
+        .range_interval
+        .as_ref()
+        .expect("complete schema-selected range interval");
+    assert_eq!(range.range.value, "Range");
+    assert_eq!(
+        range.interval.prefix,
+        RangeIntervalPrefix::Compact { value: 7, width: 1 }
+    );
+    assert_eq!(
+        range.interval.slots,
+        Some([
+            RangeIntervalSlot::Binary64 {
+                bits: lower_bits,
+                offset: 12,
+            },
+            RangeIntervalSlot::Binary64 {
+                bits: upper_bits,
+                offset: 21,
+            },
+        ])
+    );
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode range interval");
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT),
+        0
+    );
+    let no_slot = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_range_interval(
+                &[0x82, 0xe8, 0xe0, 0x07, 0x37, 0x81, 0xfe],
+                &[],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode no-slot range interval");
+    assert_eq!(
+        no_slot
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT),
+        1
+    );
+    let unset = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_range_interval(
+                &[
+                    0x80, 0x6e, 0x89, 1, 0, 0xe8, 0xe0, 0x07, 0x37, 0x83, 0x81, 0xe8, 0xe8, 0xfe,
+                    0xfe,
+                ],
+                &[],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset range interval");
+    assert_eq!(
+        unset
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT),
+        2
+    );
+
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut previous_namespace)
+        .expect("store range-interval namespace");
+    previous_namespace.version = crate::native::CATIA_RANGE_INTERVAL_VERSION - 1;
+    previous_namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields_mut()
+        .remove("range_interval");
+    let migrated = crate::native::CatiaNative::load(&previous_namespace)
+        .expect("migrate range-interval production");
+    assert_eq!(
+        migrated.entity_records[0].range_interval,
+        Some(range.clone())
+    );
+
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .range_interval
+        .as_mut()
+        .expect("complete range interval")
+        .interval
+        .prefix = RangeIntervalPrefix::Compact { value: 8, width: 1 };
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed range interval");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]

@@ -91,7 +91,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 272
+        "version": 273
       }
     },
     "source": {
@@ -269,6 +269,10 @@
       "decoded_parser_version_relation_expression_count": 0,
       "decoded_placeholder_state_relation_expression_count": 0,
       "decoded_program_referenced_relation_expression_count": 0,
+      "decoded_range_interval_count": 0,
+      "decoded_range_interval_finite_slot_count": 0,
+      "decoded_range_interval_no_slot_count": 0,
+      "decoded_range_interval_unset_slot_count": 0,
       "decoded_reference_signature_cohort_count": 0,
       "decoded_reference_signature_cohort_member_count": 0,
       "decoded_reference_signature_count": 0,

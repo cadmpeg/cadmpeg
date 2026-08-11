@@ -170,15 +170,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to transfer sketch membership and geometry.
 
-### DI-18. Constraint-range owner
+### DI-18. Range semantic owner
 
-**Question.** Which individual constraint owns each complete `Range`/`CstAttr_Dimension` or `Range`/`ComplexCst` value?
+**Question.** Which sketch constraint or product-manufacturing-information object owns each complete schema-selected `Range` interval, and what role does its suffix value have?
 
-**Known.** `catia.md` §7.3 "A lead-`2` constraint-range entity has exactly two value selectors" defines the four exact role/code/trailer tuples and retains incoming payload references and object-head storage selectors as distinct incidences. `ListAggregator` references can include unrelated and repeated identities. Dimension ranges can share one structural design-object owner whose field vocabulary contains feature, geometry, and presentation classes; their incoming source classes can also differ. These incidences do not distinguish sketch ownership from product-manufacturing-information ownership. A range transfers as one opaque sketch constraint only when exactly one total incoming incidence resolves to its same-graph paired source entity and object record, and that source object's complete owner chain reaches one transferred `Sketch` before another transferred feature. The source object record is retained as one unresolved native operand; neutral sketch entities, loci, parameters, and dimensional roles remain unresolved.
+**Known.** `catia.md` §7.3 "A catalog-resolved value selection named `Range`" defines the complete interval independently of selector cardinality and suffix framing. Range intervals occur with no slots or with finite and unset lower and upper slots. They occur in `Range`-only, `Range`/`CstAttr_Dimension`, and larger selector sequences. The narrower two-selector constraint-range production retains four exact selector/code/trailer tuples plus incoming payload references and object-head storage selectors as distinct incidences. `ListAggregator` references can include unrelated and repeated identities. Dimension ranges can share one structural design-object owner whose field vocabulary contains feature, geometry, and presentation classes; their incoming source classes can also differ. These incidences do not distinguish sketch ownership from product-manufacturing-information ownership. A two-selector range transfers as one opaque sketch constraint only when exactly one total incoming incidence resolves to its same-graph paired source entity and object record, and that source object's complete owner chain reaches one transferred `Sketch` before another transferred feature. The source object record is retained as one unresolved native operand; neutral sketch entities, loci, parameters, dimensional roles, and other Range-bearing selector sequences remain unresolved.
 
-**Need.** We must know the owner to assign a range to a neutral constraint.
-
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `b9e11131b` changed only the ledger. The current transfer gate uses a unique incoming incidence and an owner-chain check; synthetic native-sketch fixtures exercise that gate, but neither establishes that the incidence is the CATIA ownership field. Repeated or unrelated `ListAggregator` references remain unresolved. Confidence: high.
+**Need.** We must identify the owning incidence and distinguish a sketch dimension from a semantic PMI dimension before neutral transfer.
 
 ### DI-19. Sketch placement
 

@@ -649,6 +649,7 @@ mod tests {
             value_schema_selections: Vec::new(),
             relation_expression: None,
             parameter_value: None,
+            range_interval: None,
             constraint_range: None,
             definition_value: None,
             definition_chain_value: None,

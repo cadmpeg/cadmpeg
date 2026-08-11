@@ -46,6 +46,54 @@ pub enum NumericPairSlot {
     },
 }
 
+/// Prefix atom of one complete schema-selected `Range` interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum RangeIntervalPrefix {
+    /// One compact atom with its exact serialized width.
+    Compact {
+        /// Decoded compact-atom value.
+        value: u32,
+        /// Stored width, one or two bytes.
+        width: u8,
+    },
+    /// Exact fixed-width `80 <word:u32le>` form.
+    EscapedWord {
+        /// Stored little-endian word.
+        word: u32,
+    },
+}
+
+/// One slot in a complete schema-selected `Range` interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum RangeIntervalSlot {
+    /// `E6` followed by one finite IEEE-754 binary64 value.
+    Binary64 {
+        /// Exact stored bits.
+        bits: u64,
+        /// Byte offset of `E6` within the complete `7C07` payload.
+        offset: usize,
+    },
+    /// Zero-payload `E8` state.
+    Unset {
+        /// Byte offset of `E8` within the complete `7C07` payload.
+        offset: usize,
+    },
+}
+
+/// Complete encoded value selected by a source-schema entry named `Range`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct RangeInterval {
+    /// Atom preceding the fixed range type frame.
+    pub prefix: RangeIntervalPrefix,
+    /// Source-ordered lower and upper slots. An absent pair uses the shorter
+    /// no-slot production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slots: Option<[RangeIntervalSlot; 2]>,
+}
+
 /// One item in an embedded numeric value packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1004,6 +1052,69 @@ fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
     }
 }
 
+/// Parse one complete encoded value selected by a source-schema `Range`
+/// entry. `start` begins after the selector word and `end` is the next
+/// catalog-valid selector or the `7C07` payload end.
+#[must_use]
+pub fn parse_range_interval(payload: &[u8], start: usize, end: usize) -> Option<RangeInterval> {
+    let bytes = payload.get(start..end)?;
+    let (prefix, mut at) = if bytes.first() == Some(&0x80) && bytes.get(5) == Some(&0xe8) {
+        (
+            RangeIntervalPrefix::EscapedWord {
+                word: u32_le(bytes, 1)?,
+            },
+            5,
+        )
+    } else {
+        let (value, next) = compact_atom(bytes, 0)?;
+        (
+            RangeIntervalPrefix::Compact {
+                value,
+                width: u8::try_from(next).ok()?,
+            },
+            next,
+        )
+    };
+    (bytes.get(at) == Some(&0xe8)).then_some(())?;
+    let (type_atom, next) = compact_atom(bytes, at + 1)?;
+    (type_atom == 3848 && bytes.get(next) == Some(&0x37)).then_some(())?;
+    let (layout, next) = one_byte_atom(bytes, next + 1)?;
+    at = next;
+    let slots = match layout {
+        1 => None,
+        3 => {
+            let (value, next) = one_byte_atom(bytes, at)?;
+            (value == 1).then_some(())?;
+            at = next;
+            let mut slots = Vec::with_capacity(2);
+            for _ in 0..2 {
+                match *bytes.get(at)? {
+                    0xe6 => {
+                        let scalar_end = at.checked_add(9)?;
+                        let bits =
+                            u64::from_le_bytes(bytes.get(at + 1..scalar_end)?.try_into().ok()?);
+                        f64::from_bits(bits).is_finite().then_some(())?;
+                        slots.push(RangeIntervalSlot::Binary64 {
+                            bits,
+                            offset: start + at,
+                        });
+                        at = scalar_end;
+                    }
+                    0xe8 => {
+                        slots.push(RangeIntervalSlot::Unset { offset: start + at });
+                        at += 1;
+                    }
+                    _ => return None,
+                }
+            }
+            Some(slots.try_into().ok()?)
+        }
+        _ => return None,
+    };
+    (!bytes[at..].is_empty() && bytes[at..].iter().all(|byte| *byte == 0xfe)).then_some(())?;
+    Some(RangeInterval { prefix, slots })
+}
+
 fn compact_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
     let byte = *data.get(at)?;
     match byte {
@@ -1176,6 +1287,73 @@ mod tests {
         ];
 
         assert_eq!(parse_numeric_pair(&opaque), None);
+    }
+
+    #[test]
+    fn range_interval_decodes_nullable_bounds_and_exact_offsets() {
+        let mut payload = vec![
+            0x32, 0x23, 1, 0, 0, 0x87, 0xe8, 0xe0, 0x07, 0x37, 0x83, 0x81,
+        ];
+        payload.push(0xe6);
+        payload.extend_from_slice(&(-0.2032_f64).to_bits().to_le_bytes());
+        payload.push(0xe6);
+        payload.extend_from_slice(&0.2032_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xfe, 0xfe]);
+
+        assert_eq!(
+            parse_range_interval(&payload, 5, payload.len()),
+            Some(RangeInterval {
+                prefix: RangeIntervalPrefix::Compact { value: 7, width: 1 },
+                slots: Some([
+                    RangeIntervalSlot::Binary64 {
+                        bits: (-0.2032_f64).to_bits(),
+                        offset: 12,
+                    },
+                    RangeIntervalSlot::Binary64 {
+                        bits: 0.2032_f64.to_bits(),
+                        offset: 21,
+                    },
+                ]),
+            })
+        );
+    }
+
+    #[test]
+    fn range_interval_decodes_escaped_prefix_and_unset_bounds() {
+        let payload = [
+            0x32, 0x23, 1, 0, 0, 0x80, 0x6e, 0x89, 1, 0, 0xe8, 0xe0, 0x07, 0x37, 0x83, 0x81, 0xe8,
+            0xe8, 0xfe, 0xfe,
+        ];
+
+        assert_eq!(
+            parse_range_interval(&payload, 5, payload.len()),
+            Some(RangeInterval {
+                prefix: RangeIntervalPrefix::EscapedWord { word: 100_718 },
+                slots: Some([
+                    RangeIntervalSlot::Unset { offset: 16 },
+                    RangeIntervalSlot::Unset { offset: 17 },
+                ]),
+            })
+        );
+    }
+
+    #[test]
+    fn range_interval_requires_the_complete_selected_value() {
+        let valid = [0x82, 0xe8, 0xe0, 0x07, 0x37, 0x81, 0xfe];
+        assert_eq!(
+            parse_range_interval(&valid, 0, valid.len()),
+            Some(RangeInterval {
+                prefix: RangeIntervalPrefix::Compact { value: 2, width: 1 },
+                slots: None,
+            })
+        );
+        for malformed in [
+            &valid[..6],
+            &[0x82, 0xe8, 0xe0, 0x08, 0x37, 0x81, 0xfe],
+            &[0x82, 0xe8, 0xe0, 0x07, 0x37, 0x82, 0xfe],
+        ] {
+            assert_eq!(parse_range_interval(malformed, 0, malformed.len()), None);
+        }
     }
 
     #[test]

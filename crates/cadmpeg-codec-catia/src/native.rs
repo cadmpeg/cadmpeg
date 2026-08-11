@@ -25,10 +25,13 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 272;
+pub const CATIA_NATIVE_VERSION: u32 = 273;
+/// Native schema version retaining complete source-schema `Range` intervals.
+#[cfg(test)]
+pub(crate) const CATIA_RANGE_INTERVAL_VERSION: u32 = 273;
 /// Native schema version using schema-configuration names and derived identities.
 #[cfg(test)]
-const CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION: u32 = 272;
+pub(crate) const CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION: u32 = 272;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -1554,6 +1557,16 @@ pub struct CatiaParameterValue {
     pub evaluation_opcode_offset: u64,
 }
 
+/// One complete source-schema `Range` interval carried by an entity value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaRangeInterval {
+    /// Exact source-schema selector naming `Range`.
+    pub range: CatiaEntitySchemaValue,
+    /// Complete selected interval framing and nullable slots.
+    pub interval: entity_table::RangeInterval,
+}
+
 /// Exact framing of one complete constraint-range value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2020,6 +2033,9 @@ pub struct CatiaEntityRecord {
     /// Complete named parameter-value production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_value: Option<CatiaParameterValue>,
+    /// Complete source-schema `Range` interval production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range_interval: Option<CatiaRangeInterval>,
     /// Complete constraint-range production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraint_range: Option<CatiaConstraintRange>,
@@ -3268,6 +3284,33 @@ fn constraint_range_incidences(
         }
     }
     (incoming_references, incoming_storage_references)
+}
+
+fn range_interval(
+    payload: &[u8],
+    values: &[CatiaEntityValueSchemaSelection],
+) -> Option<CatiaRangeInterval> {
+    let mut matches = values
+        .iter()
+        .enumerate()
+        .filter(|(_, selection)| selection.name == "Range");
+    let (index, range) = matches.next()?;
+    matches.next().is_none().then_some(())?;
+    let start = usize::try_from(range.offset).ok()?.checked_add(5)?;
+    let end = match values.get(index + 1) {
+        Some(selection) => usize::try_from(selection.offset).ok()?,
+        None => payload.len(),
+    };
+    let interval = entity_table::parse_range_interval(payload, start, end)?;
+    Some(CatiaRangeInterval {
+        range: CatiaEntitySchemaValue {
+            offset: range.offset,
+            ordinal: range.ordinal,
+            entry: range.entry.clone(),
+            value: range.name.clone(),
+        },
+        interval,
+    })
 }
 
 fn resolved_constraint_range(
@@ -10173,6 +10216,8 @@ impl CatiaNative {
                     &entity.value_schema_selections,
                     entity.suffix_value.as_ref(),
                 );
+                entity.range_interval =
+                    range_interval(&entity.value_payload, &entity.value_schema_selections);
                 entity.constraint_range = resolved_constraint_range(
                     entity.lead,
                     &entity.value_schema_selections,
@@ -10514,6 +10559,12 @@ impl CatiaNative {
         if namespace.version < CATIA_NUMERIC_PAIR_VERSION {
             for entity in &mut entity_records {
                 entity.numeric_pair = entity_table::parse_numeric_pair(&entity.value_payload);
+            }
+        }
+        if namespace.version < CATIA_RANGE_INTERVAL_VERSION {
+            for entity in &mut entity_records {
+                entity.range_interval =
+                    range_interval(&entity.value_payload, &entity.value_schema_selections);
             }
         }
         let row_chain_arena = if namespace
@@ -10963,6 +11014,13 @@ impl CatiaNative {
                                 entity.lead,
                                 &entity.value_schema_selections,
                                 entity.suffix_value.as_ref(),
+                            )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        entity.range_interval
+                            != range_interval(
+                                &entity.value_payload,
+                                &entity.value_schema_selections,
                             )
                     })
                     || graph_entities.iter().any(|entity| {
@@ -11854,6 +11912,7 @@ fn native_object_graph(
                 value_schema_selections: Vec::new(),
                 relation_expression: None,
                 parameter_value: None,
+                range_interval: None,
                 constraint_range: None,
                 definition_value: None,
                 definition_chain_value: None,
