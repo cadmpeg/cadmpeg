@@ -2910,13 +2910,33 @@ fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
     u32_at(bytes, at + 1)
 }
 
-pub(crate) fn parse_edge_operand(
+struct ParsedRecipeOperand {
+    paired_byte_offset: u64,
+    paired_class_tag: String,
+    recipe_record_index: u32,
+    recipe_record_byte_offset: u64,
+    recipe_id: String,
+    recipe_prefix_offset: u64,
+    recipe_prefix_bytes: Vec<u8>,
+    recipe_references: Vec<crate::records::DesignRecipeReference>,
+    recipe_program_offset: u64,
+    recipe_program: Vec<i32>,
+    next_record_index: u32,
+    next_byte_offset: u64,
+}
+
+/// Parse the indexed-record envelope shared by topology recipe operands.
+fn parse_recipe_operand(
     bytes: &[u8],
     scope: &DesignParameterScope,
-    scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
-) -> Option<DesignEdgeOperand> {
+    recipe_kind: ConstructionRecipeKind,
+    next_record_delta: u32,
+) -> Option<ParsedRecipeOperand> {
+    let family_name = crate::design::RECIPES
+        .iter()
+        .find_map(|(name, kind)| (*kind == recipe_kind).then_some(*name))?;
     let start = usize::try_from(header.byte_offset).ok()?;
     let mut offsets = Vec::with_capacity(5);
     let mut position = start.checked_add(11)?;
@@ -2925,39 +2945,44 @@ pub(crate) fn parse_edge_operand(
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
-    let next_record_delta = if scope.kind == "WorkPoint" { 5 } else { 4 };
     offsets.push(next_indexed_record_offset_with_index(
         bytes,
         position,
         header.record_index.checked_add(next_record_delta)?,
     )?);
-    let mut indexed = Vec::with_capacity(offsets.len());
-    for offset in &offsets {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
-        indexed.push((class_tag, u32_at(bytes, after_tag)?));
-    }
-    let next_one = header.record_index.checked_add(1)?;
-    let next_two = header.record_index.checked_add(2)?;
+    let indexed = offsets
+        .iter()
+        .map(|offset| {
+            let (class_tag, after_tag) =
+                lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
+            Some((class_tag, u32_at(bytes, after_tag)?))
+        })
+        .collect::<Option<Vec<_>>>()?;
     let recipe_record_index = header.record_index.checked_add(3)?;
     let next_record_index = header.record_index.checked_add(next_record_delta)?;
-    if indexed[0].1 != header.record_index
-        || indexed[1].1 != next_one
-        || indexed[2].1 != next_two
-        || indexed[3].1 != recipe_record_index
-        || indexed[4].1 != next_record_index
+    let expected = [
+        header.record_index,
+        header.record_index.checked_add(1)?,
+        header.record_index.checked_add(2)?,
+        recipe_record_index,
+        next_record_index,
+    ];
+    if !indexed
+        .iter()
+        .zip(expected)
+        .all(|((_, actual), expected)| *actual == expected)
     {
         return None;
     }
     let stream = native_stream(&scope.id)?;
-    let recipe_start = u64::try_from(offsets[3]).ok()?;
+    let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
     let matches = recipes
         .iter()
         .filter(|recipe| {
             native_stream(&recipe.id) == Some(stream)
-                && recipe.kind == ConstructionRecipeKind::Edge
-                && recipe.byte_offset > recipe_start
+                && recipe.kind == recipe_kind
+                && recipe.byte_offset > recipe_record_byte_offset
                 && recipe.byte_offset < next_byte_offset
         })
         .collect::<Vec<_>>();
@@ -2968,13 +2993,13 @@ pub(crate) fn parse_edge_operand(
         bytes,
         offsets[3],
         usize::try_from(recipe.byte_offset).ok()?,
-        b"edge_recipe_data".len(),
+        family_name.len(),
     )?;
-    let recipe_references =
-        decode_recipe_references(&recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
+    let recipe_prefix_offset = u64::try_from(recipe_prefix_at).ok()?;
+    let recipe_references = decode_recipe_references(&recipe_prefix_bytes, recipe_prefix_offset);
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
-        .checked_add(b"edge_recipe_data".len())?;
+        .checked_add(family_name.len())?;
     let recipe_program_bytes =
         bytes.get(recipe_program_at..usize::try_from(next_byte_offset).ok()?)?;
     if recipe_program_bytes.is_empty()
@@ -2991,13 +3016,48 @@ pub(crate) fn parse_edge_operand(
                     .expect("invariant: chunks_exact(4) yields four-byte slices"),
             )
         })
-        .collect::<Vec<_>>();
-    let recipe_structure = edge_recipe_structure(&recipe_program);
+        .collect();
+    Some(ParsedRecipeOperand {
+        paired_byte_offset: u64::try_from(offsets[0]).ok()?,
+        paired_class_tag: indexed[0].0.clone(),
+        recipe_record_index,
+        recipe_record_byte_offset,
+        recipe_id: recipe.id.clone(),
+        recipe_prefix_offset,
+        recipe_prefix_bytes,
+        recipe_references,
+        recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
+        recipe_program,
+        next_record_index,
+        next_byte_offset,
+    })
+}
+
+pub(crate) fn parse_edge_operand(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+) -> Option<DesignEdgeOperand> {
+    let next_record_delta = if scope.kind == "WorkPoint" { 5 } else { 4 };
+    let parsed = parse_recipe_operand(
+        bytes,
+        scope,
+        header,
+        recipes,
+        ConstructionRecipeKind::Edge,
+        next_record_delta,
+    )?;
+    let stream = native_stream(&scope.id)?;
+    let recipe_structure = edge_recipe_structure(&parsed.recipe_program);
     let surface_patch_recipe_structure = (scope.kind == "SurfacePatch")
-        .then(|| surface_patch_recipe_structure(&recipe_program, recipe_references.len()))
+        .then(|| {
+            surface_patch_recipe_structure(&parsed.recipe_program, parsed.recipe_references.len())
+        })
         .flatten();
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
-        edge_recipe_local_topology_references(structure, recipe_references.len())
+        edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
     });
     Some(DesignEdgeOperand {
         id: ids::native_design_edge_operand_id(
@@ -3009,16 +3069,16 @@ pub(crate) fn parse_edge_operand(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        paired_byte_offset: u64::try_from(offsets[0]).ok()?,
-        paired_class_tag: indexed[0].0.clone(),
-        recipe_record_index,
-        recipe_record_byte_offset: recipe_start,
-        recipe_id: recipe.id.clone(),
-        recipe_prefix_offset: u64::try_from(recipe_prefix_at).ok()?,
-        recipe_prefix_bytes,
-        recipe_references,
-        recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
-        recipe_program,
+        paired_byte_offset: parsed.paired_byte_offset,
+        paired_class_tag: parsed.paired_class_tag,
+        recipe_record_index: parsed.recipe_record_index,
+        recipe_record_byte_offset: parsed.recipe_record_byte_offset,
+        recipe_id: parsed.recipe_id,
+        recipe_prefix_offset: parsed.recipe_prefix_offset,
+        recipe_prefix_bytes: parsed.recipe_prefix_bytes,
+        recipe_references: parsed.recipe_references,
+        recipe_program_offset: parsed.recipe_program_offset,
+        recipe_program: parsed.recipe_program,
         recipe_structure,
         surface_patch_recipe_structure,
         local_topology_references,
@@ -3043,8 +3103,8 @@ pub(crate) fn parse_edge_operand(
         resolved_edge_slot: None,
         resolved_axis_origin: None,
         resolved_axis_direction: None,
-        next_record_index: indexed[4].1,
-        next_byte_offset,
+        next_record_index: parsed.next_record_index,
+        next_byte_offset: parsed.next_byte_offset,
     })
 }
 
