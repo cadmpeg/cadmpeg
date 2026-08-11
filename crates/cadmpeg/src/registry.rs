@@ -20,10 +20,13 @@ pub enum TargetOptions {
     /// No format-specific target options.
     Neutral,
     /// STEP header and schema options.
+    #[cfg(feature = "step")]
     Step(cadmpeg_codec_step::StepWriteOptions),
     /// Rhino archive version.
+    #[cfg(feature = "rhino")]
     Rhino(cadmpeg_codec_rhino::RhinoArchiveVersion),
     /// IGES specification version.
+    #[cfg(feature = "iges")]
     Iges(cadmpeg_codec_iges::IgesWriteOptions),
 }
 
@@ -80,6 +83,7 @@ impl Registry {
     pub fn with_builtins() -> Self {
         let registry = Self {
             descriptors: vec![
+                #[cfg(feature = "fcstd")]
                 descriptor(
                     "fcstd",
                     "FreeCAD",
@@ -89,6 +93,7 @@ impl Registry {
                     Some(cadmpeg_codec_freecad::validate_native),
                     true,
                 ),
+                #[cfg(feature = "f3d")]
                 descriptor(
                     "f3d",
                     "Autodesk Fusion",
@@ -98,6 +103,7 @@ impl Registry {
                     Some(cadmpeg_codec_f3d::validate::validate_native),
                     true,
                 ),
+                #[cfg(feature = "inventor")]
                 descriptor(
                     "inventor",
                     "Autodesk Inventor",
@@ -107,6 +113,7 @@ impl Registry {
                     Some(cadmpeg_codec_inventor::validate_native),
                     false,
                 ),
+                #[cfg(feature = "sldprt")]
                 descriptor(
                     "sldprt",
                     "SolidWorks Part",
@@ -116,6 +123,7 @@ impl Registry {
                     Some(cadmpeg_codec_sldprt::validate_native),
                     true,
                 ),
+                #[cfg(feature = "catia")]
                 descriptor(
                     "catia",
                     "CATIA V5 Part",
@@ -125,6 +133,7 @@ impl Registry {
                     None,
                     false,
                 ),
+                #[cfg(feature = "creo")]
                 descriptor(
                     "creo",
                     "Creo Parametric Part",
@@ -134,6 +143,7 @@ impl Registry {
                     None,
                     false,
                 ),
+                #[cfg(feature = "nx")]
                 descriptor(
                     "nx",
                     "Siemens NX Part",
@@ -143,6 +153,7 @@ impl Registry {
                     None,
                     false,
                 ),
+                #[cfg(feature = "rhino")]
                 descriptor(
                     "rhino",
                     "Rhino 3DM",
@@ -152,6 +163,7 @@ impl Registry {
                     None,
                     false,
                 ),
+                #[cfg(feature = "step")]
                 descriptor(
                     "step",
                     "STEP",
@@ -161,6 +173,7 @@ impl Registry {
                     None,
                     false,
                 ),
+                #[cfg(feature = "iges")]
                 descriptor(
                     "iges",
                     "IGES",
@@ -170,6 +183,7 @@ impl Registry {
                     None,
                     true,
                 ),
+                #[cfg(feature = "sat")]
                 descriptor(
                     "sat",
                     "ASM SAT/SAB stream",
@@ -303,16 +317,19 @@ fn require_neutral(options: TargetOptions, id: &str) -> Result<(), CodecError> {
     }
 }
 
+#[cfg(feature = "fcstd")]
 fn neutral_fcstd(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     require_neutral(options, "fcstd")?;
     Ok(Box::new(cadmpeg_codec_freecad::FcstdCodec))
 }
 
+#[cfg(feature = "f3d")]
 fn neutral_f3d(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     require_neutral(options, "f3d")?;
     Ok(Box::new(cadmpeg_codec_f3d::F3dCodec))
 }
 
+#[cfg(feature = "sldprt")]
 fn neutral_sldprt(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     require_neutral(options, "sldprt")?;
     Ok(Box::new(cadmpeg_codec_sldprt::SldprtCodec))
@@ -323,6 +340,7 @@ fn neutral_cadir(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError>
     Ok(Box::new(CadirEncoder))
 }
 
+#[cfg(feature = "step")]
 fn step(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     match options {
         TargetOptions::Step(options) => Ok(Box::new(cadmpeg_codec_step::StepCodec { options })),
@@ -332,6 +350,7 @@ fn step(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     }
 }
 
+#[cfg(feature = "rhino")]
 fn rhino(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     let version = match &options {
         TargetOptions::Rhino(version) => *version,
@@ -343,6 +362,7 @@ fn rhino(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     Ok(Box::new(cadmpeg_codec_rhino::RhinoEncoder::new(version)))
 }
 
+#[cfg(feature = "iges")]
 #[allow(clippy::needless_pass_by_value)]
 fn iges(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     match options {
@@ -361,12 +381,37 @@ mod tests {
     fn every_exportable_format_has_one_encoder_factory() {
         let registry = Registry::with_builtins();
         for id in ["cadir", "step", "fcstd", "f3d", "sldprt", "rhino", "iges"] {
+            #[cfg(not(feature = "step"))]
+            if id == "step" {
+                continue;
+            }
+            #[cfg(not(feature = "fcstd"))]
+            if id == "fcstd" {
+                continue;
+            }
+            #[cfg(not(feature = "f3d"))]
+            if id == "f3d" {
+                continue;
+            }
+            #[cfg(not(feature = "sldprt"))]
+            if id == "sldprt" {
+                continue;
+            }
+            #[cfg(not(feature = "rhino"))]
+            if id == "rhino" {
+                continue;
+            }
+            #[cfg(not(feature = "iges"))]
+            if id == "iges" {
+                continue;
+            }
             assert!(registry
                 .descriptor(id)
                 .is_some_and(|value| value.encoder.is_some()));
         }
     }
 
+    #[cfg(all(feature = "fcstd", feature = "f3d"))]
     #[test]
     fn markerless_zip_is_explicitly_ambiguous() {
         let registry = Registry::with_builtins();
@@ -384,11 +429,13 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "step")]
     #[test]
     fn step_is_registered_as_a_reader() {
         assert!(Registry::with_builtins().by_id("step").is_some());
     }
 
+    #[cfg(feature = "inventor")]
     #[test]
     fn inventor_is_registered_as_a_read_only_family_codec() {
         let registry = Registry::with_builtins();
@@ -401,6 +448,7 @@ mod tests {
         assert!(descriptor.native_validator.is_some());
     }
 
+    #[cfg(feature = "iges")]
     #[test]
     fn iges_is_registered_as_a_reader_and_writer() {
         let registry = Registry::with_builtins();

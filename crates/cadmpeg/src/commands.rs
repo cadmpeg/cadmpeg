@@ -71,10 +71,13 @@ pub struct ConversionPlan {
     /// Refuse to export when the decode reported any loss.
     pub reject_lossy: bool,
     /// Explicit Rhino output archive version.
+    #[cfg(feature = "rhino")]
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// STEP writer options selected by the caller.
+    #[cfg(feature = "step")]
     pub step_options: cadmpeg_codec_step::StepWriteOptions,
     /// IGES writer options selected by the caller.
+    #[cfg(feature = "iges")]
     pub iges_options: cadmpeg_codec_iges::IgesWriteOptions,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
@@ -209,9 +212,7 @@ pub fn decode(
         out,
         path,
         force,
-        None,
-        cadmpeg_codec_step::StepWriteOptions::default(),
-        cadmpeg_codec_iges::IgesWriteOptions::default(),
+        TargetOptions::Neutral,
         false,
     )?;
     if let Some(report) = loaded.decode_report() {
@@ -289,7 +290,7 @@ pub fn export(
     path: &Path,
     format: Option<Format>,
     out: Option<&Path>,
-    plan: ConversionPlan,
+    plan: &ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
     execute_conversion(registry, path, format, out, plan, args, "export")
@@ -301,7 +302,7 @@ pub fn convert(
     path: &Path,
     format: Option<Format>,
     out: Option<&Path>,
-    plan: ConversionPlan,
+    plan: &ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
     execute_conversion(registry, path, format, out, plan, args, "convert")
@@ -312,7 +313,7 @@ fn execute_conversion(
     path: &Path,
     format: Option<Format>,
     out: Option<&Path>,
-    plan: ConversionPlan,
+    plan: &ConversionPlan,
     args: &DecodeArgs,
     command: &'static str,
 ) -> Result<()> {
@@ -398,6 +399,11 @@ fn execute_conversion(
             format.name()
         )));
     }
+    #[cfg(feature = "rhino")]
+    if plan.rhino_version.is_some() && format != Format::Rhino {
+        bail!("--rhino-version requires Rhino output");
+    }
+    let target_options = target_options_for(plan, format);
     let report = export_ir(
         registry,
         &loaded.ir,
@@ -407,9 +413,7 @@ fn execute_conversion(
         out,
         path,
         plan.force,
-        plan.rhino_version,
-        plan.step_options,
-        plan.iges_options,
+        target_options,
         plan.reject_lossy,
     )?;
     write_command_report(
@@ -688,6 +692,24 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
     Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
 }
 
+fn target_options_for(plan: &ConversionPlan, format: Format) -> TargetOptions {
+    match format {
+        #[cfg(feature = "step")]
+        Format::Step => TargetOptions::Step(plan.step_options.clone()),
+        #[cfg(feature = "rhino")]
+        Format::Rhino => TargetOptions::Rhino(
+            plan.rhino_version
+                .unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
+        ),
+        #[cfg(feature = "iges")]
+        Format::Iges => TargetOptions::Iges(plan.iges_options),
+        _ => {
+            let _ = plan;
+            TargetOptions::Neutral
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn export_ir(
     registry: &Registry,
@@ -698,25 +720,12 @@ fn export_ir(
     out: Option<&Path>,
     input: &Path,
     force: bool,
-    rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
-    step_options: cadmpeg_codec_step::StepWriteOptions,
-    iges_options: cadmpeg_codec_iges::IgesWriteOptions,
+    target_options: TargetOptions,
     reject_lossy: bool,
 ) -> Result<ExportReport> {
-    if rhino_version.is_some() && format != Format::Rhino {
-        bail!("--rhino-version requires Rhino output");
-    }
     if let Some(path) = out {
         check_output_path(input, path, force)?;
     }
-    let target_options = match format {
-        Format::Step => TargetOptions::Step(step_options),
-        Format::Rhino => TargetOptions::Rhino(
-            rhino_version.unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
-        ),
-        Format::Iges => TargetOptions::Iges(iges_options),
-        _ => TargetOptions::Neutral,
-    };
     let encoder = registry
         .encoder(format.name(), target_options)
         .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
