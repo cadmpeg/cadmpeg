@@ -2407,7 +2407,7 @@ fn build_geometry_ir(
         &histories,
         &native.feature_input_lanes,
     );
-    crate::resolved_features::holes::project_partitioned_hole_axes(
+    crate::resolved_features::holes::project_counterbore_topology_axes(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
             surfaces: &ir.model.surfaces,
@@ -3237,7 +3237,7 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
-    crate::resolved_features::holes::project_partitioned_hole_axes(
+    crate::resolved_features::holes::project_counterbore_topology_axes(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
             surfaces: &ir.model.surfaces,

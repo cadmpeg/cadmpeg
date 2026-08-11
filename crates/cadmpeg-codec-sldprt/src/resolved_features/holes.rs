@@ -1840,14 +1840,28 @@ pub(crate) fn project_generated_hole_axes(
     }
 }
 
-/// Resolve the sole unplaced member of an otherwise placed, structurally
-/// identical counterbore family from the unclaimed primary-bore axes. The
-/// partition requires identical primary and counterbore axis sets, and every
-/// existing placement must own one distinct axis in that set.
-pub(crate) fn project_partitioned_hole_axes(
+/// Resolve counterbore placements when the complete primary and counterbore
+/// axis sets are identical. A globally unique diameter owns the complete set.
+/// An otherwise placed, structurally identical family owns the unclaimed set
+/// only when every existing placement claims one distinct topology axis.
+pub(crate) fn project_counterbore_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     topology: &HoleTopology<'_>,
 ) {
+    let diameter_counts = features
+        .iter()
+        .filter(|feature| feature.suppressed != Some(true))
+        .filter_map(|feature| match feature.definition {
+            FeatureDefinition::Hole {
+                diameter: Some(Length(diameter)),
+                ..
+            } if diameter.is_finite() && diameter > 0.0 => Some(diameter.to_bits()),
+            _ => None,
+        })
+        .fold(HashMap::<u64, usize>::new(), |mut counts, diameter| {
+            *counts.entry(diameter).or_default() += 1;
+            counts
+        });
     let unresolved = features
         .iter()
         .enumerate()
@@ -1863,6 +1877,28 @@ pub(crate) fn project_partitioned_hole_axes(
         .collect::<Vec<_>>();
 
     for unresolved_index in unresolved {
+        let FeatureDefinition::Hole {
+            diameter: Some(Length(diameter)),
+            ..
+        } = features[unresolved_index].definition
+        else {
+            unreachable!("unresolved hole selection requires a finite diameter");
+        };
+        let Some(candidates) =
+            counterbore_topology_candidates(&features[unresolved_index].definition, topology)
+        else {
+            continue;
+        };
+        if diameter_counts.get(&diameter.to_bits()) == Some(&1) {
+            let FeatureDefinition::Hole { placements, .. } =
+                &mut features[unresolved_index].definition
+            else {
+                unreachable!("unresolved hole selection requires a hole feature");
+            };
+            *placements = candidates;
+            continue;
+        }
+
         let siblings = features
             .iter()
             .enumerate()
@@ -1888,11 +1924,6 @@ pub(crate) fn project_partitioned_hole_axes(
             continue;
         }
 
-        let Some(candidates) =
-            partitioned_hole_bore_candidates(&features[unresolved_index].definition, topology)
-        else {
-            continue;
-        };
         let candidate_keys = candidates
             .iter()
             .filter_map(hole_axis_key)
@@ -1949,7 +1980,7 @@ pub(crate) fn project_partitioned_hole_axes(
     }
 }
 
-fn partitioned_hole_bore_candidates(
+fn counterbore_topology_candidates(
     definition: &FeatureDefinition,
     topology: &HoleTopology<'_>,
 ) -> Option<Vec<HolePlacement>> {
@@ -1976,8 +2007,9 @@ fn partitioned_hole_bore_candidates(
     {
         return None;
     }
-    let primary = bore_carrier_placements(*diameter * 0.5, topology)?;
-    let counterbores = bore_carrier_placements(*counterbore_diameter * 0.5, topology)?;
+    let primary = cylindrical_surface_placements(*diameter * 0.5, topology.surfaces)?;
+    let counterbores =
+        cylindrical_surface_placements(*counterbore_diameter * 0.5, topology.surfaces)?;
     let primary_keys = primary
         .iter()
         .filter_map(hole_axis_key)
@@ -2475,9 +2507,31 @@ fn plane_owned_bore_placements(
 }
 
 fn bore_carrier_placements(radius: f64, topology: &HoleTopology<'_>) -> Option<Vec<HolePlacement>> {
+    carrier_placements(cylindrical_bore_axes(radius, topology))
+}
+
+fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<Vec<HolePlacement>> {
+    let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    carrier_placements(surfaces.iter().filter_map(|surface| {
+        let SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius: candidate,
+            ..
+        } = surface.geometry
+        else {
+            return None;
+        };
+        ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
+    }))
+}
+
+fn carrier_placements(
+    axes: impl IntoIterator<Item = (Point3, Vector3)>,
+) -> Option<Vec<HolePlacement>> {
     const AXIS_QUANTUM: f64 = 1.0e-8;
     let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
-    let mut carriers = cylindrical_bore_axes(radius, topology)
+    let mut carriers = axes
         .into_iter()
         .map(|(origin, axis)| {
             let axis = canonical_axis(axis);

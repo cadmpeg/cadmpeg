@@ -407,7 +407,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
 }
 
 #[test]
-fn identical_hole_siblings_partition_unclaimed_bore_axes() {
+fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     let mut surfaces = [
         cylinder(0, -5.0),
         cylinder(1, 5.0),
@@ -429,7 +429,7 @@ fn identical_hole_siblings_partition_unclaimed_bore_axes() {
             id: FaceId(format!("face-{index}")),
             shell: ShellId("shell".into()),
             surface: surface.id.clone(),
-            sense: Sense::Reversed,
+            sense: Sense::Forward,
             loops: Vec::new(),
             name: None,
             color: None,
@@ -471,8 +471,15 @@ fn identical_hole_siblings_partition_unclaimed_bore_axes() {
         depth: Length(1.0),
     };
 
+    let mut unique = [unplaced.clone()];
+    project_counterbore_topology_axes(&mut unique, &topology);
+    let FeatureDefinition::Hole { placements, .. } = &unique[0].definition else {
+        unreachable!();
+    };
+    assert_eq!(placements.len(), 3);
+
     let mut features = [placed.clone(), unplaced.clone()];
-    project_partitioned_hole_axes(&mut features, &topology);
+    project_counterbore_topology_axes(&mut features, &topology);
     let FeatureDefinition::Hole { placements, .. } = &features[1].definition else {
         unreachable!();
     };
@@ -492,7 +499,7 @@ fn identical_hole_siblings_partition_unclaimed_bore_axes() {
 
     let mut ambiguous = [placed.clone(), unplaced.clone(), unplaced.clone()];
     ambiguous[2].id = FeatureId("also-unplaced".into());
-    project_partitioned_hole_axes(&mut ambiguous, &topology);
+    project_counterbore_topology_axes(&mut ambiguous, &topology);
     let FeatureDefinition::Hole { placements, .. } = &ambiguous[1].definition else {
         unreachable!();
     };
@@ -513,7 +520,7 @@ fn identical_hole_siblings_partition_unclaimed_bore_axes() {
         points: &[],
     };
     let mut unmatched_signature = [placed.clone(), unplaced.clone()];
-    project_partitioned_hole_axes(&mut unmatched_signature, &unmatched_topology);
+    project_counterbore_topology_axes(&mut unmatched_signature, &unmatched_topology);
     let FeatureDefinition::Hole { placements, .. } = &unmatched_signature[1].definition else {
         unreachable!();
     };
@@ -527,7 +534,7 @@ fn identical_hole_siblings_partition_unclaimed_bore_axes() {
         axis: Vector3::new(0.0, 0.0, 1.0),
     };
     let mut incomplete_topology = [placed, unplaced];
-    project_partitioned_hole_axes(&mut incomplete_topology, &topology);
+    project_counterbore_topology_axes(&mut incomplete_topology, &topology);
     let FeatureDefinition::Hole { placements, .. } = &incomplete_topology[1].definition else {
         unreachable!();
     };
