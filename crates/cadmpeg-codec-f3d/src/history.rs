@@ -5521,6 +5521,36 @@ impl HistoricalIdentityIndex {
                 }
             }
         }
+        let versioned_revisions = revisions.keys().copied().collect::<HashSet<_>>();
+        let mut reconstructed_revisions = HashSet::new();
+        for history in histories.iter().filter(|history| {
+            !history.states.is_empty()
+                && history
+                    .states
+                    .iter()
+                    .all(|state| state.record_table_complete && state.topology.is_some())
+        }) {
+            for change in history
+                .states
+                .iter()
+                .flat_map(|state| &state.bulletin_boards)
+                .flat_map(|board| &board.changes)
+            {
+                let Some(record_ref) = change.old_ref.filter(|old| record_refs.contains(old))
+                else {
+                    continue;
+                };
+                let entity_ref = change.new_ref.unwrap_or(record_ref);
+                revisions
+                    .entry(record_ref)
+                    .or_default()
+                    .entity_refs
+                    .insert(entity_ref);
+                if !versioned_revisions.contains(&record_ref) {
+                    reconstructed_revisions.insert(record_ref);
+                }
+            }
+        }
         let entity_refs = record_refs
             .iter()
             .copied()
@@ -5564,6 +5594,19 @@ impl HistoricalIdentityIndex {
                     }
                 }
             }
+        }
+        for record_ref in reconstructed_revisions {
+            let Some(revision) = revisions.get_mut(&record_ref) else {
+                continue;
+            };
+            revision.states = revision
+                .entity_refs
+                .iter()
+                .filter_map(|entity_ref| identities.get(entity_ref))
+                .flat_map(|membership| membership.states.iter().copied())
+                .collect();
+            revision.states.sort_unstable();
+            revision.states.dedup();
         }
         Self {
             identities,
@@ -10426,6 +10469,49 @@ mod tests {
         assert_eq!(
             historical_selection_identity_kind(std::slice::from_ref(&revision_history), 701),
             Some((AsmHistoricalEntityKind::Edge, 42, vec![5]))
+        );
+        let revision_change = |new_ref| AsmEntityChange {
+            id: format!("revision-700-to-{new_ref}"),
+            parent: "board".into(),
+            byte_offset: 0,
+            kind: AsmEntityChangeKind::Update,
+            old_ref: Some(700),
+            new_ref: Some(new_ref),
+        };
+        let mut reconstructed_revision_history = history.clone();
+        reconstructed_revision_history.states[0].bulletin_boards = vec![AsmBulletinBoard {
+            id: "board".into(),
+            parent: reconstructed_revision_history.states[0].id.clone(),
+            byte_offset: 0,
+            owner_ref: 0,
+            number: 2,
+            changes: vec![revision_change(42)],
+        }];
+        assert_eq!(
+            historical_selection_identity_kind(
+                std::slice::from_ref(&reconstructed_revision_history),
+                700,
+            ),
+            Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
+        );
+        let mut incomplete_revision_history = reconstructed_revision_history.clone();
+        incomplete_revision_history.states[1].record_table_complete = false;
+        assert_eq!(
+            historical_selection_identity_kind(
+                std::slice::from_ref(&incomplete_revision_history),
+                700,
+            ),
+            None
+        );
+        reconstructed_revision_history.states[0].bulletin_boards[0]
+            .changes
+            .push(revision_change(90));
+        assert_eq!(
+            historical_selection_identity_kind(
+                std::slice::from_ref(&reconstructed_revision_history),
+                700,
+            ),
+            None
         );
         revision_history.states[0].entity_versions = vec![AsmEntityVersion {
             entity_ref: 90,
