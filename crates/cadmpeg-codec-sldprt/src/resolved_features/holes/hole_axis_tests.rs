@@ -20,7 +20,7 @@ use super::*;
 use crate::records::{
     FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputGeneratedSurfaceIdentity,
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
-    FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
+    FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
 };
 
 fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {
@@ -1431,6 +1431,73 @@ fn object_indexed_line_handles_select_a_congruent_bore_pattern() {
 }
 
 #[test]
+fn paired_object_loci_select_a_congruent_bore_pattern() {
+    let marker = |id: &str, ordinal, object_index, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("position".into()),
+        ordinal,
+        offset: u64::from(ordinal) * 10,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let mut lane = lane();
+    lane.sketch_entities = vec![
+        marker(
+            "first",
+            0,
+            Some(1),
+            SketchInputKind::Arc,
+            Some([0.013, 0.0]),
+        ),
+        marker(
+            "first-origin",
+            1,
+            None,
+            SketchInputKind::Point,
+            Some([0.0, 0.0]),
+        ),
+        marker(
+            "second",
+            2,
+            Some(2),
+            SketchInputKind::Relation(SketchRelationKind::Horizontal),
+            Some([-0.009, 0.0]),
+        ),
+        marker(
+            "second-origin",
+            3,
+            None,
+            SketchInputKind::Point,
+            Some([0.0, 0.0]),
+        ),
+        marker(
+            "auxiliary",
+            4,
+            Some(3),
+            SketchInputKind::Point,
+            Some([1.0, 1.0]),
+        ),
+    ];
+
+    let paired = paired_object_locus_markers(&lane, "position")
+        .into_iter()
+        .map(|marker| marker.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(paired, ["first", "second"]);
+
+    let surfaces = vec![cylinder(0, -9.0), cylinder(1, 13.0), cylinder(2, 100.0)];
+    let placements = marker_pattern_bore_axes(&lane, "position", 2.0, &surfaces, None)
+        .expect("unique congruent pattern");
+    assert_eq!(placements.len(), 2);
+}
+
+#[test]
 fn hole_temporary_axis_decodes_depth_point_direction_layout() {
     let mut payload = vec![0; 500];
     let declaration = 40;
@@ -1548,7 +1615,7 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
 }
 
 #[test]
-fn typed_position_sketch_reference_lifts_only_authored_points() {
+fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let hole = model_hole();
     let sketch_feature = cadmpeg_ir::features::Feature {
         id: FeatureId("position-sketch".into()),
@@ -1623,11 +1690,30 @@ fn typed_position_sketch_reference_lifts_only_authored_points() {
     lane.sketch_entities.push(SketchInputEntity {
         id: "point-identity".into(),
         object_index: Some(2),
-        ordinal: 2,
-        offset: 100,
+        ordinal: 4,
+        offset: 120,
         coordinates_m: None,
         ..lane.sketch_entities[0].clone()
     });
+    lane.sketch_entities.push(SketchInputEntity {
+        id: "authored-arc-locus".into(),
+        object_index: Some(2),
+        ordinal: 2,
+        offset: 100,
+        kind: SketchInputKind::Arc,
+        coordinates_m: Some([0.014, 0.025]),
+        ..lane.sketch_entities[0].clone()
+    });
+    lane.sketch_entities.push(SketchInputEntity {
+        id: "arc-origin-marker".into(),
+        object_index: None,
+        ordinal: 3,
+        offset: 110,
+        kind: SketchInputKind::Point,
+        coordinates_m: Some([0.0, 0.0]),
+        ..lane.sketch_entities[0].clone()
+    });
+    lane.sketch_entities.sort_by_key(|marker| marker.ordinal);
     let sketch = Sketch {
         id: SketchId("position-geometry".into()),
         name: Some("Position".into()),
@@ -1652,15 +1738,19 @@ fn typed_position_sketch_reference_lifts_only_authored_points() {
         },
     }];
     let mut features = vec![hole, sketch_feature];
+    let mut paired_lane = lane.clone();
+    paired_lane.sketch_entities.truncate(4);
+    paired_lane.sketch_entities[0].kind = SketchInputKind::Arc;
+    paired_lane.sketch_entities[0].coordinates_m = Some([0.012, 0.023]);
     let mut alternate_configuration = lane.clone();
     alternate_configuration.id = "alternate-lane".into();
     alternate_configuration.configuration = Some("alternate".into());
 
     project_hole_position_sketches(
         &mut features,
-        &[sketch],
+        std::slice::from_ref(&sketch),
         &entities,
-        &[history],
+        std::slice::from_ref(&history),
         &[lane, alternate_configuration],
     );
 
@@ -1687,6 +1777,76 @@ fn typed_position_sketch_reference_lifts_only_authored_points() {
         features[0].dependencies,
         [FeatureId("position-sketch".into())]
     );
+
+    let mut paired_features = vec![model_hole(), features[1].clone()];
+    project_hole_position_sketches(
+        &mut paired_features,
+        std::slice::from_ref(&sketch),
+        &[],
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&paired_lane),
+    );
+    let FeatureDefinition::Hole {
+        placements: paired_placements,
+        ..
+    } = &paired_features[0].definition
+    else {
+        panic!("expected hole");
+    };
+    assert_eq!(paired_placements.len(), 2);
+    assert!(matches!(
+        paired_placements[0],
+        cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3 {
+                x: 12.0,
+                y: 23.0,
+                z: 30.0
+            },
+            axis: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+        }
+    ));
+    assert!(matches!(
+        paired_placements[1],
+        cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3 {
+                x: 14.0,
+                y: 25.0,
+                z: 30.0
+            },
+            axis: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+        }
+    ));
+
+    let mut incomplete_lane = paired_lane;
+    incomplete_lane.sketch_entities.push(SketchInputEntity {
+        id: "unpaired-object-locus".into(),
+        object_index: Some(3),
+        ordinal: 4,
+        offset: 120,
+        kind: SketchInputKind::Arc,
+        coordinates_m: Some([0.016, 0.027]),
+        ..incomplete_lane.sketch_entities[0].clone()
+    });
+    let mut incomplete_features = vec![model_hole(), features[1].clone()];
+    project_hole_position_sketches(
+        &mut incomplete_features,
+        std::slice::from_ref(&sketch),
+        &[],
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&incomplete_lane),
+    );
+    let FeatureDefinition::Hole { placements, .. } = &incomplete_features[0].definition else {
+        panic!("expected hole");
+    };
+    assert!(placements.is_empty());
 }
 
 #[test]

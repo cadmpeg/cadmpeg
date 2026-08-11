@@ -10,7 +10,7 @@ use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::sketch_edges::{cross, dot};
-use super::transforms::quantize;
+use super::transforms::{quantize, sketch_frame_marker_transform};
 use super::CLASS_MARKER;
 use crate::classification::{classify, FeatureClass};
 use crate::records::{
@@ -1254,6 +1254,8 @@ pub(crate) fn project_hole_position_sketches(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1315,9 +1317,12 @@ pub(crate) fn project_hole_position_sketches(
         let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
             continue;
         };
-        let authored_markers = lanes
+        let matching_lanes = lanes
             .iter()
             .filter(|lane| lane.configuration == sketch.configuration)
+            .collect::<Vec<_>>();
+        let mut authored_markers = matching_lanes
+            .iter()
             .flat_map(|lane| &lane.sketch_entities)
             .filter(|marker| {
                 marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
@@ -1329,9 +1334,40 @@ pub(crate) fn project_hole_position_sketches(
                     )
             })
             .collect::<Vec<_>>();
+        let paired_marker_ids = if authored_markers.is_empty() {
+            // Direct projection requires a complete alternate object roster.
+            // An isolated pair among other coordinates can describe a
+            // construction curve or dimension handle instead of a hole locus.
+            let mut paired_marker_ids = HashSet::new();
+            let mut complete_alternate_encoding = true;
+            for lane in matching_lanes {
+                let position_markers = lane
+                    .sketch_entities
+                    .iter()
+                    .filter(|marker| {
+                        marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
+                            && marker.object_index.is_some()
+                            && marker.coordinates_m.is_some()
+                    })
+                    .count();
+                let paired = paired_object_locus_markers(lane, position_feature.id.as_str());
+                complete_alternate_encoding &= paired.len() == position_markers;
+                paired_marker_ids.extend(paired.iter().map(|marker| marker.id.as_str()));
+                authored_markers.extend(paired);
+            }
+            if complete_alternate_encoding {
+                paired_marker_ids
+            } else {
+                authored_markers.clear();
+                HashSet::new()
+            }
+        } else {
+            HashSet::new()
+        };
         if authored_markers.is_empty() {
             continue;
         }
+        let marker_transform = sketch_frame_marker_transform(sketch, QUANTUM);
         let v_axis = cross(normal, u_axis);
         let mut resolved = Vec::with_capacity(authored_markers.len());
         for marker in &authored_markers {
@@ -1340,16 +1376,37 @@ pub(crate) fn project_hole_position_sketches(
                     && entity.native_ref.as_deref() == Some(marker.id.as_str())
                     && matches!(entity.geometry, SketchGeometry::Point { .. })
             });
-            let Some(entity) = entities.next() else {
-                resolved.clear();
-                break;
-            };
+            let entity = entities.next();
             if entities.next().is_some() {
                 resolved.clear();
                 break;
             }
-            let SketchGeometry::Point { position } = entity.geometry else {
-                unreachable!("point geometry was filtered above");
+            let position = match entity {
+                Some(entity) => {
+                    let SketchGeometry::Point { position } = entity.geometry else {
+                        unreachable!("point geometry was filtered above");
+                    };
+                    position
+                }
+                None if paired_marker_ids.contains(marker.id.as_str()) => {
+                    let Some(transform) = marker_transform else {
+                        resolved.clear();
+                        break;
+                    };
+                    let [u, v] = marker
+                        .coordinates_m
+                        .expect("coordinates were filtered above");
+                    let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                    let Some((u, v)) = transform.apply(native) else {
+                        resolved.clear();
+                        break;
+                    };
+                    Point2::new(u as f64 * QUANTUM, v as f64 * QUANTUM)
+                }
+                None => {
+                    resolved.clear();
+                    break;
+                }
             };
             resolved.push(HolePlacement::Axis {
                 origin: Point3::new(
@@ -1367,6 +1424,31 @@ pub(crate) fn project_hole_position_sketches(
             }
         }
     }
+}
+
+fn paired_object_locus_markers<'a>(
+    lane: &'a FeatureInputLane,
+    feature: &str,
+) -> Vec<&'a crate::records::SketchInputEntity> {
+    // Object-locus layouts emit an indexed coordinate handle followed by an
+    // unindexed zero point. The adjacent anchor distinguishes object loci from
+    // the dimension and display handles in the same feature object.
+    lane.sketch_entities
+        .windows(2)
+        .filter_map(|pair| {
+            let [object, anchor] = pair else {
+                unreachable!("two-record window");
+            };
+            (object.feature_ref.as_deref() == Some(feature)
+                && anchor.feature_ref.as_deref() == Some(feature)
+                && object.object_index.is_some()
+                && object.coordinates_m.is_some()
+                && anchor.object_index.is_none()
+                && anchor.kind == SketchInputKind::Point
+                && anchor.coordinates_m == Some([0.0, 0.0]))
+            .then_some(object)
+        })
+        .collect()
 }
 
 fn hole_position_feature<'a>(
@@ -2398,12 +2480,19 @@ fn marker_pattern_bore_axes(
     direction: Option<Vector3>,
 ) -> Option<Vec<HolePlacement>> {
     const QUANTUM: f64 = 1.0e-8;
+    let paired_marker_ids = paired_object_locus_markers(lane, feature)
+        .into_iter()
+        .map(|marker| marker.id.as_str())
+        .collect::<HashSet<_>>();
     let mut marker_loci = lane
         .sketch_entities
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
         .filter(|marker| marker.object_index.is_some())
-        .filter(|marker| marker.kind == SketchInputKind::LineOrCircle)
+        .filter(|marker| {
+            marker.kind == SketchInputKind::LineOrCircle
+                || paired_marker_ids.contains(marker.id.as_str())
+        })
         .filter_map(|marker| {
             let [u, v] = marker.coordinates_m?;
             Some(Point2::new(u * 1000.0, v * 1000.0))
