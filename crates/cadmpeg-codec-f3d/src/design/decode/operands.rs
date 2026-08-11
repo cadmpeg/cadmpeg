@@ -379,6 +379,9 @@ pub fn decode_face_operands(
         let is_sweep_guide_surface = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::Sweep)
             && group.role == 0x0000_0011_0000_0000;
+        let is_revolve_axis = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::Revolve)
+            && group.role == 0x0000_0021_0000_0000;
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
@@ -403,6 +406,7 @@ pub fn decode_face_operands(
             && !is_shell_operand
             && !is_loft_profile
             && !is_sweep_guide_surface
+            && !is_revolve_axis
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
             && !is_mirror_seed

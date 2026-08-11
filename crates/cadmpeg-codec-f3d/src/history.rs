@@ -5700,7 +5700,7 @@ fn historical_surface_axis(
     Some(*candidate)
 }
 
-fn same_axis_line(
+pub(crate) fn same_axis_line(
     left: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
     right: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
 ) -> bool {

@@ -3971,10 +3971,14 @@ pub(crate) fn exact_path_feature_construction(
     };
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::Revolve
-            if scope.class_tag == "409"
-                && scope.paired_class_tag == "257"
-                && parameter_scope_payload_length(scope) == Some(345)
-                && scope.reference_members.len() == 6
+            if matches!(
+                (
+                    scope.class_tag.as_str(),
+                    scope.paired_class_tag.as_str(),
+                    parameter_scope_payload_length(scope),
+                ),
+                ("409", "257", Some(345)) | ("385", "262", Some(355))
+            ) && scope.reference_members.len() == 6
                 && bytes.get(start + 20) == Some(&1)
                 && u32_at(bytes, start + 21) == Some(0)
                 && u32_at(bytes, start + 29) == Some(2)

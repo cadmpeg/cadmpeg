@@ -987,6 +987,25 @@ Unstated regions:
 - `0..55` (55 B): The fixed placement envelope precedes the explicit marker block.
 - `194..341` (147 B): The carrier tail is not assigned a semantic field.
 
+## `compact_revolve_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Offsets are relative to the compact Revolve primary indexed header. Both compact class pairs use the same fixed prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `marker` | `u8` | little | spec | Offset 20 is marker `1` |
+| 21 | 4 | `zero_value` | `u32` | little | spec | offset 21 is u32 zero |
+| 25 | 4 | `operation` | `u32` | little | spec | offset 25 stores the result operation |
+| 29 | 4 | `extent_kind` | `u32` | little | spec | offset 29 stores extent kind `2` |
+| 33 | 1 | `direction_kind` | `u8` | little | spec | offset 33 stores direction kind `0` |
+| 34 | 4 | `structural_constant` | `u32` | little | spec | offset 34 stores u32 one |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding compact Revolve envelope are outside this field run.
+
 ## `current_extrude_operation_fields`
 
 Spec §3.1 · layout: byte offsets · size: 42 B

@@ -1664,6 +1664,7 @@ fn finish_model_decode<'a>(
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_entity_selection_operands,
+        &native.design_face_operands,
         &ir.model.faces,
         &ir.model.surfaces,
     );
@@ -2210,6 +2211,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_entity_selection_operands,
+        &native.design_face_operands,
         &ir.model.faces,
         &ir.model.surfaces,
     );

@@ -4339,7 +4339,7 @@ pub enum DesignTopologyIncidentSide {
     Following,
 }
 
-/// Face-selection operand owned by an Extrude parameter scope.
+/// Face-selection operand owned by a parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFaceOperand {

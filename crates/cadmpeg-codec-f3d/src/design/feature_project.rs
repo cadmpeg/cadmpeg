@@ -661,6 +661,7 @@ pub fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     edge_operands,
                     entity_selection_operands,
+                    face_operands,
                     placements,
                     curve_identities,
                 )
@@ -4559,6 +4560,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    face_operands: &[crate::records::DesignFaceOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -4635,6 +4637,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
                 *axis_member,
                 entity_selection_operands,
             )
+            && revolve_face_axis_operand(scope, axis_group, *axis_member, face_operands).is_none()
         {
             return None;
         }
@@ -4681,12 +4684,37 @@ fn unresolved_historical_face_axis_selection(
     matches!(selections.as_slice(), [selection] if !selection.historical_face_candidates.is_empty())
 }
 
+fn revolve_face_axis_operand<'a>(
+    scope: &DesignParameterScope,
+    axis_group: &DesignConstructionOperandGroup,
+    axis_member: u32,
+    face_operands: &'a [crate::records::DesignFaceOperand],
+) -> Option<&'a crate::records::DesignFaceOperand> {
+    let stream = native_stream(&scope.id);
+    let operands = face_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == stream
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == Some(axis_group.record_index)
+                && operand.group_member_ordinal == Some(0)
+                && operand.record_index == axis_member
+        })
+        .collect::<Vec<_>>();
+    let [operand] = operands.as_slice() else {
+        return None;
+    };
+    (!crate::design::face_resolve::historical_face_operand_candidates(operand).is_empty())
+        .then_some(*operand)
+}
+
 /// Resolve Revolve axes selected through history-qualified analytic faces.
 pub(crate) fn bind_revolve_face_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
     entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    face_operands: &[crate::records::DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) {
@@ -4733,39 +4761,79 @@ pub(crate) fn bind_revolve_face_axes(
                     && operand.record_index == *member
             })
             .collect::<Vec<_>>();
-        let [selection] = selections.as_slice() else {
-            continue;
+        let entity_face_slot = match selections.as_slice() {
+            [selection] => selection
+                .historical_face_candidates
+                .first()
+                .map(|candidate| candidate.face_slot)
+                .filter(|slot| {
+                    selection
+                        .historical_face_candidates
+                        .iter()
+                        .all(|candidate| candidate.face_slot == *slot)
+                }),
+            _ => None,
         };
-        let Some(face_slot) = selection
-            .historical_face_candidates
-            .first()
-            .map(|candidate| candidate.face_slot)
-            .filter(|slot| {
-                selection
-                    .historical_face_candidates
+        let entity_axis = entity_face_slot.and_then(|face_slot| {
+            analytic_axis_for_face(
+                &cadmpeg_ir::ids::FaceId(ids::brep_entity_id(face_slot)),
+                faces,
+                surfaces,
+            )
+        });
+        let recipe_axis =
+            revolve_face_axis_operand(scope, group, *member, face_operands).and_then(|operand| {
+                let candidates =
+                    crate::design::face_resolve::historical_face_operand_candidates(operand);
+                let mut axes = candidates
                     .iter()
-                    .all(|candidate| candidate.face_slot == *slot)
-            })
-        else {
-            continue;
+                    .map(|face_id| analytic_axis_for_face(face_id, faces, surfaces));
+                let first = axes.next().flatten()?;
+                axes.all(|axis| {
+                    axis.is_some_and(|axis| {
+                        crate::history::same_axis_line(
+                            (first.origin, first.direction),
+                            (axis.origin, axis.direction),
+                        )
+                    })
+                })
+                .then_some(first)
+            });
+        construction.axis = match (entity_axis, recipe_axis) {
+            (Some(entity), Some(recipe))
+                if crate::history::same_axis_line(
+                    (entity.origin, entity.direction),
+                    (recipe.origin, recipe.direction),
+                ) =>
+            {
+                Some(entity)
+            }
+            (Some(axis), None) | (None, Some(axis)) => Some(axis),
+            _ => None,
         };
-        let face_id = cadmpeg_ir::ids::FaceId(ids::brep_entity_id(face_slot));
-        let matching_faces = faces
-            .iter()
-            .filter(|face| face.id == face_id)
-            .collect::<Vec<_>>();
-        let [face] = matching_faces.as_slice() else {
-            continue;
-        };
-        let matching_surfaces = surfaces
-            .iter()
-            .filter(|surface| surface.id == face.surface)
-            .collect::<Vec<_>>();
-        let [surface] = matching_surfaces.as_slice() else {
-            continue;
-        };
-        construction.axis = analytic_surface_axis(&surface.geometry);
     }
+}
+
+fn analytic_axis_for_face(
+    face_id: &cadmpeg_ir::ids::FaceId,
+    faces: &[cadmpeg_ir::topology::Face],
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    let faces = faces
+        .iter()
+        .filter(|face| &face.id == face_id)
+        .collect::<Vec<_>>();
+    let [face] = faces.as_slice() else {
+        return None;
+    };
+    let surfaces = surfaces
+        .iter()
+        .filter(|surface| surface.id == face.surface)
+        .collect::<Vec<_>>();
+    let [surface] = surfaces.as_slice() else {
+        return None;
+    };
+    analytic_surface_axis(&surface.geometry)
 }
 
 fn analytic_surface_axis(
