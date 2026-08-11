@@ -34,9 +34,11 @@ In the legacy ASCII layout, the byte immediately after
 ASCII decimal digits. The object ends with `#END_OF_P_OBJECT`, followed
 immediately by `\n#Pro/ENGINEER`. These header-adjacent start, end, and banner
 markers together select the legacy ASCII layout. The same marker bytes later
-in a payload do not select the layout. Legacy ASCII data uses `@<name>` field
-declarations and ASCII value rows. It can continue as one object or use an
-undecorated named-section directory.
+in a payload do not select the layout. The banner's `Version <release>`,
+`Release <release>`, and `Release<release>` forms store the product release.
+A banner without one of these forms has no product release token. Legacy ASCII
+data uses `@<name>` field declarations and ASCII value rows. It can continue as
+one object or use an undecorated named-section directory.
 
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB

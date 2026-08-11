@@ -10085,6 +10085,41 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
 
     assert_eq!(scan.framing.layout, Layout::LegacyAscii);
     assert_eq!(scan.framing.layout.token(), "LEGACY_ASCII");
+    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    assert_eq!(legacy.schema, "6");
+    assert_eq!(legacy.product_release.as_deref(), Some("H-01-21"));
+    assert!(container::summarize(&scan).notes.iter().any(|note| {
+        note.contains("legacy ASCII persistence: schema 6; product release H-01-21")
+    }));
+}
+
+#[test]
+fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
+    let release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 12\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release 16.0  All Rights Reserved\n";
+    let scan = container::scan_bytes(release.as_slice());
+    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    assert_eq!(legacy.schema, "12");
+    assert_eq!(legacy.product_release.as_deref(), Some("16.0"));
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(release), &DecodeOptions::default())
+        .expect("legacy container decode");
+    let source = result.ir.source.as_ref().expect("source metadata");
+    assert_eq!(source.attributes["legacy_ascii_schema"], "12");
+    assert_eq!(source.attributes["legacy_ascii_product_release"], "16.0");
+
+    let concatenated_release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release18.0  All Rights Reserved\n";
+    let scan = container::scan_bytes(concatenated_release.as_slice());
+    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    assert_eq!(legacy.product_release.as_deref(), Some("18.0"));
+
+    let unspecified = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER\n";
+    let scan = container::scan_bytes(unspecified.as_slice());
+    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    assert_eq!(legacy.product_release, None);
 }
 
 #[test]

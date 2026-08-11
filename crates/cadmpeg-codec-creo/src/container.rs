@@ -110,6 +110,15 @@ pub enum Layout {
     Unknown,
 }
 
+/// Header metadata from a complete legacy ASCII `P_OBJECT` frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyAsciiFraming {
+    /// Decimal persistence-schema token following `#P_OBJECT`.
+    pub schema: String,
+    /// Product release token in a `Version` or `Release` banner form.
+    pub product_release: Option<String>,
+}
+
 impl Layout {
     /// A short, stable token for reports and source attributes.
     pub fn token(self) -> &'static str {
@@ -235,6 +244,8 @@ pub struct FramingScan<'a> {
     pub expanded_sections: Vec<ExpandedSection>,
     /// Identified layout family.
     pub layout: Layout,
+    /// Legacy ASCII header metadata, present only for that layout family.
+    pub legacy_ascii: Option<LegacyAsciiFraming>,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
     pub census: GeomCensus,
     /// Active Creo principal coordinate unit system, when its selector is
@@ -685,42 +696,59 @@ fn is_name_byte(b: u8) -> bool {
 
 const DEPDB_ROOT_RECORD: &[u8] = b"\xe0\x00p_dep_db\0\xe3";
 
-fn has_legacy_ascii_object(data: &[u8]) -> bool {
-    let Some(header_end) =
-        find(data, UGC_HEADER_END, 0).and_then(|offset| offset.checked_add(UGC_HEADER_END.len()))
-    else {
-        return false;
-    };
-    let Some(body) = data
-        .get(header_end..)
-        .and_then(|tail| tail.strip_prefix(b"\n"))
-    else {
-        return false;
-    };
-    if !body.starts_with(LEGACY_OBJECT_START) {
-        return false;
+fn legacy_product_release(banner: &[u8]) -> Option<String> {
+    let mut words = banner
+        .split(u8::is_ascii_whitespace)
+        .filter(|word| !word.is_empty());
+    while let Some(word) = words.next() {
+        if word == b"Version" || word == b"Release" {
+            let release = words.next()?;
+            if release.iter().all(u8::is_ascii_graphic) {
+                return String::from_utf8(release.to_vec()).ok();
+            }
+            return None;
+        }
+        if let Some(release) = word.strip_prefix(b"Release") {
+            if !release.is_empty() && release.iter().all(u8::is_ascii_graphic) {
+                return String::from_utf8(release.to_vec()).ok();
+            }
+        }
     }
-    let Some(object_header_end) = find(body, b"\n", LEGACY_OBJECT_START.len()) else {
-        return false;
-    };
+    None
+}
+
+fn legacy_ascii_framing(data: &[u8]) -> Option<LegacyAsciiFraming> {
+    let header_end = find(data, UGC_HEADER_END, 0)
+        .and_then(|offset| offset.checked_add(UGC_HEADER_END.len()))?;
+    let body = data
+        .get(header_end..)
+        .and_then(|tail| tail.strip_prefix(b"\n"))?;
+    if !body.starts_with(LEGACY_OBJECT_START) {
+        return None;
+    }
+    let object_header_end = find(body, b"\n", LEGACY_OBJECT_START.len())?;
     let schema = &body[LEGACY_OBJECT_START.len()..object_header_end];
     if schema.is_empty() || !schema.iter().all(u8::is_ascii_digit) {
-        return false;
+        return None;
     }
+    let schema = String::from_utf8(schema.to_vec()).ok()?;
     let mut from = object_header_end + 1;
     while let Some(object_end) = find(body, LEGACY_OBJECT_END, from) {
-        if object_end
+        if let Some(banner) = object_end
             .checked_add(LEGACY_OBJECT_END.len())
             .and_then(|banner| body.get(banner..))
-            .is_some_and(|tail| {
-                tail.starts_with(b"\n") && tail[1..].starts_with(LEGACY_BANNER_START)
-            })
+            .and_then(|tail| tail.strip_prefix(b"\n"))
+            .filter(|tail| tail.starts_with(LEGACY_BANNER_START))
         {
-            return true;
+            let banner_end = find(banner, b"\n", 0).unwrap_or(banner.len());
+            return Some(LegacyAsciiFraming {
+                schema,
+                product_release: legacy_product_release(&banner[..banner_end]),
+            });
         }
         from = object_end + 1;
     }
-    false
+    None
 }
 
 /// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). The
@@ -728,7 +756,7 @@ fn has_legacy_ascii_object(data: &[u8]) -> bool {
 /// contain embedded names with the `ND:` decoration. An undecorated file with
 /// neither a valid root record, an outer `ND:` name, nor a complete legacy
 /// ASCII object remains unknown.
-fn identify_layout(data: &[u8], sections: &[Section]) -> Layout {
+fn identify_layout(data: &[u8], sections: &[Section], has_legacy_ascii_object: bool) -> Layout {
     let has_depdb_root = sections.iter().any(|section| {
         if section.name != "DEPDB_DATA" {
             return false;
@@ -752,7 +780,7 @@ fn identify_layout(data: &[u8], sections: &[Section]) -> Layout {
         }
     } else if has_nd_decoration {
         Layout::Nd
-    } else if has_legacy_ascii_object(data) {
+    } else if has_legacy_ascii_object {
         Layout::LegacyAscii
     } else {
         Layout::Unknown
@@ -1938,7 +1966,13 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         })
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
-    let layout = identify_layout(&data, &sections);
+    let legacy_ascii = legacy_ascii_framing(&data);
+    let layout = identify_layout(&data, &sections, legacy_ascii.is_some());
+    let legacy_ascii = if layout == Layout::LegacyAscii {
+        legacy_ascii
+    } else {
+        None
+    };
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
@@ -2131,6 +2165,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             sections,
             expanded_sections,
             layout,
+            legacy_ascii,
             census,
             principal_unit,
             family_table,
@@ -2291,6 +2326,13 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     ];
     if let Some(name) = &scan.framing.model_name {
         notes.push(format!("native model name: {name}"));
+    }
+    if let Some(legacy) = &scan.framing.legacy_ascii {
+        let release = legacy.product_release.as_deref().unwrap_or("unspecified");
+        notes.push(format!(
+            "legacy ASCII persistence: schema {}; product release {release}",
+            legacy.schema
+        ));
     }
 
     match (

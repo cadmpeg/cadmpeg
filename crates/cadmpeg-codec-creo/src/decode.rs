@@ -35450,6 +35450,12 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         "layout".to_string(),
         scan.framing.layout.token().to_string(),
     );
+    if let Some(legacy) = &scan.framing.legacy_ascii {
+        attributes.insert("legacy_ascii_schema".to_string(), legacy.schema.clone());
+        if let Some(release) = &legacy.product_release {
+            attributes.insert("legacy_ascii_product_release".to_string(), release.clone());
+        }
+    }
     attributes.insert("file_size".to_string(), scan.framing.data.len().to_string());
     attributes.insert(
         "section_count".to_string(),

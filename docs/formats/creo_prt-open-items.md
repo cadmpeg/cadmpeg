@@ -801,8 +801,8 @@ field declaration select, and how do its object references and arrays compose
 the geometry, topology, and design-history graphs?
 
 **Known.** `creo_prt.md` §1 defines the complete legacy ASCII layout
-discriminator, its outer `P_OBJECT` boundary, and its monolithic and
-named-section forms.
+discriminator, its outer `P_OBJECT` boundary, its decimal schema token, its
+product-release banner forms, and its monolithic and named-section forms.
 
 **Need.** We must know the attribute grammar and graph joins to transfer legacy
 ASCII payloads beyond container structure.
