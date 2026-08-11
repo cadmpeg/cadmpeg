@@ -4625,6 +4625,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         id: sketch.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         profiles: Vec::new(),
         native_ref: Some("creo:featdefs:sketch#822".to_string()),
