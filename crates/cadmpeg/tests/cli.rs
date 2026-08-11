@@ -1593,7 +1593,6 @@ fn diff_input_format_forces_the_reader_per_input() {
 
 #[test]
 fn report_to_an_unwritable_path_is_an_operational_error() {
-    // and leaves no file behind.
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
     let report = dir.path().join("missing-subdir").join("report.json");

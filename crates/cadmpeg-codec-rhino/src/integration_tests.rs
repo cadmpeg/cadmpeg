@@ -292,7 +292,6 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
         assert!(charged[0].provenance.is_some());
     }
 
-    // A native retention must not also claim the payload was never read.
     assert!(!losses
         .iter()
         .any(|loss| loss.code == LossKind::UnsupportedObjectFamily));
@@ -412,7 +411,6 @@ fn unresolvable_dimension_style_is_charged_without_a_dangling_reference() {
         annotation.parameters["dimstyle_id"],
         crate::wire::Uuid::from_wire(dimstyle).to_string()
     );
-    // An unauthored text point is omitted rather than invented.
     assert!(annotation.position.is_none());
 
     let charged = result

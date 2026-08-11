@@ -173,7 +173,6 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
     failures
 }
 
-/// Writes one golden, creating nothing else.
 fn write_golden(path: &Path, bytes: &[u8]) {
     std::fs::write(path, bytes).unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
 }

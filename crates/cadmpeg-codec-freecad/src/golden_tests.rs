@@ -379,7 +379,6 @@ fn step_output_is_deterministic() {
     }
 }
 
-/// [`step_texts_agree`] tolerates a platform's libm and nothing else.
 mod step_comparison {
     use super::step_texts_agree;
 

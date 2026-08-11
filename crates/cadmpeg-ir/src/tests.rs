@@ -3182,7 +3182,6 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
 #[test]
 fn schema_generation_produces_definitions() {
     let schema = crate::cadir_json_schema();
-    // The schema must reference the entity types, not just be an empty object.
     let json = serde_json::to_string(&schema).unwrap();
     assert!(json.contains("Body"));
     assert!(json.contains("Coedge"));

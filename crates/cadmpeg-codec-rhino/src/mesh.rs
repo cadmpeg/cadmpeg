@@ -1596,7 +1596,6 @@ mod tests {
 
     #[test]
     fn nested_compressed_buffer_inflates_from_a_child_window() {
-        // Nested compressed buffer under an outer anonymous chunk.
         let inner = buffer(&[9, 8, 7, 6], 1);
         let bytes = chunk(&inner);
         with_expand(&bytes, |expand| {

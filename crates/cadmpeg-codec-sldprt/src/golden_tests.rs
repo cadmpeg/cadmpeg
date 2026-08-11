@@ -212,7 +212,6 @@ fn normalized_document(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
     document
 }
 
-/// [`normalize_identifier`] replaces container byte positions and nothing else.
 #[test]
 fn normalization_replaces_only_container_positions() {
     let ranks = BTreeMap::from([

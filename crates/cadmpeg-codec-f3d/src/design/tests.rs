@@ -6397,7 +6397,6 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         None
     );
 
-    // Fewer than six references cannot carry the two lanes plus both groups.
     draft_scope.reference_members = vec![175, 176, 181, 182, 186];
     assert_eq!(
         exact_draft_operation_with_owners(
@@ -9351,8 +9350,6 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
 
 #[test]
 fn edge_flange_scope_reads_the_shifted_header_form() {
-    // The optional four-byte header member is not announced, so the same frame
-    // written four bytes later must still read through reference agreement.
     let references = [201, 204, 207, 218, 240, 243, 251, 254];
     for header_shift in [0usize, 4] {
         let frame = edge_flange_frame(&EdgeFlangeFixture {
@@ -10865,8 +10862,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         u64::try_from(flagless_paired_at).unwrap()
     );
 
-    // A corrupt member count larger than the remaining bytes can supply must
-    // fail the parse without reaching the allocator.
     let mut bombed = bytes.clone();
     bombed[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(matches!(

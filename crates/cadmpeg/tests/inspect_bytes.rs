@@ -242,7 +242,6 @@ fn find_notes_truncation_after_the_last_hit() {
             "note: output truncated at 2 matches; pass --max 0 for all",
         ));
 
-    // Every hit fits under the default limit, so no note is printed.
     cadmpeg()
         .args(["inspect", "find", file.to_str().unwrap(), "--ascii", "a"])
         .assert()
@@ -829,13 +828,11 @@ fn inspect_input_flag_positional_and_subcommand_interplay() {
         .code(2)
         .stderr(predicate::str::contains("no codec recognized"));
 
-    // A byte subcommand still parses with no top-level input.
     cadmpeg()
         .args(["inspect", "hex", path, "--len", "1"])
         .assert()
         .success();
 
-    // Top-level `--input` cannot be combined with a byte subcommand.
     cadmpeg()
         .args(["inspect", "--input", path, "hex"])
         .assert()
@@ -949,7 +946,6 @@ fn find_context_prints_a_window_around_each_hit() {
     let file = write(dir.path(), "ctx.bin", b"AAAAneedleBBBB");
     let path = file.to_str().unwrap();
 
-    // --context 0 output is exactly the old hit-line format.
     cadmpeg()
         .args(["inspect", "find", path, "--ascii", "needle"])
         .assert()

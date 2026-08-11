@@ -2219,7 +2219,6 @@ fn decode_transfers_point_plane_cylinder_line() {
         .collect();
     assert_eq!(lines.len(), 1);
 
-    // No topology graph is fabricated; the loss is reported as blocking.
     assert!(result.ir.model.faces.is_empty() && result.ir.model.edges.is_empty());
     assert!(result.report.losses.iter().any(|l| l.code.category()
         == cadmpeg_ir::report::LossCategory::Topology
@@ -2238,7 +2237,6 @@ fn decode_transfers_point_plane_cylinder_line() {
         Exactness::Derived
     );
 
-    // The preserved stream owns partial-decode carriers without fabricating topology.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }

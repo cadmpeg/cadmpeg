@@ -276,7 +276,6 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
-    // Typed load/store must preserve each stored arena byte-for-byte.
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
             round_trip.arenas.get(*name),
@@ -10015,7 +10014,6 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
         }
     }
 
-    // A stream that does not close on its own end is rejected whole.
     let mut trailing = bytes.clone();
     trailing.push(0);
     assert!(parse(&trailing, "trailing MetaStream").is_err());
@@ -14811,7 +14809,6 @@ fn decode_yields_metadata_and_honest_report() {
     let mut cur = Cursor::new(f3d);
     let result = codec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    // No geometry was produced, and the report says so.
     assert!(!result.report.geometry_transferred);
     assert!(result.ir.model.faces.is_empty());
     assert!(result.report.error_count() >= 1);
@@ -14820,8 +14817,6 @@ fn decode_yields_metadata_and_honest_report() {
         cadmpeg_ir::report::LossCategory::Geometry
     )));
 
-    // But the explicit fallback BREP is preserved as an unknown passthrough with a hash,
-    // and source metadata was captured.
     let unknowns = result.ir.native_unknowns("f3d").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(result.source_fidelity.retained_records.len(), 2);
@@ -14997,7 +14992,6 @@ fn sab_framer_indexes_records_from_asmheader() {
     assert_eq!(records[6].name, "plane-surface");
     // The face's surface reference (chunk[7]) resolves to the plane at index 6.
     assert_eq!(records[4].ref_at(7), Some(6));
-    // The delta_state boundary record is not part of the active slice.
     assert!(records.iter().all(|r| r.head != "delta_state"));
 }
 
@@ -26180,7 +26174,6 @@ fn a_sketch_link_decodes_in_every_payload_form() {
             .sense,
         None
     );
-    // Form 2 without its trailing `0`, and form 0 with one, are misframed.
     assert!(decoded_sketch_link(SketchLinkForm::Integers(2, &[113, 0, 1, 2, 3])).is_none());
     assert!(decoded_sketch_link(SketchLinkForm::Integers(0, &[113, 0, 1, 2, 3, 0])).is_none());
 }
@@ -26492,8 +26485,6 @@ fn legacy_face_appearance_assignment_decodes_both_variable_width_forms() {
 
 #[test]
 fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
-    // A body-style assignment has an entity id, not a face GUID, before the
-    // visual token. Uppercase or mixed-case GUIDs are not face identities.
     for target in [
         "0_985",
         "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
@@ -27333,7 +27324,6 @@ fn text_encoded_asm_members_classify_as_geometry_carriers() {
             "{name} must classify as a text-encoded BREP carrier"
         );
     }
-    // The binary roles keep their own labels: the new arm must not capture them.
     assert_eq!(
         crate::container::classify("a/b.smb"),
         crate::container::role::BREP_SMB
