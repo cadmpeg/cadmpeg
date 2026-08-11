@@ -381,6 +381,8 @@ Keywords element order is serialization order, not regeneration order. Neutral r
 
 Feature-tree node roles are invariant across configurations. A configuration snapshot changes a tree node's suppression and graph state without changing its role.
 
+Late neutral resolution of active-model hole placement and construction fields propagates to the active configuration snapshot only when the corresponding snapshot fields are empty or unresolved. It does not replace resolved configuration-local fields or inactive configuration state.
+
 A named feature-input object bound to a classless history `Sketch` record with a nonzero source identifier is a profile-feature object. It participates in the same object-order ownership rules as an object whose class is `moProfileFeature_c`.
 
 An extrusion feature-input object stores a little-endian u32 form code before its object-name record. A direct class declaration is preceded by the form code and four or eight zero bytes. A repeated-class name is preceded by the form code, four or eight zero bytes, and its little-endian u16 class token. A repeated `moICE_c` object may instead store the form code immediately before its non-sentinel high-bit class token. The decimal `swVersion` value in the `Contents/SolidWorks` metadata selects four-byte padding below `12000` and eight-byte padding at `12000` or above. Missing or invalid `swVersion` does not select a width. A direct `moICE_c` declaration immediately preceded by `ff ff ff ff` is the sentinel cut form.

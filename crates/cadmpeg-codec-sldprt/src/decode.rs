@@ -2436,7 +2436,7 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
-    sync_active_configuration_face_selections(&mut ir);
+    sync_active_configuration_resolutions(&mut ir);
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
@@ -3245,7 +3245,7 @@ fn build_metadata_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
-    sync_active_configuration_face_selections(&mut ir);
+    sync_active_configuration_resolutions(&mut ir);
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(
         &mut ir,
@@ -3489,7 +3489,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     }
 }
 
-fn sync_active_configuration_face_selections(ir: &mut CadIr) {
+fn sync_active_configuration_resolutions(ir: &mut CadIr) {
     let mut active = ir
         .model
         .configurations
@@ -3502,6 +3502,88 @@ fn sync_active_configuration_face_selections(ir: &mut CadIr) {
     };
     if active.next().is_some() {
         return;
+    }
+    let resolved = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.suppressed != Some(true))
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Hole {
+                placements,
+                kind,
+                diameter,
+                extent,
+                bottom,
+                taper_angle,
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((
+                feature.id.clone(),
+                placements.clone(),
+                *kind,
+                *diameter,
+                extent.clone(),
+                *bottom,
+                *taper_angle,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    for (
+        feature,
+        resolved_placements,
+        resolved_kind,
+        resolved_diameter,
+        resolved_extent,
+        resolved_bottom,
+        resolved_taper_angle,
+    ) in resolved
+    {
+        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+            continue;
+        };
+        if state.suppressed {
+            continue;
+        }
+        let cadmpeg_ir::features::FeatureDefinition::Hole {
+            placements,
+            kind,
+            diameter,
+            extent,
+            bottom,
+            taper_angle,
+            ..
+        } = &mut state.definition
+        else {
+            continue;
+        };
+        if placements.is_empty() && !resolved_placements.is_empty() {
+            *placements = resolved_placements;
+        }
+        let incomplete = diameter.is_none()
+            || extent.as_ref().is_none_or(|extent| {
+                matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
+            })
+            || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. });
+        let resolved_complete = resolved_diameter.is_some()
+            && resolved_extent.as_ref().is_some_and(|extent| {
+                !matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
+            })
+            && !matches!(
+                resolved_kind,
+                cadmpeg_ir::features::HoleKind::Unresolved { .. }
+            );
+        if incomplete && resolved_complete {
+            *kind = resolved_kind;
+            *diameter = resolved_diameter;
+            *extent = resolved_extent;
+            *bottom = resolved_bottom;
+            *taper_angle = resolved_taper_angle;
+        }
     }
     let resolved = ir
         .model
@@ -4020,9 +4102,10 @@ mod design_loss_tests {
     use cadmpeg_ir::features::{
         Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
         ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, FaceSelection,
-        Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, Length,
-        ParameterId, ParameterPmi, ParameterValue, PathRef, PatternKind, PatternSeed,
-        PmiDimensionSubtype, RadiusSpec, RuledSurfaceMode, SurfaceContinuity,
+        Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
+        HoleBottom, HoleKind, HolePlacement, Length, ParameterId, ParameterPmi, ParameterValue,
+        PathRef, PatternKind, PatternSeed, PmiDimensionSubtype, RadiusSpec, RuledSurfaceMode,
+        SurfaceContinuity, Termination,
     };
     use cadmpeg_ir::ids::{BodyId, EdgeId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -4286,7 +4369,7 @@ mod design_loss_tests {
     }
 
     #[test]
-    fn active_configuration_inherits_face_resolved_mirror_plane() {
+    fn active_configuration_inherits_late_feature_resolutions() {
         let mut ir = CadIr::empty(Units::default());
         let feature_id = FeatureId("mirror".into());
         let seed = PatternSeed::Feature(FeatureId("seed".into()));
@@ -4311,6 +4394,42 @@ mod design_loss_tests {
             },
             native_ref: None,
         });
+        let hole_id = FeatureId("hole".into());
+        ir.model.features.push(Feature {
+            id: hole_id.clone(),
+            ordinal: 1,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                position: None,
+                direction: None,
+                placements: vec![HolePlacement::Axis {
+                    origin: Point3::new(1.0, 2.0, 3.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                }],
+                kind: HoleKind::Simple,
+                exit_kind: None,
+                diameter: Some(Length(4.0)),
+                extent: Some(Termination::Blind {
+                    length: Length(12.0),
+                }),
+                bottom: Some(HoleBottom::Flat),
+                taper_angle: None,
+                specification: None,
+                allow_multi_profile_faces: None,
+            },
+            native_ref: None,
+        });
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
@@ -4323,22 +4442,48 @@ mod design_loss_tests {
             parameter_values: BTreeMap::new(),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
-            feature_states: BTreeMap::from([(
-                feature_id.clone(),
-                ConfigurationFeatureState {
-                    suppressed: false,
-                    dependencies: Vec::new(),
-                    outputs: Vec::new(),
-                    definition: FeatureDefinition::Pattern {
-                        seeds: vec![seed],
-                        pattern: PatternKind::Unresolved { form: None },
+            feature_states: BTreeMap::from([
+                (
+                    feature_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: FeatureDefinition::Pattern {
+                            seeds: vec![seed],
+                            pattern: PatternKind::Unresolved { form: None },
+                        },
                     },
-                },
-            )]),
+                ),
+                (
+                    hole_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: FeatureDefinition::Hole {
+                            profile: None,
+                            profile_filter: None,
+                            face: None,
+                            position: None,
+                            direction: None,
+                            placements: Vec::new(),
+                            kind: HoleKind::Simple,
+                            exit_kind: None,
+                            diameter: None,
+                            extent: None,
+                            bottom: None,
+                            taper_angle: None,
+                            specification: None,
+                            allow_multi_profile_faces: None,
+                        },
+                    },
+                ),
+            ]),
             native_ref: None,
         });
 
-        sync_active_configuration_face_selections(&mut ir);
+        sync_active_configuration_resolutions(&mut ir);
 
         assert!(matches!(
             ir.model.configurations[0].feature_states[&feature_id].definition,
@@ -4346,6 +4491,48 @@ mod design_loss_tests {
                 pattern: PatternKind::Mirror { .. },
                 ..
             }
+        ));
+        assert!(matches!(
+            &ir.model.configurations[0].feature_states[&hole_id].definition,
+            FeatureDefinition::Hole {
+                placements,
+                diameter: Some(Length(4.0)),
+                extent: Some(Termination::Blind {
+                    length: Length(12.0)
+                }),
+                bottom: Some(HoleBottom::Flat),
+                ..
+            } if placements.len() == 1
+        ));
+
+        let FeatureDefinition::Hole {
+            placements,
+            diameter,
+            extent,
+            bottom,
+            ..
+        } = &mut ir.model.configurations[0]
+            .feature_states
+            .get_mut(&hole_id)
+            .expect("hole state")
+            .definition
+        else {
+            unreachable!();
+        };
+        placements.clear();
+        *diameter = Some(Length(8.0));
+        *extent = Some(Termination::ThroughAll);
+        *bottom = None;
+        sync_active_configuration_resolutions(&mut ir);
+        assert!(matches!(
+            &ir.model.configurations[0].feature_states[&hole_id].definition,
+            FeatureDefinition::Hole {
+                placements,
+                diameter: Some(Length(8.0)),
+                extent: Some(Termination::ThroughAll),
+                bottom: None,
+                ..
+            } if placements.len() == 1
         ));
     }
 
