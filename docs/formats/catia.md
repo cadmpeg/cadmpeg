@@ -834,7 +834,15 @@ Each `bit` is exactly zero or one. `prototype` identifies the node kind and `gro
 
 ## 8. Zero-entity `a9 03` variant
 
-Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`; records reference each other by **one-based global record ordinal** into the `a9 03` stream.
+Let `D` be the outer `directory_offset`, `P` be the outer
+`directory_length`, and `M` be the first `FINJPL  ` marker in `[P,D)` or `D`
+when no marker exists. The zero-entity record stream is `[P,M)`. A record is in
+the stream only when its complete logical extent ends at or before `M`. Bytes
+in FINJPL segments and `[D,EOF)` cannot define zero-entity records.
+
+Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`;
+records reference each other by **one-based global record ordinal** into the
+`a9 03` stream.
 
 Unframed `05 08 01` coordinate rows lie outside every declared record extent and outside the extended logical extents of support records whose inline data continues past the nominal frame. Marker-like bytes within either extent are record payload, not vertex rows. Logical vertex coordinates derive from lifted support endpoints after the support-occurrence and vertex-incidence registries resolve. Unframed coordinate rows remain unbound while those registries are unresolved.
 

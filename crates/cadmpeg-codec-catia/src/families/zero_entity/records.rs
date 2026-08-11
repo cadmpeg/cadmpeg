@@ -4,6 +4,7 @@
 //! NURBS surface carriers from a zero-entity record stream.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
@@ -283,10 +284,13 @@ fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usi
         .then_some(end)
 }
 
-fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
+fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEntityRecord> {
+    if data.get(range.clone()).is_none() {
+        return Vec::new();
+    }
     let mut records = Vec::new();
-    let mut position = 0usize;
-    while position + 4 <= data.len() {
+    let mut position = range.start;
+    while position + 4 <= range.end {
         if data[position..position + 2] != [0xa9, 0x03] {
             position += 1;
             continue;
@@ -316,7 +320,7 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
         } else {
             nominal_end
         };
-        if end > data.len() {
+        if end > range.end {
             break;
         }
         let Some(one_based_ordinal) = records.len().checked_add(1) else {
@@ -334,6 +338,11 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
         position = end;
     }
     records
+}
+
+#[cfg(any(test, feature = "fuzzing"))]
+fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
+    zero_entity_records_in_range(data, 0..data.len())
 }
 
 fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Option<usize> {
@@ -448,9 +457,19 @@ fn zero_entity_nurbs_knot_lane(
 }
 
 /// Inventory every complete framed record in the one-based global namespace.
+#[cfg(any(test, feature = "fuzzing"))]
 #[must_use]
 pub fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity> {
-    zero_entity_records(data)
+    zero_entity_record_inventory_in_range(data, 0..data.len())
+}
+
+/// Inventory complete framed records whose extents stay inside `range`.
+#[must_use]
+pub(crate) fn zero_entity_record_inventory_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Vec<ZeroEntityRecordIdentity> {
+    zero_entity_records_in_range(data, range)
         .into_iter()
         .map(|record| ZeroEntityRecordIdentity {
             pos: record.pos,
@@ -462,9 +481,19 @@ pub fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity
 }
 
 /// Decode the terminal face-roster, shell, and body ownership roots.
+#[cfg(test)]
 #[must_use]
 pub fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
-    let records = zero_entity_records(data);
+    zero_entity_ownership_root_in_range(data, 0..data.len())
+}
+
+/// Decode ownership roots whose records stay inside `range`.
+#[must_use]
+pub(crate) fn zero_entity_ownership_root_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Option<ZeroEntityOwnershipRoot> {
+    let records = zero_entity_records_in_range(data, range);
     records.windows(3).find_map(|window| {
         let [face_roster, shell, body] = window else {
             return None;
@@ -504,8 +533,18 @@ pub fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
 /// record's second tag byte is also its length code (`length = tag + 12`), so
 /// the decoder walks framed records.
+#[cfg(test)]
 pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
-    zero_entity_records(data)
+    zero_entity_surfaces_in_range(data, 0..data.len())
+}
+
+/// Decode surface carriers whose records stay inside `range`.
+#[must_use]
+pub(crate) fn zero_entity_surfaces_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Vec<ZeroEntitySurface> {
+    zero_entity_records_in_range(data, range)
         .into_iter()
         .filter_map(|record| {
             zero_entity_surface_at(data, record.pos).map(|geometry| ZeroEntitySurface {
@@ -517,9 +556,19 @@ pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
 }
 
 /// Decode surface-carrier ownership and exact face-local support occurrences.
+#[cfg(test)]
 #[must_use]
 pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
-    let records = zero_entity_records(data);
+    zero_entity_support_runs_in_range(data, 0..data.len())
+}
+
+/// Decode support runs whose complete record population stays inside `range`.
+#[must_use]
+pub(crate) fn zero_entity_support_runs_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Vec<ZeroEntitySupportRun> {
+    let records = zero_entity_records_in_range(data, range);
     let mut runs = Vec::new();
     let mut index = 0usize;
     while index + 1 < records.len() {
@@ -1536,9 +1585,19 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
 }
 
 /// Decode complete `5e1a` allocation tuples.
+#[cfg(test)]
 #[must_use]
 pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
-    let records = zero_entity_records(data);
+    zero_entity_edge_strides_in_range(data, 0..data.len())
+}
+
+/// Decode edge strides whose records stay inside `range`.
+#[must_use]
+pub(crate) fn zero_entity_edge_strides_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Vec<ZeroEntityEdgeStride> {
+    let records = zero_entity_records_in_range(data, range);
     records
         .into_iter()
         .filter_map(|record| {
@@ -1572,9 +1631,19 @@ pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
 }
 
 /// Decode complete `2569` headers with their adjacent `(1, 2)` oriented uses.
+#[cfg(test)]
 #[must_use]
 pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
-    let records = zero_entity_records(data);
+    zero_entity_oriented_use_pairs_in_range(data, 0..data.len())
+}
+
+/// Decode oriented-use pairs whose records stay inside `range`.
+#[must_use]
+pub(crate) fn zero_entity_oriented_use_pairs_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Vec<ZeroEntityOrientedUsePair> {
+    let records = zero_entity_records_in_range(data, range);
     records
         .windows(3)
         .filter_map(|records| {
@@ -1629,9 +1698,19 @@ pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUseP
 }
 
 /// Decode complete counted `050b`, `0510`, and `0515` incidence records.
+#[cfg(test)]
 #[must_use]
 pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
-    let records = zero_entity_records(data);
+    zero_entity_vertex_incidences_in_range(data, 0..data.len())
+}
+
+/// Decode vertex incidences whose records stay inside `range`.
+#[must_use]
+pub(crate) fn zero_entity_vertex_incidences_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Vec<ZeroEntityVertexIncidence> {
+    let records = zero_entity_records_in_range(data, range);
     records
         .windows(2)
         .filter_map(|records| {

@@ -4733,6 +4733,59 @@ fn decode_zero_entity_falls_back_to_metadata() {
 }
 
 #[test]
+fn zero_entity_directory_markers_stay_outside_the_record_stream() {
+    let mut body = vec![0u8; 16];
+    body[12..].copy_from_slice(&[0xa9, 0x03, 0x10, 0x08]);
+    let directory = [0xa9, 0x03, 0x10, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let directory_offset = 16 + body.len();
+    let mut file = Vec::new();
+    file.extend_from_slice(OUTER_MAGIC);
+    file.extend_from_slice(&be32(
+        u32::try_from(directory_offset).expect("bounded directory offset"),
+    ));
+    file.extend_from_slice(&be32(
+        u32::try_from(directory.len()).expect("bounded directory length"),
+    ));
+    file.extend_from_slice(&body);
+    file.extend_from_slice(&directory);
+
+    let scan = crate::container::scan_bytes(file);
+    assert_eq!(scan.census.a9_records, 0);
+    assert_eq!(scan.variant, Variant::Unknown);
+    let ranges = crate::container::consolidated_record_ranges(&scan);
+    let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
+    assert!(native.zero_entity_records.is_empty());
+    assert!(native.zero_entity_support_runs.is_empty());
+}
+
+#[test]
+fn zero_entity_finjpl_records_stay_outside_the_record_stream() {
+    let record = [0xa9, 0x03, 0x10, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let mut body = record.to_vec();
+    body.extend_from_slice(b"FINJPL  ");
+    body.extend_from_slice(&record);
+    let directory = [0u8; 16];
+    let directory_offset = 16 + body.len();
+    let mut file = Vec::new();
+    file.extend_from_slice(OUTER_MAGIC);
+    file.extend_from_slice(&be32(
+        u32::try_from(directory_offset).expect("bounded directory offset"),
+    ));
+    file.extend_from_slice(&be32(
+        u32::try_from(directory.len()).expect("bounded directory length"),
+    ));
+    file.extend_from_slice(&body);
+    file.extend_from_slice(&directory);
+
+    let scan = crate::container::scan_bytes(file);
+    assert_eq!(scan.census.a9_records, 1);
+    assert_eq!(scan.variant, Variant::ZeroEntity);
+    let ranges = crate::container::consolidated_record_ranges(&scan);
+    let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
+    assert_eq!(native.zero_entity_records.len(), 1);
+}
+
+#[test]
 fn decode_accounts_for_unresolved_legacy_entity_runs() {
     let mut bytes = zero_entity_catpart();
     for (entity_id, lead) in [(1_u32, 0x81), (3, 0xe5), (8, 0xfd)] {

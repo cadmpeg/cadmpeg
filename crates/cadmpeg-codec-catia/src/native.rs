@@ -7409,8 +7409,8 @@ fn zero_entity_endpoint_locus_candidates(
         .collect()
 }
 
-fn zero_entity_edge_strides(bytes: &[u8]) -> Vec<CatiaZeroEntityEdgeStride> {
-    crate::families::zero_entity::records::zero_entity_edge_strides(bytes)
+fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityEdgeStride> {
+    crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range)
         .into_iter()
         .enumerate()
         .map(|(index, record)| CatiaZeroEntityEdgeStride {
@@ -7424,8 +7424,11 @@ fn zero_entity_edge_strides(bytes: &[u8]) -> Vec<CatiaZeroEntityEdgeStride> {
         .collect()
 }
 
-fn zero_entity_oriented_use_pairs(bytes: &[u8]) -> Vec<CatiaZeroEntityOrientedUsePair> {
-    crate::families::zero_entity::records::zero_entity_oriented_use_pairs(bytes)
+fn zero_entity_oriented_use_pairs(
+    bytes: &[u8],
+    range: Range<usize>,
+) -> Vec<CatiaZeroEntityOrientedUsePair> {
+    crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(bytes, range)
         .into_iter()
         .enumerate()
         .map(|(index, pair)| CatiaZeroEntityOrientedUsePair {
@@ -7443,8 +7446,11 @@ fn zero_entity_oriented_use_pairs(bytes: &[u8]) -> Vec<CatiaZeroEntityOrientedUs
         .collect()
 }
 
-fn zero_entity_ownership_roots(bytes: &[u8]) -> Vec<CatiaZeroEntityOwnershipRoot> {
-    crate::families::zero_entity::records::zero_entity_ownership_root(bytes)
+fn zero_entity_ownership_roots(
+    bytes: &[u8],
+    range: Range<usize>,
+) -> Vec<CatiaZeroEntityOwnershipRoot> {
+    crate::families::zero_entity::records::zero_entity_ownership_root_in_range(bytes, range)
         .into_iter()
         .map(|root| CatiaZeroEntityOwnershipRoot {
             id: "catia:zero-entity:ownership-root#0".to_string(),
@@ -7461,9 +7467,10 @@ fn zero_entity_ownership_roots(bytes: &[u8]) -> Vec<CatiaZeroEntityOwnershipRoot
 
 fn zero_entity_vertex_incidences(
     bytes: &[u8],
+    range: Range<usize>,
     records: &[CatiaZeroEntityRecord],
 ) -> Vec<CatiaZeroEntityVertexIncidence> {
-    crate::families::zero_entity::records::zero_entity_vertex_incidences(bytes)
+    crate::families::zero_entity::records::zero_entity_vertex_incidences_in_range(bytes, range)
         .into_iter()
         .enumerate()
         .map(|(index, record)| {
@@ -7481,8 +7488,8 @@ fn zero_entity_vertex_incidences(
         .collect()
 }
 
-fn zero_entity_records(bytes: &[u8]) -> Vec<CatiaZeroEntityRecord> {
-    crate::families::zero_entity::records::zero_entity_record_inventory(bytes)
+fn zero_entity_records(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityRecord> {
+    crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range)
         .into_iter()
         .map(|record| CatiaZeroEntityRecord {
             id: format!("catia:zero-entity:record#{}", record.record_ordinal),
@@ -10303,12 +10310,24 @@ impl CatiaNative {
             consolidated_revolutions(bytes, consolidated_records, &consolidated_circles);
         let consolidated_spheres = consolidated_spheres(bytes, consolidated_records);
         let consolidated_tori = consolidated_tori(bytes, consolidated_records);
-        let zero_entity_records = zero_entity_records(bytes);
-        let zero_entity_edge_strides = zero_entity_edge_strides(bytes);
-        let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
-        let zero_entity_ownership_roots = zero_entity_ownership_roots(bytes);
+        let zero_entity_range = container::outer_preamble_range(bytes).unwrap_or_else(|| {
+            if bytes.starts_with(container::OUTER_MAGIC) {
+                0..0
+            } else {
+                0..bytes.len()
+            }
+        });
+        let zero_entity_records = zero_entity_records(bytes, zero_entity_range.clone());
+        let zero_entity_edge_strides = zero_entity_edge_strides(bytes, zero_entity_range.clone());
+        let zero_entity_oriented_use_pairs =
+            zero_entity_oriented_use_pairs(bytes, zero_entity_range.clone());
+        let zero_entity_ownership_roots =
+            zero_entity_ownership_roots(bytes, zero_entity_range.clone());
         let parsed_zero_entity_support_runs =
-            crate::families::zero_entity::records::zero_entity_support_runs(bytes);
+            crate::families::zero_entity::records::zero_entity_support_runs_in_range(
+                bytes,
+                zero_entity_range.clone(),
+            );
         let parsed_zero_entity_endpoint_pairs =
             crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
                 &parsed_zero_entity_support_runs,
@@ -10326,7 +10345,7 @@ impl CatiaNative {
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
-            zero_entity_vertex_incidences(bytes, &zero_entity_records);
+            zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records);
         let mut consolidated_edge_nodes =
             consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles);
         let consolidated_edge_runs = consolidated_edge_runs(

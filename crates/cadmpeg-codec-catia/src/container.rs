@@ -405,16 +405,31 @@ fn outer_body_range(data: &[u8]) -> Option<Range<usize>> {
         .then_some(directory_length..directory_offset)
 }
 
+/// Return the outer-preamble byte range before the first bounded FINJPL segment.
+///
+/// The trailing stream directory and every FINJPL segment are outside this
+/// range. Zero-entity records and the preferred E5 record stream can use the
+/// preamble as an authoritative physical ownership boundary.
+/// A zeroed directory pair has no declared directory, so its bytes after the
+/// 16-byte prefix form the fallback preamble.
+pub(crate) fn outer_preamble_range(data: &[u8]) -> Option<Range<usize>> {
+    let body = outer_body_range(data).or_else(|| {
+        (data.starts_with(OUTER_MAGIC) && u32_be(data, 8) == Some(0) && u32_be(data, 12) == Some(0))
+            .then_some(OUTER_MAGIC.len() + 8..data.len())
+    })?;
+    let end = data[body.clone()]
+        .windows(FINJPL_MARKER.len())
+        .position(|bytes| bytes == FINJPL_MARKER)
+        .map_or(body.end, |relative| body.start + relative);
+    Some(body.start..end)
+}
+
 fn e5_record_stream_in_segments(
     data: &[u8],
     body: Range<usize>,
     segments: &[FinjplSegment],
 ) -> Option<Range<usize>> {
-    let first_finjpl = data[body.clone()]
-        .windows(FINJPL_MARKER.len())
-        .position(|bytes| bytes == FINJPL_MARKER)
-        .map_or(body.end, |relative| body.start + relative);
-    let preamble = body.start..first_finjpl;
+    let preamble = outer_preamble_range(data)?;
     if coherent_e5_record_count(&data[preamble.clone()]) >= 10 {
         return Some(preamble);
     }
@@ -560,7 +575,6 @@ fn vertex_row_at(data: &[u8], position: usize) -> bool {
 /// Standard-nested BREP-spine markers used for variant identification.
 const EDGE_DELIMITER: &[u8; 8] = &[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
-const A9_MARKER: &[u8; 2] = &[0xa9, 0x03];
 pub(crate) const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
@@ -622,8 +636,8 @@ pub struct Census {
     pub edge_delimiters: usize,
     /// `05 08 01` vertex-record signatures in the BREP stream.
     pub vertex_markers: usize,
-    /// `a9 03` record-family markers in the whole file.
-    pub a9_markers: usize,
+    /// Complete `a9 03` records in the outer preamble.
+    pub a9_records: usize,
     /// `e5 0d 03` record-family markers in the outer body.
     pub e5_markers: usize,
 }
@@ -1195,7 +1209,7 @@ fn identify_variant(
     match (inner, brep) {
         // No nested container at all.
         (None, _) => {
-            if census.a9_markers > 0 {
+            if census.a9_records > 0 {
                 Variant::ZeroEntity
             } else {
                 Variant::Unknown
@@ -1242,7 +1256,12 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     });
 
     let mut census = Census {
-        a9_markers: count_subslice(&data, A9_MARKER),
+        a9_records: outer_preamble_range(&data).map_or(0, |range| {
+            crate::families::zero_entity::records::zero_entity_record_inventory_in_range(
+                &data, range,
+            )
+            .len()
+        }),
         e5_markers: outer_body
             .as_ref()
             .map_or(0, |body| count_subslice(&data[body.clone()], E5_MARKER)),
@@ -1441,10 +1460,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             scan.census.edge_delimiters
         ));
     }
-    if scan.census.a9_markers > 0 || scan.census.e5_markers > 0 {
+    if scan.census.a9_records > 0 || scan.census.e5_markers > 0 {
         notes.push(format!(
             "record-family census: {} a9 03, {} e5 0d 03",
-            scan.census.a9_markers, scan.census.e5_markers
+            scan.census.a9_records, scan.census.e5_markers
         ));
     }
     if let Some(version) = &scan.last_save_version {

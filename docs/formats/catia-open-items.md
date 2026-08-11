@@ -32,16 +32,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bit assignments to validate an extent and to write its flags.
 
-### CR-03. Zero-entity record ownership boundary
-
-**Question.** Which byte range owns zero-entity `a9 03` records when matching records also occur in the trailing directory or another outer region?
-
-**Known.** `catia.md` §1 and §8 describe zero-entity records as an outer-preamble family. The container census and zero-entity record inventory currently scan the complete byte image.
-
-**Need.** We must bind the record census and topology transfer to the owning outer preamble so directory records cannot become geometry.
-
-**Note.** Added by the 2026-08-10 hostile sweep. `container.rs:1220-1257` counts `a9 03` markers over the complete image, and `zero_entity/records.rs:286-337` walks every complete-looking record from offset zero. A valid-looking `a9` record in a trailing directory is therefore emitted with the preamble records; tag-specific lengths and geometry checks validate the record shape but not its ownership. Confidence: high for code behavior; medium for real-file occurrence.
-
 ### CR-04. E5 precedence with inner records but no BREP
 
 **Question.** What precedence resolves a coherent E5 stream when a nested container has no BREP body, or when zero-entity records coexist with a coherent E5 stream?
@@ -634,7 +624,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the terminal control byte in each `0x5fxx` face record control?
 
-**Known.** `catia.md` §8 "Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`; records reference each" defines the zero-entity face roster and support incidences.
+**Known.** `catia.md` §8 "Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`" defines the zero-entity face roster and support incidences.
 
 **Need.** We must know the control to validate and write the face.
 
