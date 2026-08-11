@@ -3211,7 +3211,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The marked shifted Extrude prologue inserts marker byte `01` at primary-header offset 27"
 size = 43
-note = "Offsets are relative to the marked shifted Extrude primary indexed header. The marker shifts every subsequent field in the shifted layout by one byte."
+note = "Offsets are relative to the marked shifted Extrude primary indexed header. The marker shifts the operation field run by one byte."
 
 [[record.gap]]
 offset = 0
@@ -3282,10 +3282,42 @@ source = "spec"
 anchor = "start support at offset 42"
 
 [[record]]
+name = "shifted_extrude_offset_profile_extent_lane"
+kind = "byte"
+section = "3.1"
+anchor = "An offset-profile form with its reference-count field at offset 262"
+size = 134
+note = "Offsets are relative to the shifted Extrude primary indexed header. The lane ends before the remaining scope envelope."
+
+[[record.gap]]
+offset = 0
+size = 116
+note = "The shifted prologue, profile-normal envelope, and unselected fields precede the widened extent lane."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 116
+type = "u32"
+source = "spec"
+anchor = "uses the widened extent lane at offsets 116 and 130"
+
+[[record.gap]]
+offset = 120
+size = 10
+note = "The fixed widened-lane payload separates the side extent values."
+
+[[record.field]]
+name = "second_side_extent"
+offset = 130
+type = "u32"
+source = "spec"
+anchor = "uses the widened extent lane at offsets 116 and 130"
+
+[[record]]
 name = "marked_shifted_extrude_symmetric_extent_lane"
 kind = "byte"
 section = "3.1"
-anchor = "A symmetric distance form with its reference-count field at offset 284"
+anchor = "A fully shifted symmetric distance form moves its extent fields"
 size = 135
 note = "Offsets are relative to the marked shifted Extrude primary indexed header. Unselected fields in the intervening envelope have no extent semantics."
 
@@ -3299,7 +3331,7 @@ name = "first_side_extent"
 offset = 117
 type = "u32"
 source = "spec"
-anchor = "stores first-side extent `1` at offset 117"
+anchor = "its first-side extent `1` is at offset 117"
 
 [[record.gap]]
 offset = 121
@@ -3311,7 +3343,7 @@ name = "second_side_extent"
 offset = 131
 type = "u32"
 source = "spec"
-anchor = "second-side extent `0` at offset 131"
+anchor = "its second-side extent `0` is at offset 131"
 
 [[record]]
 name = "shifted_extrude_offset_283_two_sided_tail"

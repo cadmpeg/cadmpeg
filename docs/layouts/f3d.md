@@ -1130,7 +1130,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 43 B
 
-Offsets are relative to the marked shifted Extrude primary indexed header. The marker shifts every subsequent field in the shifted layout by one byte.
+Offsets are relative to the marked shifted Extrude primary indexed header. The marker shifts the operation field run by one byte.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1148,6 +1148,22 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
 
+## `shifted_extrude_offset_profile_extent_lane`
+
+Spec §3.1 · layout: byte offsets · size: 134 B
+
+Offsets are relative to the shifted Extrude primary indexed header. The lane ends before the remaining scope envelope.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 116 | 4 | `first_side_extent` | `u32` | little | spec | uses the widened extent lane at offsets 116 and 130 |
+| 130 | 4 | `second_side_extent` | `u32` | little | spec | uses the widened extent lane at offsets 116 and 130 |
+
+Unstated regions:
+
+- `0..116` (116 B): The shifted prologue, profile-normal envelope, and unselected fields precede the widened extent lane.
+- `120..130` (10 B): The fixed widened-lane payload separates the side extent values.
+
 ## `marked_shifted_extrude_symmetric_extent_lane`
 
 Spec §3.1 · layout: byte offsets · size: 135 B
@@ -1156,8 +1172,8 @@ Offsets are relative to the marked shifted Extrude primary indexed header. Unsel
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 117 | 4 | `first_side_extent` | `u32` | little | spec | stores first-side extent `1` at offset 117 |
-| 131 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `0` at offset 131 |
+| 117 | 4 | `first_side_extent` | `u32` | little | spec | its first-side extent `1` is at offset 117 |
+| 131 | 4 | `second_side_extent` | `u32` | little | spec | its second-side extent `0` is at offset 131 |
 
 Unstated regions:
 

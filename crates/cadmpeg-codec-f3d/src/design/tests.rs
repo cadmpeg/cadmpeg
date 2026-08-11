@@ -9092,6 +9092,33 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             ..
         })
     ));
+    let shifted_offset_profile = scope(
+        "Extrude",
+        2,
+        (1, 2),
+        0,
+        1,
+        1,
+        None,
+        false,
+        None,
+        Some(((1, 0), true)),
+        Some(262),
+    );
+    assert!(matches!(
+        shifted_offset_profile.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: 27,
+            side_extent_discriminator_offsets: [116, 130],
+            extent: Some(DesignExtrudeExtent::OneSidedDistance),
+            start: DesignExtrudeStart::OffsetProfilePlane,
+            start_offset: 41,
+            ..
+        })
+    ));
     let shifted_two_sided = scope(
         "Extrude",
         2,

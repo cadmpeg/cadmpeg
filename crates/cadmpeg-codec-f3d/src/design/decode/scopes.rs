@@ -6382,6 +6382,7 @@ fn exact_legacy_shifted_extrude_prologue(
             )
         } else {
             let (first_offset, second_offset) = match reference_count_delta {
+                262 if bytes.get(operation_offset.checked_add(14)?) == Some(&1) => (116, 130),
                 252 | 262 | 263 => (106, 110),
                 272 => (116, 130),
                 283 => (116, 130),
