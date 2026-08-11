@@ -24,5 +24,8 @@ pub use error::{
 };
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
-pub use space::{ByteRange, SpaceId};
-pub use view::{BoundedCount, View};
+pub use space::{
+    resolve_address, AddressStep, AddressStepKind, ByteRange, ResolvedAddress, SpaceDerivation,
+    SpaceDescriptor, SpaceId,
+};
+pub use view::{bounded_len, BoundedCount, View};

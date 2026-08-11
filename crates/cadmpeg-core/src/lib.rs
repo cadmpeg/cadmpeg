@@ -4,7 +4,6 @@
 pub mod be;
 pub mod compare;
 pub mod container;
-pub mod cursor;
 pub mod decode;
 pub mod error;
 #[cfg(feature = "golden")]

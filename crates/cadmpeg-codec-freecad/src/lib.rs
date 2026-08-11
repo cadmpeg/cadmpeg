@@ -1194,11 +1194,11 @@ impl Codec for FcstdCodec {
         let thumbnail = scan
             .data
             .get("thumbnails/Thumbnail.png")
-            .map(|bytes| ("thumbnails/Thumbnail.png", bytes))
+            .map(|view| ("thumbnails/Thumbnail.png", view.window()))
             .or_else(|| {
                 scan.data
                     .get("Thumbnail.png")
-                    .map(|bytes| ("Thumbnail.png", bytes))
+                    .map(|view| ("Thumbnail.png", view.window()))
             });
         if let Some((_, thumbnail)) = thumbnail {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
@@ -1231,9 +1231,13 @@ impl Codec for FcstdCodec {
         namespace.set_arena("physical_ledger", &scan.ledger)?;
         #[allow(clippy::if_not_else)]
         if !options.container_only {
-            let document_bytes = scan.data.get("Document.xml").ok_or_else(|| {
-                CodecError::Malformed("Document.xml disappeared after scan".into())
-            })?;
+            let document_bytes = scan
+                .data
+                .get("Document.xml")
+                .map(|view| view.window())
+                .ok_or_else(|| {
+                    CodecError::Malformed("Document.xml disappeared after scan".into())
+                })?;
             let graph = persistence::parse(document_bytes)?;
             for property in &graph.properties {
                 for side_entry in &property.side_entries {
@@ -1249,12 +1253,16 @@ impl Codec for FcstdCodec {
                 .entries
                 .iter()
                 .map(|entry| {
-                    let bytes = scan.data.get(&entry.name).ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "entry {} disappeared after scan",
-                            entry.name
-                        ))
-                    })?;
+                    let bytes = scan
+                        .data
+                        .get(&entry.name)
+                        .map(|view| view.window())
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "entry {} disappeared after scan",
+                                entry.name
+                            ))
+                        })?;
                     let referenced_by = graph
                         .properties
                         .iter()
@@ -1347,10 +1355,10 @@ impl Codec for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena("design_census", &design_census)?;
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
-            let gui_graph = if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
+            let gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     &mut ir,
-                    gui_bytes,
+                    gui_view.window(),
                     &scan.data,
                     &graph.objects,
                     &graph.properties,

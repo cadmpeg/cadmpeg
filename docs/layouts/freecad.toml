@@ -122,8 +122,8 @@ anchor = "a little-endian count followed by packed-color records"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-freecad/src/gui.rs"
-contains = "let count = cursor.u32_le()"
-note = "The bounded cursor reads the leading count and each packed-colour record as little-endian u32."
+contains = "let count = view.req_u32_le()"
+note = "The bounded view reads the leading count and each packed-colour record as little-endian u32."
 
 [[record]]
 name = "link_array_side_entry_header"

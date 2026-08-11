@@ -1392,7 +1392,7 @@ fn parse_map(
 ) -> Option<SpannedValue> {
     let remaining = bytes.len().saturating_sub(*cursor);
     // Each entry is at least a one-byte key marker and a one-byte value marker.
-    let len = cadmpeg_core::cursor::bounded_len(len as u64, 2, remaining)?;
+    let len = cadmpeg_core::decode::bounded_len(len as u64, 2, remaining)?;
     let mut values = BTreeMap::new();
     for _ in 0..len {
         let key_value = parse_value(bytes, cursor, depth + 1)?;
@@ -1419,7 +1419,7 @@ fn parse_array(
     // Every element encodes as at least one marker byte, so a length exceeding
     // the unread input cannot be satisfied and is rejected before allocating.
     let remaining = bytes.len().saturating_sub(*cursor);
-    let len = cadmpeg_core::cursor::bounded_len(len as u64, 1, remaining)?;
+    let len = cadmpeg_core::decode::bounded_len(len as u64, 1, remaining)?;
     let mut values = Vec::with_capacity(len);
     for _ in 0..len {
         values.push(parse_value(bytes, cursor, depth + 1)?);

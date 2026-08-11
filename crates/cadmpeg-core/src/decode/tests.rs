@@ -252,3 +252,39 @@ fn committed_reads_preserve_truncation_location_and_operation() {
                 && context.location == Some(location)
     ));
 }
+
+#[test]
+fn nested_member_address_is_inspect_replayable() {
+    let descriptors = vec![
+        SpaceDescriptor {
+            id: SpaceId::ROOT,
+            label: "root".into(),
+            derivation: SpaceDerivation::Root,
+        },
+        SpaceDescriptor {
+            id: SpaceId::from_index(1),
+            label: "GuiDocument.xml".into(),
+            derivation: SpaceDerivation::Expanded {
+                parent: SpaceId::ROOT,
+                source_range: ByteRange { start: 30, end: 90 },
+            },
+        },
+    ];
+    let address = resolve_address(
+        &descriptors,
+        SourceLocation {
+            space: SpaceId::from_index(1),
+            offset: 120,
+        },
+    );
+    assert_eq!(address.path(), "root/GuiDocument.xml@120");
+    assert_eq!(address.steps[1].kind, AddressStepKind::ExpandedMember);
+    let commands = address.inspect_commands("part.FCStd");
+    assert_eq!(
+        commands,
+        [
+            "cadmpeg inspect extract part.FCStd GuiDocument.xml -o part.FCStd.member".to_string(),
+            "cadmpeg inspect hex part.FCStd.member --offset 120 --len 64".to_string(),
+        ]
+    );
+}

@@ -12,10 +12,45 @@ audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
 api_baseline_dir = "docs/api-baseline"
 measured_at = "2bb9a14d97e376495b3137a878c4de34c1eef8ed"
 
-# Empty until Phase 2. Example row shape (commented):
+# Row shape:
 # [[change]]
 # commit = "<sha>"
 # crate = "cadmpeg-core"
 # kind = "deletion" # deletion | move | visibility | signature | trait_impl | field
 # item = "cadmpeg_core::cursor::Cursor"
-# reason = "replaced by View; FreeCAD and Rhino ports complete"
+# reason = "..."
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::cursor::Cursor"
+reason = "replaced by View::read_counted; FreeCAD and sldprt ports complete"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::cursor"
+reason = "module deleted; bounded_len re-homed to cadmpeg_core::decode"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "move"
+item = "cadmpeg_core::cursor::bounded_len -> cadmpeg_core::decode::bounded_len"
+reason = "keep adopted bounded_len after Cursor deletion"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::View::read_counted"
+reason = "absorb Cursor::read_counted for FreeCAD/sldprt counted reads"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::{SpaceDescriptor,SpaceDerivation,ResolvedAddress,resolve_address,DecodeContext::resolve_location,DecodeContext::register_slice_as,DecodeContext::begin_expand_as}"
+reason = "stable space descriptors and sealed-boundary address resolution for inspect replay"
