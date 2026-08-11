@@ -553,6 +553,19 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
         FeatureDefinition::SketchBlockDefinition { sketch } => sketch.is_none(),
         FeatureDefinition::SketchBlockInstance { block, .. } => block.is_none(),
+        FeatureDefinition::Form { cages } => cages.is_empty(),
+        FeatureDefinition::Block {
+            dimensions,
+            placement,
+            op,
+        } => {
+            dimensions.is_none()
+                || placement.is_none()
+                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
+        FeatureDefinition::Primitive { op, .. } => {
+            *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
         FeatureDefinition::Pattern { seeds, pattern } => {
             seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
         }
@@ -5369,6 +5382,65 @@ mod tests {
             serde_json::json!({
                 "definition": "offset_surface",
                 "faces": {"kind": "faces", "value": ["face:1"]}
+            }),
+        )));
+    }
+
+    #[test]
+    fn form_and_primitive_completeness_requires_construction_payloads() {
+        let definition = |value| {
+            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+                .expect("construction definition")
+        };
+
+        assert!(!feature_definition_is_incomplete(&definition(
+            serde_json::json!({"definition": "form", "cages": ["subd:1"]}),
+        )));
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({"definition": "form", "cages": []}),
+        )));
+        assert!(!feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "block",
+                "dimensions": [30.0, 40.0, 20.0],
+                "placement": [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ],
+                "op": "join"
+            }),
+        )));
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "block",
+                "dimensions": [30.0, 40.0, 20.0],
+                "op": "join"
+            }),
+        )));
+        assert!(!feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "primitive",
+                "solid": {
+                    "kind": "cylinder",
+                    "radius": 15.0,
+                    "height": 7.0,
+                    "angle": std::f64::consts::TAU
+                },
+                "op": "join"
+            }),
+        )));
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "primitive",
+                "solid": {
+                    "kind": "cylinder",
+                    "radius": 15.0,
+                    "height": 7.0,
+                    "angle": std::f64::consts::TAU
+                },
+                "op": "unresolved"
             }),
         )));
     }
