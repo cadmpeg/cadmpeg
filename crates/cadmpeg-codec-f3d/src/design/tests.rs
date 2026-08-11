@@ -25,7 +25,7 @@ use crate::design::decode::operands::{
     parse_construction_operand_path, parse_construction_operand_transform,
     parse_construction_tracking_path, parse_edge_operand, parse_entity_selection_operand,
     parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-    parse_sketch_profile, parse_work_point_vertex_recipe, ConstructionOperandGroupParse,
+    parse_sketch_profile, parse_vertex_recipe, ConstructionOperandGroupParse,
     FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
@@ -13531,7 +13531,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_index: 9,
         record_index: 303,
     };
-    let parsed_vertex = parse_work_point_vertex_recipe(
+    let parsed_vertex = parse_vertex_recipe(
         &vertex_bytes,
         crate::ids::native_stream(&scope.id).expect("scope stream"),
         &vertex_header,

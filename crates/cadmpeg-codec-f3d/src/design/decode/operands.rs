@@ -201,7 +201,7 @@ pub fn bind_work_point_input_carriers(
             let Some(header) = headers.get(&(stream.clone(), input.record_index)) else {
                 continue;
             };
-            if let Some(recipe) = parse_work_point_vertex_recipe(bytes, &stream, header, recipes) {
+            if let Some(recipe) = parse_vertex_recipe(bytes, &stream, header, recipes) {
                 input.carrier = Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                     recipe,
                 }));
@@ -3110,8 +3110,8 @@ enum RecipeOperandTerminator {
     NextIndexedAfterRecipe { limit: u64 },
 }
 
-/// Parse the exact vertex-recipe envelope used by a `WorkPoint` input.
-pub(crate) fn parse_work_point_vertex_recipe(
+/// Parse one exact persistent vertex-recipe envelope.
+pub(crate) fn parse_vertex_recipe(
     bytes: &[u8],
     stream: &str,
     header: &DesignRecordHeader,
