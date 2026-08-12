@@ -1315,18 +1315,23 @@ pub(super) fn compact_extrusion_to_face_at(
     if !declared && !compact_single_face_child_body_at(payload, body_offset) {
         return None;
     }
-    let mut candidates = Vec::new();
-    if legacy_single_face_reference_path_at(payload, body_offset).is_some() {
-        candidates.push(body_offset);
-    }
-    candidates.extend(compact_termination_reference_candidates(
+    // A declared child begins with a fixed body header. Starting the marker
+    // search at that header lets the legacy path decoder reinterpret the
+    // header as a second, spurious compact reference. The modern marker is
+    // always after the header; an undeclared legacy child still needs the
+    // body offset as its fallback anchor.
+    let search_start = if declared {
+        body_offset.saturating_add(11)
+    } else {
+        body_offset
+    };
+    let compact_candidates = distinct_offsets(compact_termination_reference_candidates(
         payload,
-        body_offset,
+        search_start,
         end,
         declared,
     ));
-    let candidates = distinct_offsets(candidates);
-    match candidates.as_slice() {
+    match compact_candidates.as_slice() {
         [candidate] => Some(*candidate),
         [] if declared && compact_tokenized_single_face_child_at(payload, body_offset) => {
             // A declared single-face child is still a complete native
@@ -1334,6 +1339,18 @@ pub(super) fn compact_extrusion_to_face_at(
             // component path uses an unknown layout. Preserve that child as
             // the reference instead of discarding the independently decoded
             // to-face termination.
+            Some(body_offset)
+        }
+        [] if declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
+            // Some declared children retain the older counted path directly
+            // in the body and do not carry a modern marker. Preserve that
+            // complete legacy selection when no modern marker is present.
+            Some(body_offset)
+        }
+        [] if !declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
+            // Legacy streams place the path directly in the child body and
+            // have no compact marker to identify. Keep that form as a
+            // fallback only after the modern marker search is empty.
             Some(body_offset)
         }
         _ => None,
