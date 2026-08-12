@@ -260,6 +260,32 @@ fn detect_matches_ugc_magic_only() {
 }
 
 #[test]
+fn decode_refuses_when_max_entities_is_below_section_cardinality() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let data = build_prt(
+        "c",
+        &[
+            ("THMB_IMG_MAIN", jpeg_payload()),
+            ("VisibGeom", visibgeom_payload(0, 0)),
+        ],
+    );
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 1;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect_err("max_entities below section count must refuse at admission");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn scan_decodes_length_prefixed_native_model_name() {
     let data = b"#UGC:2 PART test \\\n#- CMNM 00bwidget.prt                                      \\\n#-END_OF_UGC_HEADER\n"
         .to_vec();

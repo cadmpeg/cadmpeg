@@ -1782,6 +1782,7 @@ fn finish_model_decode<'a>(
     brep: Brep,
     body_visibilities: Vec<crate::records::BodyVisibility>,
     undecoded_candidates: usize,
+    admitted_entities: u64,
 ) -> Result<DecodeResult, CodecError> {
     F3dDecodeSession::from_geometry(
         ctx,
@@ -1790,6 +1791,7 @@ fn finish_model_decode<'a>(
         brep,
         body_visibilities,
         undecoded_candidates,
+        admitted_entities,
     )?
     .into_result()
 }
@@ -1824,6 +1826,7 @@ struct F3dDecodeSession<'a> {
     deferred_xref: Option<Result<Option<crate::xref::XrefTable>, CodecError>>,
     deferred_non_root_act: Option<usize>,
     deferred_has_appearance: Option<bool>,
+    admitted_entities: u64,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -1834,6 +1837,7 @@ impl<'a> F3dDecodeSession<'a> {
         brep: Brep,
         body_visibilities: Vec<crate::records::BodyVisibility>,
         undecoded_candidates: usize,
+        mut admitted_entities: u64,
     ) -> Result<Self, CodecError> {
         let mut report = build_geometry_report(scan, &brep);
         if undecoded_candidates != 0 {
@@ -1855,6 +1859,9 @@ impl<'a> F3dDecodeSession<'a> {
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
         let (mut ir, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
+        // ASM transfer already charged its delta; keep the running counter in
+        // sync so a later admit_entities call cannot double-count those bodies.
+        admitted_entities = admitted_entities.max(ir.model.entity_count() as u64);
         let AsmTransferRemainder {
             body_keys: _,
             face_keys: _,
@@ -1868,6 +1875,11 @@ impl<'a> F3dDecodeSession<'a> {
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
+        ctx.admit_entities(
+            ir.model.entity_count() as u64,
+            &mut admitted_entities,
+            "admit F3D geometry entities",
+        )?;
         Ok(Self {
             ctx,
             scan,
@@ -1884,10 +1896,15 @@ impl<'a> F3dDecodeSession<'a> {
             deferred_xref: None,
             deferred_non_root_act: None,
             deferred_has_appearance: None,
+            admitted_entities,
         })
     }
 
-    fn from_metadata(ctx: &'a DecodeContext<'a>, scan: &'a ContainerScan<'a>) -> Self {
+    fn from_metadata(
+        ctx: &'a DecodeContext<'a>,
+        scan: &'a ContainerScan<'a>,
+        admitted_entities: u64,
+    ) -> Self {
         let (ir, unknowns) = build_metadata_ir(scan);
         Self {
             ctx,
@@ -1901,11 +1918,21 @@ impl<'a> F3dDecodeSession<'a> {
             deferred_xref: None,
             deferred_non_root_act: None,
             deferred_has_appearance: None,
+            admitted_entities,
         }
+    }
+
+    fn admit_model_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
+        self.ctx.admit_entities(
+            self.ir.model.entity_count() as u64,
+            &mut self.admitted_entities,
+            operation,
+        )
     }
 
     /// Decode design graph, products, annotations, and the report.
     fn into_result(mut self) -> Result<DecodeResult, CodecError> {
+        self.admit_model_entities("admit F3D geometry entities")?;
         self.decode_design_graph()?;
         self.decode_products()?;
         self.finalize()
@@ -2422,6 +2449,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &mesh_projection,
             );
             report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+            self.admit_model_entities("admit F3D entities")?;
             self.native.store(self.ir.native.namespace_mut("f3d"))?;
             let annotations =
                 populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns);
@@ -2448,6 +2476,7 @@ impl<'a> F3dDecodeSession<'a> {
                 Some(Err(error)) => self.report.losses.push(xref_parse_loss(&error)),
                 None => {}
             }
+            let mut admitted_entities = self.admitted_entities;
             return decode_result(
                 ctx,
                 self.ir,
@@ -2455,10 +2484,12 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 self.unknowns,
                 source_image,
+                &mut admitted_entities,
             );
         }
 
         report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+        self.admit_model_entities("admit F3D entities")?;
         self.native.store(self.ir.native.namespace_mut("f3d"))?;
         let geometry = self.geometry.take().expect("geometry");
         let annotations = populate_annotations(
@@ -2472,6 +2503,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.unknowns,
         );
         let source_image = preserve_source_image(scan);
+        let mut admitted_entities = self.admitted_entities;
         decode_result(
             ctx,
             self.ir,
@@ -2479,6 +2511,7 @@ impl<'a> F3dDecodeSession<'a> {
             annotations,
             self.unknowns,
             source_image,
+            &mut admitted_entities,
         )
     }
 }
@@ -2490,6 +2523,12 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 /// Decode a `.f3d` reader into a document and its loss report.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
+    let mut admitted_entities = 0_u64;
+    ctx.admit_entities(
+        scan.entries.len() as u64,
+        &mut admitted_entities,
+        "admit F3D archive entries",
+    )?;
 
     if crate::f3z::is_f3z(&scan) {
         return crate::f3z::decode(ctx, &scan);
@@ -2504,7 +2543,15 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         if let Ok(Some(table)) = crate::xref::decode(&scan) {
             apply_assembly_classification(&mut report, &scan, &table);
         }
-        return decode_result(ctx, ir, report, annotations, unknowns, source_image);
+        return decode_result(
+            ctx,
+            ir,
+            report,
+            annotations,
+            unknowns,
+            source_image,
+            &mut admitted_entities,
+        );
     }
 
     let unbound_body_bindings =
@@ -2596,6 +2643,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 brep,
                 body_visibilities,
                 model_breps.len() - decoded_brep_count,
+                admitted_entities,
             );
         }
     }
@@ -2603,11 +2651,19 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     // No binary stream decoded: the model may be carried only in the text
     // encoding.
     if let Some((text_facts, text_brep)) = try_decode_text_model(&scan)? {
-        return finish_model_decode(ctx, &scan, &text_facts, text_brep, Vec::new(), 0);
+        return finish_model_decode(
+            ctx,
+            &scan,
+            &text_facts,
+            text_brep,
+            Vec::new(),
+            0,
+            admitted_entities,
+        );
     }
 
     // No decodable SAB stream: use container metadata through the shared session.
-    F3dDecodeSession::from_metadata(ctx, &scan).into_result()
+    F3dDecodeSession::from_metadata(ctx, &scan, admitted_entities).into_result()
 }
 
 /// Projected mesh geometry and the Design records that own it.
@@ -3178,10 +3234,15 @@ fn decode_result(
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
+    admitted_entities: &mut u64,
 ) -> Result<DecodeResult, CodecError> {
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit F3D entities")?;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        admitted_entities,
+        "admit F3D entities",
+    )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [source_image]);

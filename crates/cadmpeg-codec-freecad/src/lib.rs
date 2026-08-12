@@ -1161,8 +1161,10 @@ impl CodecBackend for FcstdCodec {
         };
         let scan = container::scan(ctx, root)?;
         // Charge document object cardinality before persistence/geometry work.
-        ctx.charge_entities(
+        let mut admitted_entities = 0_u64;
+        ctx.admit_entities(
             scan.document.object_count as u64,
+            &mut admitted_entities,
             "admit FCStd document objects",
         )?;
         if !options.container_only
@@ -1359,6 +1361,11 @@ impl CodecBackend for FcstdCodec {
             ir.model.occurrences = occurrences;
             ir.model.assembly_joints =
                 joint::transfer_neutral(&joint_records, &ir.model.occurrences);
+            ctx.admit_entities(
+                ir.model.entity_count() as u64,
+                &mut admitted_entities,
+                "admit FCStd entities",
+            )?;
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")
@@ -1378,6 +1385,11 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
+            ctx.admit_entities(
+                ir.model.entity_count() as u64,
+                &mut admitted_entities,
+                "admit FCStd entities",
+            )?;
             for (entry_name, owner) in gui_graph
                 .properties
                 .iter()
@@ -1451,7 +1463,11 @@ impl CodecBackend for FcstdCodec {
         } else {
             semantic_losses(&ir)
         };
-        ctx.charge_entities(ir.model.entity_count() as u64, "admit FCStd entities")?;
+        ctx.admit_entities(
+            ir.model.entity_count() as u64,
+            &mut admitted_entities,
+            "admit FCStd entities",
+        )?;
         Ok(DecodeResult::new(
             ir,
             DecodeReport {

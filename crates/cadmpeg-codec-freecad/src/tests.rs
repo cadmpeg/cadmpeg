@@ -51,6 +51,34 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
 }
 
 #[test]
+fn decode_refuses_when_max_entities_is_below_object_cardinality() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="A" id="1"/>
+ <Object type="Part::Feature" name="B" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="A"><Properties Count="0"></Properties></Object>
+ <Object name="B"><Properties Count="0"></Properties></Object>
+</ObjectData></Document>"#;
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 1;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(archive(document)), &options)
+        .expect_err("max_entities below document object count must refuse at admission");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn writes_typed_property_edits_and_preserves_other_entries() {
     let decoded = FcstdCodec
         .decode(

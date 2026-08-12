@@ -102,13 +102,18 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let scan = container::scan(ctx, root)?;
     // Charge container cardinality before BREP/IR construction so max_entities
     // can refuse the expensive path rather than only the finalizer.
+    let mut admitted_entities = 0_u64;
     let container_entities =
         (scan.blocks.len() + scan.compound_streams.len() + scan.directory.len()) as u64;
-    ctx.charge_entities(container_entities, "admit SLDPRT container entities")?;
+    ctx.admit_entities(
+        container_entities,
+        &mut admitted_entities,
+        "admit SLDPRT container entities",
+    )?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
-        ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
+        let (ir, annotations, unknowns, mut pmi_losses) =
+            build_metadata_ir(ctx, &scan, &mut admitted_entities)?;
         let mut report = build_container_report(&scan, true);
         report.losses.append(&mut pmi_losses);
         return decode_result(ir, report, annotations, unknowns);
@@ -116,15 +121,20 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
-        ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
+        ctx.admit_entities(
+            admitted_entities.saturating_add(streams.len() as u64),
+            &mut admitted_entities,
+            "admit SLDPRT body streams",
+        )?;
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
+                ctx,
                 &scan,
                 &streams[decoded.selected].header,
                 decoded.brep,
                 &decoded.configuration_bodies,
+                &mut admitted_entities,
             )?;
-            ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(&ir, &mut report);
@@ -132,8 +142,8 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         }
     }
 
-    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
+    let (ir, annotations, unknowns, mut pmi_losses) =
+        build_metadata_ir(ctx, &scan, &mut admitted_entities)?;
     let mut report = build_container_report(&scan, false);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
@@ -2078,10 +2088,12 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
 }
 
 fn build_geometry_ir(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    admitted_entities: &mut u64,
 ) -> Result<
     (
         CadIr,
@@ -2500,6 +2512,11 @@ fn build_geometry_ir(
             crate::history::history_hash(&native.feature_histories),
         );
     }
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        admitted_entities,
+        "admit SLDPRT entities",
+    )?;
     native.store(ir.native.namespace_mut("sldprt"))?;
     // Stamp baseline before fabricating the read-side configuration snapshot.
     stamp_configuration_baseline(&mut ir);
@@ -3006,7 +3023,9 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 }
 
 fn build_metadata_ir(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    admitted_entities: &mut u64,
 ) -> Result<
     (
         CadIr,
@@ -3334,6 +3353,11 @@ fn build_metadata_ir(
         feature_input_lanes: lanes,
         pmi_dimensions,
     };
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        admitted_entities,
+        "admit SLDPRT entities",
+    )?;
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
     mark_active_configuration(&mut ir);
