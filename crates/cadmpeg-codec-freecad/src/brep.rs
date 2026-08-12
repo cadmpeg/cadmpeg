@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1969,17 +1969,27 @@ fn parse_binary_curve2d(
 }
 
 struct BinaryCursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
+    view: View<'a>,
 }
 
 impl<'a> BinaryCursor<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
+        Self {
+            view: View::over_retained(bytes),
+        }
     }
 
     fn remaining(&self) -> usize {
-        self.bytes.len() - self.offset
+        self.view.remaining()
+    }
+
+    fn unread(&self) -> &'a [u8] {
+        let rel = self.view.position().saturating_sub(self.view.start());
+        self.view.window().get(rel..).unwrap_or_default()
+    }
+
+    fn truncated(label: &str) -> CodecError {
+        CodecError::Malformed(format!("truncated {label}"))
     }
 
     /// Clamps a declared element count to what the unread bytes can hold.
@@ -1992,23 +2002,11 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
-        let end = self
-            .offset
-            .checked_add(count)
-            .ok_or_else(|| CodecError::Malformed(format!("{label} offset overflow")))?;
-        let bytes = self
-            .bytes
-            .get(self.offset..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
-        self.offset = end;
-        Ok(bytes)
+        self.view.take(count).ok_or_else(|| Self::truncated(label))
     }
 
     fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
-        let tail = self
-            .bytes
-            .get(self.offset..)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
+        let tail = self.unread();
         let length = tail
             .iter()
             .position(|byte| *byte == b'\n')
@@ -2039,7 +2037,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, label)?[0])
+        self.view.u8().ok_or_else(|| Self::truncated(label))
     }
 
     fn bool(&mut self, label: &str) -> Result<bool, CodecError> {
@@ -2053,15 +2051,11 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn u16(&mut self, label: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(
-            self.take(2, label)?.try_into().expect("two-byte slice"),
-        ))
+        self.view.u16_le().ok_or_else(|| Self::truncated(label))
     }
 
     fn i32(&mut self, label: &str) -> Result<i32, CodecError> {
-        Ok(i32::from_le_bytes(
-            self.take(4, label)?.try_into().expect("four-byte slice"),
-        ))
+        self.view.i32_le().ok_or_else(|| Self::truncated(label))
     }
 
     fn count(&mut self, label: &str) -> Result<usize, CodecError> {
@@ -2073,7 +2067,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
-        let value = f64::from_le_bytes(self.take(8, label)?.try_into().expect("eight-byte slice"));
+        let value = self.view.f64_le().ok_or_else(|| Self::truncated(label))?;
         value
             .is_finite()
             .then_some(value)
@@ -2081,7 +2075,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
-        let value = f32::from_le_bytes(self.take(4, label)?.try_into().expect("four-byte slice"));
+        let value = self.view.f32_le().ok_or_else(|| Self::truncated(label))?;
         value
             .is_finite()
             .then_some(value)
