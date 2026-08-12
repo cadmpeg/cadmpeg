@@ -154,7 +154,7 @@ item = "cadmpeg_core::decode::DecodeContext::admit_entities"
 reason = "delta entity admission so max_entities refuses mid-decode rather than only after IR build"
 
 [[change]]
-commit = "PENDING"
+commit = "14029f8c9195ffea033dbca4b1d2bdca7da4d359"
 crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::{alloc_filled,DecodeContext::alloc_filled}"
