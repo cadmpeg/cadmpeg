@@ -256,6 +256,8 @@ pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     } else {
         ieee[2] = yy;
     }
+    // Reconstructed IEEE-754 bytes, not a contiguous file window: byte0 comes
+    // from the prefix table, then XX and a fill derived from YY.
     Some((f64::from_be_bytes(ieee), offset + 3))
 }
 
