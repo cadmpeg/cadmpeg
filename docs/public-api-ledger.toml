@@ -119,15 +119,22 @@ item = "cadmpeg_ir::examples"
 reason = "gated behind examples feature; manifests already claimed this"
 
 [[change]]
-commit = "PENDING"
+commit = "15e948b253cf4698c20974625ac671e756726ea7"
 crate = "cadmpeg-core"
 kind = "move"
 item = "cadmpeg_core::compare::{FLOAT_TOLERANCE,LOCAL_DIGEST_SUFFIX,floats_agree,is_local_digest_attribute,values_agree,texts_agree} -> cadmpeg_ir::compare"
 reason = "IR JSON tolerance and local-digest invariants live with the IR"
 
 [[change]]
-commit = "PENDING"
+commit = "15e948b253cf4698c20974625ac671e756726ea7"
 crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::compare"
 reason = "module emptied by move to cadmpeg_ir::compare"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "DecodeReport::record_coverage(key) -> record_coverage(key, count)"
+reason = "value-parameter form so catia/creo absolute coverage counts can adopt it"

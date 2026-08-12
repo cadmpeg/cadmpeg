@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::be;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
@@ -530,7 +530,7 @@ fn construction_has_endpoint_witnesses(
 fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
     blend_bounds(stream)
         .into_iter()
-        .map(|bound| (bound.xmt, bound.blend_surface))
+        .map(|b| (b.xmt, b.blend_surface))
         .collect()
 }
 
@@ -720,7 +720,9 @@ pub(crate) fn chart_source_record_at(
             continue;
         }
         let base = tag + 2 + escape;
-        let Some(count) = be::u32_at(stream, base)
+        let Some(count) = View::over_retained(stream)
+            .child(base, stream.len())
+            .and_then(|mut view| view.u32_be())
             .and_then(|value| usize::try_from(value).ok())
             .filter(|count| *count >= 2)
         else {
@@ -730,33 +732,26 @@ pub(crate) fn chart_source_record_at(
             continue;
         };
         let preamble = base + 4 + xmt_len;
-        let Some(base_parameter) = be::f64_at(stream, preamble) else {
+        let Some(mut head) = View::over_retained(stream).child(preamble, stream.len()) else {
             continue;
         };
-        let Some(base_scale) = be::f64_at(stream, preamble + 8) else {
-            continue;
-        };
-        let Some(chart_count) = be::u32_at(stream, preamble + 16) else {
-            continue;
-        };
-        let Some(chordal_error) = be::f64_at(stream, preamble + 20) else {
-            continue;
-        };
-        let Some(angular_error) = be::f64_at(stream, preamble + 28) else {
-            continue;
-        };
-        let errors = [
-            be::f64_at(stream, preamble + 36),
-            be::f64_at(stream, preamble + 44),
-        ];
+        // Keep the sequential preamble unpack dense; rustfmt would undo the net deletion.
+        #[rustfmt::skip]
+        let (
+            Some(base_parameter), Some(base_scale), Some(chart_count), Some(chordal_error),
+            Some(angular_error), Some(e0), Some(e1),
+        ) = (
+            head.f64_be(), head.f64_be(), head.u32_be(), head.f64_be(), head.f64_be(),
+            head.f64_be(), head.f64_be(),
+        ) else { continue; };
+        let parameter_errors = [e0, e1];
         if chart_count as usize != count
-            || !base_parameter.is_finite()
-            || !base_scale.is_finite()
+            || ![base_parameter, base_scale, chordal_error, angular_error]
+                .iter()
+                .all(|value| value.is_finite())
             || base_scale == 0.0
-            || !chordal_error.is_finite()
             || chordal_error <= 0.0
-            || !angular_error.is_finite()
-            || errors != [Some(MISSING_PARAMETER), Some(MISSING_PARAMETER)]
+            || parameter_errors != [MISSING_PARAMETER, MISSING_PARAMETER]
         {
             continue;
         }
@@ -779,10 +774,7 @@ pub(crate) fn chart_source_record_at(
                 chart_count,
                 chordal_error,
                 angular_error,
-                parameter_errors: [
-                    errors[0].expect("validated parameter error"),
-                    errors[1].expect("validated parameter error"),
-                ],
+                parameter_errors,
                 points: chart_points.points,
                 native_parameters: chart_points.native_parameters,
                 ext_support_uv: chart_points.ext_support_uv,
@@ -828,17 +820,12 @@ fn chart_points(
         .map(|index| {
             let at = block + index * 88;
             let point = point_m(stream, at)?;
-            let tangent = [
-                be::f64_at(stream, at + 56)?,
-                be::f64_at(stream, at + 64)?,
-                be::f64_at(stream, at + 72)?,
-            ];
+            let mut mid = View::over_retained(stream).child(at + 24, at + 88)?;
+            let (u0, u1, v0, v1) = (mid.f64_be()?, mid.f64_be()?, mid.f64_be()?, mid.f64_be()?);
+            let tangent = [mid.f64_be()?, mid.f64_be()?, mid.f64_be()?];
+            let parameter = mid.f64_be()?;
             let norm = tangent.iter().map(|v| v * v).sum::<f64>().sqrt();
-            let parameter = be::f64_at(stream, at + 80)?;
-            let parameter_lanes = [
-                [be::f64_at(stream, at + 24)?, be::f64_at(stream, at + 40)?],
-                [be::f64_at(stream, at + 32)?, be::f64_at(stream, at + 48)?],
-            ];
+            let parameter_lanes = [[u0, v0], [u1, v1]];
             ((norm - 1.0).abs() < 1.0e-9 && parameter.is_finite()).then_some((
                 point,
                 parameter,
@@ -931,7 +918,9 @@ fn term_at(
     framing: TermUseFraming,
     pos: usize,
 ) -> Option<(TermUse, usize)> {
-    let count = be::u32_at(stream, base)?;
+    let count = View::over_retained(stream)
+        .child(base, stream.len())?
+        .u32_be()?;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
     let form: [u8; 2] = stream.get(payload..payload + 2)?.try_into().ok()?;
@@ -952,15 +941,10 @@ fn term_at(
 
 fn uv_records(stream: &[u8]) -> (BTreeMap<u32, SupportUv>, BTreeMap<u32, u8>) {
     let records = support_uv_records(stream);
-    let uv = records
-        .iter()
-        .map(|record| (record.xmt, record.support_uv()))
-        .collect();
-    let markers = records
-        .into_iter()
-        .map(|record| (record.xmt, record.marker))
-        .collect();
-    (uv, markers)
+    (
+        records.iter().map(|r| (r.xmt, r.support_uv())).collect(),
+        records.into_iter().map(|r| (r.xmt, r.marker)).collect(),
+    )
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
@@ -1024,7 +1008,9 @@ fn uv_at(
     framing: SupportUvFraming,
     pos: usize,
 ) -> Option<(SupportUvRecord, usize)> {
-    let count = be::u32_at(stream, base)?;
+    let count = View::over_retained(stream)
+        .child(base, stream.len())?
+        .u32_be()?;
     let count_usize = count as usize;
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let payload = base + 4 + xmt_len;
@@ -1035,9 +1021,9 @@ fn uv_at(
     if count_usize < width * 2 || !count_usize.is_multiple_of(width) {
         return None;
     }
-    let values = (0..count_usize)
-        .map(|index| be::f64_at(stream, payload + 1 + index * 8))
-        .collect::<Option<Vec<_>>>()?;
+    let values = View::over_retained(stream)
+        .child(payload + 1, stream.len())?
+        .read_counted(count as u64, 8, View::f64_be)?;
     if !values.iter().all(|value| value.is_finite()) {
         return None;
     }
@@ -1069,12 +1055,15 @@ fn find_bytes<'a>(stream: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item = us
 }
 
 fn point_m(stream: &[u8], at: usize) -> Option<Point3> {
-    let xyz = be::vec3_at(stream, at)?;
-    let millimeters = xyz.map(|value| value * 1000.0);
-    millimeters
-        .iter()
+    let mut view = View::over_retained(stream).child(at, stream.len())?;
+    let mm = [
+        view.f64_be()? * 1000.0,
+        view.f64_be()? * 1000.0,
+        view.f64_be()? * 1000.0,
+    ];
+    mm.iter()
         .all(|value| value.is_finite())
-        .then_some(Point3::new(millimeters[0], millimeters[1], millimeters[2]))
+        .then_some(Point3::new(mm[0], mm[1], mm[2]))
 }
 
 fn distance(first: Point3, second: Point3) -> f64 {

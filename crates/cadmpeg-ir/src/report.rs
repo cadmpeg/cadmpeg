@@ -493,9 +493,12 @@ impl TransferLedger {
 pub struct CoverageKey(pub &'static str);
 
 impl DecodeReport {
-    /// Records one observation for a statically declared coverage measure.
-    pub fn record_coverage(&mut self, key: CoverageKey) {
-        *self.coverage.entry(key.0.to_owned()).or_default() += 1;
+    /// Records a coverage measure count for a statically declared key.
+    ///
+    /// Producers pass the observed count (not an implied +1). Repeated calls
+    /// for the same key replace the prior value.
+    pub fn record_coverage(&mut self, key: CoverageKey, count: usize) {
+        self.coverage.insert(key.0.to_owned(), count);
     }
 
     /// Returns a coverage measure, treating an unobserved measure as zero.
