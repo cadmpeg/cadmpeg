@@ -1568,6 +1568,38 @@ fn component_vector_cell_count_includes_interleaved_path_slots() {
 }
 
 #[test]
+fn component_vector_preserves_identifierless_lineage_hops() {
+    let marker = 12;
+    let mut payload = vec![0; marker];
+    payload[..4].copy_from_slice(&5u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[6, 2, 0, 0]);
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+
+    let append_hop = |payload: &mut Vec<u8>, instance: u16, source: u32, timestamp: u32| {
+        payload.extend(instance.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0xa7, 0x81, 0xa9, 0x01]);
+        payload.extend(source.to_le_bytes());
+        payload.extend(timestamp.to_le_bytes());
+    };
+    append_hop(&mut payload, 0x8675, 230, 0x51c6_17de);
+    append_hop(&mut payload, 0x8675, 134, 0x51c6_080c);
+    append_hop(&mut payload, 0x81a5, 18, 0x51c5_fde3);
+    payload.extend(16u32.to_le_bytes());
+    payload.extend([0; 24]);
+
+    let path = component_vector_path_at(&payload, marker).expect("lineage path");
+    assert_eq!(path.len(), 3);
+    assert_eq!(path[0].instance, Some(0x8675));
+    assert_eq!(path[0].local_id, None);
+    assert_eq!(path[1].instance, Some(0x8675));
+    assert_eq!(path[1].local_id, None);
+    assert_eq!(path[2].instance, Some(0x81a5));
+    assert_eq!(path[2].local_id, Some(16));
+}
+
+#[test]
 fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
     let mut payload = Vec::new();
     let append_vector = |payload: &mut Vec<u8>, selector: u8, source: u32, terminal: u32| {
