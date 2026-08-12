@@ -11,6 +11,7 @@ use crate::wire::records::{
     a_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
     ConsolidatedRecord,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::geometry::{
     NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
@@ -256,11 +257,7 @@ fn parse_a8_elided_surface_tail(
     {
         return None;
     }
-    let read_f64 = |offset: usize| -> Option<f64> {
-        Some(f64::from_le_bytes(
-            tail.get(offset..offset + 8)?.try_into().ok()?,
-        ))
-    };
+    let read_f64 = |offset: usize| View::f64_le_at(tail, offset);
     let zero_u = read_f64(4)?;
     let positive_u = read_f64(12)?;
     let zero_v = read_f64(20)?;
@@ -321,10 +318,12 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<A8SurfacePar
     }
     let continuation_start = 71;
     let continuation_end = continuation_start + continuation_bytes;
-    let continuation = tail[continuation_start..continuation_end]
-        .chunks_exact(8)
-        .map(|bytes| f64::from_le_bytes(bytes.try_into().expect("eight-byte f64")))
-        .collect::<Vec<_>>();
+    let mut continuation_view =
+        View::over_retained(tail.get(continuation_start..continuation_end)?);
+    let mut continuation = Vec::new();
+    while !continuation_view.is_empty() {
+        continuation.push(continuation_view.f64_le()?);
+    }
     if continuation.iter().any(|value| !value.is_finite()) {
         return None;
     }

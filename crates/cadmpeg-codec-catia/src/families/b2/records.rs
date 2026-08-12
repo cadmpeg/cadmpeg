@@ -5,6 +5,7 @@
 //! parameter-space packets, consolidated plane carriers, and consolidated UV
 //! pcurves.
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u16_at as u16_le;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -386,8 +387,13 @@ pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
             let mut references = Vec::new();
             let mut at = 0;
             while at < payload.len() {
-                if payload[at] == 0x0a && at + 3 <= payload.len() {
-                    references.push(u16::from_le_bytes([payload[at + 1], payload[at + 2]]));
+                if let Some(value) = payload
+                    .get(at)
+                    .copied()
+                    .filter(|byte| *byte == 0x0a)
+                    .and_then(|_| View::u16_le_at(&payload, at + 1))
+                {
+                    references.push(value);
                     at += 3;
                 } else {
                     at += 1;
@@ -654,12 +660,12 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
     if data.get(37) != Some(&0x01) {
         return None;
     }
+    let mut view = View::over_retained(data);
+    view.seek(38)?;
     let mut bounds = [[0.0; 2]; 3];
-    for (index, bound) in bounds.iter_mut().enumerate() {
-        for (side, value) in bound.iter_mut().enumerate() {
-            let start = 38 + (2 * index + side) * 4;
-            *value = f32::from_le_bytes(data.get(start..start + 4)?.try_into().ok()?);
-        }
+    for bound in &mut bounds {
+        bound[0] = view.f32_le()?;
+        bound[1] = view.f32_le()?;
         if !bound[0].is_finite() || !bound[1].is_finite() || bound[0] >= bound[1] {
             return None;
         }
@@ -741,10 +747,11 @@ pub(crate) fn b2_long_61_from_records(
                 .get(frame.payload..frame.payload + 8)?
                 .try_into()
                 .ok()?;
-            let members = data[frame.payload + 9..delimiter]
-                .chunks_exact(2)
-                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-                .collect::<Vec<_>>();
+            let mut members_view = View::over_retained(data.get(frame.payload + 9..delimiter)?);
+            let mut members = Vec::new();
+            while !members_view.is_empty() {
+                members.push(members_view.u16_le()?);
+            }
             if members.is_empty() || members.windows(2).any(|pair| pair[0] >= pair[1]) {
                 return None;
             }

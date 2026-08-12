@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C0B` value blocks.
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at as u32_le;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -159,11 +160,7 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
     while at < payload.len() {
         let offset = at;
         if payload.get(at..at + 2) == Some(&[0x87, 0xe6]) && at + 10 <= payload.len() {
-            let bits = u64::from_le_bytes(
-                payload[at + 2..at + 10]
-                    .try_into()
-                    .expect("checked binary64 extent"),
-            );
+            let bits = View::u64_le_at(payload, at + 2).expect("checked binary64 extent");
             fields.push(ValueField::Binary64 { bits, offset });
             at += 10;
         } else if payload.get(at) == Some(&0x87)
@@ -212,11 +209,9 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 at += 1;
             }
         } else if payload.get(at) == Some(&0xe5) && at + 5 <= payload.len() {
-            let len = usize::try_from(u32::from_le_bytes(
-                payload[at + 1..at + 5]
-                    .try_into()
-                    .expect("checked byte-string length extent"),
-            ))
+            let len = usize::try_from(
+                View::u32_le_at(payload, at + 1).expect("checked byte-string length extent"),
+            )
             .ok();
             let end = len.and_then(|len| at.checked_add(5)?.checked_add(len));
             if let Some(end) = end.filter(|end| *end <= payload.len()) {
@@ -234,11 +229,7 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
             }
         } else if payload.get(at) == Some(&0x32) && at + 5 <= payload.len() {
             fields.push(ValueField::SchemaSelector {
-                ordinal: u32::from_le_bytes(
-                    payload[at + 1..at + 5]
-                        .try_into()
-                        .expect("checked schema-reference extent"),
-                ),
+                ordinal: View::u32_le_at(payload, at + 1).expect("checked schema-reference extent"),
                 offset,
             });
             at += 5;
