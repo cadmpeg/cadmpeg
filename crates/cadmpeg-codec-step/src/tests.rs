@@ -1764,7 +1764,7 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .iter()
         .any(|target| { target.target.as_deref() == Some("step:drawing:presentation_view#4") }));
 
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(result
         .ir
@@ -1864,7 +1864,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .expect("opaque record referencing fallback carrier");
     assert!(example.links.contains(&"step:data:curve#1".to_string()));
 
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#1")
@@ -2412,7 +2412,7 @@ fn decode_conical_apex_and_context_plane_angle_units() {
         SurfaceGeometry::Cone { radius, half_angle, .. }
             if radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
     )));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(
         validation
             .findings
@@ -2436,7 +2436,7 @@ fn decode_and_write_singular_vertex_loops() {
         .loops
         .iter()
         .all(|loop_| loop_.coedges.is_empty() && loop_.vertex_uses.len() == 1));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let mut encoded = Vec::new();
     write_step(&result.ir, &mut encoded, &StepWriteOptions::default()).expect("write vertex loops");
@@ -2608,7 +2608,7 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         result.ir.model.presentation_layers[0].items.as_slice(),
         [cadmpeg_ir::PresentationItem::Face { .. }]
     ));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -2683,7 +2683,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -2752,7 +2752,7 @@ fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -2828,7 +2828,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -2851,7 +2851,7 @@ fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
             && loss.message.contains("one optional pcurve")
             && loss.message.contains("not continuous")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -2881,7 +2881,7 @@ fn surface_curve_retains_direct_surface_support() {
             .map(|source| source.object_id.as_str()),
         Some("#57")
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -2916,7 +2916,7 @@ fn disconnected_source_shell_is_partitioned_into_connected_ir_shells() {
         .message
         .contains("2 disconnected face components"));
     assert!(source_loss.provenance.is_some());
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3102,7 +3102,7 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
             } if support.as_str() == "step:data:surface#28"
                 && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
         )));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -3150,7 +3150,7 @@ fn decode_builds_a_face_based_surface_model() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("does not resolve to a complete")));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3188,7 +3188,7 @@ fn decode_builds_faceted_brep_polygon_loops() {
         .edges
         .iter()
         .all(|edge| edge.curve.is_none()));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3228,7 +3228,7 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
     assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*origin, Point3::new(10.0 / 3.0, 10.0 / 3.0, 0.0));
     assert_eq!(*u_axis, Vector3::new(1.0, 0.0, 0.0));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3326,7 +3326,7 @@ fn complex_outer_face_bound_uses_inherited_attributes() {
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
     assert!(matches!(surface.geometry, SurfaceGeometry::Plane { .. }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3357,7 +3357,7 @@ fn implicit_face_plane_uses_the_outer_loop_only() {
         panic!("implicit face did not produce a plane");
     };
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3421,7 +3421,7 @@ fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
         decoded.ir.model.faces[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3463,7 +3463,7 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
                 .message
                 .contains("STEP edge #19 has no 3D curve carrier")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3484,7 +3484,7 @@ fn unresolved_vertex_point_does_not_enter_a_topology_draft() {
     assert!(decoded.report.losses.iter().any(|loss| loss
         .message
         .contains("VERTEX_POINT #6 has unresolved point carrier #3")));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3552,7 +3552,7 @@ fn sheet_root_salvages_independent_shells() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("shell carrier #34")));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3597,7 +3597,7 @@ fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
         .iter()
         .all(|face| face.color.is_some()));
     assert_eq!(decoded.ir.model.presentation_layers[0].items.len(), 2);
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3623,7 +3623,7 @@ fn brep_with_voids_scopes_edges_and_vertices_per_shell_after_shared_shell_use() 
         .losses
         .iter()
         .any(|loss| loss.message.contains("root #70 rejected")));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3651,7 +3651,7 @@ fn first_brep_with_voids_scopes_all_shell_carriers() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("root #31 rejected")));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3820,7 +3820,7 @@ fn unreferenced_curve_is_associated_as_free_geometry() {
             .map(|source| source.object_id.as_str()),
         Some("#14")
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -3906,7 +3906,7 @@ fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
             ..
         } if *start == 0.0 && *end == 1.0
     ));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -3932,7 +3932,7 @@ fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
         .find(|use_| use_.pcurve == pcurve)
         .expect("stale trimmed pcurve use");
     assert_eq!(use_.parameter_range, Some([0.0, 1.0]));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4260,7 +4260,7 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
         cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
             if (direction.u - 10.0).abs() < 1.0e-12
     ));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4447,7 +4447,7 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
         .iter()
         .any(|record| record.id.0 == "step:data:pcurve#56"));
 
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4491,7 +4491,7 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("conflicts with decoded topology")));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4520,7 +4520,7 @@ fn unsupported_surface_carrier_on_face_surface_preserves_topology_as_unknown() {
         Some(SurfaceGeometry::Unknown { record: Some(record) })
             if record.as_str() == "step:data:unsupported_surface#28"
     ));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4647,7 +4647,7 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
             .iter()
             .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4676,7 +4676,7 @@ fn seam_edge_does_not_guess_an_unlisted_pcurve_reference() {
         loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
             && loss.severity == cadmpeg_ir::Severity::Warning
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4711,7 +4711,7 @@ fn seam_edge_rejects_an_explicit_pcurve_outside_its_curve() {
             && loss.message.contains("SEAM_EDGE #22")
             && loss.message.contains("belongs to its edge curve")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4764,7 +4764,7 @@ fn equivalent_seam_pcurve_candidates_select_one_carrier() {
         .message
         .contains("no unique endpoint-continuous pcurve selects one")));
 
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4824,7 +4824,7 @@ fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
         .message
         .contains("no unique endpoint-continuous pcurve selects one")));
 
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4866,7 +4866,7 @@ fn ambiguous_pcurves_do_not_reject_the_body() {
         .losses
         .iter()
         .any(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4981,7 +4981,7 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
             .contains("INTERSECTION_CURVE #57 has no decoded 3D curve")
     }));
 
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5044,7 +5044,7 @@ fn surface_curve_without_a_basis_keeps_a_curve_less_edge_and_reports_loss() {
         loss.message
             .contains("STEP edge curve #19: surface-curve #57 has no resolvable basis")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5086,7 +5086,7 @@ fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
         .expect("STEP unknown arena")
         .iter()
         .all(|record| record.id.0 != "step:data:subedge#19"));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5111,7 +5111,7 @@ fn oriented_face_subtype_composes_face_orientation() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Reversed));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5140,7 +5140,7 @@ fn nested_oriented_faces_compose_back_to_the_base_orientation() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Forward));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5161,7 +5161,7 @@ fn complex_oriented_open_shell_preserves_shell_sense() {
         decoded.ir.model.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5180,7 +5180,7 @@ fn subface_subtype_reuses_parent_surface_and_own_bounds() {
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.faces.len(), 1);
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5205,7 +5205,7 @@ fn shell_based_wireframe_model_owns_wire_shell_edges() {
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.bodies[0].kind, BodyKind::Wire);
     assert_eq!(decoded.ir.model.edges.len(), 3);
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5230,7 +5230,7 @@ fn shell_based_wireframe_model_retains_vertex_shells() {
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.bodies[0].kind, BodyKind::Wire);
     assert_eq!(decoded.ir.model.shells[0].free_vertices.len(), 1);
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5266,7 +5266,7 @@ fn connected_edge_sub_set_is_accepted_as_a_wire_boundary() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.0 == "step:data:connected_edge_set#34"));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5298,7 +5298,7 @@ fn connected_edge_sub_set_keeps_topology_when_parent_is_invalid() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.0 == "step:data:connected_edge_sub_set#33"));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5329,7 +5329,7 @@ fn connected_face_sub_set_validates_and_uses_its_own_members() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("CONNECTED_FACE_SUB_SET #34")));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5363,7 +5363,7 @@ fn connected_edge_set_resolves_direct_oriented_and_seam_members() {
         .expect("oriented edge carrier");
     assert!(reversed.start.as_str().contains("vertex#7"));
     assert!(reversed.end.as_str().contains("vertex#6"));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5387,7 +5387,7 @@ fn shared_edge_wire_model_marks_every_representation_typed() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| { record.id.0 == "step:data:manifold_surface_shape_representation#71" }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5409,7 +5409,7 @@ fn complex_representation_items_reach_edge_based_wire_models() {
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.bodies[0].kind, BodyKind::Wire);
     assert_eq!(decoded.ir.model.edges.len(), 3);
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5436,7 +5436,7 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.0 == "step:data:shape_representation#4"));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5458,7 +5458,7 @@ fn complex_edge_and_oriented_edge_instances_use_named_attributes() {
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.edges.len(), 3);
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5480,7 +5480,7 @@ fn complex_advanced_face_uses_its_explicit_surface_carrier() {
         surface.id.as_str() == "step:data:surface#28"
             && matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5550,7 +5550,7 @@ fn complex_vertex_point_instances_retain_their_point_carriers() {
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.vertices.len(), 3);
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5589,7 +5589,7 @@ fn complex_geometry_instances_decode_named_partials() {
         decoded.ir.model.pcurves[0].geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { .. }
     ));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5614,7 +5614,7 @@ fn complex_points_and_directions_decode_named_partials() {
         surface.id.as_str() == "step:data:surface#28"
             && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5635,7 +5635,7 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
         result.ir.model.faces[0].surface.as_str(),
         "step:data:surface#11"
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5687,7 +5687,7 @@ fn complex_geometric_set_representation_uses_its_named_items() {
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #13 omitted unsupported or unresolved member(s): #15",
         )
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5740,7 +5740,7 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             loss.message
                 .contains("has invalid, cyclic, or unresolved segments")
         }));
-        let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -5794,7 +5794,7 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
         boundary_pcurves,
         &[cadmpeg_ir::ids::PcurveId("step:data:pcurve#44".into())]
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -5827,7 +5827,7 @@ fn free_surface_curve_keeps_its_three_dimensional_basis_reachable() {
             .map(|source| source.object_id.as_str()),
         Some("#84")
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#83")
@@ -6002,7 +6002,7 @@ fn rectangular_trimmed_surface_keeps_topology_pcurves_in_local_uv_space() {
             v_sense: Some(true),
         } if support.as_str() == "step:data:surface#58"
     ));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6027,7 +6027,7 @@ fn geometric_surface_representation_salvages_valid_sibling_sets() {
         .losses
         .iter()
         .any(|loss| { loss.message.contains("skipped non-set member #99") }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6077,7 +6077,7 @@ fn shape_representation_relationship_reaches_its_product_body() {
         loss.message
             .contains("has a shape representation with no committed topology body")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6101,7 +6101,7 @@ fn complex_shape_representation_relationship_inherits_references() {
         loss.message
             .contains("has a shape representation with no committed topology body")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6210,7 +6210,7 @@ fn product_definition_views_keep_distinct_prototypes_and_metadata() {
     assert!(prototypes
         .iter()
         .all(|id| id.as_str().contains("-definition-")));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6244,7 +6244,7 @@ fn presentation_layer_expands_all_product_definition_views() {
         ] if first.as_str() == "step:product:product#3-definition-6"
             && second.as_str() == "step:product:product#3-definition-8"
     ));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6495,7 +6495,7 @@ fn reused_shell_in_a_distinct_root_gets_a_new_owner_scope() {
             .count(),
         2
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6540,7 +6540,7 @@ fn distinct_roots_with_shared_topology_get_owner_scopes() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("conflicts with decoded topology")));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6560,7 +6560,7 @@ fn reader_recovers_a_valid_solid_from_writer_output() {
     assert_eq!(result.ir.model.faces.len(), 6);
     assert_eq!(result.ir.model.edges.len(), 12);
     assert_eq!(result.ir.model.vertices.len(), 8);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -6589,7 +6589,7 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode reordered edge loops");
     assert_eq!(decoded.ir.model.faces.len(), source.model.faces.len());
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7264,7 +7264,7 @@ fn writer_round_trips_edge_based_wire_bodies() {
             a: 1.0,
         })
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses);
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses);
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7333,7 +7333,7 @@ fn decode_builds_product_occurrences_with_relative_placement() {
     assert_eq!(child.transform.rows[0][3], 25.0);
     assert_eq!(child.transform.rows[1][3], 0.0);
     assert_eq!(child.transform.rows[2][3], 0.0);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let options = StepWriteOptions {
@@ -7493,7 +7493,7 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
         .unwrap();
     assert_eq!(child.transform.rows[0][3], 40.0);
     assert_eq!(child.transform.rows[1][3], 5.0);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7677,7 +7677,7 @@ fn decode_builds_mapped_item_placement_from_canonical_cartesian_operator() {
         .losses
         .iter()
         .any(|loss| loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7708,7 +7708,7 @@ fn decode_builds_repeated_occurrence_placements_from_their_shape_representations
         .losses
         .iter()
         .any(|loss| loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7771,7 +7771,7 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
         .losses
         .iter()
         .any(|loss| { loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7934,7 +7934,7 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert!(!result.report.losses.iter().any(|loss| loss
         .message
         .contains("does not match transferred tessellation")));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -7963,7 +7963,7 @@ fn complex_validation_measure_carrier_is_decoded() {
         loss.message
             .contains("geometric validation property #41 has an unsupported value")
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -8060,7 +8060,7 @@ fn complex_tessellated_face_retains_its_surface_carrier() {
             .map(|source| source.object_id.as_str()),
         Some("#7")
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -8097,7 +8097,7 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
         mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -8132,7 +8132,7 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
         cadmpeg_ir::presentation::PresentationItem::Tessellation { tessellation }
             if tessellation.ends_with("#7")
     )));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -8242,7 +8242,7 @@ fn decode_transfers_ap242_semantic_pmi() {
             ..
         }
     ));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
     result.ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
@@ -8590,7 +8590,7 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
         .pmi
         .iter()
         .any(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. })));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -8721,7 +8721,7 @@ fn decode_transfers_ap242_presentation_pmi() {
     assert_eq!(transform.rows[0][3], 10.0);
     assert_eq!(transform.rows[1][3], 20.0);
     assert_eq!(transform.rows[2][3], 30.0);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let options = StepWriteOptions {
@@ -8882,7 +8882,7 @@ fn annotation_plane_keeps_its_neutral_plane_reachable() {
             .map(|association| association.object_id.as_str()),
         Some("#71")
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#70")
@@ -8911,7 +8911,7 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
             .map(|source| source.object_id.as_str()),
         Some("#10")
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#7")
@@ -8952,7 +8952,7 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
             .map(|source| source.object_id.as_str()),
         Some("#7")
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#79")
@@ -9070,7 +9070,7 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
     assert_eq!(source.object_id, "#9");
     assert_eq!(source.name, None);
 
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9135,7 +9135,7 @@ fn deferred_surface_dependencies_resolve_independent_of_record_order() {
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#7"));
     assert_eq!(result.ir.model.bodies.len(), 1);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9186,7 +9186,7 @@ fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
             && loss.message.contains("UNKNOWN periodicity")
             && loss.message.contains("#4")
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9230,7 +9230,7 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
     let rational = nurbs("step:data:curve#7");
     assert_eq!(rational.knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(rational.weights.as_deref(), Some(&[1.0, 0.5, 1.0][..]));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9279,7 +9279,7 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
         nurbs("step:data:surface#12").v_knots,
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9313,7 +9313,7 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
         nurbs.weights.as_deref(),
         Some(&[1.0, 0.5, 1.0, 0.5, 1.0, 1.0][..])
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9349,7 +9349,7 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
             } if knots == &[0.0, 0.0, 1.0, 1.0] && control_points.len() == 2
         )
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9495,7 +9495,7 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
             && loss.message.contains("#76")
             && loss.message.contains("scalar color omitted")
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9544,7 +9544,7 @@ fn presentation_records_retain_non_color_geometry_owners() {
             .object_id,
         "#10"
     );
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -9599,7 +9599,7 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
         .expect("STEP unknown arena")
         .iter()
         .all(|record| record.id.0 != "step:data:styled_item#6"));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -10178,7 +10178,7 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(ref_direction.y > 0.999_999_999);
     assert!(dot.abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -10368,7 +10368,7 @@ fn trimmed_curve_prefers_the_point_under_cartesian_master() {
             .message
             .contains("fell back to a parameter trim selector")
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -10412,7 +10412,7 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
         .expect("write opposed-sense trimmed curve");
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains(".F.,.PARAMETER."));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -10444,7 +10444,7 @@ fn trimmed_curve_forward_sense_wraps_a_closed_basis() {
         .expect("forward trimmed curve");
     assert!((parameter_range[0] - 5.0).abs() < 1.0e-12);
     assert!((parameter_range[1] - (1.0 + std::f64::consts::TAU)).abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -10543,7 +10543,7 @@ fn advanced_brep_representation_reuses_its_committed_solid_body() {
         .unwrap()
         .iter()
         .any(|record| record.id.0.contains("advanced_brep_representation")));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -10599,7 +10599,7 @@ fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
         loss.message
             .contains("ADVANCED_BREP_REPRESENTATION instance(s) as named opaque STEP records")
     }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -10747,7 +10747,7 @@ fn duplicate_face_outer_bounds_are_reported_without_inventing_inner_roles() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -10982,7 +10982,7 @@ fn common_datum_compartment_round_trips_as_one_precedence() {
             modifiers: vec!["least_material_requirement".into()],
         },
     ];
-    let validation = cadmpeg_ir::validate(&ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -11154,7 +11154,7 @@ fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
         PmiDefinition::DatumSystem { references }
             if references.len() == 1 && references[0].common_group.is_none()
     )));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

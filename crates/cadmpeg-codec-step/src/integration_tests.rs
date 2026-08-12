@@ -6,7 +6,7 @@ use super::*;
 use cadmpeg_ir::codec::{EncodeInput, Encoder};
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir.native.namespace("step").is_some());
 }

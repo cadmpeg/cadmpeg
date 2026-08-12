@@ -42,7 +42,7 @@ fn try_lossless_round_trip(
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(produced), &DecodeOptions::default())
         .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
-    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&round_trip.ir, Vec::new());
     assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
     let d = cadmpeg_ir::diff::diff(original, &round_trip.ir);
     assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");

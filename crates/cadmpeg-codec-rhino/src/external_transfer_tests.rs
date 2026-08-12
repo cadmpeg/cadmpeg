@@ -68,7 +68,7 @@ fn decode_counts(path: &Path) -> Option<(u64, usize, usize)> {
             eprintln!("  {}: {}", loss.code, loss.message);
         }
     }
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
     assert!(
         validation.findings.iter().all(|finding| !matches!(
             finding.severity,

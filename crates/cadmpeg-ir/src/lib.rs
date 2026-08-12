@@ -11,7 +11,7 @@
 //!
 //! Start a hand-built document with [`CadIr::empty`], populate its arenas,
 //! call [`CadIr::finalize`] to establish canonical identity order, then call
-//! [`validate()`] to check structural and numeric invariants. Use
+//! [`validate_neutral()`] to check structural and numeric invariants. Use
 //! [`CadIr::to_canonical_json`] and [`CadIr::from_json`] for the versioned JSON
 //! form, and [`diff()`] for identity-based structural comparison.
 //!
@@ -125,7 +125,7 @@ pub use subd::{
     SubdVertexTag,
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
-pub use validate::{entity_census, validate, validate_with_source_fidelity};
+pub use validate::{entity_census, validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
 

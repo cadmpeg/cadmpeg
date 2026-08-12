@@ -10,7 +10,7 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir.native.namespace("nx").is_some());
 }

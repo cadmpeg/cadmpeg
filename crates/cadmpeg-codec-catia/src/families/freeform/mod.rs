@@ -2679,7 +2679,7 @@ mod tests {
         assert_eq!(ir.model.points[1].position, Point3::new(2.0, 3.0, 5.0));
         assert_eq!(ir.model.points[0].position, Point3::new(7.0, 11.0, 13.0));
         ir.finalize();
-        let validation = cadmpeg_ir::validate(&ir, Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 
@@ -2711,7 +2711,7 @@ mod tests {
             assert!((actual.z - expected.z).abs() < 1e-12);
         }
         ir.finalize();
-        let validation = cadmpeg_ir::validate(&ir, Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 

@@ -148,7 +148,7 @@ fn validate_model_with_index(
 }
 
 /// Validates a model while treating staged retained-record identities as native entities.
-pub fn validate_with_additional_native_identities<'a>(
+pub fn validate_neutral_with_additional_native_identities<'a>(
     ir: &'a CadIr,
     additional: impl IntoIterator<Item = &'a str>,
     losses: Vec<LossNote>,
@@ -158,12 +158,12 @@ pub fn validate_with_additional_native_identities<'a>(
 }
 
 /// Validate one neutral product model.
-pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
+pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     validate_model(ir, losses)
 }
 
 /// Validate one neutral product model together with borrowed annotations.
-pub fn validate_with_annotations(
+pub fn validate_neutral_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
@@ -178,7 +178,7 @@ pub fn validate_with_annotations(
 }
 
 /// Validate a neutral product model together with its decode-time source sidecar.
-pub fn validate_with_source_fidelity(
+pub fn validate_neutral_with_source_fidelity(
     ir: &CadIr,
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
@@ -214,7 +214,7 @@ pub fn validate_with_source_fidelity(
 
 #[cfg(test)]
 mod tests {
-    use super::validate;
+    use super::validate_neutral;
     use crate::features::{
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FaceSelection, Feature,
         FeatureDefinition, FeatureId, PrincipalPlane, SplitFaceTool,
@@ -288,7 +288,7 @@ mod tests {
             native_ref: None,
         });
 
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
@@ -345,7 +345,7 @@ mod tests {
             ),
         ];
 
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         assert!(report.findings.is_empty(), "{:?}", report.findings);
 
         if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
@@ -355,7 +355,7 @@ mod tests {
         } else {
             unreachable!();
         }
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         assert!(report.findings.iter().any(|finding| {
             finding.message == "split-face plane set has fewer than two planes"
         }));
@@ -367,7 +367,7 @@ mod tests {
         } else {
             unreachable!();
         }
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         assert!(report
             .findings
             .iter()

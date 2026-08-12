@@ -47,7 +47,7 @@ pub(crate) fn write_semantic_with_records(
     let mut normalized = ir.clone();
     drop_synthesized_configuration_snapshot(&mut normalized);
     sort_arenas(&mut normalized);
-    let validation = cadmpeg_ir::validate::validate(&normalized, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new());
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -76,7 +76,7 @@ pub(crate) fn write_semantic_with_records(
         feature_parameter_changes_authorized,
     )?;
     crate::history::prepare_configurations_for_write(ir, &mut native, annotations)?;
-    let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
     if !validation.is_ok() {
         let detail = validation
             .findings

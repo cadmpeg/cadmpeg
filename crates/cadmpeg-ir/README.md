@@ -23,8 +23,8 @@ within a document. Arena order is canonical after `CadIr::finalize`; every
 arena is sorted lexicographically by entity ID.
 
 Coordinates and linear quantities use millimeters. Angular quantities use
-radians. Call `validate` after construction or transformation. Constructors
-leave document invariants unchecked.
+radians. Call `validate_neutral` after construction or transformation.
+Constructors leave document invariants unchecked.
 
 ## Construct and consume a document
 
@@ -32,12 +32,12 @@ Create and validate an empty current-version document:
 
 ```rust
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::{validate, CadIr};
+use cadmpeg_ir::{validate_neutral, CadIr};
 
 let mut ir = CadIr::empty(Units::default());
 // Populate ir.model arenas and use typed IDs to connect entities.
 ir.finalize();
-let report = validate(&ir, Vec::new());
+let report = validate_neutral(&ir, Vec::new());
 
 assert!(report.is_ok());
 assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);

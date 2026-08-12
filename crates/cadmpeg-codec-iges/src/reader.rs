@@ -271,7 +271,7 @@ pub(crate) fn reject_invalid_semantic_ir(
     ir: &CadIr,
     losses: &[LossNote],
 ) -> Result<(), CodecError> {
-    let validation = cadmpeg_ir::validate(ir, losses.to_vec());
+    let validation = cadmpeg_ir::validate_neutral(ir, losses.to_vec());
     let Some(finding) = validation
         .findings
         .iter()

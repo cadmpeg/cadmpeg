@@ -77,7 +77,7 @@ fuzz_target!(|data: &[u8]| {
     let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
         .expect("writer output must decode");
-    assert!(cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone()).is_ok());
 
     let replay = encoder
         .plan(EncodeInput {

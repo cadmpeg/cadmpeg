@@ -161,15 +161,22 @@ item = "cadmpeg_core::decode::{alloc_filled,DecodeContext::alloc_filled}"
 reason = "checked fill allocation for parsed counts; prefer over vec![value; n]"
 
 [[change]]
-commit = "PENDING"
+commit = "791920362eed9235a48264f083307e8b08ac78c3"
 crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::validate::entity_census"
 reason = "Phase 5: encoders count arena rows without running full validation"
 
 [[change]]
-commit = "PENDING"
+commit = "791920362eed9235a48264f083307e8b08ac78c3"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::CadIr::census"
 reason = "Phase 5: cheap IR arena census for export reports"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::{validate,validate_with_source_fidelity,validate_with_annotations,validate_with_additional_native_identities} -> validate_neutral*"
+reason = "Phase 5: dependency-free neutral validation renamed; app check composes validate_neutral + fidelity + native"

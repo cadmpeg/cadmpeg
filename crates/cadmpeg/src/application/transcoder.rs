@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use cadmpeg_ir::codec::{DecodeOptions, Encoder, ExportPlan};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, SourceFidelity};
+use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
 use crate::application::{
     ArtifactStore, ConversionRefusal, ForcedInput, InputCatalog, LoadedDocument,
@@ -229,8 +229,8 @@ fn validate_ir(
     losses: Vec<cadmpeg_ir::LossNote>,
 ) -> ValidationReport {
     let mut report = match source_fidelity {
-        Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
-        None => validate(ir, losses),
+        Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
+        None => validate_neutral(ir, losses),
     };
     report.findings.extend(validators.validate(ir));
     report

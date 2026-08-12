@@ -9,7 +9,9 @@ use std::process::ExitCode;
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
+use cadmpeg_ir::{
+    validate_neutral, validate_neutral_with_source_fidelity, CadIr, CodecEntry, SourceFidelity,
+};
 
 pub use crate::application::ValidationMode;
 use crate::application::{
@@ -37,8 +39,8 @@ fn validate_ir(
     losses: Vec<cadmpeg_ir::LossNote>,
 ) -> ValidationReport {
     let mut report = match source_fidelity {
-        Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
-        None => validate(ir, losses),
+        Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
+        None => validate_neutral(ir, losses),
     };
     report.findings.extend(validators.validate(ir));
     report

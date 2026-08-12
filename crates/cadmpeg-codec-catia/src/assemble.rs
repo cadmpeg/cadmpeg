@@ -63,7 +63,7 @@ pub(crate) fn neutral_model_is_admissible(
     pending_unknowns: &[UnknownRecord],
 ) -> bool {
     ir.model.finalize();
-    cadmpeg_ir::validate::validate_with_additional_native_identities(
+    cadmpeg_ir::validate::validate_neutral_with_additional_native_identities(
         ir,
         pending_unknowns.iter().map(|record| record.id.as_str()),
         Vec::new(),
@@ -1038,7 +1038,7 @@ mod route_tests {
                 source_object: None,
             });
         }
-        let unsorted = cadmpeg_ir::validate::validate_with_additional_native_identities(
+        let unsorted = cadmpeg_ir::validate::validate_neutral_with_additional_native_identities(
             &ir,
             std::iter::empty(),
             Vec::new(),
@@ -1058,7 +1058,7 @@ mod route_tests {
                 .collect::<Vec<_>>(),
             ["catia:test:curve#10", "catia:test:curve#9"]
         );
-        let sorted = cadmpeg_ir::validate::validate_with_additional_native_identities(
+        let sorted = cadmpeg_ir::validate::validate_neutral_with_additional_native_identities(
             &ir,
             std::iter::empty(),
             Vec::new(),

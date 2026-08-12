@@ -9505,7 +9505,7 @@ mod tests {
                 keep_tools: false,
             } if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127"
         ));
-        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
     }
 
     #[test]

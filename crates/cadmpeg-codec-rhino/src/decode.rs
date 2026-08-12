@@ -600,7 +600,7 @@ impl<'a> DecodeContext<'a> {
         let appended = before
             .appended_ids(&self.ir)
             .expect("Rhino candidate builders only append IR entities");
-        let mut validation = cadmpeg_ir::validate::validate_with_annotations(
+        let mut validation = cadmpeg_ir::validate::validate_neutral_with_annotations(
             &self.ir,
             &self.annotations,
             Vec::new(),
@@ -1779,7 +1779,7 @@ impl<'a> DecodeContext<'a> {
         let mut rejection_warning = None;
         let accepted = match outcome {
             Ok(links) => {
-                let validation = cadmpeg_ir::validate::validate(&self.ir, Vec::new());
+                let validation = cadmpeg_ir::validate::validate_neutral(&self.ir, Vec::new());
                 if validation.is_ok() {
                     self.append_links(source_order, &links);
                     self.mark_decoded(source_order);
@@ -5635,7 +5635,7 @@ mod tests {
                 .links,
             vec![curve_id.to_string()]
         );
-        let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
+        let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
 
@@ -5732,7 +5732,7 @@ mod tests {
             .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
             .expect("commit staged plane B-rep");
         append_record_links(&mut candidate, &unknown, &links);
-        let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
+        let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
 
@@ -6127,7 +6127,10 @@ mod tests {
                 assert_eq!(ir.model.faces[0].sense, Sense::Reversed);
                 assert_eq!(ir.model.faces[1].sense, Sense::Forward);
             }
-            assert_eq!(cadmpeg_ir::validate(&ir, Vec::new()).error_count(), 0);
+            assert_eq!(
+                cadmpeg_ir::validate_neutral(&ir, Vec::new()).error_count(),
+                0
+            );
         }
     }
 
@@ -6157,20 +6160,26 @@ mod tests {
             cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("rhino:test");
         let annotations = cadmpeg_ir::Annotations::default();
 
-        let mut draft_ok =
-            cadmpeg_ir::validate::validate_with_annotations(&accepted, &annotations, Vec::new());
+        let mut draft_ok = cadmpeg_ir::validate::validate_neutral_with_annotations(
+            &accepted,
+            &annotations,
+            Vec::new(),
+        );
         draft_ok
             .findings
             .retain(|f| f.check != cadmpeg_ir::report::Check::ArenaOrder);
         assert!(draft_ok.is_ok());
-        assert!(cadmpeg_ir::validate(&accepted, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new()).is_ok());
 
-        let mut draft_bad =
-            cadmpeg_ir::validate::validate_with_annotations(&rejected, &annotations, Vec::new());
+        let mut draft_bad = cadmpeg_ir::validate::validate_neutral_with_annotations(
+            &rejected,
+            &annotations,
+            Vec::new(),
+        );
         draft_bad
             .findings
             .retain(|f| f.check != cadmpeg_ir::report::Check::ArenaOrder);
         assert!(!draft_bad.is_ok());
-        assert!(!cadmpeg_ir::validate(&rejected, Vec::new()).is_ok());
+        assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new()).is_ok());
     }
 }

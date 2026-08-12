@@ -7580,10 +7580,12 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     assert_eq!(round_trip.ir.model.curves[0].geometry, expected);
     assert_eq!(round_trip.ir.model.edges[0].param_range, Some([0.25, 1.75]));
     assert!(round_trip.ir.model.edges[0].curve.is_some());
-    assert!(!cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == cadmpeg_ir::Check::Annotations));
+    assert!(
+        !cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.check == cadmpeg_ir::Check::Annotations)
+    );
     round_trip.ir.model.curves[0].geometry = CurveGeometry::Line {
         origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -7641,10 +7643,12 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         .expect("source-less ellipse-carrier round trip");
     assert_eq!(round_trip.ir.model.curves[0].geometry, expected);
     assert_eq!(round_trip.ir.model.edges[0].param_range, Some([0.5, 2.0]));
-    assert!(!cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == cadmpeg_ir::Check::Annotations));
+    assert!(
+        !cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.check == cadmpeg_ir::Check::Annotations)
+    );
 }
 
 #[test]
@@ -8739,7 +8743,7 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .count()
             == 2
     }));
-    let report = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -9869,7 +9873,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
             .rows[0][3],
         30.0
     );
-    let report = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -11540,7 +11544,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     assert_eq!(appearance.properties.get("refraction_index"), Some(&1.5));
     assert!(round_trip.ir.model.appearance_bindings.is_empty());
     assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",
@@ -15165,7 +15169,7 @@ fn decode_builds_valid_topology_and_geometry() {
 
     // The decoded document is internally valid: refs resolve, the loop ring
     // closes, no bounds violations.
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 
     // Edges carry no analytic curve (their carriers were null), which is legal.
@@ -15245,7 +15249,7 @@ fn decode_transfers_generated_wire_body_topology() {
         f3d_native(&edited.ir).wire_topologies[0].side,
         cadmpeg_asm::brep::records::WireSide::In
     );
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -15281,7 +15285,7 @@ fn decode_transfers_isolated_vertex_wire_topology() {
         wire.free_vertex,
         Some(result.ir.model.vertices[0].id.clone())
     );
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "free-vertex findings: {:?}",
@@ -15311,7 +15315,7 @@ fn decode_classifies_generated_mixed_face_wire_body_as_general() {
     assert_eq!(result.ir.model.shells[0].wire_edges.len(), 1);
     assert_eq!(result.ir.model.edges.len(), 4);
     assert_eq!(result.ir.model.curves.len(), 1);
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "mixed-body findings: {:?}",
@@ -15389,7 +15393,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .curves
         .iter()
         .any(|curve| curve.geometry == expected));
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "degenerate-curve findings: {:?}",
@@ -15428,7 +15432,7 @@ fn generated_source_less_writes_general_face_wire_body() {
     assert_eq!(round_trip.ir.model.faces.len(), 1);
     assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 1);
     assert_eq!(round_trip.ir.model.edges.len(), 4);
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "mixed-body findings: {:?}",
@@ -15490,7 +15494,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
         .wire_topologies
         .iter()
         .any(|wire| wire.edges.is_empty() && wire.free_vertex.is_some()));
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "face-and-point-wire findings: {:?}",
@@ -15549,7 +15553,7 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
     );
     assert_eq!(round_trip.ir.model.faces.len(), 6);
     assert_eq!(round_trip.ir.model.shells[1].wire_edges.len(), 1);
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "combined-body findings: {:?}",
@@ -15612,7 +15616,7 @@ fn generated_source_less_writes_wire_body_topology() {
         expected_points
     );
     assert_eq!(round_trip.ir.model.curves[0].geometry, expected_curve);
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -15667,7 +15671,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         Some(round_trip.ir.model.vertices[0].id.clone())
     );
     assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "free-vertex findings: {:?}",
@@ -15739,7 +15743,7 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
     );
     assert_eq!(round_trip.ir.model.vertices.len(), 4);
     assert_eq!(round_trip.ir.model.points.len(), 4);
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "mixed-wire findings: {:?}",
@@ -15812,7 +15816,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
             .rows[0][3],
         25.0
     );
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -15861,7 +15865,7 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
     assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 2);
     assert_eq!(round_trip.ir.model.edges.len(), 2);
     assert_eq!(round_trip.ir.model.curves.len(), 2);
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -15922,7 +15926,7 @@ fn generated_source_less_writes_multi_region_wire_body() {
         .iter()
         .all(|region| region.body == round_trip.ir.model.bodies[0].id));
     assert_eq!(round_trip.ir.model.edges.len(), 2);
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -15982,7 +15986,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
         .iter()
         .all(|shell| shell.region == round_trip.ir.model.regions[0].id));
     assert_eq!(round_trip.ir.model.edges.len(), 2);
-    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -16271,7 +16275,7 @@ fn decode_keeps_face_on_unknown_surface() {
     assert!(note.message.contains("Native kinds: splne=1."));
 
     // The decoded document still validates.
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -20509,7 +20513,7 @@ fn generated_variable_blend_rejects_radius_cardinality_mismatch() {
     };
     construction.second_value = Some(construction.first_value.clone());
 
-    assert!(cadmpeg_ir::validate(&decoded, Vec::new())
+    assert!(cadmpeg_ir::validate_neutral(&decoded, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "variable blend construction payload is invalid"));
@@ -22747,7 +22751,7 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Procedural { construction }) if *construction == procedural.id
     ));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",
@@ -25018,7 +25022,7 @@ fn decode_attaches_generated_pcurve_to_its_coedge() {
             .count(),
         1
     );
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -26364,7 +26368,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .count();
     assert_eq!(paired, 2);
 
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
     assert_eq!(result.ir.model.surfaces.len(), 2);
 }
@@ -27201,7 +27205,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     assert!(merged_unknowns
         .iter()
         .all(|record| record.id.0.starts_with(&prefix)));
-    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
     assert!(
         !validation
             .findings
