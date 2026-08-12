@@ -1,7 +1,7 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_codec_sat
 pub struct cadmpeg_codec_sat::SatCodec
-impl cadmpeg_ir::codec::Codec for cadmpeg_codec_sat::SatCodec
+impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_sat::SatCodec
 pub fn cadmpeg_codec_sat::SatCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_sat::SatCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_sat::SatCodec::id(&self) -> &'static str

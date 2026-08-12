@@ -10,7 +10,7 @@
 baseline_commit = "087baee8ba7e4374fa45a0355eb3268824fd81d8"
 audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
 api_baseline_dir = "docs/api-baseline"
-measured_at = "2bb9a14d97e376495b3137a878c4de34c1eef8ed"
+measured_at = "3ba4e05c966ea869bbfc10a12b33b8dd394de78e"
 
 # Row shape:
 # [[change]]
@@ -271,3 +271,45 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::{Feature,SketchEntity,SpatialSketchEntity}::new"
 reason = "Phase 6: invariant-bearing constructors; no public Default"
+
+[[change]]
+commit = "65e841269e8746fa3e1bacd6c477607cc2a945ec"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::report::LossKind (enum -> namespaced struct) and LossTaxonomy"
+reason = "Phase 9: wire LossKind as {namespace,code,kind}; codecs keep typed local enums"
+
+[[change]]
+commit = "65e841269e8746fa3e1bacd6c477607cc2a945ec"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "DECODE_SIDECAR_VERSION 1 -> 2; DECODE_SIDECAR_VERSION_V1; DecodeSidecar::from_json migrate-on-read"
+reason = "Phase 9: namespaced loss codes need a sidecar schema bump with v1→v2 load path"
+
+[[change]]
+commit = "b80885a85bcfe7a45148c9ff9fecdf7f2e6e893a"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::{is_valid_identity,format_identity,IdentityError}"
+reason = "Phase 9: shared identity grammar for codec-owned builders"
+
+[[change]]
+commit = "3ba4e05c966ea869bbfc10a12b33b8dd394de78e"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::{Codec,CodecEntry} -> {CodecBackend,Codec}"
+reason = "Phase 9: safe consumer API is Codec; raw hook is CodecBackend; no compatibility re-export"
+
+[[change]]
+commit = "3ba4e05c966ea869bbfc10a12b33b8dd394de78e"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::annotations::Provenance -> StreamProvenance; LossProvenance -> SourceProvenance"
+reason = "Phase 9: rename the two structurally different Provenance types by role"
+
+[[change]]
+commit = "98e06dc8ba1c1944c2347ba71740db875cb22c73"
+crate = "cadmpeg"
+kind = "signature"
+item = "CLI command report schema_version 5 -> 6 (status, refusal)"
+reason = "Phase 9: operational envelope carries ConversionRefusal stage/code/message"

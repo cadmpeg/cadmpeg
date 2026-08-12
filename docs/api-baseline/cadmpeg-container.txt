@@ -1,4 +1,4 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_container
 pub mod cadmpeg_container::compound
 pub enum cadmpeg_container::compound::CompoundAllocation
@@ -225,9 +225,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_container::compound::Co
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_container::compound::CompoundStreamId
 pub mod cadmpeg_container::compression
 pub fn cadmpeg_container::compression::inflate_bounded_probe(&[u8], usize) -> core::option::Option<alloc::vec::Vec<u8>>
-pub fn cadmpeg_container::compression::inflate_raw_prefix<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<core::option::Option<cadmpeg_core::decode::view::View<'a>>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_container::compression::inflate_zlib_exact<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::decode::view::View<'a>, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_container::compression::inflate_zlib_prefix<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<core::option::Option<cadmpeg_core::decode::view::View<'a>>, cadmpeg_core::error::CodecError>
 pub enum cadmpeg_container::EntryCompression
 pub cadmpeg_container::EntryCompression::Deflate
 pub cadmpeg_container::EntryCompression::Stored
