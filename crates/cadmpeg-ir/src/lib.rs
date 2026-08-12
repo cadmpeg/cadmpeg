@@ -125,7 +125,7 @@ pub use subd::{
     SubdVertexTag,
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
-pub use validate::{validate, validate_with_source_fidelity};
+pub use validate::{entity_census, validate, validate_with_source_fidelity};
 
 pub mod unknown;
 

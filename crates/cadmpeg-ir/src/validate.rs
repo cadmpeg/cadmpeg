@@ -80,7 +80,7 @@ macro_rules! define_registered_entity_census {
 crate::document::arena_registry!(define_registered_entity_census);
 
 /// Count the records represented by the IR arenas without running validation.
-pub(crate) fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
     let mut counts = registered_entity_census(ir);
     counts.insert(
         "surfaces_unknown_geometry".into(),

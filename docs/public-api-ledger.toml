@@ -159,3 +159,17 @@ crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::{alloc_filled,DecodeContext::alloc_filled}"
 reason = "checked fill allocation for parsed counts; prefer over vec![value; n]"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::validate::entity_census"
+reason = "Phase 5: encoders count arena rows without running full validation"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::CadIr::census"
+reason = "Phase 5: cheap IR arena census for export reports"

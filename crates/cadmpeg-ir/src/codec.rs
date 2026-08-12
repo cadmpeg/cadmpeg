@@ -309,7 +309,7 @@ impl Encoder for CadirEncoder {
             format: "cadir".into(),
             census: EntityCensus {
                 basis: CensusBasis::IrArenas,
-                counts: crate::validate::entity_census(input.ir),
+                counts: input.ir.census(),
             },
             fidelity: if input.fidelity.is_some() {
                 FidelityResolution::NotConsumed

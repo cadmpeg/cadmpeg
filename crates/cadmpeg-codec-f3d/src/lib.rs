@@ -230,7 +230,6 @@ impl Encoder for F3dCodec {
             WritePath::Patched => "preserved source container replayed with semantic patches",
             WritePath::Synthesized => "source container regenerated from IR",
         };
-        let validation = cadmpeg_ir::validate(input.ir, Vec::new());
         let expects_preserved_source = input
             .ir
             .source
@@ -256,7 +255,7 @@ impl Encoder for F3dCodec {
             format: "f3d".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: validation.entity_counts,
+                counts: input.ir.census(),
             },
             fidelity,
             write_path,

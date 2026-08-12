@@ -309,12 +309,11 @@ impl SldprtCodec {
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
         let write_path = Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
         Ok(ExportReport {
             format: "sldprt".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: validation.entity_counts,
+                counts: ir.census(),
             },
             fidelity: FidelityResolution::NotProvided,
             write_path,

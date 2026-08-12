@@ -129,7 +129,6 @@ impl Encoder for RhinoEncoder {
     fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
         let mut bytes = Vec::new();
         writer::write(input.ir, self.version.value(), &mut bytes)?;
-        let validation = cadmpeg_ir::validate(input.ir, Vec::new());
         let vertex_quantization = self.version == RhinoArchiveVersion::V5
             && input
                 .ir
@@ -170,7 +169,7 @@ impl Encoder for RhinoEncoder {
             format: "rhino".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: validation.entity_counts,
+                counts: input.ir.census(),
             },
             fidelity: if input.fidelity.is_some() {
                 FidelityResolution::NotConsumed

@@ -397,6 +397,11 @@ impl CadIr {
         self.model.finalize();
         self.native.finalize();
     }
+
+    /// Count arena rows and native loss tallies without running validation.
+    pub fn census(&self) -> std::collections::BTreeMap<String, usize> {
+        crate::validate::entity_census(self)
+    }
 }
 
 /// Source-container metadata preserved for reporting.
