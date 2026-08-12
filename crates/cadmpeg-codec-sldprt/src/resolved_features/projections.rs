@@ -6,6 +6,7 @@ use super::component_paths::{
 };
 use super::drafts::{draft_operand_candidates, same_draft_operands, DraftAnchor, DraftOperands};
 use super::holes::feature_object_byte_ranges;
+use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
 use super::relation_geometry::owned_relation_parameters;
 use super::relation_loci::same_dimension_length;
@@ -1150,7 +1151,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             let token = u16::from_le_bytes(
                                 lane.native_payload.get(body..body + 2)?.try_into().ok()?,
                             );
-                            (token & 0x8000 != 0 && token != 0xffff).then_some(token)
+                            is_class_token(token).then_some(token)
                         })
                         .collect::<HashSet<_>>();
                     let lane_key = lane

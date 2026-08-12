@@ -1,5 +1,6 @@
 //! History feature class binding.
 
+use super::is_class_token;
 use super::operations::repeated_class_token;
 use super::scalars::feature_object_name;
 use crate::classification::{native_object_class, NativeClassKind};
@@ -187,7 +188,7 @@ pub(crate) fn bind_history_classes(
             let Some(token) = usize::try_from(name.offset)
                 .ok()
                 .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
-                .filter(|token| token & 0x8000 != 0 && *token != 0xffff)
+                .filter(|token| is_class_token(*token))
             else {
                 continue;
             };
@@ -477,7 +478,7 @@ fn legacy_repeated_hole_wizard_classes(
             let Some(token) = usize::try_from(name.offset)
                 .ok()
                 .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
-                .filter(|token| token & 0x8000 != 0 && *token != 0xffff)
+                .filter(|token| is_class_token(*token))
             else {
                 continue;
             };

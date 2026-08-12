@@ -1,5 +1,6 @@
 //! Boolean operation codes for extrusion, revolution and sweep.
 
+use super::is_class_token;
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
@@ -98,7 +99,7 @@ pub(super) fn feature_operation_code(
         }
     } else {
         let repeated_token = repeated_class_token(&lane.native_payload, name_offset)?;
-        if repeated_token & 0x8000 == 0 || repeated_token == u16::MAX {
+        if !is_class_token(repeated_token) {
             return None;
         }
         let compact_instance = name_offset.checked_sub(14).filter(|code_offset| {
