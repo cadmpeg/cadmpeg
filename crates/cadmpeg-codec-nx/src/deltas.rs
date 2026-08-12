@@ -5,39 +5,7 @@
 use std::collections::BTreeMap;
 
 use crate::framing::read_xmt_width as read_xmt;
-use cadmpeg_core::decode::View;
-
-fn u16_be_at(bytes: &[u8], offset: usize) -> Option<u16> {
-    let mut view = View::over_retained(bytes);
-    view.seek(offset)?;
-    view.u16_be()
-}
-
-fn u32_be_at(bytes: &[u8], offset: usize) -> Option<u32> {
-    let mut view = View::over_retained(bytes);
-    view.seek(offset)?;
-    view.u32_be()
-}
-
-fn u64_be_at(bytes: &[u8], offset: usize) -> Option<u64> {
-    let mut view = View::over_retained(bytes);
-    view.seek(offset)?;
-    view.u64_be()
-}
-
-fn f64_be_at(bytes: &[u8], offset: usize) -> Option<f64> {
-    let mut view = View::over_retained(bytes);
-    view.seek(offset)?;
-    view.f64_be()
-}
-
-fn vec3_be_at(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
-    Some([
-        f64_be_at(bytes, offset)?,
-        f64_be_at(bytes, offset.checked_add(8)?)?,
-        f64_be_at(bytes, offset.checked_add(16)?)?,
-    ])
-}
+use crate::view_at::{f64_be_at, u16_be_at, u32_be_at, u64_be_at, vec3_be_at};
 
 /// One complete admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
