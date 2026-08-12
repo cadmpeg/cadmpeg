@@ -5,6 +5,7 @@
 //! inline big-endian curved-surface parameter block.
 
 use cadmpeg_core::be::f32_at as f32_be;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -788,7 +789,10 @@ fn unit_vector(vector: Vector3) -> Option<Vector3> {
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
-    cadmpeg_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
+    let mut view = View::over_retained(bytes);
+    view.seek(at)
+        .and_then(|()| view.f32_le())
+        .unwrap_or(f32::NAN)
 }
 
 fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
