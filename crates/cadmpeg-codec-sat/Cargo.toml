@@ -14,6 +14,10 @@ keywords = ["cad", "acis", "sat", "shapemanager", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 exclude = ["tests/golden/**"]
 
+[features]
+# Exposes the `fuzz` facade of `()`-returning parser wrappers for `cadmpeg-fuzz`.
+fuzzing = []
+
 [dependencies]
 cadmpeg-asm.workspace = true
 cadmpeg-core.workspace = true

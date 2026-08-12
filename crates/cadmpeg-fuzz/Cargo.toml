@@ -18,16 +18,16 @@ libfuzzer-sys = "0.4"
 cadmpeg-asm = { path = "../cadmpeg-asm" }
 cadmpeg-core = { path = "../cadmpeg-core" }
 cadmpeg-container = { path = "../cadmpeg-container" }
-cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
+cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d", features = ["fuzzing"] }
 cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor", features = ["fuzzing"] }
 cadmpeg-protein = { path = "../cadmpeg-protein" }
-cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
+cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad", features = ["fuzzing"] }
 cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt", features = ["fuzzing"] }
 cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia", features = ["fuzzing"] }
 cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo", features = ["fuzzing"] }
 cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx", features = ["fuzzing"] }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }
-cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
+cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges", features = ["fuzzing"] }
 cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
 cadmpeg-codec-step = { path = "../cadmpeg-codec-step", features = ["fuzzing"] }
 zip = { version = "8", default-features = false, features = ["deflate"] }

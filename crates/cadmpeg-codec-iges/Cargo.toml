@@ -18,6 +18,10 @@ documentation = "https://docs.rs/cadmpeg-codec-iges"
 keywords = ["cad", "iges", "geometry", "brep"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
+[features]
+# Exposes the `fuzz` facade of `()`-returning parser wrappers for `cadmpeg-fuzz`.
+fuzzing = []
+
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true

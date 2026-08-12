@@ -15,6 +15,10 @@ rust-version.workspace = true
 # tests from the repository checkout.
 exclude = ["tests/golden/**"]
 
+[features]
+# Exposes the `fuzz` facade of `()`-returning parser wrappers for `cadmpeg-fuzz`.
+fuzzing = []
+
 [dependencies]
 cadmpeg-container.workspace = true
 cadmpeg-core.workspace = true

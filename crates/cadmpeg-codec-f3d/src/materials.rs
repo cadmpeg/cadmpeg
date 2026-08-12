@@ -1738,7 +1738,7 @@ fn definition_catalog<'a>(
     Ok(out)
 }
 
-fn nested_entry<'a>(
+pub(crate) fn nested_entry<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
     suffix: &str,
