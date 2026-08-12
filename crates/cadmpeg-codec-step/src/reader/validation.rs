@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -64,7 +64,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "validation property name",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })?;
             if name.eq_ignore_ascii_case("geometric validation property") {
@@ -80,7 +80,7 @@ pub(super) fn decode(
                                 &mut losses,
                                 id,
                                 "validation property description",
-                                LossKind::MetadataNotTransferred,
+                                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                             )
                         })
                         .unwrap_or_default(),
@@ -254,7 +254,7 @@ fn measure_scale(
         })
         .unwrap_or_else(|| {
             losses.push(LossNote {
-                code: LossKind::GeometryNotTransferred,
+                code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
                 severity: Severity::Error,
                 message: format!(
                     "geometric validation {kind} measure #{} unit scale did not resolve; the document length scale was used",

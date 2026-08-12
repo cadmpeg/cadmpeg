@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::{LossCategory, LossKind};
+use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
 use cadmpeg_ir::Exactness;
 
 use crate::container;
@@ -2282,14 +2282,14 @@ fn decode_emits_connected_primitive_brep() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.code != LossKind::MaterialNotTransferred));
+        .all(|loss| loss.code != LossKind::shared(LossTaxonomy::MaterialNotTransferred)));
     assert!(result
         .report
         .losses
         .iter()
-        .all(|loss| loss.code != LossKind::AttributesNotTransferred));
+        .all(|loss| loss.code != LossKind::shared(LossTaxonomy::AttributesNotTransferred)));
     assert!(!result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::AssemblyPlacementsNotTransferred
+        loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)
             && loss.message.contains("Assembly occurrence placements")
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
@@ -2316,7 +2316,7 @@ fn decode_does_not_report_assembly_placements_for_inline_external_metadata() {
         .report
         .losses
         .iter()
-        .any(|loss| loss.code == LossKind::AssemblyPlacementsNotTransferred));
+        .any(|loss| loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)));
 }
 
 #[test]
@@ -2330,14 +2330,14 @@ fn decode_reports_external_assembly_boundary_without_inline_geometry() {
         .unwrap();
 
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::AssemblyComponentsExternal
+        loss.code == LossKind::shared(LossTaxonomy::AssemblyComponentsExternal)
             && loss.message.contains("No inline Parasolid geometry")
     }));
     assert!(!result
         .report
         .losses
         .iter()
-        .any(|loss| loss.code == LossKind::AssemblyPlacementsNotTransferred));
+        .any(|loss| loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)));
 }
 
 #[test]
@@ -2373,7 +2373,7 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.code != LossKind::MaterialNotTransferred));
+        .all(|loss| loss.code != LossKind::shared(LossTaxonomy::MaterialNotTransferred)));
 }
 
 #[test]

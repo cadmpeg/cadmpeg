@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::report::{LossKind, Severity};
+use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
 
 use super::archive_test_support::{
@@ -443,7 +443,10 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .iter()
         .find(|loss| loss.severity == Severity::Error)
         .expect("mesh failure loss");
-    assert_eq!(failure.code, LossKind::DecodeDiagnostic);
+    assert_eq!(
+        failure.code,
+        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
+    );
     assert!(failure.message.contains(
         "1 framed object record(s) for class 4ed7d4e4-e947-11d3-bfe5-0010830122f0 could not be decoded"
     ));
@@ -619,12 +622,9 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .links
         .contains(&body.id.to_string()));
     assert!(result.report.geometry_transferred);
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|loss| loss.code == LossKind::ObjectRecordsUntransferred
-            && loss.message.contains("decoded 1/1 Rhino object records")));
+    assert!(result.report.losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
+        && loss.message.contains("decoded 1/1 Rhino object records")));
     assert!(
         cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone()).is_ok()
     );

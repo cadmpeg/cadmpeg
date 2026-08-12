@@ -5,7 +5,6 @@
 use super::*;
 use crate::archive_test_support as support;
 use crate::{RhinoArchiveVersion, RhinoEncoder};
-use cadmpeg_ir::report::LossKind;
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
 use cadmpeg_ir::Encoder;
 
@@ -271,7 +270,7 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     let losses = &result.report.losses;
 
     assert!(losses.iter().any(|loss| {
-        loss.code == LossKind::ObjectRecordsUntransferred
+        loss.code == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
             && loss.message.contains("decoded 0/2 Rhino object records")
     }));
 
@@ -281,10 +280,10 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     ] {
         let charged = losses
             .iter()
-            .filter(|loss| loss.message.starts_with(code.code()))
+            .filter(|loss| loss.code == code.kind())
             .collect::<Vec<_>>();
         assert_eq!(charged.len(), 1, "{} not charged once", code.code());
-        assert_eq!(charged[0].code, LossKind::RecordNotTyped);
+        assert_eq!(charged[0].code, code.kind());
         assert_eq!(charged[0].severity, Severity::Warning);
         assert!(charged[0]
             .message
@@ -292,9 +291,9 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
         assert!(charged[0].provenance.is_some());
     }
 
-    assert!(!losses
-        .iter()
-        .any(|loss| loss.code == LossKind::UnsupportedObjectFamily));
+    assert!(!losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::ObjectFamilyNotTransferred.kind()
+    }));
 
     // The hatch loop curve is a real neutral carrier even though the fill is not.
     assert!(!result.ir.model.curves.is_empty());
@@ -417,13 +416,13 @@ fn unresolvable_dimension_style_is_charged_without_a_dangling_reference() {
         .report
         .losses
         .iter()
-        .filter(|loss| {
-            loss.message
-                .starts_with(crate::loss::RhinoLossCode::DimensionStyleUnresolved.code())
-        })
+        .filter(|loss| loss.code == crate::loss::RhinoLossCode::DimensionStyleUnresolved.kind())
         .collect::<Vec<_>>();
     assert_eq!(charged.len(), 1);
-    assert_eq!(charged[0].code, LossKind::PmiOmitted);
+    assert_eq!(
+        charged[0].code,
+        crate::loss::RhinoLossCode::DimensionStyleUnresolved.kind()
+    );
     assert_valid(&result);
 }
 

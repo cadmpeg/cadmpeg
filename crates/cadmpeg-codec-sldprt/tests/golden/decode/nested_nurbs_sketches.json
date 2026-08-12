@@ -778,12 +778,20 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "topology_gauge_substituted",
+        "code": {
+          "code": "topology.body-hierarchy-derived",
+          "kind": "topology_gauge_substituted",
+          "namespace": "sldprt"
+        },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "config.inferred-without-native",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt"
+        },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
       }

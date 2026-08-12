@@ -12,7 +12,7 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
 ///
@@ -203,39 +203,58 @@ impl SldprtLossCode {
         }
     }
 
-    const fn shared_code(self) -> LossKind {
+    const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ContainerNoParasolidStream => LossKind::MissingGeometryStream,
+            Self::ContainerNoParasolidStream => LossTaxonomy::MissingGeometryStream,
             Self::TopologyBodyHierarchyDerived
             | Self::TopologyBodyAssignmentAmbiguous
-            | Self::TopologyFaceOwnerAmbiguous => LossKind::TopologyGaugeSubstituted,
-            Self::TopologyFaceUnclaimed => LossKind::TopologyNotTransferred,
-            Self::TopologyGraphNotTransferred => LossKind::TopologyNotTransferred,
+            | Self::TopologyFaceOwnerAmbiguous => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::TopologyFaceUnclaimed => LossTaxonomy::TopologyNotTransferred,
+            Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
-            | Self::GeometryParasolidNotTransferred => LossKind::GeometryNotTransferred,
-            Self::GeometryPcurveAmbiguous => LossKind::PcurveOmitted,
-            Self::AppearanceFaceColorUnresolved => LossKind::MaterialNotTransferred,
-            Self::TessellationFaceOwnershipUnresolved => LossKind::ReferenceGraphNotClosed,
-            Self::MaterialMetadataNotTransferred => LossKind::MaterialNotTransferred,
-            _ => LossKind::FeatureHistoryRetained,
+            | Self::GeometryParasolidNotTransferred => LossTaxonomy::GeometryNotTransferred,
+            Self::GeometryPcurveAmbiguous => LossTaxonomy::PcurveOmitted,
+            Self::AppearanceFaceColorUnresolved => LossTaxonomy::MaterialNotTransferred,
+            Self::TessellationFaceOwnershipUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
+            Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
+            _ => LossTaxonomy::FeatureHistoryRetained,
         }
+    }
+
+    /// Strict floor pinned from this local code (independent of taxonomy remap).
+    ///
+    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
+    /// silently change rejection; list only intentional overrides here.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::GeometryParasolidNotTransferred
+            | Self::TopologyGraphNotTransferred
+            | Self::ContainerNoParasolidStream => Some(Severity::Warning),
+            other => other.shared_taxonomy().strict_floor(),
+        }
+    }
+
+    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    #[must_use]
+    pub fn kind(self) -> LossKind {
+        LossKind::namespaced("sldprt", self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// Severity comes from the codec-specific code. Provenance is left absent;
-    /// the decoder attributes losses through the message and record identity,
-    /// not a source span.
+    /// The structured code is `sldprt/<local>`. Severity and strict floor come
+    /// from the local code.
     #[must_use]
     pub fn note(self, message: impl Into<String>) -> LossNote {
-        LossNote::new(self.shared_code(), message).with_severity(self.severity())
+        LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
@@ -321,7 +340,9 @@ mod tests {
     #[test]
     fn ambiguous_pcurve_is_a_tolerable_pcurve_omission() {
         let note = SldprtLossCode::GeometryPcurveAmbiguous.note("ambiguous");
-        assert_eq!(note.code, LossKind::PcurveOmitted);
+        assert_eq!(note.code.namespace(), "sldprt");
+        assert_eq!(note.code.local_code(), "geometry.pcurve-ambiguous");
+        assert_eq!(note.code.taxonomy(), LossTaxonomy::PcurveOmitted);
         assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
     }
 }

@@ -6,7 +6,9 @@ use cadmpeg_core::decode::{DecodeContext, DecodeMode};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity, TransferDisposition, TransferLedger};
+use cadmpeg_ir::report::{
+    DecodeReport, LossNote, LossTaxonomy, Severity, TransferDisposition, TransferLedger,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -158,7 +160,7 @@ fn decode_with_occurrence_limits(
     losses.extend(graph::losses(&references, &scan, &parameters));
     if product_occurrence_expansion.output_truncated {
         losses.push(LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::DecodeDiagnostic),
             severity: Severity::Warning,
             message: "IGES product occurrence expansion reached its configured output limit".into(),
             provenance: None,
@@ -166,7 +168,7 @@ fn decode_with_occurrence_limits(
     }
     if product_occurrence_expansion.depth_truncated {
         losses.push(LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::DecodeDiagnostic),
             severity: Severity::Warning,
             message: "IGES product occurrence expansion reached its configured nesting-depth limit"
                 .into(),
@@ -175,7 +177,7 @@ fn decode_with_occurrence_limits(
     }
     if product_occurrence_expansion.root_inference_blocked {
         losses.push(LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::DecodeDiagnostic),
             severity: Severity::Warning,
             message: "IGES product occurrence root inference was suppressed because a definition member list is malformed"
                 .into(),
@@ -192,7 +194,7 @@ fn decode_with_occurrence_limits(
                             || !projection.handled.contains(&entry.sequence))
                 })
                 .map(|entry| LossNote {
-                    code: cadmpeg_ir::LossKind::RecordNotTyped,
+                    code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
                     severity: Severity::Warning,
                     message: if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
                         format!(

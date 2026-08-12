@@ -9,7 +9,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::transform::Transform;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -77,7 +77,7 @@ pub(super) fn decode(
                 &mut losses,
                 id,
                 "product definition description",
-                LossKind::MetadataNotTransferred,
+                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
             )
         }) else {
             continue;
@@ -113,7 +113,7 @@ pub(super) fn decode(
                     &mut losses,
                     step_id,
                     "product identifier",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
             .unwrap_or_else(|| format!("#{step_id}"));
@@ -126,7 +126,7 @@ pub(super) fn decode(
                     &mut losses,
                     step_id,
                     "product name",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
             .filter(|name| !name.is_empty());
@@ -139,7 +139,7 @@ pub(super) fn decode(
                     &mut losses,
                     step_id,
                     "product description",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
             .filter(|description| !description.is_empty());
@@ -241,7 +241,7 @@ pub(super) fn decode(
                         &mut losses,
                         id,
                         "assembly occurrence name",
-                        LossKind::MetadataNotTransferred,
+                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     )
                 });
             Some((
@@ -359,7 +359,7 @@ pub(super) fn decode(
             } else {
                 if missing_placement_reports.insert(usage_id) {
                     losses.push(LossNote {
-                        code: LossKind::AssemblyPlacementsNotTransferred,
+                        code: LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred),
                         severity: Severity::Error,
                         message: format!(
                             "NAUO #{usage_id} has no resolved occurrence transform; \
@@ -554,7 +554,7 @@ fn apply_body_placements(
                     .collect::<Vec<_>>()
                     .join(", ");
                 losses.push(LossNote {
-                    code: LossKind::AssemblyPlacementsNotTransferred,
+                    code: LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred),
                     severity: Severity::Error,
                     message: format!(
                         "body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"

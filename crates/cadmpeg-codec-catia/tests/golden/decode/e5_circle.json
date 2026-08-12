@@ -561,7 +561,11 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "topology_not_transferred",
+        "code": {
+          "code": "topology_not_transferred",
+          "kind": "topology_not_transferred",
+          "namespace": "shared"
+        },
         "message": "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
         "severity": "blocking"
       }

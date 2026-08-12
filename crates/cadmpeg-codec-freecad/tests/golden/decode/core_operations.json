@@ -802,7 +802,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.022889953989899,
+                -0.02288995398989851,
                 10.015308421443576
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:7%3A2%3A1"
@@ -838,7 +838,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.022889953989899,
+                -0.02288995398989851,
                 10.015308421443576
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:3%3A2%3A1"
@@ -856,7 +856,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                0.848667473486684,
+                0.8486674734866845,
                 10.88686584892016
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:13%3A2%3A1"
@@ -892,7 +892,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                0.848667473486684,
+                0.8486674734866845,
                 10.88686584892016
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:17%3A2%3A1"
@@ -928,7 +928,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.022889953989899,
+                -0.02288995398989851,
                 10.015308421443576
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:3%3A3%3A1"
@@ -946,7 +946,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.524931981155545,
+                -0.5249319811555448,
                 20.524931981155543
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:22%3A2%3A1"
@@ -964,7 +964,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                0.848667473486684,
+                0.8486674734866845,
                 10.88686584892016
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:13%3A3%3A1"
@@ -1018,7 +1018,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                0.848667473486684,
+                0.8486674734866845,
                 10.88686584892016
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:17%3A3%3A1"
@@ -1036,7 +1036,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.524931981155545,
+                -0.5249319811555448,
                 20.524931981155547
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:26%3A2%3A1"
@@ -1054,7 +1054,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.022889953989899,
+                -0.02288995398989851,
                 10.015308421443576
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:7%3A3%3A1"
@@ -1162,7 +1162,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.524931981155545,
+                -0.5249319811555448,
                 20.524931981155547
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:26%3A3%3A1"
@@ -1198,7 +1198,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.524931981155545,
+                -0.5249319811555448,
                 20.524931981155543
               ],
               "pcurve": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:22%3A3%3A1"
@@ -23646,7 +23646,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:13%3A2%3A1",
           "parameter_range": [
-            0.848667473486684,
+            0.8486674734866845,
             10.88686584892016
           ]
         },
@@ -23672,7 +23672,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:13%3A3%3A1",
           "parameter_range": [
-            0.848667473486684,
+            0.8486674734866845,
             10.88686584892016
           ]
         },
@@ -23750,7 +23750,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:17%3A2%3A1",
           "parameter_range": [
-            0.848667473486684,
+            0.8486674734866845,
             10.88686584892016
           ]
         },
@@ -23776,7 +23776,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:17%3A3%3A1",
           "parameter_range": [
-            0.848667473486684,
+            0.8486674734866845,
             10.88686584892016
           ]
         },
@@ -23890,7 +23890,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:22%3A2%3A1",
           "parameter_range": [
-            -0.524931981155545,
+            -0.5249319811555448,
             20.524931981155543
           ]
         },
@@ -23916,7 +23916,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:22%3A3%3A1",
           "parameter_range": [
-            -0.524931981155545,
+            -0.5249319811555448,
             20.524931981155543
           ]
         },
@@ -23978,7 +23978,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:26%3A2%3A1",
           "parameter_range": [
-            -0.524931981155545,
+            -0.5249319811555448,
             20.524931981155547
           ]
         },
@@ -24004,7 +24004,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:26%3A3%3A1",
           "parameter_range": [
-            -0.524931981155545,
+            -0.5249319811555448,
             20.524931981155547
           ]
         },
@@ -24030,7 +24030,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:3%3A2%3A1",
           "parameter_range": [
-            -0.022889953989899,
+            -0.02288995398989851,
             10.015308421443576
           ]
         },
@@ -24056,7 +24056,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:3%3A3%3A1",
           "parameter_range": [
-            -0.022889953989899,
+            -0.02288995398989851,
             10.015308421443576
           ]
         },
@@ -24134,7 +24134,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:7%3A2%3A1",
           "parameter_range": [
-            -0.022889953989899,
+            -0.02288995398989851,
             10.015308421443576
           ]
         },
@@ -24160,7 +24160,7 @@
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:7%3A3%3A1",
           "parameter_range": [
-            -0.022889953989899,
+            -0.02288995398989851,
             10.015308421443576
           ]
         },
@@ -25140,7 +25140,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -25254,7 +25254,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -25292,7 +25292,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -25330,7 +25330,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -26153,7 +26153,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -26267,7 +26267,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -26305,7 +26305,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -26343,7 +26343,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -27149,7 +27149,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -27263,7 +27263,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -27301,7 +27301,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [
@@ -27339,7 +27339,7 @@
               ],
               [
                 0.0,
-                0.5150380749100544,
+                0.5150380749100543,
                 0.0
               ],
               [

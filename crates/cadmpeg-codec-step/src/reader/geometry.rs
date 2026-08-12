@@ -15,7 +15,7 @@ use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
@@ -347,7 +347,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                                 reference
                             } else {
                                 losses.push(LossNote {
-                                    code: LossKind::CarrierAxisInferred,
+                                    code: LossKind::shared(LossTaxonomy::CarrierAxisInferred),
                                     severity: Severity::Warning,
                                     message: format!(
                                         "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
@@ -1781,7 +1781,7 @@ pub(super) fn associate_free_geometric_set_members(
                         losses,
                         member,
                         "geometric-set member name",
-                        LossKind::MetadataNotTransferred,
+                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     )
                 })
                 .filter(|name| !name.is_empty());
@@ -1855,7 +1855,7 @@ pub(super) fn associate_free_representation_members(
                         losses,
                         member,
                         "representation member name",
-                        LossKind::MetadataNotTransferred,
+                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     )
                 })
                 .filter(|name| !name.is_empty());
@@ -1948,7 +1948,7 @@ fn associate_presentation_carrier(
                 losses,
                 target,
                 "presentation carrier name",
-                LossKind::MetadataNotTransferred,
+                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
             )
         })
         .filter(|name| !name.is_empty());
@@ -2638,7 +2638,7 @@ fn finalize_unit_candidates(
     }
     if ambiguous > 0 {
         losses.push(LossNote {
-            code: LossKind::GeometryNotTransferred,
+            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{ambiguous} geometry record(s) belong to representations with conflicting {dimension} units; source-order unit selection was not applied"
@@ -3020,7 +3020,7 @@ fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option
     }
     if measures.len() > 1 {
         losses.push(LossNote {
-            code: LossKind::GeometryNotTransferred,
+            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has {} resolvable length measure(s) and {} unresolved measure(s); the linear tolerance is ambiguous",
@@ -3030,7 +3030,7 @@ fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option
         });
     } else if measures.is_empty() && unresolved_measure_count > 0 {
         losses.push(LossNote {
-            code: LossKind::GeometryNotTransferred,
+            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved_measure_count} unresolved measure(s); the linear tolerance was not transferred"
@@ -3277,7 +3277,7 @@ fn line_parameter_scale(
 
 fn unresolved_unit_loss(message: impl Into<String>) -> LossNote {
     LossNote {
-        code: LossKind::GeometryNotTransferred,
+        code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
         severity: Severity::Error,
         message: message.into(),
         provenance: None,

@@ -1542,7 +1542,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous
     );
     assert!(outside_resolution.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
             && loss.message.contains("Global minimum resolution")
     }));
     let validation = cadmpeg_ir::validate_neutral(
@@ -1821,7 +1821,7 @@ fn strict_decode_rejects_an_attributed_projection_loss() {
 
     assert!(error
         .to_string()
-        .contains("strict mode rejects record_not_typed"));
+        .contains("strict mode rejects shared/record_not_typed"));
     assert!(error
         .to_string()
         .contains("interpretation flag disagrees with the entity form"));
@@ -7727,7 +7727,10 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
         .iter()
         .find(|loss| loss.message.contains("D3 Parameter pointer 99"))
         .unwrap();
-    assert_eq!(loss.code, cadmpeg_ir::LossKind::ReferenceGraphNotClosed);
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+    );
     assert_eq!(
         loss.provenance.as_ref().unwrap().offset,
         pointer_offset as u64
@@ -8100,7 +8103,10 @@ fn decode_validates_structure_targets_by_source_entity() {
         .report
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed)
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        })
         .collect::<Vec<_>>();
     assert_eq!(reference_losses.len(), 3);
     assert!(reference_losses.iter().all(|loss| {
@@ -8221,7 +8227,8 @@ fn decode_validates_selected_component_parameter_pointer() {
             .report
             .losses
             .iter()
-            .filter(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed)
+            .filter(|loss| loss.code
+                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed))
             .count(),
         4
     );
@@ -8230,7 +8237,8 @@ fn decode_validates_selected_component_parameter_pointer() {
         .losses
         .iter()
         .find(|loss| {
-            loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            loss.code
+                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
                 && loss.message.contains("D7 Parameter pointer 2")
         })
         .unwrap();
@@ -11815,10 +11823,10 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     assert_eq!(plan.write_path(), WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| { loss.code == cadmpeg_ir::LossKind::PassthroughRecordOmitted }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code
+            == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted)
+    }));
     let round_trip = IgesCodec
         .decode(
             &mut Cursor::new(written.as_slice()),
@@ -12107,7 +12115,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
     let report = plan.write_to(&mut written).unwrap();
     assert!(
         report.losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::LossKind::ProceduralReduced
+            loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ProceduralReduced)
                 && loss.message.contains("1 procedural surface definition(s)")
                 && loss.message.contains("2 procedural curve definition(s)")
         }),
@@ -12117,10 +12125,10 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
     assert!(
         report.losses.iter().all(|loss| {
             matches!(
-                loss.code,
-                cadmpeg_ir::LossKind::PassthroughRecordOmitted
-                    | cadmpeg_ir::LossKind::PreservedSourceUnavailable
-                    | cadmpeg_ir::LossKind::ProceduralReduced
+                loss.code.taxonomy(),
+                cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
+                    | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
+                    | cadmpeg_ir::LossTaxonomy::ProceduralReduced
             )
         }),
         "{:#?}",
@@ -12792,10 +12800,8 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
         .unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == cadmpeg_ir::LossKind::PassthroughRecordOmitted));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted)));
     assert_eq!(
         report.census.counts.get("186_manifold_solid_brep"),
         Some(&1)
@@ -13089,9 +13095,9 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
     let report = plan.write_to(&mut written).unwrap();
     assert!(
         report.losses.iter().all(|loss| matches!(
-            loss.code,
-            cadmpeg_ir::LossKind::PassthroughRecordOmitted
-                | cadmpeg_ir::LossKind::PreservedSourceUnavailable
+            loss.code.taxonomy(),
+            cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
+                | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
         )),
         "{:#?}",
         report.losses
@@ -13557,7 +13563,10 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
         .report
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed)
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        })
         .collect::<Vec<_>>();
     assert_eq!(cycle_losses.len(), 2);
     assert!(cycle_losses

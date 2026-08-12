@@ -3368,11 +3368,8 @@ fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
         result.ir.model.procedural_surfaces[0].definition,
         ProceduralSurfaceDefinition::Extrusion { .. }
     ));
-    assert!(!result
-        .report
-        .losses
-        .iter()
-        .any(|loss| loss.code == cadmpeg_ir::report::LossKind::GeometryNotTransferred));
+    assert!(!result.report.losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::report::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)));
 }
 
 #[test]

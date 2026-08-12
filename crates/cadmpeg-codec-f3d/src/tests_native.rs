@@ -5945,7 +5945,7 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("independent malformed mesh entry must not abort document decode");
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.code == LossCode::DecodeDiagnostic
+        loss.code == LossCode::shared(LossTaxonomy::DecodeDiagnostic)
             && loss.severity == Severity::Error
             && loss.message.contains(entry)
             && loss.message.contains("paramesh container has no magic")

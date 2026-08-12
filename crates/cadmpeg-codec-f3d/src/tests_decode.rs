@@ -1843,7 +1843,7 @@ fn decode_does_not_use_a_sibling_brep_for_a_brep_less_design_asset() {
         .unwrap();
     assert!(decoded.ir.model.bodies.is_empty());
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.code == LossCode::MissingGeometryStream
+        loss.code == LossCode::shared(LossTaxonomy::MissingGeometryStream)
             && loss.message == "no ASM BREP stream (.smb/.smbh) was found in the container"
     }));
 }

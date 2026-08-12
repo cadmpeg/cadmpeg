@@ -291,7 +291,9 @@ impl Encoder for SldprtCodec {
         };
         if matches!(report.fidelity, FidelityResolution::Degraded { .. }) {
             report.losses.push(LossNote {
-                code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
+                code: cadmpeg_ir::LossKind::shared(
+                    cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable,
+                ),
                 severity: Severity::Blocking,
                 message: "preserved SLDPRT source image is unavailable; regenerated from IR".into(),
                 provenance: None,

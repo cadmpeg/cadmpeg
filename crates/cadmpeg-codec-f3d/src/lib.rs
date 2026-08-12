@@ -252,7 +252,9 @@ impl Encoder for F3dCodec {
         };
         let losses = matches!(fidelity, FidelityResolution::Degraded { .. })
             .then(|| cadmpeg_ir::LossNote {
-                code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
+                code: cadmpeg_ir::LossKind::shared(
+                    cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable,
+                ),
                 severity: cadmpeg_ir::Severity::Blocking,
                 message: "preserved F3D source image is unavailable; regenerated from IR".into(),
                 provenance: None,

@@ -30,7 +30,7 @@ pub(super) struct CompositeProjection {
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
     LossNote::new(
-        cadmpeg_ir::LossKind::GeometryNotTransferred,
+        cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred),
         format!(
             "IGES Type 102 entity D{} has no exact concatenated carrier because {reason}; the ordered native composite carrier was retained",
             entry.sequence

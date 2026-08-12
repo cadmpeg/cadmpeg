@@ -179,7 +179,7 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
         loss.message.clone()
     };
 
-    let geometry = message(LossCode::GeometryNotTransferred);
+    let geometry = message(LossCode::shared(LossTaxonomy::GeometryNotTransferred));
     assert!(
         geometry.contains("declares no ASM BREP stream"),
         "geometry loss must state the absent stream: {geometry}"
@@ -189,14 +189,14 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
         "no stream was selected, so none can have failed to decode: {geometry}"
     );
 
-    let topology = message(LossCode::TopologyNotTransferred);
+    let topology = message(LossCode::shared(LossTaxonomy::TopologyNotTransferred));
     assert!(
         topology.contains("declares no ASM BREP stream"),
         "topology loss must state the absent stream: {topology}"
     );
 
     assert_eq!(
-        message(LossCode::MissingGeometryStream),
+        message(LossCode::shared(LossTaxonomy::MissingGeometryStream)),
         "no ASM BREP stream (.smb/.smbh) was found in the container"
     );
 
@@ -236,7 +236,7 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
         loss.message.clone()
     };
 
-    let geometry = message(LossCode::GeometryNotTransferred);
+    let geometry = message(LossCode::shared(LossTaxonomy::GeometryNotTransferred));
     assert!(
         geometry.contains("text-encoded ASM stream(s)") && geometry.contains("BREP0.sat"),
         "geometry loss must name the empty text carrier: {geometry}"
@@ -246,14 +246,14 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
         "a text carrier is a declared carrier: {geometry}"
     );
 
-    let topology = message(LossCode::TopologyNotTransferred);
+    let topology = message(LossCode::shared(LossTaxonomy::TopologyNotTransferred));
     assert!(
         topology.contains("text-encoded"),
         "topology loss must name the encoding: {topology}"
     );
 
     assert_eq!(
-        message(LossCode::MissingGeometryStream),
+        message(LossCode::shared(LossTaxonomy::MissingGeometryStream)),
         "2 ASM BREP stream(s) are present in the text encoding (.sat/.smt) and produced no \
          geometry; no binary stream (.smb/.smbh) was found"
     );
@@ -333,11 +333,11 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
     };
 
     assert_eq!(
-        message(LossCode::MissingGeometryStream),
+        message(LossCode::shared(LossTaxonomy::MissingGeometryStream)),
         "2 ASM BREP stream(s) are present, but none of them was selected as the document's \
          geometry stream"
     );
-    let geometry = message(LossCode::GeometryNotTransferred);
+    let geometry = message(LossCode::shared(LossTaxonomy::GeometryNotTransferred));
     assert!(
         geometry.contains("2 BREP stream(s) were located") && geometry.contains("ambiguous"),
         "geometry loss must state the ambiguous selection: {geometry}"
@@ -628,9 +628,18 @@ pub(super) fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
         coverage: std::collections::BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses: vec![
-            loss(LossCode::GeometryNotTransferred, Severity::Blocking),
-            loss(LossCode::TopologyNotTransferred, Severity::Blocking),
-            loss(LossCode::MissingGeometryStream, Severity::Error),
+            loss(
+                LossCode::shared(LossTaxonomy::GeometryNotTransferred),
+                Severity::Blocking,
+            ),
+            loss(
+                LossCode::shared(LossTaxonomy::TopologyNotTransferred),
+                Severity::Blocking,
+            ),
+            loss(
+                LossCode::shared(LossTaxonomy::MissingGeometryStream),
+                Severity::Error,
+            ),
         ],
         notes: Vec::new(),
     }
@@ -755,7 +764,7 @@ pub(super) fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
         coverage: std::collections::BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses: vec![cadmpeg_ir::report::LossNote {
-            code: LossCode::MaterialNotTransferred,
+            code: LossCode::shared(LossTaxonomy::MaterialNotTransferred),
             severity: Severity::Warning,
             message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
                       transferred."

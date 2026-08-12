@@ -7,7 +7,7 @@ use std::io::{Cursor, Write};
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::LossKind;
+use cadmpeg_ir::LossTaxonomy;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -6633,7 +6633,7 @@ fn strict_accepts_operator_requested_container_only() {
 
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
-    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
 
     let fixture = synthetic_sldprt();
 
@@ -6645,12 +6645,12 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossKind::GeometryNotTransferred));
+        .any(|note| note.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
     assert!(salvaged
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossKind::TopologyNotTransferred));
+        .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyNotTransferred));
     assert!(salvaged
         .report
         .losses
@@ -6661,7 +6661,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     match strict {
         Err(cadmpeg_core::CodecError::Malformed(message)) => {
             assert!(
-                message.contains("strict mode rejects geometry_not_transferred"),
+                message.contains("strict mode rejects sldprt/"),
                 "unexpected message: {message}"
             );
         }
@@ -6671,7 +6671,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
     let strict = SldprtCodec
@@ -6687,7 +6687,7 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossKind::TopologyGaugeSubstituted));
+        .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyGaugeSubstituted));
 }
 
 #[test]
@@ -6975,7 +6975,7 @@ fn decode_reports_and_withholds_faces_without_body_membership() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#10");
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::TopologyNotTransferred
+        loss.code.taxonomy() == LossTaxonomy::TopologyNotTransferred
             && loss
                 .message
                 .contains("not claimed by an explicit body relation")
@@ -7010,7 +7010,7 @@ fn class_root_index_selects_complete_cluster_body_relation() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.code != LossKind::TopologyNotTransferred));
+        .all(|loss| loss.code.taxonomy() != LossTaxonomy::TopologyNotTransferred));
     assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
@@ -7050,7 +7050,7 @@ fn class_root_body_relation_selects_missing_deltas_face() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.code != LossKind::TopologyNotTransferred));
+        .all(|loss| loss.code.taxonomy() != LossTaxonomy::TopologyNotTransferred));
     assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
@@ -7115,12 +7115,9 @@ fn decode_withholds_non_equivalent_face_uses_with_same_owner() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#210");
     assert!(
-        result
-            .report
-            .losses
-            .iter()
-            .any(|loss| loss.code == LossKind::TopologyGaugeSubstituted
-                && loss.message.contains("non-equivalent bridge uses")),
+        result.report.losses.iter().any(|loss| loss.code.taxonomy()
+            == LossTaxonomy::TopologyGaugeSubstituted
+            && loss.message.contains("non-equivalent bridge uses")),
         "losses: {:?}",
         result.report.losses
     );
@@ -9578,7 +9575,7 @@ fn decode_reports_display_list_geometry() {
         Some(&result.ir.model.bodies[0].id)
     );
     assert!(!result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossKind::ReferenceGraphNotClosed
+        loss.code.taxonomy() == LossTaxonomy::ReferenceGraphNotClosed
             && loss.message.contains("DisplayLists tessellation")
     }));
     assert!(result
@@ -23420,14 +23417,14 @@ fn face_on_untyped_surface_keeps_topology() {
         .report
         .losses
         .iter()
-        .any(|l| l.code == LossKind::GeometryNotTransferred));
+        .any(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
     let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -23454,16 +23451,14 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .report
         .losses
         .iter()
-        .find(|l| l.code == LossKind::GeometryNotTransferred)
+        .find(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred)
         .expect("untyped support surface raises a census note");
     assert_eq!(census.strict_consequence(), StrictConsequence::Reject);
 
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect_err("strict refuses the untyped-surface census");
-    assert!(error
-        .to_string()
-        .contains("strict mode rejects geometry_not_transferred"));
+    assert!(error.to_string().contains("strict mode rejects sldprt/"));
 }
 
 #[test]

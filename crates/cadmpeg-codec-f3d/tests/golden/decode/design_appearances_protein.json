@@ -1301,22 +1301,38 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "attributes_not_transferred",
+        "code": {
+          "namespace": "shared",
+          "code": "attributes_not_transferred",
+          "kind": "attributes_not_transferred"
+        },
         "severity": "warning",
         "message": "1 source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof."
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "namespace": "shared",
+          "code": "feature_history_retained",
+          "kind": "feature_history_retained"
+        },
         "severity": "warning",
         "message": "5 decoded sketch point(s) have no neutral sketch entity."
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "namespace": "shared",
+          "code": "feature_history_retained",
+          "kind": "feature_history_retained"
+        },
         "severity": "warning",
         "message": "1 decoded sketch curve(s) have no neutral sketch entity."
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "namespace": "shared",
+          "code": "feature_history_retained",
+          "kind": "feature_history_retained"
+        },
         "severity": "warning",
         "message": "2 decoded sketch relation(s) have no neutral constraint."
       }

@@ -74,7 +74,11 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "code": "noncanonical_source_syntax",
+        "code": {
+          "code": "noncanonical_source_syntax",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "shared"
+        },
         "message": "complex partial records are not alphabetical: observed (NAMED_UNIT, SOLID_ANGLE_UNIT, SI_UNIT), expected (NAMED_UNIT, SI_UNIT, SOLID_ANGLE_UNIT)",
         "provenance": {
           "format": "step",
@@ -85,12 +89,20 @@
         "severity": "warning"
       },
       {
-        "code": "geometry_not_transferred",
+        "code": {
+          "code": "geometry_not_transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "shared"
+        },
         "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         "severity": "error"
       },
       {
-        "code": "geometry_not_transferred",
+        "code": {
+          "code": "geometry_not_transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "shared"
+        },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
       }

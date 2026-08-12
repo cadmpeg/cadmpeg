@@ -9,7 +9,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, LimitsAndFits, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::transform::Transform;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -59,7 +59,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "datum identification",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
             .unwrap_or_else(|| format!("#{id}"));
@@ -74,7 +74,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "datum name",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             }),
             targets([id]),
@@ -119,7 +119,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "datum system name",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             }),
             targets(
@@ -155,7 +155,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "dimension name",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             });
         if matches!(kind, DimensionKind::Size) {
@@ -173,7 +173,7 @@ pub(super) fn decode(
                             &mut losses,
                             id,
                             "dimension category",
-                            LossKind::MetadataNotTransferred,
+                            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                         )
                     })
             } else {
@@ -239,7 +239,7 @@ pub(super) fn decode(
                                     &mut losses,
                                     *reference,
                                     "limits-and-fits form variance",
-                                    LossKind::MetadataNotTransferred,
+                                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                                 )
                             })
                             .unwrap_or_default(),
@@ -252,7 +252,7 @@ pub(super) fn decode(
                                     &mut losses,
                                     *reference,
                                     "limits-and-fits zone variance",
-                                    LossKind::MetadataNotTransferred,
+                                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                                 )
                             })
                             .unwrap_or_default(),
@@ -265,7 +265,7 @@ pub(super) fn decode(
                                     &mut losses,
                                     *reference,
                                     "limits-and-fits grade",
-                                    LossKind::MetadataNotTransferred,
+                                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                                 )
                             })
                             .unwrap_or_default(),
@@ -278,7 +278,7 @@ pub(super) fn decode(
                                     &mut losses,
                                     *reference,
                                     "limits-and-fits source",
-                                    LossKind::MetadataNotTransferred,
+                                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                                 )
                             })
                             .unwrap_or_default(),
@@ -437,7 +437,7 @@ pub(super) fn decode(
                         &mut losses,
                         id,
                         "geometric tolerance name",
-                        LossKind::MetadataNotTransferred,
+                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     )
                 }),
             targets(refs.iter().copied().filter(|id| aspects.contains(id))),
@@ -544,7 +544,7 @@ pub(super) fn decode(
                         &mut losses,
                         id,
                         "presentation annotation name",
-                        LossKind::MetadataNotTransferred,
+                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     )
                 }),
             Vec::new(),
@@ -830,7 +830,7 @@ fn find_annotation_text(
         }
         count => {
             losses.push(LossNote {
-                code: LossKind::MetadataNotTransferred,
+                code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 severity: Severity::Warning,
                 message: format!(
                     "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
@@ -865,7 +865,7 @@ fn collect_annotation_text(
             losses,
             id,
             "PMI annotation text",
-            LossKind::MetadataNotTransferred,
+            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
         ) {
             candidates.insert(id, text);
         }
@@ -1131,7 +1131,7 @@ fn characteristic_values(
             named_nominals.first().copied()
         } else if named_nominals.len() > 1 {
             losses.push(LossNote {
-                code: LossKind::MetadataNotTransferred,
+                code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 severity: Severity::Warning,
                 message: format!(
                     "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
@@ -1145,7 +1145,7 @@ fn characteristic_values(
         } else {
             if values.len() > 1 {
                 losses.push(LossNote {
-                    code: LossKind::MetadataNotTransferred,
+                    code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     severity: Severity::Warning,
                     message: format!(
                         "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
@@ -1270,7 +1270,7 @@ fn measure_item_name(
                 losses,
                 record.id,
                 "measure item name",
-                LossKind::MetadataNotTransferred,
+                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
             )
         })
         .filter(|name| !name.is_empty())
@@ -1380,7 +1380,7 @@ fn measure_inner(
                 })
                     .unwrap_or_else(|| {
                         measurements.losses.push(LossNote {
-                            code: LossKind::GeometryNotTransferred,
+                            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
                             severity: Severity::Error,
                             message: format!(
                                 "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
@@ -1395,7 +1395,7 @@ fn measure_inner(
                 })
                     .unwrap_or_else(|| {
                         measurements.losses.push(LossNote {
-                            code: LossKind::GeometryNotTransferred,
+                            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
                             severity: Severity::Error,
                             message: format!(
                                 "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"

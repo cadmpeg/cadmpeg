@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_ir::report::{LossKind, LossNote};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
 
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -29,7 +29,7 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
                                 &mut losses,
                                 id,
                                 "document identifier",
-                                LossKind::MetadataNotTransferred,
+                                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                             )
                         })
                         .unwrap_or_default(),
@@ -42,7 +42,7 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
                                 &mut losses,
                                 id,
                                 "document name",
-                                LossKind::MetadataNotTransferred,
+                                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                             )
                         })
                         .unwrap_or_default(),
@@ -85,7 +85,7 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
                         &mut losses,
                         id,
                         "document reference source",
-                        LossKind::MetadataNotTransferred,
+                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     )
                 })
                 .unwrap_or_default();
@@ -147,7 +147,7 @@ fn source_text(
             losses,
             record_id,
             field,
-            LossKind::MetadataNotTransferred,
+            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
         ),
         Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field),
         _ => None,

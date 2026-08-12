@@ -41,7 +41,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchCoordinateAxis,
     SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
@@ -37663,7 +37663,7 @@ fn build_report(
 
     if container_only {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::ContainerOnly,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::ContainerOnly),
             severity: Severity::Info,
             message: "Container-only decode requested; entity transfer was skipped.".to_string(),
             provenance: None,
@@ -37682,7 +37682,7 @@ fn build_report(
         .crv_array_count
         .map_or_else(|| "n/a".to_string(), |c| c.to_string());
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::CarrierSummary,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
         severity: Severity::Info,
         message: format!(
             "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
@@ -37714,7 +37714,7 @@ fn build_report(
     let unresolved_legacy_reals = count("unresolved_legacy_real_value_count");
     if unresolved_legacy_reals != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_legacy_reals} legacy type-2 value row(s) did not form a complete \
@@ -37726,7 +37726,7 @@ fn build_report(
     let unresolved_legacy_integers = count("unresolved_legacy_integer_value_count");
     if unresolved_legacy_integers != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
@@ -37739,7 +37739,7 @@ fn build_report(
         let unresolved = count(&format!("unresolved_legacy_type_{type_code}_value_count"));
         if unresolved != 0 {
             losses.push(LossNote {
-                code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+                code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
                 severity: Severity::Warning,
                 message: format!(
                     "{unresolved} legacy type-{type_code} value row(s) use an undefined \
@@ -37751,7 +37751,7 @@ fn build_report(
         let undecoded = count(&format!("undecoded_legacy_type_{type_code}_encoding_count"));
         if undecoded != 0 {
             losses.push(LossNote {
-                code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
+                code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::AttributesNotTransferred),
                 severity: Severity::Warning,
                 message: format!(
                     "{undecoded} legacy type-{type_code} byte-string value(s) retain exact \
@@ -37765,7 +37765,7 @@ fn build_report(
         let unresolved = count(&format!("unresolved_legacy_type_{type_code}_value_count"));
         if unresolved != 0 {
             losses.push(LossNote {
-                code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+                code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
                 severity: Severity::Warning,
                 message: format!(
                     "{unresolved} legacy type-{type_code} value row(s) did not form an unsigned \
@@ -37778,7 +37778,7 @@ fn build_report(
     let unresolved_legacy_type_6 = count("unresolved_legacy_type_6_value_count");
     if unresolved_legacy_type_6 != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_legacy_type_6} legacy type-6 value row(s) did not form a complete \
@@ -37790,7 +37790,7 @@ fn build_report(
     let incomplete_legacy_object_arrays = count("incomplete_legacy_object_array_count");
     if incomplete_legacy_object_arrays != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{incomplete_legacy_object_arrays} legacy type-0 object array(s) have a direct \
@@ -37802,7 +37802,7 @@ fn build_report(
     let unresolved_legacy_objects = count("unresolved_legacy_object_value_count");
     if unresolved_legacy_objects != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_legacy_objects} legacy type-0 value row(s) use an undefined object \
@@ -37814,7 +37814,7 @@ fn build_report(
     let incomplete_legacy_string_arrays = count("incomplete_legacy_string_array_count");
     if incomplete_legacy_string_arrays != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{incomplete_legacy_string_arrays} legacy type-10 string array(s) have a direct \
@@ -37826,7 +37826,7 @@ fn build_report(
     let unresolved_legacy_strings = count("unresolved_legacy_string_value_count");
     if unresolved_legacy_strings != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_legacy_strings} legacy type-10 value row(s) use an undefined \
@@ -37838,7 +37838,7 @@ fn build_report(
     let undecoded_legacy_string_encodings = count("undecoded_legacy_string_encoding_count");
     if undecoded_legacy_string_encodings != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::AttributesNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{undecoded_legacy_string_encodings} legacy type-10 string element(s) retain \
@@ -37852,7 +37852,7 @@ fn build_report(
         count("conflicting_primitive_triangle_strip_representation_count");
     if conflicting_triangle_strip_representations != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{conflicting_triangle_strip_representations} primitive triangle-strip record(s) \
@@ -37864,7 +37864,7 @@ fn build_report(
 
     // The core prototype-vs-instance limitation.
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
         severity: Severity::Blocking,
         message: format!(
             "General model B-rep transfer remains incomplete. Native face components transfer \
@@ -37887,7 +37887,7 @@ fn build_report(
 
     if !container_only && placed_plane_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
@@ -37899,7 +37899,7 @@ fn build_report(
 
     if !container_only && topology_bound_plane_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {topology_bound_plane_count} model-space plane carrier(s) from \
@@ -37912,7 +37912,7 @@ fn build_report(
 
     if !container_only && first_instance_prototype_surface_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
@@ -37925,7 +37925,7 @@ fn build_report(
 
     if !container_only && paired_envelope_sphere_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
@@ -37938,7 +37938,7 @@ fn build_report(
 
     if !container_only && positional_torus_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {positional_torus_count} exact positional torus carrier(s) from \
@@ -37950,7 +37950,7 @@ fn build_report(
 
     if !container_only && positional_cylinder_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {positional_cylinder_count} exact positional cylinder carrier(s) \
@@ -37962,7 +37962,7 @@ fn build_report(
 
     if !container_only && positional_cone_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {positional_cone_count} exact positional cone carrier(s) from \
@@ -37974,7 +37974,7 @@ fn build_report(
 
     if !container_only && positional_line_extrusion_plane_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
@@ -37987,7 +37987,7 @@ fn build_report(
 
     if !container_only && tabulated_cylinder_spline_extrusion_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {tabulated_cylinder_spline_extrusion_count} tabulated-cylinder \
@@ -37999,7 +37999,7 @@ fn build_report(
 
     if !container_only && !scan.planes.datums.is_empty() {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {} exact model-space construction datum plane carrier(s) from ActDatums; \
@@ -38012,7 +38012,7 @@ fn build_report(
 
     if !container_only && !scan.references.lines.is_empty() {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
@@ -38025,7 +38025,7 @@ fn build_report(
 
     if !container_only && !scan.references.circles.is_empty() {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {} circular reference carrier(s) from MdlRefInfo rows whose stored center, radius, and endpoints satisfy the circle equation; byte-exact endpoints remain attached as native circle records.",
@@ -38037,7 +38037,7 @@ fn build_report(
 
     if !container_only && !scan.references.ellipses.is_empty() {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {} elliptical reference carrier(s) from MdlRefInfo conic rows whose frame, coefficient radii, and antipodal endpoints satisfy one ellipse equation; the source conic records remain byte-exact native records.",
@@ -38050,7 +38050,7 @@ fn build_report(
     let topological_point_count = count("transferred_topological_point_count");
     if !container_only && topological_point_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers."
@@ -38062,7 +38062,7 @@ fn build_report(
     let native_topological_edge_count = count("transferred_native_topological_edge_count");
     if !container_only && native_topological_edge_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {native_topological_edge_count} native topological edge(s) whose endpoint vertex orbits have exact model-space points."
@@ -38074,7 +38074,7 @@ fn build_report(
     let analytic_pcurve_carrier_count = count("transferred_analytic_pcurve_carrier_count");
     if !container_only && analytic_pcurve_carrier_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {analytic_pcurve_carrier_count} exact analytic carrier(s) by mapping native linear pcurves through placed planar, cylindrical, conical, spherical, or toroidal face charts."
@@ -38087,7 +38087,7 @@ fn build_report(
         count("transferred_extrusion_plane_boundary_curve_count");
     if !container_only && extrusion_plane_boundary_curve_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {extrusion_plane_boundary_curve_count} exact NURBS boundary \
@@ -38102,7 +38102,7 @@ fn build_report(
         count("transferred_extrusion_plane_section_generator_curve_count");
     if !container_only && extrusion_plane_section_generator_curve_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {extrusion_plane_section_generator_curve_count} exact NURBS \
@@ -38117,7 +38117,7 @@ fn build_report(
         count("transferred_shared_extrusion_generator_curve_count");
     if !container_only && shared_extrusion_generator_curve_count != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Transferred {shared_extrusion_generator_curve_count} exact shared NURBS \
@@ -38136,7 +38136,7 @@ fn build_report(
         || torus_coverage.split_coordinate_envelopes != 0
     {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "Retained {} tagged type-26 radius override(s), {} prototype-minor-radius \
@@ -38156,7 +38156,7 @@ fn build_report(
 
     // The specific undecoded PSB layers that gate per-instance geometry.
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
         severity: Severity::Blocking,
         message: "Additional model-space carriers are gated by unresolved lane-specific scalar \
                   prefixes, feature-local transform bindings, placement-incomplete or untagged \
@@ -38169,7 +38169,7 @@ fn build_report(
 
     // Topology.
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
         severity: Severity::Blocking,
         message: "Native curve half-edges and closed loops were decoded. Components with complete \
                   solved boundaries and unique face orientations transfer as \
@@ -38218,7 +38218,7 @@ fn build_report(
 
     // Features, history, materials.
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
         severity: Severity::Warning,
         message: format!(
             "Named feature operations and their decoded dependency/input tables transfer as typed \
@@ -38245,7 +38245,7 @@ fn build_report(
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
@@ -38258,7 +38258,7 @@ fn build_report(
     let untransferred_curve_rows = count("untransferred_visible_curve_row_count");
     if untransferred_curve_rows != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
@@ -38270,7 +38270,7 @@ fn build_report(
     let ambiguous_surface_rows = count("ambiguous_visible_surface_row_count");
     if ambiguous_surface_rows != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Info,
             message: format!(
                 "{ambiguous_surface_rows} VisibGeom surface row(s) share a non-unique identity \
@@ -38282,7 +38282,7 @@ fn build_report(
     let ambiguous_curve_rows = count("ambiguous_visible_curve_row_count");
     if ambiguous_curve_rows != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Info,
             message: format!(
                 "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
@@ -38294,7 +38294,7 @@ fn build_report(
     let missing_segment_rows = count("missing_feature_segment_row_count");
     if missing_segment_rows != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{missing_segment_rows} declared section segment row(s) did not decode and remain \
@@ -38306,7 +38306,7 @@ fn build_report(
     let missing_relation_rows = count("missing_feature_relation_row_count");
     if missing_relation_rows != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{missing_relation_rows} declared section relation row(s) did not decode; the \
@@ -38318,7 +38318,7 @@ fn build_report(
     let malformed_relation_tables = count("malformed_feature_relation_table_count");
     if malformed_relation_tables != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{malformed_relation_tables} section relation table(s) use the invalid zero \
@@ -38330,7 +38330,7 @@ fn build_report(
     let missing_skamp_rows = count("missing_feature_skamp_row_count");
     if missing_skamp_rows != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{missing_skamp_rows} declared section incidence row(s) did not decode; the \
@@ -38342,7 +38342,7 @@ fn build_report(
     let missing_triple_rows = count("missing_feature_relation_triple_row_count");
     if missing_triple_rows != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{missing_triple_rows} declared section relation-incidence join row(s) did not \
@@ -38354,7 +38354,7 @@ fn build_report(
     let unresolved_segment_geometry = count("unresolved_feature_segment_geometry_count");
     if unresolved_segment_geometry != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_segment_geometry} decoded section segment(s) retain source-native \
@@ -38367,7 +38367,7 @@ fn build_report(
     if active_native_skamps != 0 {
         let kinds = constraint_kind_breakdown(&coverage, "active_native_feature_skamp_type_");
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{active_native_skamps} active section incidence constraint(s) retain native \
@@ -38381,7 +38381,7 @@ fn build_report(
     if active_native_relations != 0 {
         let kinds = constraint_kind_breakdown(&coverage, "active_native_feature_relation_type_");
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{active_native_relations} active section dimension relation(s) retain native \
@@ -38408,7 +38408,7 @@ fn build_report(
         .collect::<Vec<_>>()
         .join(", ");
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{incomplete_sweeps} profile sweep history feature(s) retain incomplete required \
@@ -38439,7 +38439,7 @@ fn build_report(
         .collect::<Vec<_>>()
         .join(", ");
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{incomplete_surface_operations} surface construction history feature(s) retain \
@@ -38470,7 +38470,7 @@ fn build_report(
         .collect::<Vec<_>>()
         .join(", ");
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{incomplete_other_constructions} construction history feature(s) retain \
@@ -38498,7 +38498,7 @@ fn build_report(
         .collect::<Vec<_>>()
         .join(", ");
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{incomplete_recognized_features} recognized non-sweep history feature(s) retain \
@@ -38511,7 +38511,7 @@ fn build_report(
     let native_features = count("transferred_native_feature_count");
     if native_features != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{native_features} history feature definition(s) retain only source-native \
@@ -38522,7 +38522,7 @@ fn build_report(
     }
     if explicitly_unresolved_features != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{explicitly_unresolved_features} typed history feature definition(s) retain an \
@@ -38538,7 +38538,7 @@ fn build_report(
             count("unresolved_feature_dimension_driven_coordinate_variable_count");
         let other_variables = count("unresolved_feature_dimension_driven_other_variable_count");
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_dimension_driven_variables} dimension-driven section solver \
@@ -38554,7 +38554,7 @@ fn build_report(
         count("unresolved_feature_dimension_driven_guess_count");
     if unresolved_dimension_driven_guesses != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_dimension_driven_guesses} section solver variable pre-solve \
@@ -38566,7 +38566,7 @@ fn build_report(
     let missing_solver_variables = count("missing_feature_solver_variable_count");
     if missing_solver_variables != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{missing_solver_variables} declared section solver variable row(s) did not \
@@ -38579,7 +38579,7 @@ fn build_report(
     let unresolved_dimension_values = count("unresolved_feature_dimension_value_count");
     if unresolved_dimension_values != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_dimension_values} section dimension(s) retain source-native value \
@@ -38593,7 +38593,7 @@ fn build_report(
             .saturating_sub(count("transferred_configuration_driver_table_count"));
     if unresolved_configuration_driver_tables != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_configuration_driver_tables} referenced configuration driver \
@@ -38605,7 +38605,7 @@ fn build_report(
     let prohibited_records = count("prohibited_active_curve_expression_record_count");
     if prohibited_records != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{prohibited_records} active curve-equation record(s) containing prohibited \
@@ -38619,7 +38619,7 @@ fn build_report(
         .saturating_sub(count("evaluated_active_curve_expression_solve_block_count"));
     if unresolved_solve_blocks != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_solve_blocks} active curve-equation simultaneous-solve block(s) \
@@ -38632,7 +38632,7 @@ fn build_report(
     let unresolved_solve_controls = count("unresolved_active_curve_expression_solve_control_count");
     if unresolved_solve_controls != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{unresolved_solve_controls} active curve-equation record(s) retain malformed or \
@@ -38645,7 +38645,7 @@ fn build_report(
     let prohibited_kinds = count("prohibited_active_curve_expression_kind_count");
     if prohibited_kinds != 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Warning,
             message: format!(
                 "{prohibited_kinds} prohibited datum-curve construct(s) across active \

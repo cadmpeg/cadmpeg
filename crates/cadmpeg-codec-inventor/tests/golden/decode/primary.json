@@ -483,12 +483,20 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "code": "geometry_not_transferred",
+        "code": {
+          "code": "geometry_not_transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "shared"
+        },
         "message": "the active kernel carrier decoded no surfaces, points, or faces",
         "severity": "blocking"
       },
       {
-        "code": "record_not_typed",
+        "code": {
+          "code": "record_not_typed",
+          "kind": "record_not_typed",
+          "namespace": "shared"
+        },
         "message": "Retained 1 structurally paired RSe segment(s) without record semantics.",
         "severity": "warning"
       }

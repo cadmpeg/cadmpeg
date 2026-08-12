@@ -15,8 +15,8 @@ use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{
-    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossKind, LossNote, Severity,
-    WritePath,
+    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossKind, LossNote, LossTaxonomy,
+    Severity, WritePath,
 };
 use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Sense};
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -72,7 +72,7 @@ pub(crate) fn plan(
     if source_expected && !source_available {
         losses.push(
             LossNote::new(
-                LossKind::PreservedSourceUnavailable,
+                LossKind::shared(LossTaxonomy::PreservedSourceUnavailable),
                 "preserved IGES source image is unavailable; semantic regeneration is required",
             )
             .with_severity(Severity::Blocking),
@@ -433,7 +433,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
     }
     Ok(vec![
         LossNote::new(
-            LossKind::ProceduralReduced,
+            LossKind::shared(LossTaxonomy::ProceduralReduced),
             format!(
                 "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
             ),
@@ -3556,8 +3556,11 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             _ => continue,
         };
         losses.push(
-            LossNote::new(LossKind::PassthroughRecordOmitted, message)
-                .with_severity(Severity::Warning),
+            LossNote::new(
+                LossKind::shared(LossTaxonomy::PassthroughRecordOmitted),
+                message,
+            )
+            .with_severity(Severity::Warning),
         );
     }
     Ok(losses)

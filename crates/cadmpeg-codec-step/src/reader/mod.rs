@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
@@ -95,7 +95,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         };
         report.losses.extend(diagnostics.iter().map(|diagnostic| {
             LossNote::new(
-                LossKind::NoncanonicalSourceSyntax,
+                LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax),
                 diagnostic.message.clone(),
             )
             .with_provenance(cadmpeg_ir::LossProvenance {
@@ -152,7 +152,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         self.report
             .losses
             .extend(warnings.into_iter().map(|message| LossNote {
-                code: LossKind::DecodeDiagnostic,
+                code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 severity: Severity::Warning,
                 message,
                 provenance: None,
@@ -493,7 +493,7 @@ fn decode_exchange_mode(
     }
     if accounting.unclassified > 0 {
         session.report.losses.push(LossNote {
-            code: LossKind::DecodeDiagnostic,
+            code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
             severity: Severity::Error,
             message: format!(
                 "STEP byte accounting left {} byte(s) unclassified",
@@ -510,7 +510,7 @@ fn decode_exchange_mode(
         .report
         .losses
         .extend(counts.into_iter().map(|(name, count)| LossNote {
-            code: cadmpeg_ir::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
@@ -1170,7 +1170,7 @@ mod tests {
         .expect("synthesized unknown record conversion")
         .0;
         assert!(result.report.losses.iter().any(|loss| {
-            loss.code == LossKind::DecodeDiagnostic
+            loss.code == LossKind::shared(LossTaxonomy::DecodeDiagnostic)
                 && loss.severity == Severity::Error
                 && loss.message.contains("1 byte(s) unclassified")
         }));

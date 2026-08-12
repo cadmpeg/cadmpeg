@@ -46,7 +46,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::FidelityResolution;
@@ -1502,7 +1502,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
                 return None;
             };
             Some(LossNote {
-                code: cadmpeg_ir::LossKind::FeatureHistoryRetained,
+                code: cadmpeg_ir::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
                 severity: Severity::Blocking,
                 message: format!(
                     "FCStd design operation {kind} is retained natively but has no neutral semantics"
@@ -1521,7 +1521,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
-            code: cadmpeg_ir::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Blocking,
             message: format!(
                 "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
@@ -1541,7 +1541,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
-            code: cadmpeg_ir::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Blocking,
             message: format!(
                 "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"

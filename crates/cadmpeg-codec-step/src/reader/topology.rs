@@ -18,7 +18,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
     Vertex, VertexUse,
@@ -215,7 +215,7 @@ pub(super) fn decode(
             continue;
         }
         result.losses.push(LossNote {
-            code: LossKind::NoncanonicalSourceSyntax,
+            code: LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax),
             severity: Severity::Warning,
             message: format!(
                 "{name} #{} omits the derived `cfs_faces` slot required by ISO 10303-21; \
@@ -453,14 +453,14 @@ pub(super) fn decode(
         if body_ids.is_empty() {
             if let Some(message) = failure_message {
                 result.losses.push(LossNote {
-                    code: LossKind::TopologyNotTransferred,
+                    code: LossKind::shared(LossTaxonomy::TopologyNotTransferred),
                     severity: Severity::Error,
                     message: format!("STEP topology root #{id} rejected: {message}"),
                     provenance: None,
                 });
             } else {
                 result.losses.push(LossNote {
-                    code: LossKind::TopologyNotTransferred,
+                    code: LossKind::shared(LossTaxonomy::TopologyNotTransferred),
                     severity: Severity::Error,
                     message: format!(
                         "STEP topology root #{id} does not resolve to a complete connected topology graph",
@@ -2259,7 +2259,7 @@ fn build_one(
                     losses,
                     face_step,
                     "face name",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             });
             let mut loop_ids = vec![];
@@ -2500,7 +2500,7 @@ fn build_one(
                             vec![(pcurve, None)]
                         } else {
                             losses.push(LossNote {
-                                code: LossKind::ReferenceGraphNotClosed,
+                                code: LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
                                 severity: Severity::Warning,
                                 message: format!(
                                     "SEAM_EDGE #{use_step} has no decoded pcurve reference that belongs to its edge curve and face surface; the coedge has no pcurve"
@@ -2516,7 +2516,7 @@ fn build_one(
                             }
                             _ => {
                                 losses.push(LossNote {
-                                    code: LossKind::ReferenceGraphNotClosed,
+                                    code: LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
                                     severity: Severity::Warning,
                                     message: format!(
                                         "edge #{} has no decoded surface or curve carrier, so its coedge has no pcurve",
@@ -2555,21 +2555,21 @@ fn build_one(
                                     let (code, severity, message) =
                                         match (edge.curve, surface_step, n) {
                                             (Some(curve), Some(surface), 1) => (
-                                                LossKind::PcurveOmitted,
+                                                LossKind::shared(LossTaxonomy::PcurveOmitted),
                                                 Severity::Error,
                                                 format!(
                                                     "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
                                                 ),
                                             ),
                                             (Some(curve), Some(surface), _) => (
-                                                LossKind::ReferenceGraphNotClosed,
+                                                LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
                                                 Severity::Warning,
                                                 format!(
                                                     "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
                                                 ),
                                             ),
                                             _ => (
-                                                LossKind::ReferenceGraphNotClosed,
+                                                LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
                                                 Severity::Warning,
                                                 format!(
                                                     "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
@@ -2652,7 +2652,7 @@ fn build_one(
             }
             if outer_bound_count > 1 {
                 let note = LossNote::new(
-                    LossKind::SourceTopologyInvalid,
+                    LossKind::shared(LossTaxonomy::SourceTopologyInvalid),
                     format!(
                         "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; retaining the first outer role and marking the remaining {} roles unspecified",
                         outer_bound_count - 1
@@ -2722,7 +2722,7 @@ fn build_one(
             connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices);
         if components.len() > 1 {
             let note = LossNote::new(
-                LossKind::SourceTopologyInvalid,
+                LossKind::shared(LossTaxonomy::SourceTopologyInvalid),
                 format!(
                     "source {shell_type} #{shell_step} contains {} disconnected face components across {} faces",
                     components.len(),

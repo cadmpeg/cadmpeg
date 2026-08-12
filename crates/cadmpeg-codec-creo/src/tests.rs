@@ -5111,7 +5111,10 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
         0
     );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossKind::GeometryNotTransferred
+        loss.code
+            == cadmpeg_ir::report::LossKind::shared(
+                cadmpeg_ir::LossTaxonomy::GeometryNotTransferred,
+            )
             && loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
@@ -5157,7 +5160,10 @@ fn decode_reports_missing_declared_section_segment_rows() {
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+        loss.code
+            == cadmpeg_ir::report::LossKind::shared(
+                cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
+            )
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
@@ -5250,7 +5256,10 @@ fn decode_reports_missing_declared_solver_variable_rows() {
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+        loss.code
+            == cadmpeg_ir::report::LossKind::shared(
+                cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
+            )
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
@@ -6377,7 +6386,10 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
         2
     );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+        loss.code
+            == cadmpeg_ir::report::LossKind::shared(
+                cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
+            )
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
@@ -6629,7 +6641,10 @@ fn decode_reports_missing_declared_constraint_table_rows() {
         "1 declared section relation-incidence join row(s) did not decode",
     ] {
         assert!(result.report.losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            loss.code
+                == cadmpeg_ir::report::LossKind::shared(
+                    cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
+                )
                 && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
                 && loss.severity == cadmpeg_ir::Severity::Warning
                 && loss.message.contains(message)
@@ -6654,7 +6669,10 @@ fn decode_reports_malformed_relation_table_allocation_count() {
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+        loss.code
+            == cadmpeg_ir::report::LossKind::shared(
+                cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
+            )
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
@@ -10025,7 +10043,12 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
             .report
             .losses
             .iter()
-            .filter(|loss| { loss.code == cadmpeg_ir::report::LossKind::AttributesNotTransferred })
+            .filter(|loss| {
+                loss.code
+                    == cadmpeg_ir::report::LossKind::shared(
+                        cadmpeg_ir::LossTaxonomy::AttributesNotTransferred,
+                    )
+            })
             .count(),
         1
     );
@@ -10212,7 +10235,8 @@ fn incomplete_legacy_values_are_reported() {
             .report
             .losses
             .iter()
-            .filter(|loss| loss.code == cadmpeg_ir::report::LossKind::RecordNotTyped)
+            .filter(|loss| loss.code
+                == cadmpeg_ir::report::LossKind::shared(cadmpeg_ir::LossTaxonomy::RecordNotTyped))
             .count(),
         7
     );
@@ -10221,7 +10245,10 @@ fn incomplete_legacy_values_are_reported() {
             .report
             .losses
             .iter()
-            .filter(|loss| loss.code == cadmpeg_ir::report::LossKind::AttributesNotTransferred)
+            .filter(|loss| loss.code
+                == cadmpeg_ir::report::LossKind::shared(
+                    cadmpeg_ir::LossTaxonomy::AttributesNotTransferred
+                ))
             .count(),
         1
     );

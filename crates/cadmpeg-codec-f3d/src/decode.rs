@@ -24,7 +24,7 @@ use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -171,7 +171,7 @@ fn report_unresolved_dimension_companions(
     let count = unresolved_dimension_companion_count(native, ir);
     if count != 0 {
         report.losses.push(LossNote {
-            code: LossKind::RecordNotTyped,
+            code: LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
@@ -191,7 +191,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         report.losses.push(LossNote {
-            code: LossKind::MetadataNotTransferred,
+            code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
@@ -205,7 +205,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         report.losses.push(LossNote {
-            code: LossKind::MetadataNotTransferred,
+            code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
@@ -218,7 +218,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         report.losses.push(LossNote {
-            code: LossKind::MetadataNotTransferred,
+            code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
@@ -231,7 +231,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         report.losses.push(LossNote {
-            code: LossKind::MetadataNotTransferred,
+            code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
@@ -244,7 +244,7 @@ fn report_unresolved_configuration_rules(
 fn report_unretained_act_component_links(report: &mut DecodeReport, count: usize) {
     if count != 0 {
         report.losses.push(LossNote {
-            code: LossKind::AssemblyComponentsExternal,
+            code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
             severity: Severity::Warning,
             message: format!(
                 "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
@@ -1402,7 +1402,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         .count();
     if history_budget_skips != 0 {
         report.losses.push(LossNote {
-            code: LossKind::FeatureHistoryRetained,
+            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
             severity: Severity::Error,
             message: format!(
                 "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
@@ -1418,7 +1418,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         .filter_map(|record| record.framing_error.as_deref())
     {
         report.losses.push(LossNote {
-            code: LossKind::RecordNotTyped,
+            code: LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Error,
             message: format!(
                 "An ASM history span remains opaque because record framing failed: {error}."
@@ -1428,7 +1428,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     }
     if gaps.unresolved_body_bindings != 0 {
         report.losses.push(LossNote {
-            code: LossKind::ReferenceGraphNotClosed,
+            code: LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
             severity: Severity::Warning,
             message: format!(
                 "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
@@ -1439,7 +1439,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     }
     if gaps.native_reference_images != 0 {
         report.losses.push(LossNote {
-            code: LossKind::AttributesNotTransferred,
+            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
@@ -1450,7 +1450,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     }
     if gaps.native_decals != 0 {
         report.losses.push(LossNote {
-            code: LossKind::AttributesNotTransferred,
+            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
@@ -1461,7 +1461,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     }
     if gaps.unrepaired_lost_edge_references != 0 {
         report.losses.push(LossNote {
-            code: LossKind::AttributesNotTransferred,
+            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
@@ -1473,7 +1473,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     let mut push = |count: usize, message: String| {
         if count != 0 {
             report.losses.push(LossNote {
-                code: LossKind::FeatureHistoryRetained,
+                code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
                 severity: Severity::Warning,
                 message,
                 provenance: None,
@@ -1838,7 +1838,7 @@ impl<'a> F3dDecodeSession<'a> {
         let mut report = build_geometry_report(scan, &brep);
         if undecoded_candidates != 0 {
             report.losses.push(LossNote {
-                code: LossKind::GeometryNotTransferred,
+                code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
                 severity: Severity::Warning,
                 message: format!(
                     "{undecoded_candidates} Design-referenced BREP blob(s) could not be decoded."
@@ -2719,7 +2719,7 @@ fn project_mesh_bodies(
         match outcome {
             MeshContainerOutcome::Joined(body) => bodies.push(body),
             MeshContainerOutcome::Unjoined { entry_name } => report.losses.push(LossNote {
-                code: LossKind::AssetNotTransferred,
+                code: LossKind::shared(LossTaxonomy::AssetNotTransferred),
                 severity: Severity::Warning,
                 message: format!(
                     "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
@@ -2727,13 +2727,13 @@ fn project_mesh_bodies(
                 provenance: None,
             }),
             MeshContainerOutcome::Failed { entry_name, error } => report.losses.push(LossNote {
-                code: LossKind::DecodeDiagnostic,
+                code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 severity: Severity::Error,
                 message: format!("mesh geometry container `{entry_name}` was not decoded: {error}"),
                 provenance: None,
             }),
             MeshContainerOutcome::Missing { entry_name } => report.losses.push(LossNote {
-                code: LossKind::AssetNotTransferred,
+                code: LossKind::shared(LossTaxonomy::AssetNotTransferred),
                 severity: Severity::Warning,
                 message: format!(
                     "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
@@ -3000,7 +3000,7 @@ fn report_unresolved_mesh_attributes(
             ),
         };
         report.losses.push(LossNote {
-            code: LossKind::AttributesNotTransferred,
+            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{count} mesh attribute channel(s) addressing {addressing} were not transferred: \
@@ -3029,7 +3029,7 @@ fn annotate_docstruct(ir: &mut CadIr, scan: &ContainerScan) {
 /// A warning for a present but unparseable `RedirectionsStream.dat`.
 fn xref_parse_loss(error: &CodecError) -> LossNote {
     LossNote {
-        code: LossKind::MetadataNotTransferred,
+        code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
         severity: Severity::Warning,
         message: format!("external-reference table was not decoded: {error}"),
         provenance: None,
@@ -3046,15 +3046,15 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
     }
     report.losses.retain(|loss| {
         !matches!(
-            loss.code,
-            LossKind::GeometryNotTransferred
-                | LossKind::TopologyNotTransferred
-                | LossKind::MissingGeometryStream
+            loss.code.taxonomy(),
+            LossTaxonomy::GeometryNotTransferred
+                | LossTaxonomy::TopologyNotTransferred
+                | LossTaxonomy::MissingGeometryStream
         )
     });
     report.geometry_transferred = true;
     report.losses.push(LossNote {
-        code: LossKind::MeshVertexPrecision,
+        code: LossKind::shared(LossTaxonomy::MeshVertexPrecision),
         severity: Severity::Warning,
         message: format!(
             "{bodies} mesh body geometry container(s) store vertex coordinates at f32 precision"
@@ -3085,10 +3085,10 @@ pub(crate) fn apply_bodyless_design_classification(
     }
     report.losses.retain(|loss| {
         !matches!(
-            loss.code,
-            LossKind::GeometryNotTransferred
-                | LossKind::TopologyNotTransferred
-                | LossKind::MissingGeometryStream
+            loss.code.taxonomy(),
+            LossTaxonomy::GeometryNotTransferred
+                | LossTaxonomy::TopologyNotTransferred
+                | LossTaxonomy::MissingGeometryStream
         )
     });
     report.geometry_transferred = true;
@@ -3104,7 +3104,7 @@ pub(crate) fn apply_bodyless_design_classification(
         ),
     };
     report.losses.push(LossNote {
-        code: LossKind::CarrierSummary,
+        code: LossKind::shared(LossTaxonomy::CarrierSummary),
         severity: Severity::Info,
         message,
         provenance: None,
@@ -3130,7 +3130,7 @@ fn apply_assembly_classification(
             ))
     });
     report.losses.push(LossNote {
-        code: LossKind::AssemblyComponentsExternal,
+        code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
         severity: Severity::Info,
         message: format!(
             "assembly document: geometry is defined by {} external reference(s); decode the \
@@ -4200,7 +4200,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
     if s.nurbs_surfaces > 0 {
         losses.push(LossNote {
-            code: LossKind::CarrierSummary,
+            code: LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "{} spline surface record(s) were decoded into NURBS carriers from their inline \
@@ -4212,7 +4212,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.nurbs_curves > 0 {
         losses.push(LossNote {
-            code: LossKind::CarrierSummary,
+            code: LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "{} procedural curve record(s) were decoded into NURBS carriers from their inline \
@@ -4224,7 +4224,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.missing_face_surfaces > 0 {
         losses.push(LossNote {
-            code: LossKind::ReferenceGraphNotClosed,
+            code: LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
             severity: Severity::Warning,
             message: format!(
                 "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
@@ -4236,7 +4236,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.unknown_surface_faces > 0 {
         losses.push(LossNote {
-            code: LossKind::GeometryNotTransferred,
+            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
@@ -4253,7 +4253,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.mesh_surface_faces > 0 {
         losses.push(LossNote {
-            code: LossKind::CarrierSummary,
+            code: LossKind::shared(LossTaxonomy::CarrierSummary),
             severity: Severity::Info,
             message: format!(
                 "{} face(s) use zero-payload mesh_surface sentinels. Their exact surfaces are absent by definition; the emitted unknown surface preserves that distinction from tessellation attributes.",
@@ -4264,7 +4264,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.procedural_curve_edges > 0 {
         losses.push(LossNote {
-            code: LossKind::ProceduralReduced,
+            code: LossKind::shared(LossTaxonomy::ProceduralReduced),
             severity: Severity::Warning,
             message: format!(
                 "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
@@ -4278,7 +4278,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.undecoded_pcurve_refs > 0 {
         losses.push(LossNote {
-            code: LossKind::ReferenceGraphNotClosed,
+            code: LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
             severity: Severity::Warning,
             message: format!(
                 "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
@@ -4292,7 +4292,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.partial_procedural_supports > 0 {
         losses.push(LossNote {
-            code: LossKind::ProceduralReduced,
+            code: LossKind::shared(LossTaxonomy::ProceduralReduced),
             severity: Severity::Warning,
             message: format!(
                 "{} rolling-ball blend definition(s) retain their signed radius and solved cache, but only one of two native supports resolved.",
@@ -4303,7 +4303,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     if s.other_records > 0 {
         losses.push(LossNote {
-            code: LossKind::RecordNotTyped,
+            code: LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!(
                 "{} solved-record application/refinement record(s) were not transferred: {}.",
@@ -4318,7 +4318,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         });
     }
     losses.push(LossNote {
-        code: LossKind::MaterialNotTransferred,
+        code: LossKind::shared(LossTaxonomy::MaterialNotTransferred),
         severity: Severity::Warning,
         message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
                   transferred."
@@ -4458,19 +4458,19 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     let mut losses = vec![
         LossNote {
-            code: LossKind::GeometryNotTransferred,
+            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Blocking,
             message: geometry,
             provenance: None,
         },
         LossNote {
-            code: LossKind::TopologyNotTransferred,
+            code: LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             severity: Severity::Blocking,
             message: topology,
             provenance: None,
         },
         LossNote {
-            code: LossKind::MaterialNotTransferred,
+            code: LossKind::shared(LossTaxonomy::MaterialNotTransferred),
             severity: Severity::Warning,
             message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
                       transferred."
@@ -4483,7 +4483,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     // Full decode rejects an ambiguous selection before it builds this report.
     if selected.is_none() {
         losses.push(LossNote {
-            code: LossKind::MissingGeometryStream,
+            code: LossKind::shared(LossTaxonomy::MissingGeometryStream),
             severity: Severity::Error,
             message: if brep_count == 0 && !text_breps.is_empty() {
                 format!(

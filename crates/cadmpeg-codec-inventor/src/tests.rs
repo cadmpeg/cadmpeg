@@ -3,7 +3,7 @@
 use std::io::Write as _;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
-use cadmpeg_ir::report::LossKind;
+use cadmpeg_ir::report::{LossKind, LossTaxonomy};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
@@ -54,7 +54,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .report
         .losses
         .iter()
-        .any(|loss| loss.code == LossKind::GeometryNotTransferred));
+        .any(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred)));
     let native_findings = crate::validate_native(&decoded.ir);
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     assert!(native_findings[0]
@@ -82,9 +82,9 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .report
             .losses
             .iter()
-            .map(|loss| loss.code)
+            .map(|loss| loss.code.clone())
             .collect::<Vec<_>>(),
-        [LossKind::ContainerOnly]
+        [LossKind::shared(LossTaxonomy::ContainerOnly)]
     );
     let namespace = container_only
         .ir
@@ -121,7 +121,7 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         .report
         .losses
         .iter()
-        .any(|loss| loss.code == LossKind::GeometryNotTransferred));
+        .any(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred)));
 
     let native = decoded
         .ir

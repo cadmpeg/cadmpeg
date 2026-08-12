@@ -16,7 +16,13 @@ use crate::unknown::UnknownRecord;
 pub const SOURCE_FIDELITY_VERSION: &str = "3";
 
 /// Current serialized decode-sidecar version.
-pub const DECODE_SIDECAR_VERSION: &str = "1";
+///
+/// Version 2 carries namespaced [`crate::LossKind`] objects. Version 1 sidecars
+/// with bare `snake_case` loss codes migrate on read.
+pub const DECODE_SIDECAR_VERSION: &str = "2";
+
+/// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
+pub const DECODE_SIDECAR_VERSION_V1: &str = "1";
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,8 +77,26 @@ impl DecodeSidecar {
     }
 
     /// Parses and validates a decode sidecar.
+    ///
+    /// Version [`DECODE_SIDECAR_VERSION_V1`] documents migrate in place to
+    /// version [`DECODE_SIDECAR_VERSION`]: bare loss `code` strings become
+    /// namespaced objects under the `shared` namespace.
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
-        let sidecar: Self = serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
+        let mut value: serde_json::Value =
+            serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
+        let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("");
+        match version {
+            DECODE_SIDECAR_VERSION_V1 => {
+                migrate_sidecar_v1_to_v2(&mut value)?;
+            }
+            DECODE_SIDECAR_VERSION => {}
+            found => {
+                return Err(DecodeSidecarParseError::Version {
+                    found: found.to_owned(),
+                });
+            }
+        }
+        let sidecar: Self = serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
         if sidecar.version != DECODE_SIDECAR_VERSION {
             return Err(DecodeSidecarParseError::Version {
                 found: sidecar.version,
@@ -84,6 +108,34 @@ impl DecodeSidecar {
             .map_err(DecodeSidecarParseError::Fidelity)?;
         Ok(sidecar)
     }
+}
+
+fn migrate_sidecar_v1_to_v2(value: &mut serde_json::Value) -> Result<(), DecodeSidecarParseError> {
+    value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION.into());
+    let Some(losses) = value
+        .pointer_mut("/report/losses")
+        .and_then(|losses| losses.as_array_mut())
+    else {
+        return Ok(());
+    };
+    for loss in losses {
+        let Some(code) = loss.get("code") else {
+            continue;
+        };
+        if code.is_object() {
+            continue;
+        }
+        let Some(text) = code.as_str() else {
+            return Err(DecodeSidecarParseError::Migrate(format!(
+                "v1 loss code must be a string, found {code}"
+            )));
+        };
+        let kind = crate::LossKind::from_v1_str(text).ok_or_else(|| {
+            DecodeSidecarParseError::Migrate(format!("unsupported v1 loss code {text:?}"))
+        })?;
+        loss["code"] = serde_json::to_value(kind).map_err(DecodeSidecarParseError::Json)?;
+    }
+    Ok(())
 }
 
 /// Returns the sidecar path for a CADIR path.
@@ -108,6 +160,9 @@ pub enum DecodeSidecarParseError {
         /// Version found in the sidecar.
         found: String,
     },
+    /// Version 1 → 2 migration failed.
+    #[error("decode-sidecar v1→v2 migration failed: {0}")]
+    Migrate(String),
     /// Invalid source fidelity.
     #[error(transparent)]
     Fidelity(FidelityError),
@@ -399,11 +454,30 @@ mod tests {
 
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert_eq!(DecodeSidecar::from_json(&json).unwrap(), sidecar);
-        let wrong_version = json.replacen("\"version\":\"1\"", "\"version\":\"2\"", 1);
+        assert!(json.contains("\"version\":\"2\""));
+        let wrong_version = json.replacen("\"version\":\"2\"", "\"version\":\"9\"", 1);
         assert!(matches!(
             DecodeSidecar::from_json(&wrong_version),
             Err(DecodeSidecarParseError::Version { .. })
         ));
+    }
+
+    #[test]
+    fn decode_sidecar_migrates_v1_losses_to_namespaced_v2() {
+        // Pin migrate-on-read against a fixture that carries losses; an empty
+        // losses array would pass under either schema.
+        let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
+        let sidecar = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
+        assert_eq!(sidecar.version(), DECODE_SIDECAR_VERSION);
+        assert_eq!(sidecar.report.losses.len(), 1);
+        let loss = &sidecar.report.losses[0];
+        assert_eq!(loss.code.namespace(), crate::SHARED_LOSS_NAMESPACE);
+        assert_eq!(loss.code.local_code(), "metadata_not_transferred");
+        assert_eq!(
+            loss.code.taxonomy(),
+            crate::LossTaxonomy::MetadataNotTransferred
+        );
+        assert_eq!(loss.message, "thumbnail");
     }
 
     #[test]

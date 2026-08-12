@@ -6945,7 +6945,7 @@ mod design_loss_tests {
 
         let report = super::build_geometry_report(&scan, &decoded);
         assert!(report.losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::report::LossKind::PcurveOmitted
+            loss.code == crate::loss::SldprtLossCode::GeometryPcurveAmbiguous.kind()
                 && loss.message.contains("2 pcurve(s)")
         }));
     }
