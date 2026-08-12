@@ -8,14 +8,9 @@ use cadmpeg_ir::report::{LossKind, LossNote};
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
+use super::StageOutcome;
 
-pub(super) struct DependencyResult {
-    pub typed_records: HashSet<u64>,
-    pub notes: Vec<String>,
-    pub losses: Vec<LossNote>,
-}
-
-pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
+pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
     let mut losses = Vec::new();
     let documents = exchange
         .records
@@ -115,8 +110,10 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
         }
     }
 
-    DependencyResult {
-        typed_records: typed,
+    StageOutcome {
+        value: (),
+        claims: typed,
+        warnings: Vec::new(),
         notes: notes.into_iter().collect(),
         losses,
     }

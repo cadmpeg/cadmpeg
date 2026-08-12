@@ -10,7 +10,7 @@ use cadmpeg_ir::report::{LossKind, LossNote};
 
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::{decode_text, opaque_record_id, record_targets};
+use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
 
 const DRAWING_ENTITIES: &[&str] = &[
     "DRAWING_DEFINITION",
@@ -21,11 +21,6 @@ const DRAWING_ENTITIES: &[&str] = &[
     "DRAUGHTING_MODEL",
     "DRAUGHTING_CALLOUT",
 ];
-
-pub(super) struct DrawingResult {
-    pub typed_records: HashSet<u64>,
-    pub losses: Vec<LossNote>,
-}
 
 struct TargetContext<'a> {
     target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
@@ -51,7 +46,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
     known_typed: &HashSet<u64>,
-) -> DrawingResult {
+) -> StageOutcome<()> {
     let mut losses = Vec::new();
     let mut candidates = exchange
         .records
@@ -74,9 +69,12 @@ pub(super) fn decode(
     candidates.sort_by_key(|(id, _)| exchange.records[id].span.start);
 
     if candidates.is_empty() {
-        return DrawingResult {
-            typed_records: HashSet::new(),
+        return StageOutcome {
+            value: (),
+            claims: HashSet::new(),
+            warnings: Vec::new(),
             losses,
+            notes: Vec::new(),
         };
     }
 
@@ -164,9 +162,12 @@ pub(super) fn decode(
 
     let typed_records = drawings.keys().copied().collect::<HashSet<_>>();
     ir.model.drawings.extend(drawings.into_values());
-    DrawingResult {
-        typed_records,
+    StageOutcome {
+        value: (),
+        claims: typed_records,
+        warnings: Vec::new(),
         losses,
+        notes: Vec::new(),
     }
 }
 

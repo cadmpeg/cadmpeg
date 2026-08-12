@@ -15,8 +15,9 @@ use cadmpeg_ir::transform::Transform;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
-use super::geometry::GeometryResult;
-use super::topology::TopologyResult;
+use super::geometry::GeometryData;
+use super::topology::TopologyData;
+use super::StageOutcome;
 
 const MAX_OCCURRENCES: usize = 100_000;
 const MAX_ASSEMBLY_DEPTH: usize = 256;
@@ -30,19 +31,16 @@ const PRODUCT_DEFINITION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS",
 ];
 
-pub(super) struct ProductResult {
+pub(super) struct ProductData {
     pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
 }
 
 pub(super) fn decode(
     exchange: &Exchange,
-    geometry: &GeometryResult,
-    topology: &TopologyResult,
+    geometry: &GeometryData,
+    topology: &TopologyData,
     ir: &mut CadIr,
-) -> ProductResult {
+) -> StageOutcome<ProductData> {
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
@@ -450,18 +448,21 @@ pub(super) fn decode(
             typed.insert(id);
         }
     }
-    ProductResult {
-        product_definition_ids_by_source,
-        typed_records: typed,
+    StageOutcome {
+        value: ProductData {
+            product_definition_ids_by_source,
+        },
+        claims: typed,
         warnings,
         losses,
+        notes: Vec::new(),
     }
 }
 
 fn apply_body_placements(
     exchange: &Exchange,
-    geometry: &GeometryResult,
-    topology: &TopologyResult,
+    geometry: &GeometryData,
+    topology: &TopologyData,
     usages: &BTreeMap<u64, Usage>,
     ir: &mut CadIr,
     warnings: &mut Vec<String>,
@@ -574,7 +575,7 @@ struct Usage {
 fn shape_bindings(
     exchange: &Exchange,
     definitions: &BTreeMap<u64, u64>,
-    topology: &TopologyResult,
+    topology: &TopologyData,
 ) -> BTreeMap<u64, Vec<BodyId>> {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
@@ -612,7 +613,7 @@ fn shape_binding(
     exchange: &Exchange,
     pds: &BTreeMap<u64, u64>,
     definitions: &BTreeMap<u64, u64>,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
 ) -> Option<(u64, Vec<BodyId>)> {
     let definition = *pds.get(
@@ -660,7 +661,7 @@ fn definition_representations(
 
 fn occurrence_placements(
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     usages: &BTreeMap<u64, Usage>,
     warnings: &mut Vec<String>,
 ) -> BTreeMap<u64, Transform> {
@@ -822,7 +823,7 @@ fn occurrence_placements(
 
 fn infer_parent_representation_placements(
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
     result: &mut BTreeMap<u64, Transform>,
@@ -935,7 +936,7 @@ fn infer_parent_representation_placements(
 fn mapped_item_placement(
     item: &RawRecord,
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
 ) -> Option<(u64, Transform)> {
     let (representation, origin, target) = mapped_item_definition(item, exchange)?;
     Some((
@@ -944,7 +945,7 @@ fn mapped_item_placement(
     ))
 }
 
-fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryResult) -> Option<Transform> {
+fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryData) -> Option<Transform> {
     let from = transformation_item(origin, geometry)?;
     let to = transformation_item(target, geometry)?;
     Some(to.compose(from.try_inverse_affine()?))
@@ -975,7 +976,7 @@ fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64,
 fn occurrence_placement(
     record: &RawRecord,
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     pds: &BTreeMap<u64, u64>,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
@@ -1031,7 +1032,7 @@ fn occurrence_placement(
     Some((usage, to.compose(from.try_inverse_affine()?)))
 }
 
-fn transformation_item(id: u64, geometry: &GeometryResult) -> Option<Transform> {
+fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
     geometry
         .placements
         .get(&id)

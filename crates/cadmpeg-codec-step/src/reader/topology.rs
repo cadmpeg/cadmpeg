@@ -30,11 +30,9 @@ use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::surface_parameter_periods;
 use super::index::CarrierIndex;
+use super::StageOutcome;
 
-pub(super) struct TopologyResult {
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
+pub(super) struct TopologyData {
     pub body_by_root: BTreeMap<u64, Vec<BodyId>>,
     shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
     pub body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
@@ -61,7 +59,7 @@ fn topology_commit_error(context: &str, error: &DraftError) -> String {
 pub(super) fn representation_bodies(
     representation: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     cache: &mut BTreeMap<u64, Vec<BodyId>>,
     active: &mut BTreeSet<u64>,
     depth: usize,
@@ -192,18 +190,21 @@ pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
     carrier_index: &CarrierIndex,
-) -> TopologyResult {
+) -> StageOutcome<TopologyData> {
     let mut commit_session = CommitSession::new(ir);
-    let mut result = TopologyResult {
-        typed_records: HashSet::new(),
+    let mut result = StageOutcome {
+        value: TopologyData {
+            body_by_root: BTreeMap::new(),
+            shape_representation_relationships: shape_representation_relationships(exchange),
+            body_by_shell: BTreeMap::new(),
+            faces_by_source: BTreeMap::new(),
+            edges_by_source: BTreeMap::new(),
+            vertices_by_source: BTreeMap::new(),
+        },
+        claims: HashSet::new(),
         warnings: Vec::new(),
         losses: Vec::new(),
-        body_by_root: BTreeMap::new(),
-        shape_representation_relationships: shape_representation_relationships(exchange),
-        body_by_shell: BTreeMap::new(),
-        faces_by_source: BTreeMap::new(),
-        edges_by_source: BTreeMap::new(),
-        vertices_by_source: BTreeMap::new(),
+        notes: Vec::new(),
     };
     for record in exchange.records.values() {
         let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
@@ -269,7 +270,7 @@ pub(super) fn decode(
     let mut built_wire_models = BTreeSet::new();
     for (representation, model) in wire_models {
         if built_wire_models.contains(&model) {
-            result.typed_records.insert(representation);
+            result.claims.insert(representation);
             if let Some(body_ids) = result.body_by_root.get(&model).cloned() {
                 result.body_by_root.insert(representation, body_ids);
             }
@@ -299,9 +300,7 @@ pub(super) fn decode(
                     .entry(model)
                     .or_default()
                     .push(built.body_id.clone());
-                result
-                    .typed_records
-                    .extend(std::mem::take(&mut built.typed));
+                result.claims.extend(std::mem::take(&mut built.typed));
             }
         }
         if committed == 0 {
@@ -350,9 +349,7 @@ pub(super) fn decode(
                     .entry(model)
                     .or_default()
                     .push(built.body_id.clone());
-                result
-                    .typed_records
-                    .extend(std::mem::take(&mut built.typed));
+                result.claims.extend(std::mem::take(&mut built.typed));
             }
         }
         if committed == 0 {
@@ -395,7 +392,7 @@ pub(super) fn decode(
             continue;
         };
         if let Some(root_built) = built_roots.get(&key).cloned() {
-            result.typed_records.insert(id);
+            result.claims.insert(id);
             result.body_by_root.insert(id, root_built.body_ids.clone());
             for (shell, body_ids) in root_built.body_by_shell {
                 result
@@ -450,9 +447,7 @@ pub(super) fn decode(
                         .insert(built.body_id.clone());
                 }
                 body_ids.push(built.body_id.clone());
-                result
-                    .typed_records
-                    .extend(std::mem::take(&mut built.typed));
+                result.claims.extend(std::mem::take(&mut built.typed));
             }
         }
         if body_ids.is_empty() {
@@ -513,7 +508,7 @@ pub(super) fn decode(
                 record,
                 exchange,
                 carrier_index,
-                &mut result.typed_records,
+                &mut result.claims,
             ) {
                 continue;
             }
@@ -529,9 +524,7 @@ pub(super) fn decode(
             ));
         } else {
             result.body_by_root.insert(id, vec![built.body_id.clone()]);
-            result
-                .typed_records
-                .extend(std::mem::take(&mut built.typed));
+            result.claims.extend(std::mem::take(&mut built.typed));
         }
     }
     for (id, record) in exchange.entities_any(&[
@@ -561,13 +554,7 @@ pub(super) fn decode(
                     .join(", ")
             ));
         }
-        mark_standalone_geometric_set(
-            id,
-            record,
-            exchange,
-            carrier_index,
-            &mut result.typed_records,
-        );
+        mark_standalone_geometric_set(id, record, exchange, carrier_index, &mut result.claims);
     }
     for (id, record) in exchange.entities_any(&[
         "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
@@ -598,7 +585,7 @@ pub(super) fn decode(
         )
         .is_empty();
         if has_body {
-            result.typed_records.insert(id);
+            result.claims.insert(id);
         }
     }
     for face in &ir.model.faces {

@@ -15,13 +15,8 @@ use cadmpeg_ir::transform::Transform;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
-use super::geometry::GeometryResult;
-
-pub(super) struct PmiResult {
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
-}
+use super::geometry::GeometryData;
+use super::StageOutcome;
 
 struct MeasureContext<'a> {
     length_scale: f64,
@@ -29,12 +24,18 @@ struct MeasureContext<'a> {
     losses: &'a mut Vec<LossNote>,
 }
 
-pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut CadIr) -> PmiResult {
+pub(super) fn decode(
+    exchange: &Exchange,
+    geometry: &GeometryData,
+    ir: &mut CadIr,
+) -> StageOutcome<()> {
     if !exchange.has_entity_matching(is_pmi_entity_name) {
-        return PmiResult {
-            typed_records: HashSet::new(),
+        return StageOutcome {
+            value: (),
+            claims: HashSet::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
+            notes: Vec::new(),
         };
     }
     let aspects = exchange
@@ -574,10 +575,12 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         .collect::<BTreeSet<u64>>();
     typed.extend(aspects.intersection(&targeted_aspects).copied());
     mark_characteristic_representations(exchange, &annotations, &mut typed);
-    PmiResult {
-        typed_records: typed,
+    StageOutcome {
+        value: (),
+        claims: typed,
         warnings,
         losses,
+        notes: Vec::new(),
     }
 }
 
@@ -875,7 +878,7 @@ fn collect_annotation_text(
 fn find_placement(
     id: u64,
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     visited: &mut BTreeSet<u64>,
     depth: usize,
 ) -> Option<Transform> {
@@ -1066,7 +1069,7 @@ fn modifier_values(value: &Value) -> Vec<String> {
 
 fn characteristic_values(
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     losses: &mut Vec<LossNote>,
 ) -> BTreeMap<u64, PmiValue> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
@@ -1274,7 +1277,7 @@ fn measure_item_name(
 }
 
 fn measure_context<'a>(
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     id: u64,
     losses: &'a mut Vec<LossNote>,
 ) -> MeasureContext<'a> {

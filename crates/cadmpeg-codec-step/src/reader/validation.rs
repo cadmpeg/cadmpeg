@@ -10,14 +10,8 @@ use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
-use super::geometry::GeometryResult;
-
-pub(super) struct ValidationResult {
-    pub typed_records: HashSet<u64>,
-    pub notes: Vec<String>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
-}
+use super::geometry::GeometryData;
+use super::StageOutcome;
 
 #[derive(Clone, Copy)]
 enum Expected {
@@ -28,14 +22,15 @@ enum Expected {
 
 pub(super) fn decode(
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     ir: &mut CadIr,
-) -> ValidationResult {
+) -> StageOutcome<()> {
     if !exchange.has_entity("PROPERTY_DEFINITION")
         || !exchange.has_entity("PROPERTY_DEFINITION_REPRESENTATION")
     {
-        return ValidationResult {
-            typed_records: HashSet::new(),
+        return StageOutcome {
+            value: (),
+            claims: HashSet::new(),
             notes: Vec::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
@@ -195,8 +190,9 @@ pub(super) fn decode(
         let id = step_id(&point.id.0);
         !validation_points.contains(&id) || referenced_validation_points.contains(&id)
     });
-    ValidationResult {
-        typed_records: typed,
+    StageOutcome {
+        value: (),
+        claims: typed,
         notes,
         warnings,
         losses,

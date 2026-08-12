@@ -23,14 +23,11 @@ use cadmpeg_ir::SourceObjectAssociation;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::index::{step_instance_id, CarrierIndex};
-use super::opaque_record_id;
+use super::{opaque_record_id, StageOutcome};
 
 const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 
-pub(super) struct GeometryResult {
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
+pub(super) struct GeometryData {
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
     pub transformation_operators: BTreeMap<u64, Transform>,
     pub length_scale: f64,
@@ -180,7 +177,7 @@ impl UnitScales {
     }
 }
 
-pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
+pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<GeometryData> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
         losses.push(unresolved_unit_loss(
@@ -1727,16 +1724,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             typed.insert(id);
         }
     }
-    GeometryResult {
-        typed_records: typed,
+    StageOutcome {
+        value: GeometryData {
+            placements,
+            transformation_operators,
+            length_scale: scale,
+            plane_angle_scale: angle_scale,
+            length_scales: unit_scales.length,
+            plane_angle_scales: unit_scales.angle,
+        },
+        claims: typed,
         warnings,
         losses,
-        placements,
-        transformation_operators,
-        length_scale: scale,
-        plane_angle_scale: angle_scale,
-        length_scales: unit_scales.length,
-        plane_angle_scales: unit_scales.angle,
+        notes: Vec::new(),
     }
 }
 

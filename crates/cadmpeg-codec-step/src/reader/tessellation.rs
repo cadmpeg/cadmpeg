@@ -12,21 +12,16 @@ use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::geometry::GeometryResult;
-use super::topology::TopologyResult;
-
-pub(super) struct TessellationResult {
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
-}
+use super::geometry::GeometryData;
+use super::topology::TopologyData;
+use super::StageOutcome;
 
 pub(super) fn decode(
     exchange: &Exchange,
-    geometry: &GeometryResult,
-    topology: &TopologyResult,
+    geometry: &GeometryData,
+    topology: &TopologyData,
     ir: &mut CadIr,
-) -> TessellationResult {
+) -> StageOutcome<()> {
     let coordinates = exchange
         .records
         .iter()
@@ -284,10 +279,12 @@ pub(super) fn decode(
             }
         }
     }
-    TessellationResult {
-        typed_records: typed,
+    StageOutcome {
+        value: (),
+        claims: typed,
         warnings,
         losses,
+        notes: Vec::new(),
     }
 }
 
@@ -298,7 +295,7 @@ fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
         .and_then(ValueExt::reference)
 }
 
-fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyResult) -> BTreeSet<BodyId> {
+fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyData) -> BTreeSet<BodyId> {
     let Some(link) = entity_parameter(record, kind, 1, 1).and_then(ValueExt::reference) else {
         return BTreeSet::new();
     };

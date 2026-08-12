@@ -16,20 +16,15 @@ use cadmpeg_ir::topology::Color;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
-use super::topology::TopologyResult;
-
-pub(super) struct PresentationResult {
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
-}
+use super::topology::TopologyData;
+use super::StageOutcome;
 
 pub(super) fn decode(
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
-) -> PresentationResult {
+) -> StageOutcome<()> {
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
@@ -364,17 +359,19 @@ pub(super) fn decode(
             });
         }
     }
-    PresentationResult {
-        typed_records: typed,
+    StageOutcome {
+        value: (),
+        claims: typed,
         warnings,
         losses,
+        notes: Vec::new(),
     }
 }
 
 fn invisible_body_ids(
     id: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
 ) -> (Vec<BodyId>, bool) {
     let mut body_ids = BTreeSet::new();
@@ -393,7 +390,7 @@ fn invisible_body_ids(
 fn collect_invisible_body_ids(
     id: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
     active: &mut BTreeSet<u64>,
     body_ids: &mut BTreeSet<BodyId>,
@@ -517,7 +514,7 @@ fn expand_style_targets(
 fn appearance_targets(
     id: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     entity_ids: &EntityIds,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
@@ -593,7 +590,7 @@ fn appearance_targets(
 fn presentation_item(
     id: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     entity_ids: &EntityIds,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
