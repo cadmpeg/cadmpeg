@@ -13,14 +13,14 @@ mod commands;
 mod inspect;
 mod loader;
 mod query;
-mod registry;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use crate::registry::Registry;
+use crate::application::{ForcedInput, InputCatalog, NativeValidatorCatalog};
+use crate::commands::AppCatalogs;
 
 #[cfg(feature = "step")]
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -116,7 +116,7 @@ struct Cli {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum Format {
+pub(crate) enum Format {
     /// Canonical CADIR JSON.
     #[value(alias = "json")]
     Cadir,
@@ -291,12 +291,6 @@ enum InputFormat {
     #[value(alias = "smt", alias = "smb", alias = "sab")]
     Sat,
     /// Canonical CADIR JSON.
-    Cadir,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ForcedInput {
-    Codec(&'static str),
     Cadir,
 }
 
@@ -653,7 +647,10 @@ fn misdirected_json(command: &str) -> anyhow::Error {
 
 fn main() -> ExitCode {
     let command = Cli::parse().command;
-    let registry = Registry::with_builtins();
+    let catalogs = AppCatalogs {
+        inputs: InputCatalog::with_builtins(),
+        validators: NativeValidatorCatalog::with_builtins(),
+    };
     let result = match command {
         Command::Inspect {
             input,
@@ -669,7 +666,7 @@ fn main() -> ExitCode {
             None => {
                 let input = resolve_input(input, input_flag);
                 commands::inspect(
-                    &registry,
+                    &catalogs,
                     &input,
                     input_args.forced(),
                     json,
@@ -698,7 +695,7 @@ fn main() -> ExitCode {
                 ))
             } else {
                 commands::decode(
-                    &registry,
+                    &catalogs,
                     &resolve_input(input, input_flag),
                     output.as_deref(),
                     force,
@@ -719,7 +716,7 @@ fn main() -> ExitCode {
             input_args,
             decode,
         } => commands::validate_cmd(
-            &registry,
+            &catalogs,
             &resolve_input(input, input_flag),
             input_args.forced(),
             &decode,
@@ -767,7 +764,7 @@ fn main() -> ExitCode {
                     forced_input: input_args.forced(),
                 };
                 commands::export(
-                    &registry,
+                    &catalogs,
                     &resolve_input(input, input_flag),
                     format,
                     output.as_deref(),
@@ -787,7 +784,7 @@ fn main() -> ExitCode {
             force,
             decode,
         } => commands::diff(
-            &registry,
+            &catalogs,
             commands::DiffInput {
                 path: &a,
                 forced: input_format_a.map(InputFormat::resolution),
@@ -841,7 +838,7 @@ fn main() -> ExitCode {
                     forced_input: input_args.forced(),
                 };
                 commands::convert(
-                    &registry,
+                    &catalogs,
                     &resolve_input(input, input_flag),
                     format,
                     output.as_deref(),

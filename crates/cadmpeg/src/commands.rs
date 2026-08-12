@@ -17,14 +17,25 @@ use cadmpeg_ir::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
-use crate::registry::{DetectionOutcome, Registry, TargetOptions};
-use crate::{DecodeArgs, ForcedInput, Format};
+use crate::application::{
+    build_encoder, EncoderRequest, ForcedInput, InputCatalog, NativeValidatorCatalog,
+    ResolveSourceError, ResolvedSource,
+};
+use crate::loader::{self, read_prefix, LoadNotice, DETECTION_PREFIX_LEN};
+use crate::{DecodeArgs, Format};
 
 pub(crate) const CLI_SCHEMA_VERSION: u32 = 5;
 
+/// Catalogs required by CLI command handlers.
+pub struct AppCatalogs {
+    /// Input detection and codec lookup.
+    pub inputs: InputCatalog,
+    /// Native namespace validators.
+    pub validators: NativeValidatorCatalog,
+}
+
 fn validate_ir(
-    registry: &Registry,
+    validators: &NativeValidatorCatalog,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
     losses: Vec<cadmpeg_ir::LossNote>,
@@ -33,8 +44,23 @@ fn validate_ir(
         Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
         None => validate(ir, losses),
     };
-    report.findings.extend(registry.validate_native(ir));
+    report.findings.extend(validators.validate(ir));
     report
+}
+
+fn print_load_notices(notices: &[LoadNotice]) {
+    for notice in notices {
+        match notice {
+            LoadNotice::LowConfidenceDetection {
+                format_id,
+                confidence,
+            } => {
+                eprintln!(
+                    "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
+                );
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -106,7 +132,7 @@ fn semantic(message: impl Into<String>) -> anyhow::Error {
 
 /// Inspect a native container and print its entries.
 pub fn inspect(
-    registry: &Registry,
+    catalogs: &AppCatalogs,
     path: &Path,
     forced: Option<ForcedInput>,
     json: bool,
@@ -114,28 +140,24 @@ pub fn inspect(
     force: bool,
     limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<()> {
+    if matches!(forced, Some(ForcedInput::Cadir)) {
+        bail!("inspect requires a container input, not cadir");
+    }
     let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
-    let (codec, confidence) = match forced {
-        Some(ForcedInput::Codec(id)) => (
-            registry
-                .by_id(id)
-                .ok_or_else(|| anyhow!("unsupported input format {id}"))?,
-            None,
-        ),
-        Some(ForcedInput::Cadir) => bail!("inspect requires a container input, not cadir"),
-        None => {
-            match registry.detect(&prefix) {
-                DetectionOutcome::None => return Err(anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection", path.display())),
-                DetectionOutcome::Detected { descriptor, confidence } => (
-                    descriptor.codec.as_deref().expect("detected descriptor has codec"),
-                    Some(confidence),
-                ),
-                DetectionOutcome::Ambiguous { confidence, candidates } => return Err(anyhow!(
-                    "ambiguous {confidence}-confidence input format: {}; pass --input-format",
-                    candidates.iter().map(|candidate| candidate.id).collect::<Vec<_>>().join(", ")
-                )),
-            }
+    let (codec, confidence) = match catalogs.inputs.resolve_source(&prefix, forced) {
+        Ok(ResolvedSource::Native {
+            codec, confidence, ..
+        }) => (codec, confidence),
+        Ok(ResolvedSource::Cadir) => {
+            return Err(anyhow!(
+                "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection",
+                path.display()
+            ));
         }
+        Err(ResolveSourceError::UnsupportedFormat(id)) => {
+            return Err(anyhow!("unsupported input format {id}"));
+        }
+        Err(error) => return Err(anyhow!(error.to_string())),
     };
     let mut file = File::open(path)?;
     let summary = codec
@@ -194,7 +216,7 @@ pub fn inspect(
 
 /// Decode a native CAD file and write canonical CADIR JSON.
 pub fn decode(
-    registry: &Registry,
+    catalogs: &AppCatalogs,
     path: &Path,
     out: Option<&Path>,
     force: bool,
@@ -202,9 +224,10 @@ pub fn decode(
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let loaded = loader::load_artifact(registry, path, args.options(), forced)?;
+    let outcome = loader::load_artifact(&catalogs.inputs, path, args.options(), forced)?;
+    print_load_notices(&outcome.notices);
+    let loaded = &outcome.document;
     export_ir(
-        registry,
         &loaded.ir,
         loaded.decode_report(),
         loaded.fidelity(),
@@ -212,7 +235,7 @@ pub fn decode(
         out,
         path,
         force,
-        TargetOptions::Neutral,
+        EncoderRequest::Neutral,
         false,
     )?;
     if let Some(report) = loaded.decode_report() {
@@ -232,7 +255,7 @@ pub fn decode(
 
 /// Load and validate CADIR, printing a human-readable or JSON report.
 pub fn validate_cmd(
-    registry: &Registry,
+    catalogs: &AppCatalogs,
     path: &Path,
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
@@ -240,13 +263,15 @@ pub fn validate_cmd(
     report_path: Option<&Path>,
     force: bool,
 ) -> Result<()> {
-    let loaded = loader::load_artifact(registry, path, args.options(), forced)?;
+    let outcome = loader::load_artifact(&catalogs.inputs, path, args.options(), forced)?;
+    print_load_notices(&outcome.notices);
+    let loaded = &outcome.document;
     let mut stdout = io::stdout();
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
     let report = validate_ir(
-        registry,
+        &catalogs.validators,
         &loaded.ir,
         loaded.fidelity(),
         losses(loaded.decode_report()),
@@ -286,30 +311,30 @@ pub fn validate_cmd(
 
 /// Decode if needed and export without validating CADIR.
 pub fn export(
-    registry: &Registry,
+    catalogs: &AppCatalogs,
     path: &Path,
     format: Option<Format>,
     out: Option<&Path>,
     plan: &ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
-    execute_conversion(registry, path, format, out, plan, args, "export")
+    execute_conversion(catalogs, path, format, out, plan, args, "export")
 }
 
 /// Decode if needed, validate CADIR, and export.
 pub fn convert(
-    registry: &Registry,
+    catalogs: &AppCatalogs,
     path: &Path,
     format: Option<Format>,
     out: Option<&Path>,
     plan: &ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
-    execute_conversion(registry, path, format, out, plan, args, "convert")
+    execute_conversion(catalogs, path, format, out, plan, args, "convert")
 }
 
 fn execute_conversion(
-    registry: &Registry,
+    catalogs: &AppCatalogs,
     path: &Path,
     format: Option<Format>,
     out: Option<&Path>,
@@ -328,7 +353,9 @@ fn execute_conversion(
             name = format.name()
         );
     }
-    let loaded = loader::load_artifact(registry, path, args.options(), plan.forced_input)?;
+    let outcome = loader::load_artifact(&catalogs.inputs, path, args.options(), plan.forced_input)?;
+    print_load_notices(&outcome.notices);
+    let loaded = &outcome.document;
     let mut stderr = io::stderr();
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut stderr, report)?;
@@ -353,7 +380,7 @@ fn execute_conversion(
     let validation = match plan.validation {
         ValidationMode::Required { allow_invalid } => {
             let validation = validate_ir(
-                registry,
+                &catalogs.validators,
                 &loaded.ir,
                 loaded.fidelity(),
                 losses(loaded.decode_report()),
@@ -403,9 +430,8 @@ fn execute_conversion(
     if plan.rhino_version.is_some() && format != Format::Rhino {
         bail!("--rhino-version requires Rhino output");
     }
-    let target_options = target_options_for(plan, format);
+    let encoder_request = encoder_request_for(plan, format);
     let report = export_ir(
-        registry,
         &loaded.ir,
         loaded.decode_report(),
         loaded.fidelity(),
@@ -413,7 +439,7 @@ fn execute_conversion(
         out,
         path,
         plan.force,
-        target_options,
+        encoder_request,
         plan.reject_lossy,
     )?;
     write_command_report(
@@ -429,7 +455,7 @@ fn execute_conversion(
 
 /// Structurally compare two decoded models.
 pub fn diff(
-    registry: &Registry,
+    catalogs: &AppCatalogs,
     a: DiffInput<'_>,
     b: DiffInput<'_>,
     args: &DecodeArgs,
@@ -437,8 +463,12 @@ pub fn diff(
     report_path: Option<&Path>,
     force: bool,
 ) -> Result<ExitCode> {
-    let left = loader::load_artifact(registry, a.path, args.options(), a.forced)?;
-    let right = loader::load_artifact(registry, b.path, args.options(), b.forced)?;
+    let left_outcome = loader::load_artifact(&catalogs.inputs, a.path, args.options(), a.forced)?;
+    print_load_notices(&left_outcome.notices);
+    let right_outcome = loader::load_artifact(&catalogs.inputs, b.path, args.options(), b.forced)?;
+    print_load_notices(&right_outcome.notices);
+    let left = &left_outcome.document;
+    let right = &right_outcome.document;
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
     let different = !result.is_empty() || fidelity_differs(&fidelity);
@@ -692,27 +722,26 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
     Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
 }
 
-fn target_options_for(plan: &ConversionPlan, format: Format) -> TargetOptions {
+fn encoder_request_for(plan: &ConversionPlan, format: Format) -> EncoderRequest {
     match format {
         #[cfg(feature = "step")]
-        Format::Step => TargetOptions::Step(plan.step_options.clone()),
+        Format::Step => EncoderRequest::Step(plan.step_options.clone()),
         #[cfg(feature = "rhino")]
-        Format::Rhino => TargetOptions::Rhino(
+        Format::Rhino => EncoderRequest::Rhino(
             plan.rhino_version
                 .unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
         ),
         #[cfg(feature = "iges")]
-        Format::Iges => TargetOptions::Iges(plan.iges_options),
+        Format::Iges => EncoderRequest::Iges(plan.iges_options),
         _ => {
             let _ = plan;
-            TargetOptions::Neutral
+            EncoderRequest::Neutral
         }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn export_ir(
-    registry: &Registry,
     ir: &CadIr,
     decode_report: Option<&DecodeReport>,
     source_fidelity: Option<&SourceFidelity>,
@@ -720,15 +749,13 @@ fn export_ir(
     out: Option<&Path>,
     input: &Path,
     force: bool,
-    target_options: TargetOptions,
+    encoder_request: EncoderRequest,
     reject_lossy: bool,
 ) -> Result<ExportReport> {
     if let Some(path) = out {
         check_output_path(input, path, force)?;
     }
-    let encoder = registry
-        .encoder(format.name(), target_options)
-        .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
+    let encoder = build_encoder(format, encoder_request)?;
     let plan = encoder.plan(cadmpeg_ir::codec::EncodeInput {
         ir,
         fidelity: source_fidelity,
