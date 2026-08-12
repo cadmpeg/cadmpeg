@@ -23,6 +23,8 @@ use crate::units::LengthUnit;
 
 /// Frozen accept/reject IR builders for Phase 5 gate swaps.
 pub mod admissibility_freeze;
+/// Narrow admissibility predicates as documented `Check` subsets.
+pub mod admit;
 mod annotations_native;
 mod assets;
 mod carriers_parameterization;
