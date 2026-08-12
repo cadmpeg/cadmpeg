@@ -188,6 +188,9 @@ pub enum DraftError {
 }
 
 /// Transactional collection of staged model entities and decode accounting.
+///
+/// Plan prose calls this stage `DocumentDraft`. Prefer that name in docs; this
+/// type remains the runtime draft that commits into [`CadIr`].
 #[derive(Debug, Default)]
 pub struct ModelDraft {
     model: Model,
@@ -197,6 +200,10 @@ pub struct ModelDraft {
     notes: Vec<LossNote>,
     ledger: TransferLedger,
 }
+
+/// Plan name for [`ModelDraft`] in the
+/// `DocumentDraft → CadIr → ValidationReport` state machine.
+pub type DocumentDraft = ModelDraft;
 
 impl ModelDraft {
     /// Creates an empty draft.

@@ -66,7 +66,12 @@ pub struct DecodeOptions {
 }
 
 /// A decoded document plus its loss report.
+///
+/// Construct only through [`DecodeResult::new`], which finalizes the IR and
+/// source fidelity. `#[non_exhaustive]` blocks external struct literals so
+/// callers cannot skip finalization; fields remain readable for decode consumers.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct DecodeResult {
     /// The decoded IR.
     pub ir: CadIr,
@@ -86,6 +91,26 @@ impl DecodeResult {
             report,
             source_fidelity,
         }
+    }
+
+    /// Borrow the finalized IR.
+    pub fn ir(&self) -> &CadIr {
+        &self.ir
+    }
+
+    /// Borrow the transfer report.
+    pub fn report(&self) -> &DecodeReport {
+        &self.report
+    }
+
+    /// Borrow source fidelity.
+    pub fn source_fidelity(&self) -> &SourceFidelity {
+        &self.source_fidelity
+    }
+
+    /// Consume into IR, report, and source fidelity.
+    pub fn into_parts(self) -> (CadIr, DecodeReport, SourceFidelity) {
+        (self.ir, self.report, self.source_fidelity)
     }
 }
 

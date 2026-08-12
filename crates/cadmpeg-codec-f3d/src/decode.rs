@@ -3397,10 +3397,7 @@ fn decode_result(
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
     ctx.charge_entities(ir.model.entity_count() as u64, "admit F3D entities")?;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
-        annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
-    };
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [source_image]);
     ir.finalize();

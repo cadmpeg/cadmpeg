@@ -2783,7 +2783,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
 #[test]
 fn wrong_document_version_is_flagged() {
     let mut ir = unit_cube();
-    ir.ir_version = "1".into();
+    ir.set_ir_version_for_test("1");
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

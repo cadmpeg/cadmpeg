@@ -157,6 +157,9 @@ pub struct SketchEntityUse {
 }
 
 /// Solved geometry belonging to one sketch.
+///
+/// Prefer [`SketchEntity::new`] for invariant-bearing construction. There is no
+/// public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchEntity {
@@ -178,6 +181,21 @@ pub struct SketchEntity {
     pub endpoint_refs: Vec<String>,
     /// Solved two-dimensional geometry.
     pub geometry: SketchGeometry,
+}
+
+impl SketchEntity {
+    /// Construct a sketch entity from its id, owning sketch, and geometry.
+    pub fn new(id: SketchEntityId, sketch: SketchId, geometry: SketchGeometry) -> Self {
+        Self {
+            id,
+            sketch,
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        }
+    }
 }
 
 /// Solved two-dimensional sketch geometry.
@@ -384,6 +402,9 @@ pub struct SpatialSketchEntityUse {
 }
 
 /// Solved model-space geometry belonging to one spatial sketch.
+///
+/// Prefer [`SpatialSketchEntity::new`] for invariant-bearing construction. There
+/// is no public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpatialSketchEntity {
@@ -405,6 +426,25 @@ pub struct SpatialSketchEntity {
     pub endpoint_refs: Vec<String>,
     /// Solved model-space geometry.
     pub geometry: SpatialSketchGeometry,
+}
+
+impl SpatialSketchEntity {
+    /// Construct a spatial sketch entity from its id, owning sketch, and geometry.
+    pub fn new(
+        id: SpatialSketchEntityId,
+        sketch: SpatialSketchId,
+        geometry: SpatialSketchGeometry,
+    ) -> Self {
+        Self {
+            id,
+            sketch,
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        }
+    }
 }
 
 /// One geometric relation owned by a spatial sketch.

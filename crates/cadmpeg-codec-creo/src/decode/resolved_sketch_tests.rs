@@ -1088,14 +1088,7 @@ fn mixed_current_and_generated_edges_remain_native() {
             offset: 1,
         },
     ]);
-    let mut ir = CadIr {
-        ir_version: "3".to_string(),
-        source: None,
-        units: cadmpeg_ir::units::Units::default(),
-        tolerances: cadmpeg_ir::units::Tolerances::default(),
-        model: cadmpeg_ir::document::Model::default(),
-        native: cadmpeg_ir::native::Native::default(),
-    };
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     ir.model.features.push(Feature {
         id: IrFeatureId("creo:model:feature#97".to_string()),
         ordinal: 0,

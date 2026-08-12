@@ -189,50 +189,57 @@ item = "cadmpeg_ir::{admit,admit_with_annotations,admit_with_additional_native_i
 reason = "Phase 5: narrow admissibility predicates as documented Check subsets"
 
 [[change]]
-commit = "TBD"
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
 crate = "cadmpeg-codec-inventor"
 kind = "visibility"
 item = "cadmpeg_codec_inventor::fuzzing -> fuzz"
 reason = "Phase 6: expose only the hidden feature-gated fuzz facade"
 
 [[change]]
-commit = "TBD"
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
 crate = "cadmpeg-codec-rhino"
 kind = "visibility"
 item = "cadmpeg_codec_rhino::{loss,fuzzing}"
 reason = "Phase 6: make implementation modules private and standardize hidden fuzz access"
 
 [[change]]
-commit = "TBD"
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
 crate = "cadmpeg-codec-step"
 kind = "visibility"
 item = "cadmpeg_codec_step::{lex,parse,strings}"
 reason = "Phase 6: keep parser implementation behind the codec and fuzz facades"
 
 [[change]]
-commit = "TBD"
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
 crate = "cadmpeg-codec-f3d"
 kind = "visibility"
 item = "cadmpeg_codec_f3d::{brep,container,decode,design,f3z,history,materials,records,validate,xref}"
 reason = "Phase 6: narrow the root to codec, encoder surface, and validate_native"
 
 [[change]]
-commit = "TBD"
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
 crate = "cadmpeg-codec-sldprt"
 kind = "visibility"
 item = "cadmpeg_codec_sldprt::{brep,container,decode,loss,parasolid,records,fuzzing}"
 reason = "Phase 6: keep implementation modules private and standardize hidden fuzz access"
 
 [[change]]
-commit = "TBD"
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
 crate = "cadmpeg-codec-creo"
 kind = "visibility"
 item = "cadmpeg_codec_creo::{datum,decode,placement}"
 reason = "Phase 6: retain only advertised low-level research parsers"
 
 [[change]]
-commit = "TBD"
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
 crate = "cadmpeg-codec-nx"
 kind = "visibility"
 item = "cadmpeg_codec_nx::{decode,deltas,evaluation,om,om_tokens}"
 reason = "Phase 6: retain only advertised low-level research parsers and hidden fuzz access"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-step"
+kind = "visibility"
+item = "cadmpeg_codec_step::parse"
+reason = "Phase 6: product facade hides parse; module stays #[doc(hidden)] pub for benches/fuzz"

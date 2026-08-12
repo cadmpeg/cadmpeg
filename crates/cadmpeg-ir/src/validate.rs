@@ -70,32 +70,12 @@ fn nonpositive(x: f64) -> bool {
     !(x.is_finite() && x > 0.0)
 }
 
-macro_rules! define_registered_entity_census {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
-        fn registered_entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
-            BTreeMap::from([
-                $((stringify!($field).into(), ir.model.$field.len())),*
-            ])
-        }
-    };
-}
-crate::document::arena_registry!(define_registered_entity_census);
-
 /// Count the records represented by the IR arenas without running validation.
+///
+/// Prefer [`CadIr::census`](crate::CadIr::census); this alias remains for
+/// existing `cadmpeg_ir::entity_census` call sites.
 pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
-    let mut counts = registered_entity_census(ir);
-    counts.insert(
-        "surfaces_unknown_geometry".into(),
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
-            .count(),
-    );
-    for loss in ir.native.loss_counts() {
-        counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
-    }
-    counts
+    crate::document::entity_census(ir)
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.

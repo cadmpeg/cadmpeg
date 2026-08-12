@@ -11336,14 +11336,8 @@ mod tests {
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         });
-        let ir = CadIr {
-            ir_version: IR_VERSION.into(),
-            source: None,
-            units: Units::default(),
-            tolerances: Tolerances::default(),
-            model,
-            native: Native::default(),
-        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model = model;
         let outputs = std::collections::BTreeMap::from([
             ("hole-a".to_string(), vec![body.clone()]),
             ("hole-b".to_string(), vec![body]),
@@ -11941,14 +11935,8 @@ mod tests {
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         });
-        let ir = CadIr {
-            ir_version: IR_VERSION.into(),
-            source: None,
-            units: Units::default(),
-            tolerances: Tolerances::default(),
-            model,
-            native: Native::default(),
-        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model = model;
         let operation_positions = BTreeMap::from([("blind", 0usize)]);
         assert_eq!(
             super::blind_hole_operations(std::slice::from_ref(&template), &operation_positions),
@@ -12267,14 +12255,8 @@ mod tests {
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         });
-        let ir = CadIr {
-            ir_version: IR_VERSION.into(),
-            source: None,
-            units: Units::default(),
-            tolerances: Tolerances::default(),
-            model,
-            native: Native::default(),
-        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model = model;
         let operations = vec![operation.clone()];
         let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
         let body_faces = super::connected_solid_body_faces(&ir, &body).expect("solid body faces");

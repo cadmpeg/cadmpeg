@@ -3463,10 +3463,7 @@ fn decode_result(
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = SourceFidelity {
-        annotations,
-        ..SourceFidelity::default()
-    };
+    let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }

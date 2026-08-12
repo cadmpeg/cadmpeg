@@ -550,8 +550,8 @@ struct FidelityDiff {
 impl FidelityDiff {
     fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
         Self {
-            version: (left.version != right.version)
-                .then(|| (left.version.clone(), right.version.clone())),
+            version: (left.version() != right.version())
+                .then(|| (left.version().to_owned(), right.version().to_owned())),
             annotations_changed: left.annotations != right.annotations,
             retained_records_changed: left.retained_records != right.retained_records,
         }

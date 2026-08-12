@@ -600,6 +600,9 @@ pub enum FeatureInputClassRole {
 }
 
 /// One typed sketch-entity marker inside a native feature-input stream.
+///
+/// Prefer [`SketchInputEntity::new`] for invariant-bearing construction. There
+/// is no public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchInputEntity {
@@ -634,6 +637,32 @@ pub struct SketchInputEntity {
     /// Selector stored beside `links` in the reference-bearing layout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_selector: Option<u16>,
+}
+
+impl SketchInputEntity {
+    /// Construct a marker from its identity, parent lane, ordinal, offset, and kind.
+    pub fn new(
+        id: impl Into<String>,
+        parent: impl Into<String>,
+        ordinal: u32,
+        offset: u64,
+        kind: SketchInputKind,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            parent: parent.into(),
+            feature_ref: None,
+            ordinal,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: None,
+            coordinates_m: None,
+            links: Vec::new(),
+            link_selector: None,
+        }
+    }
 }
 
 /// One marker-local reference resolved within its owning feature object.

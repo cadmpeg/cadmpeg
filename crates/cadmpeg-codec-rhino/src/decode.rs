@@ -2364,10 +2364,7 @@ impl<'a> DecodeContext<'a> {
             RETAINED_DOCUMENT_CAP,
             RETAINED_RECORD_CAP
         )];
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity {
-            annotations: self.annotations,
-            ..Default::default()
-        };
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
         source_fidelity
             .attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)
             .expect("Rhino source records separate from product identities");

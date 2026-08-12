@@ -1706,7 +1706,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
                 },
             )
             .expect("required invariant");
-        assert_eq!(result.ir.ir_version, IR_VERSION);
+        assert_eq!(result.ir.ir_version(), IR_VERSION);
         assert!(result.ir.model.bodies.is_empty());
         assert!(result.ir.model.subds.is_empty());
         assert!(result.report.container_only);
@@ -1737,7 +1737,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
                 },
             )
             .expect("required invariant");
-        assert_eq!(result.ir.ir_version, IR_VERSION);
+        assert_eq!(result.ir.ir_version(), IR_VERSION);
         assert!(result.ir.model.bodies.is_empty());
         assert!(result.ir.model.subds.is_empty());
         assert!(result.report.container_only);

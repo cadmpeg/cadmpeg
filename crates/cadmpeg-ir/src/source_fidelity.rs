@@ -23,7 +23,7 @@ pub const DECODE_SIDECAR_VERSION: &str = "1";
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeSidecar {
     /// Serialized sidecar format version.
-    pub version: String,
+    version: String,
     /// SHA-256 of the exact CADIR bytes this sidecar describes.
     pub ir_sha256: String,
     /// Native decode transfer report.
@@ -51,6 +51,11 @@ impl DecodeSidecar {
             report,
             fidelity,
         }
+    }
+
+    /// Sidecar format version stamped by constructors.
+    pub fn version(&self) -> &str {
+        &self.version
     }
 
     /// Returns whether this sidecar is bound to the supplied CADIR bytes.
@@ -170,7 +175,7 @@ pub enum FidelityError {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceFidelity {
     /// Serialized representation version.
-    pub version: String,
+    version: String,
     /// Sparse source locations and conversion exactness.
     #[serde(default)]
     pub annotations: Annotations,
@@ -190,6 +195,20 @@ impl Default for SourceFidelity {
 }
 
 impl SourceFidelity {
+    /// Representation version stamped by constructors and `Default`.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// Current-version fidelity carrying only the given annotations.
+    pub fn with_annotations(annotations: Annotations) -> Self {
+        Self {
+            version: SOURCE_FIDELITY_VERSION.into(),
+            annotations,
+            retained_records: Vec::new(),
+        }
+    }
+
     /// Sorts retained records into canonical source order.
     pub fn finalize(&mut self) {
         self.retained_records.sort_by(|left, right| {

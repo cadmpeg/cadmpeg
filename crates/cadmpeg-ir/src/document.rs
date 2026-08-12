@@ -233,16 +233,23 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 
 /// A versioned CAD document.
 ///
+/// Construction state machine: [`crate::draft::ModelDraft`] (mutable, indexed)
+/// commits into [`CadIr`] (structurally canonical after [`CadIr::finalize`]);
+/// [`crate::ValidationReport`] is produced separately by `validate_neutral` and
+/// is not embedded in the document. Plan prose names the draft stage
+/// `DocumentDraft`; the runtime type is [`crate::draft::ModelDraft`].
+///
 /// `model` holds the format-neutral graph. `native` retains typed
 /// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
+/// `ir_version` is constructor- and deserializer-controlled.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CadIr {
     /// IR schema version.
     #[serde(deserialize_with = "deserialize_ir_version")]
     #[cfg_attr(feature = "schema", schemars(schema_with = "ir_version_schema"))]
-    pub ir_version: String,
+    ir_version: String,
     /// Source-container metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceMeta>,
@@ -359,11 +366,18 @@ impl CadIr {
         }
     }
 
-    /// Serialize the document as pretty JSON.
+    /// IR schema version stamped by constructors and accepted on deserialize.
+    pub fn ir_version(&self) -> &str {
+        &self.ir_version
+    }
+
+    /// Serialize a finalized, identity-sorted view as pretty JSON.
     ///
-    /// Call [`CadIr::finalize`] first when canonical arena order is required.
+    /// Clones and [`finalize`](Self::finalize)s so callers need not pre-sort.
     pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
+        let mut canonical = self.clone();
+        canonical.finalize();
+        serde_json::to_string_pretty(&canonical)
     }
 
     /// Parse JSON and reject any unsupported `ir_version`.
@@ -400,8 +414,47 @@ impl CadIr {
 
     /// Count arena rows and native loss tallies without running validation.
     pub fn census(&self) -> std::collections::BTreeMap<String, usize> {
-        crate::validate::entity_census(self)
+        entity_census(self)
     }
+
+    /// Test-only: stamp a non-current `ir_version` for version-check coverage.
+    #[cfg(test)]
+    pub(crate) fn set_ir_version_for_test(&mut self, version: impl Into<String>) {
+        self.ir_version = version.into();
+    }
+}
+
+macro_rules! define_registered_entity_census {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+        fn registered_entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+            BTreeMap::from([
+                $((stringify!($field).into(), ir.model.$field.len())),*
+            ])
+        }
+    };
+}
+arena_registry!(define_registered_entity_census);
+
+/// Count the records represented by the IR arenas without running validation.
+pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+    let mut counts = registered_entity_census(ir);
+    counts.insert(
+        "surfaces_unknown_geometry".into(),
+        ir.model
+            .surfaces
+            .iter()
+            .filter(|surface| {
+                matches!(
+                    surface.geometry,
+                    crate::geometry::SurfaceGeometry::Unknown { .. }
+                )
+            })
+            .count(),
+    );
+    for loss in ir.native.loss_counts() {
+        counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
+    }
+    counts
 }
 
 /// Source-container metadata preserved for reporting.

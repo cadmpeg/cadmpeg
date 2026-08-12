@@ -9,11 +9,14 @@
 //! carries neutral construction features, tessellation, appearance, source
 //! attributes, source-native namespaces, and uninterpreted [`UnknownRecord`]s.
 //!
-//! Start a hand-built document with [`CadIr::empty`], populate its arenas,
-//! call [`CadIr::finalize`] to establish canonical identity order, then call
-//! [`validate_neutral()`] to check structural and numeric invariants. Use
-//! [`CadIr::to_canonical_json`] and [`CadIr::from_json`] for the versioned JSON
-//! form, and [`diff()`] for identity-based structural comparison.
+//! Document state machine: [`draft::ModelDraft`] (plan name `DocumentDraft`)
+//! commits into [`CadIr`]; [`validate_neutral()`] then yields a
+//! [`ValidationReport`]. Decode produces [`DecodeResult`] without embedding
+//! validation. Start a hand-built document with [`CadIr::empty`], populate its
+//! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
+//! call [`validate_neutral()`]. Use [`CadIr::to_canonical_json`] (sorted view)
+//! and [`CadIr::from_json`] for the versioned JSON form, and [`diff()`] for
+//! identity-based structural comparison.
 //!
 //! Format crates implement [`Codec`]. Detection selects a codec from a byte
 //! prefix, inspection enumerates a container, and decoding returns a
@@ -78,6 +81,7 @@ pub use codec::{
 };
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
+pub use draft::{DocumentDraft, ModelDraft};
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
     CoilResult, CoilSection, CoilSectionPlacement, ConfigurationActivation, ConfigurationBodies,

@@ -162,10 +162,7 @@ fn decode_result(
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
-        annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
-    };
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     let source_image = unknowns
         .iter()
         .position(|record| record.id.0 == "sldprt:file:source-image#0")
@@ -4046,31 +4043,26 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
 
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
-    let mut normalized = CadIr {
-        ir_version: ir.ir_version.clone(),
-        source: None,
-        units: ir.units.clone(),
-        tolerances: ir.tolerances,
-        model: cadmpeg_ir::document::Model {
-            bodies: ir.model.bodies.clone(),
-            regions: ir.model.regions.clone(),
-            shells: ir.model.shells.clone(),
-            faces: ir.model.faces.clone(),
-            loops: ir.model.loops.clone(),
-            coedges: ir.model.coedges.clone(),
-            edges: ir.model.edges.clone(),
-            vertices: ir.model.vertices.clone(),
-            points: ir.model.points.clone(),
-            surfaces: ir.model.surfaces.clone(),
-            curves: ir.model.curves.clone(),
-            pcurves: ir.model.pcurves.clone(),
-            procedural_surfaces: ir.model.procedural_surfaces.clone(),
-            procedural_curves: ir.model.procedural_curves.clone(),
-            appearances: ir.model.appearances.clone(),
-            appearance_bindings: ir.model.appearance_bindings.clone(),
-            ..Default::default()
-        },
-        native: cadmpeg_ir::Native::default(),
+    let mut normalized = CadIr::empty(ir.units.clone());
+    normalized.tolerances = ir.tolerances;
+    normalized.model = cadmpeg_ir::document::Model {
+        bodies: ir.model.bodies.clone(),
+        regions: ir.model.regions.clone(),
+        shells: ir.model.shells.clone(),
+        faces: ir.model.faces.clone(),
+        loops: ir.model.loops.clone(),
+        coedges: ir.model.coedges.clone(),
+        edges: ir.model.edges.clone(),
+        vertices: ir.model.vertices.clone(),
+        points: ir.model.points.clone(),
+        surfaces: ir.model.surfaces.clone(),
+        curves: ir.model.curves.clone(),
+        pcurves: ir.model.pcurves.clone(),
+        procedural_surfaces: ir.model.procedural_surfaces.clone(),
+        procedural_curves: ir.model.procedural_curves.clone(),
+        appearances: ir.model.appearances.clone(),
+        appearance_bindings: ir.model.appearance_bindings.clone(),
+        ..Default::default()
     };
     normalized.model.bodies.iter_mut().for_each(|body| {
         body.name = None;

@@ -33627,10 +33627,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     };
     ctx.charge_entities(ir.model.entity_count() as u64, "admit Creo entities")?;
     let report = build_report(&scan, &ir, coverage, ctx.container_only());
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
-        annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
-    };
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }

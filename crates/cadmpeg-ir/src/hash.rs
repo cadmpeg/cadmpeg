@@ -60,7 +60,7 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
     let unknowns = reduced_unknowns(ir, format, source_image_id);
     canonical_json_sha256(&NormalizedDocument {
-        ir_version: &ir.ir_version,
+        ir_version: ir.ir_version(),
         source: ir.source.as_ref().map(|source| {
             let mut source = source.clone();
             source.attributes.remove("document_local_sha256");

@@ -224,11 +224,7 @@ fn merge_references(
         stack.push(reference.relative_path.clone());
         let descendants = merge_references(ctx, &mut component, scan, &child_table, stack)?;
         stack.pop();
-        let DecodeResult {
-            ir: mut component_ir,
-            report: component_report,
-            source_fidelity: component_fidelity,
-        } = component;
+        let (mut component_ir, component_report, component_fidelity) = component.into_parts();
         if let Some(transform) = reference.transform {
             apply_occurrence_transform(&mut component_ir.model, transform);
         }

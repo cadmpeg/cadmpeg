@@ -52,8 +52,9 @@ mod archive;
 mod geometry;
 #[allow(dead_code)] // Parser entry points are consumed by the hidden fuzz facade.
 mod lex;
-#[allow(dead_code)] // Parser entry points are consumed by the hidden fuzz facade.
-mod parse;
+/// Hidden parser entry for benches and the fuzz facade; not part of the product API.
+#[doc(hidden)]
+pub mod parse;
 mod reader;
 mod signature;
 #[allow(dead_code)] // String helpers are part of the internal parser layer.
