@@ -163,12 +163,18 @@ pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
 ) -> Vec<PmiAnnotation> {
     let Some((stream, root, rendered_dimensions)) = scan_root(scan) else {
         return Vec::new();
     };
     let mut projected = project_with_topology(&root, topology);
-    enrich_implicit_nominals(&root, &rendered_dimensions, &mut projected);
+    enrich_implicit_nominals_with_context(
+        &root,
+        &rendered_dimensions,
+        &mut projected,
+        pattern_hole_nominals,
+    );
     for (reference, entity) in root
         .annotations
         .references
@@ -190,6 +196,88 @@ pub(crate) fn annotations(
         }
     }
     projected
+}
+
+/// Build the native-history join used when a SWIFT hole-pattern graph omits all
+/// applied members and CAD identifiers. The map is keyed by the SWIFT object
+/// name (`Hole PatternN`) and is populated only by one unambiguous native
+/// `LPatternN` whose sole seed is consumed by exactly one later Hole feature.
+pub(crate) fn pattern_hole_nominal_context(
+    features: &[cadmpeg_ir::features::Feature],
+) -> BTreeMap<String, f64> {
+    let mut candidates = BTreeMap::<String, Vec<f64>>::new();
+    for pattern in features {
+        let Some(name) = pattern.name.as_deref() else {
+            continue;
+        };
+        let Some(semantic_name) = semantic_pattern_name(name) else {
+            continue;
+        };
+        if !pattern
+            .native_ref
+            .as_deref()
+            .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
+        {
+            continue;
+        }
+        let cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, .. } = &pattern.definition
+        else {
+            continue;
+        };
+        let [cadmpeg_ir::features::PatternSeed::Feature(seed)] = seeds.as_slice() else {
+            continue;
+        };
+        if !features
+            .iter()
+            .any(|candidate| candidate.id == *seed && candidate.ordinal < pattern.ordinal)
+        {
+            continue;
+        }
+        let holes = features
+            .iter()
+            .filter(|candidate| candidate.ordinal > pattern.ordinal)
+            .filter(|candidate| {
+                candidate
+                    .dependencies
+                    .iter()
+                    .any(|dependency| dependency == seed)
+            })
+            .filter_map(|candidate| {
+                let cadmpeg_ir::features::FeatureDefinition::Hole {
+                    diameter: Some(cadmpeg_ir::features::Length(diameter)),
+                    ..
+                } = &candidate.definition
+                else {
+                    return None;
+                };
+                candidate
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
+                    .then_some(*diameter)
+                    .filter(|diameter| diameter.is_finite() && *diameter > 0.0)
+            })
+            .collect::<Vec<_>>();
+        let [diameter] = holes.as_slice() else {
+            continue;
+        };
+        candidates.entry(semantic_name).or_default().push(*diameter);
+    }
+    candidates
+        .into_iter()
+        .filter_map(|(name, values)| {
+            let [value] = values.as_slice() else {
+                return None;
+            };
+            Some((name, *value))
+        })
+        .collect()
+}
+
+fn semantic_pattern_name(native_name: &str) -> Option<String> {
+    let suffix = native_name.strip_prefix("LPattern")?;
+    (!suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit()))
+        .then(|| format!("Hole Pattern{suffix}"))
 }
 
 pub(crate) fn unsupported_annotation_classes(scan: &ContainerScan<'_>) -> BTreeMap<String, usize> {
@@ -645,10 +733,20 @@ fn project_dimension(
     })
 }
 
+#[cfg(test)]
 fn enrich_implicit_nominals(
     root: &Entity,
     rendered: &[RenderedDimension],
     annotations: &mut [PmiAnnotation],
+) {
+    enrich_implicit_nominals_with_context(root, rendered, annotations, None);
+}
+
+fn enrich_implicit_nominals_with_context(
+    root: &Entity,
+    rendered: &[RenderedDimension],
+    annotations: &mut [PmiAnnotation],
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
 ) {
     let feature_index = feature_index(root);
     for (reference, entity) in root
@@ -663,7 +761,7 @@ fn enrich_implicit_nominals(
         let (dimension_kind, source) = match short_class(&entity.class) {
             "GdtDiameter" => (
                 DimensionKind::Diameter,
-                diameter_nominal(root, entity, &feature_index),
+                diameter_nominal(root, entity, &feature_index, pattern_hole_nominals),
             ),
             "GdtDepth" => (
                 DimensionKind::Size,
@@ -1052,14 +1150,57 @@ fn diameter_nominal(
     root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
 ) -> Option<ImplicitNominal> {
-    let geometry = diameter_from_applied_geometry(annotation, feature_index)
-        .or_else(|| hole_diameter_excluding_counterbore(root, annotation, feature_index))?;
-    Some(ImplicitNominal::RenderedOrExact {
-        kind: RenderedDimensionKind::Diameter,
-        geometry,
-        exact: geometry,
+    if let Some(geometry) = diameter_from_applied_geometry(annotation, feature_index)
+        .or_else(|| hole_diameter_excluding_counterbore(root, annotation, feature_index))
+    {
+        return Some(ImplicitNominal::RenderedOrExact {
+            kind: RenderedDimensionKind::Diameter,
+            geometry,
+            exact: geometry,
+        });
+    }
+    empty_pattern_hole_nominal(annotation, feature_index, pattern_hole_nominals).map(|geometry| {
+        ImplicitNominal::RenderedOrExact {
+            kind: RenderedDimensionKind::Diameter,
+            geometry,
+            exact: geometry,
+        }
     })
+}
+
+fn empty_pattern_hole_nominal(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
+) -> Option<f64> {
+    let [reference] = annotation.features.references.as_slice() else {
+        return None;
+    };
+    let pattern = feature_index.get(reference.id.as_str())?;
+    if short_class(&pattern.class) != "GdtPattern" || !pattern.features.references.is_empty() {
+        return None;
+    }
+    let collection = unique_related(pattern, "SubFeatures")?;
+    if short_class(&collection.class) != "GdtAppliedFeatureCollection"
+        || !collection.entity.related.is_empty()
+    {
+        return None;
+    }
+    let cad_identifiers = cad_identifiers(pattern);
+    if cad_identifiers.is_empty()
+        || cad_identifiers
+            .iter()
+            .any(|identifier| !identifier.is_empty())
+    {
+        return None;
+    }
+    let name = object_name(pattern)?;
+    pattern_hole_nominals?
+        .get(&name)
+        .copied()
+        .filter(|diameter| diameter.is_finite() && *diameter > 0.0)
 }
 
 fn hole_diameter_excluding_counterbore(
@@ -2206,6 +2347,131 @@ mod tests {
         ];
         root.annotations.entities = vec![datum, position, diameter, angle];
         root
+    }
+
+    fn neutral_feature(
+        id: &str,
+        name: &str,
+        ordinal: u64,
+        dependencies: Vec<cadmpeg_ir::features::FeatureId>,
+        definition: cadmpeg_ir::features::FeatureDefinition,
+    ) -> cadmpeg_ir::features::Feature {
+        cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId(format!("sldprt:model:feature#{id}")),
+            ordinal,
+            name: Some(name.into()),
+            suppressed: None,
+            parent: None,
+            dependencies,
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: Some(format!("sldprt:history:feature#{id}")),
+        }
+    }
+
+    fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinition {
+        use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length};
+
+        FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
+            face: None,
+            position: None,
+            direction: None,
+            placements: Vec::new(),
+            kind: HoleKind::Simple,
+            exit_kind: None,
+            diameter: Some(Length(diameter)),
+            extent: None,
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
+        }
+    }
+
+    #[test]
+    fn empty_swift_pattern_uses_one_native_hole_join() {
+        use cadmpeg_ir::features::{FeatureDefinition, FeatureId, PatternKind, PatternSeed};
+
+        let seed = FeatureId("sldprt:model:feature#seed".into());
+        let pattern_definition = FeatureDefinition::Pattern {
+            seeds: vec![PatternSeed::Feature(seed.clone())],
+            pattern: PatternKind::Unresolved { form: None },
+        };
+        let features = vec![
+            neutral_feature(
+                "seed",
+                "Sketch20",
+                1,
+                Vec::new(),
+                FeatureDefinition::Native {
+                    kind: "Sketch".into(),
+                    parameters: BTreeMap::new(),
+                    properties: BTreeMap::new(),
+                },
+            ),
+            neutral_feature("pattern", "LPattern6", 2, Vec::new(), pattern_definition),
+            neutral_feature(
+                "hole",
+                "Hole5",
+                3,
+                vec![seed],
+                simple_hole_definition(6.1468),
+            ),
+        ];
+        let context = pattern_hole_nominal_context(&features);
+        assert_eq!(context.get("Hole Pattern6"), Some(&6.1468));
+
+        let mut pattern = cad_feature("GdtPattern", "");
+        pattern
+            .strings
+            .insert("ObjectName".into(), "Hole Pattern6".into());
+        pattern.related.push(RelatedObject {
+            name: "SubFeatures".into(),
+            class: "PrizMetrik.GdtAnalysis.GdtAppliedFeatureCollection".into(),
+            entity: entity("GdtAppliedFeatureCollection"),
+        });
+        let mut diameter = entity("GdtDiameter");
+        diameter
+            .strings
+            .insert("ObjectName".into(), "Diameter 8".into());
+        diameter.doubles.insert("Nominal".into(), 0.0);
+        diameter.features.references = vec![reference("FP", "GdtPattern")];
+        let root = Entity {
+            class: ROOT_CLASS.into(),
+            features: ObjectSection {
+                references: vec![reference("FP", "GdtPattern")],
+                entities: vec![pattern],
+            },
+            annotations: ObjectSection {
+                references: vec![reference("A8", "GdtDiameter")],
+                entities: vec![diameter],
+            },
+            ..Entity::default()
+        };
+        let mut projected = project(&root);
+        enrich_implicit_nominals_with_context(&root, &[], &mut projected, Some(&context));
+        let PmiDefinition::Dimension { nominal, .. } =
+            &projected.first().expect("diameter annotation").definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(6.1468)));
+
+        let mut ambiguous = features;
+        ambiguous.push(neutral_feature(
+            "hole2",
+            "Hole6",
+            4,
+            vec![FeatureId("sldprt:model:feature#seed".into())],
+            simple_hole_definition(6.1468),
+        ));
+        assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
     }
 
     fn cad_feature(class: &str, identifier: &str) -> Entity {

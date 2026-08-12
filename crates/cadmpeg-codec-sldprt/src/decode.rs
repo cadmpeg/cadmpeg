@@ -2309,7 +2309,6 @@ fn build_geometry_ir(
         &ir.model.edges,
         &ir.model.vertices,
     );
-    ir.model.pmi = crate::swift::annotations(scan, &mut annotations, Some(&topology_index));
     let face_identities = brep
         .face_atoms
         .iter()
@@ -2466,6 +2465,13 @@ fn build_geometry_ir(
     );
     sync_active_configuration_resolutions(&mut ir);
     crate::history::order_model_features_for_regeneration(&mut ir);
+    let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
+    ir.model.pmi = crate::swift::annotations(
+        scan,
+        &mut annotations,
+        Some(&topology_index),
+        Some(&pattern_hole_nominals),
+    );
     stamp_feature_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
@@ -3000,7 +3006,7 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     );
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
-    ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None);
+    ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None, None);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
