@@ -546,6 +546,14 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must identify the native association between an endpoint-less selected-edge vector and one of several distinct radius profiles.
 
+### DI-36. SurfaceCut discarded side
+
+**Question.** Which native field in an `moSurfCut_c` interval selects the retained side of a surface cut?
+
+**Known.** `sldprt.md` §2 defines the target-body reference-list vector and the cutting-surface component vector. The target projects as a body selection and the cutting surface projects as a face selection. The neutral `CutWithSurface.reverse` value remains optional; an absent native Boolean remains unresolved.
+
+**Need.** Distinguish the wrapper selector byte and the tail words between the surface-body identity pair and the termination sentinels with labeled parts cut to opposite sides before assigning the reverse value.
+
 ## 6. Write-path evidence
 
 ### EV-03. Regenerated `SWObjects` record content

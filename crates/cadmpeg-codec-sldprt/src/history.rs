@@ -4857,6 +4857,7 @@ mod history_reference_tests {
                 parent: lane.id.clone(),
                 ordinal: 0,
                 offset: 0,
+                selector: 0,
                 object_name_ref: "thread-name".into(),
                 feature_ref: thread_id,
                 producer_feature_refs: vec![hole_id.clone()],
@@ -7290,6 +7291,9 @@ fn project_definition(
     if feature.input_class.as_deref() == Some("moBaseBody_c") {
         return FeatureDefinition::StoredGeometry;
     }
+    if feature.input_class.as_deref() == Some("moPlanarSurface_c") {
+        return FeatureDefinition::DatumPlaneUnresolved;
+    }
     if let Some(role) = feature_tree_node_role(feature, history_features) {
         return FeatureDefinition::TreeNode {
             role,
@@ -7401,7 +7405,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Combine) {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::CutWithSurface) {
-        project_cut_with_surface(feature).unwrap_or_else(|| native_definition(feature))
+        project_cut_with_surface(feature)
     } else if class == Some(FeatureClass::DeleteBody) {
         project_delete_body(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::DeleteFace) {
@@ -9740,16 +9744,23 @@ fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
     }
 }
 
-fn project_cut_with_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::CutWithSurface {
-        targets: BodySelection::Native(feature.properties.get("Targets")?.clone()),
-        tools: FaceSelection::Native(feature.properties.get("Tools")?.clone()),
+fn project_cut_with_surface(feature: &Feature) -> FeatureDefinition {
+    FeatureDefinition::CutWithSurface {
+        targets: feature
+            .properties
+            .get("Targets")
+            .cloned()
+            .map_or(BodySelection::Unresolved, BodySelection::Native),
+        tools: feature
+            .properties
+            .get("Tools")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         reverse: feature
             .properties
             .get("Reverse")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
-    })
+            .and_then(|value| parse_bool(value)),
+    }
 }
 
 fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
@@ -15524,7 +15535,9 @@ pub fn sync_neutral_features(
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Targets".into(), targets);
                 properties.insert("Tools".into(), tools);
-                properties.insert("Reverse".into(), reverse.to_string());
+                if let Some(reverse) = reverse {
+                    properties.insert("Reverse".into(), reverse.to_string());
+                }
                 (
                     existing
                         .as_deref()

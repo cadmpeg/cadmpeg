@@ -314,6 +314,9 @@ pub struct FeatureInputSurfaceSelection {
     pub ordinal: u32,
     /// Byte offset of the vector marker.
     pub offset: u64,
+    /// Low selector subtype stored in the vector header.
+    #[serde(default)]
+    pub selector: u8,
     /// Feature-input name record owning this selection.
     pub object_name_ref: String,
     /// Native history feature owning this selection.

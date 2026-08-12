@@ -1485,8 +1485,10 @@ pub enum FeatureDefinition {
         targets: BodySelection,
         /// Oriented surface faces defining the cut.
         tools: FaceSelection,
-        /// Whether the side opposite the default tool orientation is removed.
-        reverse: bool,
+        /// Whether the side opposite the default tool orientation is removed,
+        /// when the native side flag is present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reverse: Option<bool>,
     },
     /// Removes one side of target bodies using ordered tool bodies.
     TrimBodies {

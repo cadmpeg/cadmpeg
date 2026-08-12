@@ -19,7 +19,8 @@ use crate::records::{
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
 use cadmpeg_ir::features::{
-    EdgeSelection, FeatureDefinition, FilletGroup, Length, PatternSeed, RadiusSpec, VariableRadius,
+    BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FilletGroup, Length,
+    PatternSeed, RadiusSpec, VariableRadius,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
@@ -804,6 +805,80 @@ pub(crate) fn project_compact_surface_selections(
             } else {
                 cadmpeg_ir::features::FaceSelection::Native(native)
             };
+            continue;
+        }
+        if let FeatureDefinition::CutWithSurface { targets, tools, .. } = &mut feature.definition {
+            let target = feature_selections
+                .iter()
+                .find(|selection| selection.selector == 0);
+            let tool = feature_selections
+                .iter()
+                .find(|selection| matches!(selection.selector, 4 | 6));
+            let Some((target, tool)) = target.zip(tool) else {
+                continue;
+            };
+            let target_native = compact_surface_selection_value(&target.components);
+            let target_producer = target
+                .terminal_feature_ref
+                .as_ref()
+                .and_then(|producer| feature_ids_by_native.get(producer));
+            if let Some(producer) = target_producer {
+                let local_id = target
+                    .components
+                    .iter()
+                    .filter_map(|component| component.local_id)
+                    .map(|local_id| local_id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                *targets = BodySelection::Generated {
+                    bodies: vec![cadmpeg_ir::features::GeneratedBodyRef {
+                        feature: (*producer).clone(),
+                        local_id,
+                    }],
+                    native: target_native,
+                };
+                if !feature.dependencies.contains(producer) {
+                    feature.dependencies.push((*producer).clone());
+                }
+            }
+            let tool_native = compact_surface_selection_value(&tool.components);
+            let tool_generated = tool
+                .terminal_feature_ref
+                .as_ref()
+                .and_then(|producer| feature_ids_by_native.get(producer))
+                .zip(tool.components.last())
+                .and_then(|(producer, component)| {
+                    component.local_id.map(|local_id| (producer, local_id))
+                });
+            if let Some((producer, local_id)) = tool_generated {
+                *tools = FaceSelection::Generated {
+                    faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                        feature: (*producer).clone(),
+                        local_id: local_id.to_string(),
+                    }],
+                    native: tool_native,
+                };
+                if !feature.dependencies.contains(producer) {
+                    feature.dependencies.push((*producer).clone());
+                }
+            }
+            continue;
+        }
+        if matches!(feature.definition, FeatureDefinition::DatumPlaneUnresolved)
+            && feature_selections.len() == 2
+        {
+            for selection in feature_selections {
+                for producer in selection
+                    .producer_feature_refs
+                    .iter()
+                    .filter_map(|producer| feature_ids_by_native.get(producer))
+                    .filter(|producer| *producer != &feature.id)
+                {
+                    if !feature.dependencies.contains(producer) {
+                        feature.dependencies.push(producer.clone());
+                    }
+                }
+            }
             continue;
         }
         let Some(selection) = surface_selection_consensus(feature_selections) else {

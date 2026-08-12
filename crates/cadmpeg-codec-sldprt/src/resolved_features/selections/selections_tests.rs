@@ -754,6 +754,49 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
 }
 
 #[test]
+fn compact_reference_list_accepts_unframed_surface_cut_targets() {
+    let marker = 12;
+    let prefix = [0xa7, 0x81, 0xa9, 0x01];
+    let signature = |serial: u32, timestamp: u32| {
+        let mut value = [0; 12];
+        value[..4].copy_from_slice(&prefix);
+        value[4..8].copy_from_slice(&serial.to_le_bytes());
+        value[8..].copy_from_slice(&timestamp.to_le_bytes());
+        value
+    };
+    let mut payload = Vec::new();
+    payload.extend(5u32.to_le_bytes());
+    payload.extend([0, 2, 0, 0]);
+    payload.extend(0u32.to_le_bytes());
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+    for local_id in [0u32, 3, 2] {
+        payload.extend(0x81a5u16.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend(signature(18, 0x51c5_fde3));
+        payload.extend(local_id.to_le_bytes());
+    }
+    payload.extend([0; 16]);
+
+    let references = compact_component_reference_list(&payload, marker, false)
+        .expect("operation target reference list");
+    assert_eq!(
+        references
+            .iter()
+            .flatten()
+            .filter_map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [0, 3, 2]
+    );
+    assert!(compact_component_reference_list_at(&payload, marker).is_none());
+    assert!(surface_reference_matches_at(
+        &payload,
+        marker,
+        &references.into_iter().flatten().collect::<Vec<_>>()
+    ));
+}
+
+#[test]
 fn compact_edge_selection_accepts_counted_u16_ids() {
     let marker = 12;
     let mut payload = vec![0; 80];
@@ -816,6 +859,14 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
             .map(|component| component.local_id)
             .collect::<Vec<_>>(),
         vec![Some(2)]
+    );
+    payload[4] = 0x06;
+    assert_eq!(
+        compact_surface_selection_at(&payload, 12)
+            .expect("nonzero selector subtype")
+            .first()
+            .and_then(|component| component.local_id),
+        Some(2)
     );
 }
 
@@ -1498,6 +1549,59 @@ fn component_vector_cell_count_includes_interleaved_path_slots() {
     let path = component_vector_path_at(&payload, marker).expect("interleaved path slots");
     assert_eq!(path.len(), 4);
     assert_eq!(path.last().expect("terminal component").local_id, Some(4));
+}
+
+#[test]
+fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
+    let mut payload = Vec::new();
+    let append_vector = |payload: &mut Vec<u8>, selector: u8, source: u32, terminal: u32| {
+        payload.extend(7u32.to_le_bytes());
+        payload.extend([selector, 2, 0, 0]);
+        payload.extend(0u32.to_le_bytes());
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0, 0]);
+        for index in 0..4u32 {
+            payload.extend(0x803e_u16.to_le_bytes());
+            payload.extend([0, 0]);
+            payload.extend([0x34, 0x80, 0x37, 0]);
+            payload.extend((source + index).to_le_bytes());
+            payload.extend(0x4ad9_837a_u32.wrapping_add(index).to_le_bytes());
+            payload.extend(if index == 3 { terminal } else { index + 1 }.to_le_bytes());
+            if index != 3 {
+                payload.extend((25 + index * 2).to_le_bytes());
+            }
+        }
+    };
+    append_vector(&mut payload, 6, 230, 16);
+    payload.extend([0; 4]);
+    append_vector(&mut payload, 4, 218, 12);
+    payload.extend([0; 4]);
+
+    let candidates = planar_surface_selection_candidates(&payload, 0, payload.len());
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0].1.len(), 4);
+    assert_eq!(
+        candidates[0].1[0].type_signature[4..8],
+        230u32.to_le_bytes()
+    );
+    assert_eq!(
+        candidates[0].1.last().and_then(|entry| entry.local_id),
+        Some(16)
+    );
+    assert_eq!(
+        candidates[1].1[0].type_signature[4..8],
+        218u32.to_le_bytes()
+    );
+    assert_eq!(
+        candidates[1].1.last().and_then(|entry| entry.local_id),
+        Some(12)
+    );
+
+    payload[4] = 3;
+    assert_eq!(
+        planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
+        1
+    );
 }
 
 #[test]

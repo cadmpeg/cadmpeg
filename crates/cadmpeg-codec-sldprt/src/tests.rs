@@ -16271,7 +16271,7 @@ fn semantic_writer_round_trips_cut_with_surface() {
         FeatureDefinition::CutWithSurface {
             targets: BodySelection::Resolved { bodies, native: body_native },
             tools: FaceSelection::Resolved { faces, native: face_native },
-            reverse: false,
+            reverse: Some(false),
         } if bodies == std::slice::from_ref(&body_id) && body_native == &body
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
@@ -16286,7 +16286,7 @@ fn semantic_writer_round_trips_cut_with_surface() {
     };
     *targets = BodySelection::Bodies(vec![body_id.clone()]);
     *tools = FaceSelection::Faces(vec![face_id.clone()]);
-    *reverse = true;
+    *reverse = Some(true);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -16302,7 +16302,55 @@ fn semantic_writer_round_trips_cut_with_surface() {
     assert_eq!(native.properties["ConsumeTool"], "false");
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
-        FeatureDefinition::CutWithSurface { reverse: true, .. }
+        FeatureDefinition::CutWithSurface {
+            reverse: Some(true),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let body = base.ir.model.bodies[0].id.0.clone();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><CutWithSurface Name="Cut" Type="SurfaceCut" id="35" Targets="{body}" Tools="{face}" ConsumeTool="false"/></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::CutWithSurface {
+            targets: BodySelection::Resolved { .. },
+            tools: FaceSelection::Resolved { .. },
+            reverse: None,
+        }
+    ));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert!(!native.properties.contains_key("Reverse"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::CutWithSurface { reverse: None, .. }
     ));
 }
 
@@ -20238,6 +20286,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
                 parent: lane.id.clone(),
                 ordinal: 0,
                 offset: marker as u64,
+                selector: 0,
                 object_name_ref: lane
                     .names
                     .iter()

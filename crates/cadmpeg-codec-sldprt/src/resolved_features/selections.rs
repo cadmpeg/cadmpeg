@@ -563,15 +563,23 @@ pub(super) fn compact_surface_selections(
             NativeClassKind::ReferencePlane => {
                 face_reference_plane_selection_candidates(lane, start, end)
             }
+            NativeClassKind::PlanarSurface => {
+                planar_surface_selection_candidates(&lane.native_payload, start, end)
+            }
             NativeClassKind::Operation(operation) => {
                 operation_surface_selection_candidates(operation, lane, start, end, name.object_id)
             }
             _ => continue,
         };
+        let expected_count = match kind {
+            NativeClassKind::Operation(FeatureClass::CutWithSurface)
+            | NativeClassKind::PlanarSurface => 2,
+            _ => 1,
+        };
         if !matches!(
             kind,
             NativeClassKind::MirrorPattern | NativeClassKind::Operation(FeatureClass::SplitFace)
-        ) && candidates.len() != 1
+        ) && candidates.len() != expected_count
         {
             continue;
         }
@@ -592,6 +600,7 @@ pub(super) fn compact_surface_selections(
                 parent: lane.id.clone(),
                 ordinal: result.len() as u32,
                 offset: offset as u64,
+                selector: lane.native_payload[offset.saturating_sub(8)],
                 object_name_ref: name.id.clone(),
                 feature_ref: feature.id.clone(),
                 producer_feature_refs,
@@ -601,6 +610,22 @@ pub(super) fn compact_surface_selections(
         }
     }
     result
+}
+
+fn planar_surface_selection_candidates(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    (start..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+        .filter_map(|marker| {
+            let selector = payload.get(marker.checked_sub(8)?..marker - 4)?;
+            (selector[1..] == [2, 0, 0] && matches!(selector[0], 4 | 6))
+                .then(|| component_vector_path_at(payload, marker))
+                .flatten()
+                .map(|components| (marker, components))
+        })
+        .collect()
 }
 
 fn face_reference_plane_selection_candidates(
@@ -652,6 +677,26 @@ fn operation_surface_selection_candidates(
     end: usize,
     object_source: Option<u32>,
 ) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    if operation == FeatureClass::CutWithSurface {
+        return (start..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+            .filter_map(|marker| {
+                let selector = lane
+                    .native_payload
+                    .get(marker.checked_sub(8)?..marker - 4)?;
+                let components = if selector[1..] == [2, 0, 0] && selector[0] == 0 {
+                    compact_component_reference_list(&lane.native_payload, marker, false)?
+                        .into_iter()
+                        .flatten()
+                        .collect()
+                } else if selector[1..] == [2, 0, 0] && matches!(selector[0], 4 | 6) {
+                    compact_surface_selection_at(&lane.native_payload, marker)?
+                } else {
+                    return None;
+                };
+                Some((marker, components))
+            })
+            .collect();
+    }
     if operation == FeatureClass::SplitFace {
         if !["moPLineProjIdRep_c", "moPLineSurfIdRep_c"]
             .into_iter()
@@ -1068,7 +1113,8 @@ pub(super) fn compact_surface_selection_at(
     let kind_start = marker.checked_sub(8)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
         || payload.get(count_start..count_start + 4)? != 6u32.to_le_bytes()
-        || payload.get(kind_start..kind_start + 4)? != [0x04, 0x02, 0, 0]
+        || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0, 0]
+        || !matches!(payload.get(kind_start)?.to_owned(), 4 | 6)
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
@@ -1101,6 +1147,15 @@ pub(crate) fn compact_surface_reference_at(
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     compact_surface_selection_at(payload, marker)
+        .or_else(|| component_vector_path_at(payload, marker))
+        .or_else(|| {
+            compact_component_reference_list_at(payload, marker)
+                .map(|references| references.into_iter().flatten().collect())
+        })
+        .or_else(|| {
+            compact_component_reference_list(payload, marker, false)
+                .map(|references| references.into_iter().flatten().collect())
+        })
         .or_else(|| counted_surface_component_path_at(payload, marker))
         .or_else(|| compact_termination_reference_path_at(payload, marker))
         .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
@@ -1114,6 +1169,11 @@ pub(crate) fn surface_reference_matches_at(
 ) -> bool {
     [
         compact_surface_selection_at(payload, marker),
+        component_vector_path_at(payload, marker),
+        compact_component_reference_list_at(payload, marker)
+            .map(|references| references.into_iter().flatten().collect()),
+        compact_component_reference_list(payload, marker, false)
+            .map(|references| references.into_iter().flatten().collect()),
         counted_surface_component_path_at(payload, marker),
         compact_termination_reference_path_at(payload, marker),
         compact_sketch_surface_component_path_at(payload, marker),
@@ -1758,6 +1818,9 @@ fn compact_component_reference_list(
         if reference.is_empty() && index + 1 == count && terminal_null_at(cursor) {
             return (!references.is_empty()).then_some(references);
         }
+        if reference.is_empty() {
+            return (!require_distinct_framing && !references.is_empty()).then_some(references);
+        }
         has_reference_framing |= reference.len() > 1;
         let last = reference.last_mut()?;
         last.local_id = Some(u32::from_le_bytes(
@@ -1775,12 +1838,14 @@ fn compact_component_reference_list(
         if index + 1 == count {
             continue;
         }
-        let gap = (0..=10).find(|gap| {
+        let Some(gap) = (0..=10).find(|gap| {
             payload
                 .get(cursor..cursor + *gap)
                 .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
                 && hop_at(cursor + *gap).is_some()
-        })?;
+        }) else {
+            return (!require_distinct_framing && !references.is_empty()).then_some(references);
+        };
         cursor += gap;
     }
     (!require_distinct_framing || has_reference_framing).then_some(references)

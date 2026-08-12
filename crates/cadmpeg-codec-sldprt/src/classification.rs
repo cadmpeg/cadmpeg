@@ -58,6 +58,8 @@ pub(crate) enum FeatureClass {
 pub(crate) enum NativeClassKind {
     /// A native modeling operation identified by its semantic feature family.
     Operation(FeatureClass),
+    /// A native planar-surface construction feature with defining selections.
+    PlanarSurface,
     Extrusion,
     SurfaceExtrusion,
     Fillet,
@@ -291,6 +293,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moExtendRefSurface_c" => operation_class(FeatureClass::ExtendSurface),
         "moRuledSrfFromEdge_c" => operation_class(FeatureClass::RuledSurface),
         "moSurfCut_c" => operation_class(FeatureClass::CutWithSurface),
+        "moPlanarSurface_c" => (NativeClassKind::PlanarSurface, Feature, None, None),
         "moDelFace_c" => operation_class(FeatureClass::DeleteFace),
         "moMoveFace_c" => operation_class(FeatureClass::MoveFace),
         "moMoveCopyBody_c" => operation_class(FeatureClass::MoveBody),
@@ -783,6 +786,12 @@ mod tests {
             assert_eq!(class.feature, Some(feature), "{name}");
             assert_eq!(class.tree_node, None, "{name}");
         }
+
+        let planar_surface = native_object_class("moPlanarSurface_c");
+        assert_eq!(planar_surface.kind, NativeClassKind::PlanarSurface);
+        assert_eq!(planar_surface.role, FeatureInputClassRole::Feature);
+        assert_eq!(planar_surface.feature, None);
+        assert_eq!(planar_surface.tree_node, None);
     }
 
     #[test]

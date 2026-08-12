@@ -135,6 +135,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         parent: "lane".into(),
         ordinal: 0,
         offset: 0,
+        selector: 0,
         object_name_ref: "name".into(),
         feature_ref: "mirror-native".into(),
         producer_feature_refs: Vec::new(),
