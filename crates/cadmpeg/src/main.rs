@@ -79,9 +79,9 @@ impl IgesTarget {
 #[cfg(feature = "step")]
 #[derive(Debug, Clone, Args)]
 struct StepOutputArgs {
-    /// STEP application protocol and edition for STEP output.
-    #[arg(long, value_enum, default_value_t)]
-    step_target: StepTarget,
+    /// STEP application protocol and edition; valid only for STEP output.
+    #[arg(long, value_enum)]
+    step_target: Option<StepTarget>,
     /// Reject STEP output before writing when any STEP loss note would be reported.
     #[arg(long)]
     reject_step_losses: bool,
@@ -89,9 +89,14 @@ struct StepOutputArgs {
 
 #[cfg(feature = "step")]
 impl StepOutputArgs {
+    /// True when a STEP-only flag was present on the command line.
+    fn flag_present(&self) -> bool {
+        self.step_target.is_some() || self.reject_step_losses
+    }
+
     fn options(&self) -> cadmpeg_codec_step::StepWriteOptions {
         cadmpeg_codec_step::StepWriteOptions {
-            schema: self.step_target.schema(),
+            schema: self.step_target.unwrap_or_default().schema(),
             unsupported: if self.reject_step_losses {
                 cadmpeg_codec_step::StepUnsupportedPolicy::Reject
             } else {
@@ -533,8 +538,8 @@ enum Command {
         rhino_version: Option<RhinoVersion>,
         /// Target IGES specification version; valid only for IGES output.
         #[cfg(feature = "iges")]
-        #[arg(long, value_enum, default_value_t)]
-        iges_target: IgesTarget,
+        #[arg(long, value_enum)]
+        iges_target: Option<IgesTarget>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -614,8 +619,8 @@ enum Command {
         rhino_version: Option<RhinoVersion>,
         /// Target IGES specification version; valid only for IGES output.
         #[cfg(feature = "iges")]
-        #[arg(long, value_enum, default_value_t)]
-        iges_target: IgesTarget,
+        #[arg(long, value_enum)]
+        iges_target: Option<IgesTarget>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -758,9 +763,11 @@ fn main() -> ExitCode {
                     #[cfg(feature = "rhino")]
                     rhino_version: rhino_version.map(RhinoVersion::codec),
                     #[cfg(feature = "step")]
-                    step_options: step.options(),
+                    step_options: step.flag_present().then(|| step.options()),
+                    #[cfg(feature = "step")]
+                    step_flag_present: step.flag_present(),
                     #[cfg(feature = "iges")]
-                    iges_options: iges_target.options(),
+                    iges_options: iges_target.map(IgesTarget::options),
                     forced_input: input_args.forced(),
                 };
                 commands::export(
@@ -832,9 +839,11 @@ fn main() -> ExitCode {
                     #[cfg(feature = "rhino")]
                     rhino_version: rhino_version.map(RhinoVersion::codec),
                     #[cfg(feature = "step")]
-                    step_options: step.options(),
+                    step_options: step.flag_present().then(|| step.options()),
+                    #[cfg(feature = "step")]
+                    step_flag_present: step.flag_present(),
                     #[cfg(feature = "iges")]
-                    iges_options: iges_target.options(),
+                    iges_options: iges_target.map(IgesTarget::options),
                     forced_input: input_args.forced(),
                 };
                 commands::convert(
@@ -851,8 +860,8 @@ fn main() -> ExitCode {
     };
     result.unwrap_or_else(|err| {
         eprintln!("error: {err:#}");
-        if err.downcast_ref::<commands::SemanticFailure>().is_some() {
-            ExitCode::from(1)
+        if let Some(refusal) = err.downcast_ref::<application::ConversionRefusal>() {
+            ExitCode::from(refusal.exit_code())
         } else {
             ExitCode::from(2)
         }

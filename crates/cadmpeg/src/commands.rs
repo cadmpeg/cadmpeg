@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Command execution, artifact writing, and human-readable reports.
 
-use std::fmt;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -12,9 +11,11 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
+pub use crate::application::ValidationMode;
 use crate::application::{
-    build_encoder, ArtifactStore, EncoderRequest, ForcedInput, InputCatalog,
-    NativeValidatorCatalog, ResolveSourceError, ResolvedSource, SidecarPersistOutcome,
+    build_encoder, export_target, ArtifactStore, ConversionPolicy, ConversionRefusal,
+    EncoderRequest, ForcedInput, InputCatalog, NativeValidatorCatalog, ResolveSourceError,
+    ResolvedSource, SidecarPersistOutcome, SourceRequest, Transcoder,
 };
 use crate::loader::{self, read_prefix, LoadNotice, DETECTION_PREFIX_LEN};
 use crate::{DecodeArgs, Format};
@@ -58,25 +59,7 @@ fn print_load_notices(notices: &[LoadNotice]) {
     }
 }
 
-#[derive(Debug)]
-/// Error whose result is meaningful to the caller rather than operational.
-///
-/// The executable maps this error to exit status 1.
-pub struct SemanticFailure(String);
-
-/// Whether a conversion validates the neutral model before export.
-#[derive(Debug, Clone, Copy)]
-pub enum ValidationMode {
-    /// Validate and optionally permit invalid output.
-    Required {
-        /// Continue despite validation errors.
-        allow_invalid: bool,
-    },
-    /// Skip neutral validation.
-    Skipped,
-}
-
-/// Complete policy and target configuration for one conversion pipeline.
+/// CLI-facing conversion arguments assembled before [`Transcoder::prepare`].
 #[allow(clippy::struct_excessive_bools)]
 pub struct ConversionPlan {
     /// Replace an existing output or report file.
@@ -91,15 +74,18 @@ pub struct ConversionPlan {
     pub allow_empty: bool,
     /// Refuse to export when the decode reported any loss.
     pub reject_lossy: bool,
-    /// Explicit Rhino output archive version.
+    /// Explicit Rhino output archive version when the flag was supplied.
     #[cfg(feature = "rhino")]
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
-    /// STEP writer options selected by the caller.
+    /// STEP writer options when a STEP-only flag was supplied.
     #[cfg(feature = "step")]
-    pub step_options: cadmpeg_codec_step::StepWriteOptions,
-    /// IGES writer options selected by the caller.
+    pub step_options: Option<cadmpeg_codec_step::StepWriteOptions>,
+    /// True when `--step-target` or `--reject-step-losses` was present.
+    #[cfg(feature = "step")]
+    pub step_flag_present: bool,
+    /// IGES writer options when `--iges-target` was supplied.
     #[cfg(feature = "iges")]
-    pub iges_options: cadmpeg_codec_iges::IgesWriteOptions,
+    pub iges_options: Option<cadmpeg_codec_iges::IgesWriteOptions>,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -111,18 +97,6 @@ pub(crate) struct DiffInput<'a> {
     pub(crate) path: &'a Path,
     /// Explicit reader selection for this input.
     pub(crate) forced: Option<ForcedInput>,
-}
-
-impl fmt::Display for SemanticFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for SemanticFailure {}
-
-fn semantic(message: impl Into<String>) -> anyhow::Error {
-    SemanticFailure(message.into()).into()
 }
 
 /// Inspect a native container and print its entries.
@@ -231,7 +205,6 @@ pub fn decode(
         path,
         force,
         EncoderRequest::Neutral,
-        false,
     )?;
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
@@ -296,10 +269,12 @@ pub fn validate_cmd(
         print_validation_report(&mut stdout, &report)?;
     }
     if !report.is_ok() {
-        return Err(semantic(format!(
-            "validation found {} error(s)",
-            report.error_count()
-        )));
+        return Err(ConversionRefusal::ValidationFailed {
+            message: format!("validation found {} error(s)", report.error_count()),
+            decode_report: loaded.decode_report().cloned(),
+            validation: report,
+        }
+        .into());
     }
     Ok(())
 }
@@ -338,21 +313,71 @@ fn execute_conversion(
     command: &'static str,
 ) -> Result<()> {
     let format = resolve_format(format, out)?;
-    if format.is_binary_container() && out.is_none() && !plan.binary_stdout {
-        // Streaming a ZIP or 3DM to stdout is nearly always the --format /
-        // --input-format mix-up, and the bytes get mistaken for JSON.
-        bail!(
-            "refusing to write binary {name} to standard output; pass -o FILE.{name}, or \
-             --input-format {name} (alias --from) if you meant to force how the INPUT is \
-             read; pass --binary-stdout to stream the bytes anyway",
-            name = format.name()
-        );
-    }
-    let outcome = loader::load_artifact(&catalogs.inputs, path, args.options(), plan.forced_input)?;
-    print_load_notices(&outcome.notices);
-    let loaded = &outcome.document;
+    let target = export_target(
+        format,
+        #[cfg(feature = "step")]
+        plan.step_options.clone(),
+        #[cfg(feature = "step")]
+        plan.step_flag_present,
+        #[cfg(feature = "iges")]
+        plan.iges_options,
+        #[cfg(feature = "rhino")]
+        plan.rhino_version,
+    )
+    .map_err(anyhow::Error::from)?;
+
+    let transcoder = Transcoder::new(&catalogs.inputs, &catalogs.validators);
+    let source = SourceRequest {
+        path,
+        forced: plan.forced_input,
+        options: args.options(),
+    };
+    let prepared = match transcoder.prepare(
+        &source,
+        target,
+        ConversionPolicy {
+            force: plan.force,
+            binary_stdout: plan.binary_stdout,
+            validation: plan.validation,
+            allow_empty: plan.allow_empty,
+            reject_lossy: plan.reject_lossy,
+            destination: out.map(Path::to_path_buf),
+        },
+    ) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            if let Some(refusal) = error.downcast_ref::<ConversionRefusal>() {
+                let mut stderr = io::stderr();
+                if let Some(report) = refusal.decode_report() {
+                    print_decode_report(&mut stderr, report)?;
+                    if matches!(plan.validation, ValidationMode::Skipped) {
+                        eprintln!("note: export skips IR validation; use `convert` to validate");
+                    } else {
+                        writeln!(stderr)?;
+                    }
+                }
+                if let Some(validation) = refusal.validation_report() {
+                    print_validation_report(&mut stderr, validation)?;
+                }
+                if refusal.may_write_report() {
+                    write_command_report(
+                        path,
+                        plan.report.as_deref(),
+                        plan.force,
+                        command,
+                        refusal.decode_report(),
+                        refusal.validation_report(),
+                        None,
+                    )?;
+                }
+            }
+            return Err(error);
+        }
+    };
+
+    print_load_notices(&prepared.notices);
     let mut stderr = io::stderr();
-    if let Some(report) = loaded.decode_report() {
+    if let Some(report) = prepared.document.decode_report() {
         print_decode_report(&mut stderr, report)?;
         if matches!(plan.validation, ValidationMode::Skipped) {
             eprintln!("note: export skips IR validation; use `convert` to validate");
@@ -360,89 +385,18 @@ fn execute_conversion(
             writeln!(stderr)?;
         }
     }
-    if let Some(refusal) = lossy_refusal(plan.reject_lossy, loaded.decode_report(), format) {
-        write_command_report(
-            path,
-            plan.report.as_deref(),
-            plan.force,
-            command,
-            loaded.decode_report(),
-            None,
-            None,
-        )?;
-        return Err(refusal);
+    if let Some(validation) = &prepared.validation {
+        print_validation_report(&mut stderr, validation)?;
     }
-    let validation = match plan.validation {
-        ValidationMode::Required { allow_invalid } => {
-            let validation = validate_ir(
-                &catalogs.validators,
-                &loaded.ir,
-                loaded.fidelity(),
-                losses(loaded.decode_report()),
-            );
-            print_validation_report(&mut stderr, &validation)?;
-            if !validation.is_ok() && !allow_invalid {
-                write_command_report(
-                    path,
-                    plan.report.as_deref(),
-                    plan.force,
-                    command,
-                    loaded.decode_report(),
-                    Some(&validation),
-                    None,
-                )?;
-                return Err(semantic(format!(
-                    "validation found {} error(s); refusing to export (use --allow-invalid to override)",
-                    validation.error_count()
-                )));
-            }
-            Some(validation)
-        }
-        ValidationMode::Skipped => None,
-    };
-    if format.is_geometry_export()
-        && loaded
-            .decode_report()
-            .as_ref()
-            .is_some_and(|report| !report.geometry_transferred)
-        && !plan.allow_empty
-    {
-        write_command_report(
-            path,
-            plan.report.as_deref(),
-            plan.force,
-            command,
-            loaded.decode_report(),
-            validation.as_ref(),
-            None,
-        )?;
-        return Err(semantic(format!(
-            "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
-            format.name()
-        )));
-    }
-    #[cfg(feature = "rhino")]
-    if plan.rhino_version.is_some() && format != Format::Rhino {
-        bail!("--rhino-version requires Rhino output");
-    }
-    let encoder_request = encoder_request_for(plan, format);
-    let report = export_ir(
-        &loaded.ir,
-        loaded.decode_report(),
-        loaded.fidelity(),
-        format,
-        out,
-        path,
-        plan.force,
-        encoder_request,
-        plan.reject_lossy,
-    )?;
+    let decode_report = prepared.document.decode_report().cloned();
+    let validation = prepared.validation.clone();
+    let report = prepared.write()?;
     write_command_report(
         path,
         plan.report.as_deref(),
         plan.force,
         command,
-        loaded.decode_report(),
+        decode_report.as_ref(),
         validation.as_ref(),
         Some(&report),
     )
@@ -679,27 +633,6 @@ fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
         .unwrap_or_default()
 }
 
-/// When `--reject-lossy` is set and the decode reported any loss, the export is
-/// refused as a model refusal — [`SemanticFailure`], exit 1 — distinct from a
-/// decode error, which is an operational failure at exit 2. This is the
-/// `refused-lossy` category of the exit-code contract.
-fn lossy_refusal(
-    reject_lossy: bool,
-    report: Option<&DecodeReport>,
-    format: Format,
-) -> Option<anyhow::Error> {
-    if !reject_lossy {
-        return None;
-    }
-    let count = report.map_or(0, |report| report.losses.len());
-    (count > 0).then(|| {
-        semantic(format!(
-            "decode reported {count} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
-            format.name()
-        ))
-    })
-}
-
 fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format> {
     if let Some(format) = explicit {
         if let Some(inferred) = Format::from_path(out) {
@@ -717,24 +650,7 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
     Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
 }
 
-fn encoder_request_for(plan: &ConversionPlan, format: Format) -> EncoderRequest {
-    match format {
-        #[cfg(feature = "step")]
-        Format::Step => EncoderRequest::Step(plan.step_options.clone()),
-        #[cfg(feature = "rhino")]
-        Format::Rhino => EncoderRequest::Rhino(
-            plan.rhino_version
-                .unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
-        ),
-        #[cfg(feature = "iges")]
-        Format::Iges => EncoderRequest::Iges(plan.iges_options),
-        _ => {
-            let _ = plan;
-            EncoderRequest::Neutral
-        }
-    }
-}
-
+/// Writes CADIR for the decode command (no conversion refusals).
 #[allow(clippy::too_many_arguments)]
 fn export_ir(
     ir: &CadIr,
@@ -745,7 +661,6 @@ fn export_ir(
     input: &Path,
     force: bool,
     encoder_request: EncoderRequest,
-    reject_lossy: bool,
 ) -> Result<ExportReport> {
     if let Some(path) = out {
         ArtifactStore::check_output_path(input, path, force)?;
@@ -755,13 +670,6 @@ fn export_ir(
         ir,
         fidelity: source_fidelity,
     })?;
-    if reject_lossy && !plan.report().losses.is_empty() {
-        return Err(semantic(format!(
-            "export planning reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
-            plan.report().losses.len(),
-            format.name()
-        )));
-    }
     let needs_sidecar_digest =
         format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
     let report = if let Some(path) = out {
