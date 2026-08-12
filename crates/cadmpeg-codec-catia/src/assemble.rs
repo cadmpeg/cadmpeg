@@ -1012,6 +1012,16 @@ mod route_tests {
         assert!(!neutral_model_is_admissible(&mut invalid, &[]));
     }
 
+    /// Phase 5 freeze: shared builders must match the CATIA admission gate.
+    #[test]
+    fn phase5_freeze_shared_admissibility_fixtures() {
+        let mut accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+        assert!(neutral_model_is_admissible(&mut accepted, &[]));
+        let mut rejected =
+            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test");
+        assert!(!neutral_model_is_admissible(&mut rejected, &[]));
+    }
+
     /// Decimal object-id keys reach the gate in native traversal order, in which
     /// `#10` follows `#9` but precedes it lexicographically. The gate must judge
     /// that arena in the order the pipeline publishes it.

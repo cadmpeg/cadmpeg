@@ -7248,6 +7248,18 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
+/// Phase 5 freeze: export precondition (:50) rejects shared broken IR; empty accepts.
+#[test]
+fn phase5_freeze_export_precondition_admissibility_fixtures() {
+    let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+    // Empty IR has no B-rep; writer refuses later for missing B-rep, but the
+    // :50 precondition is full validate — empty passes validate.
+    assert!(cadmpeg_ir::validate(&accepted, Vec::new()).is_ok());
+    let rejected =
+        cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("sldprt:test");
+    assert!(!cadmpeg_ir::validate(&rejected, Vec::new()).is_ok());
+}
+
 #[test]
 fn semantic_writer_rejects_unrepresented_typed_fields() {
     let mut decoded = SldprtCodec

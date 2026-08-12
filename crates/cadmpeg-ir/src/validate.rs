@@ -21,6 +21,8 @@ use crate::source_fidelity::SourceFidelity;
 use crate::topology::Coedge;
 use crate::units::LengthUnit;
 
+/// Frozen accept/reject IR builders for Phase 5 gate swaps.
+pub mod admissibility_freeze;
 mod annotations_native;
 mod assets;
 mod carriers_parameterization;

@@ -6148,4 +6148,29 @@ mod tests {
         assert_eq!(candidate, original);
         assert!(links.is_empty());
     }
+
+    /// Phase 5 freeze: current draft/instance gates vs shared accept/reject builders.
+    #[test]
+    fn phase5_freeze_shared_admissibility_fixtures() {
+        let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+        let rejected =
+            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("rhino:test");
+        let annotations = cadmpeg_ir::Annotations::default();
+
+        let mut draft_ok =
+            cadmpeg_ir::validate::validate_with_annotations(&accepted, &annotations, Vec::new());
+        draft_ok
+            .findings
+            .retain(|f| f.check != cadmpeg_ir::report::Check::ArenaOrder);
+        assert!(draft_ok.is_ok());
+        assert!(cadmpeg_ir::validate(&accepted, Vec::new()).is_ok());
+
+        let mut draft_bad =
+            cadmpeg_ir::validate::validate_with_annotations(&rejected, &annotations, Vec::new());
+        draft_bad
+            .findings
+            .retain(|f| f.check != cadmpeg_ir::report::Check::ArenaOrder);
+        assert!(!draft_bad.is_ok());
+        assert!(!cadmpeg_ir::validate(&rejected, Vec::new()).is_ok());
+    }
 }
