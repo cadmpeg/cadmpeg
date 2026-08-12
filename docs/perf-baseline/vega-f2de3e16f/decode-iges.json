@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "command": "timeout 120 'target/release/cadmpeg' decode '/Users/irvel/side2/cadmpeg/.worktrees/feat/refactor-convergence/crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs' >/dev/null",
+      "mean": 0.01355980746,
+      "stddev": 0.0006015871279617779,
+      "median": 0.013919381860000002,
+      "user": 0.00747326,
+      "system": 0.00357996,
+      "min": 0.01278921586,
+      "max": 0.014116840860000002,
+      "times": [
+        0.013037590860000002,
+        0.01278921586,
+        0.013919381860000002,
+        0.014116840860000002,
+        0.01393600786
+      ],
+      "memory_usage_byte": [
+        9338880,
+        9338880,
+        9338880,
+        9338880,
+        9338880
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
