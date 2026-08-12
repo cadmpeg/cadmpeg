@@ -12,7 +12,9 @@ mod design;
 mod external_reference;
 mod feature;
 #[cfg(feature = "fuzzing")]
-pub mod fuzzing;
+#[doc(hidden)]
+#[path = "fuzzing.rs"]
+pub mod fuzz;
 mod kernel;
 mod materials;
 mod native;

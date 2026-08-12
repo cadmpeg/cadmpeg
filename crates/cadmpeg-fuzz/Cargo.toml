@@ -24,12 +24,12 @@ cadmpeg-protein = { path = "../cadmpeg-protein" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
 cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt", features = ["fuzzing"] }
 cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia", features = ["fuzzing"] }
-cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
-cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
+cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo", features = ["fuzzing"] }
+cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx", features = ["fuzzing"] }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }
 cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
 cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
-cadmpeg-codec-step = { path = "../cadmpeg-codec-step" }
+cadmpeg-codec-step = { path = "../cadmpeg-codec-step", features = ["fuzzing"] }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 flate2 = "1"
 crc32fast = "1"

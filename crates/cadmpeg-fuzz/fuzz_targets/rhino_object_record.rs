@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use cadmpeg_codec_rhino::fuzzing;
+use cadmpeg_codec_rhino::fuzz;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| fuzzing::object_record(data));
+fuzz_target!(|data: &[u8]| fuzz::object_record(data));

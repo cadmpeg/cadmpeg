@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-gated entry points for focused parser fuzzing.
 
+/// Exercise outer-container scanning.
+pub fn container(data: &[u8]) {
+    let _ = crate::container::scan_bytes(data);
+}
+
+/// Exercise embedded Parasolid stream extraction.
+pub fn parasolid(data: &[u8]) {
+    let _ = crate::parasolid::extract_streams(data);
+}
+
 /// Exercise spline-curve carrier scanning.
 pub fn spline_curves(data: &[u8]) {
     let _ = crate::brep::spline::scan_curve_carriers(data);

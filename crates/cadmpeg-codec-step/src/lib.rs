@@ -50,12 +50,19 @@
 
 mod archive;
 mod geometry;
-pub mod lex;
-pub mod parse;
+#[allow(dead_code)] // Parser entry points are consumed by the hidden fuzz facade.
+mod lex;
+#[allow(dead_code)] // Parser entry points are consumed by the hidden fuzz facade.
+mod parse;
 mod reader;
 mod signature;
-pub mod strings;
+#[allow(dead_code)] // String helpers are part of the internal parser layer.
+mod strings;
 mod writer;
+
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzz;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;

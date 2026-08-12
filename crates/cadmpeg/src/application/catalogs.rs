@@ -273,7 +273,7 @@ impl NativeValidatorCatalog {
                 #[cfg(feature = "fcstd")]
                 ("fcstd", cadmpeg_codec_freecad::validate_native),
                 #[cfg(feature = "f3d")]
-                ("f3d", cadmpeg_codec_f3d::validate::validate_native),
+                ("f3d", cadmpeg_codec_f3d::validate_native),
                 #[cfg(feature = "inventor")]
                 ("inventor", cadmpeg_codec_inventor::validate_native),
                 #[cfg(feature = "sldprt")]

@@ -81,26 +81,29 @@
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
 mod act;
-pub mod brep;
+pub(crate) mod brep;
 mod bytes;
-pub mod container;
-pub mod decode;
-pub mod design;
-pub mod f3z;
-pub mod history;
+#[allow(dead_code)] // Internal container records remain available to crate tests.
+pub(crate) mod container;
+pub(crate) mod decode;
+pub(crate) mod design;
+#[allow(dead_code)] // Multi-document helpers remain behind the codec facade.
+pub(crate) mod f3z;
+pub(crate) mod history;
 mod history_records;
 mod ids;
 mod manifest;
-pub mod materials;
+pub(crate) mod materials;
 mod metastream;
 mod native;
 mod paramesh;
-pub mod records;
+#[allow(dead_code)] // Native record surface remains behind the codec facade.
+pub(crate) mod records;
 mod tsm;
-pub mod validate;
+pub(crate) mod validate;
 mod value_tree;
 mod writer;
-pub mod xref;
+pub(crate) mod xref;
 mod zip_write;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -111,6 +114,11 @@ use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
 use std::io::Write;
+
+/// Validate the typed Fusion-native namespace.
+pub fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::Finding> {
+    validate::validate_native(ir)
+}
 
 /// The ZIP local-file-header magic.
 const ZIP_MAGIC: &[u8] = b"PK\x03\x04";

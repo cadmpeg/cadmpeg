@@ -72,9 +72,12 @@
 //! entry point should use [`NxCodec`].
 
 pub mod container;
-pub mod decode;
-pub mod deltas;
-pub mod evaluation;
+#[allow(dead_code)] // Internal orchestration remains behind the codec facade.
+pub(crate) mod decode;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+pub(crate) mod deltas;
+#[allow(dead_code)] // Internal evaluation is reached by selected decode paths.
+pub(crate) mod evaluation;
 mod framing;
 pub mod geometry;
 pub mod intersection;
@@ -82,10 +85,16 @@ mod jt;
 mod jt_topology;
 pub(crate) mod native;
 pub mod nurbs;
-pub mod om;
-pub mod om_tokens;
+#[allow(dead_code)] // Object-model parsing is reached through decode and fuzz.
+pub(crate) mod om;
+#[allow(dead_code)] // Object-model token parsing is an internal dependency.
+pub(crate) mod om_tokens;
 pub mod parasolid;
 pub mod topology;
+
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzz;
 
 use std::collections::BTreeMap;
 

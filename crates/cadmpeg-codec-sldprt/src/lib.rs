@@ -93,20 +93,29 @@
 
 mod annotations;
 mod appearance;
-pub mod brep;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
+#[allow(unused_imports)] // Preserve the parser's crate-facing research names.
+pub(crate) mod brep;
 mod classification;
-pub mod container;
-pub mod decode;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
+pub(crate) mod container;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
+pub(crate) mod decode;
 mod feature_schema;
 #[cfg(feature = "fuzzing")]
-pub mod fuzzing;
+#[doc(hidden)]
+#[path = "fuzzing.rs"]
+pub mod fuzz;
 mod history;
-pub mod loss;
+#[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
+pub(crate) mod loss;
 mod metadata;
 mod native;
-pub mod parasolid;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
+pub(crate) mod parasolid;
 mod pmi;
-pub mod records;
+#[allow(dead_code)] // Internal record surface is retained for fuzz and crate tests.
+pub(crate) mod records;
 mod resolved_features;
 mod swift;
 mod tessellation;

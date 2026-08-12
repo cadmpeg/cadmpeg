@@ -28,7 +28,8 @@ pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;
 pub(crate) mod legacy;
-pub mod loss;
+#[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
+pub(crate) mod loss;
 pub(crate) mod mesh;
 pub(crate) mod morph;
 pub(crate) mod objects;
@@ -46,7 +47,9 @@ mod writer;
 mod external_transfer_tests;
 
 #[cfg(feature = "fuzzing")]
-pub mod fuzzing;
+#[doc(hidden)]
+#[path = "fuzzing.rs"]
+pub mod fuzz;
 
 const MAGIC: &[u8] = chunks::MAGIC;
 

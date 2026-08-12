@@ -4,7 +4,7 @@
 
 #![no_main]
 
-use cadmpeg_codec_sldprt::fuzzing::pmi;
+use cadmpeg_codec_sldprt::fuzz::pmi;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| pmi(data));

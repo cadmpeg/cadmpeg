@@ -63,17 +63,21 @@ mod compress;
 pub mod container;
 pub(crate) mod coverage;
 pub mod curve;
-pub mod datum;
-pub mod decode;
+pub(crate) mod datum;
+pub(crate) mod decode;
 pub mod feature;
 pub mod legacy;
-pub mod placement;
+pub(crate) mod placement;
 pub mod primdata;
 pub mod psb;
 pub mod reference;
 pub mod scalar;
 pub mod surface;
 pub mod topology;
+
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
