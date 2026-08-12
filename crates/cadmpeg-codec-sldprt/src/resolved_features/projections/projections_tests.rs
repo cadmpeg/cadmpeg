@@ -352,7 +352,6 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-
     project_compact_surface_selections(&mut features, &[], &[lane]);
 
     let FeatureDefinition::OffsetSurface { faces, .. } = &features[0].definition else {
@@ -450,8 +449,13 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
+    let mut lane2 = lane.clone();
+    lane2.id = "lane-configuration-2".into();
+    for selection in &mut lane2.surface_selections {
+        selection.parent = lane2.id.clone();
+    }
 
-    project_compact_surface_selections(&mut features, &[], &[lane]);
+    project_compact_surface_selections(&mut features, &[], &[lane, lane2]);
 
     let FeatureDefinition::CutWithSurface {
         targets,
