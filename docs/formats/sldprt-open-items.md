@@ -56,6 +56,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:626-699` inserts bridges, vertex uses, and points by attribute, so a later valid occurrence replaces the earlier one. `:403-447` keeps the latest candidate occurrence for edge and coedge attributes. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:477-484` and `:565-573` likewise keep the record with the greatest sequence for duplicate entity attributes. If two complete records share an attribute but point to different loops or coordinates, the later or highest-sequence record controls the emitted topology without a decoded native conflict rule. Candidate evidence rejects some ambiguous edge and coedge shapes, but the other tables have no uniqueness gate. Confidence: high.
 
+### BC-05. Extended topology reference form
+
+**Question.** Does a SolidWorks Parasolid topology stream encode a reference wider than `u16`?
+
+**Known.** Typed topology records store `refs` as big-endian `u16` values at fixed strides in `brep/topology.rs`. The `u16` ceiling is real for every settled fixed-offset call site. Siemens NX encodes an extended XMT form as a negative signed remainder plus a quotient (`quotient * 32767 + remainder`).
+
+**Need.** Corpus bytes that exercise a topology reference above `65535` before any encoding change. A confirmed extended form changes record length and turns the fixed-offset call sites into a running cursor.
+
+**Note.** The NX extended form is a hypothesis for SolidWorks, not evidence. Do not invent the encoding without corpus bytes. Confidence: open.
+
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV
