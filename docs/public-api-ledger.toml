@@ -147,7 +147,7 @@ item = "cadmpeg_ir::{DocumentArtifact,DocumentOrigin,artifact} -> cadmpeg::appli
 reason = "loaded-document state belongs to the CLI application workflow; no compatibility re-export"
 
 [[change]]
-commit = "PENDING"
+commit = "5fcd7360af2f6da200289532917e5594c471f26b"
 crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::DecodeContext::admit_entities"

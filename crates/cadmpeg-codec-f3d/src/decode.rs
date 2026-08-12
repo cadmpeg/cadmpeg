@@ -2032,6 +2032,7 @@ fn finish_model_decode<'a>(
             &native.sketch_relations,
             ir.tolerances.linear,
         );
+    charge_sketch_arrangement_work(ctx, ir.model.sketch_entities.len())?;
     crate::design::profile_select::bind_sweep_sketch_selections(
         &mut ir.model.features,
         &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -2588,6 +2589,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             &native.sketch_relations,
             ir.tolerances.linear,
         );
+    charge_sketch_arrangement_work(ctx, ir.model.sketch_entities.len())?;
     crate::design::profile_select::bind_sweep_sketch_selections(
         &mut ir.model.features,
         &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -3370,6 +3372,18 @@ fn apply_assembly_classification(
         };
         report.notes.push(note);
     }
+}
+
+/// Charge session work for sketch-arrangement walks, capped by the format-side
+/// arrangement ceiling so policy and format limits both bind.
+fn charge_sketch_arrangement_work(
+    ctx: &DecodeContext<'_>,
+    sketch_entities: usize,
+) -> Result<(), CodecError> {
+    let units = u64::try_from(sketch_entities.saturating_mul(sketch_entities.max(1)))
+        .unwrap_or(u64::MAX)
+        .min(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
+    ctx.charge_work(units, "f3d_sketch_arrangement")
 }
 
 fn decode_result(

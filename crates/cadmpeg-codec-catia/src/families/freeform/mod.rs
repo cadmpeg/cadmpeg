@@ -290,11 +290,12 @@ pub(crate) fn try_decode_freeform_surfaces(
         &scan.data,
         container::consolidated_record_ranges(scan),
     );
-    let mut b5_graph = crate::families::b5::graph::parse_from_records(
+    let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
         &object_source,
         &selected_object_records,
         &object_frames,
         true,
+        Some(&selection_budget),
     );
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.faces.iter().fold([0usize; 3], |mut counts, face| {
