@@ -65,6 +65,19 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     assert_eq!(path[0].type_signature, [1; 12]);
     assert_eq!(path[0].local_id, Some(7));
 
+    for selector in [[4, 2, 0, 0], [6, 2, 0, 0]] {
+        payload[92..96].copy_from_slice(&selector);
+        assert_eq!(
+            compact_extrusion_to_face_at(&payload, 0, payload.len()),
+            Some(100)
+        );
+        let path = compact_single_face_reference_path_at(&payload, 100)
+            .expect("lane subtype must not change the component path");
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0].local_id, Some(7));
+    }
+    payload[92..96].copy_from_slice(&[0, 2, 0, 0]);
+
     payload[35..39].copy_from_slice(&[0xe4, 0x82, 0x07, 0x81]);
     assert_eq!(
         compact_extrusion_to_face_at(&payload, 0, payload.len()),
@@ -273,6 +286,53 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
     assert_eq!(
         compact_extrusion_to_face_at(&payload, anchor, payload.len()),
         None
+    );
+}
+
+#[test]
+fn compact_extrusion_to_face_prefers_a_modern_marker_over_a_legacy_body_alias() {
+    let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
+    let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
+    let mut payload = vec![0; 360];
+    payload[..end_spec.len()].copy_from_slice(end_spec);
+    let anchor = end_spec.len() - 2;
+    payload[anchor + 4..anchor + 8].copy_from_slice(&1u32.to_le_bytes());
+    payload[anchor + 18..anchor + 22].copy_from_slice(&4u32.to_le_bytes());
+    payload[anchor + 30..anchor + 33].copy_from_slice(&[1, 1, 0]);
+    let child = anchor + 33;
+    payload[child..child + face_ref.len()].copy_from_slice(face_ref);
+    let body = child + face_ref.len();
+
+    // This is a valid legacy body path. A modern marker follows it in the
+    // same declared child, so accepting both anchors would make the
+    // termination ambiguous.
+    payload[body..body + 19].copy_from_slice(&[
+        0xe5, 0x83, 0x8b, 0x80, 2, 0, 0, 0, 0x40, 0, 0, 17, 0, 0, 0, 17, 0, 0, 0,
+    ]);
+    let legacy_control = body + 44;
+    payload[legacy_control..legacy_control + 2].copy_from_slice(&[0x30, 0x80]);
+    payload[legacy_control + 2..legacy_control + 6].copy_from_slice(&1u32.to_le_bytes());
+    payload[legacy_control + 10..legacy_control + 14].copy_from_slice(&1u32.to_le_bytes());
+    payload[legacy_control + 14..legacy_control + 18].copy_from_slice(&[0, 2, 0, 0]);
+    payload[legacy_control + 22..legacy_control + 38].fill(1);
+    let legacy_entry = legacy_control + 40;
+    payload[legacy_entry..legacy_entry + 4].copy_from_slice(&[0x32, 0x80, 0, 0]);
+    payload[legacy_entry + 4..legacy_entry + 16].fill(2);
+    payload[legacy_entry + 16..legacy_entry + 20].copy_from_slice(&7u32.to_le_bytes());
+    payload[legacy_entry + 20..legacy_entry + 40].fill(0);
+    payload[legacy_entry + 40..legacy_entry + 44].copy_from_slice(&101u32.to_le_bytes());
+
+    let marker = body + 140;
+    payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    payload[marker + 18..marker + 22].copy_from_slice(&[0x33, 0x80, 0, 0]);
+    payload[marker + 22..marker + 34].fill(3);
+    payload[marker + 34..marker + 38].copy_from_slice(&9u32.to_le_bytes());
+
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        Some(marker)
     );
 }
 
@@ -998,6 +1058,59 @@ fn compact_body_path_accepts_anonymous_mixed_entries() {
     let last = payload.len() - 1;
     payload[last] = 1;
     assert_eq!(compact_body_path_at(&payload, marker), None);
+}
+
+#[test]
+fn compact_body_component_path_accepts_counted_sentinel_separators() {
+    let marker = 12;
+    let mut payload = vec![0; marker + 18];
+    payload[..4].copy_from_slice(&10u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[0, 3, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+
+    let signature = |source: u32, timestamp: u32| {
+        let mut signature = vec![0x38, 0x80, 0x3b, 0];
+        signature.extend_from_slice(&source.to_le_bytes());
+        signature.extend_from_slice(&timestamp.to_le_bytes());
+        signature
+    };
+    let entry = |payload: &mut Vec<u8>, instance: u16, source: u32, timestamp: u32| {
+        payload.extend_from_slice(&instance.to_le_bytes());
+        payload.extend_from_slice(&[0, 0]);
+        payload.extend_from_slice(&signature(source, timestamp));
+    };
+    let local = |payload: &mut Vec<u8>, value: u32| {
+        payload.extend_from_slice(&value.to_le_bytes());
+        payload.extend_from_slice(&[0xff; 4]);
+        payload.extend_from_slice(&[0; 4]);
+    };
+
+    entry(&mut payload, 0x8521, 213, 1);
+    local(&mut payload, 2);
+    entry(&mut payload, 0x8521, 213, 1);
+    local(&mut payload, 9);
+    entry(&mut payload, 0x8083, 252, 2);
+    local(&mut payload, 1);
+    entry(&mut payload, 0x8041, 265, 3);
+    local(&mut payload, 1);
+    entry(&mut payload, 0x8083, 213, 1);
+    local(&mut payload, 1);
+    entry(&mut payload, 0x8036, 298, 4);
+    entry(&mut payload, 0x8041, 265, 5);
+    entry(&mut payload, 0x8036, 298, 6);
+    entry(&mut payload, 0x8083, 252, 7);
+    local(&mut payload, 1);
+    entry(&mut payload, 0x8521, 213, 1);
+    local(&mut payload, 8);
+
+    let components = compact_body_component_path_at(&payload, marker)
+        .expect("counted lineage path with sentinel separators");
+    assert_eq!(components.len(), 10);
+    assert_eq!(components[5].local_id, None);
+    assert_eq!(components[6].local_id, None);
+    assert_eq!(components[7].local_id, None);
+    assert_eq!(components[8].local_id, Some(1));
+    assert_eq!(components[9].local_id, Some(8));
 }
 
 #[test]

@@ -21,17 +21,17 @@ path = "src/main.rs"
 [features]
 # Registry ids are the feature names. `fcstd` enables the FreeCAD codec crate.
 default = [
-    "fcstd",
-    "f3d",
-    "inventor",
-    "sldprt",
-    "catia",
-    "creo",
-    "nx",
-    "rhino",
-    "step",
-    "iges",
-    "sat",
+  "fcstd",
+  "f3d",
+  "inventor",
+  "sldprt",
+  "catia",
+  "creo",
+  "nx",
+  "rhino",
+  "step",
+  "iges",
+  "sat",
 ]
 fcstd = ["dep:cadmpeg-codec-freecad"]
 f3d = ["dep:cadmpeg-codec-f3d"]

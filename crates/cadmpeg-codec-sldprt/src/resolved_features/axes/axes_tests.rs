@@ -40,6 +40,28 @@ fn compact_line_reference_rejects_conflicting_eight_and_nine_scalar_directions()
 }
 
 #[test]
+fn compact_line_reference_rejects_conflicting_layout_candidates() {
+    let mut payload = vec![0; 136];
+    let handles = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    payload[..8].copy_from_slice(&handles);
+    payload[12..16].copy_from_slice(&7000u32.to_le_bytes());
+    for (offset, value) in [
+        (56, 1.0f64),
+        (64, 0.0),
+        (72, 0.0),
+        (80, 0.0),
+        (88, f64::from_bits(0x3ff0_0000_0000_0001)),
+    ] {
+        payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    payload[96..104].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+    payload[116..118].copy_from_slice(&0x8200u16.to_le_bytes());
+    payload[134..136].copy_from_slice(&[0xff; 2]);
+
+    assert!(compact_line_reference_directions(&payload, 0, payload.len(), &[]).is_empty());
+}
+
+#[test]
 fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
     let mut payload = vec![0; 240];
     let handles = 96;

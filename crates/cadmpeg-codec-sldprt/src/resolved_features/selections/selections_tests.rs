@@ -11,6 +11,22 @@ use crate::records::{
     FeatureInputScalar, FeatureInputScalarRole,
 };
 use std::collections::{BTreeMap, HashSet};
+
+#[test]
+fn component_vector_selector_accepts_lane_subtypes() {
+    for selector in [
+        [0, 2, 0, 0],
+        [4, 2, 0, 0],
+        [6, 2, 0, 0],
+        [4, 3, 0, 0],
+        [0x7f, 2, 0, 0],
+    ] {
+        assert!(is_component_vector_selector(&selector));
+    }
+    assert!(!is_component_vector_selector(&[4, 4, 0, 0]));
+    assert!(!is_component_vector_selector(&[4, 2, 1, 0]));
+}
+
 #[test]
 fn compact_body_states_require_a_duplicated_local_identity() {
     let token = 0x89a4u16;
@@ -506,6 +522,7 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         feature_ref: "consumer".into(),
         local_edge_ids: vec![4, 4, 0],
         components,
+        references: Vec::new(),
         producer_feature_refs: vec!["producer".into()],
         terminal_feature_ref: Some("producer".into()),
     };
@@ -605,6 +622,55 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
 }
 
 #[test]
+fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
+    let class_name = "moVertDim_c";
+    let direct_record = 40;
+    let class_offset = direct_record + 4;
+    let class_body = class_offset + 6 + class_name.len();
+    let repeated_record = 104;
+    let class_token = 0x87d3_u16;
+    let mut payload = vec![0; 144];
+    payload[direct_record..direct_record + 4].copy_from_slice(&[0x20, 0x81, 0x08, 0x00]);
+    payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..class_body].copy_from_slice(class_name.as_bytes());
+    payload[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
+    payload[repeated_record..repeated_record + 4].copy_from_slice(&[0x20, 0x81, 0x10, 0x00]);
+    payload[repeated_record + 4..repeated_record + 6].copy_from_slice(&0x8123_u16.to_le_bytes());
+    payload[repeated_record + 6..repeated_record + 8].copy_from_slice(&class_token.to_le_bytes());
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "vertex-dimension-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Dimension,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    assert_eq!(fillet_edge_roster_end(&lane, 0, 80), Some(direct_record));
+    assert_eq!(
+        fillet_edge_roster_end(&lane, 80, 144),
+        Some(repeated_record)
+    );
+}
+
+#[test]
 fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
     let marker = 12;
     let mut payload = vec![0; 160];
@@ -635,6 +701,246 @@ fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
         compact_edge_component_path_at(&payload, marker).map(|components| components.len()),
         Some(3)
     );
+}
+
+#[test]
+fn compact_reference_list_preserves_reference_and_hop_boundaries() {
+    let marker = 12;
+    let mut payload = Vec::new();
+    payload.extend(2u32.to_le_bytes());
+    payload.extend([0, 2, 0, 0]);
+    payload.extend(17u32.to_le_bytes());
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+    let append_hop = |payload: &mut Vec<u8>, instance: u16, serial: u32, timestamp: u32| {
+        payload.extend(instance.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0x38, 0x80, 0x3b, 0]);
+        payload.extend(serial.to_le_bytes());
+        payload.extend(timestamp.to_le_bytes());
+    };
+    append_hop(&mut payload, 0x8036, 4, 40);
+    append_hop(&mut payload, 0x8041, 5, 50);
+    payload.extend(12u32.to_le_bytes());
+    append_hop(&mut payload, 0x8083, 9, 90);
+    payload.extend(0u32.to_le_bytes());
+    payload.extend([0xff; 4]);
+    payload.extend([0; 6]);
+
+    let references = compact_component_reference_list_at(&payload, marker).unwrap();
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].len(), 2);
+    assert_eq!(references[0][0].local_id, None);
+    assert_eq!(references[0][1].local_id, Some(12));
+    assert_eq!(references[1][0].instance, Some(0x8083));
+    assert_eq!(references[1][0].local_id, Some(0));
+    assert_eq!(
+        compact_edge_selection_at(&payload, marker),
+        Some(vec![12, 0])
+    );
+    assert_eq!(
+        compact_edge_component_path_at(&payload, marker)
+            .unwrap()
+            .iter()
+            .map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [None, Some(12)]
+    );
+
+    payload[4] = 0x06;
+    for prefix_offset in [34, 50, 70] {
+        payload[prefix_offset..prefix_offset + 4].copy_from_slice(&[0xa7, 0x81, 0xa9, 0x01]);
+    }
+    assert_eq!(
+        compact_component_reference_list_at(&payload, marker)
+            .unwrap()
+            .len(),
+        2
+    );
+
+    payload[..4].copy_from_slice(&3u32.to_le_bytes());
+    payload.extend([0; 10]);
+    payload.extend([0xff, 0xfe, 0xff]);
+    assert_eq!(
+        compact_component_reference_list_at(&payload, marker)
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn compact_reference_list_accepts_unframed_surface_cut_targets() {
+    let marker = 12;
+    let prefix = [0xa7, 0x81, 0xa9, 0x01];
+    let signature = |serial: u32, timestamp: u32| {
+        let mut value = [0; 12];
+        value[..4].copy_from_slice(&prefix);
+        value[4..8].copy_from_slice(&serial.to_le_bytes());
+        value[8..].copy_from_slice(&timestamp.to_le_bytes());
+        value
+    };
+    let mut payload = Vec::new();
+    payload.extend(5u32.to_le_bytes());
+    payload.extend([0, 2, 0, 0]);
+    payload.extend(0u32.to_le_bytes());
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+    for local_id in [0u32, 3, 2] {
+        payload.extend(0x81a5u16.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend(signature(18, 0x51c5_fde3));
+        payload.extend(local_id.to_le_bytes());
+    }
+    payload.extend([0; 16]);
+
+    let references = compact_component_reference_list(&payload, marker, false)
+        .expect("operation target reference list");
+    assert_eq!(
+        references
+            .iter()
+            .flatten()
+            .filter_map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [0, 3, 2]
+    );
+    assert!(compact_component_reference_list_at(&payload, marker).is_none());
+    assert!(surface_reference_matches_at(
+        &payload,
+        marker,
+        &references.into_iter().flatten().collect::<Vec<_>>()
+    ));
+
+    // SurfaceCut target vectors retain the same role byte with any lane-local
+    // low subtype.  The operation scanner must not require subtype zero.
+    payload[4] = 0x7f;
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.clone(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let selections = operation_surface_selection_candidates(
+        FeatureClass::CutWithSurface,
+        &lane,
+        0,
+        payload.len(),
+        None,
+    );
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].0, marker);
+}
+
+#[test]
+fn varfillet_roster_accepts_unframed_reference_lists() {
+    let marker = 12;
+    let class_offset = 146;
+    let class_name = "moVertDim_c";
+    let mut payload = vec![0; 220];
+    payload[marker - 12..marker - 8].copy_from_slice(&4u32.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+    payload[marker - 4..marker].copy_from_slice(&37u32.to_le_bytes());
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    payload[marker + 16..marker + 18].copy_from_slice(&[0, 0]);
+    let signature = |serial: u32| {
+        let mut value = [0; 12];
+        value[..4].copy_from_slice(&[0xa7, 0x81, 0xa9, 0x01]);
+        value[4..8].copy_from_slice(&serial.to_le_bytes());
+        value[8..].copy_from_slice(&0x51c5_fde3u32.to_le_bytes());
+        value
+    };
+    let mut cursor = marker + 18;
+    for (instance, serial, local_id) in [
+        (0x81a5u16, 18u32, 28u32),
+        (0x81a5, 18, 29),
+        (0x81ac, 170, 33),
+        (0x8083, 252, 1),
+    ] {
+        payload[cursor..cursor + 2].copy_from_slice(&instance.to_le_bytes());
+        payload[cursor + 4..cursor + 16].copy_from_slice(&signature(serial));
+        payload[cursor + 16..cursor + 20].copy_from_slice(&local_id.to_le_bytes());
+        cursor += 20;
+    }
+    payload[class_offset - 4..class_offset].copy_from_slice(&[0x20, 0x81, 0x08, 0]);
+    payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..class_offset + 6 + class_name.len()]
+        .copy_from_slice(class_name.as_bytes());
+    payload[class_offset + 6 + class_name.len()..class_offset + 8 + class_name.len()]
+        .copy_from_slice(&0x87d3u16.to_le_bytes());
+
+    let feature = Feature {
+        id: "varfillet".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("37".into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: "VarFillet1".into(),
+        kind: "VarFillet".into(),
+        input_class: Some("VarFillet_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "vertex-dimension-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Dimension,
+        }],
+        names: vec![FeatureInputName {
+            id: "feature-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: Some(37),
+            value: "VarFillet1".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let selections = compact_edge_selections(&[history], &lane);
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].references.len(), 4);
+    assert_eq!(selections[0].references[3][0].instance, Some(0x8083));
 }
 
 #[test]
@@ -700,6 +1006,22 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
             .map(|component| component.local_id)
             .collect::<Vec<_>>(),
         vec![Some(2)]
+    );
+    payload[4] = 0x06;
+    assert_eq!(
+        compact_surface_selection_at(&payload, 12)
+            .expect("nonzero selector subtype")
+            .first()
+            .and_then(|component| component.local_id),
+        Some(2)
+    );
+    payload[4] = 0x7f;
+    assert_eq!(
+        compact_surface_selection_at(&payload, 12)
+            .expect("lane-local selector subtype")
+            .first()
+            .and_then(|component| component.local_id),
+        Some(2)
     );
 }
 
@@ -1382,6 +1704,96 @@ fn component_vector_cell_count_includes_interleaved_path_slots() {
     let path = component_vector_path_at(&payload, marker).expect("interleaved path slots");
     assert_eq!(path.len(), 4);
     assert_eq!(path.last().expect("terminal component").local_id, Some(4));
+}
+
+#[test]
+fn component_vector_preserves_identifierless_lineage_hops() {
+    let marker = 12;
+    let mut payload = vec![0; marker];
+    payload[..4].copy_from_slice(&5u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[6, 2, 0, 0]);
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+
+    let append_hop = |payload: &mut Vec<u8>, instance: u16, source: u32, timestamp: u32| {
+        payload.extend(instance.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0xa7, 0x81, 0xa9, 0x01]);
+        payload.extend(source.to_le_bytes());
+        payload.extend(timestamp.to_le_bytes());
+    };
+    append_hop(&mut payload, 0x8675, 230, 0x51c6_17de);
+    append_hop(&mut payload, 0x8675, 134, 0x51c6_080c);
+    append_hop(&mut payload, 0x81a5, 18, 0x51c5_fde3);
+    payload.extend(16u32.to_le_bytes());
+    payload.extend([0; 24]);
+
+    let path = component_vector_path_at(&payload, marker).expect("lineage path");
+    assert_eq!(path.len(), 3);
+    assert_eq!(path[0].instance, Some(0x8675));
+    assert_eq!(path[0].local_id, None);
+    assert_eq!(path[1].instance, Some(0x8675));
+    assert_eq!(path[1].local_id, None);
+    assert_eq!(path[2].instance, Some(0x81a5));
+    assert_eq!(path[2].local_id, Some(16));
+}
+
+#[test]
+fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
+    let mut payload = Vec::new();
+    let append_vector = |payload: &mut Vec<u8>, selector: u8, source: u32, terminal: u32| {
+        payload.extend(7u32.to_le_bytes());
+        payload.extend([selector, 2, 0, 0]);
+        payload.extend(0u32.to_le_bytes());
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0, 0]);
+        for index in 0..4u32 {
+            payload.extend(0x803e_u16.to_le_bytes());
+            payload.extend([0, 0]);
+            payload.extend([0x34, 0x80, 0x37, 0]);
+            payload.extend((source + index).to_le_bytes());
+            payload.extend(0x4ad9_837a_u32.wrapping_add(index).to_le_bytes());
+            payload.extend(if index == 3 { terminal } else { index + 1 }.to_le_bytes());
+            if index != 3 {
+                payload.extend((25 + index * 2).to_le_bytes());
+            }
+        }
+    };
+    append_vector(&mut payload, 6, 230, 16);
+    payload.extend([0; 4]);
+    append_vector(&mut payload, 4, 218, 12);
+    payload.extend([0; 4]);
+
+    let candidates = planar_surface_selection_candidates(&payload, 0, payload.len());
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0].1.len(), 4);
+    assert_eq!(
+        candidates[0].1[0].type_signature[4..8],
+        230u32.to_le_bytes()
+    );
+    assert_eq!(
+        candidates[0].1.last().and_then(|entry| entry.local_id),
+        Some(16)
+    );
+    assert_eq!(
+        candidates[1].1[0].type_signature[4..8],
+        218u32.to_le_bytes()
+    );
+    assert_eq!(
+        candidates[1].1.last().and_then(|entry| entry.local_id),
+        Some(12)
+    );
+
+    payload[4] = 0x7f;
+    assert_eq!(
+        planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
+        2
+    );
+    payload[5] = 3;
+    assert_eq!(
+        planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
+        1
+    );
 }
 
 #[test]

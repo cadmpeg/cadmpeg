@@ -2,10 +2,11 @@
 
 use super::*;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+    FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
     FeatureInputSurfaceSelection,
 };
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, Length};
+use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureId, Length};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -196,6 +197,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         parent: parent.into(),
         ordinal: 0,
         offset,
+        selector: 0,
         object_name_ref: "name".into(),
         feature_ref: "thread-native".into(),
         producer_feature_refs: vec!["producer-native".into()],
@@ -335,6 +337,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
             parent: "lane".into(),
             ordinal: 0,
             offset: 12,
+            selector: 0,
             object_name_ref: "name".into(),
             feature_ref: "operation-native".into(),
             producer_feature_refs: Vec::new(),
@@ -349,13 +352,232 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-
     project_compact_surface_selections(&mut features, &[], &[lane]);
 
     let FeatureDefinition::OffsetSurface { faces, .. } = &features[0].definition else {
         panic!("expected offset surface");
     };
     assert!(matches!(faces, FaceSelection::Native(value) if value.contains(":7")));
+}
+
+#[test]
+fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
+    let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        id: FeatureId(id.into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: Some(native_ref.into()),
+    };
+    let mut features = vec![
+        feature(
+            "target",
+            "target-native",
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved,
+            },
+        ),
+        feature(
+            "tool",
+            "tool-native",
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved,
+            },
+        ),
+        feature(
+            "cut",
+            "cut-native",
+            FeatureDefinition::CutWithSurface {
+                targets: BodySelection::Unresolved,
+                tools: FaceSelection::Unresolved,
+                reverse: None,
+            },
+        ),
+    ];
+    let signature = |source: u32| {
+        let mut value = [0; 12];
+        value[4..8].copy_from_slice(&source.to_le_bytes());
+        value
+    };
+    let selection = |ordinal: u32, selector: u8, producer: &str, local_ids: &[u32]| {
+        FeatureInputSurfaceSelection {
+            id: format!("selection-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            offset: u64::from(ordinal),
+            selector,
+            object_name_ref: "cut-name".into(),
+            feature_ref: "cut-native".into(),
+            producer_feature_refs: vec![producer.into()],
+            terminal_feature_ref: Some(producer.into()),
+            components: local_ids
+                .iter()
+                .map(|local_id| FeatureInputComponentPathEntry {
+                    instance: Some(0x81a5),
+                    type_signature: signature(if producer == "target-native" { 10 } else { 20 }),
+                    local_id: Some(*local_id),
+                })
+                .collect(),
+        }
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: vec![
+            // These low selector bytes are lane-local subtypes.  They do not
+            // identify the target/tool roles; native vector order does.
+            selection(0, 7, "target-native", &[0, 3, 2]),
+            selection(1, 1, "tool-native", &[0, 7]),
+        ],
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let mut lane2 = lane.clone();
+    lane2.id = "lane-configuration-2".into();
+    for selection in &mut lane2.surface_selections {
+        selection.parent = lane2.id.clone();
+    }
+
+    project_compact_surface_selections(&mut features, &[], &[lane, lane2]);
+
+    let FeatureDefinition::CutWithSurface {
+        targets,
+        tools,
+        reverse,
+    } = &features[2].definition
+    else {
+        panic!("expected cut with surface");
+    };
+    assert!(matches!(
+        targets,
+        BodySelection::Generated { bodies, native }
+            if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef {
+                feature: FeatureId("target".into()),
+                local_id: "0,3,2".into(),
+            }] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
+    ));
+    assert!(matches!(
+        tools,
+        FaceSelection::Generated { faces, native }
+            if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
+                feature: FeatureId("tool".into()),
+                local_id: "7".into(),
+            }] && native == "sldprt:feature-input:surface-component-ids:0,7"
+    ));
+    assert!(reverse.is_none());
+    assert_eq!(
+        features[2].dependencies,
+        vec![FeatureId("target".into()), FeatureId("tool".into())]
+    );
+}
+
+#[test]
+fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
+    let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        id: FeatureId(id.into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: Some(native_ref.into()),
+    };
+    let mut features = vec![
+        feature(
+            "first",
+            "first-native",
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved,
+            },
+        ),
+        feature(
+            "second",
+            "second-native",
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved,
+            },
+        ),
+        feature(
+            "plane",
+            "plane-native",
+            FeatureDefinition::DatumPlaneUnresolved,
+        ),
+    ];
+    let component = |source: u32, local_id: u32| {
+        let mut type_signature = [0; 12];
+        type_signature[4..8].copy_from_slice(&source.to_le_bytes());
+        FeatureInputComponentPathEntry {
+            instance: Some(0x8675),
+            type_signature,
+            local_id: Some(local_id),
+        }
+    };
+    let selection =
+        |ordinal: u32, producer: &str, source: u32, local_id: u32| FeatureInputSurfaceSelection {
+            id: format!("selection-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            offset: u64::from(ordinal),
+            selector: if ordinal == 0 { 6 } else { 4 },
+            object_name_ref: "plane-name".into(),
+            feature_ref: "plane-native".into(),
+            producer_feature_refs: vec![producer.into()],
+            terminal_feature_ref: Some(producer.into()),
+            components: vec![component(source, local_id)],
+        };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: vec![
+            selection(0, "first-native", 230, 16),
+            selection(1, "second-native", 218, 12),
+        ],
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    project_compact_surface_selections(&mut features, &[], &[lane]);
+
+    assert!(matches!(
+        features[2].definition,
+        FeatureDefinition::DatumPlaneUnresolved
+    ));
+    assert_eq!(
+        features[2].dependencies,
+        vec![FeatureId("first".into()), FeatureId("second".into())]
+    );
 }
 
 #[test]
@@ -431,6 +653,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         parent: parent.into(),
         ordinal: 0,
         offset: 0,
+        selector: 0,
         object_name_ref: "name".into(),
         feature_ref: "thread-native".into(),
         producer_feature_refs: vec!["producer-native".into()],
@@ -591,6 +814,7 @@ fn split_face_collects_distinct_generated_target_faces() {
             parent: "lane".into(),
             ordinal,
             offset: u64::from(ordinal),
+            selector: 0,
             object_name_ref: "split-name".into(),
             feature_ref: "split-native".into(),
             producer_feature_refs: vec![producer.into()],
@@ -655,4 +879,287 @@ fn split_face_collects_distinct_generated_target_faces() {
             FeatureId("producer-b".into())
         ]
     );
+}
+
+#[test]
+fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
+    let signature = |serial: u32| {
+        let mut value = [0u8; 12];
+        value[..4].copy_from_slice(&[0x38, 0x80, 0x3b, 0]);
+        value[4..8].copy_from_slice(&serial.to_le_bytes());
+        value[8..].copy_from_slice(&(serial + 100).to_le_bytes());
+        value
+    };
+    let first_vertex = signature(40);
+    let second_vertex = signature(50);
+    let mut payload = vec![0; 400];
+    let class_name = "moVertDim_c";
+    let class_offset = 60;
+    payload[56..60].copy_from_slice(&[0x20, 0x81, 0x08, 0]);
+    payload[class_offset..class_offset + 4].copy_from_slice(super::super::CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..class_offset + 6 + class_name.len()]
+        .copy_from_slice(class_name.as_bytes());
+    payload[class_offset + 6 + class_name.len()..class_offset + 8 + class_name.len()]
+        .copy_from_slice(&0x87d3_u16.to_le_bytes());
+    let write_control = |payload: &mut [u8], marker: usize, vertex: [u8; 12]| {
+        payload[marker - 12..marker - 8].copy_from_slice(&3u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16]
+            .copy_from_slice(&super::super::selections::COMPACT_EDGE_VECTOR_MARKER);
+        let mut cursor = marker + 18;
+        for (instance, type_signature, local_id) in [
+            (0x8521_u16, signature(20), 7_u32),
+            (0x8521_u16, signature(20), 6_u32),
+            (0x8083_u16, vertex, 1_u32),
+        ] {
+            payload[cursor..cursor + 2].copy_from_slice(&instance.to_le_bytes());
+            payload[cursor + 4..cursor + 16].copy_from_slice(&type_signature);
+            payload[cursor + 16..cursor + 20].copy_from_slice(&local_id.to_le_bytes());
+            cursor += 20;
+        }
+    };
+    write_control(&mut payload, 130, first_vertex);
+    write_control(&mut payload, 240, second_vertex);
+
+    let feature = Feature {
+        id: "variable".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("10".into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: "Variable fillet".into(),
+        kind: "VarFillet".into(),
+        input_class: Some("VarFillet_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::from([("D0".into(), "R2mm".into()), ("D01".into(), "R3mm".into())]),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let mut next = feature.clone();
+    next.id = "next".into();
+    next.source_id = Some("11".into());
+    next.ordinal = 1;
+    next.name = "Next".into();
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature, next],
+    };
+    let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        id: id.into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset,
+        object_id: Some(object_id),
+        value: value.into(),
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "vertex-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Dimension,
+        }],
+        names: vec![
+            name("feature-name", 20, 10, "Variable fillet"),
+            name("d0-name", 100, 100, "D0"),
+            name("d01-name", 210, 101, "D01"),
+            name("next-name", 350, 11, "Next"),
+        ],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let endpoint = |type_signature| {
+        vec![FeatureInputComponentPathEntry {
+            instance: Some(0x8083),
+            type_signature,
+            local_id: Some(1),
+        }]
+    };
+    let selection = FeatureInputEdgeSelection {
+        id: "edge".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 80,
+        object_name_ref: "feature-name".into(),
+        feature_ref: "variable".into(),
+        local_edge_ids: vec![7, 6, 1, 0],
+        components: Vec::new(),
+        references: vec![endpoint(first_vertex), endpoint(second_vertex)],
+        producer_feature_refs: Vec::new(),
+        terminal_feature_ref: None,
+    };
+
+    let groups = variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection])
+        .expect("vertex join");
+    assert!(matches!(
+        groups.as_slice(),
+        [(RadiusSpec::Variable { points }, selections)]
+            if matches!(points.as_slice(), [
+                VariableRadius { parameter: 0.0, radius: Length(2.0) },
+                VariableRadius { parameter: 1.0, radius: Length(3.0) },
+            ]) && selections.len() == 1
+    ));
+}
+
+#[test]
+fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges() {
+    let signature = |serial: u32| {
+        let mut value = [0u8; 12];
+        value[..4].copy_from_slice(&[0x38, 0x80, 0x3b, 0]);
+        value[4..8].copy_from_slice(&serial.to_le_bytes());
+        value[8..].copy_from_slice(&(serial + 100).to_le_bytes());
+        value
+    };
+    let mut payload = vec![0; 400];
+    let class_name = "moEdgeDim_c";
+    let class_offset = 60;
+    payload[56..60].copy_from_slice(&[0x20, 0x81, 0x08, 0]);
+    payload[class_offset..class_offset + 4].copy_from_slice(super::super::CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..class_offset + 6 + class_name.len()]
+        .copy_from_slice(class_name.as_bytes());
+    payload[class_offset + 6 + class_name.len()..class_offset + 8 + class_name.len()]
+        .copy_from_slice(&0x87d3_u16.to_le_bytes());
+    let write_control = |payload: &mut [u8], marker: usize, edge_ids: &[u32]| {
+        payload[marker - 12..marker - 8].copy_from_slice(&(edge_ids.len() as u32).to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16]
+            .copy_from_slice(&super::super::selections::COMPACT_EDGE_VECTOR_MARKER);
+        let mut cursor = marker + 18;
+        for local_id in edge_ids {
+            payload[cursor..cursor + 2].copy_from_slice(&0x81a5_u16.to_le_bytes());
+            payload[cursor + 4..cursor + 16].copy_from_slice(&signature(20));
+            payload[cursor + 16..cursor + 20].copy_from_slice(&local_id.to_le_bytes());
+            cursor += 20;
+        }
+    };
+    write_control(&mut payload, 130, &[28, 29, 33]);
+    write_control(&mut payload, 240, &[28, 29, 4]);
+
+    let feature = Feature {
+        id: "variable".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("10".into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: "Variable fillet".into(),
+        kind: "VarFillet".into(),
+        input_class: Some("VarFillet_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::from([("D0".into(), "R2mm".into()), ("D1".into(), "R3mm".into())]),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let mut next = feature.clone();
+    next.id = "next".into();
+    next.source_id = Some("11".into());
+    next.ordinal = 1;
+    next.name = "Next".into();
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature, next],
+    };
+    let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        id: id.into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset,
+        object_id: Some(object_id),
+        value: value.into(),
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "edge-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Dimension,
+        }],
+        names: vec![
+            name("feature-name", 20, 10, "Variable fillet"),
+            name("d0-name", 100, u32::MAX, "D0"),
+            name("d1-name", 210, u32::MAX, "D1"),
+            name("next-name", 350, 11, "Next"),
+        ],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let edge_reference = |local_id| {
+        vec![FeatureInputComponentPathEntry {
+            instance: Some(0x81a5),
+            type_signature: signature(20),
+            local_id: Some(local_id),
+        }]
+    };
+    let selection = FeatureInputEdgeSelection {
+        id: "edge".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 80,
+        object_name_ref: "feature-name".into(),
+        feature_ref: "variable".into(),
+        local_edge_ids: vec![28, 29, 33, 4],
+        components: Vec::new(),
+        references: vec![
+            edge_reference(28),
+            edge_reference(29),
+            edge_reference(33),
+            edge_reference(4),
+        ],
+        producer_feature_refs: Vec::new(),
+        terminal_feature_ref: None,
+    };
+
+    let groups = variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection])
+        .expect("legacy edge-control join");
+    assert!(matches!(
+        groups.as_slice(),
+        [(RadiusSpec::Variable { points }, selections)]
+            if matches!(points.as_slice(), [
+                VariableRadius { parameter: 0.0, radius: Length(2.0) },
+                VariableRadius { parameter: 1.0, radius: Length(3.0) },
+            ]) && selections.len() == 1
+    ));
 }

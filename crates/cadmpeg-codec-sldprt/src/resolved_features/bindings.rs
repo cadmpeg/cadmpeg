@@ -51,7 +51,7 @@ pub(crate) fn bind_pattern_inputs(
     let mut curve_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut curve_path_assignments =
         Vec::<(usize, cadmpeg_ir::features::FeatureId, PathRef)>::new();
-    let mut linear_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
+    let mut pattern_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
     let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
     let mut mirror_seed_assignments = Vec::<(usize, Vec<cadmpeg_ir::features::FeatureId>)>::new();
@@ -68,6 +68,11 @@ pub(crate) fn bind_pattern_inputs(
     };
 
     for lane in lanes {
+        let generated_identities = if lane.generated_surface_identities.is_empty() {
+            generated_surface_identities(lane)
+        } else {
+            lane.generated_surface_identities.clone()
+        };
         let mut starts = history_features
             .iter()
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
@@ -164,6 +169,78 @@ pub(crate) fn bind_pattern_inputs(
                 }
                 continue;
             }
+            if feature.input_class.as_deref() == Some("moCirPattern_c") {
+                let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
+                    continue;
+                };
+                if !matches!(
+                    &model_features[model_index].definition,
+                    FeatureDefinition::Pattern { seeds, .. } if seeds.is_empty()
+                ) {
+                    continue;
+                }
+                let Some(pattern_source) = feature
+                    .source_id
+                    .as_deref()
+                    .and_then(|source| source.parse::<u32>().ok())
+                else {
+                    continue;
+                };
+                let Some(start) = usize::try_from(starts[start_index].0)
+                    .ok()
+                    .filter(|start| *start < pattern_object_end())
+                else {
+                    continue;
+                };
+                let end = pattern_object_end();
+                let mut seed_candidates = generated_identities
+                    .iter()
+                    .filter(|identity| {
+                        usize::try_from(identity.offset)
+                            .ok()
+                            .is_some_and(|offset| (start..end).contains(&offset))
+                    })
+                    .filter(|identity| {
+                        identity.components.first().is_some_and(|component| {
+                            u32::from_le_bytes(
+                                component.type_signature[4..8]
+                                    .try_into()
+                                    .expect("four-byte pattern source"),
+                            ) == pattern_source
+                        })
+                    })
+                    .filter(|identity| {
+                        identity.components.last().is_some_and(|component| {
+                            u32::from_le_bytes(
+                                component.type_signature[4..8]
+                                    .try_into()
+                                    .expect("four-byte seed source"),
+                            ) == identity.feature_source_id
+                                && component.local_id == Some(identity.local_identity)
+                        })
+                    })
+                    .filter_map(|identity| {
+                        let mut matches = history_features.iter().filter(|candidate| {
+                            candidate
+                                .source_id
+                                .as_deref()
+                                .and_then(|source| source.parse::<u32>().ok())
+                                == Some(identity.feature_source_id)
+                        });
+                        let seed = matches.next()?;
+                        matches.next().is_none().then(|| seed.id.clone())
+                    })
+                    .filter_map(|native| model_by_native.get(native.as_str()).copied())
+                    .filter(|seed_index| *seed_index != model_index)
+                    .map(|seed_index| model_features[seed_index].id.clone())
+                    .collect::<Vec<_>>();
+                seed_candidates.sort();
+                seed_candidates.dedup();
+                if let [seed] = seed_candidates.as_slice() {
+                    pattern_seed_assignments.push((model_index, seed.clone()));
+                }
+                continue;
+            }
             if feature.input_class.as_deref() == Some("moLPattern_c") {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
@@ -211,7 +288,7 @@ pub(crate) fn bind_pattern_inputs(
                         if let Some(seed_index) = derived_cosmetic_thread_seed(feature)
                             .and_then(|native| model_by_native.get(native.as_str()).copied())
                         {
-                            linear_seed_assignments
+                            pattern_seed_assignments
                                 .push((model_index, model_features[seed_index].id.clone()));
                         }
                     } else if let Some((_, seed)) = start_index
@@ -219,7 +296,7 @@ pub(crate) fn bind_pattern_inputs(
                         .and_then(|index| starts.get(index))
                     {
                         if let Some(&seed_index) = model_by_native.get(seed.id.as_str()) {
-                            linear_seed_assignments
+                            pattern_seed_assignments
                                 .push((model_index, model_features[seed_index].id.clone()));
                         }
                     }
@@ -350,15 +427,15 @@ pub(crate) fn bind_pattern_inputs(
             ));
         }
     }
-    linear_seed_assignments.extend(curve_seed_assignments);
-    let mut linear_seeds_by_pattern = HashMap::<usize, Vec<cadmpeg_ir::features::FeatureId>>::new();
-    for (index, seed) in linear_seed_assignments {
-        let candidates = linear_seeds_by_pattern.entry(index).or_default();
+    pattern_seed_assignments.extend(curve_seed_assignments);
+    let mut seeds_by_pattern = HashMap::<usize, Vec<cadmpeg_ir::features::FeatureId>>::new();
+    for (index, seed) in pattern_seed_assignments {
+        let candidates = seeds_by_pattern.entry(index).or_default();
         if !candidates.contains(&seed) {
             candidates.push(seed);
         }
     }
-    for (index, candidates) in linear_seeds_by_pattern {
+    for (index, candidates) in seeds_by_pattern {
         let [seed] = candidates.as_slice() else {
             continue;
         };

@@ -11,13 +11,19 @@ use super::parameters::value_only_scalar_offset;
 use super::relation_geometry::owned_relation_parameters;
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
-use super::selections::cosmetic_thread_cylinder_marker_reference;
+use super::selections::{
+    cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
+    variable_fillet_dimension_index_for_feature,
+};
 use super::terminations::compact_surface_selection_value;
 use crate::records::{
     FeatureInputBodySelection, FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
-use cadmpeg_ir::features::{FeatureDefinition, Length, PatternSeed};
+use cadmpeg_ir::features::{
+    BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FilletGroup, Length,
+    PatternSeed, RadiusSpec, VariableRadius,
+};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -418,6 +424,7 @@ pub(crate) fn project_compact_body_selections(
 
 pub(crate) fn project_compact_edge_selections(
     features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
     let feature_ids_by_native = features
@@ -444,9 +451,60 @@ pub(crate) fn project_compact_edge_selections(
         else {
             continue;
         };
+        let projected_edges = |selections: &[&FeatureInputEdgeSelection]| {
+            let native = compact_edge_selection_set_value(selections);
+            let generated = selections.iter().try_fold(
+                Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new(),
+                |mut edges, selection| {
+                    let native_feature = selection.terminal_feature_ref.as_ref()?;
+                    let feature = feature_ids_by_native.get(native_feature)?.clone();
+                    let local_id = compact_edge_path_value(selection);
+                    let edge = cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id };
+                    if !edges.contains(&edge) {
+                        edges.push(edge);
+                    }
+                    Some(edges)
+                },
+            );
+            match generated.filter(|edges| !edges.is_empty()) {
+                Some(edges) => EdgeSelection::Generated { edges, native },
+                None => EdgeSelection::Native(native),
+            }
+        };
+        let unresolved_variable_fillet = matches!(
+            &feature.definition,
+            FeatureDefinition::Fillet { groups }
+                if matches!(groups.as_slice(), [FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius: RadiusSpec::Unresolved { .. },
+                    ..
+                }])
+        );
+        if unresolved_variable_fillet {
+            if let Some(radius_groups) =
+                variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
+            {
+                let FeatureDefinition::Fillet { groups } = &mut feature.definition else {
+                    unreachable!("checked fillet definition")
+                };
+                let [group] = groups.as_slice() else {
+                    unreachable!("checked one fillet group")
+                };
+                let tangency_weight = group.tangency_weight;
+                *groups = radius_groups
+                    .into_iter()
+                    .map(|(radius, selections)| FilletGroup {
+                        edges: projected_edges(&selections),
+                        radius,
+                        tangency_weight,
+                    })
+                    .collect();
+            }
+        }
         let groups = match &mut feature.definition {
             FeatureDefinition::Fillet { groups } => groups
                 .iter_mut()
+                .filter(|group| matches!(group.edges, EdgeSelection::Unresolved))
                 .map(|group| &mut group.edges)
                 .collect::<Vec<_>>(),
             FeatureDefinition::Chamfer { groups, .. } => groups
@@ -456,37 +514,242 @@ pub(crate) fn project_compact_edge_selections(
             _ => continue,
         };
         for edges in groups {
-            if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
-                let native = compact_edge_selection_set_value(edge_selections);
-                let generated = edge_selections.iter().try_fold(
-                    Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new(),
-                    |mut edges, selection| {
-                        let native_feature = selection.terminal_feature_ref.as_ref()?;
-                        let feature = feature_ids_by_native.get(native_feature)?.clone();
-                        let local_id = compact_edge_path_value(selection);
-                        let edge = cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id };
-                        if !edges.contains(&edge) {
-                            edges.push(edge);
-                        }
-                        Some(edges)
-                    },
-                );
-                *edges = match generated.filter(|edges| !edges.is_empty()) {
-                    Some(edges) => cadmpeg_ir::features::EdgeSelection::Generated { edges, native },
-                    None => cadmpeg_ir::features::EdgeSelection::Native(native),
-                };
-                for dependency in edge_selections
-                    .iter()
-                    .flat_map(|selection| &selection.producer_feature_refs)
-                    .filter_map(|native| feature_ids_by_native.get(native))
-                {
-                    if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                        feature.dependencies.push(dependency.clone());
-                    }
-                }
+            *edges = projected_edges(edge_selections);
+        }
+        for dependency in edge_selections
+            .iter()
+            .flat_map(|selection| &selection.producer_feature_refs)
+            .filter_map(|native| feature_ids_by_native.get(native))
+        {
+            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                feature.dependencies.push(dependency.clone());
             }
         }
     }
+}
+
+fn variable_fillet_radius_groups<'a>(
+    feature_ref: &str,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    selections: &[&'a FeatureInputEdgeSelection],
+) -> Option<Vec<(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>)>> {
+    let history = histories.iter().find(|history| {
+        history
+            .features
+            .iter()
+            .any(|feature| feature.id == feature_ref)
+    })?;
+    let feature = history.features.iter().find(|feature| {
+        feature.id == feature_ref && feature.kind.eq_ignore_ascii_case("VarFillet")
+    })?;
+    let parameter_names = feature
+        .parameters
+        .keys()
+        .filter(|name| variable_fillet_dimension_index_for_feature(feature, name).is_some())
+        .collect::<HashSet<_>>();
+    if parameter_names.len() != feature.parameters.len() || parameter_names.len() < 2 {
+        return None;
+    }
+
+    let mut vertex_radii = HashMap::<[u8; 12], f64>::new();
+    let mut control_names = HashSet::<String>::new();
+    let mut non_vertex_control_names = HashSet::<String>::new();
+    let mut non_vertex_control_references = Vec::new();
+    for lane in lanes {
+        let mut objects = history
+            .features
+            .iter()
+            .filter_map(|candidate| Some((feature_object_name(candidate, lane)?.offset, candidate)))
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        let Some(index) = objects
+            .iter()
+            .position(|(_, candidate)| candidate.id == feature_ref)
+        else {
+            continue;
+        };
+        let object_end = objects
+            .get(index + 1)
+            .and_then(|(offset, _)| usize::try_from(*offset).ok())
+            .unwrap_or(lane.native_payload.len());
+        let Some(controls) = variable_fillet_control_references(feature, lane, object_end) else {
+            continue;
+        };
+        for (name, references) in controls {
+            let vertices = references
+                .iter()
+                .flat_map(|reference| reference.iter())
+                .filter(|component| component.instance == Some(0x8083))
+                .collect::<Vec<_>>();
+            match vertices.as_slice() {
+                [vertex] => {
+                    if !control_names.insert(name.clone()) {
+                        return None;
+                    }
+                    let radius = feature.parameters.get(&name).and_then(|value| {
+                        crate::history::parse_positive_dimension_length_mm(value)
+                    })?;
+                    match vertex_radii.entry(vertex.type_signature) {
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            entry.insert(radius);
+                        }
+                        std::collections::hash_map::Entry::Occupied(entry)
+                            if !same_dimension_length(*entry.get(), radius) =>
+                        {
+                            return None;
+                        }
+                        std::collections::hash_map::Entry::Occupied(_) => {}
+                    }
+                }
+                [] => {
+                    if !non_vertex_control_names.insert(name) {
+                        return None;
+                    }
+                    non_vertex_control_references.extend(references);
+                }
+                _ => return None,
+            }
+        }
+    }
+    if vertex_radii.is_empty() {
+        if parameter_names.len() != 2
+            || !control_names.is_empty()
+            || non_vertex_control_names.len() != parameter_names.len()
+            || !parameter_names
+                .iter()
+                .all(|name| non_vertex_control_names.contains(*name))
+            || non_vertex_control_references.is_empty()
+        {
+            return None;
+        }
+        let mut ordered_parameters = parameter_names
+            .iter()
+            .map(|name| {
+                variable_fillet_dimension_index_for_feature(feature, name).zip(
+                    feature.parameters.get(*name).and_then(|value| {
+                        crate::history::parse_positive_dimension_length_mm(value)
+                    }),
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        ordered_parameters.sort_unstable_by_key(|(index, _)| *index);
+        if ordered_parameters
+            .iter()
+            .enumerate()
+            .any(|(expected, (actual, _))| expected != *actual)
+            || selections.iter().any(|selection| {
+                selection
+                    .references
+                    .iter()
+                    .flat_map(|reference| reference.iter())
+                    .any(|component| component.instance == Some(0x8083))
+            })
+        {
+            return None;
+        }
+        let selected_references = selections
+            .iter()
+            .flat_map(|selection| selection.references.iter())
+            .collect::<Vec<_>>();
+        if non_vertex_control_references
+            .iter()
+            .any(|reference| !selected_references.contains(&reference))
+        {
+            return None;
+        }
+        let mut selections = selections.to_vec();
+        selections.sort_unstable_by_key(|selection| selection.ordinal);
+        let points = ordered_parameters
+            .into_iter()
+            .enumerate()
+            .map(|(parameter, (_, radius))| VariableRadius {
+                parameter: parameter as f64,
+                radius: Length(radius),
+            })
+            .collect();
+        return Some(vec![(RadiusSpec::Variable { points }, selections)]);
+    }
+    if control_names.len() != parameter_names.len()
+        || !parameter_names
+            .iter()
+            .all(|name| control_names.contains(*name))
+    {
+        return None;
+    }
+
+    let endpoint_signatures = |selection: &FeatureInputEdgeSelection| {
+        selection
+            .references
+            .iter()
+            .flat_map(|reference| reference.iter())
+            .filter(|component| component.instance == Some(0x8083))
+            .map(|component| component.type_signature)
+            .collect::<Vec<_>>()
+    };
+    let roster_vertices = selections
+        .iter()
+        .flat_map(|selection| endpoint_signatures(selection))
+        .collect::<HashSet<_>>();
+    if vertex_radii
+        .keys()
+        .any(|signature| !roster_vertices.contains(signature))
+    {
+        return None;
+    }
+
+    let mut groups = Vec::<((u64, u64), Vec<&FeatureInputEdgeSelection>)>::new();
+    let mut unassigned = Vec::new();
+    for &selection in selections {
+        let endpoints = endpoint_signatures(selection);
+        match endpoints.as_slice() {
+            [first, second] => {
+                let pair = (
+                    vertex_radii.get(first)?.to_bits(),
+                    vertex_radii.get(second)?.to_bits(),
+                );
+                if let Some((_, grouped)) =
+                    groups.iter_mut().find(|(candidate, _)| *candidate == pair)
+                {
+                    grouped.push(selection);
+                } else {
+                    groups.push((pair, vec![selection]));
+                }
+            }
+            [] => unassigned.push(selection),
+            _ => return None,
+        }
+    }
+    if groups.len() == 1 {
+        groups[0].1.append(&mut unassigned);
+        groups[0]
+            .1
+            .sort_unstable_by_key(|selection| selection.ordinal);
+    } else if !unassigned.is_empty() {
+        return None;
+    }
+    (!groups.is_empty()).then(|| {
+        groups
+            .into_iter()
+            .map(|((first, second), selections)| {
+                (
+                    RadiusSpec::Variable {
+                        points: vec![
+                            VariableRadius {
+                                parameter: 0.0,
+                                radius: Length(f64::from_bits(first)),
+                            },
+                            VariableRadius {
+                                parameter: 1.0,
+                                radius: Length(f64::from_bits(second)),
+                            },
+                        ],
+                    },
+                    selections,
+                )
+            })
+            .collect()
+    })
 }
 
 pub(crate) fn project_compact_surface_selections(
@@ -619,6 +882,74 @@ pub(crate) fn project_compact_surface_selections(
             } else {
                 cadmpeg_ir::features::FaceSelection::Native(native)
             };
+            continue;
+        }
+        if let FeatureDefinition::CutWithSurface { targets, tools, .. } = &mut feature.definition {
+            let Some((target, tool)) = cut_with_surface_selection_pair(feature_selections) else {
+                continue;
+            };
+            let target_native = compact_surface_selection_value(&target.components);
+            let target_producer = target
+                .terminal_feature_ref
+                .as_ref()
+                .and_then(|producer| feature_ids_by_native.get(producer));
+            if let Some(producer) = target_producer {
+                let local_id = target
+                    .components
+                    .iter()
+                    .filter_map(|component| component.local_id)
+                    .map(|local_id| local_id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                *targets = BodySelection::Generated {
+                    bodies: vec![cadmpeg_ir::features::GeneratedBodyRef {
+                        feature: (*producer).clone(),
+                        local_id,
+                    }],
+                    native: target_native,
+                };
+                if !feature.dependencies.contains(producer) {
+                    feature.dependencies.push((*producer).clone());
+                }
+            }
+            let tool_native = compact_surface_selection_value(&tool.components);
+            let tool_generated = tool
+                .terminal_feature_ref
+                .as_ref()
+                .and_then(|producer| feature_ids_by_native.get(producer))
+                .zip(tool.components.last())
+                .and_then(|(producer, component)| {
+                    component.local_id.map(|local_id| (producer, local_id))
+                });
+            if let Some((producer, local_id)) = tool_generated {
+                *tools = FaceSelection::Generated {
+                    faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                        feature: (*producer).clone(),
+                        local_id: local_id.to_string(),
+                    }],
+                    native: tool_native,
+                };
+                if !feature.dependencies.contains(producer) {
+                    feature.dependencies.push((*producer).clone());
+                }
+            }
+            continue;
+        }
+        if matches!(feature.definition, FeatureDefinition::DatumPlaneUnresolved)
+            && feature_selections.len() == 2
+        {
+            for selection in feature_selections {
+                for producer in selection
+                    .producer_feature_refs
+                    .iter()
+                    .filter_map(|producer| feature_ids_by_native.get(producer))
+                    .filter(|producer| *producer != &feature.id)
+                {
+                    if !feature.dependencies.contains(producer) {
+                        feature.dependencies.push(producer.clone());
+                    }
+                }
+            }
             continue;
         }
         let Some(selection) = surface_selection_consensus(feature_selections) else {
@@ -1076,6 +1407,45 @@ fn same_surface_selection_semantics(
             .iter()
             .zip(&right.components)
             .all(|(left, right)| left.type_signature[4..8] == right.type_signature[4..8])
+}
+
+/// Return the ordered target/tool pair retained by each `SurfaceCut` lane.
+///
+/// The role-02 vectors are ordered in the native object: the target-body
+/// reference list precedes the `moCompSurfaceBody_c` cutting-surface vector.
+/// Their low selector byte is a lane-local subtype and cannot identify the
+/// semantic role.  Configuration lanes must agree on both ordered paths.
+fn cut_with_surface_selection_pair<'a>(
+    selections: &[&'a FeatureInputSurfaceSelection],
+) -> Option<(
+    &'a FeatureInputSurfaceSelection,
+    &'a FeatureInputSurfaceSelection,
+)> {
+    let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
+    for selection in selections {
+        by_lane
+            .entry(selection.parent.as_str())
+            .or_default()
+            .push(*selection);
+    }
+    let mut consensus = None;
+    for mut lane_selections in by_lane.into_values() {
+        if lane_selections.len() != 2 {
+            return None;
+        }
+        lane_selections.sort_unstable_by_key(|selection| selection.offset);
+        let pair = (lane_selections[0], lane_selections[1]);
+        if let Some((target, tool)) = consensus {
+            if !same_surface_selection_semantics(target, pair.0)
+                || !same_surface_selection_semantics(tool, pair.1)
+            {
+                return None;
+            }
+        } else {
+            consensus = Some(pair);
+        }
+    }
+    consensus
 }
 
 /// Resolve an attached thread face when its persistent cylinder reference

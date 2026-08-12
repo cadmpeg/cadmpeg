@@ -2307,7 +2307,7 @@ pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread::diameter: core::opt
 pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread::extent: core::option::Option<cadmpeg_ir::features::CosmeticThreadExtent>
 pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread::face: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface
-pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::reverse: bool
+pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::reverse: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::tools: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::DatumAxis
@@ -14826,7 +14826,7 @@ pub cadmpeg_ir::FeatureDefinition::CosmeticThread::diameter: core::option::Optio
 pub cadmpeg_ir::FeatureDefinition::CosmeticThread::extent: core::option::Option<cadmpeg_ir::features::CosmeticThreadExtent>
 pub cadmpeg_ir::FeatureDefinition::CosmeticThread::face: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface
-pub cadmpeg_ir::FeatureDefinition::CutWithSurface::reverse: bool
+pub cadmpeg_ir::FeatureDefinition::CutWithSurface::reverse: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface::tools: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::DatumAxis

@@ -20,37 +20,47 @@ use std::collections::{HashMap, HashSet};
 
 pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
     let class_offset = usize::try_from(class_offset).ok()?;
-    let direction_offset = if payload.get(class_offset + 136..class_offset + 144)
+    let scalar = |offset: usize| {
+        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let direction_at = |offset: usize| {
+        let direction = Vector3::new(scalar(offset)?, scalar(offset + 8)?, scalar(offset + 16)?);
+        let norm =
+            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
+                .sqrt();
+        ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
+            direction.x / norm,
+            direction.y / norm,
+            direction.z / norm,
+        ))
+    };
+    let mut directions = Vec::new();
+    if payload.get(class_offset + 136..class_offset + 144)
         == Some(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff])
         && payload.get(class_offset + 148..class_offset + 152) == Some(&[0xf8, 0x2a, 0, 0])
     {
-        class_offset + 200
-    } else if payload.get(class_offset + 144..class_offset + 156)
+        if let Some(direction) = direction_at(class_offset + 200) {
+            directions.push(direction);
+        }
+    }
+    if payload.get(class_offset + 144..class_offset + 156)
         == Some(&[
             0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
         ])
         && payload.get(class_offset + 160..class_offset + 164) == Some(&[0xf8, 0x2a, 0, 0])
     {
-        class_offset + 220
-    } else {
+        if let Some(direction) = direction_at(class_offset + 220) {
+            directions.push(direction);
+        }
+    }
+    // Both declared layouts are evaluated before selecting the direction so
+    // a future overlapping layout cannot win merely by branch order.
+    directions.dedup();
+    let [direction] = directions.as_slice() else {
         return None;
     };
-    let scalar = |offset: usize| {
-        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
-        value.is_finite().then_some(value)
-    };
-    let direction = Vector3::new(
-        scalar(direction_offset)?,
-        scalar(direction_offset + 8)?,
-        scalar(direction_offset + 16)?,
-    );
-    let norm =
-        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
-    ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
-        direction.x / norm,
-        direction.y / norm,
-        direction.z / norm,
-    ))
+    Some(*direction)
 }
 
 pub(super) fn declared_line_reference_directions(
@@ -312,14 +322,18 @@ pub(super) fn compact_line_reference_directions(
                 && record.get(112..136) == Some(&[0; 24]);
             if record.get(16..32) == Some(&[0; 16]) && unshifted_termination {
                 directions.extend(direction_at(64));
-                return directions;
             }
             let terminated =
                 record.get(80..84) == Some(&[0; 4]) && (tagged_token(84) || record.len() == 84);
             if record.get(16..24) == Some(&[0; 8]) && terminated {
                 directions.extend(direction_at(56));
             }
-            return directions;
+            directions.dedup();
+            return if directions.len() == 1 {
+                directions
+            } else {
+                Vec::new()
+            };
         }
         let shifted_nine_scalar_trailer = record.get(96..104) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
             && record.get(104..116) == Some(&[0; 12])
@@ -329,7 +343,6 @@ pub(super) fn compact_line_reference_directions(
         if record.get(16..24) == Some(&[0; 8]) && shifted_nine_scalar_trailer {
             if let Some(direction) = direction_at(72) {
                 directions.push(direction);
-                return directions;
             }
         }
         let shifted_seven_scalar_trailer = (record.get(80..116) == Some(&[0; 36])
@@ -349,7 +362,6 @@ pub(super) fn compact_line_reference_directions(
         if record.get(16..24) == Some(&[0; 8]) && shifted_seven_scalar_trailer {
             if let Some(direction) = direction_at(56) {
                 directions.push(direction);
-                return directions;
             }
         }
         let tagged_trailer = record.get(88..104) == Some(&[0; 16])
@@ -367,10 +379,9 @@ pub(super) fn compact_line_reference_directions(
                     && tagged_token(124)
                     && record.get(126..142) == Some(&[0; 16])
                     && record.get(142..144) == Some(&[0xff; 2])));
-        if record.get(16..32) == Some(&[0; 16]) && tagged_trailer {
+        if directions.is_empty() && record.get(16..32) == Some(&[0; 16]) && tagged_trailer {
             if let Some(direction) = direction_at(64) {
                 directions.push(direction);
-                return directions;
             }
         }
         let seven_scalar_trailer = record.get(88..96).is_some_and(|bytes| bytes != [0; 8])
@@ -384,23 +395,23 @@ pub(super) fn compact_line_reference_directions(
                 && tagged_token(122)
                 && record.get(124..140) == Some(&[0; 16])
                 && record.get(140..142) == Some(&[0xff; 2]));
-        if record.get(16..32) == Some(&[0; 16]) && seven_scalar_trailer {
+        if directions.is_empty() && record.get(16..32) == Some(&[0; 16]) && seven_scalar_trailer {
             if let Some(direction) = direction_at(64) {
                 directions.push(direction);
-                return directions;
             }
         }
-        if record.get(16..32) == Some(&[0; 16])
+        if directions.is_empty()
+            && record.get(16..32) == Some(&[0; 16])
             && record.get(88..104) == Some(&[0; 16])
             && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
             && record.get(112..136) == Some(&[0; 24])
         {
             if let Some(direction) = direction_at(64) {
                 directions.push(direction);
-                return directions;
             }
         }
-        if record.get(16..32) == Some(&[0; 16])
+        if directions.is_empty()
+            && record.get(16..32) == Some(&[0; 16])
             && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
             && (record.get(112..128) == Some(&[0; 16])
                 || record.get(112..126).is_some_and(|tail| {
@@ -410,10 +421,12 @@ pub(super) fn compact_line_reference_directions(
         {
             if let Some(direction) = direction_at(80) {
                 directions.push(direction);
-                return directions;
             }
         }
-        if record.get(16..24) == Some(&[0; 8]) {
+        // The final branch is the legacy unshifted fallback.  It is only a
+        // candidate when no addressed layout matched; otherwise its
+        // overlapping scalar window would manufacture a second width.
+        if directions.is_empty() && record.get(16..24) == Some(&[0; 8]) {
             if record.get(80..88) == Some(&[0; 8]) {
                 let candidates = [direction_at(64), direction_at(72)]
                     .into_iter()
@@ -432,7 +445,14 @@ pub(super) fn compact_line_reference_directions(
                 directions.extend(direction_at(56));
             }
         }
-        directions
+        // A record is usable only when every matching layout agrees.  Never
+        // let the order of the recognizers choose between distinct vectors.
+        directions.dedup();
+        if directions.len() == 1 {
+            directions
+        } else {
+            Vec::new()
+        }
     });
     let mut directions = Vec::new();
     for candidate in &mut candidates {

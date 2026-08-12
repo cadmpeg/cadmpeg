@@ -191,6 +191,104 @@ fn duplicated_compact_curve_address_identifies_a_radial_circle_witness() {
 }
 
 #[test]
+fn native_radial_role_propagates_omitted_circle_construction_state() {
+    let payload = |construction: bool| {
+        let mut payload = vec![0; 104 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].copy_from_slice(if construction {
+            &[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]
+        } else {
+            &[0xff; 8]
+        });
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&(if construction { 7u32 } else { 2 }).to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&(if construction { 2u16 } else { 1 }).to_le_bytes());
+        payload[29..31].copy_from_slice(&(u16::from(!construction)).to_le_bytes());
+        payload[31..39].copy_from_slice(&[
+            0x00,
+            0x00,
+            0x80,
+            0xbf,
+            0x00,
+            0x00,
+            if construction { 0x0c } else { 0x04 },
+            0x00,
+        ]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&1u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&1u16.to_le_bytes());
+        payload[60..64].copy_from_slice(&u32::from(!construction).to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+        payload[76..78].copy_from_slice(&(if construction { 8u16 } else { 4 }).to_le_bytes());
+        for at in (78..94).step_by(4) {
+            payload[at..at + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload
+    };
+    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: offset as u32,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: None,
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let center = marker("center", 10, SketchInputKind::Point, Some([0.0, 0.0]));
+    let radial = marker("radial", 20, SketchInputKind::Point, Some([0.005, 0.0]));
+    let record = marker("radial-record", 0, SketchInputKind::LineOrCircle, None);
+    for construction in [true, false] {
+        let native = payload(construction);
+        assert_eq!(compact_radial_circle_index(&native, 0), Some(1));
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: native,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![record.clone(), center.clone(), radial.clone()],
+        };
+        let markers_by_id = lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        let operand = FeatureInputOperand {
+            offset: 0,
+            reference_ref: "reference".into(),
+            kind: FeatureInputOperandKind::Native(0x83fe),
+            entity_index: 0,
+            entity_ref: Some(center.id.clone()),
+        };
+        let carrier = dimensioned_relation_carrier(
+            std::slice::from_ref(&lane),
+            &markers_by_id,
+            "feature",
+            &operand,
+            5.0,
+        )
+        .expect("dimensioned carrier");
+        assert_eq!(carrier.construction, Some(construction));
+    }
+}
+
+#[test]
 fn radial_dimensions_normalize_radius_and_diameter_displays() {
     let parameter = |display, value| DesignParameter {
         id: ParameterId("radial".into()),

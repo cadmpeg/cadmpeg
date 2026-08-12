@@ -271,9 +271,9 @@ fn decode_with_occurrence_limits(
 
 /// Fail the decode when the projected IR has any error-severity finding.
 ///
-/// Keeps full [`cadmpeg_ir::validate_neutral`]: Phase 5 shadowing showed
-/// `DRAFT_CORE_CHECKS` error outcomes identical to full validation on every
-/// IGES golden fixture (`docs/phase5-admissibility-shadow.md`).
+/// Keeps full [`cadmpeg_ir::validate_neutral`]: `DRAFT_CORE_CHECKS` error
+/// outcomes match full validation on every IGES golden fixture, so the route
+/// stays on the full validator.
 pub(crate) fn reject_invalid_semantic_ir(
     ir: &CadIr,
     losses: &[LossNote],

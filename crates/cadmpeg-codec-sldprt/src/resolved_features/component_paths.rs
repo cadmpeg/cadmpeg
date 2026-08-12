@@ -602,7 +602,7 @@ fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
 }
 
 pub(super) fn compact_edge_path_value(selection: &FeatureInputEdgeSelection) -> String {
-    if selection.components.is_empty() {
+    if selection.components.is_empty() || !selection.references.is_empty() {
         return selection
             .local_edge_ids
             .iter()

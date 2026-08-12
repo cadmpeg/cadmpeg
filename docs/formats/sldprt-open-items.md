@@ -72,7 +72,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do we derive the UV curve for a non-isoparametric trim on a B-spline face?
 
-**Known.** `sldprt.md` §7.1 "00 TT  [ff]?" through `sldprt.md` §7.3 "The chart is a solved cache" define exact pcurves for the supported analytic, boundary-isocurve, affine-axis interior-isocurve, polar-NURBS, ruled-surface, and complete intersection-cache cases. The affine-axis constructions apply symmetrically to the `u` and `v` axes. A complete width-4 intersection witness supplies co-parameterized solved UV caches for both support surfaces. The Parasolid stream does not store a general two-dimensional NURBS trim control array.
+**Known.** `sldprt.md` §7.1 "00 TT [ff]?" through `sldprt.md` §7.3 "The chart is a solved cache" define exact pcurves for the supported analytic, boundary-isocurve, affine-axis interior-isocurve, polar-NURBS, ruled-surface, and complete intersection-cache cases. The affine-axis constructions apply symmetrically to the `u` and `v` axes. A complete width-4 intersection witness supplies co-parameterized solved UV caches for both support surfaces. The Parasolid stream does not store a general two-dimensional NURBS trim control array.
 
 **Need.** We must know the convention to construct the trim in the surface parameter space.
 
@@ -368,7 +368,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the discriminator to prevent an omitted construction circle from becoming profile geometry.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/dimensions.rs:634-673` recognizes construction only in the exact radial marker layout, and `:1008-1303` propagates that flag. However, `:276-504` and `:515-629` fabricate omitted circles from dimension and point markers with `construction: false`; `:880-1006` also stamps false in the circle-only carrier path. The closure commit `f88f841fe` proves one-to-one roster matching with synthetic tests, but it does not prove the native construction marker for every omitted-geometry path. If the profile omits a construction circle while retaining its point/dimension relation, the relation path emits it as profile geometry. Confidence: high.
+**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs` now joins each omitted dimension center to the native radial-circle roster and propagates the radial record's role-2 construction state through dimension-carrier, point-witness, and circle-only-carrier projections. A non-empty lane with no unique radial role or with conflicting role matches remains native instead of becoming profile geometry. The remaining unknown is the native discriminator for a dimension carrier that has no recoverable radial record at all. Confidence: medium.
 
 ### DI-13. Marker-only profile placement
 
@@ -454,7 +454,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does a body selected by a compact `moCombineBodies_c` target or tool path map to a body in the final B-rep?
 
-**Known.** The compact paths identify generated feature-local bodies. `sldprt.md` §4.2 "00 01 00 01" through `sldprt.md` §6 "The disc22-disc12-face layout uses one `0x22/flo2` region with a slot-1 sentinel and the chain" define final B-rep body identities and ownership. `ATOM_ID_2001` carries face identities and does not bind a feature-local body identity.
+**Known.** The compact paths identify generated feature-local bodies. A complete target or tool path projects to one generated body reference whose feature is the terminal path producer, whose local identity is the ordered path-local sequence, and whose dependencies include every uniquely identified traversed history feature. `sldprt.md` §4.2 "00 01 00 01" through `sldprt.md` §6 "The disc22-disc12-face layout uses one `0x22/flo2` region with a slot-1 sentinel and the chain" define final B-rep body identities and ownership. `ATOM_ID_2001` carries face identities and does not bind a feature-local body identity.
 
 **Need.** We must know the mapping to bind the Boolean target and tool bodies.
 
@@ -474,13 +474,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the mapping to bind the selected operation edge.
 
-### DI-26. Compact edge-identity vectors
+### DI-26. Compact edge-vector B-rep reconciliation
 
-**Question.** What grammar and identity namespace does a compact edge vector use?
+**Question.** How does a compact edge vector map its feature-local edge path to a final B-rep edge?
 
-**Known.** Entry-form `moCompEdge_c` paths have a defined component-path grammar. Compact vectors remain separate native records.
+**Known.** `sldprt.md` §2 defines the duplicated-marker framing, count, lane-local selector, typed and reference-list entry forms, separators, terminal slots, and lane-local type signatures. The decoder retains the ordered compact vector and its producer-feature paths. The terminal component identifies a feature-local generated edge, but it does not by itself identify the final B-rep edge.
 
-**Need.** We must know the grammar and namespace to bind their selected edges.
+**Need.** We must define the topology join from the retained compact edge identity to the final B-rep edge before projecting the selected edge.
 
 ### DI-27. Component-surface-body reconciliation
 
@@ -514,13 +514,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the other codes to construct the sweep result operation.
 
-### DI-31. Native Draft outward flag
+### DI-31. Native neutral-plane Draft outward flag
 
-**Question.** Which native field identifies the outward flag when Keywords omits it?
+**Question.** Which native field identifies the outward flag of a neutral-plane Draft when Keywords omits it?
 
-**Known.** `sldprt.md` §2 "A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token" defines neutral-plane Draft operands. `sldprt.md` §2 "A compact parting-line Draft uses direct duplicated component-vector records" defines parting-line Draft operands and mode. Keywords independently retains an explicit `Outward` Boolean.
+**Known.** `sldprt.md` §2 "A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token" defines neutral-plane Draft operands. `sldprt.md` §2 "A compact parting-line Draft uses direct duplicated component-vector records" defines the parting-line form, which has no outward operand. Keywords independently retains an explicit `Outward` Boolean for a neutral-plane Draft.
 
-**Need.** We must recover the native outward flag when Keywords omits it.
+**Need.** We must recover the native outward flag of a neutral-plane Draft when Keywords omits it.
 
 ### DI-32. Compact line-reference width
 
@@ -530,7 +530,39 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the record width and direction field to decode each line reference without choosing a candidate by plausibility.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs:258-444` accepts finite direction triples whose norm is within tolerance, and several layout branches return the first matching direction. The final ambiguous branch rejects distinct vectors, but the test in `axes_tests.rs:26-46` covers only that branch. If one record satisfies two layout predicates with different valid unit triples, the first branch wins without proving the other candidate invalid. Commit `e0037cf23` added negative coverage but did not establish the native width or trailer semantics from an independent record. Confidence: high.
+**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs` collects every structurally valid direction candidate for an addressed width and rejects the record when distinct candidates disagree. The documented specific-layout precedence remains only when the candidates agree; the native authoritative width and trailer semantics remain unknown. Confidence: medium.
+
+### DI-34. SWIFT implicit nominal construction
+
+**Question.** Which nominal-geometry rule applies to each remaining feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent or zero?
+
+**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel when `Dimension` is absent or zero. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width and length from named slot-geometry fields and radius from the named radius field of fillet, cylindrical, or spherical geometry. It defines counterbore diameter from the direct nominal cylinder and countersink diameter and angle from the direct nominal cone. An empty applied-feature graph and empty CAD identifiers supply no direct geometry; an empty `GdtPattern` can additionally use the exact `Hole PatternN` to `LPatternN` history join when one seed has exactly one later consuming Hole with a positive diameter. Directional distance annotations recover plane, axis, compound-hole, and closed-slot feature-of-size locations from their named geometry.
+
+**Need.** The empty-pattern history join is settled by `sldprt.md` §2.1. We must still define nonidentity `NominalTransform` semantics and the other `ComputeAnswerBy`, `Direction`, and `NormalTo` modes before those forms can supply a nominal.
+
+### DI-35. Endpoint-less variable-fillet edge groups
+
+**Question.** How does a selected-edge reference-list vector without `8083` endpoint references select its radius profile when the same `VarFillet_c` object contains more than one ordered endpoint-radius pair?
+
+**Known.** `sldprt.md` §2 defines the reference-list grammar, including count-framed adjacent references, the variable-fillet input-edge boundary, the vertex-control join, and grouping of endpoint-bearing selected edges by their ordered endpoint radii. A legacy three-edge control vector with `D0`/`D1` supplies one feature-wide ordered pair, which applies to endpoint-less selected-edge vectors. A single ordered pair is likewise the feature-wide profile when all endpoint-bearing selected edges agree.
+
+**Need.** We must identify the native association between an endpoint-less selected-edge vector and one of several distinct radius profiles.
+
+### DI-36. SurfaceCut discarded side
+
+**Question.** Which native field in an `moSurfCut_c` interval selects the retained side of a surface cut?
+
+**Known.** `sldprt.md` §2 defines the target-body reference-list vector and the cutting-surface component vector. The target projects as a body selection and the cutting surface projects as a face selection. The neutral `CutWithSurface.reverse` value remains optional; an absent native Boolean remains unresolved.
+
+**Need.** Distinguish the wrapper selector byte and the tail words between the surface-body identity pair and the termination sentinels with labeled parts cut to opposite sides before assigning the reverse value.
+
+### DI-37. Circular-pattern axis carrier
+
+**Question.** Which native record supplies the axis origin and direction for an `moCirPattern_c` interval after its seed identity resolves?
+
+**Known.** `sldprt.md` defines the `moCirPatternSurfIdRep_c` generated-surface identity path and its seed join. The interval retains the circular count and angle parameters. The identity path does not contain a complete axis frame, so the neutral circular-pattern axis remains unresolved.
+
+**Need.** We must recover the axis frame to construct `PatternKind::Circular` and replay the pattern.
 
 ### DI-33. SWIFT feature-to-topology identity
 

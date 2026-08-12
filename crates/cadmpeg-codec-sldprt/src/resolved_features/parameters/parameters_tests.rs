@@ -85,7 +85,16 @@ fn fillet_display_placeholder_establishes_length_unit() {
     let mut variable = numeric;
     variable.kind = "VarFillet".into();
     variable.input_class = Some("VarFillet_c".into());
-    variable.parameters.insert("D1".into(), "R0".into());
+    variable.parameters.insert("D0".into(), "R0".into());
+    variable.parameters.insert("D01".into(), "R0".into());
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&variable, "D0"),
+        Some(super::ScalarUnit::Length)
+    );
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&variable, "D01"),
+        Some(super::ScalarUnit::Length)
+    );
     assert_eq!(scalar_unit_from_feature_parameter(&variable, "D1"), None);
 }
 
