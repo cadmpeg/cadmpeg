@@ -7,6 +7,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
+use crate::framing::read_xmt_width as read_xmt;
 use crate::topology::{self, CompositeCurve};
 
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
@@ -1069,14 +1070,4 @@ fn point_m(stream: &[u8], at: usize) -> Option<Point3> {
 fn distance(first: Point3, second: Point3) -> f64 {
     ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
         .sqrt()
-}
-
-fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
-    let first = i16::from_be_bytes([*stream.get(at)?, *stream.get(at + 1)?]);
-    if first >= 0 {
-        return Some((first as u32, 2));
-    }
-    let remainder = first.unsigned_abs();
-    let quotient = u16::from_be_bytes([*stream.get(at + 2)?, *stream.get(at + 3)?]);
-    Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
 }

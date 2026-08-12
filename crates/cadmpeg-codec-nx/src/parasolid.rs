@@ -15,6 +15,7 @@ use cadmpeg_core::CodecError;
 use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::container::Container;
+use crate::framing::read_and_advance as read_xmt;
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -611,17 +612,6 @@ fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Ve
         return Some(references);
     }
     (0..count).map(|_| read_xmt(bytes, at)).collect()
-}
-
-fn read_xmt(bytes: &[u8], at: &mut usize) -> Option<u32> {
-    let first = i16::from_be_bytes([*bytes.get(*at)?, *bytes.get(*at + 1)?]);
-    *at += 2;
-    if first >= 0 {
-        return Some(first as u32);
-    }
-    let quotient = u16::from_be_bytes([*bytes.get(*at)?, *bytes.get(*at + 1)?]);
-    *at += 2;
-    Some(u32::from(quotient) * 32_767 + u32::from(first.unsigned_abs()))
 }
 
 #[derive(Debug, Clone, Copy)]
