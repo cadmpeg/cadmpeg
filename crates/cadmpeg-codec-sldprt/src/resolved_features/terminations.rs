@@ -9,7 +9,8 @@ use super::selections::{
     compact_general_curve_ref_at, compact_heterogeneous_component_path,
     compact_mixed_component_path, compact_profile_general_curve_ref_at,
     component_profile_source_at, component_reference_curve_path_at,
-    declared_general_curve_profile_prefix, COMPACT_EDGE_VECTOR_MARKER,
+    declared_general_curve_profile_prefix, is_component_vector_selector,
+    is_component_vector_selector_for_role, COMPACT_EDGE_VECTOR_MARKER,
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
@@ -812,7 +813,9 @@ pub(crate) fn project_surface_sweep_profiles(
 pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
     if marker < 12
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || payload.get(marker - 8..marker - 4) != Some(&[0, 3, 0, 0])
+        || !payload
+            .get(marker - 8..marker - 4)
+            .is_some_and(|selector| is_component_vector_selector_for_role(selector, 3))
         || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
     {
         return None;
@@ -838,7 +841,9 @@ pub(super) fn compact_body_component_path_at(
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     if marker < 12
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || payload.get(marker - 8..marker - 4) != Some(&[0, 3, 0, 0])
+        || !payload
+            .get(marker - 8..marker - 4)
+            .is_some_and(|selector| is_component_vector_selector_for_role(selector, 3))
         || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
     {
         return None;
@@ -1591,7 +1596,7 @@ pub(super) fn legacy_single_face_reference_path_at(
             || prefix[2..6] != 1u32.to_le_bytes()
             || prefix[6..10] != [0; 4]
             || !(1..=64).contains(&count)
-            || !matches!(&prefix[14..18], [0, 2 | 3, 0, 0])
+            || !is_component_vector_selector(&prefix[14..18])
             || prefix[22..30] != prefix[30..38]
             || prefix[38..40] != [0, 0]
         {
@@ -1642,7 +1647,9 @@ pub(super) fn compact_single_face_reference_record_at(
         .ok()
         .filter(|count| (1..=64).contains(count))?;
     if payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || !matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
+        || !payload
+            .get(marker - 8..marker - 4)
+            .is_some_and(is_component_vector_selector)
         || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
     {
         return None;
@@ -1785,7 +1792,9 @@ fn compact_termination_reference_frame_at(payload: &[u8], marker: usize) -> Opti
     })?;
     if !(1..=64).contains(&count)
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || !matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
+        || !payload
+            .get(marker - 8..marker - 4)
+            .is_some_and(is_component_vector_selector)
         || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
     {
         return None;

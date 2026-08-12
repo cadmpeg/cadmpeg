@@ -11,6 +11,22 @@ use crate::records::{
     FeatureInputScalar, FeatureInputScalarRole,
 };
 use std::collections::{BTreeMap, HashSet};
+
+#[test]
+fn component_vector_selector_accepts_lane_subtypes() {
+    for selector in [
+        [0, 2, 0, 0],
+        [4, 2, 0, 0],
+        [6, 2, 0, 0],
+        [4, 3, 0, 0],
+        [0x7f, 2, 0, 0],
+    ] {
+        assert!(is_component_vector_selector(&selector));
+    }
+    assert!(!is_component_vector_selector(&[4, 4, 0, 0]));
+    assert!(!is_component_vector_selector(&[4, 2, 1, 0]));
+}
+
 #[test]
 fn compact_body_states_require_a_duplicated_local_identity() {
     let token = 0x89a4u16;

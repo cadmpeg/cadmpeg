@@ -3,7 +3,8 @@
 use super::axes::canonical_unit_direction;
 use super::scalars::feature_object_name;
 use super::selections::{
-    compact_mixed_component_path, component_vector_path_at, COMPACT_EDGE_VECTOR_MARKER,
+    compact_mixed_component_path, component_vector_path_at, is_component_vector_selector,
+    COMPACT_EDGE_VECTOR_MARKER,
 };
 use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
@@ -156,11 +157,11 @@ fn compact_draft_selection_at(
     .ok()
     .filter(|count| (1..=MAX_PATH_CELLS).contains(count))?;
     let role_bytes = payload.get(header + 4..header + 8)?;
-    let role = match role_bytes {
-        [0, 2, 0, 0] => 2,
-        [0, 3, 0, 0] => 3,
-        _ => return None,
-    };
+    let role = is_component_vector_selector(role_bytes).then(|| match role_bytes[1] {
+        2 => 2,
+        3 => 3,
+        _ => unreachable!("component-vector selector helper validated role"),
+    })?;
     if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())? != COMPACT_EDGE_VECTOR_MARKER
         || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..marker + 18)? != [0, 0]
     {
@@ -251,7 +252,7 @@ fn draft_plane_reference_at(
             .map(u16::from_le_bytes)
             .is_some_and(|token| token & 0x8000 != 0 && token != u16::MAX)
         || header[78..82] != [0; 4]
-        || !matches!(&header[86..90], [0, 2 | 3, 0, 0])
+        || !is_component_vector_selector(&header[86..90])
     {
         return None;
     }

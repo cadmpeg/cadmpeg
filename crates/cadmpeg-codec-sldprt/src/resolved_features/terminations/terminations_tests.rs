@@ -65,6 +65,19 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     assert_eq!(path[0].type_signature, [1; 12]);
     assert_eq!(path[0].local_id, Some(7));
 
+    for selector in [[4, 2, 0, 0], [6, 2, 0, 0]] {
+        payload[92..96].copy_from_slice(&selector);
+        assert_eq!(
+            compact_extrusion_to_face_at(&payload, 0, payload.len()),
+            Some(100)
+        );
+        let path = compact_single_face_reference_path_at(&payload, 100)
+            .expect("lane subtype must not change the component path");
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0].local_id, Some(7));
+    }
+    payload[92..96].copy_from_slice(&[0, 2, 0, 0]);
+
     payload[35..39].copy_from_slice(&[0xe4, 0x82, 0x07, 0x81]);
     assert_eq!(
         compact_extrusion_to_face_at(&payload, 0, payload.len()),

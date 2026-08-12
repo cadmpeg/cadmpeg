@@ -4369,7 +4369,7 @@ name = "path_kind"
 offset = 84
 type = "bytes[4]"
 source = "spec"
-anchor = "+84 stores `00 02 00 00`"
+anchor = "+84 stores a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero"
 
 [[record.field]]
 name = "zero_before_marker"
@@ -4684,7 +4684,7 @@ name = "path_kind"
 offset = 84
 type = "bytes[4]"
 source = "spec"
-anchor = "+84 stores `00 02 00 00`"
+anchor = "+84 stores a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero"
 
 [[record.field]]
 name = "token"
@@ -5284,7 +5284,7 @@ name = "path_kind"
 offset = 86
 type = "bytes[4]"
 source = "spec"
-anchor = "+86 | bytes[4] | `00 02 00 00` or `00 03 00 00`"
+anchor = "+86 | bytes[4] | component-vector selector: byte 1 is `02` or `03`, byte 0 is a lane-specific subtype, and bytes 2–3 are zero"
 
 [[record.field]]
 name = "selector"
@@ -5333,7 +5333,7 @@ name = "selection_role"
 offset = 4
 type = "bytes[4]"
 source = "spec"
-anchor = "`00 02 00 00` for the parting-tool selection or `00 03 00 00` for a drafted-face selection"
+anchor = "a component-vector selector whose byte 1 is `02` for the parting-tool selection or `03` for a drafted-face selection, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero"
 
 [[record.field]]
 name = "selector"

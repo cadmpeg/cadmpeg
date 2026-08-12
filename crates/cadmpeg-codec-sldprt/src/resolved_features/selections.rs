@@ -1003,7 +1003,9 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
                     .ok()?,
             );
             ((1..=64).contains(&count)
-                && matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
+                && payload
+                    .get(marker - 8..marker - 4)
+                    .is_some_and(is_component_vector_selector)
                 && payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
                     == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
                 && payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..marker + 18)
@@ -1223,6 +1225,17 @@ fn edge_selection_vectors_in_interval(
 pub(super) const COMPACT_EDGE_VECTOR_MARKER: [u8; 16] = [
     0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54,
 ];
+
+/// Component-vector selectors carry a lane-specific low subtype byte. The
+/// high role byte identifies the path family; the low byte is not a fixed
+/// discriminator and therefore must not be required to be zero.
+pub(super) fn is_component_vector_selector(selector: &[u8]) -> bool {
+    matches!(selector, [_, 2 | 3, 0, 0])
+}
+
+pub(super) fn is_component_vector_selector_for_role(selector: &[u8], role: u8) -> bool {
+    matches!(role, 2 | 3) && selector.get(1) == Some(&role) && selector.get(2..4) == Some(&[0, 0])
+}
 
 pub(super) fn mirror_pattern_component_path_at(
     payload: &[u8],
