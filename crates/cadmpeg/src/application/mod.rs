@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed application workflows for the `cadmpeg` CLI.
 
+pub mod artifact_store;
 pub mod catalogs;
 pub mod document;
 pub mod encoders;
 
+pub use artifact_store::{ArtifactStore, SidecarPersistOutcome};
 pub use catalogs::{
     ForcedInput, InputCatalog, NativeValidatorCatalog, ResolveSourceError, ResolvedSource,
 };

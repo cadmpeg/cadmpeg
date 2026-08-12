@@ -2,7 +2,6 @@
 //! Command execution, artifact writing, and human-readable reports.
 
 use std::fmt;
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -11,15 +10,11 @@ use std::process::ExitCode;
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{
-    decode_sidecar_path, validate, validate_with_source_fidelity, CadIr, CodecEntry, DecodeSidecar,
-    SourceFidelity,
-};
-use sha2::{Digest, Sha256};
+use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
 use crate::application::{
-    build_encoder, EncoderRequest, ForcedInput, InputCatalog, NativeValidatorCatalog,
-    ResolveSourceError, ResolvedSource,
+    build_encoder, ArtifactStore, EncoderRequest, ForcedInput, InputCatalog,
+    NativeValidatorCatalog, ResolveSourceError, ResolvedSource, SidecarPersistOutcome,
 };
 use crate::loader::{self, read_prefix, LoadNotice, DETECTION_PREFIX_LEN};
 use crate::{DecodeArgs, Format};
@@ -753,7 +748,7 @@ fn export_ir(
     reject_lossy: bool,
 ) -> Result<ExportReport> {
     if let Some(path) = out {
-        check_output_path(input, path, force)?;
+        ArtifactStore::check_output_path(input, path, force)?;
     }
     let encoder = build_encoder(format, encoder_request)?;
     let plan = encoder.plan(cadmpeg_ir::codec::EncodeInput {
@@ -770,14 +765,23 @@ fn export_ir(
     let needs_sidecar_digest =
         format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
     let report = if let Some(path) = out {
-        let (report, cadir_sha256) = write_plan_atomic(path, plan, needs_sidecar_digest)?;
+        let (report, cadir_sha256) =
+            ArtifactStore::write_plan_atomic(path, plan, needs_sidecar_digest)?;
         if format == Format::Cadir {
-            persist_decode_sidecar(
+            match ArtifactStore::persist_decode_sidecar(
                 path,
                 cadir_sha256.as_deref(),
                 decode_report,
                 source_fidelity,
-            )?;
+            )? {
+                SidecarPersistOutcome::Wrote(sidecar) => {
+                    eprintln!("wrote decode sidecar {}", sidecar.display());
+                }
+                SidecarPersistOutcome::RemovedStale(sidecar) => {
+                    eprintln!("removed stale decode sidecar {}", sidecar.display());
+                }
+                SidecarPersistOutcome::Absent => {}
+            }
         }
         eprintln!(
             "wrote {} ({} entities)",
@@ -807,115 +811,6 @@ fn export_ir(
         }
     }
     Ok(report)
-}
-
-fn persist_decode_sidecar(
-    cadir_path: &Path,
-    cadir_sha256: Option<&str>,
-    report: Option<&DecodeReport>,
-    fidelity: Option<&SourceFidelity>,
-) -> Result<()> {
-    let path = decode_sidecar_path(cadir_path);
-    match (report, fidelity) {
-        (Some(report), Some(fidelity)) => {
-            let cadir_sha256 = cadir_sha256.ok_or_else(|| {
-                anyhow!("missing CADIR digest while writing decode-fidelity sidecar")
-            })?;
-            let sidecar =
-                DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
-            let mut bytes = sidecar.to_canonical_json()?.into_bytes();
-            bytes.push(b'\n');
-            write_atomic(&path, &bytes)?;
-            eprintln!("wrote decode sidecar {}", path.display());
-        }
-        _ if path.exists() => {
-            std::fs::remove_file(&path)
-                .with_context(|| format!("removing stale decode sidecar {}", path.display()))?;
-            eprintln!("removed stale decode sidecar {}", path.display());
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-struct TempFileWriter<'a> {
-    file: &'a mut tempfile::NamedTempFile,
-    hasher: Option<Sha256>,
-}
-
-impl TempFileWriter<'_> {
-    fn finish(self) -> Option<String> {
-        self.hasher.map(|hasher| {
-            let digest = hasher.finalize();
-            let mut encoded = String::with_capacity(digest.len() * 2);
-            for byte in digest {
-                write!(encoded, "{byte:02x}").expect("writing a digest to a String");
-            }
-            encoded
-        })
-    }
-}
-
-impl Write for TempFileWriter<'_> {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let written = self.file.write(bytes)?;
-        if let Some(hasher) = &mut self.hasher {
-            hasher.update(&bytes[..written]);
-        }
-        Ok(written)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.file.flush()
-    }
-}
-
-fn write_plan_atomic(
-    output: &Path,
-    plan: cadmpeg_ir::codec::ExportPlan<'_>,
-    with_digest: bool,
-) -> Result<(ExportReport, Option<String>)> {
-    let parent = output
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
-    let mut sink = TempFileWriter {
-        file: &mut temporary,
-        hasher: with_digest.then(Sha256::new),
-    };
-    let mut writer = BufWriter::new(&mut sink);
-    let report = plan
-        .write_to(&mut writer)
-        .with_context(|| format!("writing temporary output for {}", output.display()))?;
-    writer
-        .flush()
-        .with_context(|| format!("flushing temporary output for {}", output.display()))?;
-    drop(writer);
-    let digest = sink.finish();
-    temporary
-        .persist(output)
-        .map_err(|error| error.error)
-        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-    Ok((report, digest))
-}
-
-fn write_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = output
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
-    temporary
-        .write_all(bytes)
-        .with_context(|| format!("writing temporary output for {}", output.display()))?;
-    temporary
-        .persist(output)
-        .map_err(|error| error.error)
-        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-    Ok(())
 }
 
 fn write_command_report(
@@ -979,33 +874,7 @@ fn write_json_report(
 }
 
 fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
-    check_output_path(input, output, force)?;
-    write_atomic(output, bytes)
-}
-
-fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
-    let input = std::fs::canonicalize(input)
-        .with_context(|| format!("canonicalizing {}", input.display()))?;
-    let parent = output
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let output_absolute = if output.exists() {
-        std::fs::canonicalize(output)?
-    } else {
-        std::fs::canonicalize(parent)?.join(
-            output
-                .file_name()
-                .ok_or_else(|| anyhow!("output path has no filename"))?,
-        )
-    };
-    if input == output_absolute {
-        bail!("refusing to overwrite input {}", input.display());
-    }
-    if output.exists() && !force {
-        bail!("{} exists; pass --force to overwrite", output.display());
-    }
-    Ok(())
+    ArtifactStore::write_output(input, output, bytes, force)
 }
 
 fn print_id_delta(label: &str, ids: &[String]) {
