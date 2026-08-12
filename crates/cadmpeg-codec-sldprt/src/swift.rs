@@ -242,23 +242,31 @@ pub(crate) fn pattern_hole_nominal_context(
                     .iter()
                     .any(|dependency| dependency == seed)
             })
-            .filter_map(|candidate| {
-                let cadmpeg_ir::features::FeatureDefinition::Hole {
-                    diameter: Some(cadmpeg_ir::features::Length(diameter)),
-                    ..
-                } = &candidate.definition
-                else {
-                    return None;
-                };
+            .filter(|candidate| {
                 candidate
                     .native_ref
                     .as_deref()
                     .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-                    .then_some(*diameter)
-                    .filter(|diameter| diameter.is_finite() && *diameter > 0.0)
+            })
+            .filter_map(|candidate| {
+                let cadmpeg_ir::features::FeatureDefinition::Hole { diameter, .. } =
+                    &candidate.definition
+                else {
+                    return None;
+                };
+                Some(
+                    diameter
+                        .as_ref()
+                        .and_then(|cadmpeg_ir::features::Length(diameter)| {
+                            diameter
+                                .is_finite()
+                                .then_some(*diameter)
+                                .filter(|diameter| *diameter > 0.0)
+                        }),
+                )
             })
             .collect::<Vec<_>>();
-        let [diameter] = holes.as_slice() else {
+        let [Some(diameter)] = holes.as_slice() else {
             continue;
         };
         candidates.entry(semantic_name).or_default().push(*diameter);
@@ -2463,7 +2471,7 @@ mod tests {
         };
         assert_eq!(*nominal, Some(length(6.1468)));
 
-        let mut ambiguous = features;
+        let mut ambiguous = features.clone();
         ambiguous.push(neutral_feature(
             "hole2",
             "Hole6",
@@ -2472,6 +2480,21 @@ mod tests {
             simple_hole_definition(6.1468),
         ));
         assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
+
+        let mut unresolved = features;
+        let mut unresolved_hole = neutral_feature(
+            "hole2",
+            "Hole6",
+            4,
+            vec![FeatureId("sldprt:model:feature#seed".into())],
+            simple_hole_definition(6.1468),
+        );
+        let FeatureDefinition::Hole { diameter, .. } = &mut unresolved_hole.definition else {
+            panic!("expected hole definition");
+        };
+        *diameter = None;
+        unresolved.push(unresolved_hole);
+        assert!(pattern_hole_nominal_context(&unresolved).is_empty());
     }
 
     fn cad_feature(class: &str, identifier: &str) -> Entity {
