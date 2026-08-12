@@ -77,7 +77,7 @@ mod budget {
     static NX_CODEC: NxCodec = NxCodec;
     static SLDPRT_CODEC: SldprtCodec = SldprtCodec;
 
-    fn cases() -> [Case; 8] {
+    fn cases() -> [Case; 10] {
         [
             Case {
                 name: "catia/entities",
@@ -98,6 +98,12 @@ mod budget {
                 starvation: Starvation::Entities,
             },
             Case {
+                name: "freecad/entities",
+                codec: &FREECAD_CODEC,
+                bytes: FREECAD,
+                starvation: Starvation::Entities,
+            },
+            Case {
                 name: "freecad/collection_items",
                 codec: &FREECAD_CODEC,
                 bytes: FREECAD,
@@ -114,6 +120,12 @@ mod budget {
                 codec: &FREECAD_CODEC,
                 bytes: FREECAD,
                 starvation: Starvation::RetainedBytes,
+            },
+            Case {
+                name: "nx/entities",
+                codec: &NX_CODEC,
+                bytes: NX,
+                starvation: Starvation::Entities,
             },
             Case {
                 name: "nx/decompressed_bytes",

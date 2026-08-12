@@ -61,6 +61,26 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 }
 
 #[test]
+fn decode_refuses_when_max_entities_is_below_known_cardinality() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = prt_with_partition(&topology_partition_stream());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 1;
+    let error = NxCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect_err("max_entities below stream or IR cardinality must refuse");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};

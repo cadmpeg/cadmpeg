@@ -33613,7 +33613,12 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let scan = container::scan_bytes(root.window());
     // Charge section cardinality before IR construction so max_entities can
     // refuse the build rather than only the finalizer.
-    ctx.charge_entities(scan.framing.sections.len() as u64, "admit Creo sections")?;
+    let mut admitted_entities = 0_u64;
+    ctx.admit_entities(
+        scan.framing.sections.len() as u64,
+        &mut admitted_entities,
+        "admit Creo sections",
+    )?;
 
     let BuiltIr {
         mut ir,
@@ -33625,7 +33630,11 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     } else {
         build_ir(&scan)?
     };
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit Creo entities")?;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        &mut admitted_entities,
+        "admit Creo entities",
+    )?;
     let report = build_report(&scan, &ir, coverage, ctx.container_only());
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;

@@ -2158,6 +2158,25 @@ fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
 }
 
 #[test]
+fn decode_refuses_when_max_entities_is_below_container_cardinality() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 1;
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(synthetic_sldprt()), &options)
+        .expect_err("max_entities below container cardinality must refuse at admission");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn detect_high_on_marker_after_header() {
     let f = synthetic_sldprt();
     assert_eq!(SldprtCodec.detect(&f), Confidence::High);

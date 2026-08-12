@@ -98,24 +98,52 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
     let scan = scan(ctx, root)?;
 
+    let mut admitted_entities = 0_u64;
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report);
-        return decode_result(ctx, ir, report, annotations, unknowns);
+        return decode_result(
+            ctx,
+            ir,
+            report,
+            annotations,
+            unknowns,
+            &mut admitted_entities,
+        );
     }
 
     // Charge stream cardinality before geometry construction.
-    ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
+    ctx.admit_entities(
+        scan.streams.len() as u64,
+        &mut admitted_entities,
+        "admit NX streams",
+    )?;
 
-    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(ctx, root, &scan) {
-        return decode_result(ctx, ir, report, annotations, unknowns);
+    if let Some((ir, report, annotations, unknowns)) =
+        try_decode_geometry(ctx, root, &scan, &mut admitted_entities)?
+    {
+        return decode_result(
+            ctx,
+            ir,
+            report,
+            annotations,
+            unknowns,
+            &mut admitted_entities,
+        );
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
-    decode_result(ctx, ir, report, annotations, unknowns)
+    decode_result(
+        ctx,
+        ir,
+        report,
+        annotations,
+        unknowns,
+        &mut admitted_entities,
+    )
 }
 
 fn decode_result(
@@ -124,8 +152,13 @@ fn decode_result(
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
+    admitted_entities: &mut u64,
 ) -> Result<DecodeResult, CodecError> {
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit NX entities")?;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        admitted_entities,
+        "admit NX entities",
+    )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
     Ok(DecodeResult::new(ir, report, source_fidelity))
@@ -968,16 +1001,19 @@ fn positive_weights(weights: Option<&[f64]>) -> bool {
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
-fn try_decode_geometry(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-    scan: &Scan,
-) -> Option<(
+type GeometryDecode = (
     CadIr,
     DecodeReport,
     cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
-)> {
+);
+
+fn try_decode_geometry(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    scan: &Scan,
+    admitted_entities: &mut u64,
+) -> Result<Option<GeometryDecode>, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -1611,8 +1647,14 @@ fn try_decode_geometry(
     }
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
-        return None;
+        return Ok(None);
     }
+
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        admitted_entities,
+        "admit NX entities",
+    )?;
 
     let rmfastload_ids = scan
         .container
@@ -1633,8 +1675,11 @@ fn try_decode_geometry(
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
     classify_body_kinds(&mut ir);
-    crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
-        .ok()?;
+    if crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
+        .is_err()
+    {
+        return Ok(None);
+    }
     prune_unreferenced_unknown_carriers(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
     let referenced_pcurves: BTreeSet<_> = ir
@@ -1659,7 +1704,7 @@ fn try_decode_geometry(
         &model,
     );
     report_untransferred_streams(scan, &mut report);
-    Some((ir, report, annotations, unknowns))
+    Ok(Some((ir, report, annotations, unknowns)))
 }
 
 pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
