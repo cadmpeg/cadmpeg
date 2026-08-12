@@ -310,8 +310,36 @@ pub(super) fn compact_edge_selections(
         let feature_selections = selections
             .into_iter()
             .map(|(offset, local_edge_ids)| {
-                let references = compact_component_reference_list_at(&lane.native_payload, offset)
-                    .unwrap_or_default();
+                let reference_list =
+                    compact_component_reference_list_at(&lane.native_payload, offset).or_else(
+                        || {
+                            // Variable-fillet edge rosters use the counted
+                            // reference-list grammar but older lanes omit every
+                            // per-reference sentinel.  The feature family and
+                            // the complete declared count provide the framing in
+                            // that form; do not relax the generic edge parser,
+                            // where an unframed flat path is ambiguous.
+                            if !feature.kind.eq_ignore_ascii_case("VarFillet") {
+                                return None;
+                            }
+                            let count_start = offset.checked_sub(12)?;
+                            let count = usize::try_from(u32::from_le_bytes(
+                                lane.native_payload
+                                    .get(count_start..count_start + 4)?
+                                    .try_into()
+                                    .ok()?,
+                            ))
+                            .ok()?;
+                            compact_component_reference_list(&lane.native_payload, offset, false)
+                                .filter(|references| references.len() == count)
+                        },
+                    );
+                let references = reference_list.clone().unwrap_or_default();
+                // Keep the established component projection separate from the
+                // reference-list projection.  A vertex-bearing multi-hop
+                // reference is excluded as a whole from `components`; its
+                // lineage must not leak into the edge path merely because the
+                // roster fallback retained the reference itself.
                 let components = compact_edge_component_path_at(&lane.native_payload, offset)
                     .unwrap_or_default();
                 let terminal_feature_ref = compact_edge_owner_feature_at(

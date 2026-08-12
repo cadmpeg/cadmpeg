@@ -813,6 +813,108 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
 }
 
 #[test]
+fn varfillet_roster_accepts_unframed_reference_lists() {
+    let marker = 12;
+    let class_offset = 146;
+    let class_name = "moVertDim_c";
+    let mut payload = vec![0; 220];
+    payload[marker - 12..marker - 8].copy_from_slice(&4u32.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+    payload[marker - 4..marker].copy_from_slice(&37u32.to_le_bytes());
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    payload[marker + 16..marker + 18].copy_from_slice(&[0, 0]);
+    let signature = |serial: u32| {
+        let mut value = [0; 12];
+        value[..4].copy_from_slice(&[0xa7, 0x81, 0xa9, 0x01]);
+        value[4..8].copy_from_slice(&serial.to_le_bytes());
+        value[8..].copy_from_slice(&0x51c5_fde3u32.to_le_bytes());
+        value
+    };
+    let mut cursor = marker + 18;
+    for (instance, serial, local_id) in [
+        (0x81a5u16, 18u32, 28u32),
+        (0x81a5, 18, 29),
+        (0x81ac, 170, 33),
+        (0x8083, 252, 1),
+    ] {
+        payload[cursor..cursor + 2].copy_from_slice(&instance.to_le_bytes());
+        payload[cursor + 4..cursor + 16].copy_from_slice(&signature(serial));
+        payload[cursor + 16..cursor + 20].copy_from_slice(&local_id.to_le_bytes());
+        cursor += 20;
+    }
+    payload[class_offset - 4..class_offset].copy_from_slice(&[0x20, 0x81, 0x08, 0]);
+    payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..class_offset + 6 + class_name.len()]
+        .copy_from_slice(class_name.as_bytes());
+    payload[class_offset + 6 + class_name.len()..class_offset + 8 + class_name.len()]
+        .copy_from_slice(&0x87d3u16.to_le_bytes());
+
+    let feature = Feature {
+        id: "varfillet".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("37".into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: "VarFillet1".into(),
+        kind: "VarFillet".into(),
+        input_class: Some("VarFillet_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "vertex-dimension-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Dimension,
+        }],
+        names: vec![FeatureInputName {
+            id: "feature-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: Some(37),
+            value: "VarFillet1".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let selections = compact_edge_selections(&[history], &lane);
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].references.len(), 4);
+    assert_eq!(selections[0].references[3][0].instance, Some(0x8083));
+}
+
+#[test]
 fn compact_edge_selection_accepts_counted_u16_ids() {
     let marker = 12;
     let mut payload = vec![0; 80];
