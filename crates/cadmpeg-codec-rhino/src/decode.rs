@@ -400,6 +400,19 @@ impl ExpansionBudget {
         }
     }
 
+    fn from_session(ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Self {
+        let collections =
+            usize::try_from(ctx.policy().limits.max_collection_items).unwrap_or(usize::MAX);
+        let entities = usize::try_from(ctx.policy().limits.max_entities).unwrap_or(usize::MAX);
+        let mut budget = Self::new();
+        budget.limits = [
+            collections.min(MAX_INSTANCE_REFERENCES),
+            collections.min(MAX_INSTANCE_MEMBERS),
+            entities.min(MAX_INSTANCE_ENTITIES),
+        ];
+        budget
+    }
+
     fn charge(value: &mut usize, amount: usize, limit: usize, label: &str) -> Result<(), String> {
         *value = value
             .checked_add(amount)
@@ -470,7 +483,7 @@ impl<'a> DecodeContext<'a> {
             outcomes: BTreeMap::new(),
             retained_bytes: 0,
             retention_limits: [RETAINED_RECORD_CAP, RETAINED_DOCUMENT_CAP],
-            mesh_budget: crate::mesh::MeshBudget::new(),
+            mesh_budget: crate::mesh::MeshBudget::from_session(expand.ctx()),
             geometry_transferred: false,
             phase_warnings: Vec::new(),
             typed_losses: Vec::new(),
@@ -488,7 +501,7 @@ impl<'a> DecodeContext<'a> {
                 .filter(|(_, definition)| !scan.definitions.ambiguous_ids.contains(&definition.id))
                 .map(|(index, definition)| (definition.id, index))
                 .collect(),
-            expansion_budget: ExpansionBudget::new(),
+            expansion_budget: ExpansionBudget::from_session(expand.ctx()),
         };
         context.retain_object_records();
         context
@@ -629,6 +642,11 @@ impl<'a> DecodeContext<'a> {
                 link_updates.push((index, reference.links));
             }
             if let Err(error) = self.expansion_budget.entities(appended.len()) {
+                before.truncate(&mut self.ir);
+                annotation_checkpoint.rollback(&mut self.annotations);
+                return Err(error);
+            }
+            if let Err(error) = self.charge_session_entities(appended.len()) {
                 before.truncate(&mut self.ir);
                 annotation_checkpoint.rollback(&mut self.annotations);
                 return Err(error);
@@ -1841,8 +1859,17 @@ impl<'a> DecodeContext<'a> {
         stack: &mut Vec<crate::wire::Uuid>,
     ) -> Result<Vec<String>, String> {
         const MAX_INSTANCE_DEPTH: usize = 64;
+        let _nested = self
+            .expand
+            .ctx()
+            .enter_nested("rhino_instance_nesting", None)
+            .map_err(|error| error.to_string())?;
         self.expansion_budget.reference()?;
-        if stack.len() >= MAX_INSTANCE_DEPTH {
+        self.charge_session_collections(1, "rhino_instance_reference")?;
+        let depth_limit = usize::try_from(self.expand.ctx().policy().limits.max_recursion_depth)
+            .unwrap_or(usize::MAX)
+            .min(MAX_INSTANCE_DEPTH);
+        if stack.len() >= depth_limit {
             return Err("instance nesting exceeds 64 levels".to_string());
         }
         let object = self
@@ -1912,6 +1939,7 @@ impl<'a> DecodeContext<'a> {
         let mut links = Vec::new();
         for member_id in definition_members {
             self.expansion_budget.member()?;
+            self.charge_session_collections(1, "rhino_instance_member")?;
             let member_order = match self.resolve_object(member_id) {
                 ObjectReference::Resolved(order) => order,
                 ObjectReference::Missing => {
@@ -2455,9 +2483,33 @@ impl<'a> DecodeContext<'a> {
         if let Err(message) = self.expansion_budget.entities(amount) {
             self.scan_warning(source_order, &message);
             false
+        } else if let Err(message) = self.charge_session_entities(amount) {
+            self.scan_warning(source_order, &message);
+            false
         } else {
             true
         }
+    }
+
+    fn charge_session_entities(&self, amount: usize) -> Result<(), String> {
+        self.expand
+            .ctx()
+            .charge_entities(
+                u64::try_from(amount).unwrap_or(u64::MAX),
+                "rhino_instance_entities",
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    fn charge_session_collections(
+        &self,
+        amount: usize,
+        operation: &'static str,
+    ) -> Result<(), String> {
+        self.expand
+            .ctx()
+            .charge_collection_items(u64::try_from(amount).unwrap_or(u64::MAX), operation)
+            .map_err(|error| error.to_string())
     }
 
     fn commit_geometry(
@@ -4165,7 +4217,7 @@ pub(crate) fn embedded_brep_json(
         instance_path: Vec::new(),
     };
     let unknown = UnknownId("rhino:history:embedded-brep".to_string());
-    let mut mesh_budget = crate::mesh::MeshBudget::new();
+    let mut mesh_budget = crate::mesh::MeshBudget::from_session(expand.ctx());
     let staged = stage_brep(BrepTransferInput {
         expand,
         data,

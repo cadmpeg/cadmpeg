@@ -43,6 +43,10 @@ impl<'a> MeshExpand<'a> {
     pub(crate) fn root(self) -> View<'a> {
         self.root
     }
+
+    pub(crate) fn ctx(self) -> &'a DecodeContext<'a> {
+        self.ctx
+    }
 }
 
 /// Maps an expansion refusal to the mesh decoder error type.
@@ -87,6 +91,15 @@ impl MeshBudget {
         }
     }
 
+    /// Caps retained mesh-buffer bytes with the session retained-byte ceiling.
+    pub(crate) fn from_session(ctx: &DecodeContext<'_>) -> Self {
+        let policy = usize::try_from(ctx.policy().limits.max_retained_bytes).unwrap_or(usize::MAX);
+        Self {
+            used: 0,
+            limit: policy.min(MAX_DOCUMENT_BUFFER_OUTPUT),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn with_limit(limit: usize) -> Self {
         Self { used: 0, limit }
@@ -109,6 +122,29 @@ impl MeshBudget {
     fn commit(&mut self, bytes: usize) {
         self.used = self.used.saturating_add(bytes);
     }
+}
+
+fn buffer_output_limit(expand: MeshExpand<'_>) -> usize {
+    usize::try_from(expand.ctx.policy().limits.max_decompressed_bytes_per_expand)
+        .unwrap_or(usize::MAX)
+        .min(MAX_BUFFER_OUTPUT)
+}
+
+fn commit_mesh_buffer(
+    expand: MeshExpand<'_>,
+    document_budget: &mut MeshBudget,
+    declared: usize,
+    position: usize,
+) -> Result<(), GeometryError> {
+    document_budget.commit(declared);
+    expand
+        .ctx
+        .charge_retained(
+            u64::try_from(declared).unwrap_or(u64::MAX),
+            "rhino_mesh_buffer",
+            None,
+        )
+        .map_err(|refusal| expansion_refused(position, &refusal))
 }
 
 /// A decoded mesh and non-fatal channel warnings.
@@ -605,7 +641,8 @@ fn read_buffer<'a>(
     if declared == 0 {
         return Ok(None);
     }
-    if declared > MAX_BUFFER_OUTPUT {
+    let buffer_limit = buffer_output_limit(expand);
+    if declared > buffer_limit {
         return Err(error(
             reader.position() - 4,
             &format!("invalid {name} size"),
@@ -613,7 +650,7 @@ fn read_buffer<'a>(
     }
     *decompressed_bytes = decompressed_bytes
         .checked_add(declared)
-        .filter(|total| *total <= MAX_BUFFER_OUTPUT)
+        .filter(|total| *total <= buffer_limit)
         .ok_or_else(|| {
             error(
                 reader.position() - 4,
@@ -633,7 +670,7 @@ fn read_buffer<'a>(
         0 => {
             let mut input = reader.unread()?;
             let stored = input.take(declared)?.to_vec();
-            document_budget.commit(declared);
+            commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
             (Cow::Owned(stored), declared)
         }
         1 => {
@@ -665,7 +702,7 @@ fn read_buffer<'a>(
                 "expansion source must alias the compressed chunk body"
             );
             let (view, compressed) = inflate(expand, source, declared)?;
-            document_budget.commit(declared);
+            commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
             if compressed != chunk.body.len() {
                 return Err(error(
                     chunk.body.start + compressed,

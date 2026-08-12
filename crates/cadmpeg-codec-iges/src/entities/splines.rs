@@ -5,6 +5,7 @@ use super::geometry::{entity_loss, resolve_transform, source_object, DeclaredInt
 use crate::directory::DirectoryEntry;
 use crate::global::{Global, RealPrecision};
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
 };
@@ -180,6 +181,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> SplineProjection {
     let records = parameters
         .iter()
@@ -271,6 +273,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -552,6 +555,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {

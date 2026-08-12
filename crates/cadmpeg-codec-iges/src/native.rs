@@ -1118,6 +1118,7 @@ fn placement_affine(
     records: &BTreeMap<u32, &ParameterRecord>,
     length_factor: f64,
     precision: RealPrecision,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(u32, Affine)> {
     let definition = u32::try_from(record.integer(1)?).ok()?;
     let translation = Affine {
@@ -1166,6 +1167,7 @@ fn placement_affine(
         length_factor,
         precision,
         &mut std::collections::BTreeSet::new(),
+        ctx,
     )
     .ok()?;
     Some((definition, directory.compose(translation.compose(scale))))
@@ -1219,6 +1221,7 @@ impl OccurrenceExpansion<'_, '_> {
             self.records,
             self.length_factor,
             self.precision,
+            self.ctx,
         ) else {
             return Ok(false);
         };
@@ -1276,6 +1279,7 @@ impl OccurrenceExpansion<'_, '_> {
                         self.length_factor,
                         self.precision,
                         &mut std::collections::BTreeSet::new(),
+                        self.ctx,
                     )
                     .ok()
                 })

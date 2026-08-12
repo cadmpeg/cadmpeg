@@ -6,6 +6,7 @@ use super::geometry::{declared_unit_vector, entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{ParameterRecord, TokenValue};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, NurbsCurve, ProceduralCurve,
     ProceduralCurveDefinition,
@@ -138,6 +139,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    _ctx: Option<&DecodeContext<'_>>,
 ) -> OffsetProjection {
     let records = parameters
         .iter()

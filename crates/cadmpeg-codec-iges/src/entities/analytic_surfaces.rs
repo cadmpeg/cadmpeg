@@ -5,6 +5,7 @@ use super::geometry::{entity_loss, resolve_transform, source_object, Affine};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{derive_reference_direction, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{PointId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -138,6 +139,7 @@ fn surface_transform(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Affine, String> {
     resolve_transform(
         entry.transform,
@@ -146,6 +148,7 @@ fn surface_transform(
         global.length_factor_mm(),
         global.real_precision(),
         &mut BTreeSet::new(),
+        ctx,
     )
 }
 
@@ -160,6 +163,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> AnalyticSurfaceProjection {
     let records = parameters
         .iter()
@@ -182,7 +186,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let transform = match surface_transform(entry, &entries, &records, global) {
+        let transform = match surface_transform(entry, &entries, &records, global, ctx) {
             Ok(transform) => transform,
             Err(message) => {
                 losses.push(entity_loss(entry, message));

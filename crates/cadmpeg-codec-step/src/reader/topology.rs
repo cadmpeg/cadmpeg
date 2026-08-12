@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
@@ -64,11 +65,12 @@ pub(super) fn representation_bodies(
     cache: &mut BTreeMap<u64, Vec<BodyId>>,
     active: &mut BTreeSet<u64>,
     depth: usize,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Vec<BodyId> {
     if let Some(bodies) = cache.get(&representation) {
         return bodies.clone();
     }
-    if depth >= super::MAX_RECORD_GRAPH_DEPTH {
+    if depth >= super::record_graph_limit(ctx) {
         return Vec::new();
     }
     if let Some(bodies) = topology.body_by_root.get(&representation) {
@@ -106,6 +108,7 @@ pub(super) fn representation_bodies(
                 cache,
                 active,
                 depth + 1,
+                ctx,
             ));
         }
     }
@@ -123,6 +126,7 @@ pub(super) fn representation_bodies(
             cache,
             active,
             depth + 1,
+            ctx,
         ));
     }
     let bodies = body_ids.into_iter().collect::<Vec<_>>();
@@ -191,6 +195,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
     carrier_index: &CarrierIndex,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> StageOutcome<TopologyData> {
     let mut commit_session = CommitSession::new(ir);
     let mut result = StageOutcome {
@@ -583,6 +588,7 @@ pub(super) fn decode(
             &mut representation_cache,
             &mut BTreeSet::new(),
             0,
+            ctx,
         )
         .is_empty();
         if has_body {

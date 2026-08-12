@@ -5,6 +5,7 @@ use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -860,6 +861,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Projection {
     let records = parameters
         .iter()
@@ -1464,6 +1466,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_ok();
         let fields_valid = if entry.entity_type == 412 {
@@ -1560,6 +1563,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_ok();
         if position_valid
@@ -1629,6 +1633,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_ok();
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances);
@@ -1708,6 +1713,7 @@ pub(super) fn project(
                             global.length_factor_mm(),
                             global.real_precision(),
                             &mut BTreeSet::new(),
+                            ctx,
                         )
                         .is_ok()
                 });
@@ -1728,6 +1734,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_ok();
         if entry.status.use_flag != 2
@@ -1810,6 +1817,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_ok();
         let Some(definition) = definition else {
@@ -1980,6 +1988,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_ok();
         let (Some(definition), Some(connect_count)) = (definition, connect_count) else {

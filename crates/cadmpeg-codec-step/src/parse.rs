@@ -1077,7 +1077,12 @@ impl Parser<'_, '_, '_> {
 
     fn parameters(&mut self) -> Result<Vec<Value>, ParseError> {
         const MAX_VALUE_DEPTH: usize = 256;
-        if self.depth >= MAX_VALUE_DEPTH {
+        let budget = self.budget;
+        let _nested = budget
+            .map(|ctx| ctx.enter_nested("step_parse_parameter_nesting", None))
+            .transpose()
+            .map_err(ParseError::Resource)?;
+        if self.depth >= recursion_cap(budget, MAX_VALUE_DEPTH) {
             return self.err("parameter nesting exceeds 256 levels");
         }
         self.depth += 1;
@@ -2136,6 +2141,18 @@ impl From<&str> for ResolveError {
     }
 }
 
+fn collection_cap(budget: Option<&DecodeContext<'_>>, format_cap: usize) -> usize {
+    budget
+        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_collection_items).ok())
+        .map_or(format_cap, |policy| policy.min(format_cap))
+}
+
+fn recursion_cap(budget: Option<&DecodeContext<'_>>, format_cap: usize) -> usize {
+    budget
+        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+        .map_or(format_cap, |policy| policy.min(format_cap))
+}
+
 struct AnchorResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
     memo: BTreeMap<String, (Value, usize)>,
@@ -2154,7 +2171,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         Self {
             anchors,
             memo: BTreeMap::new(),
-            remaining_nodes: Self::MAX_EXPANDED_NODES,
+            remaining_nodes: collection_cap(budget, Self::MAX_EXPANDED_NODES),
             budget,
         }
     }
@@ -2204,7 +2221,12 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         budget: usize,
         depth: usize,
     ) -> Result<(Value, usize, usize), ResolveError> {
-        if depth >= Self::MAX_REFERENCE_DEPTH {
+        let _nested = self
+            .budget
+            .map(|ctx| ctx.enter_nested("step_anchor_reference", None))
+            .transpose()
+            .map_err(ResolveError::Resource)?;
+        if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
             return Err("expanded anchor graph exceeds its node or depth limit".into());
         }
         match value {
@@ -2333,13 +2355,18 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             bindings,
             anchors,
             stack: Vec::new(),
-            remaining_nodes: Self::MAX_MATERIALIZED_NODES,
+            remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES),
             budget,
         })
     }
 
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
-        if depth >= Self::MAX_REFERENCE_DEPTH {
+        let _nested = self
+            .budget
+            .map(|ctx| ctx.enter_nested("step_reference_expansion", None))
+            .transpose()
+            .map_err(ResolveError::Resource)?;
+        if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
             return Err("REFERENCE expansion exceeds its depth limit".into());
         }
         match value {

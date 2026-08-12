@@ -30,6 +30,13 @@ mod validation;
 
 pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 
+pub(super) fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
+    ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+        .map_or(MAX_RECORD_GRAPH_DEPTH, |policy| {
+            policy.min(MAX_RECORD_GRAPH_DEPTH)
+        })
+}
+
 struct StageOutcome<T> {
     value: T,
     claims: HashSet<u64>,
@@ -244,7 +251,7 @@ fn decode_exchange_mode(
             "step_implicit_face_plane",
         )?;
     }
-    let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index);
+    let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx);
     geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
     let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
     session.charge_stage("step_topology_association")?;
@@ -290,18 +297,26 @@ fn decode_exchange_mode(
         &owned_carriers,
     );
     session.charge_stage("step_product_decode")?;
-    let mut product = product::decode(exchange, &geometry.value, &topology.value, &mut session.ir);
+    let mut product = product::decode(
+        exchange,
+        &geometry.value,
+        &topology.value,
+        &mut session.ir,
+        session.ctx,
+        &mut session.admitted_ir_entities,
+    )?;
     session.charge_stage("step_tessellation_decode")?;
     let mut tessellation =
         tessellation::decode(exchange, &geometry.value, &topology.value, &mut session.ir);
     session.charge_stage("step_pmi_decode")?;
-    let mut pmi = pmi::decode(exchange, &geometry.value, &mut session.ir);
+    let mut pmi = pmi::decode(exchange, &geometry.value, &mut session.ir, session.ctx);
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
         exchange,
         &topology.value,
         &mut session.ir,
         &product.value.product_definition_ids_by_source,
+        session.ctx,
     );
     session.charge_stage("step_validation_decode")?;
     let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir);

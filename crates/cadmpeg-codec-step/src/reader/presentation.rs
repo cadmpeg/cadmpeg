@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
@@ -25,10 +26,12 @@ pub(super) fn decode(
     topology: &TopologyData,
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> StageOutcome<()> {
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
+    let graph_limit = super::record_graph_limit(ctx);
     let face_indices = ir
         .model
         .faces
@@ -193,8 +196,9 @@ pub(super) fn decode(
         .iter()
         .filter_map(|id| overridden_style(&exchange.records[id]))
         .collect::<BTreeSet<_>>();
-    styles
-        .sort_by_key(|id| style_depth(*id, exchange, &mut BTreeSet::new(), 0).unwrap_or(u32::MAX));
+    styles.sort_by_key(|id| {
+        style_depth(*id, exchange, &mut BTreeSet::new(), 0, graph_limit).unwrap_or(u32::MAX)
+    });
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for style_id in styles {
         if overridden_styles.contains(&style_id) {
@@ -278,8 +282,14 @@ pub(super) fn decode(
                 id
             })
             .clone();
-        let target_steps =
-            expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new(), 0);
+        let target_steps = expand_style_targets(
+            target_step,
+            exchange,
+            &mut typed,
+            &mut BTreeSet::new(),
+            0,
+            graph_limit,
+        );
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
             let targets = appearance_targets(
                 target_step,
@@ -485,8 +495,9 @@ fn expand_style_targets(
     typed: &mut HashSet<u64>,
     active: &mut BTreeSet<u64>,
     depth: usize,
+    graph_limit: usize,
 ) -> Vec<u64> {
-    if depth >= super::MAX_RECORD_GRAPH_DEPTH || !active.insert(id) {
+    if depth >= graph_limit || !active.insert(id) {
         return Vec::new();
     }
     let Some(record) = exchange.records.get(&id) else {
@@ -509,7 +520,9 @@ fn expand_style_targets(
         .into_iter()
         .flatten()
         .filter_map(ValueExt::reference)
-        .flat_map(|item| expand_style_targets(item, exchange, typed, active, depth + 1))
+        .flat_map(|item| {
+            expand_style_targets(item, exchange, typed, active, depth + 1, graph_limit)
+        })
         .collect();
     active.remove(&id);
     targets
@@ -799,14 +812,15 @@ fn style_depth(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
+    graph_limit: usize,
 ) -> Option<u32> {
-    if depth >= super::MAX_RECORD_GRAPH_DEPTH || !active.insert(id) {
+    if depth >= graph_limit || !active.insert(id) {
         return None;
     }
     let result = (|| {
         let style = exchange.records.get(&id)?;
         if let Some(base) = overridden_style(style) {
-            style_depth(base, exchange, active, depth + 1)?.checked_add(1)
+            style_depth(base, exchange, active, depth + 1, graph_limit)?.checked_add(1)
         } else {
             Some(0)
         }
