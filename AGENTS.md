@@ -41,7 +41,8 @@ Build and test operations:
 - Bounded reads go through `cadmpeg_core::decode::View` (typed LE/BE reads, `read_counted`, `req_*`). `cadmpeg_core::cursor::Cursor` is deleted. Keep `cadmpeg_core::decode::bounded_len`. Do not flatten `View` to `&[u8]` at archive entry maps when SpaceId must survive. Prefer `?` on `req_*` via a codec-local `From<ParseError>`; do not `map_err` locations away.
 - Codec crate roots are facades: export the codec, supported encoder/options, and
   `validate_native`; keep implementation modules `pub(crate)` or private.
-- `cadmpeg-validate` was not extracted; see `docs/phase6/validate-extract-spike.md`.
-  Focused parser access uses one feature-gated `#[doc(hidden)] pub mod fuzz`
-  entry point. Read-only codecs do not invent encoders. Public low-level parser
-  modules are exceptions only when the codec documentation advertises them.
+- `cadmpeg-validate` was not extracted: the visitor/eval surface is too wide for
+  the rebuild win. Validate remains in `cadmpeg-ir`. Focused parser access uses
+  one feature-gated `#[doc(hidden)] pub mod fuzz` entry point. Read-only codecs
+  do not invent encoders. Public low-level parser modules are exceptions only
+  when the codec documentation advertises them.
