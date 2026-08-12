@@ -138,3 +138,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "DecodeReport::record_coverage(key) -> record_coverage(key, count)"
 reason = "value-parameter form so catia/creo absolute coverage counts can adopt it"
+
+[[change]]
+commit = "95c017c0dec407eec654996cc726db86b98dff8a"
+crate = "cadmpeg-ir"
+kind = "move"
+item = "cadmpeg_ir::{DocumentArtifact,DocumentOrigin,artifact} -> cadmpeg::application::{LoadedDocument,LoadOrigin,document}"
+reason = "loaded-document state belongs to the CLI application workflow; no compatibility re-export"
