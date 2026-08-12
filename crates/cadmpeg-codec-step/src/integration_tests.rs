@@ -2,6 +2,7 @@
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
 use super::*;
+use cadmpeg_ir::codec::CodecBackend;
 
 use cadmpeg_ir::codec::{EncodeInput, Encoder};
 

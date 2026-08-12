@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::annotations::{ExactnessNote, Provenance};
+use crate::annotations::{ExactnessNote, StreamProvenance};
 use crate::codec::{CadirEncoder, Encoder};
 use crate::document::Model;
 use crate::examples::{directed_subd_sum, unit_cube};
@@ -30,7 +30,7 @@ use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
 use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate_neutral;
-use crate::{diff, CadIr, LossProvenance};
+use crate::{diff, CadIr, SourceProvenance};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
@@ -3237,7 +3237,7 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
     let mut source_fidelity = crate::SourceFidelity::default();
     source_fidelity.annotations.provenance.insert(
         "missing".into(),
-        Provenance {
+        StreamProvenance {
             stream: u32::MAX,
             offset: 0,
             tag: None,
@@ -3608,7 +3608,7 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
         code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
         severity: Severity::Warning,
         message: "geometry was retained as metadata".into(),
-        provenance: Some(LossProvenance {
+        provenance: Some(SourceProvenance {
             format: "rhino".into(),
             stream: String::new(),
             offset: 42,

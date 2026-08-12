@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::provenance::Provenance;
+use crate::provenance::SourceProvenance;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -581,7 +581,7 @@ pub struct LossNote {
     pub message: String,
     /// Where in the source the loss occurred, when attributable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provenance: Option<Provenance>,
+    pub provenance: Option<SourceProvenance>,
 }
 
 impl LossNote {
@@ -605,7 +605,7 @@ impl LossNote {
 
     /// Attaches source provenance to this note.
     #[must_use]
-    pub fn with_provenance(mut self, provenance: Provenance) -> Self {
+    pub fn with_provenance(mut self, provenance: SourceProvenance) -> Self {
         self.provenance = Some(provenance);
         self
     }

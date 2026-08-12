@@ -3643,7 +3643,7 @@ fn utf16(value: &str) -> Vec<u8> {
 mod tests {
     use std::io::Cursor;
 
-    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::PointId;

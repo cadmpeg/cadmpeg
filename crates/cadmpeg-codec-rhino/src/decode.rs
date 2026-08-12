@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
-use cadmpeg_ir::annotations::{ExactnessNote, Provenance};
+use cadmpeg_ir::annotations::{ExactnessNote, StreamProvenance};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
@@ -21,7 +21,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
-use cadmpeg_ir::LossProvenance;
+use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -92,7 +92,7 @@ struct ArenaLengths {
 #[derive(Debug)]
 struct AnnotationCheckpoint {
     stream_count: usize,
-    provenance: BTreeMap<String, Provenance>,
+    provenance: BTreeMap<String, StreamProvenance>,
     exactness: BTreeMap<String, ExactnessNote>,
 }
 
@@ -2313,7 +2313,7 @@ impl<'a> DecodeContext<'a> {
                         self.scan.definitions.diagnostics.len(),
                         first.message
                     ))
-                    .with_provenance(LossProvenance {
+                    .with_provenance(SourceProvenance {
                         format: "rhino".to_string(),
                         stream: String::new(),
                         offset: first.source_range.start as u64,
@@ -5069,8 +5069,8 @@ fn body(
     }
 }
 
-fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
-    LossProvenance {
+fn loss_provenance(class: &str, outcome: &ClassOutcome) -> SourceProvenance {
+    SourceProvenance {
         format: "rhino".to_string(),
         stream: String::new(),
         offset: outcome.first_offset,

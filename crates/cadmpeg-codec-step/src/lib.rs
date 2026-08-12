@@ -72,7 +72,7 @@ use std::io::Write;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::codec::{
-    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -4374,7 +4374,7 @@ impl Encoder for StepCodec {
     }
 }
 
-impl Codec for StepCodec {
+impl CodecBackend for StepCodec {
     fn id(&self) -> &'static str {
         "step"
     }

@@ -24,7 +24,7 @@ use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
@@ -82,7 +82,7 @@ fn looks_like_text_stream(prefix: &[u8]) -> bool {
 /// Bare ASM stream codec.
 pub struct SatCodec;
 
-impl Codec for SatCodec {
+impl CodecBackend for SatCodec {
     fn id(&self) -> &'static str {
         FORMAT
     }

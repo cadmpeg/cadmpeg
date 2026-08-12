@@ -40,7 +40,7 @@
 
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::report::{ExportReport, WritePath};
@@ -60,7 +60,7 @@ pub fn verbatim_replay_holds<C>(codec: &C, label: &str, fixture: &[u8]) -> Expor
 where
     C: Codec + Encoder,
 {
-    let decoded = CodecEntry::decode(
+    let decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
@@ -133,7 +133,7 @@ pub fn semantic_roundtrip<C>(
 ) where
     C: Codec + Encoder,
 {
-    let mut decoded = CodecEntry::decode(
+    let mut decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
@@ -238,7 +238,7 @@ where
         "{label}: this helper edits the document, so replaying the retained bytes would discard the edit; \
          no caller may name that path as expected"
     );
-    let mut decoded = CodecEntry::decode(
+    let mut decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),

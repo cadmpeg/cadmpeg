@@ -222,7 +222,7 @@ pub(super) fn decode(
                  read the shell element from positional slot 1",
                 record.id
             ),
-            provenance: Some(cadmpeg_ir::LossProvenance {
+            provenance: Some(cadmpeg_ir::SourceProvenance {
                 format: "step".into(),
                 stream: String::new(),
                 offset: record.span.start as u64,
@@ -2658,7 +2658,7 @@ fn build_one(
                         outer_bound_count - 1
                     ),
                 );
-                losses.push(note.with_provenance(cadmpeg_ir::LossProvenance {
+                losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
                     format: "step".into(),
                     stream: String::new(),
                     offset: fr.span.start as u64,
@@ -2729,7 +2729,7 @@ fn build_one(
                     face_ids.len(),
                 ),
             );
-            losses.push(note.with_provenance(cadmpeg_ir::LossProvenance {
+            losses.push(note.with_provenance(cadmpeg_ir::SourceProvenance {
                 format: "step".into(),
                 stream: String::new(),
                 offset: sr.span.start as u64,

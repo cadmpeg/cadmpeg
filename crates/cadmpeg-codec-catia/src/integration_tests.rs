@@ -3,6 +3,7 @@
 
 use super::*;
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::report::{LossCategory, Severity};
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {

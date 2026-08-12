@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_ir::appearance::AppearanceTarget;
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{CadIr, Severity};

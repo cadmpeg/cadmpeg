@@ -8,7 +8,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
 
@@ -94,7 +94,7 @@ impl RhinoEncoder {
     }
 }
 
-impl Codec for RhinoCodec {
+impl CodecBackend for RhinoCodec {
     fn id(&self) -> &'static str {
         "rhino"
     }

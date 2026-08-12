@@ -16,7 +16,7 @@
 //! use std::io::Cursor;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
 //! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_core::CodecError> {
 //! let decoded = SldprtCodec.decode(
@@ -57,7 +57,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{CodecEntry, DecodeOptions, Encoder};
+//! use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.sldprt")?;
@@ -125,7 +125,7 @@ mod writer_transform;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
@@ -229,7 +229,7 @@ impl SldprtCodec {
     }
 }
 
-impl Codec for SldprtCodec {
+impl CodecBackend for SldprtCodec {
     fn id(&self) -> &'static str {
         "sldprt"
     }

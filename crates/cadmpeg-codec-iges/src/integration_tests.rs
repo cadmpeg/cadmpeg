@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized IGES 5.3 card streams.
 
 use super::*;
+use cadmpeg_ir::codec::CodecBackend;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     assert_eq!(IgesCodec.detect(&bytes), Confidence::High);

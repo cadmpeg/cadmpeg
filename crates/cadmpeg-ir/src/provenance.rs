@@ -49,7 +49,7 @@ pub struct SourceObjectAssociation {
 /// when known.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct Provenance {
+pub struct SourceProvenance {
     /// Source container format.
     pub format: String,
     /// Named stream within the container (a decompressed entry name, or empty).

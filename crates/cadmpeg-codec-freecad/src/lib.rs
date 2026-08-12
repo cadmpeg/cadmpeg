@@ -36,7 +36,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
@@ -1120,7 +1120,7 @@ fn validate_logical_chain(
     }
 }
 
-impl Codec for FcstdCodec {
+impl CodecBackend for FcstdCodec {
     fn id(&self) -> &'static str {
         "fcstd"
     }
@@ -1507,7 +1507,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
                 message: format!(
                     "FCStd design operation {kind} is retained natively but has no neutral semantics"
                 ),
-                provenance: Some(cadmpeg_ir::LossProvenance {
+                provenance: Some(cadmpeg_ir::SourceProvenance {
                     format: "fcstd".into(),
                     stream: "Document.xml".into(),
                     offset: 0,
@@ -1526,7 +1526,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             message: format!(
                 "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
             ),
-            provenance: Some(cadmpeg_ir::LossProvenance {
+            provenance: Some(cadmpeg_ir::SourceProvenance {
                 format: "fcstd".into(),
                 stream: "Document.xml".into(),
                 offset: 0,
@@ -1546,7 +1546,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             message: format!(
                 "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
             ),
-            provenance: Some(cadmpeg_ir::LossProvenance {
+            provenance: Some(cadmpeg_ir::SourceProvenance {
                 format: "fcstd".into(),
                 stream: "Document.xml".into(),
                 offset: 0,

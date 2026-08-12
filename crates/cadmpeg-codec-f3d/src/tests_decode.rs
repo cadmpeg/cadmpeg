@@ -2,6 +2,7 @@
 //! Decode-domain synthetic tests and fixtures.
 
 use super::*;
+use cadmpeg_ir::codec::CodecBackend;
 
 pub(super) fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
     f3d_with_smbh_and_protein_guids(smbh, &["11111111-2222-3333-4444-555555555555"])

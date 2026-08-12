@@ -2,7 +2,7 @@
 
 use std::io::Write as _;
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::report::{LossKind, LossTaxonomy};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;

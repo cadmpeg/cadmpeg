@@ -9,7 +9,7 @@
 use std::io::Cursor;
 use std::mem::size_of;
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 

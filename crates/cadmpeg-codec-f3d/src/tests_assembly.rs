@@ -2,6 +2,7 @@
 //! Assembly-domain synthetic tests and fixtures.
 
 use super::*;
+use cadmpeg_ir::codec::CodecBackend;
 
 /// A `RedirectionsStream.dat` body with one self design entry plus one design
 /// and one XREF reference per `(relative_path, role)` pair.

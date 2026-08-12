@@ -98,7 +98,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax),
                 diagnostic.message.clone(),
             )
-            .with_provenance(cadmpeg_ir::LossProvenance {
+            .with_provenance(cadmpeg_ir::SourceProvenance {
                 format: "step".into(),
                 stream: String::new(),
                 offset: diagnostic.offset as u64,

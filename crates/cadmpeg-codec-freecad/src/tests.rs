@@ -7,7 +7,7 @@ use cadmpeg_ir::features::{
     SweepTransformation, SweepTransition, Termination,
 };
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
-use cadmpeg_ir::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 use zip::write::SimpleFileOptions;
 
 use crate::FcstdCodec;

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, CodecEntry};
+use cadmpeg_ir::CadIr;
 
 use crate::application::{
     ArtifactStore, ForcedInput, InputCatalog, LoadOrigin, LoadedDocument, ResolvedSource,

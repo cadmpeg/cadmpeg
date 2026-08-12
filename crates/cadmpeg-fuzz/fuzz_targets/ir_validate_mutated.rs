@@ -117,7 +117,7 @@ fuzz_target!(|data: &[u8]| {
             // Add an annotation for an entity that does not exist.
             source_fidelity.annotations.provenance.insert(
                 "nonexistent".to_string(),
-                cadmpeg_ir::annotations::Provenance {
+                cadmpeg_ir::annotations::StreamProvenance {
                     stream: u32::MAX,
                     offset: u64::MAX,
                     tag: None,

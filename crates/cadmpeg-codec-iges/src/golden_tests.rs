@@ -11,7 +11,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, Branch, Harness};
 
 use super::{IgesCodec, IgesEncoder};

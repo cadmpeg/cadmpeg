@@ -9,9 +9,7 @@ use std::process::ExitCode;
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{
-    validate_neutral, validate_neutral_with_source_fidelity, CadIr, CodecEntry, SourceFidelity,
-};
+use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
 pub use crate::application::ValidationMode;
 use crate::application::{

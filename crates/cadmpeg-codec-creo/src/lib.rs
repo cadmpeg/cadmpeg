@@ -8,13 +8,13 @@
 //! # Quick start
 //!
 //! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
-//! [`cadmpeg_ir::CodecEntry::inspect`] to enumerate sections and read container diagnostics:
+//! [`cadmpeg_ir::Codec::inspect`] to enumerate sections and read container diagnostics:
 //!
 //! ```no_run
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_creo::CreoCodec;
-//! use cadmpeg_ir::codec::CodecEntry;
+//! use cadmpeg_ir::codec::Codec;
 //! use cadmpeg_core::decode::InspectOptions;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,7 +25,7 @@
 //! # }
 //! ```
 //!
-//! Use [`cadmpeg_ir::CodecEntry::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
+//! Use [`cadmpeg_ir::Codec::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
 //! its [`cadmpeg_ir::report::DecodeReport`].
 //!
 //! # Format model
@@ -81,13 +81,13 @@ pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
 
 /// Codec for Creo Parametric and Pro/ENGINEER PSB `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CreoCodec;
 
-impl Codec for CreoCodec {
+impl CodecBackend for CreoCodec {
     fn id(&self) -> &'static str {
         "creo"
     }

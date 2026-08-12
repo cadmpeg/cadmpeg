@@ -16,7 +16,7 @@
 use std::io::{Cursor, Read, Seek, Write};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 pub(super) use cadmpeg_ir::report::LossTaxonomy;
 use cadmpeg_ir::report::{LossKind as LossCode, Severity};

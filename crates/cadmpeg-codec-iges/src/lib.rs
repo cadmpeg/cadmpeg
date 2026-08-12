@@ -20,7 +20,7 @@ mod writer;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
 };
 use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::CadIr;
@@ -73,7 +73,7 @@ pub(crate) fn document_digest(ir: &CadIr) -> String {
     document_local_sha256(ir, "iges", SOURCE_IMAGE_ID)
 }
 
-impl Codec for IgesCodec {
+impl CodecBackend for IgesCodec {
     fn id(&self) -> &'static str {
         "iges"
     }

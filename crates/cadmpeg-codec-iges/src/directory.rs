@@ -48,8 +48,8 @@ pub(crate) struct DirectoryEntry {
 }
 
 impl DirectoryEntry {
-    pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::LossProvenance {
-        cadmpeg_ir::LossProvenance {
+    pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
+        cadmpeg_ir::SourceProvenance {
             format: "iges".into(),
             stream: "iges".into(),
             offset: self.source_offset,

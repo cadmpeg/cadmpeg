@@ -20,7 +20,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_nx::NxCodec;
-//! use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::codec::{CodecBackend, Codec, DecodeOptions};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
@@ -34,7 +34,7 @@
 //! # }
 //! ```
 //!
-//! [`CodecEntry::inspect`](cadmpeg_ir::codec::CodecEntry::inspect) returns the SPLMSSTR directory and embedded-stream
+//! [`Codec::inspect`](cadmpeg_ir::codec::Codec::inspect) returns the SPLMSSTR directory and embedded-stream
 //! classifications without decoding entities. `DecodeOptions::container_only`
 //! produces metadata IR and skips entity decode.
 //!
@@ -100,13 +100,13 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
 
 /// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NxCodec;
 
-impl Codec for NxCodec {
+impl CodecBackend for NxCodec {
     fn id(&self) -> &'static str {
         "nx"
     }

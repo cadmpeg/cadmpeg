@@ -18,11 +18,11 @@
 //! and [`CadIr::from_json`] for the versioned JSON form, and [`diff()`] for
 //! identity-based structural comparison.
 //!
-//! Format crates implement [`Codec`]. Detection selects a codec from a byte
-//! prefix, inspection enumerates a container, and decoding returns a
-//! [`DecodeResult`]. Operation failures use [`cadmpeg_core::CodecError`].
-//! A successful decode reports partial transfer through [`DecodeReport`] and
-//! [`LossNote`].
+//! Format crates implement [`CodecBackend`]; callers use the sealed [`Codec`]
+//! entry points. Detection selects a codec from a byte prefix, inspection
+//! enumerates a container, and decoding returns a [`DecodeResult`]. Operation
+//! failures use [`cadmpeg_core::CodecError`]. A successful decode reports
+//! partial transfer through [`DecodeReport`] and [`LossNote`].
 //!
 //! [`Annotations`] records source locations and fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
@@ -75,9 +75,9 @@ pub mod transform;
 pub mod units;
 pub mod validate;
 
-pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
+pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, StreamProvenance};
 pub use codec::{
-    CadirEncoder, Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult, Encoder,
+    CadirEncoder, Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult, Encoder,
 };
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
@@ -106,8 +106,8 @@ pub use products::{
     Occurrence, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
-pub use provenance::Provenance as LossProvenance;
-pub use provenance::{Exactness, SourceObjectAssociation};
+pub use provenance::{Exactness, SourceObjectAssociation, SourceProvenance};
+
 pub use report::{
     CensusBasis, Check, CoverageKey, DecodeReport, EntityCensus, ExportReport, FidelityResolution,
     Finding, LossCategory, LossKind, LossNote, LossTaxonomy, Severity, StrictConsequence,

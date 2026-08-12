@@ -16,7 +16,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,7 +29,7 @@
 //! # }
 //! ```
 //!
-//! [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) classifies the ZIP entries and reads ASM B-rep headers
+//! [`Codec::inspect`](cadmpeg_ir::Codec::inspect) classifies the ZIP entries and reads ASM B-rep headers
 //! without building geometry. `DecodeOptions::container_only` provides the
 //! corresponding metadata-only `CadIr`.
 //!
@@ -37,7 +37,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions, Encoder};
+//! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions, Encoder};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -108,7 +108,7 @@ mod zip_write;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::ExportReport;
@@ -175,7 +175,7 @@ impl F3dCodec {
     }
 }
 
-impl Codec for F3dCodec {
+impl CodecBackend for F3dCodec {
     fn id(&self) -> &'static str {
         "f3d"
     }

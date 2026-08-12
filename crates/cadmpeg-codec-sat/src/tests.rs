@@ -2,7 +2,7 @@
 //! Synthetic-stream tests for both encodings and the detection rules.
 
 use super::*;
-use cadmpeg_ir::codec::CodecEntry;
+use cadmpeg_ir::codec::{Codec, CodecBackend};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::LossTaxonomy;
 use std::io::Cursor;

@@ -5,6 +5,7 @@
 use super::*;
 use crate::archive_test_support as support;
 use crate::{RhinoArchiveVersion, RhinoEncoder};
+use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
 use cadmpeg_ir::Encoder;
 

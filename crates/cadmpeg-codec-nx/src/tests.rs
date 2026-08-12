@@ -9,7 +9,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{
@@ -9710,7 +9710,7 @@ mod golden {
     use std::io::Cursor;
     use std::path::{Path, PathBuf};
 
-    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     use super::*;
 

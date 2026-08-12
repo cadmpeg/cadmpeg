@@ -6,7 +6,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::transform::Transform;
 

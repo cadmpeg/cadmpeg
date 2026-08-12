@@ -3264,7 +3264,7 @@ mod tests {
         assert_eq!(events.residual_spans[1].byte_len, 2);
     }
 
-    use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,

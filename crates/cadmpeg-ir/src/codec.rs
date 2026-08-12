@@ -6,9 +6,9 @@
 //! produces a finalized [`CadIr`] plus a [`DecodeReport`].
 //!
 //! A codec implements only the required [`Codec`] methods. The public
-//! [`CodecEntry::inspect`] and [`CodecEntry::decode`] entry points are the
+//! [`Codec::inspect`] and [`Codec::decode`] entry points are the
 //! single enforcement point for root-input limits and session finalize checks;
-//! they live on the sealed [`CodecEntry`] trait, blanket-implemented for every
+//! they live on the sealed [`Codec`] trait, blanket-implemented for every
 //! `Codec`, so a codec cannot override an entry point and drop the
 //! enforcement.
 
@@ -115,7 +115,7 @@ impl DecodeResult {
 }
 
 /// Decoder and container inspector for one source format.
-pub trait Codec {
+pub trait CodecBackend {
     /// Stable short id for this codec, e.g. `"f3d"`.
     fn id(&self) -> &'static str;
 
@@ -126,7 +126,7 @@ pub trait Codec {
     /// geometry.
     ///
     /// Implemented by each codec; never called by the CLI or registry. The
-    /// [`CodecEntry::inspect`] wrapper acquires the root under the inspection's
+    /// [`Codec::inspect`] wrapper acquires the root under the inspection's
     /// input limit and runs this under an internal context.
     fn inspect_impl(
         &self,
@@ -138,7 +138,7 @@ pub trait Codec {
     /// transfer.
     ///
     /// Implemented by each codec; never called by the CLI or registry. The
-    /// [`CodecEntry::decode`] wrapper acquires the root and finalizes the
+    /// [`Codec::decode`] wrapper acquires the root and finalizes the
     /// context around this call.
     fn decode_impl(
         &self,
@@ -148,23 +148,23 @@ pub trait Codec {
 }
 
 mod sealed {
-    /// Private bound for the blanket [`CodecEntry`](super::CodecEntry) implementation.
+    /// Private bound for the blanket [`Codec`](super::Codec) implementation.
     pub trait Sealed {}
-    impl<C: super::Codec + ?Sized> Sealed for C {}
+    impl<C: super::CodecBackend + ?Sized> Sealed for C {}
 }
 
 /// Public inspection and decoding entry points.
 ///
 /// ```compile_fail
 /// use cadmpeg_ir::codec::{
-///     Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult,
+///     Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult,
 /// };
 /// use cadmpeg_core::{CodecError, ContainerSummary, ReadSeek};
 /// use cadmpeg_core::decode::{DecodeContext, View};
 /// use cadmpeg_core::decode::InspectOptions;
 ///
 /// struct Rogue;
-/// impl Codec for Rogue {
+/// impl CodecBackend for Rogue {
 ///     fn id(&self) -> &'static str { "rogue" }
 ///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
 ///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
@@ -172,14 +172,14 @@ mod sealed {
 ///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
 ///         -> Result<DecodeResult, CodecError> { unimplemented!() }
 /// }
-/// impl CodecEntry for Rogue {
+/// impl Codec for Rogue {
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
 ///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
 ///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
 ///         -> Result<DecodeResult, CodecError> { unimplemented!() }
 /// }
 /// ```
-pub trait CodecEntry: Codec + sealed::Sealed {
+pub trait Codec: CodecBackend + sealed::Sealed {
     /// Inspects the source under its input and resource limits.
     fn inspect(
         &self,
@@ -195,7 +195,7 @@ pub trait CodecEntry: Codec + sealed::Sealed {
     ) -> Result<DecodeResult, CodecError>;
 }
 
-impl<C: Codec + ?Sized> CodecEntry for C {
+impl<C: CodecBackend + ?Sized> Codec for C {
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
