@@ -1777,3 +1777,47 @@ fn from_and_to_aliases_match_input_format_and_format() {
     assert!(aliased.status.success());
     assert_eq!(long.stdout, aliased.stdout);
 }
+
+#[test]
+fn wrong_target_flags_refuse_before_reading_input() {
+    let dir = tempdir().unwrap();
+    // Absent path: wrong-target must fail before open/read.
+    let missing = dir.path().join("does-not-exist.cadir.json");
+    let path = missing.to_str().unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["export", path, "-f", "step", "--iges-target", "5.3"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--iges-target requires IGES output",
+        ));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "-f", "cadir", "--step-target", "ap214"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--step-target/--reject-step-losses require STEP output",
+        ));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["export", path, "-f", "iges", "--reject-step-losses"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--step-target/--reject-step-losses require STEP output",
+        ));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "-f", "step", "--rhino-version", "80"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--rhino-version requires Rhino output",
+        ));
+}
