@@ -5,7 +5,7 @@
 //! boundary, and namespace links. A [`SurfacePrototype`] contains named template
 //! parameters. A named prototype locates its adjacent first positional instance.
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{alloc_filled, bounded_len};
 
 use crate::psb::{self, compact_int};
 use crate::scalar;
@@ -4930,7 +4930,12 @@ fn counted_parameter_scalar_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<ScalarTokenSlot>> {
-    let mut states = vec![BTreeMap::new(); body.len() + 1];
+    let mut states = alloc_filled(
+        body.len() + 1,
+        BTreeMap::new(),
+        "creo_counted_parameter_slots",
+    )
+    .ok()?;
     states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
     for cursor in 0..body.len() {
         let current = std::mem::take(&mut states[cursor]);

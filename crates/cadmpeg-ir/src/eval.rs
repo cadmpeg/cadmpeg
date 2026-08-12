@@ -23,6 +23,7 @@ use crate::geometry::{
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
+use cadmpeg_core::decode::alloc_filled;
 
 fn cross(a: Vector3, b: Vector3) -> Vector3 {
     Vector3::new(
@@ -311,7 +312,7 @@ fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezier
             weights.clone()
         }
         Some(_) => return None,
-        None => vec![1.0; control_count],
+        None => alloc_filled(control_count, 1.0, "ir_nurbs_surface_weights").ok()?,
     };
     let homogeneous_controls = surface
         .control_points
@@ -454,7 +455,7 @@ fn restrict_homogeneous_bezier(
     }
     if start == end {
         let point = split_homogeneous_bezier(controls, start)?.0.pop()?;
-        return Some(vec![point; controls.len()]);
+        return alloc_filled(controls.len(), point, "ir_bezier_collapsed_controls").ok();
     }
     let left = split_homogeneous_bezier(controls, end)?.0;
     if start == 0.0 {
@@ -1498,7 +1499,7 @@ fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'_, [f64]>> {
     let weights = match &curve.weights {
         Some(weights) if weights.len() == count => Cow::Borrowed(weights.as_slice()),
         Some(_) => return None,
-        None => Cow::Owned(vec![1.0; count]),
+        None => Cow::Owned(alloc_filled(count, 1.0, "ir_nurbs_curve_weights").ok()?),
     };
     if curve
         .control_points
@@ -1979,7 +1980,7 @@ pub fn nurbs_pcurve_contains_point(
         Some(weights) if weights.len() == count => weights,
         Some(_) => return None,
         None => {
-            owned_weights = vec![1.0; count];
+            owned_weights = alloc_filled(count, 1.0, "ir_nurbs_pcurve_weights").ok()?;
             &owned_weights
         }
     };
