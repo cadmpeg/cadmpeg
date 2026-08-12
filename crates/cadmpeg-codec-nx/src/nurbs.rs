@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::read_xmt_width as read_xmt;
 use crate::topology::Graph;
-use cadmpeg_core::be::{f64_at as be_f64, u16_at as be_u16, u32_at as be_u32};
+use crate::view_at::{f64_be_at, u16_be_at, u32_be_at};
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
@@ -299,7 +299,7 @@ fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord> {
     };
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     (bytes.get(pos + 2 + escape..pos + 4 + escape) == Some(&[0, 0])).then_some(())?;
-    let count = be_u16(bytes, pos + 4 + escape).map(usize::from)?;
+    let count = u16_be_at(bytes, pos + 4 + escape).map(usize::from)?;
     (count > 0).then_some(())?;
     let (reference, reference_len) = read_xmt(bytes, pos + 6 + escape)?;
     (reference > 5).then_some(())?;
@@ -361,7 +361,7 @@ fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)>
             .is_some_and(|(candidate_xmt, _)| candidate_xmt == xmt)
     });
     (!nested_same_record).then_some(())?;
-    let count = usize::try_from(be_u32(bytes, count_at)?).ok()?;
+    let count = usize::try_from(u32_be_at(bytes, count_at)?).ok()?;
     (count > 0).then_some(())?;
     let (_, first_len) = read_xmt(bytes, count_at + 4)?;
     let data = count_at + 4 + first_len;
@@ -377,7 +377,7 @@ fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     (xmt > 10).then_some(())?;
     let mut at = pos.checked_add(2 + escape + xmt_len)?;
     for _ in 0..8 {
-        be_f64(bytes, at)?.is_finite().then_some(())?;
+        f64_be_at(bytes, at)?.is_finite().then_some(())?;
         at += 8;
     }
     let marker = usize::from(*bytes.get(at)?);
@@ -419,7 +419,7 @@ fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)> {
     let shift = escape + xmt_len - 2;
     let count_escape = usize::from(bytes.get(pos + 9 + shift) == Some(&0xff));
     let count_at = pos + 9 + shift + count_escape;
-    let count = usize::try_from(be_u32(bytes, count_at)?).ok()?;
+    let count = usize::try_from(u32_be_at(bytes, count_at)?).ok()?;
     (count > 0).then_some(())?;
     let (_, control_ref_len) = read_xmt(bytes, count_at + 4)?;
     let data = count_at + 4 + control_ref_len;
@@ -525,14 +525,14 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
     let shift = escape + xmt_len - 2;
     let u_periodic = logical_at(bytes, pos + 4 + shift)?;
     let v_periodic = logical_at(bytes, pos + 5 + shift)?;
-    let u_degree = be_u16(bytes, pos + 6 + shift)?;
-    let v_degree = be_u16(bytes, pos + 8 + shift)?;
-    let u_count = usize::try_from(be_u32(bytes, pos + 10 + shift)?).ok()?;
-    let v_count = usize::try_from(be_u32(bytes, pos + 14 + shift)?).ok()?;
+    let u_degree = u16_be_at(bytes, pos + 6 + shift)?;
+    let v_degree = u16_be_at(bytes, pos + 8 + shift)?;
+    let u_count = usize::try_from(u32_be_at(bytes, pos + 10 + shift)?).ok()?;
+    let v_count = usize::try_from(u32_be_at(bytes, pos + 14 + shift)?).ok()?;
     let u_knot_type = *bytes.get(pos + 18 + shift)?;
     let v_knot_type = *bytes.get(pos + 19 + shift)?;
-    let u_distinct = usize::try_from(be_u32(bytes, pos + 20 + shift)?).ok()?;
-    let v_distinct = usize::try_from(be_u32(bytes, pos + 24 + shift)?).ok()?;
+    let u_distinct = usize::try_from(u32_be_at(bytes, pos + 20 + shift)?).ok()?;
+    let v_distinct = usize::try_from(u32_be_at(bytes, pos + 24 + shift)?).ok()?;
     ((u_count > 0)
         && (v_count > 0)
         && valid_knot_type(u_knot_type)
@@ -540,16 +540,16 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
         && (u_distinct > 0)
         && (v_distinct > 0))
         .then_some(())?;
-    let short = be_u16(bytes, pos + 44 + shift) == Some(125);
+    let short = u16_be_at(bytes, pos + 44 + shift) == Some(125);
     let (u_mult, v_mult, u_knots, v_knots, payload, end) = if short {
         let payload_at = pos + 46 + shift;
         let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
         (payload > 1).then_some(())?;
         (
-            u32::from(be_u16(bytes, pos + 36 + shift)?),
-            u32::from(be_u16(bytes, pos + 38 + shift)?),
-            u32::from(be_u16(bytes, pos + 40 + shift)?),
-            u32::from(be_u16(bytes, pos + 42 + shift)?),
+            u32::from(u16_be_at(bytes, pos + 36 + shift)?),
+            u32::from(u16_be_at(bytes, pos + 38 + shift)?),
+            u32::from(u16_be_at(bytes, pos + 40 + shift)?),
+            u32::from(u16_be_at(bytes, pos + 42 + shift)?),
             Some(payload),
             payload_at + payload_len,
         )
@@ -561,7 +561,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             *reference = value;
             at += len;
         }
-        if at == pos + 54 + shift && be_u16(bytes, at) == Some(125) {
+        if at == pos + 54 + shift && u16_be_at(bytes, at) == Some(125) {
             let payload_at = at + 2;
             let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
             (payload > 1).then_some(())?;
@@ -663,10 +663,10 @@ fn curve_descriptor_at(
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
     (xmt > 10).then_some(())?;
     let shift = escape + xmt_len - 2;
-    let degree = be_u16(bytes, pos + 4 + shift)?;
-    let poles = usize::try_from(be_u32(bytes, pos + 6 + shift)?).ok()?;
-    let dimension = be_u16(bytes, pos + 10 + shift)?;
-    let distinct = usize::try_from(be_u32(bytes, pos + 12 + shift)?).ok()?;
+    let degree = u16_be_at(bytes, pos + 4 + shift)?;
+    let poles = usize::try_from(u32_be_at(bytes, pos + 6 + shift)?).ok()?;
+    let dimension = u16_be_at(bytes, pos + 10 + shift)?;
+    let distinct = usize::try_from(u32_be_at(bytes, pos + 12 + shift)?).ok()?;
     let knot_type = *bytes.get(pos + 16 + shift)?;
     let periodic = logical_at(bytes, pos + 17 + shift)?;
     ((poles > 0) && matches!(dimension, 2..=4) && (distinct > 0) && valid_knot_type(knot_type))
@@ -741,7 +741,7 @@ pub(crate) struct AuxiliaryRecord {
 
 /// Decode one complete NURBS auxiliary record at `pos`.
 pub(crate) fn auxiliary_record_at(bytes: &[u8], pos: usize) -> Option<AuxiliaryRecord> {
-    let kind = be_u16(bytes, pos)?;
+    let kind = u16_be_at(bytes, pos)?;
     let (xmt, references, end) = match kind {
         125 => surface_payload_at(bytes, pos)
             .map(|(xmt, _, end)| (xmt, end))

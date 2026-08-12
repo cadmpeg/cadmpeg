@@ -13,13 +13,13 @@
 //! Use [`crate::topology`] to resolve returned record offsets into topology.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_core::be::{f64_at as read_f64, vec3_at as read_vec3};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::framing::{
     fixed_len, fixed_record_boundary, fixed_record_candidates, read_sequence_at, FixedRecordFrame,
 };
+use crate::view_at::{f64_be_at, vec3_be_at};
 
 /// A decoded analytic surface and its source offset.
 #[derive(Debug, Clone)]
@@ -149,7 +149,7 @@ fn analytic_candidate(
         0x1d => {
             let mut at = pos + 8 + frame.shift;
             read_sequence_at(stream, &mut at, 4)?;
-            let xyz = read_vec3(stream, at)?;
+            let xyz = vec3_be_at(stream, at)?;
             xyz.iter()
                 .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
                 .then_some(AnalyticRecord::Point(DecodedPoint {
@@ -217,9 +217,9 @@ pub(crate) fn decode_curve_record(record: &[u8], kind: u8, shift: usize) -> Opti
 // --- Surface decoders (offsets from the common header, [§5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#51-ownership-graph) / [§6.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#61-analytic-curves-and-surfaces)) ---
 
 fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let origin = read_vec3(s, b + 19)?;
-    let normal = read_vec3(s, b + 43)?;
-    let x_axis = read_vec3(s, b + 67)?;
+    let origin = vec3_be_at(s, b + 19)?;
+    let normal = vec3_be_at(s, b + 43)?;
+    let x_axis = vec3_be_at(s, b + 67)?;
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(origin) {
         return None;
     }
@@ -231,10 +231,10 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 }
 
 fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let origin = read_vec3(s, b + 19)?;
-    let axis = read_vec3(s, b + 43)?;
-    let radius = read_f64(s, b + 67)?;
-    let x_axis = read_vec3(s, b + 75)?;
+    let origin = vec3_be_at(s, b + 19)?;
+    let axis = vec3_be_at(s, b + 43)?;
+    let radius = f64_be_at(s, b + 67)?;
+    let x_axis = vec3_be_at(s, b + 75)?;
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(origin) || !valid_radius(radius) {
         return None;
     }
@@ -247,12 +247,12 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 }
 
 fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let origin = read_vec3(s, b + 19)?;
-    let axis = read_vec3(s, b + 43)?;
-    let radius = read_f64(s, b + 67)?;
-    let sin_half = read_f64(s, b + 75)?;
-    let cos_half = read_f64(s, b + 83)?;
-    let x_axis = read_vec3(s, b + 91)?;
+    let origin = vec3_be_at(s, b + 19)?;
+    let axis = vec3_be_at(s, b + 43)?;
+    let radius = f64_be_at(s, b + 67)?;
+    let sin_half = f64_be_at(s, b + 75)?;
+    let cos_half = f64_be_at(s, b + 83)?;
+    let x_axis = vec3_be_at(s, b + 91)?;
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(origin) || !valid_cone_radius(radius)
     {
         return None;
@@ -278,10 +278,10 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 }
 
 fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let center = read_vec3(s, b + 19)?;
-    let radius = read_f64(s, b + 43)?;
-    let axis = read_vec3(s, b + 51)?;
-    let x_axis = read_vec3(s, b + 75)?;
+    let center = vec3_be_at(s, b + 19)?;
+    let radius = f64_be_at(s, b + 43)?;
+    let axis = vec3_be_at(s, b + 51)?;
+    let x_axis = vec3_be_at(s, b + 75)?;
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
@@ -294,11 +294,11 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 }
 
 fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let center = read_vec3(s, b + 19)?;
-    let axis = read_vec3(s, b + 43)?;
-    let major = read_f64(s, b + 67)?;
-    let minor = read_f64(s, b + 75)?;
-    let x_axis = read_vec3(s, b + 83)?;
+    let center = vec3_be_at(s, b + 19)?;
+    let axis = vec3_be_at(s, b + 43)?;
+    let major = f64_be_at(s, b + 67)?;
+    let minor = f64_be_at(s, b + 75)?;
+    let x_axis = vec3_be_at(s, b + 83)?;
     // A horn torus (major == minor) is valid; both radii must be positive and
     // finite. A zero major radius is degenerate and rejected.
     if !is_orthonormal_frame(axis, x_axis)
@@ -320,8 +320,8 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 // --- Curve decoders ---
 
 fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
-    let origin = read_vec3(s, b + 19)?;
-    let direction = read_vec3(s, b + 43)?;
+    let origin = vec3_be_at(s, b + 19)?;
+    let direction = vec3_be_at(s, b + 43)?;
     if !is_unit(direction) || !valid_position(origin) {
         return None;
     }
@@ -332,10 +332,10 @@ fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
 }
 
 fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
-    let center = read_vec3(s, b + 19)?;
-    let normal = read_vec3(s, b + 43)?;
-    let x_axis = read_vec3(s, b + 67)?;
-    let radius = read_f64(s, b + 91)?;
+    let center = vec3_be_at(s, b + 19)?;
+    let normal = vec3_be_at(s, b + 43)?;
+    let x_axis = vec3_be_at(s, b + 67)?;
+    let radius = f64_be_at(s, b + 91)?;
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
@@ -348,11 +348,11 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
 }
 
 fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
-    let center = read_vec3(s, b + 19)?;
-    let normal = read_vec3(s, b + 43)?;
-    let x_axis = read_vec3(s, b + 67)?;
-    let major = read_f64(s, b + 91)?;
-    let minor = read_f64(s, b + 99)?;
+    let center = vec3_be_at(s, b + 19)?;
+    let normal = vec3_be_at(s, b + 43)?;
+    let x_axis = vec3_be_at(s, b + 67)?;
+    let major = f64_be_at(s, b + 91)?;
+    let minor = f64_be_at(s, b + 99)?;
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(center) {
         return None;
     }
