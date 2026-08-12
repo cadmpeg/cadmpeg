@@ -106,6 +106,10 @@ mod writer;
 pub(crate) mod xref;
 mod zip_write;
 
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzz;
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};

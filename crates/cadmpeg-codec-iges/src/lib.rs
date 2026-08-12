@@ -17,6 +17,10 @@ mod profile;
 mod reader;
 mod writer;
 
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzz;
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{

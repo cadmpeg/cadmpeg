@@ -435,13 +435,13 @@ impl<'a> TextScanner<'a> {
     }
 }
 
-struct ParsedMap {
+pub(crate) struct ParsedMap {
     map_id: u64,
     postfixes: Vec<String>,
     maps: Vec<ElementMapNode>,
 }
 
-fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecError> {
+pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("element map is not UTF-8".into()))?;
     let mut tokens = text.split_whitespace();
