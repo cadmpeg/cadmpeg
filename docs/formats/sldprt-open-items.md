@@ -358,7 +358,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the discriminator to prevent an omitted construction circle from becoming profile geometry.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/dimensions.rs:634-673` recognizes construction only in the exact radial marker layout, and `:1008-1303` propagates that flag. However, `:276-504` and `:515-629` fabricate omitted circles from dimension and point markers with `construction: false`; `:880-1006` also stamps false in the circle-only carrier path. The closure commit `f88f841fe` proves one-to-one roster matching with synthetic tests, but it does not prove the native construction marker for every omitted-geometry path. If the profile omits a construction circle while retaining its point/dimension relation, the relation path emits it as profile geometry. Confidence: high.
+**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs` now joins each omitted dimension center to the native radial-circle roster and propagates the radial record's role-2 construction state through dimension-carrier, point-witness, and circle-only-carrier projections. A non-empty lane with no unique radial role or with conflicting role matches remains native instead of becoming profile geometry. The remaining unknown is the native discriminator for a dimension carrier that has no recoverable radial record at all. Confidence: medium.
 
 ### DI-13. Marker-only profile placement
 
@@ -520,7 +520,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the record width and direction field to decode each line reference without choosing a candidate by plausibility.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs:258-444` accepts finite direction triples whose norm is within tolerance, and several layout branches return the first matching direction. The final ambiguous branch rejects distinct vectors, but the test in `axes_tests.rs:26-46` covers only that branch. If one record satisfies two layout predicates with different valid unit triples, the first branch wins without proving the other candidate invalid. Commit `e0037cf23` added negative coverage but did not establish the native width or trailer semantics from an independent record. Confidence: high.
+**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs` collects every structurally valid direction candidate for an addressed width and rejects the record when distinct candidates disagree. The documented specific-layout precedence remains only when the candidates agree; the native authoritative width and trailer semantics remain unknown. Confidence: medium.
 
 ### DI-34. SWIFT implicit nominal construction
 
