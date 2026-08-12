@@ -1156,6 +1156,11 @@ impl Codec for FcstdCodec {
             policy: *ctx.policy(),
         };
         let scan = container::scan(ctx, root)?;
+        // Charge document object cardinality before persistence/geometry work.
+        ctx.charge_entities(
+            scan.document.object_count as u64,
+            "admit FCStd document objects",
+        )?;
         if !options.container_only
             && !matches!(scan.document.schema_version.as_str(), "2" | "3" | "4")
         {
@@ -1442,6 +1447,7 @@ impl Codec for FcstdCodec {
         } else {
             semantic_losses(&ir)
         };
+        ctx.charge_entities(ir.model.entity_count() as u64, "admit FCStd entities")?;
         Ok(DecodeResult::new(
             ir,
             DecodeReport {

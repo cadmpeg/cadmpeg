@@ -100,16 +100,23 @@ struct EvaluatedFeatureState<'a> {
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
+    // Charge container cardinality before BREP/IR construction so max_entities
+    // can refuse the expensive path rather than only the finalizer.
+    let container_entities =
+        (scan.blocks.len() + scan.compound_streams.len() + scan.directory.len()) as u64;
+    ctx.charge_entities(container_entities, "admit SLDPRT container entities")?;
 
     if ctx.container_only() {
         let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
+        ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
         let mut report = build_container_report(&scan, true);
         report.losses.append(&mut pmi_losses);
-        return decode_result(ctx, ir, report, annotations, unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
+        ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 &scan,
@@ -117,18 +124,20 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
+            ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(&ir, &mut report);
-            return decode_result(ctx, ir, report, annotations, unknowns);
+            return decode_result(ir, report, annotations, unknowns);
         }
     }
 
     let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
     let mut report = build_container_report(&scan, false);
     report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
-    decode_result(ctx, ir, report, annotations, unknowns)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
@@ -148,13 +157,11 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
 }
 
 fn decode_result(
-    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()

@@ -2140,6 +2140,26 @@ fn synthetic_sldprt() -> Vec<u8> {
 }
 
 #[test]
+fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 0;
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(synthetic_sldprt()), &options)
+        .expect_err("max_entities=0 must refuse at container admission");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.context.operation == "admit SLDPRT container entities"
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn detect_high_on_marker_after_header() {
     let f = synthetic_sldprt();
     assert_eq!(SldprtCodec.detect(&f), Confidence::High);

@@ -102,25 +102,30 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report);
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(ctx, ir, report, annotations, unknowns);
     }
 
+    // Charge stream cardinality before geometry construction.
+    ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
+
     if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(ctx, root, &scan) {
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(ctx, ir, report, annotations, unknowns);
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(ctx, ir, report, annotations, unknowns)
 }
 
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit NX entities")?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()

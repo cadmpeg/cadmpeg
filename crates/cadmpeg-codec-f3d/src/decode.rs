@@ -2239,7 +2239,7 @@ fn finish_model_decode<'a>(
         &unknowns,
     );
     let source_image = preserve_source_image(scan);
-    decode_result(ir, report, annotations, unknowns, source_image)
+    decode_result(ctx, ir, report, annotations, unknowns, source_image)
 }
 
 fn brep_identity_namespace(entry: &str) -> Option<&str> {
@@ -2263,7 +2263,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         if let Ok(Some(table)) = crate::xref::decode(&scan) {
             apply_assembly_classification(&mut report, &scan, &table);
         }
-        return decode_result(ir, report, annotations, unknowns, source_image);
+        return decode_result(ctx, ir, report, annotations, unknowns, source_image);
     }
 
     let unbound_body_bindings =
@@ -2808,7 +2808,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         Ok(None) => {}
         Err(error) => report.losses.push(xref_parse_loss(error)),
     }
-    decode_result(ir, report, annotations, unknowns, source_image)
+    decode_result(ctx, ir, report, annotations, unknowns, source_image)
 }
 
 /// Projected mesh geometry and the Design records that own it.
@@ -3373,12 +3373,16 @@ fn apply_assembly_classification(
 }
 
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
 ) -> Result<DecodeResult, CodecError> {
+    // ASM transfer already charged its delta; admit any remaining neutral entities
+    // (sketches, appearances, products) before finalizing.
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit F3D entities")?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()

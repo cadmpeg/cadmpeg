@@ -73,6 +73,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let unresolved_feature_states = feature_projection.unresolved_states;
     ir.model.features = feature_projection.features;
     ir.model.feature_result_topologies = feature_projection.result_topologies;
+    // Charge semantic IR before native-arena materialization and kernel BREP
+    // transfer so max_entities refuses that work.
+    let mut admitted_entities = 0_u64;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        &mut admitted_entities,
+        "admit Inventor semantic entities",
+    )?;
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".into(),
@@ -1295,7 +1303,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("segment_bulk_issues", &segment_bulk_issues)?;
     namespace.set_arena("unpaired_segments", &unpaired_segments)?;
     namespace.set_arena("active_carrier", std::slice::from_ref(&active_carrier))?;
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit Inventor entities")?;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        &mut admitted_entities,
+        "admit Inventor entities",
+    )?;
 
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {

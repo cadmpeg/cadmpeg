@@ -129,7 +129,14 @@ fn finish_decode(
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
 ) -> Result<DecodeResult, CodecError> {
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit CATIA entities")?;
+    // Charge route-built entities before native decode and transfer work so
+    // max_entities refuses that work rather than only reporting afterward.
+    let mut admitted_entities = 0_u64;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        &mut admitted_entities,
+        "admit CATIA route entities",
+    )?;
     let consolidated_record_ranges = container::consolidated_record_ranges(scan);
     let native = CatiaNative::decode_with_record_ranges(&scan.data, &consolidated_record_ranges);
     let modeling_graph_scope = modeling_graph_scope(
@@ -3423,6 +3430,11 @@ fn finish_decode(
         });
     }
     native.store_owned(ir.native.namespace_mut("catia"))?;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        &mut admitted_entities,
+        "admit CATIA entities",
+    )?;
     decode_result(ir, report, annotations, unknowns)
 }
 

@@ -271,6 +271,22 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_entities(count, operation)
     }
 
+    /// Charges entities newly present since `admitted`, then advances `admitted`.
+    ///
+    /// Codecs call this at admission boundaries so `max_entities` refuses further
+    /// work instead of only reporting after a finished IR is built.
+    pub fn admit_entities(
+        &self,
+        current: u64,
+        admitted: &mut u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let additional = current.saturating_sub(*admitted);
+        self.charge_entities(additional, operation)?;
+        *admitted = current;
+        Ok(())
+    }
+
     /// Charges admitted collection items.
     pub fn charge_collection_items(
         &self,

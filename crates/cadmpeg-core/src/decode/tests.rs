@@ -181,6 +181,15 @@ fn every_session_dimension_refuses_and_fuses() {
         ResourceDimension::Entities,
     );
     assert_dimension(
+        |limits| limits.max_entities = 1,
+        |ctx| {
+            let mut admitted = 0;
+            ctx.admit_entities(1, &mut admitted, "admit")?;
+            ctx.admit_entities(2, &mut admitted, "admit")
+        },
+        ResourceDimension::Entities,
+    );
+    assert_dimension(
         |limits| limits.max_collection_items = 1,
         |ctx| ctx.charge_collection_items(2, "items"),
         ResourceDimension::CollectionItems,
