@@ -3047,16 +3047,12 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
-        let (raw, warnings, semantic_error) = match parsed {
-            crate::brep::BrepParse::Valid(value) => (value.raw, value.warnings, None),
-            crate::brep::BrepParse::SemanticInvalid {
-                raw,
-                error,
-                warnings,
-            } => (raw, warnings, Some(error)),
+        let warnings = match &parsed {
+            crate::brep::BrepParse::Valid(value) => value.warnings(),
+            crate::brep::BrepParse::SemanticInvalid { warnings, .. } => warnings,
         };
         for warning in warnings {
-            self.scan_warning(source_order, &warning);
+            self.scan_warning(source_order, warning);
         }
         let Some(identity) = object.identity.as_ref() else {
             self.scan_warning(
@@ -3075,20 +3071,36 @@ impl<'a> DecodeContext<'a> {
         let association = self.source_association(identity);
         let key = self.object_key(identity, source_order);
         let unknown = self.unknowns[source_order].id.clone();
-        let transfer = BrepTransferInput {
-            expand: self.expand,
-            data: self.scan.data,
-            archive: self.archive(),
-            writer_version: self.scan.metadata.properties.writer_version,
-            raw: &raw,
-            key: &key,
-            association: &association,
-            unknown: &unknown,
-            scale,
-            semantic_error: semantic_error.as_ref(),
-            mesh_budget: &mut self.mesh_budget,
+        let staged = match &parsed {
+            crate::brep::BrepParse::Valid(brep) => stage_brep(BrepTransferInput {
+                expand: self.expand,
+                data: self.scan.data,
+                archive: self.archive(),
+                writer_version: self.scan.metadata.properties.writer_version,
+                brep,
+                key: &key,
+                association: &association,
+                unknown: &unknown,
+                scale,
+                mesh_budget: &mut self.mesh_budget,
+            }),
+            crate::brep::BrepParse::SemanticInvalid { raw, error, .. } => Ok(stage_invalid_brep(
+                BrepCarrierInput {
+                    expand: self.expand,
+                    data: self.scan.data,
+                    archive: self.archive(),
+                    writer_version: self.scan.metadata.properties.writer_version,
+                    raw,
+                    key: &key,
+                    association: &association,
+                    unknown: &unknown,
+                    scale,
+                    mesh_budget: &mut self.mesh_budget,
+                },
+                error,
+            )),
         };
-        match stage_brep(transfer) {
+        match staged {
             Ok(staged) => {
                 let links = staged.links.clone();
                 let warnings = staged.warnings.clone();
@@ -3507,13 +3519,33 @@ struct BrepTransferInput<'a> {
     data: &'a [u8],
     archive: ArchiveVersion,
     writer_version: Option<i64>,
+    brep: &'a crate::brep::ValidatedRawBrep,
+    key: &'a str,
+    association: &'a SourceObjectAssociation,
+    unknown: &'a UnknownId,
+    scale: f64,
+    mesh_budget: &'a mut crate::mesh::MeshBudget,
+}
+
+struct BrepCarrierInput<'a> {
+    expand: crate::mesh::MeshExpand<'a>,
+    data: &'a [u8],
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
     raw: &'a crate::brep::RawBrep,
     key: &'a str,
     association: &'a SourceObjectAssociation,
     unknown: &'a UnknownId,
     scale: f64,
-    semantic_error: Option<&'a crate::curves::GeometryError>,
     mesh_budget: &'a mut crate::mesh::MeshBudget,
+}
+
+struct BrepCarrierDraft {
+    staged: BrepDraft,
+    c3: BTreeMap<i32, cadmpeg_ir::ids::CurveId>,
+    surfaces: BTreeMap<i32, cadmpeg_ir::ids::SurfaceId>,
+    child_failed: bool,
+    child_cause: Option<String>,
 }
 
 struct BrepStageContext<'a> {
@@ -3587,8 +3619,8 @@ impl BrepDraft {
     }
 }
 
-fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::GeometryError> {
-    let BrepTransferInput {
+fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
+    let BrepCarrierInput {
         expand,
         data,
         archive,
@@ -3598,7 +3630,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         association,
         unknown,
         scale,
-        semantic_error,
         mesh_budget,
     } = input;
     let mut staged = BrepDraft {
@@ -3769,28 +3800,59 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             }
         }
     }
-    if semantic_error.is_some() || child_failed {
-        staged.links.extend(
-            staged
-                .draft
-                .model()
-                .curves
-                .iter()
-                .map(|curve| curve.id.to_string())
-                .chain(
-                    staged
-                        .draft
-                        .model()
-                        .surfaces
-                        .iter()
-                        .map(|surface| surface.id.to_string()),
-                ),
-        );
-        return Ok(staged.free_carrier_fallback(
-            semantic_error
-                .map(ToString::to_string)
-                .or(child_cause)
-                .unwrap_or_else(|| "child geometry decode failed".to_string()),
+    BrepCarrierDraft {
+        staged,
+        c3,
+        surfaces,
+        child_failed,
+        child_cause,
+    }
+}
+
+fn stage_invalid_brep(
+    input: BrepCarrierInput<'_>,
+    semantic_error: &crate::curves::GeometryError,
+) -> BrepDraft {
+    let carriers = stage_brep_carriers(input);
+    finish_brep_fallback(carriers.staged, semantic_error.to_string())
+}
+
+fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::GeometryError> {
+    let BrepTransferInput {
+        expand,
+        data,
+        archive,
+        writer_version,
+        brep,
+        key,
+        association,
+        unknown,
+        scale,
+        mesh_budget,
+    } = input;
+    let raw = brep.raw();
+    let BrepCarrierDraft {
+        mut staged,
+        c3,
+        surfaces,
+        child_failed,
+        child_cause,
+    } = stage_brep_carriers(BrepCarrierInput {
+        expand,
+        data,
+        archive,
+        writer_version,
+        raw,
+        key,
+        association,
+        unknown,
+        scale,
+        mesh_budget,
+    });
+    if child_failed {
+        return Ok(finish_brep_fallback(
+            staged,
+            child_cause.unwrap_or_else(|| "child geometry decode failed".to_string()),
         ));
     }
     let (c2, pcurves, pcurve_warnings) = decode_pcurves(data, archive, raw, key);
@@ -4059,6 +4121,26 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     Ok(staged)
 }
 
+fn finish_brep_fallback(mut staged: BrepDraft, cause: impl Into<String>) -> BrepDraft {
+    staged.links.extend(
+        staged
+            .draft
+            .model()
+            .curves
+            .iter()
+            .map(|curve| curve.id.to_string())
+            .chain(
+                staged
+                    .draft
+                    .model()
+                    .surfaces
+                    .iter()
+                    .map(|surface| surface.id.to_string()),
+            ),
+    );
+    staged.free_carrier_fallback(cause)
+}
+
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
     expand: crate::mesh::MeshExpand<'_>,
@@ -4069,8 +4151,8 @@ pub(crate) fn embedded_brep_json(
     scale: f64,
 ) -> Option<String> {
     let parsed = crate::brep::parse(data, range, archive, writer_version).ok()?;
-    let raw = match parsed {
-        crate::brep::BrepParse::Valid(value) => value.raw,
+    let brep = match parsed {
+        crate::brep::BrepParse::Valid(value) => value,
         crate::brep::BrepParse::SemanticInvalid { .. } => return None,
     };
     let association = SourceObjectAssociation {
@@ -4089,12 +4171,11 @@ pub(crate) fn embedded_brep_json(
         data,
         archive,
         writer_version,
-        raw: &raw,
+        brep: &brep,
         key: "history:embedded-brep",
         association: &association,
         unknown: &unknown,
         scale,
-        semantic_error: None,
         mesh_budget: &mut mesh_budget,
     })
     .ok()?;
@@ -5658,6 +5739,8 @@ mod tests {
     #[test]
     fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         let (data, raw) = source_shaped_plane_brep();
+        let brep =
+            crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
         let association = SourceObjectAssociation {
             format: "rhino".to_string(),
             object_id: "plane-brep".to_string(),
@@ -5674,12 +5757,11 @@ mod tests {
                 data: &data,
                 archive: ArchiveVersion::V5,
                 writer_version: Some(200_206_180),
-                raw: &raw,
+                brep: &brep,
                 key: "plane",
                 association: &association,
                 unknown: &unknown,
                 scale: 25.4,
-                semantic_error: None,
                 mesh_budget: &mut crate::mesh::MeshBudget::new(),
             })
         })
@@ -5735,7 +5817,9 @@ mod tests {
     #[test]
     fn failed_trim_pcurve_does_not_discard_brep_topology() {
         let (data, mut raw) = source_shaped_plane_brep();
-        raw.c2.slots[1] = None;
+        raw.c2.slots[1].as_mut().expect("C2 slot").class_uuid = class_uuid([0; 16]);
+        let brep =
+            crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
         let association = SourceObjectAssociation {
             format: "rhino".to_string(),
             object_id: "plane-brep".to_string(),
@@ -5752,12 +5836,11 @@ mod tests {
                 data: &data,
                 archive: ArchiveVersion::V5,
                 writer_version: Some(200_206_180),
-                raw: &raw,
+                brep: &brep,
                 key: "plane",
                 association: &association,
                 unknown: &unknown,
                 scale: 1.0,
-                semantic_error: None,
                 mesh_budget: &mut crate::mesh::MeshBudget::new(),
             })
         })
