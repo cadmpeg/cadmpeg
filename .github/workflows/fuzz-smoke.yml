@@ -51,7 +51,14 @@ jobs:
 
       - name: Run each fuzz target briefly
         run: |
+          # cargo-fuzz lists every [[bin]], including seed generators under
+          # src/bin/. Those are Cargo utilities, not libFuzzer harnesses
+          # (crates/cadmpeg-fuzz/README.md). generate_fcstd_seeds reads a
+          # corpus fixture relative to CWD and exits 1 from the repo root.
           for t in $(cargo +nightly fuzz list --fuzz-dir crates/cadmpeg-fuzz); do
+            if [ ! -f "crates/cadmpeg-fuzz/fuzz_targets/${t}.rs" ]; then
+              continue
+            fi
             seed_dir="crates/cadmpeg-fuzz/seeds/$t"
             if [ ! -d "$seed_dir" ] && [ -d "seeds/$t" ]; then
               seed_dir="seeds/$t"
