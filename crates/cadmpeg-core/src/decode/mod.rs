@@ -17,7 +17,7 @@ mod view;
 mod tests;
 
 pub use arena::DecodeArena;
-pub use budget::{refuse_local_limit, DepthGuard, ScopedReservation, WorkBudget};
+pub use budget::{alloc_filled, refuse_local_limit, DepthGuard, ScopedReservation, WorkBudget};
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,

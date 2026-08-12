@@ -6526,8 +6526,20 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
         .enumerate()
         .map(|(index, feature)| (feature.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut outgoing = vec![Vec::<usize>::new(); features.len()];
-    let mut indegree = vec![0usize; features.len()];
+    let Ok(mut outgoing) = cadmpeg_core::decode::alloc_filled(
+        features.len(),
+        Vec::<usize>::new(),
+        "sldprt feature regeneration adjacency",
+    ) else {
+        return false;
+    };
+    let Ok(mut indegree) = cadmpeg_core::decode::alloc_filled(
+        features.len(),
+        0usize,
+        "sldprt feature regeneration indegree",
+    ) else {
+        return false;
+    };
     for (consumer, feature) in features.iter().enumerate() {
         let mut predecessors = feature
             .dependencies

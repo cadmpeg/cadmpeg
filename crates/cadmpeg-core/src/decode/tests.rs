@@ -207,6 +207,21 @@ fn every_session_dimension_refuses_and_fuses() {
 }
 
 #[test]
+fn alloc_filled_charges_collection_items_and_reserves() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_collection_items = 1);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    assert!(matches!(
+        ctx.alloc_filled(2, 0u8, "filled"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+    ));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
+    assert_eq!(ctx.alloc_filled(3, 7u8, "filled").unwrap(), vec![7, 7, 7]);
+}
+
+#[test]
 fn depth_is_scoped_and_work_budget_is_sticky() {
     let arena = DecodeArena::new();
     let policy = policy_with(|limits| {

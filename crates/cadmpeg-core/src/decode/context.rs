@@ -7,7 +7,7 @@ use std::io::SeekFrom;
 use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
-use super::budget::{DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
+use super::budget::{alloc_filled, DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
 use super::error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
@@ -264,6 +264,20 @@ impl<'a> DecodeContext<'a> {
         })?;
         copy.extend_from_slice(bytes);
         Ok(copy)
+    }
+
+    /// Allocates `count` copies of `value` after charging collection items and
+    /// reserving without panicking on allocator refusal.
+    ///
+    /// Prefer this over `vec![value; parsed_count]` for attacker-influenced sizes.
+    pub fn alloc_filled<T: Clone>(
+        &self,
+        count: usize,
+        value: T,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        self.charge_collection_items(count as u64, operation)?;
+        alloc_filled(count, value, operation)
     }
 
     /// Charges admitted entities.

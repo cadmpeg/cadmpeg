@@ -152,3 +152,10 @@ crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::DecodeContext::admit_entities"
 reason = "delta entity admission so max_entities refuses mid-decode rather than only after IR build"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::{alloc_filled,DecodeContext::alloc_filled}"
+reason = "checked fill allocation for parsed counts; prefer over vec![value; n]"

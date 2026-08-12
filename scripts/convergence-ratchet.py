@@ -9,6 +9,7 @@ Patterns (production filter — see ``docs/convergence-ledger.toml``):
 * ``CodecError::Malformed(format!`` (multiline-aware)
 * ``LossNote {`` struct literals (not ``-> LossNote {`` or the struct definition)
 * bare ``1e-6`` / ``1e-9`` / ``1e-10`` / ``1e-12`` in ``crates/**/src``
+* non-literal ``vec![value; count]`` repeats (parsed-count allocations)
 
 Modes:
 
@@ -38,6 +39,7 @@ METRIC_KEYS = (
     "codec_error_malformed_format",
     "loss_note_struct_literals",
     "bare_tolerance_literals",
+    "nonliteral_vec_repeat",
 )
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
@@ -47,6 +49,9 @@ LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
 LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
 LOSS_NOTE_STRUCT = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?struct\s+LossNote\s*\{")
 BARE_TOLERANCE = re.compile(r"(?<![0-9A-Za-z_.])1[eE]-(?:6|9|10|12)\b")
+# `vec![value; count]` where count is not a decimal/hex literal.
+VEC_REPEAT = re.compile(r"vec!\s*\[(?:[^\];]|;)*;\s*([^\]]+)\]", re.MULTILINE)
+VEC_REPEAT_LITERAL = re.compile(r"^(?:0x[0-9a-fA-F]+|\d+)$")
 CFG_TEST_ATTR = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
 
 FILTER_DESCRIPTION = (
@@ -170,6 +175,18 @@ def count_bare_tolerances() -> int:
     return total
 
 
+def count_nonliteral_vec_repeat() -> int:
+    total = 0
+    for path in iter_src_files("crates/**/src/**/*.rs"):
+        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        for match in VEC_REPEAT.finditer(text):
+            count_expr = match.group(1).strip()
+            if VEC_REPEAT_LITERAL.fullmatch(count_expr):
+                continue
+            total += 1
+    return total
+
+
 def measure() -> dict[str, int]:
     return {
         "from_endian_bytes": count_from_endian_bytes(),
@@ -177,6 +194,7 @@ def measure() -> dict[str, int]:
         "codec_error_malformed_format": count_malformed_format(),
         "loss_note_struct_literals": count_loss_note_literals(),
         "bare_tolerance_literals": count_bare_tolerances(),
+        "nonliteral_vec_repeat": count_nonliteral_vec_repeat(),
     }
 
 

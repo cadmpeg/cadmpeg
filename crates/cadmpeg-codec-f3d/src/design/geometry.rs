@@ -858,7 +858,11 @@ fn arrangement_has_alternate_path(
     destination: usize,
     node_count: usize,
 ) -> bool {
-    let mut visited = vec![false; node_count];
+    let Ok(mut visited) =
+        cadmpeg_core::decode::alloc_filled(node_count, false, "f3d arrangement visit marks")
+    else {
+        return false;
+    };
     let mut pending = vec![start];
     visited[start] = true;
     while let Some(node) = pending.pop() {
@@ -2768,7 +2772,11 @@ pub(crate) fn closed_sketch_profiles(
         incident.sort_by_key(|edge| edges[*edge].0.id.clone());
     }
 
-    let mut visited = vec![false; edges.len()];
+    let Ok(mut visited) =
+        cadmpeg_core::decode::alloc_filled(edges.len(), false, "f3d edge component marks")
+    else {
+        return Vec::new();
+    };
     let mut order = (0..edges.len()).collect::<Vec<_>>();
     order.sort_by_key(|edge| edges[*edge].0.id.clone());
     for first_edge in order {

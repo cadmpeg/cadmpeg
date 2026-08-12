@@ -658,7 +658,8 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
         faces.push(SubdFace { edges: ring });
     }
 
-    let mut crease_incidence = vec![0usize; live_vertices];
+    let mut crease_incidence =
+        cadmpeg_core::decode::alloc_filled(live_vertices, 0usize, "f3d subd crease incidence")?;
     for edge in &crease_edges {
         let vertices = edge_ir
             .get(*edge)
