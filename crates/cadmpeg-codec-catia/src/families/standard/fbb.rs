@@ -1,7 +1,7 @@
 //! Byte-level parsing for standard nested CATIA V5 B-rep (`FBB`) streams:
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{View, WorkBudget};
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
@@ -582,7 +582,7 @@ fn parse_count(bytes: &[u8], position: &mut usize) -> Option<usize> {
     if first != 0xff {
         return Some(usize::from(first));
     }
-    let value = u32::from_le_bytes(bytes.get(*position..*position + 4)?.try_into().ok()?);
+    let value = View::u32_le_at(bytes, *position)?;
     *position += 4;
     usize::try_from(value).ok()
 }
@@ -711,7 +711,7 @@ pub(crate) fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Ve
         position += 3;
         let mut point = [0.0; 3];
         for coordinate in &mut point {
-            let value = f32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?);
+            let value = View::f32_le_at(bytes, position)?;
             if !value.is_finite() {
                 return None;
             }
@@ -842,25 +842,16 @@ pub(crate) fn parse_trim_record_layout(
         return None;
     }
     position += 1;
-    let handle_count = usize::try_from(u32::from_le_bytes(
-        bytes.get(position..position + 4)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let handle_count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
     position += 4;
     if handle_count == 0 {
         return None;
     }
     let frame_vector = if mask & 8 != 0 {
         let components = [
-            f64::from(f32::from_le_bytes(
-                bytes.get(position..position + 4)?.try_into().ok()?,
-            )),
-            f64::from(f32::from_le_bytes(
-                bytes.get(position + 4..position + 8)?.try_into().ok()?,
-            )),
-            f64::from(f32::from_le_bytes(
-                bytes.get(position + 8..position + 12)?.try_into().ok()?,
-            )),
+            f64::from(View::f32_le_at(bytes, position)?),
+            f64::from(View::f32_le_at(bytes, position + 4)?),
+            f64::from(View::f32_le_at(bytes, position + 8)?),
         ];
         position += 12;
         let norm2 = components.iter().map(|value| value * value).sum::<f64>();
@@ -932,9 +923,7 @@ pub(crate) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Opt
     for _ in 0..layout.stored_count {
         let handle = match width {
             1 => u32::from(*bytes.get(position)?),
-            2 => u32::from(u16::from_be_bytes(
-                bytes.get(position..position + 2)?.try_into().ok()?,
-            )),
+            2 => u32::from(View::u16_be_at(bytes, position)?),
             3 => u32::from_be_bytes([
                 0,
                 *bytes.get(position)?,
