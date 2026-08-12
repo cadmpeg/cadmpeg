@@ -6003,7 +6003,9 @@ fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
 }
 
 #[test]
-fn container_resource_limits_match_the_declared_f3d_profile() {
+fn write_path_protein_bounds_remain_local_constants() {
+    // Decode nested Protein ZIPs charge through ArchiveSnapshot / begin_expand.
+    // The write-path rewriter has no DecodeContext and keeps these local caps.
     assert_eq!(crate::container::MAX_ARCHIVE_BYTES, 256 * 1024 * 1024);
     assert_eq!(
         crate::container::MAX_INFLATED_ENTRY_BYTES,
@@ -6026,6 +6028,100 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
         crate::materials::patch_protein_appearances(&protein, &std::collections::BTreeMap::new())
             .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));
+}
+
+#[test]
+fn nested_protein_decode_charges_through_session_expand_ceilings() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let target = b"AssetData/InstanceProperties.bin";
+    let mut nested = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
+    nested
+        .start_file(std::str::from_utf8(target).unwrap(), deflated)
+        .unwrap();
+    nested.write_all(b"properties").unwrap();
+    let mut protein = nested.finish().unwrap().into_inner();
+    set_zip_entry_uncompressed_size(&mut protein, target, u32::MAX);
+
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut outer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut outer, stored);
+    outer
+        .start_file(
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+            stored,
+        )
+        .unwrap();
+    outer.write_all(&synthetic_geometry_smbh()).unwrap();
+    outer
+        .start_file(
+            "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+            stored,
+        )
+        .unwrap();
+    outer.write_all(&protein).unwrap();
+    let archive = outer.finish().unwrap().into_inner();
+
+    let error = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect_err("nested Protein inflate must refuse session expand ceilings");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::DecompressedBytes
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn nested_protein_decode_honors_operator_per_expand_ceiling() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let target = b"AssetData/InstanceProperties.bin";
+    let payload = vec![b'x'; 64 * 1024];
+    let mut nested = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
+    nested
+        .start_file(std::str::from_utf8(target).unwrap(), deflated)
+        .unwrap();
+    nested.write_all(&payload).unwrap();
+    let protein = nested.finish().unwrap().into_inner();
+
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut outer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut outer, stored);
+    outer
+        .start_file(
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+            stored,
+        )
+        .unwrap();
+    outer.write_all(&synthetic_geometry_smbh()).unwrap();
+    outer
+        .start_file(
+            "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+            stored,
+        )
+        .unwrap();
+    outer.write_all(&protein).unwrap();
+    let archive = outer.finish().unwrap().into_inner();
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_decompressed_bytes_per_expand = 1024;
+    let error = F3dCodec
+        .decode(&mut Cursor::new(archive), &options)
+        .expect_err("operator per-expand ceiling must bind nested Protein inflate");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::DecompressedBytes
+        ),
+        "{error:?}"
+    );
 }
 
 fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {

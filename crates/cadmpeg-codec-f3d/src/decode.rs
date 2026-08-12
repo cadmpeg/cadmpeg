@@ -1799,7 +1799,7 @@ fn finish_model_decode<'a>(
         Some(&primary_model_brep.name),
         &brep.asm.body_native_keys,
     )?;
-    let decoded_materials = materials::decode_with_body_bindings(scan, &design_body_bindings)?;
+    let decoded_materials = materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
     let (mut ir, mut native, asm_remainder) =
         build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
     let AsmTransferRemainder {
@@ -2743,7 +2743,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.act_registry_channels = act.registry_channels;
     native.act_root_components = act.root_components;
     native.act_table_references = act.table_references;
-    let decoded_materials = materials::decode(&scan)?;
+    let decoded_materials = materials::decode(ctx, &scan)?;
     let has_appearance_assignments = decoded_materials.has_topology_assignments;
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
