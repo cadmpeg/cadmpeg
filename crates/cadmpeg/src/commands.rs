@@ -211,6 +211,9 @@ pub fn decode(
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
+    // Decode does not validate. Convert/validate compose validate_neutral +
+    // fidelity + native; salvage mode may emit IR with findings.
+    eprintln!("validation: not run (successful decode is not a valid IR; run `cadmpeg validate`)");
     write_command_report(
         path,
         report_path,

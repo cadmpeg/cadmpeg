@@ -4376,6 +4376,11 @@ impl Codec for StepCodec {
         }
     }
 
+    /// Deep semantic analysis of a STEP exchange, exposed as container inspect.
+    ///
+    /// Runs the semantic decode path to populate `unknown_entities` and related
+    /// attributes. Not a cheap syntactic census; see
+    /// `docs/formats/step-inspect.md`.
     fn inspect_impl(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -4391,7 +4396,7 @@ impl Codec for StepCodec {
         }
         let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
         let (decoded, opaque_offsets) =
-            reader::inspect_exchange(bytes, &mut exchange, &diagnostics, Some(ctx))?;
+            reader::analyze_exchange(bytes, &mut exchange, &diagnostics, Some(ctx))?;
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),

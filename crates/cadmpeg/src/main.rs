@@ -427,6 +427,9 @@ enum Command {
         bytes: Option<inspect::ByteCommand>,
     },
     /// Decode a native CAD file to canonical CADIR JSON.
+    ///
+    /// Does not validate. A successful decode is not a valid IR; run
+    /// `cadmpeg validate` (or convert, which validates unless overridden).
     Decode {
         /// Native CAD file to decode.
         #[arg(required_unless_present = "input_flag")]

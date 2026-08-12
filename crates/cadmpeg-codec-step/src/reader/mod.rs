@@ -57,7 +57,12 @@ pub(super) fn decode_exchange(
         .map(|(result, _)| result)
 }
 
-pub(super) fn inspect_exchange(
+/// Deep semantic analysis used by STEP `inspect`.
+///
+/// Runs the semantic decode path (discarding the IR at the inspect boundary)
+/// so `unknown_entities` and related attributes stay accurate. This is not a
+/// cheap syntactic census.
+pub(super) fn analyze_exchange(
     input: &[u8],
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
