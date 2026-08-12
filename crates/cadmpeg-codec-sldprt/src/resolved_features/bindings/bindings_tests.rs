@@ -2,15 +2,18 @@
 
 use super::super::LEGACY_SKETCH_MARKER;
 use super::{
-    bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_resolved_curve_vertices,
-    bind_scalar_operands, normalize_indexed_curve_entities,
+    bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
+    bind_resolved_curve_vertices, bind_scalar_operands, normalize_indexed_curve_entities,
 };
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputComponentPathEntry, FeatureInputLane, FeatureInputName, FeatureInputScalar,
-    FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind,
+    FeatureInputComponentPathEntry, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane,
+    FeatureInputName, FeatureInputScalar, FeatureInputScalarRole, FeatureInputSurfaceSelection,
+    SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternForm, PatternKind};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, PatternForm, PatternKind, PatternSeed,
+};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -299,6 +302,156 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             pattern: PatternKind::Unresolved { .. },
             ..
         }
+    ));
+}
+
+#[test]
+fn circular_pattern_seed_binds_from_generated_identity_path() {
+    let signature = |source: u32, identity: u32| {
+        let mut signature = [0; 12];
+        signature[4..8].copy_from_slice(&source.to_le_bytes());
+        signature[8..12].copy_from_slice(&identity.to_le_bytes());
+        signature
+    };
+    let pattern_native = NativeFeature {
+        id: "pattern-native".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("228".into()),
+        parent_source_id: None,
+        ordinal: 1,
+        name: "CirPattern1".into(),
+        kind: "CirPattern".into(),
+        input_class: Some("moCirPattern_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let seed_native = NativeFeature {
+        id: "seed-native".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("224".into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: "HoleWizard1".into(),
+        kind: "HoleWizard".into(),
+        input_class: Some("moHoleWzd_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![pattern_native, seed_native],
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; 256],
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "pattern-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 100,
+            object_id: Some(228),
+            value: "CirPattern1".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: vec![FeatureInputGeneratedSurfaceIdentity {
+            id: "identity".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 150,
+            type_prefix: [0xc2, 0x83, 0xfb, 0x08],
+            feature_source_id: 224,
+            local_identity: 2,
+            components: vec![
+                FeatureInputComponentPathEntry {
+                    instance: Some(0x8aaa),
+                    type_signature: signature(228, 1),
+                    local_id: None,
+                },
+                FeatureInputComponentPathEntry {
+                    instance: Some(0x89c9),
+                    type_signature: signature(224, 2),
+                    local_id: Some(2),
+                },
+            ],
+        }],
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let mut features = vec![
+        Feature {
+            id: FeatureId("pattern".into()),
+            ordinal: 0,
+            name: Some("CirPattern1".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::Unresolved {
+                    form: Some(PatternForm::Circular),
+                },
+            },
+            native_ref: Some("pattern-native".into()),
+        },
+        Feature {
+            id: FeatureId("seed".into()),
+            ordinal: 1,
+            name: Some("HoleWizard1".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::Unresolved { form: None },
+            },
+            native_ref: Some("seed-native".into()),
+        },
+    ];
+
+    bind_pattern_inputs(
+        &mut features,
+        std::slice::from_ref(&history),
+        std::slice::from_mut(&mut lane),
+    );
+
+    assert_eq!(features[0].dependencies, vec![FeatureId("seed".into())]);
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Pattern { seeds, pattern: PatternKind::Unresolved { form: Some(PatternForm::Circular) } }
+            if seeds == &[PatternSeed::Feature(FeatureId("seed".into()))]
     ));
 }
 
