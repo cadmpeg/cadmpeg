@@ -8,7 +8,7 @@
 //! from the graph.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_core::be;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,6 +16,26 @@ use crate::framing::{
     fixed_len, fixed_record_boundary, fixed_record_candidates as framed_record_candidates,
     read_and_advance, read_sequence_at, read_xmt,
 };
+
+fn u32_be_at(bytes: &[u8], offset: usize) -> Option<u32> {
+    let mut view = View::over_retained(bytes);
+    view.seek(offset)?;
+    view.u32_be()
+}
+
+fn f64_be_at(bytes: &[u8], offset: usize) -> Option<f64> {
+    let mut view = View::over_retained(bytes);
+    view.seek(offset)?;
+    view.f64_be()
+}
+
+fn vec3_be_at(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
+    Some([
+        f64_be_at(bytes, offset)?,
+        f64_be_at(bytes, offset.checked_add(8)?)?,
+        f64_be_at(bytes, offset.checked_add(16)?)?,
+    ])
+}
 
 /// Exact inline schema header for the `intersection_data` one-byte record
 /// family. The terminal `5a` is the record tag; callers use the prefix before
@@ -187,12 +207,12 @@ impl Node {
 
     /// Read a big-endian floating-point field at its logical record offset.
     pub fn f64_at(&self, offset: usize) -> Option<f64> {
-        be::f64_at(&self.bytes, offset + self.shift)
+        f64_be_at(&self.bytes, offset + self.shift)
     }
 
     /// Read a big-endian unsigned 32-bit field at a logical record offset.
     pub fn u32_at(&self, offset: usize) -> Option<u32> {
-        be::u32_at(&self.bytes, offset + self.shift)
+        u32_be_at(&self.bytes, offset + self.shift)
     }
 
     /// Decode FACE fields while accumulating every preceding large-index shift.
@@ -200,7 +220,7 @@ impl Node {
         (self.kind == 14).then_some(())?;
         let mut at = 8 + self.shift;
         let attributes = read_and_advance(&self.bytes, &mut at)?;
-        let tolerance = be::f64_at(&self.bytes, at)?;
+        let tolerance = f64_be_at(&self.bytes, at)?;
         at += 8;
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
         let sense = *self.bytes.get(at)?;
@@ -222,7 +242,7 @@ impl Node {
         (self.kind == 16).then_some(())?;
         let mut at = 8 + self.shift;
         let attributes = read_and_advance(&self.bytes, &mut at)?;
-        let tolerance = be::f64_at(&self.bytes, at)?;
+        let tolerance = f64_be_at(&self.bytes, at)?;
         at += 8;
         let refs = read_sequence_at(&self.bytes, &mut at, 7)?;
         Some(EdgeFields {
@@ -288,7 +308,7 @@ impl Node {
         (self.kind == 18).then_some(())?;
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
-        let tolerance = be::f64_at(&self.bytes, at)?;
+        let tolerance = f64_be_at(&self.bytes, at)?;
         Some(VertexFields {
             attributes: refs[0],
             point: refs[4],
@@ -301,7 +321,7 @@ impl Node {
         (self.kind == 29).then_some(())?;
         let mut at = 8 + self.shift;
         read_sequence_at(&self.bytes, &mut at, 4)?;
-        let xyz = be::vec3_at(&self.bytes, at)?;
+        let xyz = vec3_be_at(&self.bytes, at)?;
         xyz.iter()
             .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
             .then(|| Point3::new(xyz[0] * 1000.0, xyz[1] * 1000.0, xyz[2] * 1000.0))
@@ -539,10 +559,10 @@ impl Graph {
                 at += 1;
                 let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
                 let values = [
-                    be::f64_at(&node.bytes, at)?,
-                    be::f64_at(&node.bytes, at + 8)?,
-                    be::f64_at(&node.bytes, at + 16)?,
-                    be::f64_at(&node.bytes, at + 24)?,
+                    f64_be_at(&node.bytes, at)?,
+                    f64_be_at(&node.bytes, at + 8)?,
+                    f64_be_at(&node.bytes, at + 16)?,
+                    f64_be_at(&node.bytes, at + 24)?,
                 ];
                 if !values.iter().all(|value| value.is_finite())
                     || node.bytes.get(at + 32..at + 40)? != [0, 1, 0, 1, 0, 1, 0, 1]
@@ -593,7 +613,7 @@ impl Graph {
                 };
                 at += 1;
                 let support = read_and_advance(&node.bytes, &mut at)?;
-                let distance = be::f64_at(&node.bytes, at)?;
+                let distance = f64_be_at(&node.bytes, at)?;
                 let distance = distance * 1000.0;
                 (support > 1 && distance.is_finite()).then_some(OffsetSurface {
                     xmt: node.xmt,
@@ -619,7 +639,7 @@ impl Graph {
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
-                let tolerance = be::f64_at(&node.bytes, at)?;
+                let tolerance = f64_be_at(&node.bytes, at)?;
                 (refs[0] > 1 && refs[1] > 1 && tolerance.is_finite()).then_some(SurfaceCurve {
                     xmt: node.xmt,
                     surface: refs[0],
@@ -647,8 +667,8 @@ impl Graph {
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let basis = read_and_advance(&node.bytes, &mut at)?;
-                let mut point_0 = be::vec3_at(&node.bytes, at)?;
-                let mut point_1 = be::vec3_at(&node.bytes, at + 24)?;
+                let mut point_0 = vec3_be_at(&node.bytes, at)?;
+                let mut point_1 = vec3_be_at(&node.bytes, at + 24)?;
                 if point_0.iter().chain(point_1.iter()).any(|coordinate| {
                     !coordinate.is_finite() || !(*coordinate * 1000.0).is_finite()
                 }) {
@@ -657,10 +677,8 @@ impl Graph {
                 for coordinate in point_0.iter_mut().chain(point_1.iter_mut()) {
                     *coordinate *= 1000.0;
                 }
-                let p0 = node.bytes.get(at + 48..at + 56)?;
-                let p1 = node.bytes.get(at + 56..at + 64)?;
-                let p0 = f64::from_be_bytes(p0.try_into().ok()?);
-                let p1 = f64::from_be_bytes(p1.try_into().ok()?);
+                let p0 = f64_be_at(&node.bytes, at + 48)?;
+                let p1 = f64_be_at(&node.bytes, at + 56)?;
                 (basis > 1 && p0.is_finite() && p1.is_finite()).then_some(TrimmedCurve {
                     xmt: node.xmt,
                     basis,

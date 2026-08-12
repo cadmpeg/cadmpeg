@@ -5,7 +5,39 @@
 use std::collections::BTreeMap;
 
 use crate::framing::read_xmt_width as read_xmt;
-use cadmpeg_core::be;
+use cadmpeg_core::decode::View;
+
+fn u16_be_at(bytes: &[u8], offset: usize) -> Option<u16> {
+    let mut view = View::over_retained(bytes);
+    view.seek(offset)?;
+    view.u16_be()
+}
+
+fn u32_be_at(bytes: &[u8], offset: usize) -> Option<u32> {
+    let mut view = View::over_retained(bytes);
+    view.seek(offset)?;
+    view.u32_be()
+}
+
+fn u64_be_at(bytes: &[u8], offset: usize) -> Option<u64> {
+    let mut view = View::over_retained(bytes);
+    view.seek(offset)?;
+    view.u64_be()
+}
+
+fn f64_be_at(bytes: &[u8], offset: usize) -> Option<f64> {
+    let mut view = View::over_retained(bytes);
+    view.seek(offset)?;
+    view.f64_be()
+}
+
+fn vec3_be_at(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
+    Some([
+        f64_be_at(bytes, offset)?,
+        f64_be_at(bytes, offset.checked_add(8)?)?,
+        f64_be_at(bytes, offset.checked_add(16)?)?,
+    ])
+}
 
 /// One complete admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
@@ -757,7 +789,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
-        let Some(kind) = be::u16_at(stream, offset) else {
+        let Some(kind) = u16_be_at(stream, offset) else {
             break;
         };
         let Some(name) = family_name(kind) else {
@@ -892,7 +924,7 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
 
 fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
     (stream.get(..2) == Some(b"PS")).then_some(())?;
-    let description_len = usize::try_from(be::u32_at(stream, 2)?).ok()?;
+    let description_len = usize::try_from(u32_be_at(stream, 2)?).ok()?;
     (description_len > 0).then_some(())?;
     let description_start = 6usize;
     let description_end = description_start.checked_add(description_len)?;
@@ -906,7 +938,7 @@ fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
         .any(|window| window == b"(deltas)")
         .then_some(())?;
 
-    let schema_len = usize::try_from(be::u32_at(stream, description_end)?).ok()?;
+    let schema_len = usize::try_from(u32_be_at(stream, description_end)?).ok()?;
     (schema_len > 4).then_some(())?;
     let schema_start = description_end.checked_add(4)?;
     let schema_end = schema_start.checked_add(schema_len)?;
@@ -920,9 +952,9 @@ fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
     let mut at = schema_end;
     (stream.get(at..at.checked_add(2)?) == Some([0x00, 0xe7].as_slice())).then_some(())?;
     at = at.checked_add(2)?;
-    (be::u32_at(stream, at) == Some(0)).then_some(())?;
+    (u32_be_at(stream, at) == Some(0)).then_some(())?;
     at = at.checked_add(4)?;
-    (be::u16_at(stream, at) == Some(3)).then_some(())?;
+    (u16_be_at(stream, at) == Some(3)).then_some(())?;
     at = at.checked_add(2)?;
     (stream.get(at) == Some(&0xff)).then_some(())?;
     at = at.checked_add(1)?;
@@ -932,7 +964,7 @@ fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
     let (second, consumed) = read_xmt(stream, at)?;
     (second == first.checked_add(1)?).then_some(())?;
     at = at.checked_add(consumed)?;
-    (be::u16_at(stream, at) == Some(0)).then_some(())?;
+    (u16_be_at(stream, at) == Some(0)).then_some(())?;
     at = at.checked_add(2)?;
 
     Some(TransmitHeader {
@@ -988,7 +1020,7 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
             let end = record.end.checked_add(value_count * 8)?;
             let bytes = stream.get(record.end..end)?;
             let values = (0..value_count)
-                .map(|ordinal| be::f64_at(bytes, ordinal * 8))
+                .map(|ordinal| f64_be_at(bytes, ordinal * 8))
                 .collect::<Option<Vec<_>>>()?;
             values.iter().all(|value| value.is_finite()).then_some(())?;
             let next_event =
@@ -1012,7 +1044,7 @@ fn tagged_reference_lanes(stream: &[u8], census: &Census) -> Vec<TaggedReference
             let mut at = offset;
             let mut references = Vec::new();
             while at < end {
-                let kind = be::u16_at(stream, at)?;
+                let kind = u16_be_at(stream, at)?;
                 is_tagged_reference_kind(kind).then_some(())?;
                 let (xmt, consumed) = read_xmt(stream, at.checked_add(2)?)?;
                 (xmt > 1).then_some(())?;
@@ -1075,7 +1107,7 @@ fn reference_type_map(
     };
     let mut at = if let Some((1, consumed)) = read_xmt(stream, offset) {
         let separator = offset.checked_add(consumed)?;
-        (be::u16_at(stream, separator) == Some(1)).then_some(())?;
+        (u16_be_at(stream, separator) == Some(1)).then_some(())?;
         separator.checked_add(2)?
     } else {
         (stream.get(offset) == Some(&1)).then_some(())?;
@@ -1099,7 +1131,7 @@ fn reference_type_map(
         at = at.checked_add(consumed)?;
         expected_end.is_none_or(|end| at <= end).then_some(())?;
         if reference == 1 {
-            (be::u16_at(stream, at) == Some(0)).then_some(())?;
+            (u16_be_at(stream, at) == Some(0)).then_some(())?;
             at = at.checked_add(2)?;
             if expected_end == Some(at) {
                 return (!entries.is_empty()).then_some(ReferenceTypeMap {
@@ -1109,7 +1141,7 @@ fn reference_type_map(
                     end: at,
                 });
             }
-            let target_kind = be::u16_at(stream, at)?;
+            let target_kind = u16_be_at(stream, at)?;
             (target_kind > 0).then_some(())?;
             at = at.checked_add(2)?;
             return (expected_end.is_none_or(|end| at <= end) && !entries.is_empty()).then_some(
@@ -1121,7 +1153,7 @@ fn reference_type_map(
                 },
             );
         }
-        let kind = be::u16_at(stream, at)?;
+        let kind = u16_be_at(stream, at)?;
         is_reference_type_kind(kind).then_some(())?;
         at = at.checked_add(2)?;
         expected_end.is_none_or(|end| at <= end).then_some(())?;
@@ -1148,7 +1180,7 @@ fn reference_state_packet(
     offset: usize,
     gap_end: usize,
 ) -> Option<ReferenceStatePacket> {
-    (be::u16_at(stream, offset) == Some(1) && be::u16_at(stream, offset + 2) == Some(1))
+    (u16_be_at(stream, offset) == Some(1) && u16_be_at(stream, offset + 2) == Some(1))
         .then_some(())?;
     let mut at = offset.checked_add(4)?;
     let mut frames = Vec::new();
@@ -1173,7 +1205,7 @@ fn reference_state_frame(
     offset: usize,
     gap_end: usize,
 ) -> Option<(ReferenceStateFrame, usize)> {
-    (be::u16_at(stream, offset) == Some(4)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(4)).then_some(())?;
     let mut at = offset.checked_add(2)?;
     let mut references = [0; 4];
     for reference in &mut references {
@@ -1186,11 +1218,11 @@ fn reference_state_frame(
     let interleaved_null =
         references[0] > 1 && references[1] == 1 && references[2] > 1 && references[3] == 1;
     (leading_non_null || interleaved_null).then_some(())?;
-    (be::u16_at(stream, at) == Some(1)).then_some(())?;
+    (u16_be_at(stream, at) == Some(1)).then_some(())?;
     at = at.checked_add(2)?;
     let mut state_words = [0; 5];
     for word in &mut state_words {
-        *word = be::u32_at(stream, at)?;
+        *word = u32_be_at(stream, at)?;
         at = at.checked_add(4)?;
     }
     let state_byte = *stream.get(at)?;
@@ -1212,7 +1244,7 @@ fn reference_state_terminal(stream: &[u8], offset: usize, gap_end: usize) -> Opt
         (reference == 1).then_some(())?;
         at = at.checked_add(consumed)?;
     }
-    (be::u32_at(stream, at) == Some(1)).then_some(())?;
+    (u32_be_at(stream, at) == Some(1)).then_some(())?;
     at = at.checked_add(4)?;
     (at <= gap_end).then_some(at)
 }
@@ -1236,9 +1268,9 @@ fn schema_reference_preamble(
     offset: usize,
     gap_end: usize,
 ) -> Option<SchemaReferencePreamble> {
-    let identity = be::u16_at(stream, offset)?;
+    let identity = u16_be_at(stream, offset)?;
     (identity > 1
-        && be::u16_at(stream, offset.checked_add(2)?) == Some(4)
+        && u16_be_at(stream, offset.checked_add(2)?) == Some(4)
         && stream.get(offset.checked_add(4)?) == Some(&0xff))
     .then_some(())?;
     let mut at = offset.checked_add(5)?;
@@ -1260,33 +1292,33 @@ fn schema_reference_preamble(
     (state_references == [1; 3] || state_references == linked_state).then_some(())?;
     let mut state_words = [0; 4];
     for state_word in &mut state_words {
-        *state_word = be::u32_at(stream, at)?;
+        *state_word = u32_be_at(stream, at)?;
         at = at.checked_add(4)?;
     }
     (matches!(state_words[0], 0 | 2) && state_words[1] == 0 && state_words[2] == 1).then_some(())?;
     (stream.get(at..at.checked_add(3)?) == Some(&[0, 0, 0])).then_some(())?;
     at = at.checked_add(3)?;
-    (be::u16_at(stream, at) == Some(identity)).then_some(())?;
+    (u16_be_at(stream, at) == Some(identity)).then_some(())?;
     at = at.checked_add(2)?;
     for _ in 0..2 {
         let (reference, consumed) = read_xmt(stream, at)?;
         (reference == 1).then_some(())?;
         at = at.checked_add(consumed)?;
     }
-    let count = be::u16_at(stream, at)?;
+    let count = u16_be_at(stream, at)?;
     (count > 0).then_some(())?;
     at = at.checked_add(2)?;
     let mut entries = Vec::new();
     loop {
-        let entry_kind = be::u16_at(stream, at)?;
+        let entry_kind = u16_be_at(stream, at)?;
         matches!(entry_kind, 81 | 82).then_some(())?;
         at = at.checked_add(2)?;
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
         if entry_kind == 82 && reference == 1 {
-            (be::u16_at(stream, at) == Some(0)).then_some(())?;
+            (u16_be_at(stream, at) == Some(0)).then_some(())?;
             at = at.checked_add(2)?;
-            let terminal_value = be::u16_at(stream, at)?;
+            let terminal_value = u16_be_at(stream, at)?;
             at = at.checked_add(2)?;
             return (at <= gap_end && !entries.is_empty()).then_some(SchemaReferencePreamble {
                 identity,
@@ -1485,7 +1517,7 @@ fn inline_schema_declaration(
         let (xmt, consumed) = read_xmt(stream, at)?;
         (xmt > 1).then_some(())?;
         at = at.checked_add(consumed)?;
-        (be::u32_at(stream, at) == Some(0)).then_some(())?;
+        (u32_be_at(stream, at) == Some(0)).then_some(())?;
         at = at.checked_add(4)?;
         let mut references = [0; 3];
         for reference in &mut references {
@@ -1494,7 +1526,7 @@ fn inline_schema_declaration(
         (references == [2, xmt.checked_add(1)?, 1]).then_some(())?;
         let mut transform = [0.0; 13];
         for (ordinal, transform_value) in transform.iter_mut().enumerate() {
-            let value = be::f64_at(stream, at)?;
+            let value = f64_be_at(stream, at)?;
             let valid = match ordinal {
                 0 | 4 | 8 | 12 => value.to_bits() == 1.0f64.to_bits(),
                 9..=11 => value.is_finite(),
@@ -1504,10 +1536,10 @@ fn inline_schema_declaration(
             *transform_value = value;
             at = at.checked_add(8)?;
         }
-        (be::u32_at(stream, at) == Some(1)).then_some(())?;
+        (u32_be_at(stream, at) == Some(1)).then_some(())?;
         at = at.checked_add(4)?;
         for _ in 0..3 {
-            (be::u64_at(stream, at) == Some(0xc2bc_928f_996e_0000)).then_some(())?;
+            (u64_be_at(stream, at) == Some(0xc2bc_928f_996e_0000)).then_some(())?;
             at = at.checked_add(8)?;
         }
         (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
@@ -1529,7 +1561,7 @@ fn inline_schema_declaration(
         let (xmt, consumed) = read_xmt(stream, at)?;
         (xmt > 1).then_some(())?;
         at = at.checked_add(consumed)?;
-        let node_id = be::u32_at(stream, at)?;
+        let node_id = u32_be_at(stream, at)?;
         at = at.checked_add(4)?;
         let mut leading_references = [0; 5];
         let mut leading_statuses = [0; 5];
@@ -1700,7 +1732,7 @@ fn inline_schema_declaration(
         }
         let prefix_state = prefix_state?;
         at = at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?;
-        (be::u16_at(stream, at) == Some(4)).then_some(())?;
+        (u16_be_at(stream, at) == Some(4)).then_some(())?;
         at = at.checked_add(2)?;
         let mut references = [0; 4];
         for reference in &mut references {
@@ -1711,7 +1743,7 @@ fn inline_schema_declaration(
         let (null_reference, consumed) = read_xmt(stream, at)?;
         (null_reference == 1).then_some(())?;
         at = at.checked_add(consumed)?;
-        (be::u16_at(stream, at) == Some(0)).then_some(())?;
+        (u16_be_at(stream, at) == Some(0)).then_some(())?;
         at = at.checked_add(2)?;
         let (anchor_reference, consumed) = read_xmt(stream, at)?;
         let anchor_reference = match anchor_reference {
@@ -1722,7 +1754,7 @@ fn inline_schema_declaration(
         at = at.checked_add(consumed)?;
         let mut state_words = [0; 3];
         for state_word in &mut state_words {
-            *state_word = be::u32_at(stream, at)?;
+            *state_word = u32_be_at(stream, at)?;
             at = at.checked_add(4)?;
         }
         matches!(
@@ -1785,7 +1817,7 @@ fn type_41_schema_state(
         == Some(TYPE_41_SCHEMA_HEADER))
     .then_some(())?;
     let mut at = offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?;
-    (be::u32_at(stream, at) == Some(1)).then_some(())?;
+    (u32_be_at(stream, at) == Some(1)).then_some(())?;
     at = at.checked_add(4)?;
     let (reference, consumed) = read_xmt(stream, at)?;
     (reference > 1).then_some(())?;
@@ -1794,7 +1826,7 @@ fn type_41_schema_state(
     at = at.checked_add(2)?;
     let mut numeric_values = [0.0; 11];
     for value in &mut numeric_values {
-        *value = be::f64_at(stream, at)?;
+        *value = f64_be_at(stream, at)?;
         value.is_finite().then_some(())?;
         at = at.checked_add(8)?;
     }
@@ -1842,7 +1874,7 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
     }
     (first == 3).then_some(())?;
 
-    let node_id = be::u32_at(stream, at)?;
+    let node_id = u32_be_at(stream, at)?;
     at = at.checked_add(4)?;
     let mut references = [0; 8];
     for reference in &mut references {
@@ -1874,7 +1906,7 @@ fn region_schema_declaration(
     let (xmt, consumed) = read_xmt(stream, at)?;
     (xmt > 1).then_some(())?;
     at = at.checked_add(consumed)?;
-    let state_word = be::u32_at(stream, at)?;
+    let state_word = u32_be_at(stream, at)?;
     at = at.checked_add(4)?;
     let mut references = [0; 4];
     for reference in &mut references {
@@ -1953,7 +1985,7 @@ fn type_150_state_packet(
     at = at.checked_add(1)?;
     let mut values = [0.0; 9];
     for value in &mut values {
-        *value = be::f64_at(stream, at)?;
+        *value = f64_be_at(stream, at)?;
         value.is_finite().then_some(())?;
         at = at.checked_add(8)?;
     }
@@ -2152,7 +2184,7 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
     let (xmt, consumed) = read_xmt(stream, offset + 2)?;
     (xmt > 1).then_some(())?;
     let node_id_at = offset + 2 + consumed;
-    let node_id = be::u32_at(stream, node_id_at)?;
+    let node_id = u32_be_at(stream, node_id_at)?;
     let mut at = node_id_at + 4;
     let mut references = [0; 8];
     for reference in &mut references {
@@ -2531,7 +2563,7 @@ fn fixed_layout(
     let node_id = if kind == 17 {
         None
     } else {
-        let node_id = be::u32_at(stream, at)?;
+        let node_id = u32_be_at(stream, at)?;
         at += 4;
         Some(node_id)
     };
@@ -2550,7 +2582,7 @@ fn fixed_layout(
                 references.push(reference);
             }
             Token::Tolerance => {
-                let tolerance = be::f64_at(stream, at)?;
+                let tolerance = f64_be_at(stream, at)?;
                 (tolerance.is_finite()
                     && (!matches!(kind, 16 | 18) || tolerance.abs() >= 1.0e-100))
                     .then_some(())?;
@@ -2578,7 +2610,7 @@ fn fixed_layout(
                 at += 1;
             }
             Token::Position => {
-                let xyz = be::vec3_at(stream, at)?;
+                let xyz = vec3_be_at(stream, at)?;
                 xyz.iter()
                     .all(|value| {
                         value.is_finite() && (kind != 29 || *value == 0.0 || value.is_normal())
@@ -2589,13 +2621,13 @@ fn fixed_layout(
                 at += 24;
             }
             Token::Vector => {
-                let xyz = be::vec3_at(stream, at)?;
+                let xyz = vec3_be_at(stream, at)?;
                 xyz.iter().all(|value| value.is_finite()).then_some(())?;
                 canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
                 at += 24;
             }
             Token::Scalar => {
-                be::f64_at(stream, at)?.is_finite().then_some(())?;
+                f64_be_at(stream, at)?.is_finite().then_some(())?;
                 canonical_bytes.extend_from_slice(stream.get(at..at + 8)?);
                 at += 8;
             }
@@ -2657,7 +2689,7 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
 }
 
 fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
-    (be::u16_at(stream, offset) == Some(90)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(90)).then_some(())?;
     let direct = group_layout(stream, offset, 0);
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| group_layout(stream, offset, 1))
@@ -2676,7 +2708,7 @@ fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
 }
 
 fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
-    (be::u16_at(stream, offset) == Some(74)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(74)).then_some(())?;
     let direct = attdef_list_layout(stream, offset, 0);
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| attdef_list_layout(stream, offset, 1))
@@ -2695,7 +2727,7 @@ fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
 }
 
 fn consume_type_70(stream: &[u8], offset: usize) -> Option<Record> {
-    (be::u16_at(stream, offset) == Some(70)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(70)).then_some(())?;
     let direct = type_70_layout(stream, offset, 0);
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| type_70_layout(stream, offset, 1))
@@ -2732,7 +2764,7 @@ fn type_70_body(
     let (xmt, consumed) = read_xmt(stream, body)?;
     (xmt > 1).then_some(())?;
     let mut at = body.checked_add(consumed)?;
-    let node_id = be::u32_at(stream, at)?;
+    let node_id = u32_be_at(stream, at)?;
     at += 4;
     (stream.get(at) == Some(&4)).then_some(())?;
     at += 1;
@@ -2744,12 +2776,12 @@ fn type_70_body(
         at += consumed;
         references.push(reference);
     }
-    let count = be::u16_at(stream, at)?;
+    let count = u16_be_at(stream, at)?;
     (count > 0).then_some(())?;
     at += 2;
-    (be::u32_at(stream, at) == Some(20)).then_some(())?;
+    (u32_be_at(stream, at) == Some(20)).then_some(())?;
     at += 4;
-    (be::u32_at(stream, at) == Some(1)).then_some(())?;
+    (u32_be_at(stream, at) == Some(1)).then_some(())?;
     at += 4;
     let first_trailing = references.len();
     for _ in 0..trailing_count {
@@ -2768,7 +2800,7 @@ fn type_70_body(
 }
 
 fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
-    (be::u16_at(stream, offset) == Some(101)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(101)).then_some(())?;
     let direct = type_101_layout(stream, offset, 0);
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| type_101_layout(stream, offset, 1))
@@ -2823,17 +2855,17 @@ fn attdef_list_layout(
 }
 
 fn attdef_list_body(stream: &[u8], body: usize) -> Option<(u32, u32, u32, Vec<u32>, usize)> {
-    let slot_count_value = be::u32_at(stream, body)?;
+    let slot_count_value = u32_be_at(stream, body)?;
     let slot_count = usize::try_from(slot_count_value).ok()?;
     (slot_count > 0).then_some(())?;
     let (xmt, consumed) = read_xmt(stream, body.checked_add(4)?)?;
     (xmt > 1).then_some(())?;
     let mut at = body.checked_add(4 + consumed)?;
-    let active_count_value = be::u32_at(stream, at)?;
+    let active_count_value = u32_be_at(stream, at)?;
     let active_count = usize::try_from(active_count_value).ok()?;
     (active_count <= slot_count).then_some(())?;
     at += 4;
-    (be::u32_at(stream, at) == Some(0)).then_some(())?;
+    (u32_be_at(stream, at) == Some(0)).then_some(())?;
     at += 4;
     (slot_count <= stream.len().saturating_sub(at) / 3).then_some(())?;
     let mut references = Vec::new();
@@ -2866,7 +2898,7 @@ fn group_layout(
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
-    let node_id = be::u32_at(stream, at)?;
+    let node_id = u32_be_at(stream, at)?;
     at += 4;
     let mut references = Vec::new();
     for _ in 0..4 {
@@ -2887,7 +2919,7 @@ fn group_layout(
 }
 
 fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
-    (be::u16_at(stream, offset) == Some(91)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(91)).then_some(())?;
     let direct = type_91_layout(stream, offset, 0);
     let escaped_marker = stream.get(offset + 2) == Some(&0xff);
     let escaped = escaped_marker
@@ -2918,7 +2950,7 @@ fn type_91_layout(
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
-    matches!(be::u32_at(stream, at), Some(0 | 1)).then_some(())?;
+    matches!(u32_be_at(stream, at), Some(0 | 1)).then_some(())?;
     at += 4;
     let mut references = Vec::new();
     for _ in 0..6 {
@@ -2933,7 +2965,7 @@ fn type_91_layout(
 }
 
 fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
-    (be::u16_at(stream, offset) == Some(141)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(141)).then_some(())?;
     let direct = type_141_layout(stream, offset, 0);
     let escaped_marker = stream.get(offset + 2) == Some(&0xff);
     let escaped = escaped_marker
@@ -2957,7 +2989,7 @@ fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
 }
 
 fn consume_type_45(stream: &[u8], offset: usize) -> Option<Record> {
-    (be::u16_at(stream, offset) == Some(45)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(45)).then_some(())?;
     let direct = type_45_layout(stream, offset, 0);
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| type_45_layout(stream, offset, 1))
@@ -2976,7 +3008,7 @@ fn consume_type_45(stream: &[u8], offset: usize) -> Option<Record> {
 }
 
 fn consume_type_67(stream: &[u8], offset: usize) -> Option<Record> {
-    (be::u16_at(stream, offset) == Some(67)).then_some(())?;
+    (u16_be_at(stream, offset) == Some(67)).then_some(())?;
     let direct =
         type_67_layout(stream, offset, 0).filter(|(_, _, _, end)| plausible_next(stream, *end));
     let escaped = (stream.get(offset + 2) == Some(&0xff))
@@ -3004,7 +3036,7 @@ fn type_67_layout(
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
-    let node_id = be::u32_at(stream, at)?;
+    let node_id = u32_be_at(stream, at)?;
     at += 4;
     let mut references = Vec::new();
     for expected_status in [1, 1, 1, 1, 0] {
@@ -3027,7 +3059,7 @@ fn type_67_layout(
     at += 1;
     references.push(linked_reference);
     for _ in 0..4 {
-        let value = be::f64_at(stream, at)?;
+        let value = f64_be_at(stream, at)?;
         (value == 0.0 || value.is_normal()).then_some(())?;
         at += 8;
     }
@@ -3036,7 +3068,7 @@ fn type_67_layout(
 
 fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(u32, usize)> {
     let count_at = offset.checked_add(2 + envelope_len)?;
-    let count = usize::try_from(be::u32_at(stream, count_at)?).ok()?;
+    let count = usize::try_from(u32_be_at(stream, count_at)?).ok()?;
     (count > 0).then_some(())?;
     let (xmt, xmt_len) = read_xmt(stream, count_at.checked_add(4)?)?;
     (xmt > 1).then_some(())?;
@@ -3187,7 +3219,7 @@ fn plausible_next(stream: &[u8], offset: usize) -> bool {
     if offset >= stream.len() {
         return true;
     }
-    be::u16_at(stream, offset).is_some_and(is_next_kind)
+    u16_be_at(stream, offset).is_some_and(is_next_kind)
 }
 
 fn is_next_kind(kind: u16) -> bool {
