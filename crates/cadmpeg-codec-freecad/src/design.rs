@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -3281,21 +3282,15 @@ fn part_fillet_edge_values(
     let property = property(properties, "Edges")?;
     let entry_name = property.side_entries.as_slice().first()?;
     let data = &entries.iter().find(|entry| entry.name == *entry_name)?.data;
-    let count = u32::from_le_bytes(data.get(0..4)?.try_into().ok()?) as usize;
-    let expected = 4_usize.checked_add(count.checked_mul(20)?)?;
-    if data.len() != expected || count > MAX_SKETCH_RECORDS {
+    let mut view = View::over_retained(data);
+    let count = view.u32_le()?;
+    if count as usize > MAX_SKETCH_RECORDS {
         return None;
     }
-    data[4..]
-        .chunks_exact(20)
-        .map(|record| {
-            Some((
-                u32::from_le_bytes(record[0..4].try_into().ok()?),
-                f64::from_le_bytes(record[4..12].try_into().ok()?),
-                f64::from_le_bytes(record[12..20].try_into().ok()?),
-            ))
-        })
-        .collect()
+    let values = view.read_counted(u64::from(count), 20, |view| {
+        Some((view.u32_le()?, view.f64_le()?, view.f64_le()?))
+    })?;
+    view.is_empty().then_some(values)
 }
 
 fn shell_mode(properties: &[&PropertyRecord]) -> Option<ShellMode> {
