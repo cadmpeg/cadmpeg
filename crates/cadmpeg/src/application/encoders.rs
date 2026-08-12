@@ -29,13 +29,17 @@ pub enum EncoderRequest {
 ///
 /// Cadir and STEP options are distinct request variants, so they are not
 /// representable together.
+#[cfg_attr(
+    not(any(feature = "step", feature = "rhino", feature = "iges")),
+    allow(clippy::needless_pass_by_value)
+)]
 pub fn build_encoder(
     format: Format,
     request: EncoderRequest,
 ) -> Result<Box<dyn Encoder>, CodecError> {
     match format {
         Format::Cadir => {
-            require_neutral(request, "cadir")?;
+            require_neutral(&request, "cadir")?;
             Ok(Box::new(CadirEncoder))
         }
         #[cfg(feature = "step")]
@@ -49,17 +53,17 @@ pub fn build_encoder(
         },
         #[cfg(feature = "fcstd")]
         Format::Fcstd => {
-            require_neutral(request, "fcstd")?;
+            require_neutral(&request, "fcstd")?;
             Ok(Box::new(cadmpeg_codec_freecad::FcstdCodec))
         }
         #[cfg(feature = "f3d")]
         Format::F3d => {
-            require_neutral(request, "f3d")?;
+            require_neutral(&request, "f3d")?;
             Ok(Box::new(cadmpeg_codec_f3d::F3dCodec))
         }
         #[cfg(feature = "sldprt")]
         Format::Sldprt => {
-            require_neutral(request, "sldprt")?;
+            require_neutral(&request, "sldprt")?;
             Ok(Box::new(cadmpeg_codec_sldprt::SldprtCodec))
         }
         #[cfg(feature = "rhino")]
@@ -83,16 +87,25 @@ pub fn build_encoder(
     }
 }
 
-fn require_neutral(request: EncoderRequest, id: &str) -> Result<(), CodecError> {
+// When no option-bearing codec feature is on, Neutral is the only
+// EncoderRequest variant: the Err path is absent and Result is always Ok.
+#[cfg_attr(
+    not(any(feature = "step", feature = "rhino", feature = "iges")),
+    allow(clippy::unnecessary_wraps)
+)]
+fn require_neutral(request: &EncoderRequest, id: &str) -> Result<(), CodecError> {
     match request {
-        EncoderRequest::Neutral => Ok(()),
-        #[allow(unused_variables)]
-        other => {
-            let _ = other;
-            Err(CodecError::Malformed(format!(
-                "target options do not belong to the {id} encoder"
-            )))
+        EncoderRequest::Neutral => {
+            let _ = id;
+            Ok(())
         }
+        // Non-Neutral variants exist only when their codec features are on.
+        // With `--features sldprt` alone, Neutral is the sole variant and this
+        // arm must not compile, or `-D unreachable-patterns` fails the gate.
+        #[cfg(any(feature = "step", feature = "rhino", feature = "iges"))]
+        _ => Err(CodecError::Malformed(format!(
+            "target options do not belong to the {id} encoder"
+        ))),
     }
 }
 
