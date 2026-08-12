@@ -18,7 +18,8 @@ use super::relation_records::unique_relation_declaration_candidates;
 use super::scalars::{feature_object_name, operand_kind};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
-    LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SPATIAL_VERTEX_PREFIX,
+    is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
+    SPATIAL_VERTEX_PREFIX,
 };
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
@@ -2466,10 +2467,8 @@ fn compact_linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
     matches!(
         cells,
         [Some(first), Some(second)]
-            if u16::from_le_bytes([first[0], first[1]]) & 0x8000 != 0
-                && first[..2] != [0xff; 2]
-                && u16::from_le_bytes([second[0], second[1]]) & 0x8000 != 0
-                && second[..2] != [0xff; 2]
+            if is_class_token(u16::from_le_bytes([first[0], first[1]]))
+                && is_class_token(u16::from_le_bytes([second[0], second[1]]))
                 && first[..4] != second[..4]
                 && first[4..8] == [0xff; 4]
                 && second[4..8] == [0xff; 4]

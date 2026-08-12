@@ -254,7 +254,11 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "code": "geometry_not_transferred",
+        "code": {
+          "code": "geometry_not_transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "shared"
+        },
         "message": "Inventor geometry is not available for this document kind.",
         "severity": "blocking"
       }

@@ -4,10 +4,10 @@
 
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::LossKind;
+use cadmpeg_ir::LossTaxonomy;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -16,17 +16,15 @@ use crate::SldprtCodec;
 fn source_record_join_borrows_the_retained_source_image() {
     let payload = vec![0x5a; 4096];
     let payload_ptr = payload.as_ptr();
-    let fidelity = cadmpeg_ir::SourceFidelity {
-        retained_records: vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord {
-            id: "sldprt:file:source-image#0".into(),
-            stream: "source".into(),
-            offset: 0,
-            byte_len: payload.len() as u64,
-            sha256: cadmpeg_ir::hash::sha256_hex(&payload),
-            data: Some(payload),
-        }],
-        ..Default::default()
-    };
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    fidelity.retained_records = vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord {
+        id: "sldprt:file:source-image#0".into(),
+        stream: "source".into(),
+        offset: 0,
+        byte_len: payload.len() as u64,
+        sha256: cadmpeg_ir::hash::sha256_hex(&payload),
+        data: Some(payload),
+    }];
 
     let records = crate::source_records(&cadmpeg_ir::examples::unit_cube(), &fidelity).unwrap();
     let retained = records[0].data.expect("retained source bytes");
@@ -1536,23 +1534,83 @@ fn pmi_semantic_payload_record_with_items(
     items: &[(&str, f64)],
     display_text: &str,
 ) -> Vec<u8> {
+    pmi_semantic_payload_record_configured(
+        cad_text,
+        guid,
+        items,
+        display_text,
+        PmiPayloadOptions::default(),
+    )
+}
+
+#[derive(Clone, Copy, Default)]
+struct PmiPayloadOptions {
+    /// Place `annoType` after `cadText` and add an extra map key.
+    reorder_and_extra_key: bool,
+    /// Embed a key-like `cadText` string inside `dimText`.
+    key_like_string_in_value: bool,
+    /// Truncate after writing `dimItems` so the map fails to parse.
+    truncate_after_dim_items_key: bool,
+}
+
+fn pmi_semantic_payload_record_configured(
+    cad_text: &str,
+    guid: &str,
+    items: &[(&str, f64)],
+    display_text: &str,
+    options: PmiPayloadOptions,
+) -> Vec<u8> {
     fn string(bytes: &mut Vec<u8>, value: &str) {
         assert!(value.len() < 32);
         bytes.push(0xa0 | value.len() as u8);
         bytes.extend_from_slice(value.as_bytes());
     }
+    fn push_array_header(bytes: &mut Vec<u8>, len: usize) {
+        if len < 16 {
+            bytes.push(0x90 | len as u8);
+        } else if let Ok(len16) = u16::try_from(len) {
+            bytes.push(0xdc);
+            bytes.extend_from_slice(&len16.to_be_bytes());
+        } else {
+            panic!("dimItems length exceeds array16");
+        }
+    }
+    fn push_map_header(bytes: &mut Vec<u8>, len: usize) {
+        if len < 16 {
+            bytes.push(0x80 | len as u8);
+        } else if let Ok(len16) = u16::try_from(len) {
+            bytes.push(0xde);
+            bytes.extend_from_slice(&len16.to_be_bytes());
+        } else {
+            panic!("map length exceeds map16");
+        }
+    }
     assert_eq!(guid.len(), 36);
     let mut payload = b"unqlite".to_vec();
     payload.extend_from_slice(&[0; 57]);
     payload.extend_from_slice(guid.as_bytes());
-    payload.push(0x87);
-    string(&mut payload, "annoType");
-    payload.push(1);
-    string(&mut payload, "cadText");
-    string(&mut payload, cad_text);
+    let outer_len = if options.reorder_and_extra_key { 8 } else { 7 };
+    push_map_header(&mut payload, outer_len);
+    if options.reorder_and_extra_key {
+        string(&mut payload, "cadText");
+        string(&mut payload, cad_text);
+        string(&mut payload, "extraKey");
+        string(&mut payload, "ignored");
+        string(&mut payload, "annoType");
+        payload.push(1);
+    } else {
+        string(&mut payload, "annoType");
+        payload.push(1);
+        string(&mut payload, "cadText");
+        string(&mut payload, cad_text);
+    }
     string(&mut payload, "dimItems");
-    assert!(items.len() < 16);
-    payload.push(0x90 | items.len() as u8);
+    if options.truncate_after_dim_items_key {
+        // Declare one element and stop so the outer map cannot finish.
+        push_array_header(&mut payload, 1);
+        return payload;
+    }
+    push_array_header(&mut payload, items.len());
     for (subtype, value) in items {
         payload.push(0x87);
         string(&mut payload, "class");
@@ -1572,7 +1630,11 @@ fn pmi_semantic_payload_record_with_items(
         payload.extend_from_slice(&value.to_be_bytes());
     }
     string(&mut payload, "dimText");
-    string(&mut payload, display_text);
+    if options.key_like_string_in_value {
+        string(&mut payload, "cadText");
+    } else {
+        string(&mut payload, display_text);
+    }
     string(&mut payload, "dimType");
     payload.push(0);
     string(&mut payload, "iDString");
@@ -2076,6 +2138,26 @@ fn synthetic_sldprt() -> Vec<u8> {
 }
 
 #[test]
+fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 0;
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(synthetic_sldprt()), &options)
+        .expect_err("max_entities=0 must refuse at container admission");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.context.operation == "admit SLDPRT container entities"
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn detect_high_on_marker_after_header() {
     let f = synthetic_sldprt();
     assert_eq!(SldprtCodec.detect(&f), Confidence::High);
@@ -2568,7 +2650,7 @@ fn retained_source_image_round_trips_byte_exactly() {
             .iter()
             .any(|candidate| candidate.id == coedge.radial_next));
     }
-    cadmpeg_ir::roundtrip::verbatim_replay_holds(
+    cadmpeg_test_support::roundtrip::verbatim_replay_holds(
         &SldprtCodec,
         "retained_source_image_round_trips_byte_exactly",
         &source,
@@ -5559,7 +5641,7 @@ fn decode_preserves_unresolved_active_configuration() {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
     }));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -6521,7 +6603,7 @@ fn decode_builds_valid_topology_and_plane() {
         .collect();
     assert!(xs.contains(&1000.0));
 
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
     assert_eq!(result.ir.model.loops[0].coedges.len(), 3);
     // Edges carry no analytic curve (their carriers were null), which is legal.
@@ -6551,7 +6633,7 @@ fn strict_accepts_operator_requested_container_only() {
 
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
-    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
 
     let fixture = synthetic_sldprt();
 
@@ -6563,12 +6645,12 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossKind::GeometryNotTransferred));
+        .any(|note| note.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
     assert!(salvaged
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossKind::TopologyNotTransferred));
+        .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyNotTransferred));
     assert!(salvaged
         .report
         .losses
@@ -6579,7 +6661,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     match strict {
         Err(cadmpeg_core::CodecError::Malformed(message)) => {
             assert!(
-                message.contains("strict mode rejects geometry_not_transferred"),
+                message.contains("strict mode rejects sldprt/"),
                 "unexpected message: {message}"
             );
         }
@@ -6589,7 +6671,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
     let strict = SldprtCodec
@@ -6605,7 +6687,7 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossKind::TopologyGaugeSubstituted));
+        .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyGaugeSubstituted));
 }
 
 #[test]
@@ -6670,7 +6752,7 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -6706,7 +6788,7 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .points
         .iter()
         .all(|point| point.id.0.contains("@block@")));
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -6743,7 +6825,7 @@ fn decode_uses_the_active_configuration_source_site() {
         result.ir.source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -6832,7 +6914,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
             .find(|unknown| unknown.id == record)
             .is_some_and(|unknown| unknown.links.contains(&geometry)));
     }
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -6893,7 +6975,7 @@ fn decode_reports_and_withholds_faces_without_body_membership() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#10");
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::TopologyNotTransferred
+        loss.code.taxonomy() == LossTaxonomy::TopologyNotTransferred
             && loss
                 .message
                 .contains("not claimed by an explicit body relation")
@@ -6928,8 +7010,8 @@ fn class_root_index_selects_complete_cluster_body_relation() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.code != LossKind::TopologyNotTransferred));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+        .all(|loss| loss.code.taxonomy() != LossTaxonomy::TopologyNotTransferred));
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -6968,8 +7050,8 @@ fn class_root_body_relation_selects_missing_deltas_face() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.code != LossKind::TopologyNotTransferred));
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+        .all(|loss| loss.code.taxonomy() != LossTaxonomy::TopologyNotTransferred));
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -6989,7 +7071,7 @@ fn unselected_deltas_bridges_do_not_enter_partition_membership() {
         .points
         .iter()
         .all(|point| point.position.x != 10_000.0));
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -7033,12 +7115,9 @@ fn decode_withholds_non_equivalent_face_uses_with_same_owner() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#210");
     assert!(
-        result
-            .report
-            .losses
-            .iter()
-            .any(|loss| loss.code == LossKind::TopologyGaugeSubstituted
-                && loss.message.contains("non-equivalent bridge uses")),
+        result.report.losses.iter().any(|loss| loss.code.taxonomy()
+            == LossTaxonomy::TopologyGaugeSubstituted
+            && loss.message.contains("non-equivalent bridge uses")),
         "losses: {:?}",
         result.report.losses
     );
@@ -7117,7 +7196,7 @@ fn semantic_writer_preserves_sheet_body_classification() {
         )
         .unwrap();
     decoded.ir.model.points[0].position.z += 1.0;
-    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -7162,6 +7241,18 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
         )
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+/// Phase 5 freeze: export precondition (:50) rejects shared broken IR; empty accepts.
+#[test]
+fn phase5_freeze_export_precondition_admissibility_fixtures() {
+    let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+    // Empty IR has no B-rep; writer refuses later for missing B-rep, but the
+    // :50 precondition is full validate — empty passes validate.
+    assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new()).is_ok());
+    let rejected =
+        cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("sldprt:test");
+    assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new()).is_ok());
 }
 
 #[test]
@@ -7532,7 +7623,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
             ..
         } if center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0)
     ));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -7578,7 +7669,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
             && radial_sin.u.abs() < 1e-9
             && (radial_sin.v - 1000.0).abs() < 1e-9
     ));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -7614,7 +7705,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     assert!(origin.u.abs() < 1e-12);
     assert!((origin.v - 1000.0).abs() < 1e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -7650,7 +7741,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     assert!(origin.u.abs() < 1e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -7888,7 +7979,7 @@ fn decode_preserves_multiple_regions_and_shells_per_body() {
         .shells
         .iter()
         .all(|shell| shell.faces.len() == 1));
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 
     result.ir.model.points[0].position.z += 1.0;
@@ -8286,7 +8377,7 @@ fn edge_uses_decoded_line_curve() {
         .coedges
         .iter()
         .any(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -8474,7 +8565,7 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
     assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.control_points.len(), 4);
     assert_eq!(surface.control_points[3].z, 500.0);
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -8603,7 +8694,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     )
     .expect("nested offset evaluation");
     assert!((point.z - 5.0).abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -8653,7 +8744,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         loss.message
             .contains("1 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -8699,7 +8790,7 @@ fn merged_sites_retain_procedural_surface_constructions() {
         loss.message
             .contains("2 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -9014,7 +9105,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .and_then(|edge| edge.param_range),
         Some([0.0, 1000.0])
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -9051,7 +9142,7 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
             .and_then(|edge| edge.param_range),
         Some([-500.0, 500.0])
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -9156,7 +9247,7 @@ fn semantic_writer_preserves_body_material() {
         )
         .unwrap();
     decoded.ir.model.points[0].position.z += 1.0;
-    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -9278,7 +9369,7 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -9317,7 +9408,7 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -9342,7 +9433,7 @@ fn partition_point_refs_do_not_select_deltas_framing() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -9484,7 +9575,7 @@ fn decode_reports_display_list_geometry() {
         Some(&result.ir.model.bodies[0].id)
     );
     assert!(!result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossKind::ReferenceGraphNotClosed
+        loss.code.taxonomy() == LossTaxonomy::ReferenceGraphNotClosed
             && loss.message.contains("DisplayLists tessellation")
     }));
     assert!(result
@@ -11002,7 +11093,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
             .ordinal
     };
     assert!(ordinal("Later") < ordinal("Forward"));
-    assert!(!cadmpeg_ir::validate(&decoded.ir, Vec::new())
+    assert!(!cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("parameter dependency")));
@@ -15800,7 +15891,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
         loss.message
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
-    let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
     let FeatureDefinition::HelixNativeAxis {
@@ -19522,7 +19613,7 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
             ..
         } if profile == &sketch.id
     ));
-    cadmpeg_ir::roundtrip::verbatim_replay_holds(
+    cadmpeg_test_support::roundtrip::verbatim_replay_holds(
         &SldprtCodec,
         "decode_projects_sketch_feature_dependencies",
         &original,
@@ -20095,7 +20186,7 @@ fn decode_projects_owned_native_sketch_relation() {
             && operands[1].object_index == 2
             && operands[1].native_ref.is_none()
     ));
-    let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
     SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -21347,6 +21438,79 @@ fn decode_extracts_pmi_semantic_dimension() {
 }
 
 #[test]
+fn decode_extracts_array16_and_reordered_pmi_maps() {
+    let items = vec![("Linear", 0.025); 16];
+    let array16 = pmi_semantic_payload_record_with_items(
+        "D1@Sketch1",
+        "01234567-89ab-cdef-0123-456789abcdef",
+        &items,
+        "25.000 mm",
+    );
+    let reordered = pmi_semantic_payload_record_configured(
+        "D1@Sketch1",
+        "fedcba98-7654-3210-fedc-ba9876543210",
+        &[("Linear", 0.030)],
+        "30.000 mm",
+        PmiPayloadOptions {
+            reorder_and_extra_key: true,
+            ..PmiPayloadOptions::default()
+        },
+    );
+    for (payload, guid, value, item_count) in [
+        (
+            array16,
+            "01234567-89ab-cdef-0123-456789abcdef",
+            0.025,
+            16_u32,
+        ),
+        (reordered, "fedcba98-7654-3210-fedc-ba9876543210", 0.030, 1),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let native = sldprt_native(&decoded.ir);
+        let dimension = native
+            .pmi_dimensions
+            .iter()
+            .find(|record| record.guid == guid)
+            .expect("PMI dimension");
+        assert_eq!(dimension.value, value);
+        assert_eq!(dimension.item_count, item_count);
+        assert!(decoded.report.losses.iter().all(|loss| {
+            !loss.message.contains("semantic-record-malformed")
+                && !loss.message.contains("failed to parse MessagePack map")
+        }));
+    }
+}
+
+#[test]
+fn decode_reports_malformed_pmi_semantic_map() {
+    let payload = pmi_semantic_payload_record_configured(
+        "D1@Sketch1",
+        "01234567-89ab-cdef-0123-456789abcdef",
+        &[("Linear", 0.025)],
+        "25.000 mm",
+        PmiPayloadOptions {
+            truncate_after_dim_items_key: true,
+            ..PmiPayloadOptions::default()
+        },
+    );
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(sldprt_native(&decoded.ir).pmi_dimensions.is_empty());
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("01234567-89ab-cdef-0123-456789abcdef")
+            && loss.message.contains("failed to parse MessagePack map")
+    }));
+}
+
+#[test]
 fn multi_item_pmi_dimension_is_not_bound() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -21933,7 +22097,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     assert!(sketch.native_ref.as_deref().is_some_and(|native_ref| {
         native_ref.starts_with("sldprt:feature-input:resolved-features#")
     }));
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 
@@ -22203,7 +22367,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
             ..
         } if value == &sketch_id
     )));
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let mut written = Vec::new();
     SldprtCodec
@@ -22412,7 +22576,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .expect("bound sweep");
     assert_ne!(sweep.0, sweep.1);
     assert!(bound.contains(sweep.0) && bound.contains(sweep.1));
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 
@@ -23303,14 +23467,14 @@ fn face_on_untyped_surface_keeps_topology() {
         .report
         .losses
         .iter()
-        .any(|l| l.code == LossKind::GeometryNotTransferred));
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        .any(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -23337,16 +23501,14 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .report
         .losses
         .iter()
-        .find(|l| l.code == LossKind::GeometryNotTransferred)
+        .find(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred)
         .expect("untyped support surface raises a census note");
     assert_eq!(census.strict_consequence(), StrictConsequence::Reject);
 
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect_err("strict refuses the untyped-surface census");
-    assert!(error
-        .to_string()
-        .contains("strict mode rejects geometry_not_transferred"));
+    assert!(error.to_string().contains("strict mode rejects sldprt/"));
 }
 
 #[test]

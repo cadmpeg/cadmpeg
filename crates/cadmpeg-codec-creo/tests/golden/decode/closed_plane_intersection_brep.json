@@ -191,7 +191,7 @@
           "geometry": {
             "direction": {
               "x": 0.0,
-              "y": 5.073268178784763e-18,
+              "y": -1.6613637599827195e-18,
               "z": 1.0
             },
             "kind": "line",
@@ -212,13 +212,13 @@
             "direction": {
               "x": 0.0,
               "y": -1.0,
-              "z": -5.073268178784763e-18
+              "z": 1.6613637599827195e-18
             },
             "kind": "line",
             "origin": {
               "x": 0.0,
-              "y": 0.5,
-              "z": 2.5366340893923816e-18
+              "y": 0.5000000000000002,
+              "z": -8.3068187999136015e-19
             }
           },
           "id": "creo:visibgeom:curve#11",
@@ -231,14 +231,14 @@
           "geometry": {
             "direction": {
               "x": 0.0,
-              "y": 0.7071067811865475,
-              "z": -0.7071067811865475
+              "y": 0.7071067811865476,
+              "z": -0.7071067811865476
             },
             "kind": "line",
             "origin": {
               "x": 0.0,
-              "y": 2.5366340893923816e-18,
-              "z": 0.5
+              "y": -8.3068187999136015e-19,
+              "z": 0.5000000000000002
             }
           },
           "id": "creo:visibgeom:curve#12",
@@ -252,7 +252,7 @@
             "direction": {
               "x": 1.0,
               "y": 0.0,
-              "z": -2.819256915099733e-17
+              "z": -4.715744251715768e-17
             },
             "kind": "line",
             "origin": {
@@ -271,14 +271,14 @@
           "geometry": {
             "direction": {
               "x": -0.8944271909999159,
-              "y": 2.268834503169857e-18,
-              "z": 0.4472135954999578
+              "y": -7.429844605352011e-19,
+              "z": 0.4472135954999579
             },
             "kind": "line",
             "origin": {
-              "x": 1.0000000000000002,
+              "x": 1.0000000000000004,
               "y": 0.0,
-              "z": -2.819256915099734e-17
+              "z": -4.71574425171577e-17
             }
           },
           "id": "creo:visibgeom:curve#14",
@@ -291,14 +291,14 @@
           "geometry": {
             "direction": {
               "x": 0.8944271909999159,
-              "y": -0.4472135954999578,
-              "z": -2.7485034935967283e-17
+              "y": -0.4472135954999579,
+              "z": -4.143591438482614e-17
             },
             "kind": "line",
             "origin": {
               "x": 0.0,
-              "y": 0.5,
-              "z": 2.5366340893923816e-18
+              "y": 0.5000000000000002,
+              "z": -8.3068187999136015e-19
             }
           },
           "id": "creo:visibgeom:curve#15",
@@ -316,7 +316,7 @@
           "id": "creo:visibgeom:edge#10",
           "param_range": [
             0.0,
-            0.5
+            0.5000000000000002
           ],
           "start": "creo:visibgeom:vertex#1"
         },
@@ -326,7 +326,7 @@
           "id": "creo:visibgeom:edge#11",
           "param_range": [
             0.0,
-            0.5
+            0.5000000000000002
           ],
           "start": "creo:visibgeom:vertex#3"
         },
@@ -336,7 +336,7 @@
           "id": "creo:visibgeom:edge#12",
           "param_range": [
             0.0,
-            0.7071067811865476
+            0.7071067811865478
           ],
           "start": "creo:visibgeom:vertex#2"
         },
@@ -346,7 +346,7 @@
           "id": "creo:visibgeom:edge#13",
           "param_range": [
             0.0,
-            1.0000000000000002
+            1.0000000000000004
           ],
           "start": "creo:visibgeom:vertex#1"
         },
@@ -356,7 +356,7 @@
           "id": "creo:visibgeom:edge#14",
           "param_range": [
             0.0,
-            1.1180339887498951
+            1.1180339887498953
           ],
           "start": "creo:visibgeom:vertex#4"
         },
@@ -366,7 +366,7 @@
           "id": "creo:visibgeom:edge#15",
           "param_range": [
             0.0,
-            1.1180339887498951
+            1.1180339887498953
           ],
           "start": "creo:visibgeom:vertex#3"
         }
@@ -508,7 +508,7 @@
         {
           "geometry": {
             "direction": {
-              "u": 5.073268178784763e-18,
+              "u": -1.6613637599827195e-18,
               "v": 1.0
             },
             "kind": "line",
@@ -520,7 +520,7 @@
           "id": "creo:visibgeom:pcurve#10:1",
           "parameter_range": [
             0.0,
-            0.5
+            0.5000000000000002
           ]
         },
         {
@@ -538,25 +538,25 @@
           "id": "creo:visibgeom:pcurve#10:2",
           "parameter_range": [
             0.0,
-            0.5
+            0.5000000000000002
           ]
         },
         {
           "geometry": {
             "direction": {
               "u": -1.0,
-              "v": -5.073268178784763e-18
+              "v": 1.6613637599827195e-18
             },
             "kind": "line",
             "origin": {
-              "u": 0.5,
-              "v": 2.5366340893923816e-18
+              "u": 0.5000000000000002,
+              "v": -8.3068187999136015e-19
             }
           },
           "id": "creo:visibgeom:pcurve#11:1",
           "parameter_range": [
             0.0,
-            0.5
+            0.5000000000000002
           ]
         },
         {
@@ -568,55 +568,55 @@
             "kind": "line",
             "origin": {
               "u": 0.0,
-              "v": 0.5
+              "v": 0.5000000000000002
             }
           },
           "id": "creo:visibgeom:pcurve#11:3",
           "parameter_range": [
             0.0,
-            0.5
+            0.5000000000000002
           ]
         },
         {
           "geometry": {
             "direction": {
-              "u": 0.7071067811865475,
-              "v": -0.7071067811865475
+              "u": 0.7071067811865476,
+              "v": -0.7071067811865476
             },
             "kind": "line",
             "origin": {
-              "u": 2.5366340893923816e-18,
-              "v": 0.5
+              "u": -8.3068187999136015e-19,
+              "v": 0.5000000000000002
             }
           },
           "id": "creo:visibgeom:pcurve#12:1",
           "parameter_range": [
             0.0,
-            0.7071067811865476
+            0.7071067811865478
           ]
         },
         {
           "geometry": {
             "direction": {
-              "u": -0.7071067811865475,
-              "v": -0.7071067811865475
+              "u": -0.7071067811865477,
+              "v": -0.7071067811865476
             },
             "kind": "line",
             "origin": {
-              "u": 1.0,
+              "u": 1.0000000000000002,
               "v": -0.5
             }
           },
           "id": "creo:visibgeom:pcurve#12:4",
           "parameter_range": [
             0.0,
-            0.7071067811865476
+            0.7071067811865478
           ]
         },
         {
           "geometry": {
             "direction": {
-              "u": -2.819256915099733e-17,
+              "u": -4.715744251715768e-17,
               "v": 1.0
             },
             "kind": "line",
@@ -628,7 +628,7 @@
           "id": "creo:visibgeom:pcurve#13:2",
           "parameter_range": [
             0.0,
-            1.0000000000000002
+            1.0000000000000004
           ]
         },
         {
@@ -646,79 +646,79 @@
           "id": "creo:visibgeom:pcurve#13:3",
           "parameter_range": [
             0.0,
-            1.0000000000000002
+            1.0000000000000004
           ]
         },
         {
           "geometry": {
             "direction": {
-              "u": 0.4472135954999578,
+              "u": 0.4472135954999579,
               "v": -0.8944271909999159
             },
             "kind": "line",
             "origin": {
-              "u": -2.819256915099734e-17,
-              "v": 1.0000000000000002
+              "u": -4.71574425171577e-17,
+              "v": 1.0000000000000004
             }
           },
           "id": "creo:visibgeom:pcurve#14:2",
           "parameter_range": [
             0.0,
-            1.1180339887498951
+            1.1180339887498953
           ]
         },
         {
           "geometry": {
             "direction": {
-              "u": 0.8944271909999157,
-              "v": -0.4472135954999579
+              "u": 0.894427190999916,
+              "v": -0.44721359549995804
             },
             "kind": "line",
             "origin": {
-              "u": -1.6682478271735242e-16,
-              "v": 1.386322135663551e-16
+              "u": -3.274977682448136e-16,
+              "v": 2.803403257276559e-16
             }
           },
           "id": "creo:visibgeom:pcurve#14:4",
           "parameter_range": [
             0.0,
-            1.1180339887498951
+            1.1180339887498953
           ]
         },
         {
           "geometry": {
             "direction": {
               "u": 0.8944271909999159,
-              "v": -0.4472135954999578
+              "v": -0.4472135954999579
             },
             "kind": "line",
             "origin": {
               "u": 0.0,
-              "v": 0.5
+              "v": 0.5000000000000002
             }
           },
           "id": "creo:visibgeom:pcurve#15:3",
           "parameter_range": [
             0.0,
-            1.1180339887498951
+            1.1180339887498953
           ]
         },
         {
           "geometry": {
             "direction": {
-              "u": -0.447213595499958,
-              "v": 0.8944271909999157
+              "u": -0.44721359549995804,
+              "v": 0.894427190999916
             },
             "kind": "line",
             "origin": {
               "u": 0.5,
-              "v": -1.0
+              "v": -1.0000000000000002
             }
           },
           "id": "creo:visibgeom:pcurve#15:4",
           "parameter_range": [
             0.0,
-            1.1180339887498951
+            1.1180339887498953
           ]
         }
       ],
@@ -736,24 +736,24 @@
           "id": "creo:visibgeom:point#2",
           "position": {
             "x": 0.0,
-            "y": 2.5366340893923816e-18,
-            "z": 0.5
+            "y": -8.3068187999136015e-19,
+            "z": 0.5000000000000002
           }
         },
         {
           "id": "creo:visibgeom:point#3",
           "position": {
             "x": 0.0,
-            "y": 0.5,
-            "z": 2.5366340893923816e-18
+            "y": 0.5000000000000002,
+            "z": -8.3068187999136015e-19
           }
         },
         {
           "id": "creo:visibgeom:point#4",
           "position": {
-            "x": 1.0000000000000002,
+            "x": 1.0000000000000004,
             "y": 0.0,
-            "z": -2.819256915099734e-17
+            "z": -4.71574425171577e-17
           }
         }
       ],
@@ -871,9 +871,9 @@
           "geometry": {
             "kind": "plane",
             "normal": {
-              "x": 0.3333333333333333,
-              "y": 0.6666666666666666,
-              "z": 0.6666666666666666
+              "x": 0.33333333333333337,
+              "y": 0.6666666666666667,
+              "z": 0.6666666666666667
             },
             "origin": {
               "x": 1.0,
@@ -881,9 +881,9 @@
               "z": 0.0
             },
             "u_axis": {
-              "x": -0.6666666666666666,
-              "y": -0.3333333333333333,
-              "z": 0.6666666666666666
+              "x": -0.6666666666666667,
+              "y": -0.33333333333333337,
+              "z": 0.6666666666666667
             }
           },
           "id": "creo:visibgeom:surface#4",
@@ -3980,47 +3980,83 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "carrier_summary",
+        "code": {
+          "code": "carrier_summary",
+          "kind": "carrier_summary",
+          "namespace": "shared"
+        },
         "message": "PSB container decoded structurally: 3 section(s), unknown layout, VisibGeom namespace census srf_array=4 / crv_array=6; 4 typed surface rows, 0 labeled curve prototypes, 6 canonical curve-topology rows, and 4 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records.",
         "severity": "info"
       },
       {
-        "code": "geometry_not_transferred",
+        "code": {
+          "code": "geometry_not_transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "shared"
+        },
         "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 1 PSB geometry section(s) were preserved verbatim as unknown records.",
         "severity": "blocking"
       },
       {
-        "code": "carrier_summary",
+        "code": {
+          "code": "carrier_summary",
+          "kind": "carrier_summary",
+          "namespace": "shared"
+        },
         "message": "Transferred 4 model-space plane carrier(s) from complete VisibGeom local-system support frames.",
         "severity": "info"
       },
       {
-        "code": "carrier_summary",
+        "code": {
+          "code": "carrier_summary",
+          "kind": "carrier_summary",
+          "namespace": "shared"
+        },
         "message": "Transferred 4 exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers.",
         "severity": "info"
       },
       {
-        "code": "carrier_summary",
+        "code": {
+          "code": "carrier_summary",
+          "kind": "carrier_summary",
+          "namespace": "shared"
+        },
         "message": "Transferred 6 native topological edge(s) whose endpoint vertex orbits have exact model-space points.",
         "severity": "info"
       },
       {
-        "code": "geometry_not_transferred",
+        "code": {
+          "code": "geometry_not_transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "shared"
+        },
         "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices.",
         "severity": "blocking"
       },
       {
-        "code": "topology_not_transferred",
+        "code": {
+          "code": "topology_not_transferred",
+          "kind": "topology_not_transferred",
+          "namespace": "shared"
+        },
         "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "feature_history_retained",
+          "kind": "feature_history_retained",
+          "namespace": "shared"
+        },
         "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "feature_history_retained",
+          "kind": "feature_history_retained",
+          "namespace": "shared"
+        },
         "message": "1 recognized non-sweep history feature(s) retain incomplete required construction operands (fillet=1).",
         "severity": "warning"
       }

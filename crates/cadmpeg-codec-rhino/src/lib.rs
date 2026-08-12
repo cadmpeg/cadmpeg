@@ -8,7 +8,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
 
@@ -28,7 +28,8 @@ pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;
 pub(crate) mod legacy;
-pub mod loss;
+#[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
+pub(crate) mod loss;
 pub(crate) mod mesh;
 pub(crate) mod morph;
 pub(crate) mod objects;
@@ -46,7 +47,9 @@ mod writer;
 mod external_transfer_tests;
 
 #[cfg(feature = "fuzzing")]
-pub mod fuzzing;
+#[doc(hidden)]
+#[path = "fuzzing.rs"]
+pub mod fuzz;
 
 const MAGIC: &[u8] = chunks::MAGIC;
 
@@ -91,7 +94,7 @@ impl RhinoEncoder {
     }
 }
 
-impl Codec for RhinoCodec {
+impl CodecBackend for RhinoCodec {
     fn id(&self) -> &'static str {
         "rhino"
     }
@@ -129,7 +132,6 @@ impl Encoder for RhinoEncoder {
     fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
         let mut bytes = Vec::new();
         writer::write(input.ir, self.version.value(), &mut bytes)?;
-        let validation = cadmpeg_ir::validate(input.ir, Vec::new());
         let vertex_quantization = self.version == RhinoArchiveVersion::V5
             && input
                 .ir
@@ -170,7 +172,7 @@ impl Encoder for RhinoEncoder {
             format: "rhino".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: validation.entity_counts,
+                counts: input.ir.census(),
             },
             fidelity: if input.fidelity.is_some() {
                 FidelityResolution::NotConsumed

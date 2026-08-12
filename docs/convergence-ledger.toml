@@ -1,0 +1,16 @@
+# Convergence ratchet ceilings. Counts may only fall.
+# A decrease updates this file in the same commit. A deliberate increase
+# requires a reason under [reasons] for every raised key.
+measured_at = "2fafe9cff4abc4831a794f4e538703233db0e271"
+filter = "production .rs under crates/**/src; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items and their brace bodies when the attribute immediately precedes the item"
+
+[ceilings]
+from_endian_bytes = 853
+le_be_at_outside_core = 91
+codec_error_malformed_format = 1282
+loss_note_struct_literals = 197
+bare_tolerance_literals = 804
+nonliteral_vec_repeat = 261
+
+[reasons]
+from_endian_bytes = "Merge agent/sldprt-l6-20260811 into origin/main: L6 adds ten sldprt native from_*_bytes sites beyond the refactor baseline."

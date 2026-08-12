@@ -1,4 +1,4 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -27,7 +27,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::Annota
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::AnnotationBuilder
 pub struct cadmpeg_ir::annotations::Annotations
 pub cadmpeg_ir::annotations::Annotations::exactness: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::ExactnessNote>
-pub cadmpeg_ir::annotations::Annotations::provenance: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::Provenance>
+pub cadmpeg_ir::annotations::Annotations::provenance: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::StreamProvenance>
 pub cadmpeg_ir::annotations::Annotations::streams: alloc::vec::Vec<alloc::string::String>
 impl core::clone::Clone for cadmpeg_ir::annotations::Annotations
 pub fn cadmpeg_ir::annotations::Annotations::clone(&self) -> cadmpeg_ir::annotations::Annotations
@@ -74,29 +74,6 @@ impl core::marker::Unpin for cadmpeg_ir::annotations::ExactnessNote
 impl core::marker::UnsafeUnpin for cadmpeg_ir::annotations::ExactnessNote
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::ExactnessNote
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::ExactnessNote
-pub struct cadmpeg_ir::annotations::Provenance
-pub cadmpeg_ir::annotations::Provenance::offset: u64
-pub cadmpeg_ir::annotations::Provenance::stream: u32
-pub cadmpeg_ir::annotations::Provenance::tag: core::option::Option<alloc::string::String>
-impl core::clone::Clone for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::clone(&self) -> cadmpeg_ir::annotations::Provenance
-impl core::cmp::Eq for cadmpeg_ir::annotations::Provenance
-impl core::cmp::PartialEq for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::eq(&self, &cadmpeg_ir::annotations::Provenance) -> bool
-impl core::fmt::Debug for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::annotations::Provenance
-impl serde_core::ser::Serialize for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_ir::annotations::Provenance
-impl core::marker::Send for cadmpeg_ir::annotations::Provenance
-impl core::marker::Sync for cadmpeg_ir::annotations::Provenance
-impl core::marker::Unpin for cadmpeg_ir::annotations::Provenance
-impl core::marker::UnsafeUnpin for cadmpeg_ir::annotations::Provenance
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::Provenance
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::Provenance
 pub struct cadmpeg_ir::annotations::ProvenanceNote<'a>
 impl cadmpeg_ir::annotations::ProvenanceNote<'_>
 pub fn cadmpeg_ir::annotations::ProvenanceNote<'_>::tag(self, impl core::convert::Into<alloc::string::String>)
@@ -130,6 +107,29 @@ impl core::marker::Unpin for cadmpeg_ir::annotations::StreamHandle
 impl core::marker::UnsafeUnpin for cadmpeg_ir::annotations::StreamHandle
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::StreamHandle
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::StreamHandle
+pub struct cadmpeg_ir::annotations::StreamProvenance
+pub cadmpeg_ir::annotations::StreamProvenance::offset: u64
+pub cadmpeg_ir::annotations::StreamProvenance::stream: u32
+pub cadmpeg_ir::annotations::StreamProvenance::tag: core::option::Option<alloc::string::String>
+impl core::clone::Clone for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::clone(&self) -> cadmpeg_ir::annotations::StreamProvenance
+impl core::cmp::Eq for cadmpeg_ir::annotations::StreamProvenance
+impl core::cmp::PartialEq for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::eq(&self, &cadmpeg_ir::annotations::StreamProvenance) -> bool
+impl core::fmt::Debug for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::annotations::StreamProvenance
+impl serde_core::ser::Serialize for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::annotations::StreamProvenance
+impl core::marker::Send for cadmpeg_ir::annotations::StreamProvenance
+impl core::marker::Sync for cadmpeg_ir::annotations::StreamProvenance
+impl core::marker::Unpin for cadmpeg_ir::annotations::StreamProvenance
+impl core::marker::UnsafeUnpin for cadmpeg_ir::annotations::StreamProvenance
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::StreamProvenance
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::StreamProvenance
 pub mod cadmpeg_ir::appearance
 pub enum cadmpeg_ir::appearance::AppearanceTarget
 pub cadmpeg_ir::appearance::AppearanceTarget::Body(cadmpeg_ir::ids::BodyId)
@@ -312,48 +312,6 @@ impl core::marker::Unpin for cadmpeg_ir::appearance::TextureRef
 impl core::marker::UnsafeUnpin for cadmpeg_ir::appearance::TextureRef
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::appearance::TextureRef
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::appearance::TextureRef
-pub mod cadmpeg_ir::artifact
-pub enum cadmpeg_ir::artifact::DocumentOrigin
-pub cadmpeg_ir::artifact::DocumentOrigin::Decoded
-pub cadmpeg_ir::artifact::DocumentOrigin::Decoded::fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
-pub cadmpeg_ir::artifact::DocumentOrigin::Decoded::report: cadmpeg_ir::report::DecodeReport
-pub cadmpeg_ir::artifact::DocumentOrigin::Neutral
-impl core::clone::Clone for cadmpeg_ir::artifact::DocumentOrigin
-pub fn cadmpeg_ir::artifact::DocumentOrigin::clone(&self) -> cadmpeg_ir::artifact::DocumentOrigin
-impl core::cmp::PartialEq for cadmpeg_ir::artifact::DocumentOrigin
-pub fn cadmpeg_ir::artifact::DocumentOrigin::eq(&self, &cadmpeg_ir::artifact::DocumentOrigin) -> bool
-impl core::fmt::Debug for cadmpeg_ir::artifact::DocumentOrigin
-pub fn cadmpeg_ir::artifact::DocumentOrigin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::Freeze for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::Send for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::Sync for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::Unpin for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::UnsafeUnpin for cadmpeg_ir::artifact::DocumentOrigin
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::artifact::DocumentOrigin
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::artifact::DocumentOrigin
-pub struct cadmpeg_ir::artifact::DocumentArtifact
-pub cadmpeg_ir::artifact::DocumentArtifact::ir: cadmpeg_ir::document::CadIr
-pub cadmpeg_ir::artifact::DocumentArtifact::origin: cadmpeg_ir::artifact::DocumentOrigin
-impl cadmpeg_ir::artifact::DocumentArtifact
-pub const fn cadmpeg_ir::artifact::DocumentArtifact::decode_report(&self) -> core::option::Option<&cadmpeg_ir::report::DecodeReport>
-pub fn cadmpeg_ir::artifact::DocumentArtifact::decoded(cadmpeg_ir::codec::DecodeResult) -> Self
-pub const fn cadmpeg_ir::artifact::DocumentArtifact::fidelity(&self) -> core::option::Option<&cadmpeg_ir::source_fidelity::SourceFidelity>
-pub const fn cadmpeg_ir::artifact::DocumentArtifact::neutral(cadmpeg_ir::document::CadIr) -> Self
-impl core::clone::Clone for cadmpeg_ir::artifact::DocumentArtifact
-pub fn cadmpeg_ir::artifact::DocumentArtifact::clone(&self) -> cadmpeg_ir::artifact::DocumentArtifact
-impl core::cmp::PartialEq for cadmpeg_ir::artifact::DocumentArtifact
-pub fn cadmpeg_ir::artifact::DocumentArtifact::eq(&self, &cadmpeg_ir::artifact::DocumentArtifact) -> bool
-impl core::fmt::Debug for cadmpeg_ir::artifact::DocumentArtifact
-pub fn cadmpeg_ir::artifact::DocumentArtifact::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::Freeze for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::Send for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::Sync for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::Unpin for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::UnsafeUnpin for cadmpeg_ir::artifact::DocumentArtifact
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::artifact::DocumentArtifact
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::artifact::DocumentArtifact
 pub mod cadmpeg_ir::assets
 pub enum cadmpeg_ir::assets::AssetContent
 pub cadmpeg_ir::assets::AssetContent::Embedded
@@ -602,12 +560,16 @@ impl core::marker::Unpin for cadmpeg_ir::codec::DecodeOptions
 impl core::marker::UnsafeUnpin for cadmpeg_ir::codec::DecodeOptions
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::DecodeOptions
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::DecodeOptions
-pub struct cadmpeg_ir::codec::DecodeResult
+#[non_exhaustive] pub struct cadmpeg_ir::codec::DecodeResult
 pub cadmpeg_ir::codec::DecodeResult::ir: cadmpeg_ir::document::CadIr
 pub cadmpeg_ir::codec::DecodeResult::report: cadmpeg_ir::report::DecodeReport
 pub cadmpeg_ir::codec::DecodeResult::source_fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 impl cadmpeg_ir::codec::DecodeResult
+pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
+pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
+pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 impl core::clone::Clone for cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::clone(&self) -> cadmpeg_ir::codec::DecodeResult
 impl core::cmp::PartialEq for cadmpeg_ir::codec::DecodeResult
@@ -640,11 +602,11 @@ impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::EncodeInput
 pub struct cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> cadmpeg_ir::codec::ExportPlan<'a>
 pub fn cadmpeg_ir::codec::ExportPlan<'a>::buffered(cadmpeg_ir::report::ExportReport, alloc::vec::Vec<u8>) -> Self
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::deferred(cadmpeg_ir::report::ExportReport, impl core::ops::function::FnOnce(&mut dyn std::io::Write) -> core::result::Result<(), cadmpeg_core::error::CodecError> + 'a) -> Self
+pub fn cadmpeg_ir::codec::ExportPlan<'a>::deferred(cadmpeg_ir::report::ExportReport, impl core::ops::function::FnOnce(&mut dyn core::io::write::Write) -> core::result::Result<(), cadmpeg_core::error::CodecError> + 'a) -> Self
 pub fn cadmpeg_ir::codec::ExportPlan<'a>::fidelity_resolution(&self) -> &cadmpeg_ir::report::FidelityResolution
 pub fn cadmpeg_ir::codec::ExportPlan<'a>::report(&self) -> &cadmpeg_ir::report::ExportReport
 pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_path(&self) -> cadmpeg_ir::report::WritePath
-pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_to(self, &mut dyn std::io::Write) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::ExportPlan<'a>::write_to(self, &mut dyn core::io::write::Write) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_core::error::CodecError>
 impl<'a> core::marker::Freeze for cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> !core::marker::Send for cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> !core::marker::Sync for cadmpeg_ir::codec::ExportPlan<'a>
@@ -652,23 +614,30 @@ impl<'a> core::marker::Unpin for cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> core::marker::UnsafeUnpin for cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::ExportPlan<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::ExportPlan<'a>
-pub trait cadmpeg_ir::codec::Codec
-pub fn cadmpeg_ir::codec::Codec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::Codec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_ir::codec::Codec::id(&self) -> &'static str
-pub fn cadmpeg_ir::codec::Codec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-pub trait cadmpeg_ir::codec::CodecEntry: cadmpeg_ir::codec::Codec + cadmpeg_ir::codec::sealed::Sealed
-pub fn cadmpeg_ir::codec::CodecEntry::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::CodecEntry::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl<C: cadmpeg_ir::codec::Codec + ?core::marker::Sized> cadmpeg_ir::codec::CodecEntry for C
+pub trait cadmpeg_ir::codec::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
+pub fn cadmpeg_ir::codec::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+impl<C: cadmpeg_ir::codec::CodecBackend + ?core::marker::Sized> cadmpeg_ir::codec::Codec for C
 pub fn C::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn C::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub trait cadmpeg_ir::codec::CodecBackend
+pub fn cadmpeg_ir::codec::CodecBackend::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CodecBackend::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
+pub fn cadmpeg_ir::codec::CodecBackend::id(&self) -> &'static str
+pub fn cadmpeg_ir::codec::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::codec::Encoder
 pub fn cadmpeg_ir::codec::Encoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub mod cadmpeg_ir::compare
+pub const cadmpeg_ir::compare::FLOAT_TOLERANCE: f64
+pub const cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX: &str
+pub fn cadmpeg_ir::compare::floats_agree(f64, f64) -> bool
+pub fn cadmpeg_ir::compare::is_local_digest_attribute(&str) -> bool
+pub fn cadmpeg_ir::compare::texts_agree(&str, &str) -> bool
+pub fn cadmpeg_ir::compare::values_agree(&serde_json::value::Value, &serde_json::value::Value) -> core::result::Result<(), alloc::string::String>
 pub mod cadmpeg_ir::diff
 pub struct cadmpeg_ir::diff::ArenaDiff
 pub cadmpeg_ir::diff::ArenaDiff::added: alloc::vec::Vec<alloc::string::String>
@@ -784,7 +753,6 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::diff::SourceDiff
 pub fn cadmpeg_ir::diff::diff(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::document::CadIr) -> cadmpeg_ir::diff::IrDiff
 pub mod cadmpeg_ir::document
 pub struct cadmpeg_ir::document::CadIr
-pub cadmpeg_ir::document::CadIr::ir_version: alloc::string::String
 pub cadmpeg_ir::document::CadIr::model: cadmpeg_ir::document::Model
 pub cadmpeg_ir::document::CadIr::native: cadmpeg_ir::native::Native
 pub cadmpeg_ir::document::CadIr::source: core::option::Option<cadmpeg_ir::document::SourceMeta>
@@ -792,9 +760,11 @@ pub cadmpeg_ir::document::CadIr::tolerances: cadmpeg_ir::units::Tolerances
 pub cadmpeg_ir::document::CadIr::units: cadmpeg_ir::units::Units
 impl cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::document::CadIr::all_native_unknowns_iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<cadmpeg_ir::unknown::NativeUnknownRecord, cadmpeg_ir::native::NativeConvertError>> + '_
+pub fn cadmpeg_ir::document::CadIr::census(&self) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub fn cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units) -> Self
 pub fn cadmpeg_ir::document::CadIr::finalize(&mut self)
 pub fn cadmpeg_ir::document::CadIr::from_json(&str) -> core::result::Result<Self, serde_json::error::Error>
+pub fn cadmpeg_ir::document::CadIr::ir_version(&self) -> &str
 pub fn cadmpeg_ir::document::CadIr::native_unknowns(&self, &str) -> core::result::Result<alloc::vec::Vec<cadmpeg_ir::unknown::NativeUnknownRecord>, cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::document::CadIr::native_unknowns_iter<'a>(&'a self, &str) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<cadmpeg_ir::unknown::NativeUnknownRecord, cadmpeg_ir::native::NativeConvertError>> + 'a
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns(&mut self, &str, &[cadmpeg_ir::unknown::NativeUnknownRecord]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
@@ -915,6 +885,7 @@ pub const cadmpeg_ir::document::IR_VERSION: &str
 pub trait cadmpeg_ir::document::EntityRewrite
 pub type cadmpeg_ir::document::EntityRewrite::Error
 pub fn cadmpeg_ir::document::EntityRewrite::rewrite<T: serde_core::ser::Serialize + serde_core::de::DeserializeOwned>(&mut self, T) -> core::result::Result<T, Self::Error>
+pub fn cadmpeg_ir::document::entity_census(&cadmpeg_ir::document::CadIr) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub mod cadmpeg_ir::draft
 pub enum cadmpeg_ir::draft::DraftError
 pub cadmpeg_ir::draft::DraftError::IdentityCollision(alloc::string::String)
@@ -940,19 +911,6 @@ impl core::marker::Unpin for cadmpeg_ir::draft::DraftError
 impl core::marker::UnsafeUnpin for cadmpeg_ir::draft::DraftError
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::draft::DraftError
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::draft::DraftError
-pub struct cadmpeg_ir::draft::BrepAssembly(_)
-impl cadmpeg_ir::draft::BrepAssembly
-pub fn cadmpeg_ir::draft::BrepAssembly::into_draft(self) -> cadmpeg_ir::draft::ModelDraft
-pub fn cadmpeg_ir::draft::BrepAssembly::new(cadmpeg_ir::draft::ModelDraft) -> core::result::Result<Self, cadmpeg_ir::draft::DraftError>
-impl core::fmt::Debug for cadmpeg_ir::draft::BrepAssembly
-pub fn cadmpeg_ir::draft::BrepAssembly::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_ir::draft::BrepAssembly
-impl core::marker::Send for cadmpeg_ir::draft::BrepAssembly
-impl core::marker::Sync for cadmpeg_ir::draft::BrepAssembly
-impl core::marker::Unpin for cadmpeg_ir::draft::BrepAssembly
-impl core::marker::UnsafeUnpin for cadmpeg_ir::draft::BrepAssembly
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::draft::BrepAssembly
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::draft::BrepAssembly
 pub struct cadmpeg_ir::draft::CommitSession
 impl cadmpeg_ir::draft::CommitSession
 pub fn cadmpeg_ir::draft::CommitSession::commit_model(&mut self, cadmpeg_ir::draft::ModelDraft, &mut cadmpeg_ir::document::CadIr) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
@@ -1142,6 +1100,7 @@ pub fn cadmpeg_ir::topology::Shell::arena_mut(&mut cadmpeg_ir::document::Model) 
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::topology::Vertex
 pub fn cadmpeg_ir::topology::Vertex::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::topology::Vertex::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
+pub type cadmpeg_ir::draft::DocumentDraft = cadmpeg_ir::draft::ModelDraft
 pub mod cadmpeg_ir::drawings
 pub enum cadmpeg_ir::drawings::DrawingKind
 pub cadmpeg_ir::drawings::DrawingKind::Annotation
@@ -1328,6 +1287,7 @@ pub fn cadmpeg_ir::eval::analytic_surface_parameters(&cadmpeg_ir::geometry::Surf
 pub fn cadmpeg_ir::eval::curve_point(&cadmpeg_ir::geometry::CurveGeometry, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::curve_second_derivative(&cadmpeg_ir::geometry::CurveGeometry, f64) -> core::option::Option<cadmpeg_ir::math::Vector3>
 pub fn cadmpeg_ir::eval::curve_tangent(&cadmpeg_ir::geometry::CurveGeometry, f64) -> core::option::Option<cadmpeg_ir::math::Vector3>
+pub fn cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(&cadmpeg_ir::sketches::SketchGeometry, &cadmpeg_ir::sketches::SketchGeometry, f64) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::map_nurbs_curve_parameter(&cadmpeg_ir::geometry::NurbsCurve, f64) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::model_curve_parameter_near_point(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::ids::CurveId, cadmpeg_ir::math::Point3, f64) -> core::option::Option<f64>
 pub fn cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(&cadmpeg_ir::index::ModelIndex<'_>, &cadmpeg_ir::ids::CurveId, cadmpeg_ir::math::Point3, f64) -> core::option::Option<f64>
@@ -1356,9 +1316,6 @@ pub fn cadmpeg_ir::eval::spatial_points_are_reflections(cadmpeg_ir::math::Point3
 pub fn cadmpeg_ir::eval::surface_partials(&cadmpeg_ir::geometry::SurfaceGeometry, f64, f64) -> core::option::Option<cadmpeg_ir::eval::SurfacePartials>
 pub fn cadmpeg_ir::eval::surface_point(&cadmpeg_ir::geometry::SurfaceGeometry, f64, f64) -> core::option::Option<cadmpeg_ir::math::Point3>
 pub fn cadmpeg_ir::eval::surface_second_partials(&cadmpeg_ir::geometry::SurfaceGeometry, f64, f64) -> core::option::Option<cadmpeg_ir::eval::SurfaceSecondPartials>
-pub mod cadmpeg_ir::examples
-pub fn cadmpeg_ir::examples::directed_subd_sum() -> cadmpeg_ir::document::CadIr
-pub fn cadmpeg_ir::examples::unit_cube() -> cadmpeg_ir::document::CadIr
 pub mod cadmpeg_ir::features
 pub enum cadmpeg_ir::features::BinderConstruction
 pub cadmpeg_ir::features::BinderConstruction::Shape
@@ -1821,6 +1778,37 @@ impl core::marker::Unpin for cadmpeg_ir::features::CoilSectionPlacement
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::CoilSectionPlacement
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::CoilSectionPlacement
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::CoilSectionPlacement
+pub enum cadmpeg_ir::features::ConfigurationActivation
+pub cadmpeg_ir::features::ConfigurationActivation::Resolved(bool)
+pub cadmpeg_ir::features::ConfigurationActivation::Unresolved
+impl cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::is_active(&self) -> bool
+pub fn cadmpeg_ir::features::ConfigurationActivation::is_inactive(&self) -> bool
+pub fn cadmpeg_ir::features::ConfigurationActivation::resolved(&self) -> core::option::Option<bool>
+impl core::clone::Clone for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::clone(&self) -> cadmpeg_ir::features::ConfigurationActivation
+impl core::cmp::Eq for cadmpeg_ir::features::ConfigurationActivation
+impl core::cmp::PartialEq for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::eq(&self, &cadmpeg_ir::features::ConfigurationActivation) -> bool
+impl core::convert::From<bool> for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::from(bool) -> Self
+impl core::default::Default for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::default() -> Self
+impl core::fmt::Debug for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::ConfigurationActivation
+impl serde_core::ser::Serialize for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::Send for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::Sync for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::Unpin for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ConfigurationActivation
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ConfigurationActivation
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ConfigurationActivation
 pub enum cadmpeg_ir::features::ConfigurationBodies
 pub cadmpeg_ir::features::ConfigurationBodies::Resolved(alloc::vec::Vec<cadmpeg_ir::ids::BodyId>)
 pub cadmpeg_ir::features::ConfigurationBodies::Unresolved
@@ -1856,6 +1844,44 @@ impl core::marker::Unpin for cadmpeg_ir::features::ConfigurationBodies
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ConfigurationBodies
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ConfigurationBodies
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ConfigurationBodies
+pub enum cadmpeg_ir::features::ConfigurationName
+pub cadmpeg_ir::features::ConfigurationName::Resolved(alloc::string::String)
+pub cadmpeg_ir::features::ConfigurationName::Unresolved
+impl cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::is_unresolved(&self) -> bool
+pub fn cadmpeg_ir::features::ConfigurationName::resolved(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::features::ConfigurationName::resolved_mut(&mut self) -> core::option::Option<&mut alloc::string::String>
+impl core::clone::Clone for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::clone(&self) -> cadmpeg_ir::features::ConfigurationName
+impl core::cmp::Eq for cadmpeg_ir::features::ConfigurationName
+impl core::cmp::PartialEq for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::eq(&self, &cadmpeg_ir::features::ConfigurationName) -> bool
+impl core::cmp::PartialEq<&str> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::eq(&self, &&str) -> bool
+impl core::cmp::PartialEq<alloc::string::String> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::eq(&self, &alloc::string::String) -> bool
+impl core::cmp::PartialEq<str> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::eq(&self, &str) -> bool
+impl core::convert::From<&str> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::from(&str) -> Self
+impl core::convert::From<alloc::string::String> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::from(alloc::string::String) -> Self
+impl core::default::Default for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::default() -> cadmpeg_ir::features::ConfigurationName
+impl core::fmt::Debug for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::ConfigurationName
+impl serde_core::ser::Serialize for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::ConfigurationName
+impl core::marker::Send for cadmpeg_ir::features::ConfigurationName
+impl core::marker::Sync for cadmpeg_ir::features::ConfigurationName
+impl core::marker::Unpin for cadmpeg_ir::features::ConfigurationName
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ConfigurationName
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ConfigurationName
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ConfigurationName
 pub enum cadmpeg_ir::features::CosmeticThreadExtent
 pub cadmpeg_ir::features::CosmeticThreadExtent::Blind
 pub cadmpeg_ir::features::CosmeticThreadExtent::Blind::length: cadmpeg_ir::features::Length
@@ -1951,6 +1977,63 @@ impl core::marker::Unpin for cadmpeg_ir::features::DatumPlaneReference
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::DatumPlaneReference
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::DatumPlaneReference
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::DatumPlaneReference
+pub enum cadmpeg_ir::features::DatumPointConstruction
+pub cadmpeg_ir::features::DatumPointConstruction::CircleCenter
+pub cadmpeg_ir::features::DatumPointConstruction::CircleCenter::edge: cadmpeg_ir::features::EdgeSelection
+pub cadmpeg_ir::features::DatumPointConstruction::DistanceOnEdge
+pub cadmpeg_ir::features::DatumPointConstruction::DistanceOnEdge::edge: cadmpeg_ir::features::EdgeSelection
+pub cadmpeg_ir::features::DatumPointConstruction::DistanceOnEdge::fraction: f64
+pub cadmpeg_ir::features::DatumPointConstruction::EdgePlaneIntersection
+pub cadmpeg_ir::features::DatumPointConstruction::EdgePlaneIntersection::edge: cadmpeg_ir::features::EdgeSelection
+pub cadmpeg_ir::features::DatumPointConstruction::EdgePlaneIntersection::plane: cadmpeg_ir::features::DatumPlaneReference
+pub cadmpeg_ir::features::DatumPointConstruction::ThreePlaneIntersection
+pub cadmpeg_ir::features::DatumPointConstruction::ThreePlaneIntersection::planes: alloc::boxed::Box<[cadmpeg_ir::features::DatumPlaneReference; 3]>
+pub cadmpeg_ir::features::DatumPointConstruction::TwoEdgeIntersection
+pub cadmpeg_ir::features::DatumPointConstruction::TwoEdgeIntersection::edges: [cadmpeg_ir::features::EdgeSelection; 2]
+pub cadmpeg_ir::features::DatumPointConstruction::Vertex
+pub cadmpeg_ir::features::DatumPointConstruction::Vertex::vertex: cadmpeg_ir::features::VertexSelection
+impl cadmpeg_ir::features::DatumPointConstruction
+pub fn cadmpeg_ir::features::DatumPointConstruction::feature_references(&self) -> alloc::vec::Vec<&cadmpeg_ir::features::FeatureId>
+impl core::clone::Clone for cadmpeg_ir::features::DatumPointConstruction
+pub fn cadmpeg_ir::features::DatumPointConstruction::clone(&self) -> cadmpeg_ir::features::DatumPointConstruction
+impl core::cmp::PartialEq for cadmpeg_ir::features::DatumPointConstruction
+pub fn cadmpeg_ir::features::DatumPointConstruction::eq(&self, &cadmpeg_ir::features::DatumPointConstruction) -> bool
+impl core::fmt::Debug for cadmpeg_ir::features::DatumPointConstruction
+pub fn cadmpeg_ir::features::DatumPointConstruction::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::DatumPointConstruction
+impl serde_core::ser::Serialize for cadmpeg_ir::features::DatumPointConstruction
+pub fn cadmpeg_ir::features::DatumPointConstruction::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::DatumPointConstruction
+pub fn cadmpeg_ir::features::DatumPointConstruction::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::DatumPointConstruction
+impl core::marker::Send for cadmpeg_ir::features::DatumPointConstruction
+impl core::marker::Sync for cadmpeg_ir::features::DatumPointConstruction
+impl core::marker::Unpin for cadmpeg_ir::features::DatumPointConstruction
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::DatumPointConstruction
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::DatumPointConstruction
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::DatumPointConstruction
+pub enum cadmpeg_ir::features::DecalMapping
+pub cadmpeg_ir::features::DecalMapping::FitToFaces
+impl core::clone::Clone for cadmpeg_ir::features::DecalMapping
+pub fn cadmpeg_ir::features::DecalMapping::clone(&self) -> cadmpeg_ir::features::DecalMapping
+impl core::cmp::Eq for cadmpeg_ir::features::DecalMapping
+impl core::cmp::PartialEq for cadmpeg_ir::features::DecalMapping
+pub fn cadmpeg_ir::features::DecalMapping::eq(&self, &cadmpeg_ir::features::DecalMapping) -> bool
+impl core::fmt::Debug for cadmpeg_ir::features::DecalMapping
+pub fn cadmpeg_ir::features::DecalMapping::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::features::DecalMapping
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::DecalMapping
+impl serde_core::ser::Serialize for cadmpeg_ir::features::DecalMapping
+pub fn cadmpeg_ir::features::DecalMapping::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::DecalMapping
+pub fn cadmpeg_ir::features::DecalMapping::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::DecalMapping
+impl core::marker::Send for cadmpeg_ir::features::DecalMapping
+impl core::marker::Sync for cadmpeg_ir::features::DecalMapping
+impl core::marker::Unpin for cadmpeg_ir::features::DecalMapping
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::DecalMapping
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::DecalMapping
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::DecalMapping
 pub enum cadmpeg_ir::features::DimensionDisplay
 pub cadmpeg_ir::features::DimensionDisplay::Diameter
 pub cadmpeg_ir::features::DimensionDisplay::Radius
@@ -2245,10 +2328,21 @@ pub cadmpeg_ir::features::FeatureDefinition::DatumPlane::origin: cadmpeg_ir::mat
 pub cadmpeg_ir::features::FeatureDefinition::DatumPlane::u_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumPoint
+pub cadmpeg_ir::features::FeatureDefinition::DatumPoint::construction: core::option::Option<alloc::boxed::Box<cadmpeg_ir::features::DatumPointConstruction>>
 pub cadmpeg_ir::features::FeatureDefinition::DatumPoint::position: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::DatumPointUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane
 pub cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane::plane: cadmpeg_ir::features::PrincipalPlane
+pub cadmpeg_ir::features::FeatureDefinition::DatumThreePointPlane
+pub cadmpeg_ir::features::FeatureDefinition::DatumThreePointPlane::normal: cadmpeg_ir::math::Vector3
+pub cadmpeg_ir::features::FeatureDefinition::DatumThreePointPlane::origin: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::features::FeatureDefinition::DatumThreePointPlane::points: alloc::boxed::Box<[cadmpeg_ir::features::VertexSelection; 3]>
+pub cadmpeg_ir::features::FeatureDefinition::DatumThreePointPlane::u_axis: cadmpeg_ir::math::Vector3
+pub cadmpeg_ir::features::FeatureDefinition::Decal
+pub cadmpeg_ir::features::FeatureDefinition::Decal::asset: cadmpeg_ir::assets::AssetId
+pub cadmpeg_ir::features::FeatureDefinition::Decal::faces: cadmpeg_ir::features::FaceSelection
+pub cadmpeg_ir::features::FeatureDefinition::Decal::mapping: cadmpeg_ir::features::DecalMapping
+pub cadmpeg_ir::features::FeatureDefinition::Decal::opacity: core::option::Option<f64>
 pub cadmpeg_ir::features::FeatureDefinition::DeleteBody
 pub cadmpeg_ir::features::FeatureDefinition::DeleteBody::bodies: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::DeleteBody::mode: cadmpeg_ir::features::BodyRetentionMode
@@ -2455,10 +2549,13 @@ pub cadmpeg_ir::features::FeatureDefinition::ProjectedCurve::target_faces: cadmp
 pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage
 pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::asset: cadmpeg_ir::assets::AssetId
 pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::bounds: [cadmpeg_ir::math::Point2; 2]
+pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::mirror_u: bool
+pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::mirror_v: bool
 pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::opacity: core::option::Option<f64>
 pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::u_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::v_axis: cadmpeg_ir::math::Vector3
+pub cadmpeg_ir::features::FeatureDefinition::ReferenceImage::visible: bool
 pub cadmpeg_ir::features::FeatureDefinition::RefineShape
 pub cadmpeg_ir::features::FeatureDefinition::RefineShape::source: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::RegularPolygonCurve
@@ -4371,6 +4468,10 @@ pub enum cadmpeg_ir::features::VertexSelection
 pub cadmpeg_ir::features::VertexSelection::Generated
 pub cadmpeg_ir::features::VertexSelection::Generated::native: alloc::string::String
 pub cadmpeg_ir::features::VertexSelection::Generated::vertex: cadmpeg_ir::features::GeneratedVertexRef
+pub cadmpeg_ir::features::VertexSelection::Historical
+pub cadmpeg_ir::features::VertexSelection::Historical::native: alloc::string::String
+pub cadmpeg_ir::features::VertexSelection::Historical::state: cadmpeg_ir::ids::FeatureInputTopologyId
+pub cadmpeg_ir::features::VertexSelection::Historical::vertex: cadmpeg_ir::ids::HistoricalVertexId
 pub cadmpeg_ir::features::VertexSelection::Native(alloc::string::String)
 pub cadmpeg_ir::features::VertexSelection::Unresolved
 impl core::clone::Clone for cadmpeg_ir::features::VertexSelection
@@ -4603,12 +4704,12 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ConfigurationId
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ConfigurationId
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ConfigurationId
 pub struct cadmpeg_ir::features::DesignConfiguration
-pub cadmpeg_ir::features::DesignConfiguration::active: bool
+pub cadmpeg_ir::features::DesignConfiguration::active: cadmpeg_ir::features::ConfigurationActivation
 pub cadmpeg_ir::features::DesignConfiguration::bodies: cadmpeg_ir::features::ConfigurationBodies
 pub cadmpeg_ir::features::DesignConfiguration::feature_states: alloc::collections::btree::map::BTreeMap<cadmpeg_ir::features::FeatureId, cadmpeg_ir::features::ConfigurationFeatureState>
 pub cadmpeg_ir::features::DesignConfiguration::id: cadmpeg_ir::features::ConfigurationId
 pub cadmpeg_ir::features::DesignConfiguration::material: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::features::DesignConfiguration::name: alloc::string::String
+pub cadmpeg_ir::features::DesignConfiguration::name: cadmpeg_ir::features::ConfigurationName
 pub cadmpeg_ir::features::DesignConfiguration::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::features::DesignConfiguration::ordinal: u32
 pub cadmpeg_ir::features::DesignConfiguration::parameter_overrides: alloc::collections::btree::map::BTreeMap<cadmpeg_ir::features::ParameterId, alloc::string::String>
@@ -4735,6 +4836,8 @@ pub cadmpeg_ir::features::Feature::source_properties: alloc::collections::btree:
 pub cadmpeg_ir::features::Feature::source_tag: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::features::Feature::source_text: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::features::Feature::suppressed: core::option::Option<bool>
+impl cadmpeg_ir::features::Feature
+pub fn cadmpeg_ir::features::Feature::new(cadmpeg_ir::features::FeatureId, u64, cadmpeg_ir::features::FeatureDefinition) -> Self
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::features::Feature
 pub fn cadmpeg_ir::features::Feature::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::features::Feature::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -4799,6 +4902,7 @@ pub cadmpeg_ir::features::FeatureInputTopology::faces: alloc::vec::Vec<cadmpeg_i
 pub cadmpeg_ir::features::FeatureInputTopology::id: cadmpeg_ir::ids::FeatureInputTopologyId
 pub cadmpeg_ir::features::FeatureInputTopology::input_of: cadmpeg_ir::features::FeatureId
 pub cadmpeg_ir::features::FeatureInputTopology::native_ref: core::option::Option<alloc::string::String>
+pub cadmpeg_ir::features::FeatureInputTopology::vertices: alloc::vec::Vec<cadmpeg_ir::ids::HistoricalVertexId>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::features::FeatureInputTopology
 pub fn cadmpeg_ir::features::FeatureInputTopology::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::features::FeatureInputTopology::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -6202,6 +6306,7 @@ pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionG2Blend
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionG2Blend::construction: alloc::boxed::Box<cadmpeg_ir::geometry::RevisionG2BlendConstruction>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution::angular_interval: [f64; 2]
+pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution::angular_parameter_interval: core::option::Option<[f64; 2]>
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution::axis_direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution::axis_origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution::directrix: cadmpeg_ir::ids::CurveId
@@ -8513,6 +8618,32 @@ pub fn cadmpeg_ir::hash::canonical_json_sha256<T: serde_core::ser::Serialize>(&T
 pub fn cadmpeg_ir::hash::document_local_sha256(&cadmpeg_ir::document::CadIr, &str, &str) -> alloc::string::String
 pub fn cadmpeg_ir::hash::sha256_hex(&[u8]) -> alloc::string::String
 pub mod cadmpeg_ir::ids
+pub enum cadmpeg_ir::ids::IdentityError
+pub cadmpeg_ir::ids::IdentityError::InvalidComponent
+pub cadmpeg_ir::ids::IdentityError::InvalidComponent::label: &'static str
+pub cadmpeg_ir::ids::IdentityError::InvalidComponent::value: alloc::string::String
+pub cadmpeg_ir::ids::IdentityError::InvalidId
+pub cadmpeg_ir::ids::IdentityError::InvalidId::value: alloc::string::String
+pub cadmpeg_ir::ids::IdentityError::InvalidKey
+pub cadmpeg_ir::ids::IdentityError::InvalidKey::value: alloc::string::String
+impl core::clone::Clone for cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::IdentityError::clone(&self) -> cadmpeg_ir::ids::IdentityError
+impl core::cmp::Eq for cadmpeg_ir::ids::IdentityError
+impl core::cmp::PartialEq for cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::IdentityError::eq(&self, &cadmpeg_ir::ids::IdentityError) -> bool
+impl core::error::Error for cadmpeg_ir::ids::IdentityError
+impl core::fmt::Debug for cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::IdentityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::IdentityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::ids::IdentityError
+impl core::marker::Freeze for cadmpeg_ir::ids::IdentityError
+impl core::marker::Send for cadmpeg_ir::ids::IdentityError
+impl core::marker::Sync for cadmpeg_ir::ids::IdentityError
+impl core::marker::Unpin for cadmpeg_ir::ids::IdentityError
+impl core::marker::UnsafeUnpin for cadmpeg_ir::ids::IdentityError
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::ids::IdentityError
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::ids::IdentityError
 pub struct cadmpeg_ir::ids::AppearanceId(pub alloc::string::String)
 impl cadmpeg_ir::ids::AppearanceId
 pub fn cadmpeg_ir::ids::AppearanceId::as_str(&self) -> &str
@@ -8897,6 +9028,38 @@ impl core::marker::Unpin for cadmpeg_ir::ids::HistoricalFaceId
 impl core::marker::UnsafeUnpin for cadmpeg_ir::ids::HistoricalFaceId
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::ids::HistoricalFaceId
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::ids::HistoricalFaceId
+pub struct cadmpeg_ir::ids::HistoricalVertexId(pub alloc::string::String)
+impl cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::as_str(&self) -> &str
+impl core::clone::Clone for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::clone(&self) -> cadmpeg_ir::ids::HistoricalVertexId
+impl core::cmp::Eq for cadmpeg_ir::ids::HistoricalVertexId
+impl core::cmp::Ord for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::cmp(&self, &cadmpeg_ir::ids::HistoricalVertexId) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::eq(&self, &cadmpeg_ir::ids::HistoricalVertexId) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::partial_cmp(&self, &cadmpeg_ir::ids::HistoricalVertexId) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for cadmpeg_ir::ids::HistoricalVertexId
+impl serde_core::ser::Serialize for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::ids::HistoricalVertexId
+pub fn cadmpeg_ir::ids::HistoricalVertexId::from(S) -> Self
+impl core::marker::Freeze for cadmpeg_ir::ids::HistoricalVertexId
+impl core::marker::Send for cadmpeg_ir::ids::HistoricalVertexId
+impl core::marker::Sync for cadmpeg_ir::ids::HistoricalVertexId
+impl core::marker::Unpin for cadmpeg_ir::ids::HistoricalVertexId
+impl core::marker::UnsafeUnpin for cadmpeg_ir::ids::HistoricalVertexId
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::ids::HistoricalVertexId
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::ids::HistoricalVertexId
 pub struct cadmpeg_ir::ids::LayerId(pub alloc::string::String)
 impl cadmpeg_ir::ids::LayerId
 pub fn cadmpeg_ir::ids::LayerId::as_str(&self) -> &str
@@ -9377,6 +9540,8 @@ impl core::marker::Unpin for cadmpeg_ir::ids::VertexId
 impl core::marker::UnsafeUnpin for cadmpeg_ir::ids::VertexId
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::ids::VertexId
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::ids::VertexId
+pub fn cadmpeg_ir::ids::format_identity(&str, &str, &str, impl core::fmt::Display) -> core::result::Result<alloc::string::String, cadmpeg_ir::ids::IdentityError>
+pub fn cadmpeg_ir::ids::is_valid_identity(&str) -> bool
 pub mod cadmpeg_ir::index
 pub struct cadmpeg_ir::index::ModelIndex<'a>
 impl<'a> cadmpeg_ir::index::ModelIndex<'a>
@@ -9409,6 +9574,7 @@ pub fn cadmpeg_ir::index::ModelIndex<'a>::points(&self, &str) -> core::option::O
 pub fn cadmpeg_ir::index::ModelIndex<'a>::presentation_documents(&self, &str) -> core::option::Option<&'a cadmpeg_ir::presentation::PresentationDocument>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::presentation_layers(&self, &str) -> core::option::Option<&'a cadmpeg_ir::presentation::PresentationLayer>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::procedural_curves(&self, &str) -> core::option::Option<&'a cadmpeg_ir::geometry::ProceduralCurve>
+pub fn cadmpeg_ir::index::ModelIndex<'a>::procedural_surface_for_surface(&self, &str) -> core::option::Option<&'a cadmpeg_ir::geometry::ProceduralSurface>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::procedural_surfaces(&self, &str) -> core::option::Option<&'a cadmpeg_ir::geometry::ProceduralSurface>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::product_definitions(&self, &str) -> core::option::Option<&'a cadmpeg_ir::products::ProductDefinition>
 pub fn cadmpeg_ir::index::ModelIndex<'a>::regions(&self, &str) -> core::option::Option<&'a cadmpeg_ir::topology::Region>
@@ -9435,28 +9601,6 @@ impl<'a> core::marker::UnsafeUnpin for cadmpeg_ir::index::ModelIndex<'a>
 impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::index::ModelIndex<'a>
 impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::index::ModelIndex<'a>
 pub mod cadmpeg_ir::math
-pub struct cadmpeg_ir::math::Aabb
-pub cadmpeg_ir::math::Aabb::max: cadmpeg_ir::math::Point3
-pub cadmpeg_ir::math::Aabb::min: cadmpeg_ir::math::Point3
-impl core::clone::Clone for cadmpeg_ir::math::Aabb
-pub fn cadmpeg_ir::math::Aabb::clone(&self) -> cadmpeg_ir::math::Aabb
-impl core::cmp::PartialEq for cadmpeg_ir::math::Aabb
-pub fn cadmpeg_ir::math::Aabb::eq(&self, &cadmpeg_ir::math::Aabb) -> bool
-impl core::fmt::Debug for cadmpeg_ir::math::Aabb
-pub fn cadmpeg_ir::math::Aabb::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_ir::math::Aabb
-impl core::marker::StructuralPartialEq for cadmpeg_ir::math::Aabb
-impl serde_core::ser::Serialize for cadmpeg_ir::math::Aabb
-pub fn cadmpeg_ir::math::Aabb::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::math::Aabb
-pub fn cadmpeg_ir::math::Aabb::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_ir::math::Aabb
-impl core::marker::Send for cadmpeg_ir::math::Aabb
-impl core::marker::Sync for cadmpeg_ir::math::Aabb
-impl core::marker::Unpin for cadmpeg_ir::math::Aabb
-impl core::marker::UnsafeUnpin for cadmpeg_ir::math::Aabb
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::math::Aabb
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::math::Aabb
 pub struct cadmpeg_ir::math::Point2
 pub cadmpeg_ir::math::Point2::u: f64
 pub cadmpeg_ir::math::Point2::v: f64
@@ -10788,78 +10932,81 @@ impl core::marker::Unpin for cadmpeg_ir::report::LossCategory
 impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossCategory
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossCategory
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossCategory
-#[non_exhaustive] pub enum cadmpeg_ir::report::LossKind
-pub cadmpeg_ir::report::LossKind::AnalyticSurfaceNormalized
-pub cadmpeg_ir::report::LossKind::AppearanceReduced
-pub cadmpeg_ir::report::LossKind::AssemblyComponentsExternal
-pub cadmpeg_ir::report::LossKind::AssemblyPlacementsNotTransferred
-pub cadmpeg_ir::report::LossKind::AssetNotTransferred
-pub cadmpeg_ir::report::LossKind::AttributesNotTransferred
-pub cadmpeg_ir::report::LossKind::BodyTransformNotApplied
-pub cadmpeg_ir::report::LossKind::CarrierAxisInferred
-pub cadmpeg_ir::report::LossKind::CarrierSummary
-pub cadmpeg_ir::report::LossKind::ContainerOnly
-pub cadmpeg_ir::report::LossKind::CurvelessEdgeOmitted
-pub cadmpeg_ir::report::LossKind::DecodeDiagnostic
-pub cadmpeg_ir::report::LossKind::EllipticalConeReduced
-pub cadmpeg_ir::report::LossKind::FeatureHistoryRetained
-pub cadmpeg_ir::report::LossKind::GeometryNotTransferred
-pub cadmpeg_ir::report::LossKind::HiddenBodyOmitted
-pub cadmpeg_ir::report::LossKind::IntegrityFailure
-pub cadmpeg_ir::report::LossKind::MaterialNotTransferred
-pub cadmpeg_ir::report::LossKind::MeshVertexPrecision
-pub cadmpeg_ir::report::LossKind::MetadataNotTransferred
-pub cadmpeg_ir::report::LossKind::MissingGeometryStream
-pub cadmpeg_ir::report::LossKind::NoExportableSolids
-pub cadmpeg_ir::report::LossKind::NoncanonicalSourceSyntax
-pub cadmpeg_ir::report::LossKind::ObjectRecordsUntransferred
-pub cadmpeg_ir::report::LossKind::ParametricRecordOmitted
-pub cadmpeg_ir::report::LossKind::PassthroughRecordOmitted
-pub cadmpeg_ir::report::LossKind::PcurveOmitted
-pub cadmpeg_ir::report::LossKind::PmiOmitted
-pub cadmpeg_ir::report::LossKind::PreservedSourceUnavailable
-pub cadmpeg_ir::report::LossKind::ProceduralReduced
-pub cadmpeg_ir::report::LossKind::RecordNotTyped
-pub cadmpeg_ir::report::LossKind::ReferenceGraphNotClosed
-pub cadmpeg_ir::report::LossKind::SourceAssociationOmitted
-pub cadmpeg_ir::report::LossKind::SourceTopologyInvalid
-pub cadmpeg_ir::report::LossKind::SubdOmitted
-pub cadmpeg_ir::report::LossKind::TessellationOmitted
-pub cadmpeg_ir::report::LossKind::TopologyGaugeSubstituted
-pub cadmpeg_ir::report::LossKind::TopologyNotTransferred
-pub cadmpeg_ir::report::LossKind::UnknownSurfaceFaceOmitted
-pub cadmpeg_ir::report::LossKind::UnsupportedObjectFamily
-impl cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::as_str(self) -> &'static str
-pub const fn cadmpeg_ir::report::LossKind::category(self) -> cadmpeg_ir::report::LossCategory
-pub const fn cadmpeg_ir::report::LossKind::default_severity(self) -> cadmpeg_ir::report::Severity
-pub const fn cadmpeg_ir::report::LossKind::strict_floor(self) -> core::option::Option<cadmpeg_ir::report::Severity>
-impl core::clone::Clone for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::clone(&self) -> cadmpeg_ir::report::LossKind
-impl core::cmp::Eq for cadmpeg_ir::report::LossKind
-impl core::cmp::Ord for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::cmp(&self, &cadmpeg_ir::report::LossKind) -> core::cmp::Ordering
-impl core::cmp::PartialEq for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::eq(&self, &cadmpeg_ir::report::LossKind) -> bool
-impl core::cmp::PartialOrd for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::partial_cmp(&self, &cadmpeg_ir::report::LossKind) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_ir::report::LossKind
-impl core::marker::StructuralPartialEq for cadmpeg_ir::report::LossKind
-impl serde_core::ser::Serialize for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_ir::report::LossKind
-impl core::marker::Send for cadmpeg_ir::report::LossKind
-impl core::marker::Sync for cadmpeg_ir::report::LossKind
-impl core::marker::Unpin for cadmpeg_ir::report::LossKind
-impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossKind
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossKind
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossKind
+#[non_exhaustive] pub enum cadmpeg_ir::report::LossTaxonomy
+pub cadmpeg_ir::report::LossTaxonomy::AnalyticSurfaceNormalized
+pub cadmpeg_ir::report::LossTaxonomy::AppearanceReduced
+pub cadmpeg_ir::report::LossTaxonomy::AssemblyComponentsExternal
+pub cadmpeg_ir::report::LossTaxonomy::AssemblyPlacementsNotTransferred
+pub cadmpeg_ir::report::LossTaxonomy::AssetNotTransferred
+pub cadmpeg_ir::report::LossTaxonomy::AttributesNotTransferred
+pub cadmpeg_ir::report::LossTaxonomy::BodyTransformNotApplied
+pub cadmpeg_ir::report::LossTaxonomy::CarrierAxisInferred
+pub cadmpeg_ir::report::LossTaxonomy::CarrierSummary
+pub cadmpeg_ir::report::LossTaxonomy::ContainerOnly
+pub cadmpeg_ir::report::LossTaxonomy::CurvelessEdgeOmitted
+pub cadmpeg_ir::report::LossTaxonomy::DecodeDiagnostic
+pub cadmpeg_ir::report::LossTaxonomy::EllipticalConeReduced
+pub cadmpeg_ir::report::LossTaxonomy::FeatureHistoryRetained
+pub cadmpeg_ir::report::LossTaxonomy::GeometryNotTransferred
+pub cadmpeg_ir::report::LossTaxonomy::HiddenBodyOmitted
+pub cadmpeg_ir::report::LossTaxonomy::IntegrityFailure
+pub cadmpeg_ir::report::LossTaxonomy::MaterialNotTransferred
+pub cadmpeg_ir::report::LossTaxonomy::MeshVertexPrecision
+pub cadmpeg_ir::report::LossTaxonomy::MetadataNotTransferred
+pub cadmpeg_ir::report::LossTaxonomy::MissingGeometryStream
+pub cadmpeg_ir::report::LossTaxonomy::NoExportableSolids
+pub cadmpeg_ir::report::LossTaxonomy::NoncanonicalSourceSyntax
+pub cadmpeg_ir::report::LossTaxonomy::ObjectRecordsUntransferred
+pub cadmpeg_ir::report::LossTaxonomy::ParametricRecordOmitted
+pub cadmpeg_ir::report::LossTaxonomy::PassthroughRecordOmitted
+pub cadmpeg_ir::report::LossTaxonomy::PcurveOmitted
+pub cadmpeg_ir::report::LossTaxonomy::PmiOmitted
+pub cadmpeg_ir::report::LossTaxonomy::PreservedSourceUnavailable
+pub cadmpeg_ir::report::LossTaxonomy::ProceduralReduced
+pub cadmpeg_ir::report::LossTaxonomy::RecordNotTyped
+pub cadmpeg_ir::report::LossTaxonomy::ReferenceGraphNotClosed
+pub cadmpeg_ir::report::LossTaxonomy::SourceAssociationOmitted
+pub cadmpeg_ir::report::LossTaxonomy::SourceTopologyInvalid
+pub cadmpeg_ir::report::LossTaxonomy::SubdOmitted
+pub cadmpeg_ir::report::LossTaxonomy::TessellationOmitted
+pub cadmpeg_ir::report::LossTaxonomy::TopologyGaugeSubstituted
+pub cadmpeg_ir::report::LossTaxonomy::TopologyNotTransferred
+pub cadmpeg_ir::report::LossTaxonomy::UnknownSurfaceFaceOmitted
+pub cadmpeg_ir::report::LossTaxonomy::UnsupportedObjectFamily
+impl cadmpeg_ir::report::LossTaxonomy
+pub const fn cadmpeg_ir::report::LossTaxonomy::as_str(self) -> &'static str
+pub const fn cadmpeg_ir::report::LossTaxonomy::category(self) -> cadmpeg_ir::report::LossCategory
+pub const fn cadmpeg_ir::report::LossTaxonomy::default_severity(self) -> cadmpeg_ir::report::Severity
+pub fn cadmpeg_ir::report::LossTaxonomy::from_v1_str(&str) -> core::option::Option<Self>
+pub const fn cadmpeg_ir::report::LossTaxonomy::strict_floor(self) -> core::option::Option<cadmpeg_ir::report::Severity>
+impl core::clone::Clone for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::clone(&self) -> cadmpeg_ir::report::LossTaxonomy
+impl core::cmp::Eq for cadmpeg_ir::report::LossTaxonomy
+impl core::cmp::Ord for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::cmp(&self, &cadmpeg_ir::report::LossTaxonomy) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::eq(&self, &cadmpeg_ir::report::LossTaxonomy) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::partial_cmp(&self, &cadmpeg_ir::report::LossTaxonomy) -> core::option::Option<core::cmp::Ordering>
+impl core::convert::From<cadmpeg_ir::report::LossTaxonomy> for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::from(cadmpeg_ir::report::LossTaxonomy) -> Self
+impl core::fmt::Debug for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::StructuralPartialEq for cadmpeg_ir::report::LossTaxonomy
+impl serde_core::ser::Serialize for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::Send for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::Sync for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::Unpin for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossTaxonomy
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossTaxonomy
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossTaxonomy
 pub enum cadmpeg_ir::report::Severity
 pub cadmpeg_ir::report::Severity::Blocking
 pub cadmpeg_ir::report::Severity::Error
@@ -11003,7 +11150,7 @@ pub cadmpeg_ir::report::DecodeReport::transfer_ledger: cadmpeg_ir::report::Trans
 impl cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::coverage_count(&self, cadmpeg_ir::report::CoverageKey) -> usize
 pub fn cadmpeg_ir::report::DecodeReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::report::DecodeReport::record_coverage(&mut self, cadmpeg_ir::report::CoverageKey)
+pub fn cadmpeg_ir::report::DecodeReport::record_coverage(&mut self, cadmpeg_ir::report::CoverageKey, usize)
 impl core::clone::Clone for cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::clone(&self) -> cadmpeg_ir::report::DecodeReport
 impl core::cmp::PartialEq for cadmpeg_ir::report::DecodeReport
@@ -11095,16 +11242,59 @@ impl core::marker::Unpin for cadmpeg_ir::report::Finding
 impl core::marker::UnsafeUnpin for cadmpeg_ir::report::Finding
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::Finding
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::Finding
+pub struct cadmpeg_ir::report::LossKind
+pub cadmpeg_ir::report::LossKind::code: alloc::string::String
+pub cadmpeg_ir::report::LossKind::namespace: alloc::string::String
+pub cadmpeg_ir::report::LossKind::taxonomy: cadmpeg_ir::report::LossTaxonomy
+impl cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::as_str(&self) -> alloc::string::String
+pub const fn cadmpeg_ir::report::LossKind::category(&self) -> cadmpeg_ir::report::LossCategory
+pub const fn cadmpeg_ir::report::LossKind::default_severity(&self) -> cadmpeg_ir::report::Severity
+pub fn cadmpeg_ir::report::LossKind::from_v1_str(&str) -> core::option::Option<Self>
+pub fn cadmpeg_ir::report::LossKind::local_code(&self) -> &str
+pub fn cadmpeg_ir::report::LossKind::namespace(&self) -> &str
+pub fn cadmpeg_ir::report::LossKind::namespaced(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::LossTaxonomy) -> Self
+pub fn cadmpeg_ir::report::LossKind::shared(cadmpeg_ir::report::LossTaxonomy) -> Self
+pub const fn cadmpeg_ir::report::LossKind::strict_floor(&self) -> core::option::Option<cadmpeg_ir::report::Severity>
+pub const fn cadmpeg_ir::report::LossKind::taxonomy(&self) -> cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossKind::with_strict_floor(self, core::option::Option<cadmpeg_ir::report::Severity>) -> Self
+impl core::clone::Clone for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::clone(&self) -> cadmpeg_ir::report::LossKind
+impl core::cmp::Eq for cadmpeg_ir::report::LossKind
+impl core::cmp::Ord for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::cmp(&self, &cadmpeg_ir::report::LossKind) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::eq(&self, &cadmpeg_ir::report::LossKind) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::partial_cmp(&self, &cadmpeg_ir::report::LossKind) -> core::option::Option<core::cmp::Ordering>
+impl core::convert::From<cadmpeg_ir::report::LossTaxonomy> for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::from(cadmpeg_ir::report::LossTaxonomy) -> Self
+impl core::fmt::Debug for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::report::LossKind
+impl serde_core::ser::Serialize for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl core::marker::Freeze for cadmpeg_ir::report::LossKind
+impl core::marker::Send for cadmpeg_ir::report::LossKind
+impl core::marker::Sync for cadmpeg_ir::report::LossKind
+impl core::marker::Unpin for cadmpeg_ir::report::LossKind
+impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossKind
 pub struct cadmpeg_ir::report::LossNote
 pub cadmpeg_ir::report::LossNote::code: cadmpeg_ir::report::LossKind
 pub cadmpeg_ir::report::LossNote::message: alloc::string::String
-pub cadmpeg_ir::report::LossNote::provenance: core::option::Option<cadmpeg_ir::LossProvenance>
+pub cadmpeg_ir::report::LossNote::provenance: core::option::Option<cadmpeg_ir::SourceProvenance>
 pub cadmpeg_ir::report::LossNote::severity: cadmpeg_ir::report::Severity
 impl cadmpeg_ir::report::LossNote
-pub fn cadmpeg_ir::report::LossNote::new(cadmpeg_ir::report::LossKind, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::report::LossNote::new(impl core::convert::Into<cadmpeg_ir::report::LossKind>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::report::LossNote::strict_consequence(&self) -> cadmpeg_ir::report::StrictConsequence
-pub fn cadmpeg_ir::report::LossNote::with_provenance(self, cadmpeg_ir::LossProvenance) -> Self
-pub const fn cadmpeg_ir::report::LossNote::with_severity(self, cadmpeg_ir::report::Severity) -> Self
+pub fn cadmpeg_ir::report::LossNote::with_provenance(self, cadmpeg_ir::SourceProvenance) -> Self
+pub fn cadmpeg_ir::report::LossNote::with_severity(self, cadmpeg_ir::report::Severity) -> Self
 impl core::clone::Clone for cadmpeg_ir::report::LossNote
 pub fn cadmpeg_ir::report::LossNote::clone(&self) -> cadmpeg_ir::report::LossNote
 impl core::cmp::PartialEq for cadmpeg_ir::report::LossNote
@@ -11200,43 +11390,7 @@ impl core::marker::Unpin for cadmpeg_ir::report::ValidationReport
 impl core::marker::UnsafeUnpin for cadmpeg_ir::report::ValidationReport
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::ValidationReport
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::ValidationReport
-pub mod cadmpeg_ir::roundtrip
-pub enum cadmpeg_ir::roundtrip::MutationOutcome
-pub cadmpeg_ir::roundtrip::MutationOutcome::Refused
-pub cadmpeg_ir::roundtrip::MutationOutcome::Refused::error: cadmpeg_core::error::CodecError
-pub cadmpeg_ir::roundtrip::MutationOutcome::Written
-pub cadmpeg_ir::roundtrip::MutationOutcome::Written::baseline: alloc::boxed::Box<cadmpeg_ir::document::CadIr>
-pub cadmpeg_ir::roundtrip::MutationOutcome::Written::bytes: alloc::vec::Vec<u8>
-pub cadmpeg_ir::roundtrip::MutationOutcome::Written::edited: alloc::boxed::Box<cadmpeg_ir::document::CadIr>
-pub cadmpeg_ir::roundtrip::MutationOutcome::Written::report: alloc::boxed::Box<cadmpeg_ir::report::ExportReport>
-impl core::fmt::Debug for cadmpeg_ir::roundtrip::MutationOutcome
-pub fn cadmpeg_ir::roundtrip::MutationOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_ir::roundtrip::MutationOutcome
-impl core::marker::Send for cadmpeg_ir::roundtrip::MutationOutcome
-impl core::marker::Sync for cadmpeg_ir::roundtrip::MutationOutcome
-impl core::marker::Unpin for cadmpeg_ir::roundtrip::MutationOutcome
-impl core::marker::UnsafeUnpin for cadmpeg_ir::roundtrip::MutationOutcome
-impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::roundtrip::MutationOutcome
-impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::roundtrip::MutationOutcome
-pub enum cadmpeg_ir::roundtrip::SemanticOutcome
-pub cadmpeg_ir::roundtrip::SemanticOutcome::Refused
-pub cadmpeg_ir::roundtrip::SemanticOutcome::Refused::error: cadmpeg_core::error::CodecError
-pub cadmpeg_ir::roundtrip::SemanticOutcome::Written
-pub cadmpeg_ir::roundtrip::SemanticOutcome::Written::bytes: alloc::vec::Vec<u8>
-pub cadmpeg_ir::roundtrip::SemanticOutcome::Written::ir: alloc::boxed::Box<cadmpeg_ir::document::CadIr>
-pub cadmpeg_ir::roundtrip::SemanticOutcome::Written::report: alloc::boxed::Box<cadmpeg_ir::report::ExportReport>
-impl core::fmt::Debug for cadmpeg_ir::roundtrip::SemanticOutcome
-pub fn cadmpeg_ir::roundtrip::SemanticOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for cadmpeg_ir::roundtrip::SemanticOutcome
-impl core::marker::Send for cadmpeg_ir::roundtrip::SemanticOutcome
-impl core::marker::Sync for cadmpeg_ir::roundtrip::SemanticOutcome
-impl core::marker::Unpin for cadmpeg_ir::roundtrip::SemanticOutcome
-impl core::marker::UnsafeUnpin for cadmpeg_ir::roundtrip::SemanticOutcome
-impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::roundtrip::SemanticOutcome
-impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::roundtrip::SemanticOutcome
-pub fn cadmpeg_ir::roundtrip::mutation_roundtrip<C>(&C, &str, &[u8], cadmpeg_ir::report::WritePath, impl core::ops::function::FnOnce(&mut cadmpeg_ir::document::CadIr) -> bool, impl core::ops::function::FnOnce(&cadmpeg_ir::roundtrip::MutationOutcome)) -> bool where C: cadmpeg_ir::codec::Codec + cadmpeg_ir::codec::Encoder
-pub fn cadmpeg_ir::roundtrip::semantic_roundtrip<C>(&C, &str, &[u8], impl core::ops::function::FnOnce(&cadmpeg_ir::roundtrip::SemanticOutcome)) where C: cadmpeg_ir::codec::Codec + cadmpeg_ir::codec::Encoder
-pub fn cadmpeg_ir::roundtrip::verbatim_replay_holds<C>(&C, &str, &[u8]) -> cadmpeg_ir::report::ExportReport where C: cadmpeg_ir::codec::Codec + cadmpeg_ir::codec::Encoder
+pub const cadmpeg_ir::report::SHARED_LOSS_NAMESPACE: &str
 pub mod cadmpeg_ir::schema
 pub enum cadmpeg_ir::schema::EntityKind
 pub cadmpeg_ir::schema::EntityKind::Appearance
@@ -12217,6 +12371,7 @@ pub cadmpeg_ir::sketches::Sketch::name: core::option::Option<alloc::string::Stri
 pub cadmpeg_ir::sketches::Sketch::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::sketches::Sketch::placement: cadmpeg_ir::sketches::SketchPlacement
 pub cadmpeg_ir::sketches::Sketch::profiles: alloc::vec::Vec<alloc::vec::Vec<cadmpeg_ir::sketches::SketchEntityUse>>
+pub cadmpeg_ir::sketches::Sketch::visible: core::option::Option<bool>
 impl cadmpeg_ir::sketches::Sketch
 pub fn cadmpeg_ir::sketches::Sketch::resolved_placement(&self) -> core::option::Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3, cadmpeg_ir::math::Vector3)>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::sketches::Sketch
@@ -12339,6 +12494,8 @@ pub cadmpeg_ir::sketches::SketchEntity::geometry_ref: core::option::Option<alloc
 pub cadmpeg_ir::sketches::SketchEntity::id: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::sketches::SketchEntity::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::sketches::SketchEntity::sketch: cadmpeg_ir::sketches::SketchId
+impl cadmpeg_ir::sketches::SketchEntity
+pub fn cadmpeg_ir::sketches::SketchEntity::new(cadmpeg_ir::sketches::SketchEntityId, cadmpeg_ir::sketches::SketchId, cadmpeg_ir::sketches::SketchGeometry) -> Self
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::sketches::SketchEntity
 pub fn cadmpeg_ir::sketches::SketchEntity::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::sketches::SketchEntity::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -12538,6 +12695,7 @@ pub cadmpeg_ir::sketches::SpatialSketch::id: cadmpeg_ir::sketches::SpatialSketch
 pub cadmpeg_ir::sketches::SpatialSketch::name: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::sketches::SpatialSketch::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::sketches::SpatialSketch::profiles: alloc::vec::Vec<cadmpeg_ir::sketches::SpatialSketchProfile>
+pub cadmpeg_ir::sketches::SpatialSketch::visible: core::option::Option<bool>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::sketches::SpatialSketch
 pub fn cadmpeg_ir::sketches::SpatialSketch::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::sketches::SpatialSketch::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -12601,6 +12759,8 @@ pub cadmpeg_ir::sketches::SpatialSketchEntity::geometry_ref: core::option::Optio
 pub cadmpeg_ir::sketches::SpatialSketchEntity::id: cadmpeg_ir::sketches::SpatialSketchEntityId
 pub cadmpeg_ir::sketches::SpatialSketchEntity::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::sketches::SpatialSketchEntity::sketch: cadmpeg_ir::sketches::SpatialSketchId
+impl cadmpeg_ir::sketches::SpatialSketchEntity
+pub fn cadmpeg_ir::sketches::SpatialSketchEntity::new(cadmpeg_ir::sketches::SpatialSketchEntityId, cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_ir::sketches::SpatialSketchGeometry) -> Self
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::sketches::SpatialSketchEntity
 pub fn cadmpeg_ir::sketches::SpatialSketchEntity::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::sketches::SpatialSketchEntity::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -12748,6 +12908,7 @@ pub mod cadmpeg_ir::source_fidelity
 pub enum cadmpeg_ir::source_fidelity::DecodeSidecarParseError
 pub cadmpeg_ir::source_fidelity::DecodeSidecarParseError::Fidelity(cadmpeg_ir::source_fidelity::FidelityError)
 pub cadmpeg_ir::source_fidelity::DecodeSidecarParseError::Json(serde_json::error::Error)
+pub cadmpeg_ir::source_fidelity::DecodeSidecarParseError::Migrate(alloc::string::String)
 pub cadmpeg_ir::source_fidelity::DecodeSidecarParseError::Version
 pub cadmpeg_ir::source_fidelity::DecodeSidecarParseError::Version::found: alloc::string::String
 impl core::error::Error for cadmpeg_ir::source_fidelity::DecodeSidecarParseError
@@ -12812,13 +12973,13 @@ pub struct cadmpeg_ir::source_fidelity::DecodeSidecar
 pub cadmpeg_ir::source_fidelity::DecodeSidecar::fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::source_fidelity::DecodeSidecar::ir_sha256: alloc::string::String
 pub cadmpeg_ir::source_fidelity::DecodeSidecar::report: cadmpeg_ir::report::DecodeReport
-pub cadmpeg_ir::source_fidelity::DecodeSidecar::version: alloc::string::String
 impl cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind(&[u8], cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind_sha256(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::result::Result<Self, cadmpeg_ir::source_fidelity::DecodeSidecarParseError>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::version(&self) -> &str
 impl core::clone::Clone for cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::clone(&self) -> cadmpeg_ir::source_fidelity::DecodeSidecar
 impl core::cmp::PartialEq for cadmpeg_ir::source_fidelity::DecodeSidecar
@@ -12866,7 +13027,6 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::source_fidelity::Retai
 pub struct cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::source_fidelity::SourceFidelity::annotations: cadmpeg_ir::annotations::Annotations
 pub cadmpeg_ir::source_fidelity::SourceFidelity::retained_records: alloc::vec::Vec<cadmpeg_ir::source_fidelity::RetainedSourceRecord>
-pub cadmpeg_ir::source_fidelity::SourceFidelity::version: alloc::string::String
 impl cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::attach_native_unknown_records(&mut self, &mut cadmpeg_ir::document::CadIr, &str, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_ir::unknown::UnknownRecord>) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::finalize(&mut self)
@@ -12874,6 +13034,8 @@ pub fn cadmpeg_ir::source_fidelity::SourceFidelity::from_json(&str) -> core::res
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::retain_unknown_records(&mut self, &str, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_ir::unknown::UnknownRecord>)
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::retained_record(&self, &str) -> core::option::Option<&cadmpeg_ir::source_fidelity::RetainedSourceRecord>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::validate(&self) -> core::result::Result<(), cadmpeg_ir::source_fidelity::FidelityError>
+pub fn cadmpeg_ir::source_fidelity::SourceFidelity::version(&self) -> &str
+pub fn cadmpeg_ir::source_fidelity::SourceFidelity::with_annotations(cadmpeg_ir::annotations::Annotations) -> Self
 impl core::clone::Clone for cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::clone(&self) -> cadmpeg_ir::source_fidelity::SourceFidelity
 impl core::cmp::Eq for cadmpeg_ir::source_fidelity::SourceFidelity
@@ -12896,6 +13058,7 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::source_fidelity::SourceFidelity
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::source_fidelity::SourceFidelity
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::source_fidelity::SourceFidelity
 pub const cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION: &str
+pub const cadmpeg_ir::source_fidelity::DECODE_SIDECAR_VERSION_V1: &str
 pub const cadmpeg_ir::source_fidelity::SOURCE_FIDELITY_VERSION: &str
 pub fn cadmpeg_ir::source_fidelity::decode_sidecar_path(&std::path::Path) -> std::path::PathBuf
 pub mod cadmpeg_ir::spreadsheets
@@ -13951,10 +14114,25 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::unknown::UnknownRecord
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::unknown::UnknownRecord
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::unknown::UnknownRecord
 pub mod cadmpeg_ir::validate
-pub fn cadmpeg_ir::validate::validate(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::validate_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::validate_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate::validate_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub mod cadmpeg_ir::validate::admissibility_freeze
+pub fn cadmpeg_ir::validate::admissibility_freeze::accepted_empty() -> cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point(&str) -> cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region(&str) -> cadmpeg_ir::document::CadIr
+pub mod cadmpeg_ir::validate::admit
+pub const cadmpeg_ir::validate::admit::CATIA_ADMISSION_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::validate::admit::DRAFT_CORE_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::validate::admit::RHINO_DRAFT_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::validate::admit::RHINO_INSTANCE_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::validate::admit::SLDPRT_EXPORT_PRECONDITION_CHECKS: &[cadmpeg_ir::report::Check]
+pub fn cadmpeg_ir::validate::admit::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate::admit::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate::admit::admit_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate::admit::filter_checks(cadmpeg_ir::report::ValidationReport, &[cadmpeg_ir::report::Check]) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate::entity_census(&cadmpeg_ir::document::CadIr) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
+pub fn cadmpeg_ir::validate::validate_neutral(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate::validate_neutral_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate::validate_neutral_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
 pub enum cadmpeg_ir::AssemblyGraphError
 pub cadmpeg_ir::AssemblyGraphError::DuplicateOccurrence(cadmpeg_ir::ids::OccurrenceId)
 pub cadmpeg_ir::AssemblyGraphError::MissingParent
@@ -14309,6 +14487,37 @@ impl core::marker::Unpin for cadmpeg_ir::codec::Confidence
 impl core::marker::UnsafeUnpin for cadmpeg_ir::codec::Confidence
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::Confidence
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::Confidence
+pub enum cadmpeg_ir::ConfigurationActivation
+pub cadmpeg_ir::ConfigurationActivation::Resolved(bool)
+pub cadmpeg_ir::ConfigurationActivation::Unresolved
+impl cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::is_active(&self) -> bool
+pub fn cadmpeg_ir::features::ConfigurationActivation::is_inactive(&self) -> bool
+pub fn cadmpeg_ir::features::ConfigurationActivation::resolved(&self) -> core::option::Option<bool>
+impl core::clone::Clone for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::clone(&self) -> cadmpeg_ir::features::ConfigurationActivation
+impl core::cmp::Eq for cadmpeg_ir::features::ConfigurationActivation
+impl core::cmp::PartialEq for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::eq(&self, &cadmpeg_ir::features::ConfigurationActivation) -> bool
+impl core::convert::From<bool> for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::from(bool) -> Self
+impl core::default::Default for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::default() -> Self
+impl core::fmt::Debug for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::ConfigurationActivation
+impl serde_core::ser::Serialize for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::ConfigurationActivation
+pub fn cadmpeg_ir::features::ConfigurationActivation::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::Send for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::Sync for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::Unpin for cadmpeg_ir::features::ConfigurationActivation
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ConfigurationActivation
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ConfigurationActivation
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ConfigurationActivation
 pub enum cadmpeg_ir::ConfigurationBodies
 pub cadmpeg_ir::ConfigurationBodies::Resolved(alloc::vec::Vec<cadmpeg_ir::ids::BodyId>)
 pub cadmpeg_ir::ConfigurationBodies::Unresolved
@@ -14344,6 +14553,44 @@ impl core::marker::Unpin for cadmpeg_ir::features::ConfigurationBodies
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ConfigurationBodies
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ConfigurationBodies
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ConfigurationBodies
+pub enum cadmpeg_ir::ConfigurationName
+pub cadmpeg_ir::ConfigurationName::Resolved(alloc::string::String)
+pub cadmpeg_ir::ConfigurationName::Unresolved
+impl cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::is_unresolved(&self) -> bool
+pub fn cadmpeg_ir::features::ConfigurationName::resolved(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::features::ConfigurationName::resolved_mut(&mut self) -> core::option::Option<&mut alloc::string::String>
+impl core::clone::Clone for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::clone(&self) -> cadmpeg_ir::features::ConfigurationName
+impl core::cmp::Eq for cadmpeg_ir::features::ConfigurationName
+impl core::cmp::PartialEq for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::eq(&self, &cadmpeg_ir::features::ConfigurationName) -> bool
+impl core::cmp::PartialEq<&str> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::eq(&self, &&str) -> bool
+impl core::cmp::PartialEq<alloc::string::String> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::eq(&self, &alloc::string::String) -> bool
+impl core::cmp::PartialEq<str> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::eq(&self, &str) -> bool
+impl core::convert::From<&str> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::from(&str) -> Self
+impl core::convert::From<alloc::string::String> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::from(alloc::string::String) -> Self
+impl core::default::Default for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::default() -> cadmpeg_ir::features::ConfigurationName
+impl core::fmt::Debug for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::features::ConfigurationName
+impl serde_core::ser::Serialize for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::ConfigurationName
+pub fn cadmpeg_ir::features::ConfigurationName::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::features::ConfigurationName
+impl core::marker::Send for cadmpeg_ir::features::ConfigurationName
+impl core::marker::Sync for cadmpeg_ir::features::ConfigurationName
+impl core::marker::Unpin for cadmpeg_ir::features::ConfigurationName
+impl core::marker::UnsafeUnpin for cadmpeg_ir::features::ConfigurationName
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::ConfigurationName
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::ConfigurationName
 pub enum cadmpeg_ir::CopyOnChangePolicy
 pub cadmpeg_ir::CopyOnChangePolicy::Disabled
 pub cadmpeg_ir::CopyOnChangePolicy::Enabled
@@ -14419,6 +14666,7 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::CurveProject
 pub enum cadmpeg_ir::DecodeSidecarParseError
 pub cadmpeg_ir::DecodeSidecarParseError::Fidelity(cadmpeg_ir::source_fidelity::FidelityError)
 pub cadmpeg_ir::DecodeSidecarParseError::Json(serde_json::error::Error)
+pub cadmpeg_ir::DecodeSidecarParseError::Migrate(alloc::string::String)
 pub cadmpeg_ir::DecodeSidecarParseError::Version
 pub cadmpeg_ir::DecodeSidecarParseError::Version::found: alloc::string::String
 impl core::error::Error for cadmpeg_ir::source_fidelity::DecodeSidecarParseError
@@ -14460,25 +14708,6 @@ impl core::marker::Unpin for cadmpeg_ir::pmi::DimensionKind
 impl core::marker::UnsafeUnpin for cadmpeg_ir::pmi::DimensionKind
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::pmi::DimensionKind
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::pmi::DimensionKind
-pub enum cadmpeg_ir::DocumentOrigin
-pub cadmpeg_ir::DocumentOrigin::Decoded
-pub cadmpeg_ir::DocumentOrigin::Decoded::fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
-pub cadmpeg_ir::DocumentOrigin::Decoded::report: cadmpeg_ir::report::DecodeReport
-pub cadmpeg_ir::DocumentOrigin::Neutral
-impl core::clone::Clone for cadmpeg_ir::artifact::DocumentOrigin
-pub fn cadmpeg_ir::artifact::DocumentOrigin::clone(&self) -> cadmpeg_ir::artifact::DocumentOrigin
-impl core::cmp::PartialEq for cadmpeg_ir::artifact::DocumentOrigin
-pub fn cadmpeg_ir::artifact::DocumentOrigin::eq(&self, &cadmpeg_ir::artifact::DocumentOrigin) -> bool
-impl core::fmt::Debug for cadmpeg_ir::artifact::DocumentOrigin
-pub fn cadmpeg_ir::artifact::DocumentOrigin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::Freeze for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::Send for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::Sync for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::Unpin for cadmpeg_ir::artifact::DocumentOrigin
-impl core::marker::UnsafeUnpin for cadmpeg_ir::artifact::DocumentOrigin
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::artifact::DocumentOrigin
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::artifact::DocumentOrigin
 pub enum cadmpeg_ir::Exactness
 pub cadmpeg_ir::Exactness::ByteExact
 pub cadmpeg_ir::Exactness::Derived
@@ -14618,10 +14847,21 @@ pub cadmpeg_ir::FeatureDefinition::DatumPlane::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::DatumPlane::u_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::DatumPlaneUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumPoint
+pub cadmpeg_ir::FeatureDefinition::DatumPoint::construction: core::option::Option<alloc::boxed::Box<cadmpeg_ir::features::DatumPointConstruction>>
 pub cadmpeg_ir::FeatureDefinition::DatumPoint::position: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::DatumPointUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumPrincipalPlane
 pub cadmpeg_ir::FeatureDefinition::DatumPrincipalPlane::plane: cadmpeg_ir::features::PrincipalPlane
+pub cadmpeg_ir::FeatureDefinition::DatumThreePointPlane
+pub cadmpeg_ir::FeatureDefinition::DatumThreePointPlane::normal: cadmpeg_ir::math::Vector3
+pub cadmpeg_ir::FeatureDefinition::DatumThreePointPlane::origin: cadmpeg_ir::math::Point3
+pub cadmpeg_ir::FeatureDefinition::DatumThreePointPlane::points: alloc::boxed::Box<[cadmpeg_ir::features::VertexSelection; 3]>
+pub cadmpeg_ir::FeatureDefinition::DatumThreePointPlane::u_axis: cadmpeg_ir::math::Vector3
+pub cadmpeg_ir::FeatureDefinition::Decal
+pub cadmpeg_ir::FeatureDefinition::Decal::asset: cadmpeg_ir::assets::AssetId
+pub cadmpeg_ir::FeatureDefinition::Decal::faces: cadmpeg_ir::features::FaceSelection
+pub cadmpeg_ir::FeatureDefinition::Decal::mapping: cadmpeg_ir::features::DecalMapping
+pub cadmpeg_ir::FeatureDefinition::Decal::opacity: core::option::Option<f64>
 pub cadmpeg_ir::FeatureDefinition::DeleteBody
 pub cadmpeg_ir::FeatureDefinition::DeleteBody::bodies: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::DeleteBody::mode: cadmpeg_ir::features::BodyRetentionMode
@@ -14828,10 +15068,13 @@ pub cadmpeg_ir::FeatureDefinition::ProjectedCurve::target_faces: cadmpeg_ir::fea
 pub cadmpeg_ir::FeatureDefinition::ReferenceImage
 pub cadmpeg_ir::FeatureDefinition::ReferenceImage::asset: cadmpeg_ir::assets::AssetId
 pub cadmpeg_ir::FeatureDefinition::ReferenceImage::bounds: [cadmpeg_ir::math::Point2; 2]
+pub cadmpeg_ir::FeatureDefinition::ReferenceImage::mirror_u: bool
+pub cadmpeg_ir::FeatureDefinition::ReferenceImage::mirror_v: bool
 pub cadmpeg_ir::FeatureDefinition::ReferenceImage::opacity: core::option::Option<f64>
 pub cadmpeg_ir::FeatureDefinition::ReferenceImage::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::ReferenceImage::u_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::ReferenceImage::v_axis: cadmpeg_ir::math::Vector3
+pub cadmpeg_ir::FeatureDefinition::ReferenceImage::visible: bool
 pub cadmpeg_ir::FeatureDefinition::RefineShape
 pub cadmpeg_ir::FeatureDefinition::RefineShape::source: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::RegularPolygonCurve
@@ -15041,6 +15284,32 @@ impl core::marker::Unpin for cadmpeg_ir::pmi::GeometricToleranceKind
 impl core::marker::UnsafeUnpin for cadmpeg_ir::pmi::GeometricToleranceKind
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::pmi::GeometricToleranceKind
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::pmi::GeometricToleranceKind
+pub enum cadmpeg_ir::IdentityError
+pub cadmpeg_ir::IdentityError::InvalidComponent
+pub cadmpeg_ir::IdentityError::InvalidComponent::label: &'static str
+pub cadmpeg_ir::IdentityError::InvalidComponent::value: alloc::string::String
+pub cadmpeg_ir::IdentityError::InvalidId
+pub cadmpeg_ir::IdentityError::InvalidId::value: alloc::string::String
+pub cadmpeg_ir::IdentityError::InvalidKey
+pub cadmpeg_ir::IdentityError::InvalidKey::value: alloc::string::String
+impl core::clone::Clone for cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::IdentityError::clone(&self) -> cadmpeg_ir::ids::IdentityError
+impl core::cmp::Eq for cadmpeg_ir::ids::IdentityError
+impl core::cmp::PartialEq for cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::IdentityError::eq(&self, &cadmpeg_ir::ids::IdentityError) -> bool
+impl core::error::Error for cadmpeg_ir::ids::IdentityError
+impl core::fmt::Debug for cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::IdentityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::ids::IdentityError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::ids::IdentityError
+impl core::marker::Freeze for cadmpeg_ir::ids::IdentityError
+impl core::marker::Send for cadmpeg_ir::ids::IdentityError
+impl core::marker::Sync for cadmpeg_ir::ids::IdentityError
+impl core::marker::Unpin for cadmpeg_ir::ids::IdentityError
+impl core::marker::UnsafeUnpin for cadmpeg_ir::ids::IdentityError
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::ids::IdentityError
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::ids::IdentityError
 pub enum cadmpeg_ir::JointKind
 pub cadmpeg_ir::JointKind::Angle
 pub cadmpeg_ir::JointKind::Ball
@@ -15112,78 +15381,81 @@ impl core::marker::Unpin for cadmpeg_ir::report::LossCategory
 impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossCategory
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossCategory
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossCategory
-#[non_exhaustive] pub enum cadmpeg_ir::LossKind
-pub cadmpeg_ir::LossKind::AnalyticSurfaceNormalized
-pub cadmpeg_ir::LossKind::AppearanceReduced
-pub cadmpeg_ir::LossKind::AssemblyComponentsExternal
-pub cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred
-pub cadmpeg_ir::LossKind::AssetNotTransferred
-pub cadmpeg_ir::LossKind::AttributesNotTransferred
-pub cadmpeg_ir::LossKind::BodyTransformNotApplied
-pub cadmpeg_ir::LossKind::CarrierAxisInferred
-pub cadmpeg_ir::LossKind::CarrierSummary
-pub cadmpeg_ir::LossKind::ContainerOnly
-pub cadmpeg_ir::LossKind::CurvelessEdgeOmitted
-pub cadmpeg_ir::LossKind::DecodeDiagnostic
-pub cadmpeg_ir::LossKind::EllipticalConeReduced
-pub cadmpeg_ir::LossKind::FeatureHistoryRetained
-pub cadmpeg_ir::LossKind::GeometryNotTransferred
-pub cadmpeg_ir::LossKind::HiddenBodyOmitted
-pub cadmpeg_ir::LossKind::IntegrityFailure
-pub cadmpeg_ir::LossKind::MaterialNotTransferred
-pub cadmpeg_ir::LossKind::MeshVertexPrecision
-pub cadmpeg_ir::LossKind::MetadataNotTransferred
-pub cadmpeg_ir::LossKind::MissingGeometryStream
-pub cadmpeg_ir::LossKind::NoExportableSolids
-pub cadmpeg_ir::LossKind::NoncanonicalSourceSyntax
-pub cadmpeg_ir::LossKind::ObjectRecordsUntransferred
-pub cadmpeg_ir::LossKind::ParametricRecordOmitted
-pub cadmpeg_ir::LossKind::PassthroughRecordOmitted
-pub cadmpeg_ir::LossKind::PcurveOmitted
-pub cadmpeg_ir::LossKind::PmiOmitted
-pub cadmpeg_ir::LossKind::PreservedSourceUnavailable
-pub cadmpeg_ir::LossKind::ProceduralReduced
-pub cadmpeg_ir::LossKind::RecordNotTyped
-pub cadmpeg_ir::LossKind::ReferenceGraphNotClosed
-pub cadmpeg_ir::LossKind::SourceAssociationOmitted
-pub cadmpeg_ir::LossKind::SourceTopologyInvalid
-pub cadmpeg_ir::LossKind::SubdOmitted
-pub cadmpeg_ir::LossKind::TessellationOmitted
-pub cadmpeg_ir::LossKind::TopologyGaugeSubstituted
-pub cadmpeg_ir::LossKind::TopologyNotTransferred
-pub cadmpeg_ir::LossKind::UnknownSurfaceFaceOmitted
-pub cadmpeg_ir::LossKind::UnsupportedObjectFamily
-impl cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::as_str(self) -> &'static str
-pub const fn cadmpeg_ir::report::LossKind::category(self) -> cadmpeg_ir::report::LossCategory
-pub const fn cadmpeg_ir::report::LossKind::default_severity(self) -> cadmpeg_ir::report::Severity
-pub const fn cadmpeg_ir::report::LossKind::strict_floor(self) -> core::option::Option<cadmpeg_ir::report::Severity>
-impl core::clone::Clone for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::clone(&self) -> cadmpeg_ir::report::LossKind
-impl core::cmp::Eq for cadmpeg_ir::report::LossKind
-impl core::cmp::Ord for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::cmp(&self, &cadmpeg_ir::report::LossKind) -> core::cmp::Ordering
-impl core::cmp::PartialEq for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::eq(&self, &cadmpeg_ir::report::LossKind) -> bool
-impl core::cmp::PartialOrd for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::partial_cmp(&self, &cadmpeg_ir::report::LossKind) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for cadmpeg_ir::report::LossKind
-impl core::marker::StructuralPartialEq for cadmpeg_ir::report::LossKind
-impl serde_core::ser::Serialize for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::LossKind
-pub fn cadmpeg_ir::report::LossKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_ir::report::LossKind
-impl core::marker::Send for cadmpeg_ir::report::LossKind
-impl core::marker::Sync for cadmpeg_ir::report::LossKind
-impl core::marker::Unpin for cadmpeg_ir::report::LossKind
-impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossKind
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossKind
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossKind
+#[non_exhaustive] pub enum cadmpeg_ir::LossTaxonomy
+pub cadmpeg_ir::LossTaxonomy::AnalyticSurfaceNormalized
+pub cadmpeg_ir::LossTaxonomy::AppearanceReduced
+pub cadmpeg_ir::LossTaxonomy::AssemblyComponentsExternal
+pub cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred
+pub cadmpeg_ir::LossTaxonomy::AssetNotTransferred
+pub cadmpeg_ir::LossTaxonomy::AttributesNotTransferred
+pub cadmpeg_ir::LossTaxonomy::BodyTransformNotApplied
+pub cadmpeg_ir::LossTaxonomy::CarrierAxisInferred
+pub cadmpeg_ir::LossTaxonomy::CarrierSummary
+pub cadmpeg_ir::LossTaxonomy::ContainerOnly
+pub cadmpeg_ir::LossTaxonomy::CurvelessEdgeOmitted
+pub cadmpeg_ir::LossTaxonomy::DecodeDiagnostic
+pub cadmpeg_ir::LossTaxonomy::EllipticalConeReduced
+pub cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained
+pub cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+pub cadmpeg_ir::LossTaxonomy::HiddenBodyOmitted
+pub cadmpeg_ir::LossTaxonomy::IntegrityFailure
+pub cadmpeg_ir::LossTaxonomy::MaterialNotTransferred
+pub cadmpeg_ir::LossTaxonomy::MeshVertexPrecision
+pub cadmpeg_ir::LossTaxonomy::MetadataNotTransferred
+pub cadmpeg_ir::LossTaxonomy::MissingGeometryStream
+pub cadmpeg_ir::LossTaxonomy::NoExportableSolids
+pub cadmpeg_ir::LossTaxonomy::NoncanonicalSourceSyntax
+pub cadmpeg_ir::LossTaxonomy::ObjectRecordsUntransferred
+pub cadmpeg_ir::LossTaxonomy::ParametricRecordOmitted
+pub cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
+pub cadmpeg_ir::LossTaxonomy::PcurveOmitted
+pub cadmpeg_ir::LossTaxonomy::PmiOmitted
+pub cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
+pub cadmpeg_ir::LossTaxonomy::ProceduralReduced
+pub cadmpeg_ir::LossTaxonomy::RecordNotTyped
+pub cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed
+pub cadmpeg_ir::LossTaxonomy::SourceAssociationOmitted
+pub cadmpeg_ir::LossTaxonomy::SourceTopologyInvalid
+pub cadmpeg_ir::LossTaxonomy::SubdOmitted
+pub cadmpeg_ir::LossTaxonomy::TessellationOmitted
+pub cadmpeg_ir::LossTaxonomy::TopologyGaugeSubstituted
+pub cadmpeg_ir::LossTaxonomy::TopologyNotTransferred
+pub cadmpeg_ir::LossTaxonomy::UnknownSurfaceFaceOmitted
+pub cadmpeg_ir::LossTaxonomy::UnsupportedObjectFamily
+impl cadmpeg_ir::report::LossTaxonomy
+pub const fn cadmpeg_ir::report::LossTaxonomy::as_str(self) -> &'static str
+pub const fn cadmpeg_ir::report::LossTaxonomy::category(self) -> cadmpeg_ir::report::LossCategory
+pub const fn cadmpeg_ir::report::LossTaxonomy::default_severity(self) -> cadmpeg_ir::report::Severity
+pub fn cadmpeg_ir::report::LossTaxonomy::from_v1_str(&str) -> core::option::Option<Self>
+pub const fn cadmpeg_ir::report::LossTaxonomy::strict_floor(self) -> core::option::Option<cadmpeg_ir::report::Severity>
+impl core::clone::Clone for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::clone(&self) -> cadmpeg_ir::report::LossTaxonomy
+impl core::cmp::Eq for cadmpeg_ir::report::LossTaxonomy
+impl core::cmp::Ord for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::cmp(&self, &cadmpeg_ir::report::LossTaxonomy) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::eq(&self, &cadmpeg_ir::report::LossTaxonomy) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::partial_cmp(&self, &cadmpeg_ir::report::LossTaxonomy) -> core::option::Option<core::cmp::Ordering>
+impl core::convert::From<cadmpeg_ir::report::LossTaxonomy> for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::from(cadmpeg_ir::report::LossTaxonomy) -> Self
+impl core::fmt::Debug for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::StructuralPartialEq for cadmpeg_ir::report::LossTaxonomy
+impl serde_core::ser::Serialize for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossTaxonomy::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::Send for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::Sync for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::Unpin for cadmpeg_ir::report::LossTaxonomy
+impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossTaxonomy
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossTaxonomy
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossTaxonomy
 pub enum cadmpeg_ir::NativeConvertError
 pub cadmpeg_ir::NativeConvertError::InvalidOwner(alloc::string::String)
 pub cadmpeg_ir::NativeConvertError::MissingId
@@ -16115,7 +16387,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::Annota
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::AnnotationBuilder
 pub struct cadmpeg_ir::Annotations
 pub cadmpeg_ir::Annotations::exactness: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::ExactnessNote>
-pub cadmpeg_ir::Annotations::provenance: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::Provenance>
+pub cadmpeg_ir::Annotations::provenance: alloc::collections::btree::map::BTreeMap<alloc::string::String, cadmpeg_ir::annotations::StreamProvenance>
 pub cadmpeg_ir::Annotations::streams: alloc::vec::Vec<alloc::string::String>
 impl core::clone::Clone for cadmpeg_ir::annotations::Annotations
 pub fn cadmpeg_ir::annotations::Annotations::clone(&self) -> cadmpeg_ir::annotations::Annotations
@@ -16235,7 +16507,6 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::diff::AttributeChange
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::diff::AttributeChange
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::diff::AttributeChange
 pub struct cadmpeg_ir::CadIr
-pub cadmpeg_ir::CadIr::ir_version: alloc::string::String
 pub cadmpeg_ir::CadIr::model: cadmpeg_ir::document::Model
 pub cadmpeg_ir::CadIr::native: cadmpeg_ir::native::Native
 pub cadmpeg_ir::CadIr::source: core::option::Option<cadmpeg_ir::document::SourceMeta>
@@ -16243,9 +16514,11 @@ pub cadmpeg_ir::CadIr::tolerances: cadmpeg_ir::units::Tolerances
 pub cadmpeg_ir::CadIr::units: cadmpeg_ir::units::Units
 impl cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::document::CadIr::all_native_unknowns_iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<cadmpeg_ir::unknown::NativeUnknownRecord, cadmpeg_ir::native::NativeConvertError>> + '_
+pub fn cadmpeg_ir::document::CadIr::census(&self) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
 pub fn cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units) -> Self
 pub fn cadmpeg_ir::document::CadIr::finalize(&mut self)
 pub fn cadmpeg_ir::document::CadIr::from_json(&str) -> core::result::Result<Self, serde_json::error::Error>
+pub fn cadmpeg_ir::document::CadIr::ir_version(&self) -> &str
 pub fn cadmpeg_ir::document::CadIr::native_unknowns(&self, &str) -> core::result::Result<alloc::vec::Vec<cadmpeg_ir::unknown::NativeUnknownRecord>, cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::document::CadIr::native_unknowns_iter<'a>(&'a self, &str) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<cadmpeg_ir::unknown::NativeUnknownRecord, cadmpeg_ir::native::NativeConvertError>> + 'a
 pub fn cadmpeg_ir::document::CadIr::set_native_unknowns(&mut self, &str, &[cadmpeg_ir::unknown::NativeUnknownRecord]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
@@ -16445,7 +16718,7 @@ pub cadmpeg_ir::DecodeReport::transfer_ledger: cadmpeg_ir::report::TransferLedge
 impl cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::coverage_count(&self, cadmpeg_ir::report::CoverageKey) -> usize
 pub fn cadmpeg_ir::report::DecodeReport::error_count(&self) -> usize
-pub fn cadmpeg_ir::report::DecodeReport::record_coverage(&mut self, cadmpeg_ir::report::CoverageKey)
+pub fn cadmpeg_ir::report::DecodeReport::record_coverage(&mut self, cadmpeg_ir::report::CoverageKey, usize)
 impl core::clone::Clone for cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::report::DecodeReport::clone(&self) -> cadmpeg_ir::report::DecodeReport
 impl core::cmp::PartialEq for cadmpeg_ir::report::DecodeReport
@@ -16464,12 +16737,16 @@ impl core::marker::Unpin for cadmpeg_ir::report::DecodeReport
 impl core::marker::UnsafeUnpin for cadmpeg_ir::report::DecodeReport
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::DecodeReport
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::DecodeReport
-pub struct cadmpeg_ir::DecodeResult
+#[non_exhaustive] pub struct cadmpeg_ir::DecodeResult
 pub cadmpeg_ir::DecodeResult::ir: cadmpeg_ir::document::CadIr
 pub cadmpeg_ir::DecodeResult::report: cadmpeg_ir::report::DecodeReport
 pub cadmpeg_ir::DecodeResult::source_fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 impl cadmpeg_ir::codec::DecodeResult
+pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
+pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
+pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
+pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
 impl core::clone::Clone for cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::clone(&self) -> cadmpeg_ir::codec::DecodeResult
 impl core::cmp::PartialEq for cadmpeg_ir::codec::DecodeResult
@@ -16488,13 +16765,13 @@ pub struct cadmpeg_ir::DecodeSidecar
 pub cadmpeg_ir::DecodeSidecar::fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::DecodeSidecar::ir_sha256: alloc::string::String
 pub cadmpeg_ir::DecodeSidecar::report: cadmpeg_ir::report::DecodeReport
-pub cadmpeg_ir::DecodeSidecar::version: alloc::string::String
 impl cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind(&[u8], cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind_sha256(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::result::Result<Self, cadmpeg_ir::source_fidelity::DecodeSidecarParseError>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::version(&self) -> &str
 impl core::clone::Clone for cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::clone(&self) -> cadmpeg_ir::source_fidelity::DecodeSidecar
 impl core::cmp::PartialEq for cadmpeg_ir::source_fidelity::DecodeSidecar
@@ -16514,12 +16791,12 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::source_fidelity::DecodeSidecar
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::source_fidelity::DecodeSidecar
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::source_fidelity::DecodeSidecar
 pub struct cadmpeg_ir::DesignConfiguration
-pub cadmpeg_ir::DesignConfiguration::active: bool
+pub cadmpeg_ir::DesignConfiguration::active: cadmpeg_ir::features::ConfigurationActivation
 pub cadmpeg_ir::DesignConfiguration::bodies: cadmpeg_ir::features::ConfigurationBodies
 pub cadmpeg_ir::DesignConfiguration::feature_states: alloc::collections::btree::map::BTreeMap<cadmpeg_ir::features::FeatureId, cadmpeg_ir::features::ConfigurationFeatureState>
 pub cadmpeg_ir::DesignConfiguration::id: cadmpeg_ir::features::ConfigurationId
 pub cadmpeg_ir::DesignConfiguration::material: core::option::Option<alloc::string::String>
-pub cadmpeg_ir::DesignConfiguration::name: alloc::string::String
+pub cadmpeg_ir::DesignConfiguration::name: cadmpeg_ir::features::ConfigurationName
 pub cadmpeg_ir::DesignConfiguration::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::DesignConfiguration::ordinal: u32
 pub cadmpeg_ir::DesignConfiguration::parameter_overrides: alloc::collections::btree::map::BTreeMap<cadmpeg_ir::features::ParameterId, alloc::string::String>
@@ -16589,28 +16866,6 @@ impl core::marker::Unpin for cadmpeg_ir::features::DesignParameter
 impl core::marker::UnsafeUnpin for cadmpeg_ir::features::DesignParameter
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::features::DesignParameter
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::features::DesignParameter
-pub struct cadmpeg_ir::DocumentArtifact
-pub cadmpeg_ir::DocumentArtifact::ir: cadmpeg_ir::document::CadIr
-pub cadmpeg_ir::DocumentArtifact::origin: cadmpeg_ir::artifact::DocumentOrigin
-impl cadmpeg_ir::artifact::DocumentArtifact
-pub const fn cadmpeg_ir::artifact::DocumentArtifact::decode_report(&self) -> core::option::Option<&cadmpeg_ir::report::DecodeReport>
-pub fn cadmpeg_ir::artifact::DocumentArtifact::decoded(cadmpeg_ir::codec::DecodeResult) -> Self
-pub const fn cadmpeg_ir::artifact::DocumentArtifact::fidelity(&self) -> core::option::Option<&cadmpeg_ir::source_fidelity::SourceFidelity>
-pub const fn cadmpeg_ir::artifact::DocumentArtifact::neutral(cadmpeg_ir::document::CadIr) -> Self
-impl core::clone::Clone for cadmpeg_ir::artifact::DocumentArtifact
-pub fn cadmpeg_ir::artifact::DocumentArtifact::clone(&self) -> cadmpeg_ir::artifact::DocumentArtifact
-impl core::cmp::PartialEq for cadmpeg_ir::artifact::DocumentArtifact
-pub fn cadmpeg_ir::artifact::DocumentArtifact::eq(&self, &cadmpeg_ir::artifact::DocumentArtifact) -> bool
-impl core::fmt::Debug for cadmpeg_ir::artifact::DocumentArtifact
-pub fn cadmpeg_ir::artifact::DocumentArtifact::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::Freeze for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::Send for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::Sync for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::Unpin for cadmpeg_ir::artifact::DocumentArtifact
-impl core::marker::UnsafeUnpin for cadmpeg_ir::artifact::DocumentArtifact
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::artifact::DocumentArtifact
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::artifact::DocumentArtifact
 pub struct cadmpeg_ir::EntityCensus
 pub cadmpeg_ir::EntityCensus::basis: cadmpeg_ir::report::CensusBasis
 pub cadmpeg_ir::EntityCensus::counts: alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
@@ -16722,6 +16977,8 @@ pub cadmpeg_ir::Feature::source_properties: alloc::collections::btree::map::BTre
 pub cadmpeg_ir::Feature::source_tag: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::Feature::source_text: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::Feature::suppressed: core::option::Option<bool>
+impl cadmpeg_ir::features::Feature
+pub fn cadmpeg_ir::features::Feature::new(cadmpeg_ir::features::FeatureId, u64, cadmpeg_ir::features::FeatureDefinition) -> Self
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::features::Feature
 pub fn cadmpeg_ir::features::Feature::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::features::Feature::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -16915,16 +17172,59 @@ impl core::marker::Unpin for cadmpeg_ir::native::LossCount
 impl core::marker::UnsafeUnpin for cadmpeg_ir::native::LossCount
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::native::LossCount
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::native::LossCount
+pub struct cadmpeg_ir::LossKind
+pub cadmpeg_ir::LossKind::code: alloc::string::String
+pub cadmpeg_ir::LossKind::namespace: alloc::string::String
+pub cadmpeg_ir::LossKind::taxonomy: cadmpeg_ir::report::LossTaxonomy
+impl cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::as_str(&self) -> alloc::string::String
+pub const fn cadmpeg_ir::report::LossKind::category(&self) -> cadmpeg_ir::report::LossCategory
+pub const fn cadmpeg_ir::report::LossKind::default_severity(&self) -> cadmpeg_ir::report::Severity
+pub fn cadmpeg_ir::report::LossKind::from_v1_str(&str) -> core::option::Option<Self>
+pub fn cadmpeg_ir::report::LossKind::local_code(&self) -> &str
+pub fn cadmpeg_ir::report::LossKind::namespace(&self) -> &str
+pub fn cadmpeg_ir::report::LossKind::namespaced(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::report::LossTaxonomy) -> Self
+pub fn cadmpeg_ir::report::LossKind::shared(cadmpeg_ir::report::LossTaxonomy) -> Self
+pub const fn cadmpeg_ir::report::LossKind::strict_floor(&self) -> core::option::Option<cadmpeg_ir::report::Severity>
+pub const fn cadmpeg_ir::report::LossKind::taxonomy(&self) -> cadmpeg_ir::report::LossTaxonomy
+pub fn cadmpeg_ir::report::LossKind::with_strict_floor(self, core::option::Option<cadmpeg_ir::report::Severity>) -> Self
+impl core::clone::Clone for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::clone(&self) -> cadmpeg_ir::report::LossKind
+impl core::cmp::Eq for cadmpeg_ir::report::LossKind
+impl core::cmp::Ord for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::cmp(&self, &cadmpeg_ir::report::LossKind) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::eq(&self, &cadmpeg_ir::report::LossKind) -> bool
+impl core::cmp::PartialOrd for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::partial_cmp(&self, &cadmpeg_ir::report::LossKind) -> core::option::Option<core::cmp::Ordering>
+impl core::convert::From<cadmpeg_ir::report::LossTaxonomy> for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::from(cadmpeg_ir::report::LossTaxonomy) -> Self
+impl core::fmt::Debug for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::report::LossKind
+impl serde_core::ser::Serialize for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::report::LossKind
+pub fn cadmpeg_ir::report::LossKind::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl core::marker::Freeze for cadmpeg_ir::report::LossKind
+impl core::marker::Send for cadmpeg_ir::report::LossKind
+impl core::marker::Sync for cadmpeg_ir::report::LossKind
+impl core::marker::Unpin for cadmpeg_ir::report::LossKind
+impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossKind
 pub struct cadmpeg_ir::LossNote
 pub cadmpeg_ir::LossNote::code: cadmpeg_ir::report::LossKind
 pub cadmpeg_ir::LossNote::message: alloc::string::String
-pub cadmpeg_ir::LossNote::provenance: core::option::Option<cadmpeg_ir::LossProvenance>
+pub cadmpeg_ir::LossNote::provenance: core::option::Option<cadmpeg_ir::SourceProvenance>
 pub cadmpeg_ir::LossNote::severity: cadmpeg_ir::report::Severity
 impl cadmpeg_ir::report::LossNote
-pub fn cadmpeg_ir::report::LossNote::new(cadmpeg_ir::report::LossKind, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn cadmpeg_ir::report::LossNote::new(impl core::convert::Into<cadmpeg_ir::report::LossKind>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn cadmpeg_ir::report::LossNote::strict_consequence(&self) -> cadmpeg_ir::report::StrictConsequence
-pub fn cadmpeg_ir::report::LossNote::with_provenance(self, cadmpeg_ir::LossProvenance) -> Self
-pub const fn cadmpeg_ir::report::LossNote::with_severity(self, cadmpeg_ir::report::Severity) -> Self
+pub fn cadmpeg_ir::report::LossNote::with_provenance(self, cadmpeg_ir::SourceProvenance) -> Self
+pub fn cadmpeg_ir::report::LossNote::with_severity(self, cadmpeg_ir::report::Severity) -> Self
 impl core::clone::Clone for cadmpeg_ir::report::LossNote
 pub fn cadmpeg_ir::report::LossNote::clone(&self) -> cadmpeg_ir::report::LossNote
 impl core::cmp::PartialEq for cadmpeg_ir::report::LossNote
@@ -16943,30 +17243,33 @@ impl core::marker::Unpin for cadmpeg_ir::report::LossNote
 impl core::marker::UnsafeUnpin for cadmpeg_ir::report::LossNote
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::LossNote
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::LossNote
-pub struct cadmpeg_ir::LossProvenance
-pub cadmpeg_ir::LossProvenance::format: alloc::string::String
-pub cadmpeg_ir::LossProvenance::offset: u64
-pub cadmpeg_ir::LossProvenance::stream: alloc::string::String
-pub cadmpeg_ir::LossProvenance::tag: core::option::Option<alloc::string::String>
-impl core::clone::Clone for cadmpeg_ir::LossProvenance
-pub fn cadmpeg_ir::LossProvenance::clone(&self) -> cadmpeg_ir::LossProvenance
-impl core::cmp::Eq for cadmpeg_ir::LossProvenance
-impl core::cmp::PartialEq for cadmpeg_ir::LossProvenance
-pub fn cadmpeg_ir::LossProvenance::eq(&self, &cadmpeg_ir::LossProvenance) -> bool
-impl core::fmt::Debug for cadmpeg_ir::LossProvenance
-pub fn cadmpeg_ir::LossProvenance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::LossProvenance
-impl serde_core::ser::Serialize for cadmpeg_ir::LossProvenance
-pub fn cadmpeg_ir::LossProvenance::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::LossProvenance
-pub fn cadmpeg_ir::LossProvenance::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_ir::LossProvenance
-impl core::marker::Send for cadmpeg_ir::LossProvenance
-impl core::marker::Sync for cadmpeg_ir::LossProvenance
-impl core::marker::Unpin for cadmpeg_ir::LossProvenance
-impl core::marker::UnsafeUnpin for cadmpeg_ir::LossProvenance
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::LossProvenance
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::LossProvenance
+pub struct cadmpeg_ir::ModelDraft
+impl cadmpeg_ir::draft::ModelDraft
+pub fn cadmpeg_ir::draft::ModelDraft::arena<T: cadmpeg_ir::draft::ArenaEntity>(&self) -> &alloc::vec::Vec<T>
+pub fn cadmpeg_ir::draft::ModelDraft::arena_mut<T: cadmpeg_ir::draft::ArenaEntity>(&mut self) -> &mut alloc::vec::Vec<T>
+pub fn cadmpeg_ir::draft::ModelDraft::commit(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::report::LossNote>, &mut cadmpeg_ir::report::TransferLedger) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
+pub fn cadmpeg_ir::draft::ModelDraft::commit_incomplete(self, &mut cadmpeg_ir::document::CadIr, &mut cadmpeg_ir::annotations::Annotations, &mut alloc::vec::Vec<cadmpeg_ir::report::LossNote>, &mut cadmpeg_ir::report::TransferLedger, impl core::ops::function::FnMut(cadmpeg_ir::schema::EntityKind, &str) -> bool) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
+pub fn cadmpeg_ir::draft::ModelDraft::commit_model(self, &mut cadmpeg_ir::document::CadIr) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
+pub fn cadmpeg_ir::draft::ModelDraft::entity_count(&self) -> usize
+pub fn cadmpeg_ir::draft::ModelDraft::exactness(&mut self, impl core::convert::Into<alloc::string::String>, cadmpeg_ir::Exactness)
+pub fn cadmpeg_ir::draft::ModelDraft::insert<T: cadmpeg_ir::draft::ArenaEntity>(&mut self, T) -> core::result::Result<(), cadmpeg_ir::draft::DraftError>
+pub fn cadmpeg_ir::draft::ModelDraft::ledger_mut(&mut self) -> &mut cadmpeg_ir::report::TransferLedger
+pub fn cadmpeg_ir::draft::ModelDraft::model(&self) -> &cadmpeg_ir::document::Model
+pub fn cadmpeg_ir::draft::ModelDraft::model_mut(&mut self) -> &mut cadmpeg_ir::document::Model
+pub fn cadmpeg_ir::draft::ModelDraft::new() -> Self
+pub fn cadmpeg_ir::draft::ModelDraft::note(&mut self, cadmpeg_ir::report::LossNote)
+pub fn cadmpeg_ir::draft::ModelDraft::retain_exactness(&mut self, impl core::ops::function::FnMut(&str) -> bool)
+impl core::default::Default for cadmpeg_ir::draft::ModelDraft
+pub fn cadmpeg_ir::draft::ModelDraft::default() -> cadmpeg_ir::draft::ModelDraft
+impl core::fmt::Debug for cadmpeg_ir::draft::ModelDraft
+pub fn cadmpeg_ir::draft::ModelDraft::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_ir::draft::ModelDraft
+impl core::marker::Send for cadmpeg_ir::draft::ModelDraft
+impl core::marker::Sync for cadmpeg_ir::draft::ModelDraft
+impl core::marker::Unpin for cadmpeg_ir::draft::ModelDraft
+impl core::marker::UnsafeUnpin for cadmpeg_ir::draft::ModelDraft
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::draft::ModelDraft
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::draft::ModelDraft
 pub struct cadmpeg_ir::ModifiedEntity
 pub cadmpeg_ir::ModifiedEntity::fields: alloc::vec::Vec<alloc::string::String>
 pub cadmpeg_ir::ModifiedEntity::id: alloc::string::String
@@ -17379,29 +17682,6 @@ impl core::marker::Unpin for cadmpeg_ir::products::ProductDefinition
 impl core::marker::UnsafeUnpin for cadmpeg_ir::products::ProductDefinition
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::products::ProductDefinition
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::products::ProductDefinition
-pub struct cadmpeg_ir::Provenance
-pub cadmpeg_ir::Provenance::offset: u64
-pub cadmpeg_ir::Provenance::stream: u32
-pub cadmpeg_ir::Provenance::tag: core::option::Option<alloc::string::String>
-impl core::clone::Clone for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::clone(&self) -> cadmpeg_ir::annotations::Provenance
-impl core::cmp::Eq for cadmpeg_ir::annotations::Provenance
-impl core::cmp::PartialEq for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::eq(&self, &cadmpeg_ir::annotations::Provenance) -> bool
-impl core::fmt::Debug for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_ir::annotations::Provenance
-impl serde_core::ser::Serialize for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::annotations::Provenance
-pub fn cadmpeg_ir::annotations::Provenance::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for cadmpeg_ir::annotations::Provenance
-impl core::marker::Send for cadmpeg_ir::annotations::Provenance
-impl core::marker::Sync for cadmpeg_ir::annotations::Provenance
-impl core::marker::Unpin for cadmpeg_ir::annotations::Provenance
-impl core::marker::UnsafeUnpin for cadmpeg_ir::annotations::Provenance
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::Provenance
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::Provenance
 pub struct cadmpeg_ir::RetainedSourceRecord
 pub cadmpeg_ir::RetainedSourceRecord::byte_len: u64
 pub cadmpeg_ir::RetainedSourceRecord::data: core::option::Option<alloc::vec::Vec<u8>>
@@ -17461,6 +17741,7 @@ pub cadmpeg_ir::Sketch::name: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::Sketch::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::Sketch::placement: cadmpeg_ir::sketches::SketchPlacement
 pub cadmpeg_ir::Sketch::profiles: alloc::vec::Vec<alloc::vec::Vec<cadmpeg_ir::sketches::SketchEntityUse>>
+pub cadmpeg_ir::Sketch::visible: core::option::Option<bool>
 impl cadmpeg_ir::sketches::Sketch
 pub fn cadmpeg_ir::sketches::Sketch::resolved_placement(&self) -> core::option::Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3, cadmpeg_ir::math::Vector3)>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::sketches::Sketch
@@ -17561,6 +17842,8 @@ pub cadmpeg_ir::SketchEntity::geometry_ref: core::option::Option<alloc::string::
 pub cadmpeg_ir::SketchEntity::id: cadmpeg_ir::sketches::SketchEntityId
 pub cadmpeg_ir::SketchEntity::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::SketchEntity::sketch: cadmpeg_ir::sketches::SketchId
+impl cadmpeg_ir::sketches::SketchEntity
+pub fn cadmpeg_ir::sketches::SketchEntity::new(cadmpeg_ir::sketches::SketchEntityId, cadmpeg_ir::sketches::SketchId, cadmpeg_ir::sketches::SketchGeometry) -> Self
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::sketches::SketchEntity
 pub fn cadmpeg_ir::sketches::SketchEntity::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::sketches::SketchEntity::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -17712,7 +17995,6 @@ impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::diff::SourceDiff
 pub struct cadmpeg_ir::SourceFidelity
 pub cadmpeg_ir::SourceFidelity::annotations: cadmpeg_ir::annotations::Annotations
 pub cadmpeg_ir::SourceFidelity::retained_records: alloc::vec::Vec<cadmpeg_ir::source_fidelity::RetainedSourceRecord>
-pub cadmpeg_ir::SourceFidelity::version: alloc::string::String
 impl cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::attach_native_unknown_records(&mut self, &mut cadmpeg_ir::document::CadIr, &str, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_ir::unknown::UnknownRecord>) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::finalize(&mut self)
@@ -17720,6 +18002,8 @@ pub fn cadmpeg_ir::source_fidelity::SourceFidelity::from_json(&str) -> core::res
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::retain_unknown_records(&mut self, &str, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_ir::unknown::UnknownRecord>)
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::retained_record(&self, &str) -> core::option::Option<&cadmpeg_ir::source_fidelity::RetainedSourceRecord>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::validate(&self) -> core::result::Result<(), cadmpeg_ir::source_fidelity::FidelityError>
+pub fn cadmpeg_ir::source_fidelity::SourceFidelity::version(&self) -> &str
+pub fn cadmpeg_ir::source_fidelity::SourceFidelity::with_annotations(cadmpeg_ir::annotations::Annotations) -> Self
 impl core::clone::Clone for cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::clone(&self) -> cadmpeg_ir::source_fidelity::SourceFidelity
 impl core::cmp::Eq for cadmpeg_ir::source_fidelity::SourceFidelity
@@ -17791,12 +18075,37 @@ impl core::marker::Unpin for cadmpeg_ir::SourceObjectAssociation
 impl core::marker::UnsafeUnpin for cadmpeg_ir::SourceObjectAssociation
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::SourceObjectAssociation
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::SourceObjectAssociation
+pub struct cadmpeg_ir::SourceProvenance
+pub cadmpeg_ir::SourceProvenance::format: alloc::string::String
+pub cadmpeg_ir::SourceProvenance::offset: u64
+pub cadmpeg_ir::SourceProvenance::stream: alloc::string::String
+pub cadmpeg_ir::SourceProvenance::tag: core::option::Option<alloc::string::String>
+impl core::clone::Clone for cadmpeg_ir::SourceProvenance
+pub fn cadmpeg_ir::SourceProvenance::clone(&self) -> cadmpeg_ir::SourceProvenance
+impl core::cmp::Eq for cadmpeg_ir::SourceProvenance
+impl core::cmp::PartialEq for cadmpeg_ir::SourceProvenance
+pub fn cadmpeg_ir::SourceProvenance::eq(&self, &cadmpeg_ir::SourceProvenance) -> bool
+impl core::fmt::Debug for cadmpeg_ir::SourceProvenance
+pub fn cadmpeg_ir::SourceProvenance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::SourceProvenance
+impl serde_core::ser::Serialize for cadmpeg_ir::SourceProvenance
+pub fn cadmpeg_ir::SourceProvenance::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::SourceProvenance
+pub fn cadmpeg_ir::SourceProvenance::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::SourceProvenance
+impl core::marker::Send for cadmpeg_ir::SourceProvenance
+impl core::marker::Sync for cadmpeg_ir::SourceProvenance
+impl core::marker::Unpin for cadmpeg_ir::SourceProvenance
+impl core::marker::UnsafeUnpin for cadmpeg_ir::SourceProvenance
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::SourceProvenance
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::SourceProvenance
 pub struct cadmpeg_ir::SpatialSketch
 pub cadmpeg_ir::SpatialSketch::configuration: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::SpatialSketch::id: cadmpeg_ir::sketches::SpatialSketchId
 pub cadmpeg_ir::SpatialSketch::name: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::SpatialSketch::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::SpatialSketch::profiles: alloc::vec::Vec<cadmpeg_ir::sketches::SpatialSketchProfile>
+pub cadmpeg_ir::SpatialSketch::visible: core::option::Option<bool>
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::sketches::SpatialSketch
 pub fn cadmpeg_ir::sketches::SpatialSketch::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::sketches::SpatialSketch::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -17830,6 +18139,8 @@ pub cadmpeg_ir::SpatialSketchEntity::geometry_ref: core::option::Option<alloc::s
 pub cadmpeg_ir::SpatialSketchEntity::id: cadmpeg_ir::sketches::SpatialSketchEntityId
 pub cadmpeg_ir::SpatialSketchEntity::native_ref: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::SpatialSketchEntity::sketch: cadmpeg_ir::sketches::SpatialSketchId
+impl cadmpeg_ir::sketches::SpatialSketchEntity
+pub fn cadmpeg_ir::sketches::SpatialSketchEntity::new(cadmpeg_ir::sketches::SpatialSketchEntityId, cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_ir::sketches::SpatialSketchGeometry) -> Self
 impl cadmpeg_ir::draft::ArenaEntity for cadmpeg_ir::sketches::SpatialSketchEntity
 pub fn cadmpeg_ir::sketches::SpatialSketchEntity::arena(&cadmpeg_ir::document::Model) -> &alloc::vec::Vec<Self>
 pub fn cadmpeg_ir::sketches::SpatialSketchEntity::arena_mut(&mut cadmpeg_ir::document::Model) -> &mut alloc::vec::Vec<Self>
@@ -18054,6 +18365,29 @@ impl core::marker::Unpin for cadmpeg_ir::spreadsheets::SpreadsheetRange
 impl core::marker::UnsafeUnpin for cadmpeg_ir::spreadsheets::SpreadsheetRange
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::spreadsheets::SpreadsheetRange
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::spreadsheets::SpreadsheetRange
+pub struct cadmpeg_ir::StreamProvenance
+pub cadmpeg_ir::StreamProvenance::offset: u64
+pub cadmpeg_ir::StreamProvenance::stream: u32
+pub cadmpeg_ir::StreamProvenance::tag: core::option::Option<alloc::string::String>
+impl core::clone::Clone for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::clone(&self) -> cadmpeg_ir::annotations::StreamProvenance
+impl core::cmp::Eq for cadmpeg_ir::annotations::StreamProvenance
+impl core::cmp::PartialEq for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::eq(&self, &cadmpeg_ir::annotations::StreamProvenance) -> bool
+impl core::fmt::Debug for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::annotations::StreamProvenance
+impl serde_core::ser::Serialize for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::annotations::StreamProvenance
+pub fn cadmpeg_ir::annotations::StreamProvenance::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::annotations::StreamProvenance
+impl core::marker::Send for cadmpeg_ir::annotations::StreamProvenance
+impl core::marker::Sync for cadmpeg_ir::annotations::StreamProvenance
+impl core::marker::Unpin for cadmpeg_ir::annotations::StreamProvenance
+impl core::marker::UnsafeUnpin for cadmpeg_ir::annotations::StreamProvenance
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::annotations::StreamProvenance
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::annotations::StreamProvenance
 pub struct cadmpeg_ir::SubdEdge
 pub cadmpeg_ir::SubdEdge::sector_coefficients: [f64; 2]
 pub cadmpeg_ir::SubdEdge::sharpness: [f64; 2]
@@ -18264,27 +18598,42 @@ impl core::marker::Unpin for cadmpeg_ir::presentation::ViewPresentation
 impl core::marker::UnsafeUnpin for cadmpeg_ir::presentation::ViewPresentation
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::presentation::ViewPresentation
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::presentation::ViewPresentation
+pub const cadmpeg_ir::CATIA_ADMISSION_CHECKS: &[cadmpeg_ir::report::Check]
 pub const cadmpeg_ir::DECODE_SIDECAR_VERSION: &str
+pub const cadmpeg_ir::DECODE_SIDECAR_VERSION_V1: &str
+pub const cadmpeg_ir::DRAFT_CORE_CHECKS: &[cadmpeg_ir::report::Check]
 pub const cadmpeg_ir::IR_VERSION: &str
+pub const cadmpeg_ir::RHINO_DRAFT_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::RHINO_INSTANCE_CHECKS: &[cadmpeg_ir::report::Check]
+pub const cadmpeg_ir::SHARED_LOSS_NAMESPACE: &str
+pub const cadmpeg_ir::SLDPRT_EXPORT_PRECONDITION_CHECKS: &[cadmpeg_ir::report::Check]
 pub const cadmpeg_ir::SOURCE_FIDELITY_VERSION: &str
-pub trait cadmpeg_ir::Codec
-pub fn cadmpeg_ir::Codec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::Codec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
-pub fn cadmpeg_ir::Codec::id(&self) -> &'static str
-pub fn cadmpeg_ir::Codec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-pub trait cadmpeg_ir::CodecEntry: cadmpeg_ir::codec::Codec + cadmpeg_ir::codec::sealed::Sealed
-pub fn cadmpeg_ir::CodecEntry::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::CodecEntry::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl<C: cadmpeg_ir::codec::Codec + ?core::marker::Sized> cadmpeg_ir::codec::CodecEntry for C
+pub trait cadmpeg_ir::Codec: cadmpeg_ir::codec::CodecBackend + cadmpeg_ir::codec::sealed::Sealed
+pub fn cadmpeg_ir::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+impl<C: cadmpeg_ir::codec::CodecBackend + ?core::marker::Sized> cadmpeg_ir::codec::Codec for C
 pub fn C::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn C::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub trait cadmpeg_ir::CodecBackend
+pub fn cadmpeg_ir::CodecBackend::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CodecBackend::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
+pub fn cadmpeg_ir::CodecBackend::id(&self) -> &'static str
+pub fn cadmpeg_ir::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::Encoder
 pub fn cadmpeg_ir::Encoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::Encoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 impl cadmpeg_ir::codec::Encoder for cadmpeg_ir::codec::CadirEncoder
 pub fn cadmpeg_ir::codec::CadirEncoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::CadirEncoder::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::admit_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, &[cadmpeg_ir::report::Check], alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
 pub fn cadmpeg_ir::decode_sidecar_path(&std::path::Path) -> std::path::PathBuf
 pub fn cadmpeg_ir::diff(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::document::CadIr) -> cadmpeg_ir::diff::IrDiff
-pub fn cadmpeg_ir::validate(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
-pub fn cadmpeg_ir::validate_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::entity_census(&cadmpeg_ir::document::CadIr) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, usize>
+pub fn cadmpeg_ir::filter_checks(cadmpeg_ir::report::ValidationReport, &[cadmpeg_ir::report::Check]) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::format_identity(&str, &str, &str, impl core::fmt::Display) -> core::result::Result<alloc::string::String, cadmpeg_ir::ids::IdentityError>
+pub fn cadmpeg_ir::is_valid_identity(&str) -> bool
+pub fn cadmpeg_ir::validate_neutral(&cadmpeg_ir::document::CadIr, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub fn cadmpeg_ir::validate_neutral_with_source_fidelity(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, alloc::vec::Vec<cadmpeg_ir::report::LossNote>) -> cadmpeg_ir::report::ValidationReport
+pub type cadmpeg_ir::DocumentDraft = cadmpeg_ir::draft::ModelDraft

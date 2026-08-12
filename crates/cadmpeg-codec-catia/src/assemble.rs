@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -57,15 +57,17 @@ pub(crate) fn annotate(
 /// Judge one candidate neutral model after canonicalizing arena order.
 ///
 /// Matches [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new), which
-/// sorts arenas by entity id before a document leaves the codec.
+/// sorts arenas by entity id before a document leaves the codec. Admission uses
+/// [`cadmpeg_ir::CATIA_ADMISSION_CHECKS`], not full final-document validation.
 pub(crate) fn neutral_model_is_admissible(
     ir: &mut CadIr,
     pending_unknowns: &[UnknownRecord],
 ) -> bool {
     ir.model.finalize();
-    cadmpeg_ir::validate::validate_with_additional_native_identities(
+    cadmpeg_ir::admit_with_additional_native_identities(
         ir,
         pending_unknowns.iter().map(|record| record.id.as_str()),
+        cadmpeg_ir::CATIA_ADMISSION_CHECKS,
         Vec::new(),
     )
     .is_ok()
@@ -173,7 +175,7 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     losses.insert(
         0,
         LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Blocking,
             message: format!(
                 "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
@@ -476,7 +478,7 @@ pub(crate) fn build_geometry_report(
     let mut losses = Vec::new();
 
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::CarrierSummary,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
         severity: Severity::Info,
         message: format!(
             "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
@@ -496,7 +498,7 @@ pub(crate) fn build_geometry_report(
 
     if let Some(topology_failure) = topology_failure {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             severity: Severity::Blocking,
             message: format!(
                 "The B-rep boundary graph was not emitted: {} face outer-bound row(s) in {} \
@@ -512,7 +514,7 @@ pub(crate) fn build_geometry_report(
         .saturating_sub(report_counts.admitted_standard_face_rows);
     if topology_failure.is_none() && scan.census.fbb_runs > 1 && withheld_face_rows > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             severity: Severity::Blocking,
             message: format!(
                 "{withheld_face_rows} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have a source-closed edge, vertex, trim, and topology binding, and cross-group ownership remains unresolved.",
@@ -525,7 +527,7 @@ pub(crate) fn build_geometry_report(
 
     if plane_faces > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{plane_faces} plane surface record(s) were located but not decoded because their \
@@ -538,7 +540,7 @@ pub(crate) fn build_geometry_report(
     let invalid_analytic = analytic_record_count.saturating_sub(typed.total() + plane_faces);
     if invalid_analytic > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
@@ -549,7 +551,7 @@ pub(crate) fn build_geometry_report(
     }
     if report_counts.face_local_freeform > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{} face-local free-form carrier record(s) retain their tag, bounds, and \
@@ -561,7 +563,7 @@ pub(crate) fn build_geometry_report(
     }
     if report_counts.unbound_revolution > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{} consolidated surface-of-revolution record(s) retain their profile identity, \
@@ -576,7 +578,7 @@ pub(crate) fn build_geometry_report(
     insert_unresolved_carrier_loss(ir, &mut losses);
 
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::AttributesNotTransferred),
         severity: Severity::Warning,
         message: "Standard circles with an exact adjacent-carrier section normal or two \
                   non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or \
@@ -690,7 +692,7 @@ pub(crate) fn link_payload_carriers(
 pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let mut losses = vec![LossNote {
-        code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
         severity: Severity::Blocking,
         message: format!(
             "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
@@ -703,7 +705,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
 
     if container_only {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::ContainerOnly,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::ContainerOnly),
             severity: Severity::Info,
             message: "Container-only decode requested; entity decode was not attempted."
                 .to_string(),
@@ -712,7 +714,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     }
 
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
         severity: Severity::Blocking,
         message:
             "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
@@ -1012,6 +1014,16 @@ mod route_tests {
         assert!(!neutral_model_is_admissible(&mut invalid, &[]));
     }
 
+    /// Phase 5 freeze: shared builders must match the CATIA admission gate.
+    #[test]
+    fn phase5_freeze_shared_admissibility_fixtures() {
+        let mut accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+        assert!(neutral_model_is_admissible(&mut accepted, &[]));
+        let mut rejected =
+            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test");
+        assert!(!neutral_model_is_admissible(&mut rejected, &[]));
+    }
+
     /// Decimal object-id keys reach the gate in native traversal order, in which
     /// `#10` follows `#9` but precedes it lexicographically. The gate must judge
     /// that arena in the order the pipeline publishes it.
@@ -1028,7 +1040,7 @@ mod route_tests {
                 source_object: None,
             });
         }
-        let unsorted = cadmpeg_ir::validate::validate_with_additional_native_identities(
+        let unsorted = cadmpeg_ir::validate::validate_neutral_with_additional_native_identities(
             &ir,
             std::iter::empty(),
             Vec::new(),
@@ -1048,7 +1060,7 @@ mod route_tests {
                 .collect::<Vec<_>>(),
             ["catia:test:curve#10", "catia:test:curve#9"]
         );
-        let sorted = cadmpeg_ir::validate::validate_with_additional_native_identities(
+        let sorted = cadmpeg_ir::validate::validate_neutral_with_additional_native_identities(
             &ir,
             std::iter::empty(),
             Vec::new(),

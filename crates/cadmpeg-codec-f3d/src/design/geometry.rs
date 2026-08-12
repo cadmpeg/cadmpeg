@@ -3,8 +3,14 @@
 
 use crate::design::profile_select::historical_face_points;
 use crate::records::{DesignExtrudeSelectionMember, SketchRelationOperand};
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
+
+/// Format-side work cap for arrangement edge retention walks.
+///
+/// Session `work_budget` callers take `min(this, policy.max_work_units)`.
+pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
 
 #[derive(Clone)]
 struct SketchArrangementEdge {
@@ -217,7 +223,11 @@ pub(crate) fn sketch_arrangement_faces(
         }
         edges.push(edge);
     }
-    arrangement_retain_cycle_edges(&mut edges, nodes.len());
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+    arrangement_retain_cycle_edges(&mut edges, nodes.len(), &arrangement_budget);
+    if arrangement_budget.exhausted() {
+        return None;
+    }
     if edges.len() < 3 {
         return None;
     }
@@ -810,8 +820,16 @@ fn arrangement_node(nodes: &mut Vec<Point2>, point: Point2, tolerance: f64) -> u
 /// bridges, not profile boundaries. Retaining only edges with an alternate
 /// path between their endpoints leaves the bounded-face arrangement intact
 /// while preserving intersections and nested loops.
-fn arrangement_retain_cycle_edges(edges: &mut Vec<SketchArrangementEdge>, node_count: usize) {
+fn arrangement_retain_cycle_edges(
+    edges: &mut Vec<SketchArrangementEdge>,
+    node_count: usize,
+    budget: &WorkBudget<'_>,
+) {
     loop {
+        // Each retention pass may run a BFS per edge (O(E²) worst case).
+        if !budget.charge_by(edges.len().saturating_mul(edges.len().max(1))) {
+            return;
+        }
         let retained = edges
             .iter()
             .enumerate()
@@ -840,7 +858,11 @@ fn arrangement_has_alternate_path(
     destination: usize,
     node_count: usize,
 ) -> bool {
-    let mut visited = vec![false; node_count];
+    let Ok(mut visited) =
+        cadmpeg_core::decode::alloc_filled(node_count, false, "f3d arrangement visit marks")
+    else {
+        return false;
+    };
     let mut pending = vec![start];
     visited[start] = true;
     while let Some(node) = pending.pop() {
@@ -1794,6 +1816,8 @@ fn certified_nurbs_tubes(
 }
 
 fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
+    // Format invariant: densification above this count is outside the reader.
+    // Session work for arrangement walks is charged separately via work_budget.
     const MAX_SUBDIVISIONS: usize = 100_000;
     if !travel_bound.is_finite() || travel_bound < 0.0 || !target_error.is_finite() {
         return None;
@@ -2748,7 +2772,11 @@ pub(crate) fn closed_sketch_profiles(
         incident.sort_by_key(|edge| edges[*edge].0.id.clone());
     }
 
-    let mut visited = vec![false; edges.len()];
+    let Ok(mut visited) =
+        cadmpeg_core::decode::alloc_filled(edges.len(), false, "f3d edge component marks")
+    else {
+        return Vec::new();
+    };
     let mut order = (0..edges.len()).collect::<Vec<_>>();
     order.sort_by_key(|edge| edges[*edge].0.id.clone());
     for first_edge in order {

@@ -1,0 +1,304 @@
+// SPDX-License-Identifier: Apache-2.0
+//! CADIR-plus-sidecar persistence for the CLI.
+//!
+//! CADIR and its decode-fidelity sidecar are written as two separate atomic
+//! renames. Those renames are not transactional: a crash between them can leave
+//! a stale sidecar beside a newer CADIR. Digest verification failing closed on
+//! the next load is what saves the caller, not a transactional pair.
+
+use std::fmt::Write as _;
+use std::fs::File;
+use std::io::{self, BufWriter, Read, Write};
+use std::path::{Path, PathBuf};
+
+use anyhow::{anyhow, bail, Context, Result};
+use cadmpeg_ir::codec::ExportPlan;
+use cadmpeg_ir::report::{DecodeReport, ExportReport};
+use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar, SourceFidelity};
+use sha2::{Digest, Sha256};
+
+/// Owner of bounded reads, sidecar paths, digest checks, and atomic writes.
+///
+/// Methods are associated functions: the type names the owner; there is no
+/// instance state.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ArtifactStore;
+
+impl ArtifactStore {
+    /// Sidecar path for a CADIR path (`<stem>.fidelity.json`).
+    pub fn sidecar_path(cadir_path: &Path) -> PathBuf {
+        decode_sidecar_path(cadir_path)
+    }
+
+    /// Read at most `n` leading bytes for content-based format detection.
+    pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
+        let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+        let mut buf = Vec::with_capacity(n);
+        let mut chunk = vec![0_u8; 64 * 1024].into_boxed_slice();
+        while buf.len() < n {
+            let remaining = n - buf.len();
+            let chunk_len = remaining.min(chunk.len());
+            let read = f.read(&mut chunk[..chunk_len])?;
+            if read == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..read]);
+        }
+        Ok(buf)
+    }
+
+    /// Read a UTF-8 text file, refusing payloads above `max_bytes`.
+    pub fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
+        let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+        let mut limited = file.take(max_bytes.saturating_add(1));
+        let mut text = String::new();
+        limited
+            .read_to_string(&mut text)
+            .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
+        if text.len() as u64 > max_bytes {
+            return Err(anyhow!(
+                "{} exceeds the configured {}-byte input limit",
+                path.display(),
+                max_bytes
+            ));
+        }
+        Ok(text)
+    }
+
+    /// Load and parse a decode sidecar, verifying it against CADIR bytes.
+    ///
+    /// Mismatch is a hard error (fail-closed).
+    pub fn load_matching_sidecar(
+        cadir_path: &Path,
+        cadir_bytes: &[u8],
+        max_bytes: u64,
+    ) -> Result<Option<DecodeSidecar>> {
+        let path = Self::sidecar_path(cadir_path);
+        if !path.exists() {
+            return Ok(None);
+        }
+        let text = Self::read_bounded_text(&path, max_bytes)
+            .with_context(|| format!("reading decode sidecar {}", path.display()))?;
+        let sidecar = DecodeSidecar::from_json(&text)
+            .with_context(|| format!("parsing decode sidecar {}", path.display()))?;
+        if !sidecar.matches(cadir_bytes) {
+            return Err(anyhow!(
+                "decode sidecar {} does not match {}",
+                path.display(),
+                cadir_path.display()
+            ));
+        }
+        Ok(Some(sidecar))
+    }
+
+    /// Refuse to overwrite the input path, or an existing output without force.
+    pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
+        let input = std::fs::canonicalize(input)
+            .with_context(|| format!("canonicalizing {}", input.display()))?;
+        let parent = output
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let output_absolute = if output.exists() {
+            std::fs::canonicalize(output)?
+        } else {
+            std::fs::canonicalize(parent)?.join(
+                output
+                    .file_name()
+                    .ok_or_else(|| anyhow!("output path has no filename"))?,
+            )
+        };
+        if input == output_absolute {
+            bail!("refusing to overwrite input {}", input.display());
+        }
+        if output.exists() && !force {
+            bail!("{} exists; pass --force to overwrite", output.display());
+        }
+        Ok(())
+    }
+
+    /// Stage bytes then atomically replace `output`.
+    pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
+        let parent = output
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)
+            .with_context(|| format!("creating temporary output in {}", parent.display()))?;
+        temporary
+            .write_all(bytes)
+            .with_context(|| format!("writing temporary output for {}", output.display()))?;
+        temporary
+            .persist(output)
+            .map_err(|error| error.error)
+            .with_context(|| format!("persisting temporary output to {}", output.display()))?;
+        Ok(())
+    }
+
+    /// Check the output path, then write bytes atomically.
+    pub fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
+        Self::check_output_path(input, output, force)?;
+        Self::write_bytes_atomic(output, bytes)
+    }
+
+    /// Stage an export plan, optionally hashing CADIR bytes for the sidecar.
+    pub fn write_plan_atomic(
+        output: &Path,
+        plan: ExportPlan<'_>,
+        with_digest: bool,
+    ) -> Result<(ExportReport, Option<String>)> {
+        let parent = output
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)
+            .with_context(|| format!("creating temporary output in {}", parent.display()))?;
+        let mut sink = TempFileWriter {
+            file: &mut temporary,
+            hasher: with_digest.then(Sha256::new),
+        };
+        let mut writer = BufWriter::new(&mut sink);
+        let report = plan
+            .write_to(&mut writer)
+            .with_context(|| format!("writing temporary output for {}", output.display()))?;
+        writer
+            .flush()
+            .with_context(|| format!("flushing temporary output for {}", output.display()))?;
+        drop(writer);
+        let digest = sink.finish();
+        temporary
+            .persist(output)
+            .map_err(|error| error.error)
+            .with_context(|| format!("persisting temporary output to {}", output.display()))?;
+        Ok((report, digest))
+    }
+
+    /// Persist or remove the decode-fidelity sidecar beside a CADIR file.
+    ///
+    /// When both report and fidelity are present this is a second atomic rename
+    /// after the CADIR write. The pair is not transactional; see the module
+    /// docs. When origin metadata is absent, a stale sidecar is removed.
+    pub fn persist_decode_sidecar(
+        cadir_path: &Path,
+        cadir_sha256: Option<&str>,
+        report: Option<&DecodeReport>,
+        fidelity: Option<&SourceFidelity>,
+    ) -> Result<SidecarPersistOutcome> {
+        let path = Self::sidecar_path(cadir_path);
+        match (report, fidelity) {
+            (Some(report), Some(fidelity)) => {
+                let cadir_sha256 = cadir_sha256.ok_or_else(|| {
+                    anyhow!("missing CADIR digest while writing decode-fidelity sidecar")
+                })?;
+                let sidecar =
+                    DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
+                let mut bytes = sidecar.to_canonical_json()?.into_bytes();
+                bytes.push(b'\n');
+                Self::write_bytes_atomic(&path, &bytes)?;
+                Ok(SidecarPersistOutcome::Wrote(path))
+            }
+            _ if path.exists() => {
+                std::fs::remove_file(&path)
+                    .with_context(|| format!("removing stale decode sidecar {}", path.display()))?;
+                Ok(SidecarPersistOutcome::RemovedStale(path))
+            }
+            _ => Ok(SidecarPersistOutcome::Absent),
+        }
+    }
+}
+
+/// Result of attempting to keep a CADIR sidecar in sync with its document.
+#[derive(Debug)]
+pub enum SidecarPersistOutcome {
+    /// Sidecar written beside the CADIR file.
+    Wrote(PathBuf),
+    /// Stale sidecar removed because the CADIR has no decode origin.
+    RemovedStale(PathBuf),
+    /// No sidecar present and none required.
+    Absent,
+}
+
+struct TempFileWriter<'a> {
+    file: &'a mut tempfile::NamedTempFile,
+    hasher: Option<Sha256>,
+}
+
+impl TempFileWriter<'_> {
+    fn finish(self) -> Option<String> {
+        self.hasher.map(|hasher| {
+            let digest = hasher.finalize();
+            let mut encoded = String::with_capacity(digest.len() * 2);
+            for byte in digest {
+                write!(encoded, "{byte:02x}").expect("writing a digest to a String");
+            }
+            encoded
+        })
+    }
+}
+
+impl Write for TempFileWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let written = self.file.write(bytes)?;
+        if let Some(hasher) = &mut self.hasher {
+            hasher.update(&bytes[..written]);
+        }
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::default_trait_access)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
+
+    #[test]
+    fn matching_sidecar_loads_and_mismatch_fails_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("part.cadir.json");
+        let text = CadIr::empty(Units::default()).to_canonical_json().unwrap();
+        std::fs::write(&path, &text).unwrap();
+        let report = DecodeReport {
+            format: "test".into(),
+            container_only: false,
+            geometry_transferred: false,
+            coverage: Default::default(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+        let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
+        std::fs::write(
+            ArtifactStore::sidecar_path(&path),
+            sidecar.to_canonical_json().unwrap(),
+        )
+        .unwrap();
+
+        let loaded =
+            ArtifactStore::load_matching_sidecar(&path, text.as_bytes(), 1024 * 1024).unwrap();
+        assert!(loaded.is_some());
+
+        std::fs::write(&path, format!("{text}\n")).unwrap();
+        let error = ArtifactStore::load_matching_sidecar(
+            &path,
+            format!("{text}\n").as_bytes(),
+            1024 * 1024,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("does not match"));
+    }
+
+    #[test]
+    fn text_reader_refuses_input_above_the_configured_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("large.json");
+        std::fs::write(&path, "12345").unwrap();
+        let error = ArtifactStore::read_bounded_text(&path, 4).unwrap_err();
+        assert!(error.to_string().contains("4-byte input limit"));
+    }
+}

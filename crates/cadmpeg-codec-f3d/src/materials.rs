@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
+use cadmpeg_container::ArchiveSnapshot;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
@@ -468,15 +470,19 @@ pub struct DecodedMaterials {
 /// The [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)
 /// Design body-map join is skipped. Use [`decode_with_body_bindings`] when the
 /// resolved map pairs are available.
-pub fn decode(scan: &ContainerScan) -> Result<DecodedMaterials, CodecError> {
-    decode_with_body_bindings(scan, &[])
+pub fn decode<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &ContainerScan<'a>,
+) -> Result<DecodedMaterials, CodecError> {
+    decode_with_body_bindings(ctx, scan, &[])
 }
 
 /// Decode appearance assets and resolve body bindings through the ordered,
 /// blob-qualified Design body-map pairs, closing the design-entity join
 /// backbone in [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
-pub fn decode_with_body_bindings(
-    scan: &ContainerScan,
+pub fn decode_with_body_bindings<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &ContainerScan<'a>,
     body_bindings: &[DesignBodyBinding],
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
@@ -485,16 +491,18 @@ pub fn decode_with_body_bindings(
         .iter()
         .filter(|entry| scan.is_design_asset_entry(entry, role::PROTEIN))
     {
-        let payload = scan.entry_bytes(&entry.name)?;
-        let Some(instance) = instance_properties(payload) else {
+        let protein = scan.entry_view(&entry.name).ok_or_else(|| {
+            CodecError::Malformed("protein archive entry missing from scan".into())
+        })?;
+        let Some(instance) = instance_properties(ctx, protein)? else {
             continue;
         };
-        let Some(record_frames) = cadmpeg_protein::record_frames(&instance) else {
+        let Some(record_frames) = cadmpeg_protein::record_frames(instance.window()) else {
             continue;
         };
-        let catalog = definition_catalog(payload);
-        let mut appearances = if cadmpeg_protein::has_schemas(payload) {
-            let records = cadmpeg_protein::decode(payload, &instance)?;
+        let catalog = definition_catalog(ctx, protein)?;
+        let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
+            let records = cadmpeg_protein::decode(protein.window(), instance.window())?;
             let mut decoded = appearances_from_schema_records(&records);
             let decoded_ids = decoded
                 .iter()
@@ -1670,26 +1678,24 @@ fn unique_body_map_pair<'a>(
     Ok(Some(binding))
 }
 
-fn instance_properties(protein: &[u8]) -> Option<Vec<u8>> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).ok()?;
-    for index in 0..archive.len() {
-        let mut file = archive.by_index(index).ok()?;
-        if file.name().ends_with("AssetData/InstanceProperties.bin") {
-            let size = file.size();
-            let name = file.name().to_owned();
-            let bytes = crate::container::read_entry_bounded(&mut file, size, &name).ok()?;
-            return Some(bytes);
-        }
-    }
-    None
+/// Open a nested Protein ZIP member through the session archive expander so
+/// per-expand and cumulative decompressed ceilings bind.
+fn instance_properties<'a>(
+    ctx: &DecodeContext<'a>,
+    protein: View<'a>,
+) -> Result<Option<View<'a>>, CodecError> {
+    nested_entry(ctx, protein, "AssetData/InstanceProperties.bin")
 }
 
-fn definition_catalog(
-    protein: &[u8],
-) -> std::collections::HashMap<String, (String, Option<String>)> {
-    let Some(bytes) = nested_entry(protein, "AssetData/DefinitionIteratorProperties.bin") else {
-        return std::collections::HashMap::new();
+fn definition_catalog<'a>(
+    ctx: &DecodeContext<'a>,
+    protein: View<'a>,
+) -> Result<std::collections::HashMap<String, (String, Option<String>)>, CodecError> {
+    let Some(entry) = nested_entry(ctx, protein, "AssetData/DefinitionIteratorProperties.bin")?
+    else {
+        return Ok(std::collections::HashMap::new());
     };
+    let bytes = entry.window();
     let marker = b"\x80\x00\x01\x00";
     let starts: Vec<usize> = bytes
         .windows(marker.len())
@@ -1729,21 +1735,23 @@ fn definition_catalog(
             }
         }
     }
-    out
+    Ok(out)
 }
 
-fn nested_entry(protein: &[u8], suffix: &str) -> Option<Vec<u8>> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).ok()?;
-    for index in 0..archive.len() {
-        let mut file = archive.by_index(index).ok()?;
-        if file.name().ends_with(suffix) {
-            let size = file.size();
-            let name = file.name().to_owned();
-            let bytes = crate::container::read_entry_bounded(&mut file, size, &name).ok()?;
-            return Some(bytes);
+fn nested_entry<'a>(
+    ctx: &DecodeContext<'a>,
+    protein: View<'a>,
+    suffix: &str,
+) -> Result<Option<View<'a>>, CodecError> {
+    let Ok(archive) = ArchiveSnapshot::new(protein) else {
+        return Ok(None);
+    };
+    for entry in archive.entries() {
+        if entry.name.ends_with(suffix) {
+            return Ok(Some(archive.open(ctx, entry)?));
         }
     }
-    None
+    Ok(None)
 }
 
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native

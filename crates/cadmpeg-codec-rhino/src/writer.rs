@@ -3643,7 +3643,7 @@ fn utf16(value: &str) -> Vec<u8> {
 mod tests {
     use std::io::Cursor;
 
-    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::PointId;
@@ -4553,7 +4553,7 @@ mod tests {
             assert_ne!(uses[0].sense, uses[1].sense);
             assert_eq!(uses[0].radial_next, uses[1].id);
             assert_eq!(uses[1].radial_next, uses[0].id);
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4631,7 +4631,7 @@ mod tests {
                     cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
                 ));
             }
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4715,7 +4715,7 @@ mod tests {
                         cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
                     )
             }));
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4863,7 +4863,7 @@ mod tests {
                 .pcurves
                 .iter()
                 .all(|pcurve| pcurve.fit_tolerance == Some(0.001)));
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4940,7 +4940,7 @@ mod tests {
                 planar_shared_pcurve.geometry,
                 cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
             ));
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -5018,7 +5018,7 @@ mod tests {
                 .pcurves
                 .iter()
                 .all(|pcurve| pcurve.fit_tolerance == Some(0.0001)));
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -5119,7 +5119,7 @@ mod tests {
                 .coedges
                 .iter()
                 .all(|coedge| coedge.radial_next != coedge.id));
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -5173,7 +5173,7 @@ mod tests {
             assert_eq!(decoded.ir.model.bodies.len(), 2, "{version:?}");
             assert_eq!(decoded.ir.model.faces.len(), 3, "{version:?}");
             assert_eq!(decoded.ir.model.edges.len(), 10, "{version:?}");
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -5247,7 +5247,7 @@ mod tests {
                 surface.geometry,
                 SurfaceGeometry::Plane { origin, .. } if origin.z == 3.0
             )));
-            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -5306,7 +5306,7 @@ mod tests {
                 assert_eq!(actual.param_range, expected.param_range, "{version:?}");
             }
             assert!(
-                cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok(),
+                cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok(),
                 "{version:?}"
             );
         }

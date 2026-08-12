@@ -10,26 +10,22 @@ use cadmpeg_ir::ids::{
     ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::topology::Color;
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
-use super::topology::TopologyResult;
-
-pub(super) struct PresentationResult {
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
-}
+use super::topology::TopologyData;
+use super::StageOutcome;
 
 pub(super) fn decode(
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
-) -> PresentationResult {
+) -> StageOutcome<()> {
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
@@ -137,7 +133,7 @@ pub(super) fn decode(
                     &mut losses,
                     layer_id,
                     "presentation layer name",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
         else {
@@ -160,7 +156,7 @@ pub(super) fn decode(
                     &mut losses,
                     layer_id,
                     "presentation layer description",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
             .filter(|value| !value.is_empty());
@@ -181,7 +177,7 @@ pub(super) fn decode(
             })
             .collect();
         ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId(format!("step:presentation:layer#{layer_id}")),
+            id: LayerId(StepIdentity::presentation("layer", layer_id)),
             name,
             description,
             items,
@@ -265,7 +261,7 @@ pub(super) fn decode(
         let appearance_id = appearance_ids
             .entry(color_id)
             .or_insert_with(|| {
-                let id = AppearanceId(format!("step:presentation:appearance#{color_id}"));
+                let id = AppearanceId(StepIdentity::presentation("appearance", color_id));
                 ir.model.appearances.push(Appearance {
                     id: id.clone(),
                     name,
@@ -310,7 +306,10 @@ pub(super) fn decode(
                     _ => {}
                 }
                 ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: format!("step:presentation:binding#{style_id}:{ordinal}-{target_ordinal}"),
+                    id: StepIdentity::presentation(
+                        "binding",
+                        format!("{style_id}:{ordinal}-{target_ordinal}"),
+                    ),
                     target,
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),
@@ -353,7 +352,7 @@ pub(super) fn decode(
                 .map(|(style_id, _)| format!("#{style_id}"))
                 .collect::<Vec<_>>();
             losses.push(LossNote {
-                code: LossKind::MetadataNotTransferred,
+                code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 severity: Severity::Warning,
                 message: format!(
                     "independent styled items {} assign conflicting scalar colors to {:?}; scalar color omitted and appearance bindings retain every assignment",
@@ -364,17 +363,19 @@ pub(super) fn decode(
             });
         }
     }
-    PresentationResult {
-        typed_records: typed,
+    StageOutcome {
+        value: (),
+        claims: typed,
         warnings,
         losses,
+        notes: Vec::new(),
     }
 }
 
 fn invisible_body_ids(
     id: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
 ) -> (Vec<BodyId>, bool) {
     let mut body_ids = BTreeSet::new();
@@ -393,7 +394,7 @@ fn invisible_body_ids(
 fn collect_invisible_body_ids(
     id: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
     active: &mut BTreeSet<u64>,
     body_ids: &mut BTreeSet<BodyId>,
@@ -406,7 +407,7 @@ fn collect_invisible_body_ids(
         active.remove(&id);
         return !ids.is_empty();
     }
-    let fallback = BodyId(format!("step:data:body#{id}"));
+    let fallback = BodyId(StepIdentity::data("body", id));
     if body_indices.contains_key(&fallback.0) {
         body_ids.insert(fallback);
         active.remove(&id);
@@ -517,7 +518,7 @@ fn expand_style_targets(
 fn appearance_targets(
     id: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     entity_ids: &EntityIds,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
@@ -554,13 +555,13 @@ fn appearance_targets(
             .map(AppearanceTarget::Vertex)
             .collect();
     }
-    let face_id = format!("step:data:face#{id}");
-    let body_id = format!("step:data:body#{id}");
-    let edge_id = format!("step:data:edge#{id}");
-    let surface_id = format!("step:data:surface#{id}");
-    let curve_id = format!("step:data:curve#{id}");
-    let point_id = format!("step:data:point#{id}");
-    let tessellation_id = format!("step:tessellation:mesh#{id}");
+    let face_id = StepIdentity::data("face", id);
+    let body_id = StepIdentity::data("body", id);
+    let edge_id = StepIdentity::data("edge", id);
+    let surface_id = StepIdentity::data("surface", id);
+    let curve_id = StepIdentity::data("curve", id);
+    let point_id = StepIdentity::data("point", id);
+    let tessellation_id = StepIdentity::tessellation("mesh", id);
     if face_indices.contains_key(&face_id) {
         return vec![AppearanceTarget::Face(FaceId(face_id))];
     }
@@ -593,7 +594,7 @@ fn appearance_targets(
 fn presentation_item(
     id: u64,
     exchange: &Exchange,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     entity_ids: &EntityIds,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
@@ -653,7 +654,7 @@ fn presentation_item_one(
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
 ) -> PresentationItem {
-    let candidate = |kind: &str| format!("step:data:{kind}#{id}");
+    let candidate = |kind: &str| StepIdentity::data(kind, id);
     let body = candidate("body");
     if body_indices.contains_key(&body) {
         return PresentationItem::Body { body: BodyId(body) };
@@ -699,10 +700,10 @@ fn presentation_item_one(
     if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         && entity_ids
             .occurrences
-            .contains(&format!("step:product:occurrence#{id}"))
+            .contains(&StepIdentity::product("occurrence", id))
     {
         PresentationItem::Occurrence {
-            occurrence: OccurrenceId(format!("step:product:occurrence#{id}")),
+            occurrence: OccurrenceId(StepIdentity::product("occurrence", id)),
         }
     } else if record.partials.iter().any(|partial| {
         (partial.name == "DATUM"
@@ -712,10 +713,10 @@ fn presentation_item_one(
             || super::pmi::is_presentation_annotation(&partial.name))
             && entity_ids
                 .pmi
-                .contains(&format!("step:presentation:pmi#{id}"))
+                .contains(&StepIdentity::presentation("pmi", id))
     }) {
         PresentationItem::Pmi {
-            annotation: PmiId(format!("step:presentation:pmi#{id}")),
+            annotation: PmiId(StepIdentity::presentation("pmi", id)),
         }
     } else if (has("TRIANGULATED_FACE")
         || has("COMPLEX_TRIANGULATED_FACE")
@@ -723,10 +724,10 @@ fn presentation_item_one(
         || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
         && entity_ids
             .tessellations
-            .contains(&format!("step:tessellation:mesh#{id}"))
+            .contains(&StepIdentity::tessellation("mesh", id))
     {
         PresentationItem::Tessellation {
-            tessellation: format!("step:tessellation:mesh#{id}"),
+            tessellation: StepIdentity::tessellation("mesh", id),
         }
     } else {
         PresentationItem::Source {
@@ -923,7 +924,7 @@ fn find_color(
                             losses,
                             id,
                             "colour name",
-                            LossKind::AttributesNotTransferred,
+                            LossKind::shared(LossTaxonomy::AttributesNotTransferred),
                         )
                     }),
                 ))
@@ -944,7 +945,7 @@ fn find_color(
                     losses,
                     id,
                     "predefined colour name",
-                    LossKind::AttributesNotTransferred,
+                    LossKind::shared(LossTaxonomy::AttributesNotTransferred),
                 )?;
                 predefined(&name).map(|color| (side_rank, id, color, Some(name)))
             }

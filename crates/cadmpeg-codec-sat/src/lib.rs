@@ -24,9 +24,9 @@ use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
 use std::collections::BTreeMap;
 
@@ -82,7 +82,7 @@ fn looks_like_text_stream(prefix: &[u8]) -> bool {
 /// Bare ASM stream codec.
 pub struct SatCodec;
 
-impl Codec for SatCodec {
+impl CodecBackend for SatCodec {
     fn id(&self) -> &'static str {
         FORMAT
     }
@@ -227,6 +227,9 @@ fn decode_asm_binary(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResu
     let header = asm_header::parse(bytes).ok_or_else(|| {
         CodecError::Malformed("ASM binary magic without a parseable header".to_string())
     })?;
+    if let Some(count) = header.entity_count {
+        ctx.charge_entities(count, "admit SAT header entities")?;
+    }
     let width = usize::from(header.width);
     let start = asm_header::record_stream_start(bytes).ok_or_else(|| {
         CodecError::Malformed("ASM binary header without a record stream".to_string())
@@ -257,6 +260,9 @@ fn decode_acis_binary(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeRes
     let header = acis_header::parse(bytes).ok_or_else(|| {
         CodecError::Malformed("ACIS binary magic without a parseable header".to_string())
     })?;
+    if let Some(count) = header.entity_count {
+        ctx.charge_entities(count, "admit SAT header entities")?;
+    }
     if !matches!(header.save_format_major(), Some(217 | 218)) {
         let mut attributes = BTreeMap::new();
         header_attributes(&header, "acis", &mut attributes);
@@ -349,7 +355,7 @@ fn build_result(
             format!(" The stream ends with `{dialect}`.")
         });
         losses.push(LossNote {
-            code: LossKind::GeometryNotTransferred,
+            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Blocking,
             message: format!(
                 "the stream framed but its records decoded no surfaces, points, or faces; its \
@@ -360,7 +366,7 @@ fn build_result(
     }
     if stats.unknown_surface_faces > 0 {
         losses.push(LossNote {
-            code: LossKind::GeometryNotTransferred,
+            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Warning,
             message: format!(
                 "{} face(s) rest on procedural surface constructions without a decoded carrier",
@@ -408,7 +414,7 @@ fn unsupported_result(message: &str, attributes: BTreeMap<String, String>) -> De
         coverage: BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses: vec![LossNote {
-            code: LossKind::GeometryNotTransferred,
+            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
             severity: Severity::Blocking,
             message: message.to_string(),
             provenance: None,

@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::cursor::Cursor;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
@@ -360,7 +360,7 @@ fn parse_unique_root(payload: &[u8]) -> Option<Entity> {
         .enumerate()
         .filter_map(|(offset, window)| (window == ENTITY_TOKEN).then_some(offset))
     {
-        let mut cursor = Cursor::with_bounds(payload, offset, payload.len())?;
+        let mut cursor = View::over_retained(payload).child(offset, payload.len())?;
         let Some(entity) = parse_entity(&mut cursor, 0) else {
             continue;
         };
@@ -374,7 +374,7 @@ fn parse_unique_root(payload: &[u8]) -> Option<Entity> {
     parsed
 }
 
-fn parse_entity(cursor: &mut Cursor<'_>, depth: usize) -> Option<Entity> {
+fn parse_entity(cursor: &mut View<'_>, depth: usize) -> Option<Entity> {
     let offset = cursor.position();
     if depth >= MAX_DEPTH || pstr(cursor)? != "Entity" {
         return None;
@@ -425,7 +425,7 @@ fn parse_entity(cursor: &mut Cursor<'_>, depth: usize) -> Option<Entity> {
     }
 }
 
-fn read_strings(cursor: &mut Cursor<'_>) -> Option<BTreeMap<String, String>> {
+fn read_strings(cursor: &mut View<'_>) -> Option<BTreeMap<String, String>> {
     let count = cursor.u32_le()?;
     let pairs = cursor.read_counted(u64::from(count), 2, |cursor| {
         Some((pstr(cursor)?.to_string(), pstr(cursor)?.to_string()))
@@ -436,7 +436,7 @@ fn read_strings(cursor: &mut Cursor<'_>) -> Option<BTreeMap<String, String>> {
     unique_map(pairs)
 }
 
-fn read_integers(cursor: &mut Cursor<'_>) -> Option<BTreeMap<String, i32>> {
+fn read_integers(cursor: &mut View<'_>) -> Option<BTreeMap<String, i32>> {
     let count = cursor.u32_le()?;
     let pairs = cursor.read_counted(u64::from(count), 5, |cursor| {
         Some((pstr(cursor)?.to_string(), cursor.i32_le()?))
@@ -447,7 +447,7 @@ fn read_integers(cursor: &mut Cursor<'_>) -> Option<BTreeMap<String, i32>> {
     unique_map(pairs)
 }
 
-fn read_doubles(cursor: &mut Cursor<'_>) -> Option<BTreeMap<String, f64>> {
+fn read_doubles(cursor: &mut View<'_>) -> Option<BTreeMap<String, f64>> {
     let count = cursor.u32_le()?;
     let pairs = cursor.read_counted(u64::from(count), 9, |cursor| {
         Some((pstr(cursor)?.to_string(), cursor.f64_le()?))
@@ -468,7 +468,7 @@ fn unique_map<T>(pairs: Vec<(String, T)>) -> Option<BTreeMap<String, T>> {
     Some(values)
 }
 
-fn read_objects(cursor: &mut Cursor<'_>, end: &str, depth: usize) -> Option<ObjectSection> {
+fn read_objects(cursor: &mut View<'_>, end: &str, depth: usize) -> Option<ObjectSection> {
     let count = cursor.u32_le()?;
     let references = cursor.read_counted(u64::from(count), 2, |cursor| {
         Some(Reference {
@@ -499,7 +499,7 @@ fn read_objects(cursor: &mut Cursor<'_>, end: &str, depth: usize) -> Option<Obje
     })
 }
 
-fn read_related(cursor: &mut Cursor<'_>, depth: usize) -> Option<Vec<RelatedObject>> {
+fn read_related(cursor: &mut View<'_>, depth: usize) -> Option<Vec<RelatedObject>> {
     let count = cursor.u32_le()?;
     let descriptors = cursor.read_counted(u64::from(count), 2, |cursor| {
         Some((pstr(cursor)?.to_string(), pstr(cursor)?.to_string()))
@@ -534,12 +534,12 @@ fn reference_matches_entity(reference: &Reference, entity: &Entity) -> bool {
         == entity.class
 }
 
-fn pstr<'a>(cursor: &mut Cursor<'a>) -> Option<&'a str> {
+fn pstr<'a>(cursor: &mut View<'a>) -> Option<&'a str> {
     let len = usize::from(cursor.u8()?);
     std::str::from_utf8(cursor.take(len)?).ok()
 }
 
-fn peek_pstr<'a>(cursor: &Cursor<'a>) -> Option<&'a str> {
+fn peek_pstr<'a>(cursor: &View<'a>) -> Option<&'a str> {
     let mut probe = *cursor;
     pstr(&mut probe)
 }

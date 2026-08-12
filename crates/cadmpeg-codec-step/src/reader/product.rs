@@ -9,14 +9,16 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::transform::Transform;
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
-use super::geometry::GeometryResult;
-use super::topology::TopologyResult;
+use super::geometry::GeometryData;
+use super::topology::TopologyData;
+use super::StageOutcome;
 
 const MAX_OCCURRENCES: usize = 100_000;
 const MAX_ASSEMBLY_DEPTH: usize = 256;
@@ -30,19 +32,16 @@ const PRODUCT_DEFINITION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS",
 ];
 
-pub(super) struct ProductResult {
+pub(super) struct ProductData {
     pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
 }
 
 pub(super) fn decode(
     exchange: &Exchange,
-    geometry: &GeometryResult,
-    topology: &TopologyResult,
+    geometry: &GeometryData,
+    topology: &TopologyData,
     ir: &mut CadIr,
-) -> ProductResult {
+) -> StageOutcome<ProductData> {
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
@@ -79,7 +78,7 @@ pub(super) fn decode(
                 &mut losses,
                 id,
                 "product definition description",
-                LossKind::MetadataNotTransferred,
+                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
             )
         }) else {
             continue;
@@ -115,7 +114,7 @@ pub(super) fn decode(
                     &mut losses,
                     step_id,
                     "product identifier",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
             .unwrap_or_else(|| format!("#{step_id}"));
@@ -128,7 +127,7 @@ pub(super) fn decode(
                     &mut losses,
                     step_id,
                     "product name",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
             .filter(|name| !name.is_empty());
@@ -141,7 +140,7 @@ pub(super) fn decode(
                     &mut losses,
                     step_id,
                     "product description",
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 )
             })
             .filter(|description| !description.is_empty());
@@ -243,7 +242,7 @@ pub(super) fn decode(
                         &mut losses,
                         id,
                         "assembly occurrence name",
-                        LossKind::MetadataNotTransferred,
+                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     )
                 });
             Some((
@@ -275,7 +274,10 @@ pub(super) fn decode(
             ));
             continue;
         };
-        let id = OccurrenceId(format!("step:product:occurrence#definition-{definition}"));
+        let id = OccurrenceId(StepIdentity::product(
+            "occurrence",
+            format!("definition-{definition}"),
+        ));
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
             prototype: PrototypeReference::Local {
@@ -348,7 +350,10 @@ pub(super) fn decode(
             } else {
                 format!("-instance-{instance}")
             };
-            let id = OccurrenceId(format!("step:product:occurrence#{usage_id}{suffix}"));
+            let id = OccurrenceId(StepIdentity::product(
+                "occurrence",
+                format!("{usage_id}{suffix}"),
+            ));
             if ir.model.occurrences.len() >= MAX_OCCURRENCES {
                 warnings.push(format!(
                     "assembly occurrence expansion exceeds the {MAX_OCCURRENCES}-occurrence limit"
@@ -361,7 +366,7 @@ pub(super) fn decode(
             } else {
                 if missing_placement_reports.insert(usage_id) {
                     losses.push(LossNote {
-                        code: LossKind::AssemblyPlacementsNotTransferred,
+                        code: LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred),
                         severity: Severity::Error,
                         message: format!(
                             "NAUO #{usage_id} has no resolved occurrence transform; \
@@ -450,18 +455,21 @@ pub(super) fn decode(
             typed.insert(id);
         }
     }
-    ProductResult {
-        product_definition_ids_by_source,
-        typed_records: typed,
+    StageOutcome {
+        value: ProductData {
+            product_definition_ids_by_source,
+        },
+        claims: typed,
         warnings,
         losses,
+        notes: Vec::new(),
     }
 }
 
 fn apply_body_placements(
     exchange: &Exchange,
-    geometry: &GeometryResult,
-    topology: &TopologyResult,
+    geometry: &GeometryData,
+    topology: &TopologyData,
     usages: &BTreeMap<u64, Usage>,
     ir: &mut CadIr,
     warnings: &mut Vec<String>,
@@ -553,7 +561,7 @@ fn apply_body_placements(
                     .collect::<Vec<_>>()
                     .join(", ");
                 losses.push(LossNote {
-                    code: LossKind::AssemblyPlacementsNotTransferred,
+                    code: LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred),
                     severity: Severity::Error,
                     message: format!(
                         "body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"
@@ -574,7 +582,7 @@ struct Usage {
 fn shape_bindings(
     exchange: &Exchange,
     definitions: &BTreeMap<u64, u64>,
-    topology: &TopologyResult,
+    topology: &TopologyData,
 ) -> BTreeMap<u64, Vec<BodyId>> {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
@@ -612,7 +620,7 @@ fn shape_binding(
     exchange: &Exchange,
     pds: &BTreeMap<u64, u64>,
     definitions: &BTreeMap<u64, u64>,
-    topology: &TopologyResult,
+    topology: &TopologyData,
     representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
 ) -> Option<(u64, Vec<BodyId>)> {
     let definition = *pds.get(
@@ -660,7 +668,7 @@ fn definition_representations(
 
 fn occurrence_placements(
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     usages: &BTreeMap<u64, Usage>,
     warnings: &mut Vec<String>,
 ) -> BTreeMap<u64, Transform> {
@@ -822,7 +830,7 @@ fn occurrence_placements(
 
 fn infer_parent_representation_placements(
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
     result: &mut BTreeMap<u64, Transform>,
@@ -935,7 +943,7 @@ fn infer_parent_representation_placements(
 fn mapped_item_placement(
     item: &RawRecord,
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
 ) -> Option<(u64, Transform)> {
     let (representation, origin, target) = mapped_item_definition(item, exchange)?;
     Some((
@@ -944,7 +952,7 @@ fn mapped_item_placement(
     ))
 }
 
-fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryResult) -> Option<Transform> {
+fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryData) -> Option<Transform> {
     let from = transformation_item(origin, geometry)?;
     let to = transformation_item(target, geometry)?;
     Some(to.compose(from.try_inverse_affine()?))
@@ -975,7 +983,7 @@ fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64,
 fn occurrence_placement(
     record: &RawRecord,
     exchange: &Exchange,
-    geometry: &GeometryResult,
+    geometry: &GeometryData,
     pds: &BTreeMap<u64, u64>,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
@@ -1031,7 +1039,7 @@ fn occurrence_placement(
     Some((usage, to.compose(from.try_inverse_affine()?)))
 }
 
-fn transformation_item(id: u64, geometry: &GeometryResult) -> Option<Transform> {
+fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
     geometry
         .placements
         .get(&id)
@@ -1114,7 +1122,7 @@ fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {
     [[x.x, y.x, z.x], [x.y, y.y, z.y], [x.z, y.z, z.z]]
 }
 fn product_ir_id(id: u64) -> ProductDefinitionId {
-    ProductDefinitionId(format!("step:product:product#{id}"))
+    ProductDefinitionId(StepIdentity::product("product", id))
 }
 
 fn product_definition_ir_id(
@@ -1125,8 +1133,9 @@ fn product_definition_ir_id(
     if definition_count == 1 {
         product_ir_id(product)
     } else {
-        ProductDefinitionId(format!(
-            "step:product:product#{product}-definition-{definition}"
+        ProductDefinitionId(StepIdentity::product(
+            "product",
+            format!("{product}-definition-{definition}"),
         ))
     }
 }

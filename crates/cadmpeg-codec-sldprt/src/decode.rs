@@ -100,32 +100,44 @@ struct EvaluatedFeatureState<'a> {
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
+    // Charge container cardinality before BREP/IR construction so max_entities
+    // can refuse the expensive path rather than only the finalizer.
+    let container_entities =
+        (scan.blocks.len() + scan.compound_streams.len() + scan.directory.len()) as u64;
+    ctx.charge_entities(container_entities, "admit SLDPRT container entities")?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
-        let report = build_container_report(&scan, true);
-        return decode_result(ctx, ir, report, annotations, unknowns);
+        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
+        ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
+        let mut report = build_container_report(&scan, true);
+        report.losses.append(&mut pmi_losses);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
+        ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
-            let (ir, annotations, unknowns) = build_geometry_ir(
+            let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 &scan,
                 &streams[decoded.selected].header,
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
+            ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
+            report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(&ir, &mut report);
-            return decode_result(ctx, ir, report, annotations, unknowns);
+            return decode_result(ir, report, annotations, unknowns);
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
     let mut report = build_container_report(&scan, false);
+    report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
-    decode_result(ctx, ir, report, annotations, unknowns)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
@@ -145,17 +157,12 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
 }
 
 fn decode_result(
-    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
-        annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
-    };
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     let source_image = unknowns
         .iter()
         .position(|record| record.id.0 == "sldprt:file:source-image#0")
@@ -2075,7 +2082,15 @@ fn build_geometry_ir(
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
-) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        Annotations,
+        Vec<UnknownRecord>,
+        Vec<cadmpeg_ir::LossNote>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
     let materials = crate::appearance::materials(scan);
     let unique_material = materials.len() == 1;
@@ -2104,7 +2119,8 @@ fn build_geometry_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
+    let mut pmi_losses = Vec::new();
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut ir.model.features,
@@ -2724,7 +2740,7 @@ fn build_geometry_ir(
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     stamp_local_digests(&mut ir);
-    Ok((ir, annotations, unknowns))
+    Ok((ir, annotations, unknowns, pmi_losses))
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -2991,7 +3007,15 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
 fn build_metadata_ir(
     scan: &ContainerScan,
-) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        Annotations,
+        Vec<UnknownRecord>,
+        Vec<cadmpeg_ir::LossNote>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -3005,7 +3029,8 @@ fn build_metadata_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
+    let mut pmi_losses = Vec::new();
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None, None);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
@@ -3316,7 +3341,7 @@ fn build_metadata_ir(
     snapshot_active_configuration(&mut ir);
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     stamp_local_digests(&mut ir);
-    Ok((ir, annotations, unknowns))
+    Ok((ir, annotations, unknowns, pmi_losses))
 }
 
 fn project_design_history(
@@ -4030,31 +4055,26 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
 
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
-    let mut normalized = CadIr {
-        ir_version: ir.ir_version.clone(),
-        source: None,
-        units: ir.units.clone(),
-        tolerances: ir.tolerances,
-        model: cadmpeg_ir::document::Model {
-            bodies: ir.model.bodies.clone(),
-            regions: ir.model.regions.clone(),
-            shells: ir.model.shells.clone(),
-            faces: ir.model.faces.clone(),
-            loops: ir.model.loops.clone(),
-            coedges: ir.model.coedges.clone(),
-            edges: ir.model.edges.clone(),
-            vertices: ir.model.vertices.clone(),
-            points: ir.model.points.clone(),
-            surfaces: ir.model.surfaces.clone(),
-            curves: ir.model.curves.clone(),
-            pcurves: ir.model.pcurves.clone(),
-            procedural_surfaces: ir.model.procedural_surfaces.clone(),
-            procedural_curves: ir.model.procedural_curves.clone(),
-            appearances: ir.model.appearances.clone(),
-            appearance_bindings: ir.model.appearance_bindings.clone(),
-            ..Default::default()
-        },
-        native: cadmpeg_ir::Native::default(),
+    let mut normalized = CadIr::empty(ir.units.clone());
+    normalized.tolerances = ir.tolerances;
+    normalized.model = cadmpeg_ir::document::Model {
+        bodies: ir.model.bodies.clone(),
+        regions: ir.model.regions.clone(),
+        shells: ir.model.shells.clone(),
+        faces: ir.model.faces.clone(),
+        loops: ir.model.loops.clone(),
+        coedges: ir.model.coedges.clone(),
+        edges: ir.model.edges.clone(),
+        vertices: ir.model.vertices.clone(),
+        points: ir.model.points.clone(),
+        surfaces: ir.model.surfaces.clone(),
+        curves: ir.model.curves.clone(),
+        pcurves: ir.model.pcurves.clone(),
+        procedural_surfaces: ir.model.procedural_surfaces.clone(),
+        procedural_curves: ir.model.procedural_curves.clone(),
+        appearances: ir.model.appearances.clone(),
+        appearance_bindings: ir.model.appearance_bindings.clone(),
+        ..Default::default()
     };
     normalized.model.bodies.iter_mut().for_each(|body| {
         body.name = None;
@@ -7021,7 +7041,7 @@ mod design_loss_tests {
 
         let report = super::build_geometry_report(&scan, &decoded);
         assert!(report.losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::report::LossKind::PcurveOmitted
+            loss.code == crate::loss::SldprtLossCode::GeometryPcurveAmbiguous.kind()
                 && loss.message.contains("2 pcurve(s)")
         }));
     }

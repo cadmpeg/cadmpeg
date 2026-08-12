@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared feature-byte helpers used by definition and row decoders.
 
-use cadmpeg_core::cursor::bounded_len;
+use cadmpeg_core::decode::bounded_len;
 
 use crate::psb;
 use crate::scalar;

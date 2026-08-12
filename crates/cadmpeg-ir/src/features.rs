@@ -398,6 +398,9 @@ pub struct Length(pub f64);
 pub struct Angle(pub f64);
 
 /// An ordered neutral construction feature and its resulting bodies.
+///
+/// Prefer [`Feature::new`] for invariant-bearing construction. There is no
+/// public [`Default`]: an empty id with an arbitrary definition is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Feature {
@@ -437,6 +440,27 @@ pub struct Feature {
     /// Identifier of the full-fidelity record in a native namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+impl Feature {
+    /// Construct a feature from its identity, construction order, and definition.
+    pub fn new(id: FeatureId, ordinal: u64, definition: FeatureDefinition) -> Self {
+        Self {
+            id,
+            ordinal,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        }
+    }
 }
 
 /// Typed topology membership at one feature's evaluation input.

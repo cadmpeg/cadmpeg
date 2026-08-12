@@ -9,7 +9,7 @@ use crate::records::{
     SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
-use cadmpeg_ir::annotations::{Annotations, ExactnessNote, Provenance};
+use cadmpeg_ir::annotations::{Annotations, ExactnessNote, StreamProvenance};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
     Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, PathRef,
@@ -6947,7 +6947,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     let mut annotations = Annotations::default();
     annotations.provenance.insert(
         sketch_id.0.clone(),
-        Provenance {
+        StreamProvenance {
             stream: 0,
             offset: 200,
             tag: Some("support".into()),

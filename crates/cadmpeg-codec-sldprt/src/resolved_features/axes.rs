@@ -10,7 +10,7 @@ use super::endpoints::{
 use super::scalars::feature_object_name;
 use super::sketch_edges::{cross, dot};
 use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform};
-use super::{CLASS_MARKER, SKETCH_MARKER};
+use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::features::{FeatureDefinition, Length};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
@@ -313,7 +313,7 @@ pub(super) fn compact_line_reference_directions(
         let tagged_token = |offset: usize| {
             record.get(offset..offset + 2).is_some_and(|bytes| {
                 let token = u16::from_le_bytes([bytes[0], bytes[1]]);
-                token & 0x8000 != 0 && token != u16::MAX
+                is_class_token(token)
             })
         };
         if address == 0 {
@@ -416,7 +416,7 @@ pub(super) fn compact_line_reference_directions(
             && (record.get(112..128) == Some(&[0; 16])
                 || record.get(112..126).is_some_and(|tail| {
                     let token = u16::from_le_bytes([tail[12], tail[13]]);
-                    tail[..12] == [0; 12] && token & 0x8000 != 0 && token != u16::MAX
+                    tail[..12] == [0; 12] && is_class_token(token)
                 }))
         {
             if let Some(direction) = direction_at(80) {
@@ -483,8 +483,7 @@ pub(super) fn revolution_line_reference_inputs(
         let token = u16::from_le_bytes(payload.get(offset + 8..offset + 10)?.try_into().ok()?);
         (profile_sources.contains(&source)
             && identity != 0
-            && token & 0x8000 != 0
-            && token != u16::MAX
+            && is_class_token(token)
             && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]))
         .then_some(source)
     };
@@ -795,7 +794,7 @@ pub(super) fn revolution_line_reference_inputs(
                                 .get(*offset..*offset + 2)
                                 .and_then(|bytes| bytes.try_into().ok())
                                 .map(u16::from_le_bytes)
-                                .is_some_and(|token| token & 0x8000 != 0 && token != u16::MAX)
+                                .is_some_and(is_class_token)
                     }) else {
                         continue;
                     };

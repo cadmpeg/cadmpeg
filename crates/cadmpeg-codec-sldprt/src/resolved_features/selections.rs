@@ -15,7 +15,7 @@ use super::terminations::{
     compact_extrusion_to_vertex_at, compact_single_face_reference_record_at,
     compact_termination_reference_path_at,
 };
-use super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
+use super::{is_class_token, CLASS_MARKER, LEGACY_SKETCH_MARKER};
 use crate::classification::{
     classify_type_token, native_object_class, FeatureClass, NativeClassKind,
 };
@@ -23,7 +23,7 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
 };
-use cadmpeg_core::cursor::bounded_len;
+use cadmpeg_core::decode::bounded_len;
 use std::collections::{HashMap, HashSet};
 
 pub(super) fn compact_body_selections(
@@ -487,7 +487,7 @@ pub(super) fn compact_surface_selections(
                 .checked_add(6 + class.name.len())?;
             let token =
                 u16::from_le_bytes(lane.native_payload.get(body..body + 2)?.try_into().ok()?);
-            (token & 0x8000 != 0 && token != 0xffff).then_some(token)
+            is_class_token(token).then_some(token)
         })
         .collect::<HashSet<_>>();
     let mirror_surface_prefix = mirror_surface_type_prefix(lane);
@@ -1015,8 +1015,7 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
 ) -> Option<usize> {
     let body = payload.get(body_offset..body_offset + 11)?;
     let nested_token = u16::from_le_bytes(body[2..4].try_into().ok()?);
-    if nested_token & 0x8000 == 0
-        || nested_token == 0xffff
+    if !is_class_token(nested_token)
         || body[4..8] != 2u32.to_le_bytes()
         || !matches!(body[8], 0 | 0x40)
         || body[9..11] != [0, 0]
@@ -1051,8 +1050,7 @@ pub(super) fn component_face_reference_at(
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
     let token = u16::from_le_bytes(payload.get(body_offset..body_offset + 2)?.try_into().ok()?);
     let flags = payload.get(body_offset + 6..body_offset + 8)?;
-    if token & 0x8000 == 0
-        || token == 0xffff
+    if !is_class_token(token)
         || payload.get(body_offset + 2..body_offset + 6)? != 2u32.to_le_bytes()
         || !matches!(flags, [0 | 0x40, 0])
     {
@@ -1351,11 +1349,7 @@ pub(super) fn compact_mixed_component_path(
         let type_variant = u16::from_le_bytes(signature[2..4].try_into().ok()?);
         let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
         let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
-        (type_family & 0x8000 != 0
-            && type_family != u16::MAX
-            && type_variant != 0
-            && source != 0
-            && identity != 0)
+        (is_class_token(type_family) && type_variant != 0 && source != 0 && identity != 0)
             .then_some(signature)
     };
     let node_at =
@@ -1476,7 +1470,7 @@ fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
         .ok()?;
     let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
     let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
-    (family & 0x8000 != 0 && family != u16::MAX && variant != 0).then_some(prefix)
+    (is_class_token(family) && variant != 0).then_some(prefix)
 }
 
 fn inline_mirror_surface_paths(
@@ -1494,7 +1488,7 @@ fn inline_mirror_surface_paths(
     let instance_before = |offset: usize| -> Option<u16> {
         let bytes = payload.get(offset.checked_sub(4)?..offset)?;
         let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
-        (instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..] == [0, 0]).then_some(instance)
+        (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let mut result = Vec::new();
     for terminal in start..end.saturating_sub(16) {
@@ -1508,8 +1502,7 @@ fn inline_mirror_surface_paths(
                     .try_into()
                     .expect("two-byte instance slice"),
             );
-            instance & 0x8000 != 0
-                && instance != u16::MAX
+            is_class_token(instance)
                 && local_bytes[2..] == [0, 0]
                 && signature_at(terminal + 16).is_some()
         };
@@ -1544,7 +1537,7 @@ pub(super) fn inline_surface_reference_at(
     let prefix: [u8; 4] = payload.get(offset..offset + 4)?.try_into().ok()?;
     let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
     let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
-    if family & 0x8000 == 0 || family == u16::MAX || variant == 0 {
+    if !is_class_token(family) || variant == 0 {
         return None;
     }
     let signature_at = |offset: usize| -> Option<[u8; 12]> {
@@ -1556,7 +1549,7 @@ pub(super) fn inline_surface_reference_at(
     let instance_before = |offset: usize| -> Option<u16> {
         let bytes = payload.get(offset.checked_sub(4)?..offset)?;
         let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
-        (instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..] == [0, 0]).then_some(instance)
+        (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let mut cursor = offset;
     let mut components = Vec::new();
@@ -1564,10 +1557,8 @@ pub(super) fn inline_surface_reference_at(
         let signature = signature_at(cursor)?;
         let tail: [u8; 4] = payload.get(cursor + 12..cursor + 16)?.try_into().ok()?;
         let instance = u16::from_le_bytes(tail[..2].try_into().ok()?);
-        let continues = instance & 0x8000 != 0
-            && instance != u16::MAX
-            && tail[2..] == [0, 0]
-            && signature_at(cursor + 16).is_some();
+        let continues =
+            is_class_token(instance) && tail[2..] == [0, 0] && signature_at(cursor + 16).is_some();
         components.push(FeatureInputComponentPathEntry {
             instance: instance_before(cursor),
             type_signature: signature,
@@ -1599,7 +1590,7 @@ pub(crate) fn generated_surface_identities(
     let instance_before = |offset: usize| -> Option<u16> {
         let bytes = lane.native_payload.get(offset.checked_sub(4)?..offset)?;
         let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
-        (instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..] == [0, 0]).then_some(instance)
+        (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let prefixes = lane
         .classes
@@ -1619,7 +1610,7 @@ pub(crate) fn generated_surface_identities(
                 .ok()?;
             let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
             let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
-            if family & 0x8000 == 0 || family == u16::MAX || variant == 0 {
+            if !is_class_token(family) || variant == 0 {
                 return None;
             }
             Some(prefix)
@@ -1645,8 +1636,7 @@ pub(crate) fn generated_surface_identities(
             .expect("bounded surface identity tail");
         let possible_instance =
             u16::from_le_bytes(tail[..2].try_into().expect("two-byte instance slice"));
-        if possible_instance & 0x8000 != 0
-            && possible_instance != u16::MAX
+        if is_class_token(possible_instance)
             && tail[2..] == [0, 0]
             && signature_prefix_at(terminal + 16, prefix).is_some()
         {
@@ -2221,8 +2211,7 @@ fn compact_component_path_with_layout(
     let entry_at = |offset: usize| {
         let instance = payload.get(offset..offset + 4)?;
         let token = u16::from_le_bytes(instance[0..2].try_into().ok()?);
-        (token & 0x8000 != 0
-            && token != u16::MAX
+        (is_class_token(token)
             && instance[2..4] == [0, 0]
             && payload.get(offset + 4..offset + 6)? != [0, 0]
             && (!wide || payload.get(offset + 16..offset + 20)? == [0; 4])
@@ -2270,8 +2259,7 @@ fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> boo
         4 => payload.get(cursor..cursor + 4).is_some_and(|bytes| {
             bytes == [0; 4]
                 || bytes == [0xff; 4]
-                || (u16::from_le_bytes([bytes[0], bytes[1]]) & 0x8000 != 0
-                    && bytes[0..2] != [0xff, 0xff]
+                || (is_class_token(u16::from_le_bytes([bytes[0], bytes[1]]))
                     && bytes[2..4] == [1, 0])
                 || (u16::from_le_bytes([bytes[0], bytes[1]]) != 0
                     && bytes[0..2] != [0xff, 0xff]
@@ -2302,8 +2290,7 @@ fn compact_sparse_component_path(
     fn entry_prefix(payload: &[u8], offset: usize) -> Option<(u16, [u8; 12])> {
         let instance = payload.get(offset..offset + 4)?;
         let token = u16::from_le_bytes(instance[..2].try_into().ok()?);
-        (token & 0x8000 != 0
-            && token != u16::MAX
+        (is_class_token(token)
             && instance[2..] == [0; 2]
             && payload.get(offset + 4..offset + 6)? != [0; 2])
             .then(|| {
@@ -2379,7 +2366,7 @@ fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<V
     let object_terminated = suffix.get(..10).is_some_and(|suffix| {
         suffix[..8].iter().all(|byte| *byte == 0) && {
             let token = u16::from_le_bytes([suffix[8], suffix[9]]);
-            token & 0x8000 != 0 && token != u16::MAX
+            is_class_token(token)
         }
     });
     (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated)).then_some(ids)

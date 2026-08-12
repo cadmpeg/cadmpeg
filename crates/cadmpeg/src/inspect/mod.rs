@@ -457,6 +457,8 @@ fn find(args: &FindArgs) -> Result<()> {
         let envelope = serde_json::json!({
             "schema_version": crate::commands::CLI_SCHEMA_VERSION,
             "command": "inspect find",
+            "status": "ok",
+            "refusal": null,
             "pattern": described,
             "pattern_bytes": pattern.len(),
             "truncated": truncated,

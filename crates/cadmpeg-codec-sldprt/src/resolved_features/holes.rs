@@ -11,7 +11,7 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::sketch_edges::{cross, dot};
 use super::transforms::{quantize, sketch_frame_marker_transform};
-use super::CLASS_MARKER;
+use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
 use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
@@ -3697,7 +3697,7 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
                             .get(*offset..*offset + 2)
                             .and_then(|bytes| bytes.try_into().ok())
                             .map(u16::from_le_bytes)
-                            .is_some_and(|token| token & 0x8000 != 0 && token != u16::MAX))
+                            .is_some_and(is_class_token))
             })
         })?;
         (depth > 0.0 && (norm - 1.0).abs() <= 1.0e-9 && next_record < end).then_some((

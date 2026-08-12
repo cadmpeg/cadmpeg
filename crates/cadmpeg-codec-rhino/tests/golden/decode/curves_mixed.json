@@ -495,68 +495,120 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "object_records_untransferred",
-        "message": "object.record-census: decoded 6/6 Rhino object records",
+        "code": {
+          "code": "object.record-census",
+          "kind": "object_records_untransferred",
+          "namespace": "rhino"
+        },
+        "message": "decoded 6/6 Rhino object records",
         "severity": "info"
       },
       {
-        "code": "integrity_failure",
-        "message": "container.integrity-failure: CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x39b4e298",
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino"
+        },
+        "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x39b4e298",
         "severity": "error"
       },
       {
-        "code": "integrity_failure",
-        "message": "container.integrity-failure: CRC mismatch at offset 314 for typecode 0x20008070: expected 0x0, got 0x66d82b63",
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino"
+        },
+        "message": "CRC mismatch at offset 314 for typecode 0x20008070: expected 0x0, got 0x66d82b63",
         "severity": "error"
       },
       {
-        "code": "integrity_failure",
-        "message": "container.integrity-failure: CRC mismatch at offset 659 for typecode 0x20008070: expected 0x0, got 0x5010a2d6",
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino"
+        },
+        "message": "CRC mismatch at offset 659 for typecode 0x20008070: expected 0x0, got 0x5010a2d6",
         "severity": "error"
       },
       {
-        "code": "integrity_failure",
-        "message": "container.integrity-failure: CRC mismatch at offset 840 for typecode 0x20008070: expected 0x0, got 0x966b1368",
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino"
+        },
+        "message": "CRC mismatch at offset 840 for typecode 0x20008070: expected 0x0, got 0x966b1368",
         "severity": "error"
       },
       {
-        "code": "integrity_failure",
-        "message": "container.integrity-failure: CRC mismatch at offset 1197 for typecode 0x20008070: expected 0x0, got 0xc25c0543",
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino"
+        },
+        "message": "CRC mismatch at offset 1197 for typecode 0x20008070: expected 0x0, got 0xc25c0543",
         "severity": "error"
       },
       {
-        "code": "integrity_failure",
-        "message": "container.integrity-failure: CRC mismatch at offset 1418 for typecode 0x20008070: expected 0x0, got 0x3d8e7ff3",
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino"
+        },
+        "message": "CRC mismatch at offset 1418 for typecode 0x20008070: expected 0x0, got 0x3d8e7ff3",
         "severity": "error"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.scan-diagnostic: object at 177 has nil object UUID",
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "object at 177 has nil object UUID",
         "severity": "warning"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.scan-diagnostic: object at 314 has nil object UUID",
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "object at 314 has nil object UUID",
         "severity": "warning"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.scan-diagnostic: object at 659 has nil object UUID",
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "object at 659 has nil object UUID",
         "severity": "warning"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.scan-diagnostic: object at 840 has nil object UUID",
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "object at 840 has nil object UUID",
         "severity": "warning"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.scan-diagnostic: object at 1197 has nil object UUID",
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "object at 1197 has nil object UUID",
         "severity": "warning"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.scan-diagnostic: object at 1418 has nil object UUID",
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "object at 1418 has nil object UUID",
         "severity": "warning"
       }
     ],

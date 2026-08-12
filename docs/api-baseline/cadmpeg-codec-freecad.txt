@@ -1,4 +1,4 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_codec_freecad
 pub enum cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub cadmpeg_codec_freecad::FcstdPropertyOwner::Document
@@ -21,11 +21,11 @@ impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_freecad::Fcst
 impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_freecad::FcstdPropertyOwner<'a>
 pub struct cadmpeg_codec_freecad::FcstdCodec
 impl cadmpeg_codec_freecad::FcstdCodec
-pub fn cadmpeg_codec_freecad::FcstdCodec::encode_with_options(&self, &cadmpeg_ir::document::CadIr, &mut dyn std::io::Write, cadmpeg_codec_freecad::FcstdWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_freecad::FcstdCodec::encode_with_options(&self, &cadmpeg_ir::document::CadIr, &mut dyn core::io::write::Write, cadmpeg_codec_freecad::FcstdWriteOptions) -> core::result::Result<cadmpeg_ir::report::ExportReport, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdCodec::replace_side_entry(&self, &mut cadmpeg_ir::document::CadIr, &str, alloc::vec::Vec<u8>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdCodec::set_property_value_attribute(&self, &mut cadmpeg_ir::document::CadIr, cadmpeg_codec_freecad::FcstdPropertyOwner<'_>, &str, usize, &str, impl core::convert::Into<alloc::string::String>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdCodec::set_property_value_text(&self, &mut cadmpeg_ir::document::CadIr, cadmpeg_codec_freecad::FcstdPropertyOwner<'_>, &str, usize, core::option::Option<alloc::string::String>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::Codec for cadmpeg_codec_freecad::FcstdCodec
+impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_freecad::FcstdCodec
 pub fn cadmpeg_codec_freecad::FcstdCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_freecad::FcstdCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_freecad::FcstdCodec::id(&self) -> &'static str

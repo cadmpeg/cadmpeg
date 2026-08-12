@@ -9,7 +9,7 @@ use super::scalars::feature_object_name;
 use super::selections::{
     compact_component_path_end_at, component_face_reference_in_record, COMPACT_EDGE_VECTOR_MARKER,
 };
-use super::{CLASS_MARKER, NAME_MARKER};
+use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
@@ -1400,7 +1400,7 @@ pub(super) fn sketch_block_record_origin(
         return Some(Point3::new(0.0, 0.0, 0.0));
     }
     let point_token = u16::from_le_bytes(payload.get(body..body + 2)?.try_into().ok()?);
-    if point_token & 0x8000 == 0 || point_token == 0xffff {
+    if !is_class_token(point_token) {
         return None;
     }
     let scalar = |relative: usize| {
@@ -2101,8 +2101,7 @@ pub(super) fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u
         .enumerate()
         .filter_map(|(offset, body)| {
             let token = u16::from_le_bytes(body[..2].try_into().ok()?);
-            if token & 0x8000 == 0
-                || token == u16::MAX
+            if !is_class_token(token)
                 || body[2..6] != 2u32.to_le_bytes()
                 || body[6..42] != [0; 36]
                 || body[42..45] != [0; 3]

@@ -3,6 +3,7 @@
 
 use super::*;
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -13,7 +14,7 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir.native.namespace("creo").is_some());
 }

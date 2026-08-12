@@ -47,7 +47,12 @@ pub(crate) fn write_semantic_with_records(
     let mut normalized = ir.clone();
     drop_synthesized_configuration_snapshot(&mut normalized);
     sort_arenas(&mut normalized);
-    let validation = cadmpeg_ir::validate::validate(&normalized, Vec::new());
+    // Export precondition on the normalized input. Keeps full validate_neutral:
+    // writer refusal depends on non-core Checks (e.g. Counts for duplicate
+    // configuration source indices). SLDPRT_EXPORT_PRECONDITION_CHECKS records
+    // the draft/topology floor; narrowing further needs reject-fixture coverage.
+    // The postcondition after bake/prepare (below) also keeps full validate_neutral.
+    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new());
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -76,7 +81,7 @@ pub(crate) fn write_semantic_with_records(
         feature_parameter_changes_authorized,
     )?;
     crate::history::prepare_configurations_for_write(ir, &mut native, annotations)?;
-    let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
     if !validation.is_ok() {
         let detail = validation
             .findings

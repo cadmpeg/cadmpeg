@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_ir::appearance::AppearanceTarget;
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{CadIr, Severity};
@@ -418,7 +418,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
             *loss_details.entry(loss.message.clone()).or_insert(0) += 1;
         }
     }
-    let validation_errors = cadmpeg_ir::validate(&decoded.ir, Vec::new())
+    let validation_errors = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new())
         .findings
         .iter()
         .filter(|finding| finding.severity >= Severity::Error)
