@@ -21,7 +21,10 @@ use super::dimensions::{project_dimensioned_sketch_geometry, project_marker_dime
 #[cfg(test)]
 use super::endpoints::inferred_point_coordinates_by_index;
 #[cfg(test)]
-use super::profiles::project_marker_backed_sketches;
+use super::profiles::{
+    bind_sketch_profiles, nested_profile_contains_declared_circular_carriers,
+    project_marker_backed_sketches,
+};
 #[cfg(test)]
 use super::projections::{
     bind_circular_profile_by_dimension, project_compact_edge_selections,
@@ -102,6 +105,15 @@ pub(super) fn sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Option<MarkerTransform> {
+    if sketch.placement == cadmpeg_ir::sketches::SketchPlacement::Unresolved {
+        return Some(MarkerTransform {
+            swap: false,
+            u_sign: 1,
+            v_sign: 1,
+            affine_matrix: None,
+            translation: (0, 0),
+        });
+    }
     axis_aligned_sketch_frame_marker_transform(sketch, quantum)
         .or_else(|| affine_sketch_frame_marker_transform(sketch, quantum))
 }

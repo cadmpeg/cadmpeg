@@ -100,7 +100,7 @@ fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
             continue;
         };
         let Some(len) =
-            cadmpeg_core::cursor::bounded_len(u64::from(len), 1, buf.len().saturating_sub(data))
+            cadmpeg_core::decode::bounded_len(u64::from(len), 1, buf.len().saturating_sub(data))
         else {
             continue;
         };
@@ -157,7 +157,7 @@ fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
             continue;
         };
         let Some(count) =
-            cadmpeg_core::cursor::bounded_len(u64::from(count), 4, buf.len().saturating_sub(data))
+            cadmpeg_core::decode::bounded_len(u64::from(count), 4, buf.len().saturating_sub(data))
         else {
             continue;
         };

@@ -6,7 +6,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_iges::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::{CadIr, UnknownRecord};
 use libfuzzer_sys::fuzz_target;
@@ -77,7 +77,7 @@ fuzz_target!(|data: &[u8]| {
     let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
         .expect("writer output must decode");
-    assert!(cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone()).is_ok());
 
     let replay = encoder
         .plan(EncodeInput {

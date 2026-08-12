@@ -23,6 +23,7 @@ pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_material_local_sha256";
 pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
+pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
@@ -43,11 +44,15 @@ pub(crate) fn write_semantic_with_records(
             SldprtNative::load(namespace).map_err(Into::into)
         })
         .transpose()?;
-    let retained_partition = retained_partition(ir, retained_records);
     let mut normalized = ir.clone();
     drop_synthesized_configuration_snapshot(&mut normalized);
     sort_arenas(&mut normalized);
-    let validation = cadmpeg_ir::validate::validate(&normalized, Vec::new());
+    // Export precondition on the normalized input. Keeps full validate_neutral:
+    // writer refusal depends on non-core Checks (e.g. Counts for duplicate
+    // configuration source indices). SLDPRT_EXPORT_PRECONDITION_CHECKS records
+    // the draft/topology floor; narrowing further needs reject-fixture coverage.
+    // The postcondition after bake/prepare (below) also keeps full validate_neutral.
+    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new());
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -59,6 +64,7 @@ pub(crate) fn write_semantic_with_records(
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
+    let retained_partition = retained_partition(&normalized, retained_records);
     let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
         && crate::history::native_parameters_match_source(&normalized, native.as_ref());
@@ -75,7 +81,7 @@ pub(crate) fn write_semantic_with_records(
         feature_parameter_changes_authorized,
     )?;
     crate::history::prepare_configurations_for_write(ir, &mut native, annotations)?;
-    let validation = cadmpeg_ir::validate::validate(ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -565,6 +571,17 @@ fn section_type_ids(
 }
 
 fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
+    let pmi_baseline = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get(PMI_LOCAL_DIGEST_ATTRIBUTE));
+    if (pmi_baseline.is_some() || !ir.model.pmi.is_empty())
+        && pmi_baseline != Some(&pmi_local_sha256(ir)?)
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT writer cannot edit retained SWIFT semantic PMI".into(),
+        ));
+    }
     if ir.source.as_ref().is_some_and(|source| {
         source
             .attributes
@@ -671,6 +688,12 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         }
     }
     Ok(())
+}
+
+pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+    let bytes = serde_json::to_vec(&ir.model.pmi)
+        .map_err(|error| CodecError::Malformed(format!("cannot hash SLDPRT PMI: {error}")))?;
+    Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
 fn configuration_partitions(
@@ -1300,8 +1323,10 @@ fn resolved_feature_payload(
         &lane.classes,
         &expected_lane.scalars,
     );
-    expected_lane.references =
-        crate::resolved_features::markers::reference_cells(&expected_lane.scalars);
+    expected_lane.references = crate::resolved_features::markers::reference_cells(
+        &expected_lane.scalars,
+        &expected_lane.classes,
+    );
     crate::resolved_features::bindings::bind_scalar_operands(
         histories,
         std::slice::from_mut(&mut expected_lane),
@@ -3420,6 +3445,47 @@ mod nurbs_write_tests {
     use super::*;
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn retained_swift_pmi_requires_an_unchanged_semantic_baseline() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
+            id: cadmpeg_ir::ids::PmiId("sldprt:model:pmi#A1".into()),
+            name: Some("datum A".into()),
+            targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
+                source_id: "F1".into(),
+            }],
+            definition: cadmpeg_ir::PmiDefinition::Datum {
+                identification: "A".into(),
+            },
+        });
+        let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
+        ir.source = Some(cadmpeg_ir::document::SourceMeta {
+            format: "sldprt".into(),
+            attributes: std::collections::BTreeMap::from([(
+                PMI_LOCAL_DIGEST_ATTRIBUTE.into(),
+                hash,
+            )]),
+        });
+        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+
+        let cadmpeg_ir::PmiDefinition::Datum { identification } =
+            &mut ir.model.pmi.first_mut().expect("PMI annotation").definition
+        else {
+            panic!("datum definition");
+        };
+        *identification = "B".into();
+        assert!(matches!(
+            check_semantic_support(&ir, &Annotations::default()),
+            Err(CodecError::NotImplemented(message)) if message.contains("SWIFT semantic PMI")
+        ));
+
+        ir.model.pmi.clear();
+        assert!(matches!(
+            check_semantic_support(&ir, &Annotations::default()),
+            Err(CodecError::NotImplemented(message)) if message.contains("SWIFT semantic PMI")
+        ));
+    }
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {

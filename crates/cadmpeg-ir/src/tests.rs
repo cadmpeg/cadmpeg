@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::annotations::{ExactnessNote, Provenance};
+use crate::annotations::{ExactnessNote, StreamProvenance};
 use crate::codec::{CadirEncoder, Encoder};
 use crate::document::Model;
 use crate::examples::{directed_subd_sum, unit_cube};
@@ -21,7 +21,7 @@ use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
 use crate::products::{ProductDefinition, ProductDefinitionKind};
 use crate::provenance::{Exactness, SourceObjectAssociation};
-use crate::report::{Check, LossKind, LossNote, Severity};
+use crate::report::{Check, LossKind, LossNote, LossTaxonomy, Severity};
 use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
@@ -29,8 +29,8 @@ use crate::subd::{
 use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
 use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
-use crate::validate::validate;
-use crate::{diff, CadIr, LossProvenance};
+use crate::validate::validate_neutral;
+use crate::{diff, CadIr, SourceProvenance};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
@@ -104,7 +104,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
         .visit_references(&mut |reference| references.push(reference.target));
     assert_eq!(references, vec![target.0.clone()]);
 
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(owner.0.as_str())
@@ -176,7 +176,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.model.feature_input_topologies.push(state);
     ir.model.features.push(feature);
-    assert!(!validate(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -189,11 +189,14 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         unreachable!("test fillet uses a historical selection")
     };
     edges[0] = HistoricalEdgeId(missing.into());
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::ReferentialIntegrity
-            && finding.entity.as_deref() == Some(feature_id.as_str())
-            && finding.message == format!("references missing historical edge `{missing}`")
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::ReferentialIntegrity
+                && finding.entity.as_deref() == Some(feature_id.as_str())
+                && finding.message == format!("references missing historical edge `{missing}`")
+        }));
 }
 
 #[test]
@@ -249,7 +252,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     ir.model.features[0].visit_references(&mut |reference| references.push(reference.target));
     assert_eq!(references, vec![state_id.0]);
 
-    assert!(!validate(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -269,11 +272,14 @@ fn historical_vertex_selection_requires_input_state_membership() {
         unreachable!("test datum point uses a historical vertex")
     };
     *vertex = HistoricalVertexId(missing.into());
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::ReferentialIntegrity
-            && finding.entity.as_deref() == Some(feature_id.as_str())
-            && finding.message == format!("references missing historical vertex `{missing}`")
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::ReferentialIntegrity
+                && finding.entity.as_deref() == Some(feature_id.as_str())
+                && finding.message == format!("references missing historical vertex `{missing}`")
+        }));
 }
 
 #[test]
@@ -347,7 +353,7 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
         native_ref: None,
     });
 
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(!findings
         .iter()
         .any(|finding| finding.message.contains("three-point datum-plane")));
@@ -364,17 +370,23 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
         &mut ir,
         historical(&first_state, &vertices[0], "different-native-identity"),
     );
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.message == "three-point datum plane requires three distinct vertices"
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.message == "three-point datum plane requires three distinct vertices"
+        }));
 
     set_third(
         &mut ir,
         historical(&second_state, &other_vertex, "native:4"),
     );
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.message == "three-point datum-plane vertices use different input topologies"
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.message == "three-point datum-plane vertices use different input topologies"
+        }));
 }
 
 #[test]
@@ -393,9 +405,12 @@ fn non_finite_body_transform_is_invalid() {
     let mut transform = crate::transform::Transform::identity();
     transform.rows[2][3] = f64::NAN;
     ir.model.bodies[0].transform = Some(transform);
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::Bounds && finding.message.contains("non-finite")
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::Bounds && finding.message.contains("non-finite")
+        }));
 }
 
 /// Replace the surface of the cube's first face with an unknown surface,
@@ -428,7 +443,7 @@ fn face_on_unknown_surface_validates_clean() {
     .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         report.is_ok(),
         "a face on an unknown surface is legal, got: {:?}",
@@ -447,7 +462,7 @@ fn face_on_unknown_surface_validates_clean() {
 fn unknown_surface_without_record_is_legal() {
     let mut ir = unit_cube();
     make_first_face_surface_unknown(&mut ir, None);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         report.is_ok(),
         "an unknown surface need not preserve bytes, got: {:?}",
@@ -480,29 +495,35 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:?}", report.findings);
 
     ir.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.01);
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding
-            .message
-            .contains("construction-backed surface cannot carry a cache-fit tolerance")
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding
+                .message
+                .contains("construction-backed surface cannot carry a cache-fit tolerance")
+        }));
     ir.model.procedural_surfaces[0].cache_fit_tolerance = None;
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: ProceduralSurfaceId("synthetic:missing".into()),
     };
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding
-            .message
-            .contains("references missing procedural surface construction")
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding
+                .message
+                .contains("references missing procedural surface construction")
+        }));
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural { construction };
     ir.model.procedural_surfaces[0].surface = ir.model.surfaces[1].id.clone();
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("does not produce surface")));
@@ -530,29 +551,35 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
         },
         cache_fit_tolerance: None,
     });
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:?}", report.findings);
 
     ir.model.procedural_curves[0].cache_fit_tolerance = Some(0.01);
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding
-            .message
-            .contains("construction-backed curve cannot carry a cache-fit tolerance")
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding
+                .message
+                .contains("construction-backed curve cannot carry a cache-fit tolerance")
+        }));
     ir.model.procedural_curves[0].cache_fit_tolerance = None;
 
     ir.model.curves[0].geometry = CurveGeometry::Procedural {
         construction: ProceduralCurveId("synthetic:missing".into()),
     };
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding
-            .message
-            .contains("references missing procedural curve construction")
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding
+                .message
+                .contains("references missing procedural curve construction")
+        }));
 
     ir.model.curves[0].geometry = CurveGeometry::Procedural { construction };
     ir.model.procedural_curves[0].curve = ir.model.curves[1].id.clone();
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("does not produce curve")));
@@ -563,7 +590,7 @@ fn unknown_surface_dangling_record_is_flagged() {
     let mut ir = unit_cube();
     // Link a record id that is not in the unknowns arena.
     make_first_face_surface_unknown(&mut ir, Some(UnknownId("missing".into())));
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity
             && finding.message.contains("missing unknown record `missing`")
@@ -624,7 +651,7 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
 #[test]
 fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum();
-    let validation_counts = validate(&ir, Vec::new()).entity_counts;
+    let validation_counts = validate_neutral(&ir, Vec::new()).entity_counts;
     let plan = CadirEncoder
         .plan(crate::codec::EncodeInput {
             ir: &ir,
@@ -638,7 +665,7 @@ fn cadir_encoder_census_matches_validation_counts() {
 #[test]
 fn unit_cube_validates_clean() {
     let ir = unit_cube();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         report.is_ok(),
         "cube should have no error findings, got: {:?}",
@@ -652,7 +679,7 @@ fn unit_cube_validates_clean() {
 #[test]
 fn arena_registry_drives_counts_and_diff_dispatch() {
     let ir = unit_cube();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     let diff_kinds = diff(&ir, &ir)
         .per_arena
         .into_iter()
@@ -794,7 +821,7 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
     });
     ir.finalize();
 
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::GeometricConsistency
             && finding.entity.as_deref() == Some("synthetic:test:sketch#0")
@@ -874,7 +901,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.sketch_constraints,
@@ -884,7 +911,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
     ir.model.sketch_constraints[0].definition = SketchConstraintDefinition::Polygon {
         entities: vec![members[0].clone(), members[1].clone(), members[0].clone()],
     };
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint.0.as_str())
             && finding.message.contains("three distinct members")
@@ -1006,7 +1033,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     .contains("offset pair does not match its oriented distance")
         })
     };
-    assert!(!offset_mismatch(&validate(&ir, Vec::new())));
+    assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
 
     {
         let SketchGeometry::Nurbs { control_points, .. } =
@@ -1026,7 +1053,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         (reversed_distance - 2.0).abs() <= 1.0e-9,
         "reversed fitted offset distance {reversed_distance}"
     );
-    assert!(!offset_mismatch(&validate(&ir, Vec::new())));
+    assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
     let SketchGeometry::Nurbs { control_points, .. } =
         &mut ir.model.sketch_entities[result_ordinal].geometry
     else {
@@ -1034,7 +1061,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     };
     control_points.reverse();
     control_points.last_mut().expect("result endpoint").u += 0.01;
-    assert!(offset_mismatch(&validate(&ir, Vec::new())));
+    assert!(offset_mismatch(&validate_neutral(&ir, Vec::new())));
 }
 
 #[test]
@@ -1228,7 +1255,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         native_ref: None,
     });
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
@@ -1236,7 +1263,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     ir.model.sketch_entities[0].geometry = SketchGeometry::Native {
         native_kind: "center-bearing-curve".into(),
     };
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
@@ -1335,7 +1362,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         native_ref: None,
     });
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(first_sketch.0.as_str())
             && finding.message.contains("disconnected consecutive")
@@ -1356,7 +1383,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         unreachable!("second entity is a line")
     };
     *start = Point2::new(1.0 + ir.tolerances.linear * 0.5, 0.0);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(first_sketch.0.as_str())
             && finding.message.contains("disconnected consecutive")
@@ -1437,7 +1464,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         native_ref: None,
     });
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert_eq!(
         report
             .findings
@@ -1520,7 +1547,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         native_ref: None,
     });
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     for fragment in [
         "does not precede",
         "missing output body",
@@ -1583,7 +1610,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         });
     }
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
         .iter()
@@ -1644,7 +1671,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             native_ref: None,
         });
     }
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("does not precede its consumer")));
@@ -1709,7 +1736,7 @@ fn document_parameters_can_feed_feature_parameters() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate(&ir, Vec::new()).findings.is_empty());
+    assert!(validate_neutral(&ir, Vec::new()).findings.is_empty());
 }
 
 #[test]
@@ -1768,7 +1795,7 @@ fn tessellation_counts_must_be_consistent() {
         channels: Vec::new(),
     });
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
         .iter()
@@ -1831,7 +1858,7 @@ fn corner_normals_and_feature_edges_have_explicit_domains() {
         .tessellations
         .extend([invalid_normals, invalid_edge, valid]);
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     let errors_for = |entity: &str| {
         report
             .findings
@@ -1931,7 +1958,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
         .tessellations
         .extend([valid, invalid, duplicate_group_id, duplicate_texture]);
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     let errors_for = |entity: &str| {
         report
             .findings
@@ -1997,7 +2024,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.configurations[0].bodies,
@@ -2012,7 +2039,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         ParameterId("synthetic:test:parameter#missing".into()),
         "30 mm".into(),
     )]);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("configuration parameter override")
@@ -2021,7 +2048,7 @@ fn configuration_body_membership_round_trips_and_validates() {
 
     let missing_feature = FeatureId("synthetic:test:feature#missing".into());
     ir.model.configurations[0].suppressed_features = vec![missing_feature.clone(), missing_feature];
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("configuration suppressed feature")
@@ -2050,7 +2077,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             },
         },
     )]);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     for reference in [
         "configuration parameter value",
         "configuration feature state",
@@ -2068,7 +2095,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.parameters[0].value = Some(ParameterValue::Length(Length(10.0)));
     ir.model.configurations[0].parameter_values =
         BTreeMap::from([(parameter_id.clone(), ParameterValue::Angle(Angle(1.0)))]);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message == "configuration parameter value is invalid"
@@ -2076,7 +2103,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].parameter_values.clear();
 
     ir.model.parameters[0].value = Some(ParameterValue::Real(f64::NAN));
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(parameter_id.0.as_str())
             && finding.message == "parameter value is invalid"
@@ -2120,7 +2147,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             },
         },
     )]);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     for message in [
         "does not precede",
         "repeats dependency",
@@ -2146,7 +2173,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             },
         },
     )]);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message
@@ -2158,7 +2185,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         .expect("configuration feature state");
     state.suppressed = true;
     state.outputs.push(body.clone());
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message == "suppressed configuration feature state has output bodies"
@@ -2168,7 +2195,7 @@ fn configuration_body_membership_round_trips_and_validates() {
 
     ir.model.configurations[0].active = true.into();
     ir.model.features[0].suppressed = Some(true);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message
@@ -2191,7 +2218,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     )]);
     // A dependency with no state in this configuration inherits its model-level
     // state; `feature_states` is allowed to be sparse, so that is not a finding.
-    assert!(validate(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.insert(
         first_feature.clone(),
         ConfigurationFeatureState {
@@ -2207,7 +2234,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0]
         .suppressed_features
         .push(first_feature.clone());
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message
@@ -2222,14 +2249,14 @@ fn configuration_body_membership_round_trips_and_validates() {
         .expect("dependency state")
         .suppressed = false;
     ir.model.configurations[0].suppressed_features.clear();
-    assert!(validate(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(vec![
         BodyId("synthetic:test:body#missing".into()),
         BodyId("synthetic:test:body#missing".into()),
     ]);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message.contains("missing configuration body")
@@ -2257,7 +2284,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].active = true.into();
     ir.model.configurations[1].active = true.into();
     ir.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
         .iter()
@@ -2331,7 +2358,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
             .added,
         ["sldprt:test:configuration#0"]
     );
-    let report = validate(&right, Vec::new());
+    let report = validate_neutral(&right, Vec::new());
     assert_eq!(report.entity_counts["native.f3d.act_guids"], 1);
     assert_eq!(report.entity_counts["native.sldprt.configurations"], 1);
     assert!(report.is_ok(), "{:?}", report.findings);
@@ -2343,7 +2370,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .get_mut("configurations")
         .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new());
     right.native.finalize();
-    assert!(validate(&right, Vec::new())
+    assert!(validate_neutral(&right, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "entity id is not globally unique"));
@@ -2454,7 +2481,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     ));
     ir.finalize();
 
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(!report
         .findings
         .iter()
@@ -2465,7 +2492,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         reference: Some(DatumPlaneReference::Feature(offset)),
         distance: Length(5.0),
     };
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
         .iter()
@@ -2589,7 +2616,7 @@ fn dangling_reference_is_flagged() {
     let mut ir = unit_cube();
     // Point a coedge's edge at something that does not exist.
     ir.model.coedges[0].edge = EdgeId("does-not-exist".into());
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
         .iter()
@@ -2601,7 +2628,7 @@ fn dangling_reference_is_flagged() {
 fn coedge_use_curve_requires_a_resolved_carrier_and_interval() {
     let mut ir = unit_cube();
     ir.model.coedges[0].use_curve = Some(CurveId("missing:use-curve#0".into()));
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity && finding.message.contains("coedge use curve")
     }));
@@ -2620,7 +2647,7 @@ fn broken_loop_ring_is_flagged() {
     // referenced id resolves but the ring no longer closes.
     let foreign = ir.model.coedges[20].id.clone();
     ir.model.coedges[0].next = foreign;
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         report
             .findings
@@ -2650,7 +2677,7 @@ fn mismatched_partner_edge_is_flagged() {
             c.edge = other_edge.clone();
         }
     }
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         report
             .findings
@@ -2670,7 +2697,7 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
         radius: -1e-200,
     };
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -2680,7 +2707,7 @@ fn degenerate_plane_normal_is_flagged() {
     if let SurfaceGeometry::Plane { normal, .. } = &mut ir.model.surfaces[0].geometry {
         *normal = Vector3::new(0.0, 0.0, 0.0);
     }
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|f| f.check == Check::Bounds));
 }
 
@@ -2695,7 +2722,7 @@ fn new_topology_references_are_validated() {
         .push(crate::ids::VertexId("missing-free".into()));
     ir.model.coedges[0].radial_next = CoedgeId("missing-radial".into());
 
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     let messages = report
         .findings
         .iter()
@@ -2737,7 +2764,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
         source_object: None,
     });
 
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     for entity in [
         edge_id.as_str(),
         "synthetic:test:curve#bad-parabola",
@@ -2756,8 +2783,8 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
 #[test]
 fn wrong_document_version_is_flagged() {
     let mut ir = unit_cube();
-    ir.ir_version = "1".into();
-    assert!(validate(&ir, Vec::new())
+    ir.set_ir_version_for_test("1");
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::Version));
@@ -2887,7 +2914,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         }],
         source_object: None,
     });
-    assert!(validate(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
     assert_eq!(
@@ -2895,7 +2922,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         serde_json::json!("smooth_x")
     );
     ir.model.subds[0].faces[0].edges[1].reversed = true;
-    assert!(!validate(&ir, Vec::new()).is_ok());
+    assert!(!validate_neutral(&ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -2934,7 +2961,7 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
         }],
         source_object: None,
     });
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("fewer than three")));
@@ -2962,7 +2989,7 @@ fn revolution_rejects_equal_intervals() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("revolution interval")));
@@ -2984,7 +3011,7 @@ fn source_association_is_a_free_carrier_root() {
             instance_path: Vec::new(),
         }),
     });
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:?}", report.findings);
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
@@ -3011,7 +3038,7 @@ fn source_association_rejects_out_of_range_color() {
             instance_path: Vec::new(),
         }),
     });
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("outside [0, 1]")));
@@ -3028,7 +3055,7 @@ fn parser_distinguishes_malformed_json_from_version_rejection() {
 fn entity_ids_follow_canonical_grammar() {
     let mut ir = unit_cube();
     ir.model.points[0].id.0 = "synthetic:scope:point".into();
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::Identity
             && finding.entity.as_deref() == Some("synthetic:scope:point")
@@ -3040,7 +3067,7 @@ fn entity_ids_follow_canonical_grammar() {
 fn ids_are_globally_unique_across_arenas() {
     let mut ir = unit_cube();
     ir.model.points[0].id.0 = ir.model.vertices[0].id.0.clone();
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::Identity));
@@ -3050,7 +3077,7 @@ fn ids_are_globally_unique_across_arenas() {
 fn arena_ids_must_be_sorted() {
     let mut ir = unit_cube();
     ir.model.points.swap(0, 1);
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ArenaOrder));
@@ -3067,10 +3094,13 @@ fn two_member_radial_ring_with_equal_senses_warns() {
         .find(|coedge| coedge.id == other_id)
         .unwrap()
         .sense = sense;
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::CoedgePairing
-            && finding.severity == crate::report::Severity::Warning
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::CoedgePairing
+                && finding.severity == crate::report::Severity::Warning
+        }));
 }
 
 #[test]
@@ -3079,7 +3109,7 @@ fn coedge_backed_edge_cannot_be_a_wire_edge() {
     ir.model.shells[0]
         .wire_edges
         .push(ir.model.coedges[0].edge.clone());
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::WireTopology));
@@ -3110,7 +3140,7 @@ fn wire_and_free_topology_negative_cases_are_reported() {
     ir.model.bodies[0].kind = crate::topology::BodyKind::Wire;
     ir.finalize();
 
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     for message in [
         "wire edge must belong to exactly one shell",
         "free vertex must belong to exactly one shell",
@@ -3145,10 +3175,13 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
     ir.model.regions[0].shells.push(second_shell.id.clone());
     ir.model.shells.push(second_shell);
 
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::WireTopology
-            && finding.message == "free vertex must belong to exactly one shell"
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::WireTopology
+                && finding.message == "free vertex must belong to exactly one shell"
+        }));
 }
 
 #[test]
@@ -3170,7 +3203,7 @@ fn self_referential_composite_curve_is_invalid() {
         source_object: None,
     });
 
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -3180,7 +3213,7 @@ fn self_referential_composite_curve_is_invalid() {
 fn empty_shell_is_reported() {
     let mut ir = unit_cube();
     ir.model.shells[0].faces.clear();
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::WireTopology && finding.message == "shell owns no topology"
     }));
@@ -3192,7 +3225,7 @@ fn orphan_carrier_is_flagged() {
     let mut orphan = ir.model.curves[0].clone();
     orphan.id = CurveId("zz:orphan".into());
     ir.model.curves.push(orphan);
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::CarrierReachability));
@@ -3204,7 +3237,7 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
     let mut source_fidelity = crate::SourceFidelity::default();
     source_fidelity.annotations.provenance.insert(
         "missing".into(),
-        Provenance {
+        StreamProvenance {
             stream: u32::MAX,
             offset: 0,
             tag: None,
@@ -3220,7 +3253,8 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
             )]),
         },
     );
-    let findings = crate::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
+    let findings =
+        crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::Annotations && finding.severity == crate::report::Severity::Error
     }));
@@ -3240,7 +3274,7 @@ fn native_topology_link_must_resolve() {
         )],
     );
     ir.native.finalize();
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::NativeLinks));
@@ -3273,14 +3307,20 @@ fn parameter_native_ref_must_resolve() {
         }),
         native_ref: Some("native:missing#0".into()),
     });
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.0.as_str())
-    }));
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::NativeLinks
-            && finding.message.contains("PMI native_ref")
-            && finding.entity.as_deref() == Some(id.0.as_str())
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.0.as_str())
+        }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::NativeLinks
+                && finding.message.contains("PMI native_ref")
+                && finding.entity.as_deref() == Some(id.0.as_str())
+        }));
 }
 
 #[test]
@@ -3323,16 +3363,22 @@ fn sketch_constraint_native_ref_must_resolve() {
             native_ref: Some("native:missing-relation#0".into()),
         });
 
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::NativeLinks
-            && finding.entity.as_deref() == Some(id.0.as_str())
-            && finding.message.contains("native:missing-relation#0")
-    }));
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::NativeLinks
-            && finding.entity.as_deref() == Some(id.0.as_str())
-            && finding.message.contains("native:missing-operand#0")
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::NativeLinks
+                && finding.entity.as_deref() == Some(id.0.as_str())
+                && finding.message.contains("native:missing-relation#0")
+        }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::NativeLinks
+                && finding.entity.as_deref() == Some(id.0.as_str())
+                && finding.message.contains("native:missing-operand#0")
+        }));
     let serialized = serde_json::to_string(&ir).unwrap();
     let round_trip = CadIr::from_json(&serialized).unwrap();
     assert!(matches!(
@@ -3368,9 +3414,12 @@ fn sketch_constraint_native_ref_must_resolve() {
         unreachable!("test constraint is native")
     };
     operands[0].native_role = Some(7);
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.check == Check::Counts && finding.entity.as_deref() == Some(id.0.as_str())
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::Counts && finding.entity.as_deref() == Some(id.0.as_str())
+        }));
 }
 
 #[test]
@@ -3385,7 +3434,7 @@ fn unresolved_unknown_record_link_is_reported_once() {
     )
     .expect("store unknown record");
 
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     let reported = findings
         .iter()
         .filter(|finding| {
@@ -3412,13 +3461,13 @@ fn periodic_curve_parameter_domain_is_checked() {
         radius: 1.0,
     };
     ir.model.edges[0].param_range = Some([0.0, 7.0]);
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
 
     ir.model.edges[0].param_range = Some([-std::f64::consts::PI, std::f64::consts::PI]);
-    assert!(!validate(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -3429,14 +3478,14 @@ fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
     let mut ir = unit_cube();
     ir.model.edges[0].curve = None;
     ir.model.edges[0].param_range = Some([1.0, 0.0]);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
             && finding.entity.as_deref() == Some(ir.model.edges[0].id.0.as_str())
     }));
 
     ir.model.edges[0].param_range = Some([f64::NAN, 0.0]);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
             && finding.entity.as_deref() == Some(ir.model.edges[0].id.0.as_str())
@@ -3471,13 +3520,13 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         .unwrap()
         .geometry = geometry;
     ir.model.edges[0].param_range = Some([0.5, 2.5]);
-    assert!(!validate(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
 
     ir.model.edges[0].param_range = Some([0.5, 2.500_001]);
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -3494,7 +3543,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     };
     nurbs.periodic = false;
     ir.model.edges[0].param_range = Some([0.5, 2.5]);
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -3505,7 +3554,7 @@ fn document_and_entity_tolerances_are_checked() {
     let mut ir = unit_cube();
     ir.tolerances.angular = f64::NAN;
     ir.model.faces[0].tolerance = Some(0.0);
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::Tolerances));
@@ -3556,10 +3605,10 @@ fn schema_generation_produces_definitions() {
 #[test]
 fn loss_provenance_root_alias_constructs_and_serializes() {
     let note = LossNote {
-        code: LossKind::GeometryNotTransferred,
+        code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
         severity: Severity::Warning,
         message: "geometry was retained as metadata".into(),
-        provenance: Some(LossProvenance {
+        provenance: Some(SourceProvenance {
             format: "rhino".into(),
             stream: String::new(),
             offset: 42,
@@ -3667,7 +3716,7 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
 #[test]
 fn edge_endpoint_mismatch_is_flagged() {
     let mut ir = unit_cube();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         !report
             .findings
@@ -3680,7 +3729,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     let mut source_tolerant = unit_cube();
     source_tolerant.model.points[0].position.z += 0.015;
     source_tolerant.tolerances.linear = 0.02;
-    let report = validate(&source_tolerant, Vec::new());
+    let report = validate_neutral(&source_tolerant, Vec::new());
     assert!(
         !report
             .findings
@@ -3693,7 +3742,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     // Displace one corner: the point no longer lies on its edges' curves at
     // the stored parameter values.
     ir.model.points[0].position.z += 1.0;
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         report
             .findings
@@ -3723,7 +3772,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         },
         cache_fit_tolerance: Some(0.99),
     });
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         report
             .findings
@@ -3734,7 +3783,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     );
 
     ir.model.procedural_curves[0].cache_fit_tolerance = Some(1.0);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(
         !report
             .findings
@@ -3784,7 +3833,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             isoparametric: None,
             parameter_range: None,
         }];
-        validate(&ir, Vec::new())
+        validate_neutral(&ir, Vec::new())
     };
 
     let consistent = checked(10.0, 0.0, None);
@@ -3879,7 +3928,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             cache_fit_tolerance: Some(0.01),
             record_bounds: None,
         });
-    let procedural_report = validate(&procedural, Vec::new());
+    let procedural_report = validate_neutral(&procedural, Vec::new());
     assert!(
         !procedural_report
             .findings
@@ -3895,7 +3944,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         extension: 0,
         revision_form: None,
     };
-    let exact_report = validate(&procedural, Vec::new());
+    let exact_report = validate_neutral(&procedural, Vec::new());
     assert!(
         !exact_report
             .findings
@@ -3938,7 +3987,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         parameter_range: Some([-10.0, 0.0]),
     }];
     let ranged_coedge_id = coedge.id.clone();
-    let negative = validate(&negative_parameterization, Vec::new());
+    let negative = validate_neutral(&negative_parameterization, Vec::new());
     assert!(
         !negative
             .findings
@@ -3956,7 +4005,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .expect("ranged coedge")
         .pcurves[0]
         .parameter_range = Some([-11.0, 0.0]);
-    let invalid_range = validate(&negative_parameterization, Vec::new());
+    let invalid_range = validate_neutral(&negative_parameterization, Vec::new());
     assert!(invalid_range.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain && finding.message.contains("coedge pcurve range")
     }));
@@ -3981,7 +4030,7 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
     });
     ir.model.faces[0].loops.push(loop_id.clone());
     ir.model.finalize();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:#?}", report.findings);
 
     ir.model
@@ -3990,7 +4039,7 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
         .find(|loop_| loop_.id == loop_id)
         .unwrap()
         .boundary_role = crate::topology::LoopBoundaryRole::Outer;
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::LoopClosure
             && finding.message == "face has more than one explicit outer loop"
@@ -4010,7 +4059,7 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
         .unwrap()
         .coedges
         .push(coedge);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::LoopClosure && finding.entity.as_deref() == Some(loop_id.0.as_str())
     }));
@@ -4175,7 +4224,7 @@ fn feature_extent_magnitudes_are_validated() {
             },
             native_ref: None,
         });
-        assert!(validate(&ir, Vec::new())
+        assert!(validate_neutral(&ir, Vec::new())
             .findings
             .iter()
             .any(|finding| finding.message == "feature extent magnitude is invalid"));
@@ -4240,7 +4289,7 @@ fn block_placement_must_be_proper_rigid() {
             },
             native_ref: None,
         });
-        assert!(validate(&ir, Vec::new())
+        assert!(validate_neutral(&ir, Vec::new())
             .findings
             .iter()
             .any(|finding| finding.message == "block placement is invalid"));
@@ -4319,7 +4368,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     });
 
     let message = "generated termination vertex is invalid";
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -4348,7 +4397,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         native_ref: None,
     });
     ir.model.features[1].dependencies.push(source.clone());
-    assert!(!validate(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -4356,7 +4405,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
         extrude.0, source.0
     );
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == configuration_message));
@@ -4366,7 +4415,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .get_mut(&extrude)
         .expect("configured extrude");
     state.dependencies.push(source);
-    assert!(validate(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
     let state = ir.model.configurations[0]
         .feature_states
         .get_mut(&extrude)
@@ -4384,9 +4433,12 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         unreachable!()
     };
     native.clear();
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.message == "configuration generated termination vertex is invalid"
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.message == "configuration generated termination vertex is invalid"
+        }));
     let state = ir.model.configurations[0]
         .feature_states
         .get_mut(&extrude)
@@ -4400,7 +4452,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     side.termination = Termination::Blind {
         length: crate::features::Length(f64::NAN),
     };
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| { finding.message == "configuration feature extent magnitude is invalid" }));
@@ -4436,7 +4488,7 @@ fn body_combine_requires_exactly_one_resolved_target() {
         },
         native_ref: None,
     });
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     for message in [
         "body combine target is invalid",
         "body combine operands overlap",
@@ -4517,7 +4569,7 @@ fn feature_operand_roles_must_be_disjoint() {
             native_ref: None,
         });
     }
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     for message in [
         "face blend supports overlap",
         "body trim operands overlap",
@@ -4578,13 +4630,13 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         "pattern omits seed feature `{}` from its dependencies",
         seed.0
     );
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == message));
 
     ir.model.features[1].dependencies.push(seed);
-    assert!(!validate(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -4742,7 +4794,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         native_ref: None,
     });
 
-    let findings = validate(&ir, Vec::new())
+    let findings = validate_neutral(&ir, Vec::new())
         .findings
         .into_iter()
         .map(|finding| finding.message)
@@ -4790,7 +4842,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         unreachable!()
     };
     *distance = Length(f64::NAN);
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| { finding.message == "configuration datum-plane offset is invalid" }));
@@ -4802,7 +4854,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         unreachable!()
     };
     *distance = Length(5.0);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:#?}", report.findings);
 }
 
@@ -4852,7 +4904,7 @@ fn resolved_datum_geometry_must_be_finite_and_coherent() {
             native_ref: None,
         });
     }
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     for message in [
         "datum-plane frame is invalid",
         "datum-axis frame is invalid",
@@ -4906,7 +4958,7 @@ fn explicit_extrusion_direction_must_be_nonzero() {
         },
         native_ref: None,
     });
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "extrusion direction is invalid"));
@@ -4997,7 +5049,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
             native_ref: None,
         });
         ir.finalize();
-        validate(&ir, Vec::new())
+        validate_neutral(&ir, Vec::new())
     };
     assert!(validate_definition(definition.clone()).is_ok());
 
@@ -5093,7 +5145,7 @@ fn extrusion_side_drafts_are_validated() {
             },
             native_ref: None,
         });
-        let has_draft_finding = validate(&ir, Vec::new())
+        let has_draft_finding = validate_neutral(&ir, Vec::new())
             .findings
             .iter()
             .any(|finding| finding.message == "extrusion draft is invalid");
@@ -5179,7 +5231,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             native_ref: None,
         });
     }
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings.iter().any(|finding| finding
         .message
         .contains("does not precede its profile consumer")));
@@ -5283,7 +5335,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         },
     ));
 
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.message == "sketch profile indices are empty, repeated, or out of range"
     }));
@@ -5384,12 +5436,12 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         native_ref: None,
     });
 
-    assert!(validate(&ir, Vec::new()).findings.is_empty());
+    assert!(validate_neutral(&ir, Vec::new()).findings.is_empty());
     let mut duplicate = ir.model.features.last().expect("spatial owner").clone();
     duplicate.id = FeatureId("synthetic:test:feature#duplicate-spatial-sketch".into());
     duplicate.ordinal = 1;
     ir.model.features.push(duplicate);
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("has multiple owning features")));
@@ -5777,7 +5829,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             native_ref: None,
         });
     ir.finalize();
-    assert!(validate(&ir, Vec::new()).findings.is_empty());
+    assert!(validate_neutral(&ir, Vec::new()).findings.is_empty());
     let mut overlapping_offset = ir.clone();
     let SpatialSketchConstraintDefinition::Offset {
         sources, results, ..
@@ -5792,7 +5844,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         panic!("spatial offset definition");
     };
     results[0] = sources[0].clone();
-    assert!(validate(&overlapping_offset, Vec::new())
+    assert!(validate_neutral(&overlapping_offset, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "invalid spatial constraint arity"));
@@ -5816,9 +5868,12 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         panic!("spatial offset definition");
     };
     sources[0] = point_entity;
-    assert!(validate(&non_curve_offset, Vec::new()).findings.iter().any(
-        |finding| finding.message == "spatial offset source and result members must be curves"
-    ));
+    assert!(validate_neutral(&non_curve_offset, Vec::new())
+        .findings
+        .iter()
+        .any(
+            |finding| finding.message == "spatial offset source and result members must be curves"
+        ));
     let mut invalid_distance = ir.clone();
     invalid_distance
         .model
@@ -5827,7 +5882,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .find(|parameter| parameter.id == distance)
         .expect("spatial distance parameter")
         .value = Some(ParameterValue::Length(Length(3.0)));
-    let invalid_distance_findings = validate(&invalid_distance, Vec::new()).findings;
+    let invalid_distance_findings = validate_neutral(&invalid_distance, Vec::new()).findings;
     assert!(invalid_distance_findings.iter().any(|finding| finding
         .message
         .contains("spatial distance requires parallel lines")));
@@ -6208,7 +6263,7 @@ fn feature_operation_geometry_is_validated() {
             native_ref: None,
         });
     }
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(!findings
         .iter()
         .any(|finding| { finding.entity.as_deref() == Some("synthetic:test:feature#invalid-0") }));
@@ -6254,10 +6309,13 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         definition,
         native_ref: None,
     });
-    assert!(!validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
-            && finding.message == "full-round fillet face sets are invalid"
-    }));
+    assert!(!validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
+                && finding.message == "full-round fillet face sets are invalid"
+        }));
 
     if let FeatureDefinition::FullRoundFillet { groups } =
         &mut ir.model.features[feature_index].definition
@@ -6267,10 +6325,13 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
     } else {
         unreachable!("test feature is a full-round fillet");
     }
-    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
-            && finding.message == "full-round fillet face sets are invalid"
-    }));
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
+                && finding.message == "full-round fillet face sets are invalid"
+        }));
 }
 
 #[test]
@@ -6307,7 +6368,7 @@ fn flex_modes_round_trip_and_validate() {
         },
         native_ref: None,
     });
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new()).findings;
     assert!(findings
         .iter()
         .any(|finding| finding.message == "flex axis is degenerate"));
@@ -6568,7 +6629,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         native_ref: None,
     });
 
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.is_empty(), "{:?}", report.findings);
     let FeatureDefinition::BaseFeature {
         bodies: BodySelection::Generated { bodies, .. },
@@ -6577,7 +6638,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         panic!("test consumer must retain its generated body selection");
     };
     bodies[0].local_id = "body#undeclared".into();
-    assert!(validate(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "generated body selection is invalid"));
@@ -6709,14 +6770,14 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
     assert_eq!(
         serde_json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
         "AQID"
     );
 
     ir.model.assets.clear();
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(feature_id.0.as_str())
             && finding.message.contains("reference-image asset")
@@ -6727,7 +6788,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         unreachable!();
     };
     *v_axis = Vector3::new(1.0, 0.0, 0.0);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(feature_id.0.as_str())
             && finding.message == "reference-image placement is invalid"
@@ -6773,7 +6834,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
 
     let FeatureDefinition::Decal {
         ref mut opacity, ..
@@ -6782,7 +6843,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
         unreachable!();
     };
     *opacity = Some(2.0);
-    let report = validate(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(feature_id.0.as_str())
             && finding.message == "decal opacity is invalid"

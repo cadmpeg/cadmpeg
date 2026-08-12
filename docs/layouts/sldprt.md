@@ -29,6 +29,23 @@ the table says `unstated` and says so in the field note.
 | `00 12` | vertex-use | 24 B | magic at body +16 | §4 |
 | `00 1d` | world point | 38 B | no magic; four references at body +6 and xyz as three f64 BE at body +14 | §4 |
 
+## `feature_input_operand_cell12`
+
+Spec §2 · layout: byte offsets · size: 12 B
+
+Primary and legacy named-scalar operand cell. A lane-local class declaration can begin immediately after this cell.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | little-endian u16 tag at +0 |
+| 2 | 2 | `marker_address` | `u16` | little | spec | u16 marker address at +2 |
+| 4 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at +4 |
+| 8 | 4 | `zero_trailer` | `bytes[4]` | little | spec | four zero bytes at +8 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs` — The scalar parser reads the primary and legacy operand as one 12-byte cell.
+
 ## `outer_header`
 
 Spec §1.1 · layout: byte offsets · size: 8 B
@@ -1297,7 +1314,7 @@ Cross-checked against code:
 
 Spec §2 · layout: byte offsets · size: 97 B
 
-Offsets begin immediately after the data-class name.
+Offsets begin immediately after the data-class name. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1484,6 +1501,30 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser reads the extended-form pull direction only after the nine-byte zero discriminator.
 
+## `wide_spatial_marker_coordinate_prefix`
+
+Spec §2 · layout: byte offsets · size: 90 B
+
+The fixed coordinate prefix is shared by point and relation-handle markers. The record trailer follows the third coordinate.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An object-indexed marker-backed spatial point begins with `ff ff 07 00 01`, `ff ff 1f 00 01`, or `ff ff 1f 00 03` |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes |
+| 13 | 4 | `sentinel` | `f32` | little | spec | little-endian f32 `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | the native kind is at marker +17 |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | role bytes `04 00 02 00` |
+| 27 | 2 | `profile_role` | `u16` | little | spec | profile role u16 `1` |
+| 48 | 8 | `state_value` | `f64` | little | spec | marker +48 stores f64 `1` |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | marker +64 contains `0e 00` |
+| 66 | 24 | `coordinates` | `f64[3]` | little | spec | the coordinates begin at marker +66 |
+
+Unstated regions:
+
+- `21..23` (2 B): Reserved bytes before the profile locus.
+- `29..48` (19 B): Marker state, selector, and reserved bytes precede the state value.
+- `56..64` (8 B): Zero bytes before the coordinate tag.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
@@ -1491,4 +1532,5 @@ Cross-checked against code:
 | ResolvedFeatures sketch and feature-input markers (§2) | §2 | The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. The fixed-offset layouts above cover the currently tabulated profile, sketch-input, and reference-plane forms; the remaining paragraphs are transcribable in principle and can be added incrementally. |
 | Body records (§6) | §6 | Apart from the class-root directory, §6 states slot-reference graphs and population invariants over about thirty named disc layouts. Those layouts state no byte offsets; their slot values are reached through the §5 common header and the §10 framing arithmetic. |
 | Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. Specification section 5 gives the supported schema, disc, and flo slot-count table. |
+| SWIFT semantic PMI object graph (§2.1) | §2.1 | Token-framed variable-length grammar. Every entity and section is delimited by Pascal-string tokens and counted key/value or relation rosters; no field has a fixed offset from the stream or entity start. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |

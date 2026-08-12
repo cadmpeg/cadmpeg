@@ -5,13 +5,13 @@
 //! `tests/fixtures/*.p21` are the frozen inputs.
 //! Fixtures stay frozen; `UPDATE_GOLDEN=1` rewrites goldens only.
 //! `inspect` pins the container summary; `decode` pins the IR, losses, and
-//! source fidelity. Shared harness: [`cadmpeg_core::golden`].
+//! source fidelity. Shared harness: [`cadmpeg_test_support::golden`].
 
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::golden::{elide_local_digests, snapshot_text, Branch, Harness};
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, Branch, Harness};
 
 use super::StepCodec;
 

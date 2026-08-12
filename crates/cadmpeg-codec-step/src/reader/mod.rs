@@ -9,11 +9,12 @@ use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
+use crate::ids::StepIdentity;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
 mod dependencies;
@@ -28,6 +29,141 @@ mod topology;
 mod validation;
 
 pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
+
+struct StageOutcome<T> {
+    value: T,
+    claims: HashSet<u64>,
+    warnings: Vec<String>,
+    losses: Vec<LossNote>,
+    notes: Vec<String>,
+}
+
+impl<T> std::ops::Deref for StageOutcome<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for StageOutcome<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+
+struct StepDecodeSession<'ctx, 'arena> {
+    ir: CadIr,
+    report: DecodeReport,
+    typed_records: HashSet<u64>,
+    admitted_ir_entities: u64,
+    semantic_input_work: u64,
+    ctx: Option<&'ctx DecodeContext<'arena>>,
+}
+
+impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
+    fn new(
+        exchange: &Exchange,
+        diagnostics: &[ParseDiagnostic],
+        container_only: bool,
+        ctx: Option<&'ctx DecodeContext<'arena>>,
+    ) -> Self {
+        let mut ir = CadIr::empty(Units::default());
+        let mut attributes = BTreeMap::new();
+        attributes.insert("schema".into(), schema_name(exchange));
+        attributes.insert("data_sections".into(), exchange.data.len().to_string());
+        attributes.insert(
+            "entity_instances".into(),
+            exchange.records.len().to_string(),
+        );
+        ir.source = Some(SourceMeta {
+            format: "step".into(),
+            attributes,
+        });
+
+        let mut report = DecodeReport {
+            format: "step".into(),
+            container_only,
+            geometry_transferred: false,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: exchange
+                .references
+                .iter()
+                .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
+                .collect(),
+        };
+        report.losses.extend(diagnostics.iter().map(|diagnostic| {
+            LossNote::new(
+                LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax),
+                diagnostic.message.clone(),
+            )
+            .with_provenance(cadmpeg_ir::SourceProvenance {
+                format: "step".into(),
+                stream: String::new(),
+                offset: diagnostic.offset as u64,
+                tag: Some(
+                    match diagnostic.kind {
+                        crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
+                            "complex_entity"
+                        }
+                        crate::parse::ParseDiagnosticKind::OmittedEntityName => "entity_name",
+                    }
+                    .into(),
+                ),
+            })
+        }));
+
+        Self {
+            ir,
+            report,
+            typed_records: HashSet::new(),
+            admitted_ir_entities: 0,
+            semantic_input_work: 0,
+            ctx,
+        }
+    }
+
+    fn charge_stage(&mut self, operation: &'static str) -> Result<(), CodecError> {
+        self.charge_pending_ir_entities(operation)?;
+        let output_work = u64::try_from(self.ir.model.entity_count()).unwrap_or(u64::MAX);
+        let units = self.semantic_input_work.saturating_add(output_work);
+        self.ctx
+            .map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+    }
+
+    fn charge_pending_ir_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
+        let current_entities = u64::try_from(self.ir.model.entity_count()).unwrap_or(u64::MAX);
+        let additional_entities = current_entities.saturating_sub(self.admitted_ir_entities);
+        if let Some(ctx) = self.ctx {
+            ctx.charge_entities(additional_entities, operation)?;
+        }
+        self.admitted_ir_entities = current_entities;
+        Ok(())
+    }
+
+    fn absorb<T>(&mut self, outcome: &mut StageOutcome<T>) {
+        self.typed_records.extend(outcome.claims.drain());
+        self.report.losses.append(&mut outcome.losses);
+        self.report.notes.append(&mut outcome.notes);
+    }
+
+    fn absorb_warnings(&mut self, warnings: impl IntoIterator<Item = String>) {
+        self.report
+            .losses
+            .extend(warnings.into_iter().map(|message| LossNote {
+                code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
+                severity: Severity::Warning,
+                message,
+                provenance: None,
+            }));
+    }
+
+    fn into_result(self, source_fidelity: SourceFidelity) -> DecodeResult {
+        DecodeResult::new(self.ir, self.report, source_fidelity)
+    }
+}
 
 struct OpaqueSourceRecord {
     unknown_id: String,
@@ -57,7 +193,12 @@ pub(super) fn decode_exchange(
         .map(|(result, _)| result)
 }
 
-pub(super) fn inspect_exchange(
+/// Deep semantic analysis used by STEP `inspect`.
+///
+/// Runs the semantic decode path (discarding the IR at the inspect boundary)
+/// so `unknown_entities` and related attributes stay accurate. This is not a
+/// cheap syntactic census.
+pub(super) fn analyze_exchange(
     input: &[u8],
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
@@ -81,346 +222,134 @@ fn decode_exchange_mode(
     retain_opaque: bool,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
-    let mut ir = CadIr::empty(Units::default());
-    let mut attributes = BTreeMap::new();
-    attributes.insert("schema".into(), schema_name(exchange));
-    attributes.insert("data_sections".into(), exchange.data.len().to_string());
-    attributes.insert(
-        "entity_instances".into(),
-        exchange.records.len().to_string(),
-    );
-    ir.source = Some(SourceMeta {
-        format: "step".into(),
-        attributes,
-    });
-
-    let mut report = DecodeReport {
-        format: "step".into(),
-        container_only: options.container_only,
-        geometry_transferred: false,
-        coverage: std::collections::BTreeMap::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: Vec::new(),
-        notes: exchange
-            .references
-            .iter()
-            .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
-            .collect(),
-    };
-    report.losses.extend(diagnostics.iter().map(|diagnostic| {
-        LossNote::new(
-            LossKind::NoncanonicalSourceSyntax,
-            diagnostic.message.clone(),
-        )
-        .with_provenance(cadmpeg_ir::LossProvenance {
-            format: "step".into(),
-            stream: String::new(),
-            offset: diagnostic.offset as u64,
-            tag: Some(
-                match diagnostic.kind {
-                    crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
-                        "complex_entity"
-                    }
-                    crate::parse::ParseDiagnosticKind::OmittedEntityName => "entity_name",
-                }
-                .into(),
-            ),
-        })
-    }));
+    let mut session = StepDecodeSession::new(exchange, diagnostics, options.container_only, ctx);
     if options.container_only {
         return Ok((
-            DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
+            session.into_result(SourceFidelity::default()),
             BTreeSet::new(),
         ));
     }
 
-    let semantic_input_work = semantic_input_work(exchange);
-    let mut admitted_ir_entities = 0;
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_geometry_decode",
-    )?;
-    let mut geometry = geometry::decode(exchange, &mut ir);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_dependency_decode",
-    )?;
-    let dependencies = dependencies::decode(exchange);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_carrier_index",
-    )?;
-    let carrier_index = index::CarrierIndex::from_ir(&ir);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_topology_decode",
-    )?;
-    if let Some(ctx) = ctx {
+    session.semantic_input_work = semantic_input_work(exchange);
+    session.charge_stage("step_geometry_decode")?;
+    let mut geometry = geometry::decode(exchange, &mut session.ir);
+    session.charge_stage("step_dependency_decode")?;
+    let mut dependencies = dependencies::decode(exchange);
+    session.charge_stage("step_carrier_index")?;
+    let carrier_index = index::CarrierIndex::from_ir(&session.ir);
+    session.charge_stage("step_topology_decode")?;
+    if let Some(ctx) = session.ctx {
         ctx.charge_work(
             implicit_face_plane_work(exchange),
             "step_implicit_face_plane",
         )?;
     }
-    let topology = topology::decode(exchange, &mut ir, &carrier_index);
-    geometry::infer_edge_parameter_ranges(&mut ir, ctx)?;
-    let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_topology_association",
-    )?;
-    geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_replica_association",
-    )?;
-    geometry::associate_replica_bases(exchange, &mut ir, &carrier_index);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_pcurve_association",
-    )?;
-    geometry::associate_pcurve_supports(exchange, &mut ir, &carrier_index);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_geometric_set_association",
-    )?;
+    let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index);
+    geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
+    let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
+    session.charge_stage("step_topology_association")?;
+    geometry::associate_topology_carriers(
+        exchange,
+        &mut session.ir,
+        &carrier_index,
+        &owned_carriers,
+    );
+    session.charge_stage("step_replica_association")?;
+    geometry::associate_replica_bases(exchange, &mut session.ir, &carrier_index);
+    session.charge_stage("step_pcurve_association")?;
+    geometry::associate_pcurve_supports(exchange, &mut session.ir, &carrier_index);
+    session.charge_stage("step_geometric_set_association")?;
     geometry::associate_free_geometric_set_members(
         exchange,
-        &mut ir,
+        &mut session.ir,
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
     );
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_representation_association",
-    )?;
+    session.charge_stage("step_representation_association")?;
     geometry::associate_free_representation_members(
         exchange,
-        &mut ir,
+        &mut session.ir,
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
     );
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_presentation_carrier_association",
-    )?;
+    session.charge_stage("step_presentation_carrier_association")?;
     geometry::associate_free_presentation_carriers(
         exchange,
-        &mut ir,
+        &mut session.ir,
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
     );
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_surface_curve_association",
-    )?;
-    geometry::associate_surface_curve_supports(exchange, &mut ir, &carrier_index, &owned_carriers);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_product_decode",
-    )?;
-    let product = product::decode(exchange, &geometry, &topology, &mut ir);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_tessellation_decode",
-    )?;
-    let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_pmi_decode",
-    )?;
-    let pmi = pmi::decode(exchange, &geometry, &mut ir);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_presentation_decode",
-    )?;
-    let presentation = presentation::decode(
+    session.charge_stage("step_surface_curve_association")?;
+    geometry::associate_surface_curve_supports(
         exchange,
-        &topology,
-        &mut ir,
-        &product.product_definition_ids_by_source,
+        &mut session.ir,
+        &carrier_index,
+        &owned_carriers,
     );
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_validation_decode",
-    )?;
-    let validation = validation::decode(exchange, &geometry, &mut ir);
-    report.notes.extend(dependencies.notes);
-    report.notes.extend(validation.notes);
-    report.losses.extend(dependencies.losses);
-    report.losses.extend(presentation.losses);
-    report.losses.extend(product.losses);
-    report.geometry_transferred = !ir.model.points.is_empty()
-        || !ir.model.curves.is_empty()
-        || !ir.model.surfaces.is_empty()
-        || !ir.model.bodies.is_empty()
-        || !ir.model.tessellations.is_empty();
-    report
-        .losses
-        .extend(geometry.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message,
-            provenance: None,
-        }));
-    report
-        .losses
-        .extend(topology.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message,
-            provenance: None,
-        }));
-    report
-        .losses
-        .extend(presentation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message,
-            provenance: None,
-        }));
-    report
-        .losses
-        .extend(product.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message,
-            provenance: None,
-        }));
-    report
-        .losses
-        .extend(tessellation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message,
-            provenance: None,
-        }));
-    report.losses.extend(tessellation.losses);
-    report.losses.extend(topology.losses);
-    report.losses.extend(geometry.losses);
-    report
-        .losses
-        .extend(pmi.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message,
-            provenance: None,
-        }));
-    report
-        .losses
-        .extend(validation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message,
-            provenance: None,
-        }));
-    report.losses.extend(pmi.losses);
-    report.losses.extend(validation.losses);
-    let mut typed_records = geometry.typed_records;
-    typed_records.extend(topology.typed_records);
-    typed_records.extend(presentation.typed_records);
-    typed_records.extend(product.typed_records);
-    typed_records.extend(tessellation.typed_records);
-    typed_records.extend(pmi.typed_records);
-    typed_records.extend(dependencies.typed_records);
-    typed_records.extend(validation.typed_records);
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_drawing_decode",
-    )?;
-    let drawing = drawing::decode(exchange, &mut ir, &typed_records);
-    report.losses.extend(drawing.losses);
-    typed_records.extend(drawing.typed_records);
+    session.charge_stage("step_product_decode")?;
+    let mut product = product::decode(exchange, &geometry.value, &topology.value, &mut session.ir);
+    session.charge_stage("step_tessellation_decode")?;
+    let mut tessellation =
+        tessellation::decode(exchange, &geometry.value, &topology.value, &mut session.ir);
+    session.charge_stage("step_pmi_decode")?;
+    let mut pmi = pmi::decode(exchange, &geometry.value, &mut session.ir);
+    session.charge_stage("step_presentation_decode")?;
+    let mut presentation = presentation::decode(
+        exchange,
+        &topology.value,
+        &mut session.ir,
+        &product.value.product_definition_ids_by_source,
+    );
+    session.charge_stage("step_validation_decode")?;
+    let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir);
+    session.report.geometry_transferred = !session.ir.model.points.is_empty()
+        || !session.ir.model.curves.is_empty()
+        || !session.ir.model.surfaces.is_empty()
+        || !session.ir.model.bodies.is_empty()
+        || !session.ir.model.tessellations.is_empty();
+
+    // Keep the established report order while every pass contributes through
+    // the same accumulator.
+    session.absorb(&mut dependencies);
+    session.absorb(&mut presentation);
+    session.absorb(&mut product);
+    session.absorb_warnings(std::mem::take(&mut geometry.warnings));
+    session.absorb_warnings(std::mem::take(&mut topology.warnings));
+    session.absorb_warnings(std::mem::take(&mut presentation.warnings));
+    session.absorb_warnings(std::mem::take(&mut product.warnings));
+    session.absorb_warnings(std::mem::take(&mut tessellation.warnings));
+    session.absorb(&mut tessellation);
+    session.absorb(&mut topology);
+    session.absorb(&mut geometry);
+    session.absorb_warnings(std::mem::take(&mut pmi.warnings));
+    session.absorb_warnings(std::mem::take(&mut validation.warnings));
+    session.absorb(&mut pmi);
+    session.absorb(&mut validation);
+
+    session.charge_stage("step_drawing_decode")?;
+    let mut drawing = drawing::decode(exchange, &mut session.ir, &session.typed_records);
+    session.absorb(&mut drawing);
     let mut post_decode_warnings = Vec::new();
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_carrier_retention",
-    )?;
+    session.charge_stage("step_carrier_retention")?;
     retain_unowned_carriers(
         exchange,
-        &mut ir,
-        &mut typed_records,
+        &mut session.ir,
+        &mut session.typed_records,
         &mut post_decode_warnings,
     );
-    report
-        .losses
-        .extend(post_decode_warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message,
-            provenance: None,
-        }));
+    session.absorb_warnings(post_decode_warnings);
 
-    charge_semantic_stage(
-        ctx,
-        semantic_input_work,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_opaque_record_retention",
-    )?;
+    session.charge_stage("step_opaque_record_retention")?;
     let opaque_offsets = if retain_opaque {
         BTreeSet::new()
     } else {
         exchange
             .records
             .values()
-            .filter(|record| !typed_records.contains(&record.id))
+            .filter(|record| !session.typed_records.contains(&record.id))
             .map(|record| record.span.start)
             .collect()
     };
@@ -433,12 +362,12 @@ fn decode_exchange_mode(
         opaque_ids = exchange
             .records
             .values()
-            .filter(|record| !typed_records.contains(&record.id))
+            .filter(|record| !session.typed_records.contains(&record.id))
             .map(|record| (record.id, opaque_record_id(record).0))
             .collect::<BTreeMap<_, _>>();
         opaque_sources.reserve(opaque_ids.len());
         for record in exchange.records.values() {
-            if typed_records.contains(&record.id) {
+            if session.typed_records.contains(&record.id) {
                 continue;
             }
             let kind = record
@@ -472,10 +401,10 @@ fn decode_exchange_mode(
             .iter()
             .flat_map(|source| source.links.iter().copied())
             .collect::<BTreeSet<_>>();
-        source_targets = record_targets(&ir, |record_id| target_ids.contains(&record_id));
+        source_targets = record_targets(&session.ir, |record_id| target_ids.contains(&record_id));
     } else {
         for record in exchange.records.values() {
-            if typed_records.contains(&record.id) {
+            if session.typed_records.contains(&record.id) {
                 continue;
             }
             let kind = record
@@ -488,23 +417,24 @@ fn decode_exchange_mode(
         }
     }
     let accounting = {
-        if let Some(ctx) = ctx {
+        if let Some(ctx) = session.ctx {
             ctx.charge_work(
                 u64::try_from(input.len()).unwrap_or(u64::MAX),
                 "step_byte_accounting",
             )?;
         }
-        let _reservation = ctx
+        let _reservation = session
+            .ctx
             .map(|ctx| ctx.reserve_scoped(input.len() as u64, "step_byte_accounting", None))
             .transpose()?;
-        byte_accounting(input, exchange, &typed_records)
+        byte_accounting(input, exchange, &session.typed_records)
     };
     if retain_opaque {
         let signature_spans = std::mem::take(&mut exchange.signatures);
         exchange.release_source_graph();
         let mut opaque = Vec::with_capacity(opaque_sources.len() + signature_spans.len());
         for source in opaque_sources {
-            let bytes = if let Some(ctx) = ctx {
+            let bytes = if let Some(ctx) = session.ctx {
                 ctx.charge_collection_items(source.reference_work, "step_opaque_record_links")?;
                 ctx.copy_retained(&input[source.span.clone()], "step_opaque_record", None)?
             } else {
@@ -530,14 +460,14 @@ fn decode_exchange_mode(
             });
         }
         for (index, signature) in signature_spans.into_iter().enumerate() {
-            let bytes = if let Some(ctx) = ctx {
+            let bytes = if let Some(ctx) = session.ctx {
                 ctx.copy_retained(&input[signature.clone()], "step_signature_record", None)?
             } else {
                 input[signature.clone()].to_vec()
             };
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord {
-                id: UnknownId(format!("step:signature#{index}")),
+                id: crate::ids::StepIdentity::signature(index),
                 offset: signature.start as u64,
                 byte_len: signature.len() as u64,
                 sha256: sha256_hex(&bytes),
@@ -545,9 +475,9 @@ fn decode_exchange_mode(
                 links: Vec::new(),
             });
         }
-        source_fidelity.attach_native_unknown_records(&mut ir, "step", opaque)?;
+        source_fidelity.attach_native_unknown_records(&mut session.ir, "step", opaque)?;
     }
-    if let Some(source) = &mut ir.source {
+    if let Some(source) = &mut session.ir.source {
         source
             .attributes
             .insert("bytes_structural".into(), accounting.structural.to_string());
@@ -563,8 +493,8 @@ fn decode_exchange_mode(
         );
     }
     if accounting.unclassified > 0 {
-        report.losses.push(LossNote {
-            code: LossKind::DecodeDiagnostic,
+        session.report.losses.push(LossNote {
+            code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
             severity: Severity::Error,
             message: format!(
                 "STEP byte accounting left {} byte(s) unclassified",
@@ -573,56 +503,21 @@ fn decode_exchange_mode(
             provenance: None,
         });
     }
-    report.notes.push(format!(
+    session.report.notes.push(format!(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
         accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
     ));
-    report
+    session
+        .report
         .losses
         .extend(counts.into_iter().map(|(name, count)| LossNote {
-            code: cadmpeg_ir::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Warning,
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
         }));
-    charge_pending_ir_entities(
-        ctx,
-        &ir,
-        &mut admitted_ir_entities,
-        "step_admit_ir_entities",
-    )?;
-    Ok((
-        DecodeResult::new(ir, report, source_fidelity),
-        opaque_offsets,
-    ))
-}
-
-fn charge_semantic_stage(
-    ctx: Option<&DecodeContext<'_>>,
-    input_work: u64,
-    ir: &CadIr,
-    admitted_ir_entities: &mut u64,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    charge_pending_ir_entities(ctx, ir, admitted_ir_entities, operation)?;
-    let output_work = u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX);
-    let units = input_work.saturating_add(output_work);
-    ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
-}
-
-fn charge_pending_ir_entities(
-    ctx: Option<&DecodeContext<'_>>,
-    ir: &CadIr,
-    admitted_ir_entities: &mut u64,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let current_entities = u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX);
-    let additional_entities = current_entities.saturating_sub(*admitted_ir_entities);
-    if let Some(ctx) = ctx {
-        ctx.charge_entities(additional_entities, operation)?;
-    }
-    *admitted_ir_entities = current_entities;
-    Ok(())
+    session.charge_pending_ir_entities("step_admit_ir_entities")?;
+    Ok((session.into_result(source_fidelity), opaque_offsets))
 }
 
 /// Count the source graph nodes that each semantic pass may inspect.
@@ -766,7 +661,7 @@ fn retain_unowned_carriers(
                 .any(|partial| partial.name == "PCURVE")
         })
         .map(|(&id, _)| id)
-        .filter(|id| !owned.contains(&format!("step:data:pcurve#{id}")))
+        .filter(|id| !owned.contains(&StepIdentity::data("pcurve", id)))
         .collect::<BTreeSet<_>>();
     let referenced = referenced_record_ids(exchange);
     let unowned_direct_carriers = ir
@@ -1032,7 +927,7 @@ fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId(format!("step:data:{kind}#{}", record.id))
+    UnknownId(crate::ids::StepIdentity::data(&kind, record.id))
 }
 
 fn record_targets(
@@ -1276,7 +1171,7 @@ mod tests {
         .expect("synthesized unknown record conversion")
         .0;
         assert!(result.report.losses.iter().any(|loss| {
-            loss.code == LossKind::DecodeDiagnostic
+            loss.code == LossKind::shared(LossTaxonomy::DecodeDiagnostic)
                 && loss.severity == Severity::Error
                 && loss.message.contains("1 byte(s) unclassified")
         }));

@@ -424,17 +424,29 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "material_not_transferred",
+        "code": {
+          "namespace": "shared",
+          "code": "material_not_transferred",
+          "kind": "material_not_transferred"
+        },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
       },
       {
-        "code": "metadata_not_transferred",
+        "code": {
+          "namespace": "shared",
+          "code": "metadata_not_transferred",
+          "kind": "metadata_not_transferred"
+        },
         "severity": "warning",
         "message": "1 Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
       },
       {
-        "code": "metadata_not_transferred",
+        "code": {
+          "namespace": "shared",
+          "code": "metadata_not_transferred",
+          "kind": "metadata_not_transferred"
+        },
         "severity": "warning",
         "message": "1 Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
       }

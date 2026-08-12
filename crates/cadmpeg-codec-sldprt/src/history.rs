@@ -2498,7 +2498,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn projected_split_line_uses_the_unique_lower_source_sketch_signature() {
+    fn split_face_path_uses_the_prebound_source_sketch() {
         let dimensions = BTreeMap::from([("D1".into(), "<MOD-DIAM>85".into())]);
         let mut split = feature("split", Some("711"), 0);
         split.kind = "Split Line".into();
@@ -2508,11 +2508,15 @@ mod history_reference_tests {
             crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY.into(),
             crate::resolved_features::operations::SPLIT_LINE_PROJECTION_MODE.into(),
         );
+        split.properties.insert(
+            crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY.into(),
+            "sketch".into(),
+        );
         let mut sketch = feature("sketch", Some("705"), 1);
         sketch.xml_tag = "Sketch".into();
         sketch.kind = "Sketch".into();
         sketch.input_class = Some("moProfileFeature_c".into());
-        sketch.parameters = dimensions;
+        sketch.parameters = BTreeMap::from([("D1".into(), "<MOD-DIAM>2159mm".into())]);
         let history = FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -2538,20 +2542,6 @@ mod history_reference_tests {
             split_feature.dependencies,
             vec![neutral_feature_id(&sketch.id)]
         );
-
-        let mut ambiguous = history;
-        let mut duplicate = sketch;
-        duplicate.id = "duplicate-sketch".into();
-        duplicate.source_id = Some("704".into());
-        ambiguous.features.push(duplicate);
-        let projected = project_features(&[ambiguous]);
-        assert!(matches!(
-            projected
-                .iter()
-                .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
-                .map(|candidate| &candidate.definition),
-            Some(FeatureDefinition::Native { .. })
-        ));
     }
 
     #[test]
@@ -3383,7 +3373,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn legacy_history_extrusion_uses_preceding_profile_and_sole_depth() {
+    fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
         let mut profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
         profile.xml_tag = "Sketch".into();
         profile.kind = "Sketch".into();
@@ -3392,6 +3382,12 @@ mod history_reference_tests {
         extrusion.kind = "localized-boss-kind".into();
         extrusion.input_class = None;
         extrusion.parameters.insert("m".into(), "6.8".into());
+        extrusion.parameters.insert("aux-1".into(), "1.2".into());
+        extrusion.parameters.insert("aux-2".into(), "3.4".into());
+        extrusion.content = vec![
+            FeatureContent::Dimension("m".into()),
+            FeatureContent::Dimension("m".into()),
+        ];
         let history = FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -5703,12 +5699,8 @@ mod history_reference_tests {
             },
         ];
 
-        project_configuration_sketch_states(
-            &mut ir,
-            &[history],
-            &[lane],
-            &cadmpeg_ir::Annotations::default(),
-        );
+        let mut annotations = cadmpeg_ir::Annotations::default();
+        project_configuration_sketch_states(&mut ir, &[history], &[lane], &mut annotations);
 
         assert_eq!(ir.model.sketches.len(), 1);
         assert!(matches!(
@@ -5913,12 +5905,8 @@ mod history_reference_tests {
             feature_input_lane("second-lane", Some("1")),
         ];
 
-        project_configuration_sketch_states(
-            &mut ir,
-            &[],
-            &lanes,
-            &cadmpeg_ir::Annotations::default(),
-        );
+        let mut annotations = cadmpeg_ir::Annotations::default();
+        project_configuration_sketch_states(&mut ir, &[], &lanes, &mut annotations);
 
         assert!(ir.model.configurations.iter().all(|configuration| matches!(
             &configuration.feature_states[&feature_id].definition,
@@ -6194,11 +6182,12 @@ mod history_reference_tests {
         );
         ir.model.configurations.push(configuration);
 
+        let mut annotations = cadmpeg_ir::Annotations::default();
         project_configuration_sketch_states(
             &mut ir,
             &[],
             &[feature_input_lane("lane", Some("0"))],
-            &cadmpeg_ir::Annotations::default(),
+            &mut annotations,
         );
 
         assert!(matches!(
@@ -6537,8 +6526,20 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
         .enumerate()
         .map(|(index, feature)| (feature.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut outgoing = vec![Vec::<usize>::new(); features.len()];
-    let mut indegree = vec![0usize; features.len()];
+    let Ok(mut outgoing) = cadmpeg_core::decode::alloc_filled(
+        features.len(),
+        Vec::<usize>::new(),
+        "sldprt feature regeneration adjacency",
+    ) else {
+        return false;
+    };
+    let Ok(mut indegree) = cadmpeg_core::decode::alloc_filled(
+        features.len(),
+        0usize,
+        "sldprt feature regeneration indegree",
+    ) else {
+        return false;
+    };
     for (consumer, feature) in features.iter().enumerate() {
         let mut predecessors = feature
             .dependencies
@@ -7364,8 +7365,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Draft) {
         project_draft(feature)
     } else if class == Some(FeatureClass::SplitFace) {
-        project_split_face(feature, native_by_source, history_features)
-            .unwrap_or_else(|| native_definition(feature))
+        project_split_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Combine) {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::CutWithSurface) {
@@ -7403,41 +7403,23 @@ fn project_definition(
     }
 }
 
-fn project_split_face(
-    feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
-    history_features: &[Feature],
-) -> Option<FeatureDefinition> {
+fn project_split_face(feature: &Feature) -> Option<FeatureDefinition> {
     if feature.input_class.as_deref() != Some("moPLine_c")
         || feature
             .properties
             .get(crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY)
             .map(String::as_str)
             != Some(crate::resolved_features::operations::SPLIT_LINE_PROJECTION_MODE)
-        || feature.parameters.is_empty()
     {
         return None;
     }
-    let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
-    let mut candidates = history_features.iter().filter(|candidate| {
-        candidate.parent == feature.parent
-            && classify(candidate) == Some(FeatureClass::Sketch)
-            && candidate.input_class.as_deref() == Some("moProfileFeature_c")
-            && candidate.parameters == feature.parameters
-            && candidate
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok())
-                .is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
-    });
-    let tool = candidates.next()?;
-    if candidates.next().is_some() {
-        return None;
-    }
-    let native = native_by_source.get(tool.source_id.as_deref()?)?;
+    let native = feature
+        .properties
+        .get(crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY)
+        .map(String::as_str)?;
     Some(FeatureDefinition::SplitFace {
         targets: FaceSelection::Unresolved,
-        tool: SplitFaceTool::Path(PathRef::Native((*native).into())),
+        tool: SplitFaceTool::Path(PathRef::Native(native.into())),
     })
 }
 
@@ -7950,9 +7932,21 @@ fn project_extrude(
     native_by_source: &HashMap<&str, &str>,
     features_by_source: &HashMap<&str, &Feature>,
 ) -> Option<FeatureDefinition> {
-    let legacy_profile = (feature.input_class.is_none()
+    let source_dimensions = feature
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            FeatureContent::Dimension(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let source_depth = (source_dimensions.len() == 1)
+        .then(|| source_dimensions.iter().copied().next())
+        .flatten();
+    let legacy_history_extrusion = feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
-        && feature.parameters.len() == 1)
+        && source_depth.is_some();
+    let legacy_profile = legacy_history_extrusion
         .then(|| {
             let source = feature.source_id.as_deref()?.parse::<i64>().ok()?;
             features_by_source
@@ -7982,6 +7976,15 @@ fn project_extrude(
             .or_else(|| parse_positive_dimension_length_mm(sole))
             .map(Length)
     };
+    let legacy_length = || {
+        source_depth
+            .and_then(|name| feature.parameters.get(name))
+            .and_then(|value| {
+                parse_positive_length_mm(value)
+                    .or_else(|| parse_positive_dimension_length_mm(value))
+            })
+            .map(Length)
+    };
     let length = |name| {
         feature
             .parameters
@@ -8006,7 +8009,6 @@ fn project_extrude(
             offset: None,
         },
     };
-    let legacy_history_extrusion = legacy_profile.is_some();
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
             && !feature.parameters.contains_key("D1")
@@ -8014,7 +8016,10 @@ fn project_extrude(
         {
             one_sided(Termination::Unresolved)
         }
-        None | Some("Blind") => match length("Depth").or_else(sole_length) {
+        None | Some("Blind") => match length("Depth")
+            .or_else(|| legacy_history_extrusion.then(legacy_length).flatten())
+            .or_else(sole_length)
+        {
             Some(length) => one_sided(Termination::Blind { length }),
             None => one_sided(Termination::Unresolved),
         },
@@ -10652,7 +10657,7 @@ fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     }
 }
 
-fn parse_dimension_display_length(expression: &str) -> Option<f64> {
+pub(crate) fn parse_dimension_display_length(expression: &str) -> Option<f64> {
     let expression = strip_dimension_count(expression.trim());
     let value = strip_diameter_modifier(expression)
         .or_else(|| strip_radius_modifier(expression))
@@ -10843,7 +10848,7 @@ pub(crate) fn enrich_history_parameters_values_only(
 
 /// The shared native-lane enrichment prefix, declared once for both codec
 /// directions. Runs the ordered extrusion-termination, combine, sweep-path,
-/// sketch-block, parameter, reference-plane, reference-point,
+/// sketch-block, split-line, parameter, reference-plane, reference-point,
 /// coordinate-system, PMI, evaluated-parameter, reference-axis, and
 /// revolution-input enrichments; the read path additionally applies
 /// hole-construction enrichment (selected by `mode`).
@@ -10859,10 +10864,10 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
         histories, lanes,
     );
+    crate::resolved_features::operations::enrich_history_split_lines(histories, lanes);
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
     crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
     enrich_history_parameters_semantic(histories, lanes);
-    crate::resolved_features::operations::enrich_history_split_line_modes(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
         crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
@@ -11087,7 +11092,7 @@ pub(crate) fn project_configuration_sketch_states(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-    annotations: &cadmpeg_ir::Annotations,
+    annotations: &mut cadmpeg_ir::Annotations,
 ) {
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
@@ -11168,7 +11173,8 @@ pub(crate) fn project_configuration_sketch_states(
         crate::resolved_features::profiles::bind_sketch_profiles(
             &mut features,
             &mut ir.model.sketches,
-            &ir.model.sketch_entities,
+            &mut ir.model.sketch_entities,
+            &mut ir.model.sketch_constraints,
             &parameters,
             histories,
             scoped_lanes,
@@ -12391,11 +12397,12 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
     );
     align_configuration_parameter_kinds(&mut current_projection);
+    let mut current_annotations = annotations.clone();
     project_configuration_sketch_states(
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
-        annotations,
+        &mut current_annotations,
     );
     let current_parameter_hash =
         configuration_parameter_value_hash(&current_projection.model.configurations);
@@ -12432,11 +12439,12 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
     );
     align_configuration_parameter_kinds(&mut projected);
+    let mut projected_annotations = annotations.clone();
     project_configuration_sketch_states(
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
-        annotations,
+        &mut projected_annotations,
     );
     if configuration_parameter_value_hash(&projected.model.configurations)
         != configuration_parameter_value_hash(&ir.model.configurations)
@@ -13269,6 +13277,3897 @@ fn restore_equivalent_parameter_expressions(
     }
 }
 
+type NeutralFeatureEncoding = (String, BTreeMap<String, String>, BTreeMap<String, String>);
+
+struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
+    feature: &'context cadmpeg_ir::features::Feature,
+    existing: Option<&'context Feature>,
+    principal_planes_by_record: &'context HashMap<String, cadmpeg_ir::features::PrincipalPlane>,
+    record_sources: &'context HashMap<String, String>,
+    retained_tree_node_roles: &'context HashMap<String, FeatureTreeNodeRole>,
+    feature_sources: &'context HashMap<&'feature_key FeatureId, &'source str>,
+    sketch_sources: &'context HashMap<cadmpeg_ir::sketches::SketchId, String>,
+    parent_sources: &'context HashMap<FeatureId, String>,
+    resolved_parameter_names: &'context HashMap<String, HashSet<String>>,
+}
+
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "Per-feature encoders use one fallible dispatch interface."
+)]
+impl NeutralFeatureEncoder<'_, '_, '_> {
+    fn encode(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        match &self.feature.definition {
+            FeatureDefinition::TreeNode { .. } => self.encode_tree_node(),
+            FeatureDefinition::CosmeticThread { .. } => self.encode_cosmetic_thread(),
+            FeatureDefinition::SketchBlockDefinition { .. } => {
+                self.encode_sketch_block_definition()
+            }
+            FeatureDefinition::SketchBlockInstance { .. } => self.encode_sketch_block_instance(),
+            FeatureDefinition::Native { .. } => self.encode_native(),
+            FeatureDefinition::StoredGeometry => self.encode_stored_geometry(),
+            FeatureDefinition::DerivedGeometry { .. } => self.encode_derived_geometry(),
+            FeatureDefinition::ImportedGeometry { .. } => self.encode_imported_geometry(),
+            FeatureDefinition::Primitive { .. } => self.encode_primitive(),
+            FeatureDefinition::DatumPrincipalPlane { .. } => self.encode_datum_principal_plane(),
+            FeatureDefinition::DatumPlaneUnresolved => self.encode_datum_plane_unresolved(),
+            FeatureDefinition::BoundarySurfaceUnresolved => {
+                self.encode_boundary_surface_unresolved()
+            }
+            FeatureDefinition::DatumPlane { .. } => self.encode_datum_plane(),
+            FeatureDefinition::DatumOffsetPlane { .. } => self.encode_datum_offset_plane(),
+            FeatureDefinition::TrimSurface { .. } => self.encode_trim_surface(),
+            FeatureDefinition::ExtendSurface { .. } => self.encode_extend_surface(),
+            FeatureDefinition::RuledSurface { .. } => self.encode_ruled_surface(),
+            FeatureDefinition::DatumAxis { .. } => self.encode_datum_axis(),
+            FeatureDefinition::DatumPoint { .. } => self.encode_datum_point(),
+            FeatureDefinition::DatumCoordinateSystem { .. } => {
+                self.encode_datum_coordinate_system()
+            }
+            FeatureDefinition::EquationCurve { .. } => self.encode_equation_curve(),
+            FeatureDefinition::ProjectedCurve { .. } => self.encode_projected_curve(),
+            FeatureDefinition::CompositeCurve { .. } => self.encode_composite_curve(),
+            FeatureDefinition::Helix { .. } => self.encode_helix(),
+            FeatureDefinition::HelixNativeAxis { .. } => self.encode_helix_native_axis(),
+            FeatureDefinition::Wrap { .. } => self.encode_wrap(),
+            FeatureDefinition::Sketch { .. } => self.encode_sketch(),
+            FeatureDefinition::SpatialSketch { .. } => self.encode_spatial_sketch(),
+            FeatureDefinition::Extrude { .. } => self.encode_extrude(),
+            FeatureDefinition::Fillet { .. } => self.encode_fillet(),
+            FeatureDefinition::Chamfer { .. } => self.encode_chamfer(),
+            FeatureDefinition::OffsetShape { .. } => self.encode_offset_shape(),
+            FeatureDefinition::PostProcess { .. } => self.encode_post_process(),
+            FeatureDefinition::PointGeometry { .. }
+            | FeatureDefinition::LineSegment { .. }
+            | FeatureDefinition::CircularArc { .. }
+            | FeatureDefinition::EllipticArc { .. }
+            | FeatureDefinition::Polyline { .. }
+            | FeatureDefinition::RegularPolygonCurve { .. }
+            | FeatureDefinition::PlanarPatch { .. }
+            | FeatureDefinition::FaceFromShapes { .. } => self.encode_curve_geometry(),
+            FeatureDefinition::Compound { .. }
+            | FeatureDefinition::RefineShape { .. }
+            | FeatureDefinition::ReverseShape { .. }
+            | FeatureDefinition::RuledBetweenCurves { .. }
+            | FeatureDefinition::SectionShape { .. }
+            | FeatureDefinition::MirrorShape { .. }
+            | FeatureDefinition::ProjectOnSurface { .. } => self.encode_shape_operation(),
+            FeatureDefinition::Shell { .. } => self.encode_shell(),
+            FeatureDefinition::Thicken { .. } => self.encode_thicken(),
+            FeatureDefinition::OffsetSurface { .. } => self.encode_offset_surface(),
+            FeatureDefinition::KnitSurface { .. } => self.encode_knit_surface(),
+            FeatureDefinition::FilledSurface { .. } => self.encode_filled_surface(),
+            FeatureDefinition::Draft { .. } => self.encode_draft(),
+            FeatureDefinition::Combine { .. } => self.encode_combine(),
+            FeatureDefinition::CutWithSurface { .. } => self.encode_cut_with_surface(),
+            FeatureDefinition::DeleteBody { .. } => self.encode_delete_body(),
+            FeatureDefinition::DeleteFace { .. } => self.encode_delete_face(),
+            FeatureDefinition::ReplaceFace { .. } => self.encode_replace_face(),
+            FeatureDefinition::MoveFace { .. } => self.encode_move_face(),
+            FeatureDefinition::MoveBody { .. } => self.encode_move_body(),
+            FeatureDefinition::Dome { .. } => self.encode_dome(),
+            FeatureDefinition::Flex { .. } => self.encode_flex(),
+            FeatureDefinition::Scale { .. } => self.encode_scale(),
+            FeatureDefinition::Hole { .. } => self.encode_hole(),
+            FeatureDefinition::Revolve { .. } => self.encode_revolve(),
+            FeatureDefinition::Sweep { .. } => self.encode_sweep(),
+            FeatureDefinition::Loft { .. } => self.encode_loft(),
+            FeatureDefinition::Rib { .. } => self.encode_rib(),
+            FeatureDefinition::Pattern { .. } => self.encode_pattern(),
+            FeatureDefinition::HelicalSweep { .. } => self.encode_helical_sweep(),
+            FeatureDefinition::Binder { .. } => self.encode_binder(),
+            FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::Block { .. }
+            | FeatureDefinition::ExtractBody { .. }
+            | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::FreeformSurfaceUnresolved
+            | FeatureDefinition::DraftUnresolved
+            | FeatureDefinition::FaceBlend { .. }
+            | FeatureDefinition::SewBodies { .. }
+            | FeatureDefinition::TrimBodies { .. } => self.encode_explicitly_unsupported(),
+            _ => self.encode_unsupported(),
+        }
+    }
+
+    fn encode_tree_node(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::TreeNode {
+            role,
+            children,
+            active_child,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let retained_tree_node_roles = self.retained_tree_node_roles;
+        Ok({
+            if !children.is_empty() || active_child.is_some() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses explicit tree membership",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| retained_tree_node_roles.get(&record.id) != Some(role))
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes feature-tree node role",
+                    feature.id
+                )));
+            }
+            (
+                existing.map_or_else(
+                    || feature_tree_node_kind(*role).into(),
+                    |record| record.kind.clone(),
+                ),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                feature.source_properties.clone(),
+            )
+        })
+    }
+
+    fn encode_cosmetic_thread(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::CosmeticThread {
+            face,
+            diameter,
+            extent,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let Some(record) =
+                existing.filter(|record| classify(record) == Some(FeatureClass::CosmeticThread))
+            else {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} adds a cosmetic thread",
+                    feature.id
+                )));
+            };
+            let mut parameters = record.parameters.clone();
+            if let Some(diameter) = diameter {
+                let prefix = record
+                    .parameters
+                    .get("D2")
+                    .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
+                    .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;");
+                parameters.insert(
+                    "D2".into(),
+                    format!("{prefix}{}", format_f64_literal(diameter.0)),
+                );
+            }
+            match extent {
+                Some(CosmeticThreadExtent::Blind { length }) => {
+                    parameters.insert(
+                        "D1".into(),
+                        format_length_like(
+                            length.0,
+                            record.parameters.get("D1").map(String::as_str),
+                        ),
+                    );
+                }
+                Some(CosmeticThreadExtent::Through) => {
+                    parameters.remove("D1");
+                }
+                None => {}
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(value) = face_selection_value(face) {
+                properties.insert("Face".into(), value);
+            } else if !matches!(face, FaceSelection::Unresolved) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes cosmetic-thread face selection",
+                    feature.id
+                )));
+            }
+            (record.kind.clone(), parameters, properties)
+        })
+    }
+
+    fn encode_sketch_block_definition(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::SketchBlockDefinition { sketch } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if sketch.is_some() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes sketch-block geometry",
+                    feature.id
+                )));
+            }
+            let record = existing.filter(|record| {
+                feature_input_class(record, NativeClassKind::SketchBlockDefinition)
+            });
+            let Some(record) = record else {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires a retained sketch-block definition",
+                    feature.id
+                )));
+            };
+            (
+                record.kind.clone(),
+                record.parameters.clone(),
+                record.properties.clone(),
+            )
+        })
+    }
+
+    fn encode_sketch_block_instance(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::SketchBlockInstance { block, placement } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let feature_sources = self.feature_sources;
+        Ok({
+            let retained_source = existing
+                .and_then(|record| record.properties.get("BlockDefinition"))
+                .map(String::as_str);
+            let block_source = block
+                .as_ref()
+                .and_then(|block| feature_sources.get(block).copied());
+            let retained_placement = existing.and_then(sketch_block_placement);
+            if retained_source != block_source || retained_placement.as_ref() != placement.as_ref()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes sketch-block instance semantics",
+                    feature.id
+                )));
+            }
+            let record = existing
+                .filter(|record| feature_input_class(record, NativeClassKind::SketchBlockInstance));
+            let Some(record) = record else {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires a retained sketch-block instance",
+                    feature.id
+                )));
+            };
+            (
+                record.kind.clone(),
+                record.parameters.clone(),
+                record.properties.clone(),
+            )
+        })
+    }
+
+    fn encode_native(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Native {
+            kind,
+            parameters,
+            properties,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Ok({
+            let mut merged = feature.source_properties.clone();
+            merged.extend(properties.clone());
+            (kind.clone(), parameters.clone(), merged)
+        })
+    }
+
+    fn encode_stored_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::StoredGeometry = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok((
+            existing.map_or_else(|| "Feature".into(), |record| record.kind.clone()),
+            existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default(),
+            feature.source_properties.clone(),
+        ))
+    }
+
+    fn encode_derived_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DerivedGeometry { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses unsupported copied-geometry semantics",
+            feature.id
+        )))
+    }
+
+    fn encode_imported_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::ImportedGeometry { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses unsupported external-import semantics",
+            feature.id
+        )))
+    }
+
+    fn encode_primitive(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Primitive { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses unsupported analytic-primitive semantics",
+            feature.id
+        )))
+    }
+
+    fn encode_datum_principal_plane(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DatumPrincipalPlane { plane } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let principal_planes_by_record = self.principal_planes_by_record;
+        Ok({
+            let record = existing.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires a retained principal-plane record",
+                    feature.id
+                ))
+            })?;
+            if principal_planes_by_record.get(&record.id) != Some(plane) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes its principal-plane role",
+                    feature.id
+                )));
+            }
+            (
+                record.kind.clone(),
+                record.parameters.clone(),
+                feature.source_properties.clone(),
+            )
+        })
+    }
+
+    fn encode_datum_plane_unresolved(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DatumPlaneUnresolved = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} has unresolved datum-plane construction",
+            feature.id
+        )))
+    }
+
+    fn encode_boundary_surface_unresolved(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::BoundarySurfaceUnresolved = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} has unresolved boundary-surface construction",
+            feature.id
+        )))
+    }
+
+    fn encode_datum_plane(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if !valid_plane_frame(*normal, *u_axis) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported reference-plane semantics",
+                    feature.id
+                )));
+            }
+            if ![origin.x, origin.y, origin.z]
+                .iter()
+                .all(|value| value.is_finite())
+            {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has a non-finite reference-plane origin",
+                    feature.id
+                )));
+            }
+            require_same_family(existing, &feature.id, &["ReferencePlane"])?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Origin".into(), format_point3_mm(*origin));
+            properties.insert("Normal".into(), format_vector3(*normal));
+            properties.insert("UAxis".into(), format_vector3(*u_axis));
+            (
+                existing.map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_datum_offset_plane(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DatumOffsetPlane {
+            reference,
+            distance,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let parent_sources = self.parent_sources;
+        Ok({
+            if !distance.0.is_finite() {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has a non-finite reference-plane offset",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !is_offset_plane(record)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes operation family",
+                    feature.id
+                )));
+            }
+            let mut properties = feature.source_properties.clone();
+            match reference {
+                Some(DatumPlaneReference::Feature(reference)) => {
+                    let source = parent_sources.get(reference).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing datum plane",
+                            feature.id
+                        ))
+                    })?;
+                    let key = if properties.contains_key("Plane")
+                        && !properties.contains_key("Reference")
+                    {
+                        "Plane"
+                    } else {
+                        "Reference"
+                    };
+                    properties.insert(key.into(), source.clone());
+                }
+                Some(DatumPlaneReference::Face { .. }) => {
+                    let Some(record) = existing else {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} cannot create a face-supported datum plane",
+                            feature.id
+                        )));
+                    };
+                    properties = record.properties.clone();
+                }
+                None if existing.is_some() => {}
+                None => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved datum-plane reference",
+                        feature.id
+                    )));
+                }
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            parameters.insert(
+                "D1".into(),
+                format_length_like(
+                    distance.0,
+                    existing
+                        .and_then(|record| record.parameters.get("D1"))
+                        .map(String::as_str),
+                ),
+            );
+            (
+                existing.map_or_else(|| "Plane".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_trim_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::TrimSurface { faces, tool, keep } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let sketch_sources = self.sketch_sources;
+        Ok({
+            let faces = face_selection_value(faces).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no trim-surface input faces",
+                    feature.id
+                ))
+            })?;
+            let tool = path_source(tool, record_sources, sketch_sources).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} references a missing trim path",
+                    feature.id
+                ))
+            })?;
+            require_same_family(existing, &feature.id, &["TrimSurface", "SurfaceTrim"])?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Faces".into(), faces);
+            properties.insert("Tool".into(), tool);
+            properties.insert(
+                "Keep".into(),
+                crate::feature_schema::trim_region_token(*keep).into(),
+            );
+            (
+                existing.map_or_else(|| "TrimSurface".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_extend_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::ExtendSurface {
+            faces,
+            distance,
+            method,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let faces = face_selection_value(faces).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no extend-surface input faces",
+                    feature.id
+                ))
+            })?;
+            require_same_family(existing, &feature.id, &["ExtendSurface", "SurfaceExtend"])?;
+            let distance = distance.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved surface extension distance",
+                    feature.id
+                ))
+            })?;
+            if !distance.0.is_finite() || distance.0 <= 0.0 {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has an invalid surface extension",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            parameters.insert("Distance".into(), format_length_mm(distance.0));
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Faces".into(), faces);
+            properties.insert(
+                "Method".into(),
+                crate::feature_schema::surface_extension_token(*method).into(),
+            );
+            (
+                existing.map_or_else(|| "ExtendSurface".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_ruled_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::RuledSurface {
+            edges,
+            support_faces,
+            mode,
+            angle,
+            alternate_face,
+            corner,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if angle.is_some() || alternate_face.is_some() || corner.is_some() {
+                return Err(CodecError::Malformed(format!(
+                                   "SLDPRT feature {} cannot encode ruled-surface angle, face-side, or corner semantics",
+                                   feature.id
+                               )));
+            }
+            let edges = edge_selection_value(edges).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no ruled-surface boundary edges",
+                    feature.id
+                ))
+            })?;
+            let support_faces = face_selection_value(support_faces).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no ruled-surface supports",
+                    feature.id
+                ))
+            })?;
+            require_same_family(existing, &feature.id, &["RuledSurface", "SurfaceRuled"])?;
+            let (mode_name, direction, distance) = match mode {
+                RuledSurfaceMode::Normal { distance } => ("Normal", None, *distance),
+                RuledSurfaceMode::Tangent { distance } => ("Tangent", None, *distance),
+                RuledSurfaceMode::Direction {
+                    direction,
+                    distance,
+                } => {
+                    require_direction(*direction, &feature.id, "ruled-surface direction")?;
+                    ("Direction", Some(*direction), *distance)
+                }
+            };
+            if !distance.0.is_finite() || distance.0 <= 0.0 {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has an invalid ruled-surface distance",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            parameters.insert("Distance".into(), format_length_mm(distance.0));
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Edges".into(), edges);
+            properties.insert("SupportFaces".into(), support_faces);
+            properties.insert("Mode".into(), mode_name.into());
+            match direction {
+                Some(direction) => {
+                    properties.insert("Direction".into(), format_vector3(direction));
+                }
+                None => {
+                    properties.remove("Direction");
+                }
+            }
+            (
+                existing.map_or_else(|| "RuledSurface".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_datum_axis(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DatumAxis { origin, direction } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if !valid_direction(*direction) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported reference-axis semantics",
+                    feature.id
+                )));
+            }
+            if ![origin.x, origin.y, origin.z]
+                .iter()
+                .all(|value| value.is_finite())
+            {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has a non-finite reference-axis origin",
+                    feature.id
+                )));
+            }
+            require_same_family(existing, &feature.id, &["ReferenceAxis"])?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Origin".into(), format_point3_mm(*origin));
+            properties.insert("Direction".into(), format_vector3(*direction));
+            (
+                existing.map_or_else(|| "ReferenceAxis".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_datum_point(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DatumPoint { position, .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if ![position.x, position.y, position.z]
+                .iter()
+                .all(|value| value.is_finite())
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported reference-point semantics",
+                    feature.id
+                )));
+            }
+            require_same_family(existing, &feature.id, &["ReferencePoint"])?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Position".into(), format_point3_mm(*position));
+            (
+                existing.map_or_else(|| "ReferencePoint".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_datum_coordinate_system(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DatumCoordinateSystem {
+            origin,
+            x_axis,
+            y_axis,
+            z_axis,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if !valid_coordinate_frame(*origin, *x_axis, *y_axis, *z_axis) {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has an invalid coordinate-system frame",
+                    feature.id
+                )));
+            }
+            require_same_family(
+                existing,
+                &feature.id,
+                &["CoordinateSystem", "ReferenceCoordinateSystem"],
+            )?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Origin".into(), format_point3_mm(*origin));
+            properties.insert("XAxis".into(), format_vector3(*x_axis));
+            properties.insert("YAxis".into(), format_vector3(*y_axis));
+            properties.insert("ZAxis".into(), format_vector3(*z_axis));
+            (
+                existing.map_or_else(|| "CoordinateSystem".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_equation_curve(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::EquationCurve {
+            parameter,
+            x_expression,
+            y_expression,
+            z_expression,
+            start,
+            end,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if parameter.trim().is_empty()
+                || x_expression.trim().is_empty()
+                || y_expression.trim().is_empty()
+                || z_expression.trim().is_empty()
+                || !start.is_finite()
+                || !end.is_finite()
+                || start >= end
+            {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has an invalid equation curve",
+                    feature.id
+                )));
+            }
+            require_same_family(
+                existing,
+                &feature.id,
+                &["EquationDrivenCurve", "EquationCurve"],
+            )?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Parameter".into(), parameter.clone());
+            properties.insert("XEquation".into(), x_expression.clone());
+            properties.insert("YEquation".into(), y_expression.clone());
+            properties.insert("ZEquation".into(), z_expression.clone());
+            properties.insert("Start".into(), start.to_string());
+            properties.insert("End".into(), end.to_string());
+            (
+                existing.map_or_else(
+                    || "EquationDrivenCurve".into(),
+                    |record| record.kind.clone(),
+                ),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_projected_curve(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::ProjectedCurve {
+            source,
+            target_faces,
+            direction,
+            bidirectional,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let sketch_sources = self.sketch_sources;
+        Ok({
+            let source = path_source(source, record_sources, sketch_sources).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} references a missing projection source",
+                    feature.id
+                ))
+            })?;
+            let target_faces = face_selection_value(target_faces).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no projection target faces",
+                    feature.id
+                ))
+            })?;
+            require_same_family(
+                existing,
+                &feature.id,
+                &["ProjectedCurve", "ProjectionCurve"],
+            )?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Source".into(), source);
+            properties.insert("TargetFaces".into(), target_faces);
+            if let Some(bidirectional) = bidirectional {
+                properties.insert("Bidirectional".into(), bidirectional.to_string());
+            }
+            match direction {
+                CurveProjectionDirection::Vector(direction) => {
+                    require_direction(*direction, &feature.id, "projection direction")?;
+                    properties.insert("Direction".into(), format_vector3(*direction));
+                }
+                CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal) => {
+                    properties.remove("Direction");
+                }
+                CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved projection direction",
+                        feature.id
+                    )));
+                }
+            }
+            (
+                existing.map_or_else(|| "ProjectedCurve".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_composite_curve(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::CompositeCurve { segments, closed } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let sketch_sources = self.sketch_sources;
+        Ok({
+            if segments.is_empty() {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no composite-curve segments",
+                    feature.id
+                )));
+            }
+            require_same_family(existing, &feature.id, &["CompositeCurve"])?;
+            let segments = segments
+                .iter()
+                .map(|segment| {
+                    path_source(segment, record_sources, sketch_sources).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing composite segment",
+                            feature.id
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Segments".into(), segments.join(";"));
+            properties.insert("Closed".into(), closed.to_string());
+            (
+                existing.map_or_else(|| "CompositeCurve".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_helix(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Helix {
+            axis_origin,
+            axis_direction,
+            radius,
+            pitch,
+            revolutions,
+            start_angle,
+            clockwise,
+            radial_growth,
+            cone_angle,
+            segment_turns,
+            construction_style,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if radial_growth.is_some()
+                || cone_angle.is_some()
+                || segment_turns.is_some()
+                || construction_style.is_some()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported helix construction controls",
+                    feature.id
+                )));
+            }
+            if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
+                .into_iter()
+                .all(f64::is_finite)
+                || !valid_direction(*axis_direction)
+                || !radius.0.is_finite()
+                || radius.0 <= 0.0
+                || !revolutions.is_finite()
+                || *revolutions <= 0.0
+                || !start_angle.0.is_finite()
+            {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has invalid helix geometry",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !is_helix(record)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes operation family",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            parameters.insert("Radius".into(), format_length_mm(radius.0));
+            parameters.insert("Pitch".into(), format_length_mm(pitch.0));
+            parameters.insert("Revolutions".into(), revolutions.to_string());
+            parameters.insert("StartAngle".into(), format_angle_rad(start_angle.0));
+            let mut properties = feature.source_properties.clone();
+            properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
+            properties.insert("AxisDirection".into(), format_vector3(*axis_direction));
+            properties.insert("Clockwise".into(), clockwise.to_string());
+            (
+                existing.map_or_else(|| "Helix".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_helix_native_axis(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::HelixNativeAxis {
+            axis_native_ref,
+            axial_rise,
+            pitch,
+            revolutions,
+            start_angle,
+            clockwise,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if axis_native_ref.is_empty()
+                || !axial_rise.0.is_finite()
+                || !pitch.0.is_finite()
+                || !revolutions.is_finite()
+                || *revolutions <= 0.0
+                || !start_angle.0.is_finite()
+            {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has invalid native-axis helix geometry",
+                    feature.id
+                )));
+            }
+            let record = existing.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires a retained native helix axis",
+                    feature.id
+                ))
+            })?;
+            if !is_helix(record) || axis_native_ref != &record.id {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes its native helix axis",
+                    feature.id
+                )));
+            }
+            let mut parameters = record.parameters.clone();
+            parameters.insert(
+                "D3".into(),
+                format_length_like(
+                    axial_rise.0,
+                    record.parameters.get("D3").map(String::as_str),
+                ),
+            );
+            parameters.insert(
+                "D4".into(),
+                format_length_like(pitch.0, record.parameters.get("D4").map(String::as_str)),
+            );
+            parameters.insert("D5".into(), revolutions.to_string());
+            parameters.insert(
+                "D7".into(),
+                format_angle_like(
+                    start_angle.0,
+                    record.parameters.get("D7").map(String::as_str),
+                ),
+            );
+            let mut properties = feature.source_properties.clone();
+            if properties.contains_key("Clockwise") || *clockwise {
+                properties.insert("Clockwise".into(), clockwise.to_string());
+            }
+            (record.kind.clone(), parameters, properties)
+        })
+    }
+
+    fn encode_wrap(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Wrap {
+            profile,
+            face,
+            mode,
+            depth,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let feature_sources = self.feature_sources;
+        let sketch_sources = self.sketch_sources;
+        Ok({
+            require_same_family(existing, &feature.id, &["Wrap"])?;
+            let profile = profile_source(profile, record_sources, feature_sources, sketch_sources)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} references a missing wrap profile",
+                        feature.id
+                    ))
+                })?;
+            let face = face_selection_value(face).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no wrap target face",
+                    feature.id
+                ))
+            })?;
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            match mode {
+                WrapMode::Emboss | WrapMode::Deboss => {
+                    let depth = depth
+                        .filter(|value| value.0.is_finite() && value.0 > 0.0)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} has invalid wrap depth",
+                                feature.id
+                            ))
+                        })?;
+                    parameters.insert("Depth".into(), format_length_mm(depth.0));
+                }
+                WrapMode::Scribe => {
+                    if depth.is_some() {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} gives a scribe wrap a depth",
+                            feature.id
+                        )));
+                    }
+                    parameters.remove("Depth");
+                }
+            }
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Profile".into(), profile);
+            properties.insert("Face".into(), face);
+            properties.insert(
+                "Mode".into(),
+                match mode {
+                    WrapMode::Emboss => "Emboss",
+                    WrapMode::Deboss => "Deboss",
+                    WrapMode::Scribe => "Scribe",
+                }
+                .into(),
+            );
+            (
+                existing.map_or_else(|| "Wrap".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_sketch(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Sketch { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            require_same_family(existing, &feature.id, &["Sketch"])?;
+            (
+                existing.map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                feature.source_properties.clone(),
+            )
+        })
+    }
+
+    fn encode_spatial_sketch(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::SpatialSketch { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            require_same_family(existing, &feature.id, &["Sketch"])?;
+            (
+                "3DSketch".into(),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                feature.source_properties.clone(),
+            )
+        })
+    }
+
+    fn encode_extrude(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Extrude {
+            profile,
+            direction,
+            start,
+            extent,
+            op,
+            direction_source,
+            solid,
+            face_maker,
+            inner_wire_taper,
+            length_along_profile_normal,
+            allow_multi_profile_faces,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let feature_sources = self.feature_sources;
+        let sketch_sources = self.sketch_sources;
+        let resolved_parameter_names = self.resolved_parameter_names;
+        Ok({
+            // Writer accepts only a first-side draft; second-side draft or
+            // any side offset is rejected.
+            let (first_draft, second_side_draft, any_side_offset) = match extent {
+                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                    (side.draft, None, side.offset.is_some())
+                }
+                ExtrudeExtent::TwoSided { first, second } => (
+                    first.draft,
+                    second.draft,
+                    first.offset.is_some() || second.offset.is_some(),
+                ),
+            };
+            let extent_is_unresolved = matches!(
+                extent,
+                ExtrudeExtent::OneSided { side }
+                    if matches!(side.termination, Termination::Unresolved)
+            );
+            if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane)
+                || second_side_draft.is_some()
+                || direction_source.is_some()
+                || *solid == Some(false)
+                || face_maker.is_some()
+                || inner_wire_taper.is_some()
+                || any_side_offset
+                || length_along_profile_normal.is_some()
+                || allow_multi_profile_faces.is_some()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported extrusion construction controls",
+                    feature.id
+                )));
+            }
+            if *op == BooleanOp::Unresolved && existing.is_none() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires retained extrusion operation data",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !is_extrude(record)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported extrusion semantics",
+                    feature.id
+                )));
+            }
+            if let ProfileRef::Unresolved(owner) = profile {
+                let retained = existing.is_some_and(|record| {
+                    record.id == *owner && !record.properties.contains_key("Profile")
+                });
+                if !retained {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires retained extrusion profile data",
+                        feature.id
+                    )));
+                }
+            }
+            let implicit_profile = existing.is_some_and(|record| {
+                !record.properties.contains_key("Profile")
+                    && (matches!(profile, ProfileRef::Unresolved(owner) if owner == &record.id)
+                        || matches!(profile, ProfileRef::Native(native) if native == &record.id))
+            });
+            let profile_source = if implicit_profile {
+                None
+            } else {
+                Some(
+                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing extrusion profile",
+                                feature.id
+                            ))
+                        })?,
+                )
+            };
+            if let Some(record) = existing {
+                if !record.properties.contains_key("Operation")
+                    && *op != BooleanOp::Unresolved
+                    && extrude_feature_op(record).is_some_and(|native_op| native_op != *op)
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes its inferred extrusion operation",
+                        feature.id
+                    )));
+                }
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let positional_depth = (parameters.contains_key("D1")
+                || existing.is_some_and(|record| {
+                    resolved_parameter_names
+                        .get(&record.id)
+                        .is_some_and(|names| names.contains("D1"))
+                }))
+                && !parameters.contains_key("Depth");
+            let mut properties = feature.source_properties.clone();
+            if extent_is_unresolved && existing.is_none() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires retained extrusion extent data",
+                    feature.id
+                )));
+            }
+            if !extent_is_unresolved {
+                parameters.remove("Depth");
+                parameters.remove("Depth2");
+                parameters.remove("Draft");
+                properties.remove("Direction");
+                properties.remove("Face");
+                properties.remove("Vertex");
+            }
+            let unsupported_extent = || {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses an unsupported extrusion extent",
+                    feature.id
+                ))
+            };
+            match extent {
+                ExtrudeExtent::OneSided { side } => match &side.termination {
+                    Termination::Unresolved => {}
+                    Termination::Blind { length } => {
+                        if properties.contains_key("EndCondition") || existing.is_none() {
+                            properties.insert("EndCondition".into(), "Blind".into());
+                        }
+                        let key = if positional_depth { "D1" } else { "Depth" };
+                        parameters.insert(
+                            key.into(),
+                            format_length_like(
+                                length.0,
+                                existing
+                                    .and_then(|record| record.parameters.get(key))
+                                    .map(String::as_str),
+                            ),
+                        );
+                    }
+                    Termination::ThroughAll => {
+                        properties.insert("EndCondition".into(), "ThroughAll".into());
+                    }
+                    Termination::ThroughNext => {
+                        properties.insert("EndCondition".into(), "ThroughNext".into());
+                    }
+                    Termination::ToFirst | Termination::ToLast | Termination::ToShape { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported extrusion termination",
+                            feature.id
+                        )));
+                    }
+                    Termination::ToFace { face, offset }
+                        if face_selection_value(face).is_some() =>
+                    {
+                        let selection = face_selection_value(face).expect("guarded above");
+                        properties.insert("EndCondition".into(), "ToFace".into());
+                        properties.insert("Face".into(), selection);
+                        if let Some(offset) = offset {
+                            parameters.insert("Depth".into(), format_length_mm(offset.0));
+                        }
+                    }
+                    Termination::ToVertex { vertex }
+                        if vertex_selection_value(vertex).is_some() =>
+                    {
+                        let selection = vertex_selection_value(vertex).expect("guarded above");
+                        properties.insert("EndCondition".into(), "ToVertex".into());
+                        properties.insert("Vertex".into(), selection);
+                    }
+                    Termination::OffsetFromFace { face, offset }
+                        if face_selection_value(face).is_some() =>
+                    {
+                        let selection = face_selection_value(face).expect("guarded above");
+                        properties.insert("EndCondition".into(), "OffsetFromFace".into());
+                        properties.insert("Face".into(), selection);
+                        parameters.insert("Depth".into(), format_length_mm(offset.0));
+                    }
+                    Termination::ToFace { .. }
+                    | Termination::ToVertex { .. }
+                    | Termination::OffsetFromFace { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported extrusion termination selection",
+                            feature.id
+                        )));
+                    }
+                    Termination::Angle { .. } => return Err(unsupported_extent()),
+                },
+                ExtrudeExtent::Symmetric { side } => match &side.termination {
+                    Termination::Blind { length } => {
+                        properties.insert("EndCondition".into(), "Symmetric".into());
+                        parameters.insert("Depth".into(), format_length_mm(length.0));
+                    }
+                    _ => return Err(unsupported_extent()),
+                },
+                ExtrudeExtent::TwoSided { first, second } => {
+                    match (&first.termination, &second.termination) {
+                        (
+                            Termination::Blind { length: first },
+                            Termination::Blind { length: second },
+                        ) => {
+                            properties.insert("EndCondition".into(), "TwoSided".into());
+                            parameters.insert("Depth".into(), format_length_mm(first.0));
+                            parameters.insert("Depth2".into(), format_length_mm(second.0));
+                        }
+                        (Termination::ThroughAll, Termination::ThroughAll) => {
+                            properties.insert("EndCondition".into(), "ThroughAllBoth".into());
+                        }
+                        _ => return Err(unsupported_extent()),
+                    }
+                }
+            }
+            match direction {
+                cadmpeg_ir::features::ExtrudeDirection::Unresolved => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved extrusion direction",
+                        feature.id
+                    )));
+                }
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal => {
+                    properties.remove("Direction");
+                }
+                cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses a reversed profile-normal extrusion direction",
+                        feature.id
+                    )));
+                }
+                cadmpeg_ir::features::ExtrudeDirection::Explicit(direction) => {
+                    require_direction(*direction, &feature.id, "extrusion direction")?;
+                    properties.insert("Direction".into(), format_vector3(*direction));
+                }
+            }
+            if let Some(draft) = first_draft {
+                if !draft.0.is_finite() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a non-finite extrusion draft",
+                        feature.id
+                    )));
+                }
+                parameters.insert("Draft".into(), format_angle_rad(draft.0));
+            }
+            if *op != BooleanOp::Unresolved
+                && (properties.contains_key("Operation")
+                    || existing.and_then(extrude_feature_op).is_none())
+            {
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
+            }
+            if !implicit_profile {
+                properties.insert(
+                    "Profile".into(),
+                    profile_source.expect("non-implicit profile was resolved"),
+                );
+            }
+            let kind = existing.map_or_else(
+                || match op {
+                    BooleanOp::Unresolved => "Extrusion".into(),
+                    BooleanOp::Join => "BossExtrude".into(),
+                    BooleanOp::Cut => "CutExtrude".into(),
+                    BooleanOp::NewBody | BooleanOp::Intersect => "Extrusion".into(),
+                },
+                |record| record.kind.clone(),
+            );
+            (kind, parameters, properties)
+        })
+    }
+
+    fn encode_fillet(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Fillet { groups } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let [group] = groups.as_slice() else {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires exactly one fillet edge group",
+                    feature.id
+                )));
+            };
+            let edges = &group.edges;
+            let radius = &group.radius;
+            let selection = edge_selection_value(edges);
+            if selection.is_none()
+                && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported fillet semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !is_fillet(record)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported fillet semantics",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let positional_radius = parameters.contains_key("D1")
+                && !parameters.contains_key("Radius")
+                && !parameters.keys().any(|name| indexed_name(name, "Radius"));
+            match radius {
+                RadiusSpec::Unresolved { .. } => {
+                    if existing.is_none() {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has an unresolved fillet radius law",
+                            feature.id
+                        )));
+                    }
+                }
+                RadiusSpec::Constant {
+                    radius: Length(radius),
+                } => {
+                    parameters.retain(|name, _| {
+                        name != "Radius"
+                            && !indexed_name(name, "Radius")
+                            && !indexed_name(name, "Position")
+                    });
+                    let key = if positional_radius { "D1" } else { "Radius" };
+                    let value = format_length_like(
+                        *radius,
+                        existing
+                            .and_then(|record| record.parameters.get(key))
+                            .map(String::as_str),
+                    );
+                    parameters.insert(key.into(), value);
+                }
+                RadiusSpec::Chordal { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses a chordal fillet law",
+                        feature.id
+                    )));
+                }
+                RadiusSpec::Asymmetric { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses an asymmetric fillet law",
+                        feature.id
+                    )));
+                }
+                RadiusSpec::Variable { points } => {
+                    parameters.retain(|name, _| {
+                        name != "Radius"
+                            && !indexed_name(name, "Radius")
+                            && !indexed_name(name, "Position")
+                    });
+                    if positional_radius {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes positional fillet form",
+                            feature.id
+                        )));
+                    }
+                    if points.len() < 2
+                        || points.iter().any(|point| {
+                            !point.parameter.is_finite() || !(0.0..=1.0).contains(&point.parameter)
+                        })
+                        || points
+                            .windows(2)
+                            .any(|pair| pair[0].parameter >= pair[1].parameter)
+                    {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has an invalid variable-radius law",
+                            feature.id
+                        )));
+                    }
+                    for (index, point) in points.iter().enumerate() {
+                        parameters.insert(format!("Position{index}"), point.parameter.to_string());
+                        parameters
+                            .insert(format!("Radius{index}"), format_length_mm(point.radius.0));
+                    }
+                }
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(selection) = selection {
+                write_native_selection(
+                    &mut properties,
+                    "Edges",
+                    &selection,
+                    existing.map_or("", |record| record.id.as_str()),
+                );
+            }
+            (
+                existing.map_or_else(|| "Fillet".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_chamfer(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Chamfer {
+            groups,
+            flip_direction,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let [group] = groups.as_slice() else {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} requires exactly one chamfer edge group",
+                    feature.id
+                )));
+            };
+            let edges = &group.edges;
+            let spec = &group.spec;
+            if *flip_direction {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
+                    feature.id
+                )));
+            }
+            let selection = edge_selection_value(edges);
+            if selection.is_none()
+                && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported chamfer semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !is_chamfer(record)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported chamfer semantics",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let positional = parameters.contains_key("D1")
+                && !parameters.contains_key("Distance")
+                && !parameters.contains_key("Distance1");
+            let positional_angle = positional
+                && parameters
+                    .get("D2")
+                    .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
+            match spec {
+                ChamferSpec::Unresolved { .. } => {
+                    if existing.is_none() {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unresolved chamfer dimensions",
+                            feature.id
+                        )));
+                    }
+                }
+                ChamferSpec::Distance { distance } => {
+                    if existing.is_some()
+                        && if positional {
+                            parameters.contains_key("D2")
+                        } else {
+                            parameters.contains_key("Distance1")
+                                || parameters.contains_key("Distance2")
+                                || parameters.contains_key("Angle")
+                        }
+                    {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes chamfer form",
+                            feature.id
+                        )));
+                    }
+                    let key = if positional { "D1" } else { "Distance" };
+                    let value = format_length_like(
+                        distance.0,
+                        existing
+                            .and_then(|record| record.parameters.get(key))
+                            .map(String::as_str),
+                    );
+                    parameters.insert(key.into(), value);
+                }
+                ChamferSpec::TwoDistances { first, second } => {
+                    if existing.is_some()
+                        && if positional {
+                            !parameters.contains_key("D2") || positional_angle
+                        } else {
+                            !parameters.contains_key("Distance1")
+                                || !parameters.contains_key("Distance2")
+                                || parameters.contains_key("Angle")
+                        }
+                    {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes chamfer form",
+                            feature.id
+                        )));
+                    }
+                    let (first_key, second_key) = if positional {
+                        ("D1", "D2")
+                    } else {
+                        ("Distance1", "Distance2")
+                    };
+                    parameters.insert(
+                        first_key.into(),
+                        format_length_like(
+                            first.0,
+                            existing
+                                .and_then(|record| record.parameters.get(first_key))
+                                .map(String::as_str),
+                        ),
+                    );
+                    parameters.insert(
+                        second_key.into(),
+                        format_length_like(
+                            second.0,
+                            existing
+                                .and_then(|record| record.parameters.get(second_key))
+                                .map(String::as_str),
+                        ),
+                    );
+                }
+                ChamferSpec::DistanceAngle { distance, angle } => {
+                    if existing.is_some()
+                        && if positional {
+                            !positional_angle
+                        } else {
+                            !parameters.contains_key("Distance")
+                                || !parameters.contains_key("Angle")
+                                || parameters.contains_key("Distance1")
+                                || parameters.contains_key("Distance2")
+                        }
+                    {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes chamfer form",
+                            feature.id
+                        )));
+                    }
+                    let (distance_key, angle_key) = if positional {
+                        ("D1", "D2")
+                    } else {
+                        ("Distance", "Angle")
+                    };
+                    parameters.insert(
+                        distance_key.into(),
+                        format_length_like(
+                            distance.0,
+                            existing
+                                .and_then(|record| record.parameters.get(distance_key))
+                                .map(String::as_str),
+                        ),
+                    );
+                    parameters.insert(
+                        angle_key.into(),
+                        format_angle_like(
+                            angle.0,
+                            existing
+                                .and_then(|record| record.parameters.get(angle_key))
+                                .map(String::as_str),
+                        ),
+                    );
+                }
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(selection) = selection {
+                write_native_selection(
+                    &mut properties,
+                    "Edges",
+                    &selection,
+                    existing.map_or("", |record| record.id.as_str()),
+                );
+            }
+            (
+                existing.map_or_else(|| "Chamfer".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_offset_shape(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::OffsetShape { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses unsupported whole-shape offset semantics",
+            feature.id
+        )))
+    }
+
+    fn encode_post_process(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::PostProcess { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses unsupported topology post-processing semantics",
+            feature.id
+        )))
+    }
+
+    fn encode_curve_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let (FeatureDefinition::PointGeometry { .. }
+        | FeatureDefinition::LineSegment { .. }
+        | FeatureDefinition::CircularArc { .. }
+        | FeatureDefinition::EllipticArc { .. }
+        | FeatureDefinition::Polyline { .. }
+        | FeatureDefinition::RegularPolygonCurve { .. }
+        | FeatureDefinition::PlanarPatch { .. }
+        | FeatureDefinition::FaceFromShapes { .. }) = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses unsupported construction-geometry semantics",
+            feature.id
+        )))
+    }
+
+    fn encode_shape_operation(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let (FeatureDefinition::Compound { .. }
+        | FeatureDefinition::RefineShape { .. }
+        | FeatureDefinition::ReverseShape { .. }
+        | FeatureDefinition::RuledBetweenCurves { .. }
+        | FeatureDefinition::SectionShape { .. }
+        | FeatureDefinition::MirrorShape { .. }
+        | FeatureDefinition::ProjectOnSurface { .. }) = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses unsupported derived-shape semantics",
+            feature.id
+        )))
+    }
+
+    fn encode_shell(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Shell {
+            bodies,
+            removed_faces,
+            thickness,
+            outward,
+            mode,
+            join,
+            resolve_intersections,
+            allow_self_intersections,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if bodies.is_some()
+                || mode.is_some()
+                || join.is_some()
+                || resolve_intersections.is_some()
+                || allow_self_intersections.is_some()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported shell construction semantics",
+                    feature.id
+                )));
+            }
+            let selection = face_selection_value(removed_faces);
+            if selection.is_none()
+                && !(matches!(removed_faces, FaceSelection::Unresolved) && existing.is_some())
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported shell semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !feature_family(record, "Shell")) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported shell semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none() && (thickness.is_none() || outward.is_none()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved shell construction",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let thickness_key =
+                if parameters.contains_key("D1") && !parameters.contains_key("Thickness") {
+                    "D1"
+                } else {
+                    "Thickness"
+                };
+            if let Some(thickness) = thickness {
+                parameters.insert(
+                    thickness_key.into(),
+                    format_length_like(
+                        thickness.0,
+                        existing
+                            .and_then(|record| record.parameters.get(thickness_key))
+                            .map(String::as_str),
+                    ),
+                );
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(selection) = selection {
+                write_native_selection(
+                    &mut properties,
+                    "RemovedFaces",
+                    &selection,
+                    existing.map_or("", |record| record.id.as_str()),
+                );
+            }
+            if let Some(outward) = outward {
+                properties.insert("Outward".into(), outward.to_string());
+            }
+            (
+                existing.map_or_else(|| "Shell".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_thicken(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Thicken {
+            faces,
+            thickness,
+            side,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            use cadmpeg_ir::features::ThickenSide;
+
+            let selection = face_selection_value(faces);
+            if selection.is_none()
+                && !(matches!(faces, FaceSelection::Unresolved) && existing.is_some())
+                || existing.is_some_and(|record| {
+                    !feature_family(record, "Thicken")
+                        && !feature_family(record, "Thickness")
+                        && !feature_input_class(record, NativeClassKind::Thicken)
+                })
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported thicken semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none() && (thickness.is_none() || side.is_none()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved thicken construction",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let thickness_key =
+                if parameters.contains_key("D1") && !parameters.contains_key("Thickness") {
+                    "D1"
+                } else {
+                    "Thickness"
+                };
+            if let Some(thickness) = thickness {
+                parameters.insert(
+                    thickness_key.into(),
+                    format_length_like(
+                        thickness.0,
+                        existing
+                            .and_then(|record| record.parameters.get(thickness_key))
+                            .map(String::as_str),
+                    ),
+                );
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(selection) = selection {
+                write_native_selection(
+                    &mut properties,
+                    "Faces",
+                    &selection,
+                    existing.map_or("", |record| record.id.as_str()),
+                );
+            }
+            if let Some(side) = side {
+                let both_sides = matches!(side, ThickenSide::Both);
+                if both_sides || properties.contains_key("BothSides") {
+                    properties.insert("BothSides".into(), both_sides.to_string());
+                }
+                let reverse = matches!(side, ThickenSide::Reverse);
+                if reverse || properties.contains_key("Reverse") {
+                    properties.insert("Reverse".into(), reverse.to_string());
+                }
+            }
+            (
+                existing.map_or_else(|| "Thicken".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_offset_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let selection = face_selection_value(faces).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no offset-surface support faces",
+                    feature.id
+                ))
+            })?;
+            require_same_family(existing, &feature.id, &["OffsetSurface"])?;
+            let distance = distance.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved surface offset",
+                    feature.id
+                ))
+            })?;
+            if !distance.0.is_finite() {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has a non-finite surface offset",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            parameters.insert("Distance".into(), format_length_mm(distance.0));
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Faces".into(), selection);
+            (
+                existing.map_or_else(|| "OffsetSurface".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_knit_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::KnitSurface {
+            faces,
+            merge_entities,
+            create_solid,
+            gap_tolerance,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let selection = face_selection_value(faces).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no knit-surface input faces",
+                    feature.id
+                ))
+            })?;
+            let merge_entities = merge_entities.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved knit merge state",
+                    feature.id
+                ))
+            })?;
+            let create_solid = create_solid.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved knit solid state",
+                    feature.id
+                ))
+            })?;
+            require_same_family(existing, &feature.id, &["KnitSurface", "Knit"])?;
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            match gap_tolerance {
+                Some(value) if value.0.is_finite() && value.0 >= 0.0 => {
+                    parameters.insert("GapTolerance".into(), format_length_mm(value.0));
+                }
+                Some(_) => {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an invalid knit tolerance",
+                        feature.id
+                    )));
+                }
+                None => {
+                    parameters.remove("GapTolerance");
+                }
+            }
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Faces".into(), selection);
+            properties.insert("MergeEntities".into(), merge_entities.to_string());
+            properties.insert("CreateSolid".into(), create_solid.to_string());
+            (
+                existing.map_or_else(|| "KnitSurface".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_filled_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::FilledSurface {
+            boundary,
+            support_faces,
+            continuity,
+            boundary_continuities,
+            merge_result,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses a path-based filled-surface boundary",
+                    feature.id
+                )));
+            };
+            let boundary = edge_selection_value(boundary).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no filled-surface boundary",
+                    feature.id
+                ))
+            })?;
+            let support_faces = face_selection_value(support_faces).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no filled-surface supports",
+                    feature.id
+                ))
+            })?;
+            let continuity = continuity.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved filled-surface continuity",
+                    feature.id
+                ))
+            })?;
+            if !boundary_continuities.is_empty() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has per-boundary filled-surface continuity",
+                    feature.id
+                )));
+            }
+            let merge_result = merge_result.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved filled-surface merge state",
+                    feature.id
+                ))
+            })?;
+            require_same_family(existing, &feature.id, &["FilledSurface", "FillSurface"])?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Boundary".into(), boundary);
+            properties.insert("SupportFaces".into(), support_faces);
+            properties.insert(
+                "Continuity".into(),
+                crate::feature_schema::surface_continuity_token(continuity).into(),
+            );
+            properties.insert("MergeResult".into(), merge_result.to_string());
+            (
+                existing.map_or_else(|| "FilledSurface".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_draft(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Draft {
+            faces: face_selection,
+            neutral_plane: plane_selection,
+            parting_tool,
+            pull_plane,
+            pull_direction,
+            angle,
+            outward,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let faces = face_selection_value(face_selection);
+            let neutral_plane = face_selection_value(plane_selection);
+            let operands_supported = |selection: &FaceSelection, native: Option<&String>| {
+                native.is_some()
+                    || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
+            };
+            if existing.is_some_and(|record| !feature_family(record, "Draft"))
+                || parting_tool.is_some()
+                || pull_plane.is_some()
+                || !operands_supported(face_selection, faces.as_ref())
+                || !operands_supported(plane_selection, neutral_plane.as_ref())
+                || existing.is_none()
+                    && (pull_direction.is_none() || angle.is_none() || outward.is_none())
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported draft semantics",
+                    feature.id
+                )));
+            }
+            if let Some(pull_direction) = pull_direction {
+                require_direction(*pull_direction, &feature.id, "draft direction")?;
+            }
+            if angle.is_some_and(|angle| !angle.0.is_finite()) {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has a non-finite draft angle",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            if let Some(angle) = angle {
+                parameters.insert("Angle".into(), format_angle_rad(angle.0));
+            }
+            let mut properties = feature.source_properties.clone();
+            let fallback = existing.map_or("", |record| record.id.as_str());
+            if let Some(faces) = faces {
+                write_native_selection(&mut properties, "Faces", &faces, fallback);
+            }
+            if let Some(neutral_plane) = neutral_plane {
+                write_native_selection(&mut properties, "NeutralPlane", &neutral_plane, fallback);
+            }
+            if let Some(pull_direction) = pull_direction {
+                properties.insert("Direction".into(), format_vector3(*pull_direction));
+            }
+            if let Some(outward) = outward {
+                properties.insert("Outward".into(), outward.to_string());
+            }
+            (
+                existing.map_or_else(|| "Draft".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_combine(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Combine {
+            target,
+            tools,
+            op,
+            keep_tools,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if existing.is_some_and(|record| {
+                !feature_family(record, "Combine")
+                    && !feature_input_class(record, NativeClassKind::Combine)
+            }) || *op == BooleanOp::NewBody
+                || *keep_tools
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported combine semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none()
+                && (body_selection_value(target).is_none()
+                    || body_selection_value(tools).is_none()
+                    || *op == BooleanOp::Unresolved)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has unresolved combine semantics",
+                    feature.id
+                )));
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(target) = body_selection_value(target) {
+                properties.insert("Target".into(), target);
+            }
+            if let Some(tools) = body_selection_value(tools) {
+                properties.insert("Tools".into(), tools);
+            }
+            if *op != BooleanOp::Unresolved {
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
+            }
+            (
+                existing.map_or_else(|| "Combine".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_cut_with_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::CutWithSurface {
+            targets,
+            tools,
+            reverse,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            require_same_family(existing, &feature.id, &["CutWithSurface", "SurfaceCut"])?;
+            let targets = body_selection_value(targets).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no surface-cut target bodies",
+                    feature.id
+                ))
+            })?;
+            let tools = face_selection_value(tools).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no surface-cut tools",
+                    feature.id
+                ))
+            })?;
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Targets".into(), targets);
+            properties.insert("Tools".into(), tools);
+            properties.insert("Reverse".into(), reverse.to_string());
+            (
+                existing.map_or_else(|| "CutWithSurface".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_delete_body(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let selection = body_selection_value(bodies);
+            if existing.is_some_and(|record| body_retention_mode(record).is_none()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported delete-body semantics",
+                    feature.id
+                )));
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(selection) = selection {
+                if !crate::resolved_features::component_paths::is_compact_body_selection_value(
+                    &selection,
+                ) {
+                    properties.insert("Bodies".into(), selection);
+                }
+            } else if !matches!(mode, BodyRetentionMode::Unresolved) || existing.is_none() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported delete-body semantics",
+                    feature.id
+                )));
+            }
+            match mode {
+                BodyRetentionMode::Unresolved => {
+                    let Some(record) = existing else {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} requires a retained unresolved body operation",
+                            feature.id
+                        )));
+                    };
+                    if body_retention_mode(record) != Some(BodyRetentionMode::Unresolved) {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} removes a resolved body-retention mode",
+                            feature.id
+                        )));
+                    }
+                    properties.remove("Mode");
+                }
+                BodyRetentionMode::DeleteSelected => {
+                    properties.insert("Mode".into(), "Delete".into());
+                }
+                BodyRetentionMode::KeepSelected => {
+                    properties.insert("Mode".into(), "Keep".into());
+                }
+            }
+            (
+                existing.map_or_else(
+                    || match mode {
+                        BodyRetentionMode::Unresolved => "Feature".into(),
+                        BodyRetentionMode::DeleteSelected => "DeleteBody".into(),
+                        BodyRetentionMode::KeepSelected => "KeepBody".into(),
+                    },
+                    |record| record.kind.clone(),
+                ),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_delete_face(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::DeleteFace { faces, heal } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let faces = face_selection_value(faces);
+            if existing.is_some_and(|record| !feature_family(record, "DeleteFace"))
+                || faces.is_none()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported delete-face semantics",
+                    feature.id
+                )));
+            }
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Faces".into(), faces.expect("checked above"));
+            properties.insert("Heal".into(), heal.to_string());
+            (
+                existing.map_or_else(|| "DeleteFace".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_replace_face(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::ReplaceFace {
+            targets,
+            replacements,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let targets = face_selection_value(targets);
+            let replacements = face_selection_value(replacements);
+            if existing.is_some_and(|record| !feature_family(record, "ReplaceFace"))
+                || targets.is_none()
+                || replacements.is_none()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported replace-face semantics",
+                    feature.id
+                )));
+            }
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Faces".into(), targets.expect("checked above"));
+            properties.insert(
+                "ReplacementFaces".into(),
+                replacements.expect("checked above"),
+            );
+            (
+                existing.map_or_else(|| "ReplaceFace".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_move_face(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::MoveFace { faces, motion } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let faces = face_selection_value(faces);
+            if existing.is_some_and(|record| !feature_family(record, "MoveFace")) || faces.is_none()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported move-face semantics",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Faces".into(), faces.expect("checked above"));
+            parameters.remove("Distance");
+            parameters.remove("Angle");
+            properties.remove("Direction");
+            properties.remove("AxisOrigin");
+            properties.remove("AxisDirection");
+            match motion {
+                FaceMotion::Offset { distance } => {
+                    properties.insert("Mode".into(), "Offset".into());
+                    parameters.insert("Distance".into(), format_length_mm(distance.0));
+                }
+                FaceMotion::Translate {
+                    direction,
+                    distance,
+                } => {
+                    require_direction(*direction, &feature.id, "face translation")?;
+                    properties.insert("Mode".into(), "Translate".into());
+                    properties.insert("Direction".into(), format_vector3(*direction));
+                    parameters.insert("Distance".into(), format_length_mm(distance.0));
+                }
+                FaceMotion::Rotate {
+                    axis_origin,
+                    axis_dir,
+                    angle,
+                } => {
+                    require_direction(*axis_dir, &feature.id, "face rotation axis")?;
+                    if !angle.0.is_finite() {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has a non-finite face rotation angle",
+                            feature.id
+                        )));
+                    }
+                    properties.insert("Mode".into(), "Rotate".into());
+                    properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
+                    properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
+                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                }
+            }
+            (
+                existing.map_or_else(|| "MoveFace".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_move_body(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::MoveBody {
+            bodies,
+            translation,
+            rotation,
+            copies,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let bodies = body_selection_value(bodies).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no body-motion selection",
+                    feature.id
+                ))
+            })?;
+            require_same_family(existing, &feature.id, &["MoveBody", "MoveCopyBody"])?;
+            if ![translation.x, translation.y, translation.z]
+                .into_iter()
+                .all(f64::is_finite)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has a non-finite body translation",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let mut properties = feature.source_properties.clone();
+            properties.insert("Bodies".into(), bodies);
+            properties.insert(
+                "Translation".into(),
+                format_point3_mm(Point3::new(translation.x, translation.y, translation.z)),
+            );
+            properties.insert("Copies".into(), copies.to_string());
+            match rotation {
+                Some(rotation) => {
+                    require_direction(rotation.direction, &feature.id, "body rotation axis")?;
+                    if !rotation.angle.0.is_finite()
+                        || ![rotation.origin.x, rotation.origin.y, rotation.origin.z]
+                            .into_iter()
+                            .all(f64::is_finite)
+                    {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has invalid body rotation",
+                            feature.id
+                        )));
+                    }
+                    properties.insert("RotationOrigin".into(), format_point3_mm(rotation.origin));
+                    properties.insert("RotationAxis".into(), format_vector3(rotation.direction));
+                    parameters.insert("Rotation".into(), format_angle_rad(rotation.angle.0));
+                }
+                None => {
+                    properties.remove("RotationOrigin");
+                    properties.remove("RotationAxis");
+                    parameters.remove("Rotation");
+                }
+            }
+            (
+                existing.map_or_else(|| "MoveBody".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_dome(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Dome {
+            faces,
+            height,
+            elliptical,
+            reverse,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let faces = face_selection_value(faces);
+            if existing.is_some_and(|record| !feature_family(record, "Dome")) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported dome semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none()
+                && (faces.is_none()
+                    || height.is_none()
+                    || elliptical.is_none()
+                    || reverse.is_none())
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved dome construction",
+                    feature.id
+                )));
+            }
+            if height.is_some_and(|height| !height.0.is_finite()) {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has a non-finite dome height",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            if let Some(height) = height {
+                parameters.insert("Height".into(), format_length_mm(height.0));
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(faces) = faces {
+                properties.insert("Faces".into(), faces);
+            }
+            if let Some(elliptical) = elliptical {
+                properties.insert("Elliptical".into(), elliptical.to_string());
+            }
+            if let Some(reverse) = reverse {
+                properties.insert("Reverse".into(), reverse.to_string());
+            }
+            (
+                existing.map_or_else(|| "Dome".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_flex(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Flex { axis, mode } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if existing.is_some_and(|record| !feature_family(record, "Flex")) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported flex semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none() && (axis.is_none() || matches!(mode, FlexMode::Unresolved { .. }))
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved flex construction",
+                    feature.id
+                )));
+            }
+            if let Some(axis) = axis {
+                require_direction(*axis, &feature.id, "flex axis")?;
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let mut properties = feature.source_properties.clone();
+            if let Some(axis) = axis {
+                properties.insert("Axis".into(), format_vector3(*axis));
+                properties.remove("AxisDirection");
+            }
+            match mode {
+                FlexMode::Unresolved { .. } => {}
+                FlexMode::Bending { angle } => {
+                    if !angle.0.is_finite() {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has a non-finite flex angle",
+                            feature.id
+                        )));
+                    }
+                    parameters.remove("Factor");
+                    parameters.remove("Distance");
+                    properties.insert("Mode".into(), "Bending".into());
+                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                }
+                FlexMode::Twisting { angle } => {
+                    if !angle.0.is_finite() {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has a non-finite flex angle",
+                            feature.id
+                        )));
+                    }
+                    parameters.remove("Factor");
+                    parameters.remove("Distance");
+                    properties.insert("Mode".into(), "Twisting".into());
+                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                }
+                FlexMode::Tapering { factor } => {
+                    if !factor.is_finite() || *factor <= 0.0 {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has an invalid flex taper factor",
+                            feature.id
+                        )));
+                    }
+                    parameters.remove("Angle");
+                    parameters.remove("Distance");
+                    properties.insert("Mode".into(), "Tapering".into());
+                    parameters.insert("Factor".into(), factor.to_string());
+                }
+                FlexMode::Stretching { distance } => {
+                    if !distance.0.is_finite() {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has a non-finite flex distance",
+                            feature.id
+                        )));
+                    }
+                    parameters.remove("Angle");
+                    parameters.remove("Factor");
+                    properties.insert("Mode".into(), "Stretching".into());
+                    parameters.insert("Distance".into(), format_length_mm(distance.0));
+                }
+            }
+            (
+                existing.map_or_else(|| "Flex".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_scale(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Scale {
+            bodies,
+            center,
+            factors,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            let selection = body_selection_value(bodies);
+            if existing.is_some_and(|record| !feature_family(record, "Scale")) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported scale semantics",
+                    feature.id
+                )));
+            }
+            let center_valid = center.as_ref().is_none_or(|center| match center {
+                ScaleCenter::Point(point) => {
+                    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+                }
+                ScaleCenter::Native(reference) => !reference.is_empty(),
+                ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
+            });
+            let resolved_factors = factors.resolved();
+            if existing.is_none()
+                && (selection.is_none() || center.is_none() || resolved_factors.is_none())
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved scale construction",
+                    feature.id
+                )));
+            }
+            let factors_valid = [factors.uniform, factors.x, factors.y, factors.z]
+                .into_iter()
+                .flatten()
+                .all(|factor| factor.is_finite() && factor != 0.0);
+            if !factors_valid || !center_valid {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has an invalid scale transform",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            if let Some(factor) = factors.uniform {
+                parameters.insert("Factor".into(), factor.to_string());
+            } else {
+                if [factors.x, factors.y, factors.z]
+                    .into_iter()
+                    .all(|factor| factor.is_some())
+                {
+                    parameters.remove("Factor");
+                }
+                if let Some(factor) = factors.x {
+                    parameters.insert("ScaleX".into(), factor.to_string());
+                }
+                if let Some(factor) = factors.y {
+                    parameters.insert("ScaleY".into(), factor.to_string());
+                }
+                if let Some(factor) = factors.z {
+                    parameters.insert("ScaleZ".into(), factor.to_string());
+                }
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(selection) = selection {
+                properties.insert("Bodies".into(), selection);
+            }
+            match center {
+                Some(ScaleCenter::Centroid) => {
+                    properties.remove("Center");
+                    properties.remove("CenterRef");
+                    properties.insert("CenterType".into(), "Centroid".into());
+                }
+                Some(ScaleCenter::ModelOrigin) => {
+                    properties.remove("Center");
+                    properties.remove("CenterRef");
+                    properties.insert("CenterType".into(), "ModelOrigin".into());
+                }
+                Some(ScaleCenter::Point(point)) => {
+                    properties.remove("CenterRef");
+                    properties.insert("CenterType".into(), "Point".into());
+                    properties.insert("Center".into(), format_point3_mm(*point));
+                }
+                Some(ScaleCenter::Native(reference)) => {
+                    properties.remove("Center");
+                    properties.insert("CenterType".into(), "Reference".into());
+                    properties.insert("CenterRef".into(), reference.clone());
+                }
+                None => {}
+            }
+            (
+                existing.map_or_else(|| "Scale".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_hole(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Hole {
+            profile,
+            profile_filter,
+            face,
+            position,
+            direction,
+            placements,
+            kind,
+            exit_kind,
+            diameter,
+            extent,
+            bottom,
+            taper_angle,
+            specification,
+            allow_multi_profile_faces,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        Ok({
+            if profile.is_some()
+                || profile_filter.is_some()
+                || position.is_some()
+                || direction.is_some()
+                || exit_kind.is_some()
+                || bottom.is_some()
+                || taper_angle.is_some()
+                || specification.is_some()
+                || allow_multi_profile_faces.is_some()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported hole construction semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| classify(record) != Some(FeatureClass::Hole)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported hole semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none() && diameter.is_none() {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has an unresolved hole diameter",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            if let Some(diameter) = diameter {
+                parameters.insert("Diameter".into(), format_length_mm(diameter.0));
+            }
+            match kind {
+                HoleKind::Unresolved { .. } if existing.is_some() => {}
+                HoleKind::Unresolved { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved hole entry construction",
+                        feature.id
+                    )));
+                }
+                HoleKind::Simple => {
+                    parameters.remove("CounterboreDiameter");
+                    parameters.remove("CounterboreDepth");
+                    parameters.remove("CountersinkDiameter");
+                    parameters.remove("CountersinkAngle");
+                    parameters.remove("ThreadMajorDiameter");
+                    parameters.remove("ThreadDepth");
+                    parameters.remove("ThreadPitch");
+                    parameters.remove("DrillPointAngle");
+                }
+                HoleKind::SimpleDrilled { drill_point_angle } => {
+                    parameters.remove("CounterboreDiameter");
+                    parameters.remove("CounterboreDepth");
+                    parameters.remove("CountersinkDiameter");
+                    parameters.remove("CountersinkAngle");
+                    parameters.remove("ThreadMajorDiameter");
+                    parameters.remove("ThreadDepth");
+                    parameters.remove("ThreadPitch");
+                    parameters.insert(
+                        "DrillPointAngle".into(),
+                        format_angle_rad(drill_point_angle.0),
+                    );
+                }
+                HoleKind::Counterbore { diameter, depth } => {
+                    parameters.remove("CountersinkDiameter");
+                    parameters.remove("CountersinkAngle");
+                    parameters.remove("ThreadMajorDiameter");
+                    parameters.remove("ThreadDepth");
+                    parameters.remove("ThreadPitch");
+                    parameters.insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
+                    parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                    parameters.remove("DrillPointAngle");
+                }
+                HoleKind::CounterboreDrilled {
+                    diameter,
+                    depth,
+                    drill_point_angle,
+                } => {
+                    parameters.remove("CountersinkDiameter");
+                    parameters.remove("CountersinkAngle");
+                    parameters.remove("ThreadMajorDiameter");
+                    parameters.remove("ThreadDepth");
+                    parameters.remove("ThreadPitch");
+                    parameters.insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
+                    parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                    parameters.insert(
+                        "DrillPointAngle".into(),
+                        format_angle_rad(drill_point_angle.0),
+                    );
+                }
+                HoleKind::Countersink { diameter, angle } => {
+                    parameters.remove("CounterboreDiameter");
+                    parameters.remove("CounterboreDepth");
+                    parameters.remove("ThreadMajorDiameter");
+                    parameters.remove("ThreadDepth");
+                    parameters.remove("ThreadPitch");
+                    parameters.remove("DrillPointAngle");
+                    parameters.insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
+                    parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                }
+                HoleKind::Threaded {
+                    major_diameter,
+                    thread_depth,
+                    pitch,
+                    drill_point_angle,
+                } => {
+                    parameters.remove("CounterboreDiameter");
+                    parameters.remove("CounterboreDepth");
+                    parameters.remove("CountersinkDiameter");
+                    parameters.remove("CountersinkAngle");
+                    parameters.insert(
+                        "ThreadMajorDiameter".into(),
+                        format_length_mm(major_diameter.0),
+                    );
+                    parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
+                    if let Some(pitch) = pitch {
+                        parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
+                    } else {
+                        parameters.remove("ThreadPitch");
+                    }
+                    parameters.insert(
+                        "DrillPointAngle".into(),
+                        format_angle_rad(drill_point_angle.0),
+                    );
+                }
+                HoleKind::Counterdrill { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unsupported counterdrill construction",
+                        feature.id
+                    )));
+                }
+                HoleKind::Chamfer { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unsupported chamfered-hole construction",
+                        feature.id
+                    )));
+                }
+            }
+            let mut properties = feature.source_properties.clone();
+            match face {
+                Some(face) if face_selection_value(face).is_some() => {
+                    properties.insert(
+                        "Face".into(),
+                        face_selection_value(face).expect("guarded above"),
+                    );
+                }
+                Some(FaceSelection::Unresolved) if existing.is_some() => {}
+                Some(FaceSelection::Unresolved) => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved hole face selection",
+                        feature.id
+                    )));
+                }
+                Some(_) => {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an empty hole face selection",
+                        feature.id
+                    )));
+                }
+                None => {
+                    properties.remove("Face");
+                }
+            }
+            match placements.as_slice() {
+                [cadmpeg_ir::features::HolePlacement::Directed {
+                    position,
+                    direction,
+                }] => {
+                    if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite()
+                    {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has a non-finite hole position",
+                            feature.id
+                        )));
+                    }
+                    require_direction(*direction, &feature.id, "hole direction")?;
+                    properties.insert("Position".into(), format_point3_mm(*position));
+                    properties.insert("Direction".into(), format_vector3(*direction));
+                }
+                [] if existing.is_none() => {
+                    properties.remove("Position");
+                    properties.remove("Direction");
+                }
+                [] => {}
+                placements
+                    if existing.is_some()
+                        && placements.iter().all(|placement| {
+                            matches!(placement, cadmpeg_ir::features::HolePlacement::Axis { .. })
+                        }) => {}
+                _ => {
+                    return Err(CodecError::NotImplemented(format!(
+                                       "SLDPRT feature {} has placements that require native generated-surface identities",
+                                       feature.id
+                                   )));
+                }
+            }
+            match extent {
+                Some(Termination::Blind {
+                    length: Length(depth),
+                }) => {
+                    parameters.insert("Depth".into(), format_length_mm(*depth));
+                    properties.insert("EndCondition".into(), "Blind".into());
+                }
+                Some(Termination::ThroughAll) => {
+                    parameters.remove("Depth");
+                    properties.insert("EndCondition".into(), "ThroughAll".into());
+                }
+                Some(_) => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported hole termination",
+                        feature.id
+                    )))
+                }
+                None if existing.is_some() => {}
+                None => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved hole termination",
+                        feature.id
+                    )))
+                }
+            }
+            (
+                existing.map_or_else(|| "Hole".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_revolve(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Revolve { construction, op } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let feature_sources = self.feature_sources;
+        let sketch_sources = self.sketch_sources;
+        Ok({
+            if construction.axis_reference.is_some()
+                || construction.solid == Some(false)
+                || construction.face_maker_class.is_some()
+                || construction.fuse_order.is_some()
+                || construction.allow_multi_profile_faces.is_some()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported revolution construction controls",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !is_revolve(record)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported revolution semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none()
+                && (construction.profile.is_none()
+                    || construction.axis.is_none()
+                    || construction.extent.is_none()
+                    || *op == BooleanOp::Unresolved)
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved revolution construction",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let mut properties = feature.source_properties.clone();
+            if let Some(extent) = &construction.extent {
+                parameters.remove("Angle");
+                parameters.remove("Angle2");
+                match extent {
+                    RevolveExtent::OneSided {
+                        termination: Termination::Angle { angle },
+                    } => {
+                        properties.insert("EndCondition".into(), "OneSided".into());
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    }
+                    RevolveExtent::Symmetric {
+                        termination: Termination::Angle { angle },
+                    } => {
+                        properties.insert("EndCondition".into(), "Symmetric".into());
+                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    }
+                    RevolveExtent::TwoSided {
+                        first: Termination::Angle { angle: first },
+                        second: Termination::Angle { angle: second },
+                    } => {
+                        properties.insert("EndCondition".into(), "TwoSided".into());
+                        parameters.insert("Angle".into(), format_angle_rad(first.0));
+                        parameters.insert("Angle2".into(), format_angle_rad(second.0));
+                    }
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses a linear revolution extent",
+                            feature.id
+                        )));
+                    }
+                }
+            }
+            if let Some(axis) = construction.axis {
+                if !valid_direction(axis.direction) {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a degenerate revolution axis",
+                        feature.id
+                    )));
+                }
+                properties.insert("AxisOrigin".into(), format_point3_mm(axis.origin));
+                properties.insert("AxisDirection".into(), format_vector3(axis.direction));
+            }
+            if *op != BooleanOp::Unresolved {
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
+            }
+            if let Some(profile) = &construction.profile {
+                let profile_source =
+                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing revolution profile",
+                                feature.id
+                            ))
+                        })?;
+                properties.insert("Profile".into(), profile_source);
+            }
+            (
+                existing.map_or_else(|| "Revolve".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_sweep(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Sweep {
+            section,
+            sections,
+            path,
+            mode,
+            orientation,
+            transition,
+            transformation,
+            path_tangent,
+            linearize,
+            twist,
+            path_extent,
+            guide_rail,
+            taper,
+            scale,
+            allow_multi_profile_faces,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let feature_sources = self.feature_sources;
+        let sketch_sources = self.sketch_sources;
+        Ok({
+            if !sections.is_empty()
+                || orientation.is_some()
+                || transition.is_some()
+                || transformation.is_some()
+                || *path_tangent
+                || *linearize
+                || path_extent.is_some()
+                || guide_rail.is_some()
+                || taper.is_some()
+                || allow_multi_profile_faces.is_some()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported sweep construction semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !is_sweep(record)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes operation family",
+                    feature.id
+                )));
+            }
+            let profile_source =
+                match section {
+                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
+                        ..
+                    }) if existing.is_some() => None,
+                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_))
+                        if existing
+                            .is_some_and(|record| !record.properties.contains_key("Profile")) =>
+                    {
+                        None
+                    }
+                    cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
+                        profile_source(profile, record_sources, feature_sources, sketch_sources)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "SLDPRT feature {} references a missing sweep profile",
+                                    feature.id
+                                ))
+                            })?,
+                    ),
+                    cadmpeg_ir::features::SweepSection::Unresolved(_) => None,
+                    cadmpeg_ir::features::SweepSection::Generated(_) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported generated sweep section",
+                            feature.id
+                        )));
+                    }
+                };
+            let path_source = match path {
+                Some(path) => Some(
+                    path_source(path, record_sources, sketch_sources).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing sweep path",
+                            feature.id
+                        ))
+                    })?,
+                ),
+                None => None,
+            };
+            if existing.is_none() && (profile_source.is_none() || path_source.is_none()) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved sweep operands",
+                    feature.id
+                )));
+            }
+            if existing.is_none() && *mode == SweepMode::Unresolved {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved sweep result semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none()
+                && matches!(
+                    mode,
+                    SweepMode::Solid {
+                        op: BooleanOp::Unresolved
+                    }
+                )
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has an unresolved boolean operation",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            match twist {
+                Some(twist) => {
+                    parameters.insert("Twist".into(), format_angle_rad(twist.0));
+                }
+                None => {
+                    parameters.remove("Twist");
+                }
+            }
+            match scale {
+                Some(scale) if scale.is_finite() && *scale > 0.0 => {
+                    parameters.insert("Scale".into(), scale.to_string());
+                }
+                Some(_) => {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an invalid sweep scale",
+                        feature.id
+                    )))
+                }
+                None => {
+                    parameters.remove("Scale");
+                }
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(profile) = profile_source {
+                properties.insert("Profile".into(), profile);
+            }
+            if let Some(path) = path_source {
+                properties.insert("Path".into(), path);
+            }
+            match mode {
+                SweepMode::Solid { op } if *op != BooleanOp::Unresolved => {
+                    properties.insert(
+                        "Operation".into(),
+                        resolved_boolean_op(*op, &feature.id)?.into(),
+                    );
+                }
+                SweepMode::Solid { .. } => {}
+                SweepMode::Surface => {
+                    properties.remove("Operation");
+                }
+                SweepMode::Unresolved => {}
+            }
+            (
+                existing.map_or_else(
+                    || {
+                        match mode {
+                            SweepMode::Surface => "Surface-Sweep",
+                            SweepMode::Solid { .. } | SweepMode::Unresolved => "Sweep",
+                        }
+                        .into()
+                    },
+                    |record| record.kind.clone(),
+                ),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_loft(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Loft {
+            sections,
+            guides,
+            centerline,
+            op,
+            closed,
+            solid,
+            ruled,
+            max_degree,
+            check_compatibility,
+            allow_multi_profile_faces,
+        } = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let feature_sources = self.feature_sources;
+        let sketch_sources = self.sketch_sources;
+        Ok({
+            if centerline.is_some()
+                || !solid
+                || *ruled
+                || max_degree.is_some()
+                || check_compatibility.is_some()
+                || allow_multi_profile_faces.is_some()
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported loft result semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_some_and(|record| !is_loft(record)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes unsupported loft semantics",
+                    feature.id
+                )));
+            }
+            if existing.is_none() && (sections.len() < 2 || *op == BooleanOp::Unresolved) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved loft construction semantics",
+                    feature.id
+                )));
+            }
+            if sections
+                .iter()
+                .any(|section| matches!(section, cadmpeg_ir::features::LoftSection::Point(_)))
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses a point loft section",
+                    feature.id
+                )));
+            }
+            let profile_sources = sections
+                .iter()
+                .filter_map(|section| match section {
+                    cadmpeg_ir::features::LoftSection::Profile(profile) => Some(profile),
+                    cadmpeg_ir::features::LoftSection::Point(_) => None,
+                })
+                .map(|profile| {
+                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                })
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} references a missing loft profile",
+                        feature.id
+                    ))
+                })?;
+            let guide_sources = guides
+                .iter()
+                .map(|path| path_source(path, record_sources, sketch_sources))
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} references a missing loft guide",
+                        feature.id
+                    ))
+                })?;
+            let mut properties = feature.source_properties.clone();
+            if !profile_sources.is_empty() || existing.is_none() {
+                properties.insert("Profiles".into(), profile_sources.join(","));
+            }
+            if guide_sources.is_empty() && existing.is_none() {
+                properties.remove("Guides");
+            } else if !guide_sources.is_empty() {
+                properties.insert("Guides".into(), guide_sources.join(","));
+            }
+            if *op != BooleanOp::Unresolved {
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
+            }
+            if *closed || existing.is_none() || properties.contains_key("Closed") {
+                properties.insert("Closed".into(), closed.to_string());
+            }
+            (
+                existing.map_or_else(|| "Loft".into(), |record| record.kind.clone()),
+                existing
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                properties,
+            )
+        })
+    }
+
+    fn encode_rib(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Rib { construction, op } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let feature_sources = self.feature_sources;
+        let sketch_sources = self.sketch_sources;
+        Ok({
+            require_same_family(existing, &feature.id, &["Rib"])?;
+            if existing.is_none()
+                && (construction.profile.is_none()
+                    || construction.direction.is_none()
+                    || construction.thickness.is_none()
+                    || construction.side.is_none()
+                    || construction.draft == RibDraft::Unresolved
+                    || *op == BooleanOp::Unresolved)
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved rib construction",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            if let Some(thickness) = construction.thickness {
+                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+            }
+            match construction.draft {
+                RibDraft::Angle(draft) => {
+                    parameters.insert("Draft".into(), format_angle_rad(draft.0));
+                }
+                RibDraft::None => {
+                    parameters.remove("Draft");
+                }
+                RibDraft::Unresolved => {}
+            }
+            let mut properties = feature.source_properties.clone();
+            if let Some(profile) = &construction.profile {
+                let profile_source =
+                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing rib profile",
+                                feature.id
+                            ))
+                        })?;
+                properties.insert("Profile".into(), profile_source);
+            }
+            if let Some(direction) = construction.direction {
+                require_direction(direction, &feature.id, "rib direction")?;
+                properties.insert("Direction".into(), format_vector3(direction));
+            }
+            if let Some(side) = construction.side {
+                properties.insert("BothSides".into(), (side == RibSide::Centered).to_string());
+            }
+            if *op != BooleanOp::Unresolved {
+                properties.insert(
+                    "Operation".into(),
+                    resolved_boolean_op(*op, &feature.id)?.into(),
+                );
+            }
+            (
+                existing.map_or_else(|| "Rib".into(), |record| record.kind.clone()),
+                parameters,
+                properties,
+            )
+        })
+    }
+
+    fn encode_pattern(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Pattern { seeds, pattern } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        let existing = self.existing;
+        let record_sources = self.record_sources;
+        let sketch_sources = self.sketch_sources;
+        let parent_sources = self.parent_sources;
+        Ok({
+            let expected_form = match pattern {
+                PatternKind::Unresolved { form } => *form,
+                PatternKind::Linear { .. } | PatternKind::LinearOffsets { .. } => {
+                    Some(PatternForm::Linear)
+                }
+                PatternKind::Circular { .. } | PatternKind::CircularAngles { .. } => {
+                    Some(PatternForm::Circular)
+                }
+                PatternKind::CurveDriven { .. } => Some(PatternForm::CurveDriven),
+                PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => {
+                    Some(PatternForm::Mirror)
+                }
+                PatternKind::Scale { .. } => Some(PatternForm::Scale),
+                PatternKind::Composite { .. } => Some(PatternForm::Composite),
+            };
+            if existing.is_some_and(|record| {
+                expected_form.is_some_and(|form| pattern_form(record) != Some(form))
+            }) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes pattern form",
+                    feature.id
+                )));
+            }
+            let mut seed_sources = Vec::new();
+            for seed in seeds {
+                match seed {
+                    PatternSeed::Feature(seed) => {
+                        seed_sources.push(parent_sources.get(seed).cloned().ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing pattern seed",
+                                feature.id
+                            ))
+                        })?);
+                    }
+                    PatternSeed::Faces(_) | PatternSeed::Bodies(_) if existing.is_some() => {}
+                    PatternSeed::Faces(_) | PatternSeed::Bodies(_) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has a source-less topology pattern seed",
+                            feature.id
+                        )));
+                    }
+                    PatternSeed::Occurrences(_) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has component-occurrence pattern seeds",
+                            feature.id
+                        )));
+                    }
+                }
+            }
+            if seed_sources.is_empty()
+                && (!matches!(
+                    expected_form,
+                    Some(PatternForm::Linear | PatternForm::CurveDriven)
+                ) || existing.is_none())
+                && !matches!(pattern, PatternKind::Unresolved { .. })
+            {
+                return Err(CodecError::Malformed(format!(
+                    "SLDPRT feature {} has no pattern seeds",
+                    feature.id
+                )));
+            }
+            let mut parameters = existing
+                .map(|record| record.parameters.clone())
+                .unwrap_or_default();
+            let mut properties = feature.source_properties.clone();
+            if !seed_sources.is_empty() {
+                properties.insert("Seeds".into(), seed_sources.join(","));
+            }
+            match pattern {
+                PatternKind::Unresolved { .. } => {
+                    if existing.is_none() {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unresolved pattern construction",
+                            feature.id
+                        )));
+                    }
+                }
+                PatternKind::Linear {
+                    direction,
+                    spacing,
+                    count,
+                    second,
+                } => {
+                    match direction {
+                        Some(direction) => {
+                            require_direction(*direction, &feature.id, "pattern")?;
+                            properties.insert("Direction".into(), format_vector3(*direction));
+                        }
+                        None if existing.is_some() => {}
+                        None => {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has an unresolved pattern direction",
+                                feature.id
+                            )));
+                        }
+                    }
+                    require_count(*count, &feature.id)?;
+                    if !spacing.0.is_finite() || spacing.0 <= 0.0 {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has invalid linear-pattern spacing",
+                            feature.id
+                        )));
+                    }
+                    let spacing_key =
+                        if parameters.contains_key("D3") && !parameters.contains_key("Spacing") {
+                            "D3"
+                        } else {
+                            "Spacing"
+                        };
+                    let count_key =
+                        if parameters.contains_key("D1") && !parameters.contains_key("Count") {
+                            "D1"
+                        } else {
+                            "Count"
+                        };
+                    parameters.insert(
+                        spacing_key.into(),
+                        format_length_like(
+                            spacing.0,
+                            existing
+                                .and_then(|record| record.parameters.get(spacing_key))
+                                .map(String::as_str),
+                        ),
+                    );
+                    parameters.insert(count_key.into(), count.to_string());
+                    if let Some(second) = second {
+                        require_direction(second.direction, &feature.id, "second pattern")?;
+                        require_count(second.count, &feature.id)?;
+                        if !second.spacing.0.is_finite() || second.spacing.0 <= 0.0 {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has invalid second linear-pattern spacing",
+                                feature.id
+                            )));
+                        }
+                        properties.insert("Direction2".into(), format_vector3(second.direction));
+                        parameters.insert("D4".into(), format_length_like(second.spacing.0, None));
+                        parameters.insert("D2".into(), second.count.to_string());
+                    }
+                }
+                PatternKind::Circular {
+                    axis_origin,
+                    axis_dir,
+                    angle,
+                    count,
+                } => {
+                    require_direction(*axis_dir, &feature.id, "pattern axis")?;
+                    require_count(*count, &feature.id)?;
+                    properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
+                    properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
+                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                    parameters.insert("Count".into(), count.to_string());
+                }
+                PatternKind::CurveDriven {
+                    path,
+                    spacing,
+                    count,
+                } => {
+                    require_count(*count, &feature.id)?;
+                    if !spacing.0.is_finite() || spacing.0 <= 0.0 {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has invalid curve-pattern spacing",
+                            feature.id
+                        )));
+                    }
+                    match path {
+                        Some(path) => {
+                            let path = path_source(path, record_sources, sketch_sources)
+                                .ok_or_else(|| {
+                                    CodecError::Malformed(format!(
+                                        "SLDPRT feature {} references a missing pattern path",
+                                        feature.id
+                                    ))
+                                })?;
+                            properties.insert("Path".into(), path);
+                        }
+                        None if existing.is_some() => {}
+                        None => {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has an unresolved curve-pattern path",
+                                feature.id
+                            )));
+                        }
+                    }
+                    let spacing_key =
+                        if parameters.contains_key("D3") && !parameters.contains_key("Spacing") {
+                            "D3"
+                        } else {
+                            "Spacing"
+                        };
+                    let count_key =
+                        if parameters.contains_key("D1") && !parameters.contains_key("Count") {
+                            "D1"
+                        } else {
+                            "Count"
+                        };
+                    parameters.insert(
+                        spacing_key.into(),
+                        format_length_like(
+                            spacing.0,
+                            existing
+                                .and_then(|record| record.parameters.get(spacing_key))
+                                .map(String::as_str),
+                        ),
+                    );
+                    parameters.insert(count_key.into(), count.to_string());
+                }
+                PatternKind::Mirror {
+                    plane_origin,
+                    plane_normal,
+                } => {
+                    require_direction(*plane_normal, &feature.id, "mirror plane normal")?;
+                    properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
+                    properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
+                }
+                PatternKind::MirrorReference { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved mirror plane",
+                        feature.id
+                    )));
+                }
+                PatternKind::LinearOffsets { .. }
+                | PatternKind::CircularAngles { .. }
+                | PatternKind::Scale { .. }
+                | PatternKind::Composite { .. } => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses a pattern form that cannot be written",
+                        feature.id
+                    )));
+                }
+            }
+            let kind = existing.map_or_else(
+                || match expected_form {
+                    Some(PatternForm::Linear) => "LinearPattern".into(),
+                    Some(PatternForm::Circular) => "CircularPattern".into(),
+                    Some(PatternForm::CurveDriven) => "CrvPattern".into(),
+                    Some(PatternForm::Mirror) => "Mirror".into(),
+                    Some(PatternForm::Scale | PatternForm::Composite) => "Pattern".into(),
+                    None => "Pattern".into(),
+                },
+                |record| record.kind.clone(),
+            );
+            (kind, parameters, properties)
+        })
+    }
+
+    fn encode_helical_sweep(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::HelicalSweep { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses a helical sweep that cannot be written",
+            feature.id
+        )))
+    }
+
+    fn encode_binder(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let FeatureDefinition::Binder { .. } = &feature.definition else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses design-binder semantics that cannot be written",
+            feature.id
+        )))
+    }
+
+    fn encode_explicitly_unsupported(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        let (FeatureDefinition::DatumPointUnresolved
+        | FeatureDefinition::DatumCoordinateSystemUnresolved
+        | FeatureDefinition::Block { .. }
+        | FeatureDefinition::ExtractBody { .. }
+        | FeatureDefinition::LoftUnresolved
+        | FeatureDefinition::FreeformSurfaceUnresolved
+        | FeatureDefinition::DraftUnresolved
+        | FeatureDefinition::FaceBlend { .. }
+        | FeatureDefinition::SewBodies { .. }
+        | FeatureDefinition::TrimBodies { .. }) = &feature.definition
+        else {
+            unreachable!("neutral feature encoder dispatched wrong variant")
+        };
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses semantics that cannot be written",
+            feature.id
+        )))
+    }
+
+    fn encode_unsupported(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+        let feature = self.feature;
+        Err(CodecError::NotImplemented(format!(
+            "SLDPRT feature {} uses semantics that cannot be written",
+            feature.id
+        )))
+    }
+}
+
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub fn sync_neutral_features(
     features: &[cadmpeg_ir::features::Feature],
@@ -13476,3497 +17375,18 @@ pub fn sync_neutral_features(
                     feature.id
                 ))
             })?;
-        let (kind, mut parameters, mut properties) = match &feature.definition {
-            FeatureDefinition::TreeNode {
-                role,
-                children,
-                active_child,
-            } => {
-                if !children.is_empty() || active_child.is_some() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} uses explicit tree membership",
-                        feature.id
-                    )));
-                }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| retained_tree_node_roles.get(&record.id) != Some(role))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes feature-tree node role",
-                        feature.id
-                    )));
-                }
-                (
-                    existing.as_deref().map_or_else(
-                        || feature_tree_node_kind(*role).into(),
-                        |record| record.kind.clone(),
-                    ),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    feature.source_properties.clone(),
-                )
-            }
-            FeatureDefinition::CosmeticThread {
-                face,
-                diameter,
-                extent,
-            } => {
-                let Some(record) = existing
-                    .as_deref()
-                    .filter(|record| classify(record) == Some(FeatureClass::CosmeticThread))
-                else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} adds a cosmetic thread",
-                        feature.id
-                    )));
-                };
-                let mut parameters = record.parameters.clone();
-                if let Some(diameter) = diameter {
-                    let prefix = record
-                        .parameters
-                        .get("D2")
-                        .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
-                        .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;");
-                    parameters.insert(
-                        "D2".into(),
-                        format!("{prefix}{}", format_f64_literal(diameter.0)),
-                    );
-                }
-                match extent {
-                    Some(CosmeticThreadExtent::Blind { length }) => {
-                        parameters.insert(
-                            "D1".into(),
-                            format_length_like(
-                                length.0,
-                                record.parameters.get("D1").map(String::as_str),
-                            ),
-                        );
-                    }
-                    Some(CosmeticThreadExtent::Through) => {
-                        parameters.remove("D1");
-                    }
-                    None => {}
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(value) = face_selection_value(face) {
-                    properties.insert("Face".into(), value);
-                } else if !matches!(face, FaceSelection::Unresolved) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes cosmetic-thread face selection",
-                        feature.id
-                    )));
-                }
-                (record.kind.clone(), parameters, properties)
-            }
-            FeatureDefinition::SketchBlockDefinition { sketch } => {
-                if sketch.is_some() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes sketch-block geometry",
-                        feature.id
-                    )));
-                }
-                let record = existing.as_deref().filter(|record| {
-                    feature_input_class(record, NativeClassKind::SketchBlockDefinition)
-                });
-                let Some(record) = record else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained sketch-block definition",
-                        feature.id
-                    )));
-                };
-                (
-                    record.kind.clone(),
-                    record.parameters.clone(),
-                    record.properties.clone(),
-                )
-            }
-            FeatureDefinition::SketchBlockInstance { block, placement } => {
-                let retained_source = existing
-                    .as_deref()
-                    .and_then(|record| record.properties.get("BlockDefinition"))
-                    .map(String::as_str);
-                let block_source = block
-                    .as_ref()
-                    .and_then(|block| feature_sources.get(block).copied());
-                let retained_placement = existing.as_deref().and_then(sketch_block_placement);
-                if retained_source != block_source
-                    || retained_placement.as_ref() != placement.as_ref()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes sketch-block instance semantics",
-                        feature.id
-                    )));
-                }
-                let record = existing.as_deref().filter(|record| {
-                    feature_input_class(record, NativeClassKind::SketchBlockInstance)
-                });
-                let Some(record) = record else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained sketch-block instance",
-                        feature.id
-                    )));
-                };
-                (
-                    record.kind.clone(),
-                    record.parameters.clone(),
-                    record.properties.clone(),
-                )
-            }
-            FeatureDefinition::Native {
-                kind,
-                parameters,
-                properties,
-            } => {
-                let mut merged = feature.source_properties.clone();
-                merged.extend(properties.clone());
-                (kind.clone(), parameters.clone(), merged)
-            }
-            FeatureDefinition::StoredGeometry => (
-                existing
-                    .as_deref()
-                    .map_or_else(|| "Feature".into(), |record| record.kind.clone()),
-                existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
-                feature.source_properties.clone(),
-            ),
-            FeatureDefinition::DerivedGeometry { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses unsupported copied-geometry semantics",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::ImportedGeometry { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses unsupported external-import semantics",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::Primitive { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses unsupported analytic-primitive semantics",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::DatumPrincipalPlane { plane } => {
-                let record = existing.as_deref().ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained principal-plane record",
-                        feature.id
-                    ))
-                })?;
-                if principal_planes_by_record.get(&record.id) != Some(plane) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes its principal-plane role",
-                        feature.id
-                    )));
-                }
-                (
-                    record.kind.clone(),
-                    record.parameters.clone(),
-                    feature.source_properties.clone(),
-                )
-            }
-            FeatureDefinition::DatumPlaneUnresolved => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} has unresolved datum-plane construction",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::BoundarySurfaceUnresolved => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} has unresolved boundary-surface construction",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::DatumPlane {
-                origin,
-                normal,
-                u_axis,
-            } => {
-                if !valid_plane_frame(*normal, *u_axis) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported reference-plane semantics",
-                        feature.id
-                    )));
-                }
-                if ![origin.x, origin.y, origin.z]
-                    .iter()
-                    .all(|value| value.is_finite())
-                {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has a non-finite reference-plane origin",
-                        feature.id
-                    )));
-                }
-                require_same_family(existing.as_deref(), &feature.id, &["ReferencePlane"])?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Origin".into(), format_point3_mm(*origin));
-                properties.insert("Normal".into(), format_vector3(*normal));
-                properties.insert("UAxis".into(), format_vector3(*u_axis));
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::DatumOffsetPlane {
-                reference,
-                distance,
-            } => {
-                if !distance.0.is_finite() {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has a non-finite reference-plane offset",
-                        feature.id
-                    )));
-                }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !is_offset_plane(record))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
-                let mut properties = feature.source_properties.clone();
-                match reference {
-                    Some(DatumPlaneReference::Feature(reference)) => {
-                        let source = parent_sources.get(reference).ok_or_else(|| {
-                            CodecError::Malformed(format!(
-                                "SLDPRT feature {} references a missing datum plane",
-                                feature.id
-                            ))
-                        })?;
-                        let key = if properties.contains_key("Plane")
-                            && !properties.contains_key("Reference")
-                        {
-                            "Plane"
-                        } else {
-                            "Reference"
-                        };
-                        properties.insert(key.into(), source.clone());
-                    }
-                    Some(DatumPlaneReference::Face { .. }) => {
-                        let Some(record) = existing.as_deref() else {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} cannot create a face-supported datum plane",
-                                feature.id
-                            )));
-                        };
-                        properties = record.properties.clone();
-                    }
-                    None if existing.is_some() => {}
-                    None => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has an unresolved datum-plane reference",
-                            feature.id
-                        )));
-                    }
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                parameters.insert(
-                    "D1".into(),
-                    format_length_like(
-                        distance.0,
-                        existing
-                            .as_deref()
-                            .and_then(|record| record.parameters.get("D1"))
-                            .map(String::as_str),
-                    ),
-                );
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Plane".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::TrimSurface { faces, tool, keep } => {
-                let faces = face_selection_value(faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no trim-surface input faces",
-                        feature.id
-                    ))
-                })?;
-                let tool =
-                    path_source(tool, &record_sources, &sketch_sources).ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing trim path",
-                            feature.id
-                        ))
-                    })?;
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["TrimSurface", "SurfaceTrim"],
-                )?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), faces);
-                properties.insert("Tool".into(), tool);
-                properties.insert(
-                    "Keep".into(),
-                    crate::feature_schema::trim_region_token(*keep).into(),
-                );
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "TrimSurface".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::ExtendSurface {
-                faces,
-                distance,
-                method,
-            } => {
-                let faces = face_selection_value(faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no extend-surface input faces",
-                        feature.id
-                    ))
-                })?;
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["ExtendSurface", "SurfaceExtend"],
-                )?;
-                let distance = distance.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved surface extension distance",
-                        feature.id
-                    ))
-                })?;
-                if !distance.0.is_finite() || distance.0 <= 0.0 {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has an invalid surface extension",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                parameters.insert("Distance".into(), format_length_mm(distance.0));
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), faces);
-                properties.insert(
-                    "Method".into(),
-                    crate::feature_schema::surface_extension_token(*method).into(),
-                );
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "ExtendSurface".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::RuledSurface {
-                edges,
-                support_faces,
-                mode,
-                angle,
-                alternate_face,
-                corner,
-            } => {
-                if angle.is_some() || alternate_face.is_some() || corner.is_some() {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} cannot encode ruled-surface angle, face-side, or corner semantics",
-                        feature.id
-                    )));
-                }
-                let edges = edge_selection_value(edges).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no ruled-surface boundary edges",
-                        feature.id
-                    ))
-                })?;
-                let support_faces = face_selection_value(support_faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no ruled-surface supports",
-                        feature.id
-                    ))
-                })?;
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["RuledSurface", "SurfaceRuled"],
-                )?;
-                let (mode_name, direction, distance) = match mode {
-                    RuledSurfaceMode::Normal { distance } => ("Normal", None, *distance),
-                    RuledSurfaceMode::Tangent { distance } => ("Tangent", None, *distance),
-                    RuledSurfaceMode::Direction {
-                        direction,
-                        distance,
-                    } => {
-                        require_direction(*direction, &feature.id, "ruled-surface direction")?;
-                        ("Direction", Some(*direction), *distance)
-                    }
-                };
-                if !distance.0.is_finite() || distance.0 <= 0.0 {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has an invalid ruled-surface distance",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                parameters.insert("Distance".into(), format_length_mm(distance.0));
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Edges".into(), edges);
-                properties.insert("SupportFaces".into(), support_faces);
-                properties.insert("Mode".into(), mode_name.into());
-                match direction {
-                    Some(direction) => {
-                        properties.insert("Direction".into(), format_vector3(direction));
-                    }
-                    None => {
-                        properties.remove("Direction");
-                    }
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "RuledSurface".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::DatumAxis { origin, direction } => {
-                if !valid_direction(*direction) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported reference-axis semantics",
-                        feature.id
-                    )));
-                }
-                if ![origin.x, origin.y, origin.z]
-                    .iter()
-                    .all(|value| value.is_finite())
-                {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has a non-finite reference-axis origin",
-                        feature.id
-                    )));
-                }
-                require_same_family(existing.as_deref(), &feature.id, &["ReferenceAxis"])?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Origin".into(), format_point3_mm(*origin));
-                properties.insert("Direction".into(), format_vector3(*direction));
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "ReferenceAxis".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::DatumPoint { position, .. } => {
-                if ![position.x, position.y, position.z]
-                    .iter()
-                    .all(|value| value.is_finite())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported reference-point semantics",
-                        feature.id
-                    )));
-                }
-                require_same_family(existing.as_deref(), &feature.id, &["ReferencePoint"])?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Position".into(), format_point3_mm(*position));
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "ReferencePoint".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::DatumCoordinateSystem {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            } => {
-                if !valid_coordinate_frame(*origin, *x_axis, *y_axis, *z_axis) {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has an invalid coordinate-system frame",
-                        feature.id
-                    )));
-                }
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["CoordinateSystem", "ReferenceCoordinateSystem"],
-                )?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Origin".into(), format_point3_mm(*origin));
-                properties.insert("XAxis".into(), format_vector3(*x_axis));
-                properties.insert("YAxis".into(), format_vector3(*y_axis));
-                properties.insert("ZAxis".into(), format_vector3(*z_axis));
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "CoordinateSystem".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::EquationCurve {
-                parameter,
-                x_expression,
-                y_expression,
-                z_expression,
-                start,
-                end,
-            } => {
-                if parameter.trim().is_empty()
-                    || x_expression.trim().is_empty()
-                    || y_expression.trim().is_empty()
-                    || z_expression.trim().is_empty()
-                    || !start.is_finite()
-                    || !end.is_finite()
-                    || start >= end
-                {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has an invalid equation curve",
-                        feature.id
-                    )));
-                }
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["EquationDrivenCurve", "EquationCurve"],
-                )?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Parameter".into(), parameter.clone());
-                properties.insert("XEquation".into(), x_expression.clone());
-                properties.insert("YEquation".into(), y_expression.clone());
-                properties.insert("ZEquation".into(), z_expression.clone());
-                properties.insert("Start".into(), start.to_string());
-                properties.insert("End".into(), end.to_string());
-                (
-                    existing.as_deref().map_or_else(
-                        || "EquationDrivenCurve".into(),
-                        |record| record.kind.clone(),
-                    ),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::ProjectedCurve {
-                source,
-                target_faces,
-                direction,
-                bidirectional,
-            } => {
-                let source =
-                    path_source(source, &record_sources, &sketch_sources).ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing projection source",
-                            feature.id
-                        ))
-                    })?;
-                let target_faces = face_selection_value(target_faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no projection target faces",
-                        feature.id
-                    ))
-                })?;
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["ProjectedCurve", "ProjectionCurve"],
-                )?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Source".into(), source);
-                properties.insert("TargetFaces".into(), target_faces);
-                if let Some(bidirectional) = bidirectional {
-                    properties.insert("Bidirectional".into(), bidirectional.to_string());
-                }
-                match direction {
-                    CurveProjectionDirection::Vector(direction) => {
-                        require_direction(*direction, &feature.id, "projection direction")?;
-                        properties.insert("Direction".into(), format_vector3(*direction));
-                    }
-                    CurveProjectionDirection::State(
-                        CurveProjectionDirectionState::TargetNormal,
-                    ) => {
-                        properties.remove("Direction");
-                    }
-                    CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has unresolved projection direction",
-                            feature.id
-                        )));
-                    }
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "ProjectedCurve".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::CompositeCurve { segments, closed } => {
-                if segments.is_empty() {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no composite-curve segments",
-                        feature.id
-                    )));
-                }
-                require_same_family(existing.as_deref(), &feature.id, &["CompositeCurve"])?;
-                let segments = segments
-                    .iter()
-                    .map(|segment| {
-                        path_source(segment, &record_sources, &sketch_sources).ok_or_else(|| {
-                            CodecError::Malformed(format!(
-                                "SLDPRT feature {} references a missing composite segment",
-                                feature.id
-                            ))
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Segments".into(), segments.join(";"));
-                properties.insert("Closed".into(), closed.to_string());
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "CompositeCurve".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::Helix {
-                axis_origin,
-                axis_direction,
-                radius,
-                pitch,
-                revolutions,
-                start_angle,
-                clockwise,
-                radial_growth,
-                cone_angle,
-                segment_turns,
-                construction_style,
-            } => {
-                if radial_growth.is_some()
-                    || cone_angle.is_some()
-                    || segment_turns.is_some()
-                    || construction_style.is_some()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} uses unsupported helix construction controls",
-                        feature.id
-                    )));
-                }
-                if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
-                    .into_iter()
-                    .all(f64::is_finite)
-                    || !valid_direction(*axis_direction)
-                    || !radius.0.is_finite()
-                    || radius.0 <= 0.0
-                    || !revolutions.is_finite()
-                    || *revolutions <= 0.0
-                    || !start_angle.0.is_finite()
-                {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has invalid helix geometry",
-                        feature.id
-                    )));
-                }
-                if existing.as_deref().is_some_and(|record| !is_helix(record)) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                parameters.insert("Radius".into(), format_length_mm(radius.0));
-                parameters.insert("Pitch".into(), format_length_mm(pitch.0));
-                parameters.insert("Revolutions".into(), revolutions.to_string());
-                parameters.insert("StartAngle".into(), format_angle_rad(start_angle.0));
-                let mut properties = feature.source_properties.clone();
-                properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
-                properties.insert("AxisDirection".into(), format_vector3(*axis_direction));
-                properties.insert("Clockwise".into(), clockwise.to_string());
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Helix".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::HelixNativeAxis {
-                axis_native_ref,
-                axial_rise,
-                pitch,
-                revolutions,
-                start_angle,
-                clockwise,
-            } => {
-                if axis_native_ref.is_empty()
-                    || !axial_rise.0.is_finite()
-                    || !pitch.0.is_finite()
-                    || !revolutions.is_finite()
-                    || *revolutions <= 0.0
-                    || !start_angle.0.is_finite()
-                {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has invalid native-axis helix geometry",
-                        feature.id
-                    )));
-                }
-                let record = existing.as_deref().ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained native helix axis",
-                        feature.id
-                    ))
-                })?;
-                if !is_helix(record) || axis_native_ref != &record.id {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes its native helix axis",
-                        feature.id
-                    )));
-                }
-                let mut parameters = record.parameters.clone();
-                parameters.insert(
-                    "D3".into(),
-                    format_length_like(
-                        axial_rise.0,
-                        record.parameters.get("D3").map(String::as_str),
-                    ),
-                );
-                parameters.insert(
-                    "D4".into(),
-                    format_length_like(pitch.0, record.parameters.get("D4").map(String::as_str)),
-                );
-                parameters.insert("D5".into(), revolutions.to_string());
-                parameters.insert(
-                    "D7".into(),
-                    format_angle_like(
-                        start_angle.0,
-                        record.parameters.get("D7").map(String::as_str),
-                    ),
-                );
-                let mut properties = feature.source_properties.clone();
-                if properties.contains_key("Clockwise") || *clockwise {
-                    properties.insert("Clockwise".into(), clockwise.to_string());
-                }
-                (record.kind.clone(), parameters, properties)
-            }
-            FeatureDefinition::Wrap {
-                profile,
-                face,
-                mode,
-                depth,
-            } => {
-                require_same_family(existing.as_deref(), &feature.id, &["Wrap"])?;
-                let profile =
-                    profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
-                        .ok_or_else(|| {
-                            CodecError::Malformed(format!(
-                                "SLDPRT feature {} references a missing wrap profile",
-                                feature.id
-                            ))
-                        })?;
-                let face = face_selection_value(face).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no wrap target face",
-                        feature.id
-                    ))
-                })?;
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                match mode {
-                    WrapMode::Emboss | WrapMode::Deboss => {
-                        let depth = depth
-                            .filter(|value| value.0.is_finite() && value.0 > 0.0)
-                            .ok_or_else(|| {
-                                CodecError::Malformed(format!(
-                                    "SLDPRT feature {} has invalid wrap depth",
-                                    feature.id
-                                ))
-                            })?;
-                        parameters.insert("Depth".into(), format_length_mm(depth.0));
-                    }
-                    WrapMode::Scribe => {
-                        if depth.is_some() {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} gives a scribe wrap a depth",
-                                feature.id
-                            )));
-                        }
-                        parameters.remove("Depth");
-                    }
-                }
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Profile".into(), profile);
-                properties.insert("Face".into(), face);
-                properties.insert(
-                    "Mode".into(),
-                    match mode {
-                        WrapMode::Emboss => "Emboss",
-                        WrapMode::Deboss => "Deboss",
-                        WrapMode::Scribe => "Scribe",
-                    }
-                    .into(),
-                );
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Wrap".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Sketch { .. } => {
-                require_same_family(existing.as_deref(), &feature.id, &["Sketch"])?;
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    feature.source_properties.clone(),
-                )
-            }
-            FeatureDefinition::SpatialSketch { .. } => {
-                require_same_family(existing.as_deref(), &feature.id, &["Sketch"])?;
-                (
-                    "3DSketch".into(),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    feature.source_properties.clone(),
-                )
-            }
-            FeatureDefinition::Extrude {
-                profile,
-                direction,
-                start,
-                extent,
-                op,
-                direction_source,
-                solid,
-                face_maker,
-                inner_wire_taper,
-                length_along_profile_normal,
-                allow_multi_profile_faces,
-            } => {
-                // Writer accepts only a first-side draft; second-side draft or
-                // any side offset is rejected.
-                let (first_draft, second_side_draft, any_side_offset) = match extent {
-                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                        (side.draft, None, side.offset.is_some())
-                    }
-                    ExtrudeExtent::TwoSided { first, second } => (
-                        first.draft,
-                        second.draft,
-                        first.offset.is_some() || second.offset.is_some(),
-                    ),
-                };
-                let extent_is_unresolved = matches!(
-                    extent,
-                    ExtrudeExtent::OneSided { side }
-                        if matches!(side.termination, Termination::Unresolved)
-                );
-                if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane)
-                    || second_side_draft.is_some()
-                    || direction_source.is_some()
-                    || *solid == Some(false)
-                    || face_maker.is_some()
-                    || inner_wire_taper.is_some()
-                    || any_side_offset
-                    || length_along_profile_normal.is_some()
-                    || allow_multi_profile_faces.is_some()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} uses unsupported extrusion construction controls",
-                        feature.id
-                    )));
-                }
-                if *op == BooleanOp::Unresolved && existing.is_none() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires retained extrusion operation data",
-                        feature.id
-                    )));
-                }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !is_extrude(record))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported extrusion semantics",
-                        feature.id
-                    )));
-                }
-                if let ProfileRef::Unresolved(owner) = profile {
-                    let retained = existing.as_deref().is_some_and(|record| {
-                        record.id == *owner && !record.properties.contains_key("Profile")
-                    });
-                    if !retained {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} requires retained extrusion profile data",
-                            feature.id
-                        )));
-                    }
-                }
-                let implicit_profile = existing.as_deref().is_some_and(|record| {
-                    !record.properties.contains_key("Profile")
-                        && (matches!(profile, ProfileRef::Unresolved(owner) if owner == &record.id)
-                            || matches!(profile, ProfileRef::Native(native) if native == &record.id))
-                });
-                let profile_source = if implicit_profile {
-                    None
-                } else {
-                    Some(
-                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
-                            .ok_or_else(|| {
-                                CodecError::Malformed(format!(
-                                    "SLDPRT feature {} references a missing extrusion profile",
-                                    feature.id
-                                ))
-                            })?,
-                    )
-                };
-                if let Some(record) = existing.as_deref() {
-                    if !record.properties.contains_key("Operation")
-                        && *op != BooleanOp::Unresolved
-                        && extrude_feature_op(record).is_some_and(|native_op| native_op != *op)
-                    {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} changes its inferred extrusion operation",
-                            feature.id
-                        )));
-                    }
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let positional_depth = (parameters.contains_key("D1")
-                    || existing.as_deref().is_some_and(|record| {
-                        resolved_parameter_names
-                            .get(&record.id)
-                            .is_some_and(|names| names.contains("D1"))
-                    }))
-                    && !parameters.contains_key("Depth");
-                let mut properties = feature.source_properties.clone();
-                if extent_is_unresolved && existing.is_none() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires retained extrusion extent data",
-                        feature.id
-                    )));
-                }
-                if !extent_is_unresolved {
-                    parameters.remove("Depth");
-                    parameters.remove("Depth2");
-                    parameters.remove("Draft");
-                    properties.remove("Direction");
-                    properties.remove("Face");
-                    properties.remove("Vertex");
-                }
-                let unsupported_extent = || {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} uses an unsupported extrusion extent",
-                        feature.id
-                    ))
-                };
-                match extent {
-                    ExtrudeExtent::OneSided { side } => match &side.termination {
-                        Termination::Unresolved => {}
-                        Termination::Blind { length } => {
-                            if properties.contains_key("EndCondition") || existing.is_none() {
-                                properties.insert("EndCondition".into(), "Blind".into());
-                            }
-                            let key = if positional_depth { "D1" } else { "Depth" };
-                            parameters.insert(
-                                key.into(),
-                                format_length_like(
-                                    length.0,
-                                    existing
-                                        .as_deref()
-                                        .and_then(|record| record.parameters.get(key))
-                                        .map(String::as_str),
-                                ),
-                            );
-                        }
-                        Termination::ThroughAll => {
-                            properties.insert("EndCondition".into(), "ThroughAll".into());
-                        }
-                        Termination::ThroughNext => {
-                            properties.insert("EndCondition".into(), "ThroughNext".into());
-                        }
-                        Termination::ToFirst
-                        | Termination::ToLast
-                        | Termination::ToShape { .. } => {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} uses an unsupported extrusion termination",
-                                feature.id
-                            )));
-                        }
-                        Termination::ToFace { face, offset }
-                            if face_selection_value(face).is_some() =>
-                        {
-                            let selection = face_selection_value(face).expect("guarded above");
-                            properties.insert("EndCondition".into(), "ToFace".into());
-                            properties.insert("Face".into(), selection);
-                            if let Some(offset) = offset {
-                                parameters.insert("Depth".into(), format_length_mm(offset.0));
-                            }
-                        }
-                        Termination::ToVertex { vertex }
-                            if vertex_selection_value(vertex).is_some() =>
-                        {
-                            let selection = vertex_selection_value(vertex).expect("guarded above");
-                            properties.insert("EndCondition".into(), "ToVertex".into());
-                            properties.insert("Vertex".into(), selection);
-                        }
-                        Termination::OffsetFromFace { face, offset }
-                            if face_selection_value(face).is_some() =>
-                        {
-                            let selection = face_selection_value(face).expect("guarded above");
-                            properties.insert("EndCondition".into(), "OffsetFromFace".into());
-                            properties.insert("Face".into(), selection);
-                            parameters.insert("Depth".into(), format_length_mm(offset.0));
-                        }
-                        Termination::ToFace { .. }
-                        | Termination::ToVertex { .. }
-                        | Termination::OffsetFromFace { .. } => {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} uses an unsupported extrusion termination selection",
-                                feature.id
-                            )));
-                        }
-                        Termination::Angle { .. } => return Err(unsupported_extent()),
-                    },
-                    ExtrudeExtent::Symmetric { side } => match &side.termination {
-                        Termination::Blind { length } => {
-                            properties.insert("EndCondition".into(), "Symmetric".into());
-                            parameters.insert("Depth".into(), format_length_mm(length.0));
-                        }
-                        _ => return Err(unsupported_extent()),
-                    },
-                    ExtrudeExtent::TwoSided { first, second } => {
-                        match (&first.termination, &second.termination) {
-                            (
-                                Termination::Blind { length: first },
-                                Termination::Blind { length: second },
-                            ) => {
-                                properties.insert("EndCondition".into(), "TwoSided".into());
-                                parameters.insert("Depth".into(), format_length_mm(first.0));
-                                parameters.insert("Depth2".into(), format_length_mm(second.0));
-                            }
-                            (Termination::ThroughAll, Termination::ThroughAll) => {
-                                properties.insert("EndCondition".into(), "ThroughAllBoth".into());
-                            }
-                            _ => return Err(unsupported_extent()),
-                        }
-                    }
-                }
-                match direction {
-                    cadmpeg_ir::features::ExtrudeDirection::Unresolved => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has an unresolved extrusion direction",
-                            feature.id
-                        )));
-                    }
-                    cadmpeg_ir::features::ExtrudeDirection::ProfileNormal => {
-                        properties.remove("Direction");
-                    }
-                    cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses a reversed profile-normal extrusion direction",
-                            feature.id
-                        )));
-                    }
-                    cadmpeg_ir::features::ExtrudeDirection::Explicit(direction) => {
-                        require_direction(*direction, &feature.id, "extrusion direction")?;
-                        properties.insert("Direction".into(), format_vector3(*direction));
-                    }
-                }
-                if let Some(draft) = first_draft {
-                    if !draft.0.is_finite() {
-                        return Err(CodecError::Malformed(format!(
-                            "SLDPRT feature {} has a non-finite extrusion draft",
-                            feature.id
-                        )));
-                    }
-                    parameters.insert("Draft".into(), format_angle_rad(draft.0));
-                }
-                if *op != BooleanOp::Unresolved
-                    && (properties.contains_key("Operation")
-                        || existing.as_deref().and_then(extrude_feature_op).is_none())
-                {
-                    properties.insert(
-                        "Operation".into(),
-                        resolved_boolean_op(*op, &feature.id)?.into(),
-                    );
-                }
-                if !implicit_profile {
-                    properties.insert(
-                        "Profile".into(),
-                        profile_source.expect("non-implicit profile was resolved"),
-                    );
-                }
-                let kind = existing.as_deref().map_or_else(
-                    || match op {
-                        BooleanOp::Unresolved => "Extrusion".into(),
-                        BooleanOp::Join => "BossExtrude".into(),
-                        BooleanOp::Cut => "CutExtrude".into(),
-                        BooleanOp::NewBody | BooleanOp::Intersect => "Extrusion".into(),
-                    },
-                    |record| record.kind.clone(),
-                );
-                (kind, parameters, properties)
-            }
-            FeatureDefinition::Fillet { groups } => {
-                let [group] = groups.as_slice() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires exactly one fillet edge group",
-                        feature.id
-                    )));
-                };
-                let edges = &group.edges;
-                let radius = &group.radius;
-                let selection = edge_selection_value(edges);
-                if selection.is_none()
-                    && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported fillet semantics",
-                        feature.id
-                    )));
-                }
-                if existing.as_deref().is_some_and(|record| !is_fillet(record)) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported fillet semantics",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let positional_radius = parameters.contains_key("D1")
-                    && !parameters.contains_key("Radius")
-                    && !parameters.keys().any(|name| indexed_name(name, "Radius"));
-                match radius {
-                    RadiusSpec::Unresolved { .. } => {
-                        if existing.is_none() {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} has an unresolved fillet radius law",
-                                feature.id
-                            )));
-                        }
-                    }
-                    RadiusSpec::Constant {
-                        radius: Length(radius),
-                    } => {
-                        parameters.retain(|name, _| {
-                            name != "Radius"
-                                && !indexed_name(name, "Radius")
-                                && !indexed_name(name, "Position")
-                        });
-                        let key = if positional_radius { "D1" } else { "Radius" };
-                        let value = format_length_like(
-                            *radius,
-                            existing
-                                .as_deref()
-                                .and_then(|record| record.parameters.get(key))
-                                .map(String::as_str),
-                        );
-                        parameters.insert(key.into(), value);
-                    }
-                    RadiusSpec::Chordal { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses a chordal fillet law",
-                            feature.id
-                        )));
-                    }
-                    RadiusSpec::Asymmetric { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an asymmetric fillet law",
-                            feature.id
-                        )));
-                    }
-                    RadiusSpec::Variable { points } => {
-                        parameters.retain(|name, _| {
-                            name != "Radius"
-                                && !indexed_name(name, "Radius")
-                                && !indexed_name(name, "Position")
-                        });
-                        if positional_radius {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} changes positional fillet form",
-                                feature.id
-                            )));
-                        }
-                        if points.len() < 2
-                            || points.iter().any(|point| {
-                                !point.parameter.is_finite()
-                                    || !(0.0..=1.0).contains(&point.parameter)
-                            })
-                            || points
-                                .windows(2)
-                                .any(|pair| pair[0].parameter >= pair[1].parameter)
-                        {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has an invalid variable-radius law",
-                                feature.id
-                            )));
-                        }
-                        for (index, point) in points.iter().enumerate() {
-                            parameters
-                                .insert(format!("Position{index}"), point.parameter.to_string());
-                            parameters
-                                .insert(format!("Radius{index}"), format_length_mm(point.radius.0));
-                        }
-                    }
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(selection) = selection {
-                    write_native_selection(
-                        &mut properties,
-                        "Edges",
-                        &selection,
-                        existing.as_deref().map_or("", |record| record.id.as_str()),
-                    );
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Fillet".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Chamfer {
-                groups,
-                flip_direction,
-            } => {
-                let [group] = groups.as_slice() else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires exactly one chamfer edge group",
-                        feature.id
-                    )));
-                };
-                let edges = &group.edges;
-                let spec = &group.spec;
-                if *flip_direction {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
-                        feature.id
-                    )));
-                }
-                let selection = edge_selection_value(edges);
-                if selection.is_none()
-                    && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported chamfer semantics",
-                        feature.id
-                    )));
-                }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !is_chamfer(record))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported chamfer semantics",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let positional = parameters.contains_key("D1")
-                    && !parameters.contains_key("Distance")
-                    && !parameters.contains_key("Distance1");
-                let positional_angle = positional
-                    && parameters
-                        .get("D2")
-                        .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
-                match spec {
-                    ChamferSpec::Unresolved { .. } => {
-                        if existing.is_none() {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} has unresolved chamfer dimensions",
-                                feature.id
-                            )));
-                        }
-                    }
-                    ChamferSpec::Distance { distance } => {
-                        if existing.is_some()
-                            && if positional {
-                                parameters.contains_key("D2")
-                            } else {
-                                parameters.contains_key("Distance1")
-                                    || parameters.contains_key("Distance2")
-                                    || parameters.contains_key("Angle")
-                            }
-                        {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} changes chamfer form",
-                                feature.id
-                            )));
-                        }
-                        let key = if positional { "D1" } else { "Distance" };
-                        let value = format_length_like(
-                            distance.0,
-                            existing
-                                .as_deref()
-                                .and_then(|record| record.parameters.get(key))
-                                .map(String::as_str),
-                        );
-                        parameters.insert(key.into(), value);
-                    }
-                    ChamferSpec::TwoDistances { first, second } => {
-                        if existing.is_some()
-                            && if positional {
-                                !parameters.contains_key("D2") || positional_angle
-                            } else {
-                                !parameters.contains_key("Distance1")
-                                    || !parameters.contains_key("Distance2")
-                                    || parameters.contains_key("Angle")
-                            }
-                        {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} changes chamfer form",
-                                feature.id
-                            )));
-                        }
-                        let (first_key, second_key) = if positional {
-                            ("D1", "D2")
-                        } else {
-                            ("Distance1", "Distance2")
-                        };
-                        parameters.insert(
-                            first_key.into(),
-                            format_length_like(
-                                first.0,
-                                existing
-                                    .as_deref()
-                                    .and_then(|record| record.parameters.get(first_key))
-                                    .map(String::as_str),
-                            ),
-                        );
-                        parameters.insert(
-                            second_key.into(),
-                            format_length_like(
-                                second.0,
-                                existing
-                                    .as_deref()
-                                    .and_then(|record| record.parameters.get(second_key))
-                                    .map(String::as_str),
-                            ),
-                        );
-                    }
-                    ChamferSpec::DistanceAngle { distance, angle } => {
-                        if existing.is_some()
-                            && if positional {
-                                !positional_angle
-                            } else {
-                                !parameters.contains_key("Distance")
-                                    || !parameters.contains_key("Angle")
-                                    || parameters.contains_key("Distance1")
-                                    || parameters.contains_key("Distance2")
-                            }
-                        {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} changes chamfer form",
-                                feature.id
-                            )));
-                        }
-                        let (distance_key, angle_key) = if positional {
-                            ("D1", "D2")
-                        } else {
-                            ("Distance", "Angle")
-                        };
-                        parameters.insert(
-                            distance_key.into(),
-                            format_length_like(
-                                distance.0,
-                                existing
-                                    .as_deref()
-                                    .and_then(|record| record.parameters.get(distance_key))
-                                    .map(String::as_str),
-                            ),
-                        );
-                        parameters.insert(
-                            angle_key.into(),
-                            format_angle_like(
-                                angle.0,
-                                existing
-                                    .as_deref()
-                                    .and_then(|record| record.parameters.get(angle_key))
-                                    .map(String::as_str),
-                            ),
-                        );
-                    }
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(selection) = selection {
-                    write_native_selection(
-                        &mut properties,
-                        "Edges",
-                        &selection,
-                        existing.as_deref().map_or("", |record| record.id.as_str()),
-                    );
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Chamfer".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::OffsetShape { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses unsupported whole-shape offset semantics",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::PostProcess { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses unsupported topology post-processing semantics",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::PointGeometry { .. }
-            | FeatureDefinition::LineSegment { .. }
-            | FeatureDefinition::CircularArc { .. }
-            | FeatureDefinition::EllipticArc { .. }
-            | FeatureDefinition::Polyline { .. }
-            | FeatureDefinition::RegularPolygonCurve { .. }
-            | FeatureDefinition::PlanarPatch { .. }
-            | FeatureDefinition::FaceFromShapes { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses unsupported construction-geometry semantics",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::Compound { .. }
-            | FeatureDefinition::RefineShape { .. }
-            | FeatureDefinition::ReverseShape { .. }
-            | FeatureDefinition::RuledBetweenCurves { .. }
-            | FeatureDefinition::SectionShape { .. }
-            | FeatureDefinition::MirrorShape { .. }
-            | FeatureDefinition::ProjectOnSurface { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses unsupported derived-shape semantics",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::Shell {
-                bodies,
-                removed_faces,
-                thickness,
-                outward,
-                mode,
-                join,
-                resolve_intersections,
-                allow_self_intersections,
-            } => {
-                if bodies.is_some()
-                    || mode.is_some()
-                    || join.is_some()
-                    || resolve_intersections.is_some()
-                    || allow_self_intersections.is_some()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported shell construction semantics",
-                        feature.id
-                    )));
-                }
-                let selection = face_selection_value(removed_faces);
-                if selection.is_none()
-                    && !(matches!(removed_faces, FaceSelection::Unresolved) && existing.is_some())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported shell semantics",
-                        feature.id
-                    )));
-                }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Shell"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported shell semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none() && (thickness.is_none() || outward.is_none()) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved shell construction",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let thickness_key =
-                    if parameters.contains_key("D1") && !parameters.contains_key("Thickness") {
-                        "D1"
-                    } else {
-                        "Thickness"
-                    };
-                if let Some(thickness) = thickness {
-                    parameters.insert(
-                        thickness_key.into(),
-                        format_length_like(
-                            thickness.0,
-                            existing
-                                .as_deref()
-                                .and_then(|record| record.parameters.get(thickness_key))
-                                .map(String::as_str),
-                        ),
-                    );
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(selection) = selection {
-                    write_native_selection(
-                        &mut properties,
-                        "RemovedFaces",
-                        &selection,
-                        existing.as_deref().map_or("", |record| record.id.as_str()),
-                    );
-                }
-                if let Some(outward) = outward {
-                    properties.insert("Outward".into(), outward.to_string());
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Shell".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Thicken {
-                faces,
-                thickness,
-                side,
-            } => {
-                use cadmpeg_ir::features::ThickenSide;
-
-                let selection = face_selection_value(faces);
-                if selection.is_none()
-                    && !(matches!(faces, FaceSelection::Unresolved) && existing.is_some())
-                    || existing.as_deref().is_some_and(|record| {
-                        !feature_family(record, "Thicken")
-                            && !feature_family(record, "Thickness")
-                            && !feature_input_class(record, NativeClassKind::Thicken)
-                    })
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported thicken semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none() && (thickness.is_none() || side.is_none()) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved thicken construction",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let thickness_key =
-                    if parameters.contains_key("D1") && !parameters.contains_key("Thickness") {
-                        "D1"
-                    } else {
-                        "Thickness"
-                    };
-                if let Some(thickness) = thickness {
-                    parameters.insert(
-                        thickness_key.into(),
-                        format_length_like(
-                            thickness.0,
-                            existing
-                                .as_deref()
-                                .and_then(|record| record.parameters.get(thickness_key))
-                                .map(String::as_str),
-                        ),
-                    );
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(selection) = selection {
-                    write_native_selection(
-                        &mut properties,
-                        "Faces",
-                        &selection,
-                        existing.as_deref().map_or("", |record| record.id.as_str()),
-                    );
-                }
-                if let Some(side) = side {
-                    let both_sides = matches!(side, ThickenSide::Both);
-                    if both_sides || properties.contains_key("BothSides") {
-                        properties.insert("BothSides".into(), both_sides.to_string());
-                    }
-                    let reverse = matches!(side, ThickenSide::Reverse);
-                    if reverse || properties.contains_key("Reverse") {
-                        properties.insert("Reverse".into(), reverse.to_string());
-                    }
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Thicken".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::OffsetSurface { faces, distance } => {
-                let selection = face_selection_value(faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no offset-surface support faces",
-                        feature.id
-                    ))
-                })?;
-                require_same_family(existing.as_deref(), &feature.id, &["OffsetSurface"])?;
-                let distance = distance.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved surface offset",
-                        feature.id
-                    ))
-                })?;
-                if !distance.0.is_finite() {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has a non-finite surface offset",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                parameters.insert("Distance".into(), format_length_mm(distance.0));
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), selection);
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "OffsetSurface".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::KnitSurface {
-                faces,
-                merge_entities,
-                create_solid,
-                gap_tolerance,
-            } => {
-                let selection = face_selection_value(faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no knit-surface input faces",
-                        feature.id
-                    ))
-                })?;
-                let merge_entities = merge_entities.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved knit merge state",
-                        feature.id
-                    ))
-                })?;
-                let create_solid = create_solid.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved knit solid state",
-                        feature.id
-                    ))
-                })?;
-                require_same_family(existing.as_deref(), &feature.id, &["KnitSurface", "Knit"])?;
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                match gap_tolerance {
-                    Some(value) if value.0.is_finite() && value.0 >= 0.0 => {
-                        parameters.insert("GapTolerance".into(), format_length_mm(value.0));
-                    }
-                    Some(_) => {
-                        return Err(CodecError::Malformed(format!(
-                            "SLDPRT feature {} has an invalid knit tolerance",
-                            feature.id
-                        )));
-                    }
-                    None => {
-                        parameters.remove("GapTolerance");
-                    }
-                }
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), selection);
-                properties.insert("MergeEntities".into(), merge_entities.to_string());
-                properties.insert("CreateSolid".into(), create_solid.to_string());
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "KnitSurface".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::FilledSurface {
-                boundary,
-                support_faces,
-                continuity,
-                boundary_continuities,
-                merge_result,
-            } => {
-                let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} uses a path-based filled-surface boundary",
-                        feature.id
-                    )));
-                };
-                let boundary = edge_selection_value(boundary).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no filled-surface boundary",
-                        feature.id
-                    ))
-                })?;
-                let support_faces = face_selection_value(support_faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no filled-surface supports",
-                        feature.id
-                    ))
-                })?;
-                let continuity = continuity.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved filled-surface continuity",
-                        feature.id
-                    ))
-                })?;
-                if !boundary_continuities.is_empty() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has per-boundary filled-surface continuity",
-                        feature.id
-                    )));
-                }
-                let merge_result = merge_result.ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved filled-surface merge state",
-                        feature.id
-                    ))
-                })?;
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["FilledSurface", "FillSurface"],
-                )?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Boundary".into(), boundary);
-                properties.insert("SupportFaces".into(), support_faces);
-                properties.insert(
-                    "Continuity".into(),
-                    crate::feature_schema::surface_continuity_token(continuity).into(),
-                );
-                properties.insert("MergeResult".into(), merge_result.to_string());
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "FilledSurface".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::Draft {
-                faces: face_selection,
-                neutral_plane: plane_selection,
-                parting_tool,
-                pull_plane,
-                pull_direction,
-                angle,
-                outward,
-            } => {
-                let faces = face_selection_value(face_selection);
-                let neutral_plane = face_selection_value(plane_selection);
-                let operands_supported = |selection: &FaceSelection, native: Option<&String>| {
-                    native.is_some()
-                        || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
-                };
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Draft"))
-                    || parting_tool.is_some()
-                    || pull_plane.is_some()
-                    || !operands_supported(face_selection, faces.as_ref())
-                    || !operands_supported(plane_selection, neutral_plane.as_ref())
-                    || existing.is_none()
-                        && (pull_direction.is_none() || angle.is_none() || outward.is_none())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported draft semantics",
-                        feature.id
-                    )));
-                }
-                if let Some(pull_direction) = pull_direction {
-                    require_direction(*pull_direction, &feature.id, "draft direction")?;
-                }
-                if angle.is_some_and(|angle| !angle.0.is_finite()) {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has a non-finite draft angle",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                if let Some(angle) = angle {
-                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                }
-                let mut properties = feature.source_properties.clone();
-                let fallback = existing.as_deref().map_or("", |record| record.id.as_str());
-                if let Some(faces) = faces {
-                    write_native_selection(&mut properties, "Faces", &faces, fallback);
-                }
-                if let Some(neutral_plane) = neutral_plane {
-                    write_native_selection(
-                        &mut properties,
-                        "NeutralPlane",
-                        &neutral_plane,
-                        fallback,
-                    );
-                }
-                if let Some(pull_direction) = pull_direction {
-                    properties.insert("Direction".into(), format_vector3(*pull_direction));
-                }
-                if let Some(outward) = outward {
-                    properties.insert("Outward".into(), outward.to_string());
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Draft".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Combine {
-                target,
-                tools,
-                op,
-                keep_tools,
-            } => {
-                if existing.as_deref().is_some_and(|record| {
-                    !feature_family(record, "Combine")
-                        && !feature_input_class(record, NativeClassKind::Combine)
-                }) || *op == BooleanOp::NewBody
-                    || *keep_tools
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported combine semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none()
-                    && (body_selection_value(target).is_none()
-                        || body_selection_value(tools).is_none()
-                        || *op == BooleanOp::Unresolved)
-                {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has unresolved combine semantics",
-                        feature.id
-                    )));
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(target) = body_selection_value(target) {
-                    properties.insert("Target".into(), target);
-                }
-                if let Some(tools) = body_selection_value(tools) {
-                    properties.insert("Tools".into(), tools);
-                }
-                if *op != BooleanOp::Unresolved {
-                    properties.insert(
-                        "Operation".into(),
-                        resolved_boolean_op(*op, &feature.id)?.into(),
-                    );
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Combine".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::CutWithSurface {
-                targets,
-                tools,
-                reverse,
-            } => {
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["CutWithSurface", "SurfaceCut"],
-                )?;
-                let targets = body_selection_value(targets).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no surface-cut target bodies",
-                        feature.id
-                    ))
-                })?;
-                let tools = face_selection_value(tools).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no surface-cut tools",
-                        feature.id
-                    ))
-                })?;
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Targets".into(), targets);
-                properties.insert("Tools".into(), tools);
-                properties.insert("Reverse".into(), reverse.to_string());
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "CutWithSurface".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::DeleteBody { bodies, mode } => {
-                let selection = body_selection_value(bodies);
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| body_retention_mode(record).is_none())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported delete-body semantics",
-                        feature.id
-                    )));
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(selection) = selection {
-                    if !crate::resolved_features::component_paths::is_compact_body_selection_value(
-                        &selection,
-                    ) {
-                        properties.insert("Bodies".into(), selection);
-                    }
-                } else if !matches!(mode, BodyRetentionMode::Unresolved) || existing.is_none() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported delete-body semantics",
-                        feature.id
-                    )));
-                }
-                match mode {
-                    BodyRetentionMode::Unresolved => {
-                        let Some(record) = existing.as_deref() else {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} requires a retained unresolved body operation",
-                                feature.id
-                            )));
-                        };
-                        if body_retention_mode(record) != Some(BodyRetentionMode::Unresolved) {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} removes a resolved body-retention mode",
-                                feature.id
-                            )));
-                        }
-                        properties.remove("Mode");
-                    }
-                    BodyRetentionMode::DeleteSelected => {
-                        properties.insert("Mode".into(), "Delete".into());
-                    }
-                    BodyRetentionMode::KeepSelected => {
-                        properties.insert("Mode".into(), "Keep".into());
-                    }
-                }
-                (
-                    existing.as_deref().map_or_else(
-                        || match mode {
-                            BodyRetentionMode::Unresolved => "Feature".into(),
-                            BodyRetentionMode::DeleteSelected => "DeleteBody".into(),
-                            BodyRetentionMode::KeepSelected => "KeepBody".into(),
-                        },
-                        |record| record.kind.clone(),
-                    ),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::DeleteFace { faces, heal } => {
-                let faces = face_selection_value(faces);
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "DeleteFace"))
-                    || faces.is_none()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported delete-face semantics",
-                        feature.id
-                    )));
-                }
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), faces.expect("checked above"));
-                properties.insert("Heal".into(), heal.to_string());
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "DeleteFace".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::ReplaceFace {
-                targets,
-                replacements,
-            } => {
-                let targets = face_selection_value(targets);
-                let replacements = face_selection_value(replacements);
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "ReplaceFace"))
-                    || targets.is_none()
-                    || replacements.is_none()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported replace-face semantics",
-                        feature.id
-                    )));
-                }
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), targets.expect("checked above"));
-                properties.insert(
-                    "ReplacementFaces".into(),
-                    replacements.expect("checked above"),
-                );
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "ReplaceFace".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::MoveFace { faces, motion } => {
-                let faces = face_selection_value(faces);
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "MoveFace"))
-                    || faces.is_none()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported move-face semantics",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), faces.expect("checked above"));
-                parameters.remove("Distance");
-                parameters.remove("Angle");
-                properties.remove("Direction");
-                properties.remove("AxisOrigin");
-                properties.remove("AxisDirection");
-                match motion {
-                    FaceMotion::Offset { distance } => {
-                        properties.insert("Mode".into(), "Offset".into());
-                        parameters.insert("Distance".into(), format_length_mm(distance.0));
-                    }
-                    FaceMotion::Translate {
-                        direction,
-                        distance,
-                    } => {
-                        require_direction(*direction, &feature.id, "face translation")?;
-                        properties.insert("Mode".into(), "Translate".into());
-                        properties.insert("Direction".into(), format_vector3(*direction));
-                        parameters.insert("Distance".into(), format_length_mm(distance.0));
-                    }
-                    FaceMotion::Rotate {
-                        axis_origin,
-                        axis_dir,
-                        angle,
-                    } => {
-                        require_direction(*axis_dir, &feature.id, "face rotation axis")?;
-                        if !angle.0.is_finite() {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has a non-finite face rotation angle",
-                                feature.id
-                            )));
-                        }
-                        properties.insert("Mode".into(), "Rotate".into());
-                        properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
-                        properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                    }
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "MoveFace".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::MoveBody {
-                bodies,
-                translation,
-                rotation,
-                copies,
-            } => {
-                let bodies = body_selection_value(bodies).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no body-motion selection",
-                        feature.id
-                    ))
-                })?;
-                require_same_family(
-                    existing.as_deref(),
-                    &feature.id,
-                    &["MoveBody", "MoveCopyBody"],
-                )?;
-                if ![translation.x, translation.y, translation.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has a non-finite body translation",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Bodies".into(), bodies);
-                properties.insert(
-                    "Translation".into(),
-                    format_point3_mm(Point3::new(translation.x, translation.y, translation.z)),
-                );
-                properties.insert("Copies".into(), copies.to_string());
-                match rotation {
-                    Some(rotation) => {
-                        require_direction(rotation.direction, &feature.id, "body rotation axis")?;
-                        if !rotation.angle.0.is_finite()
-                            || ![rotation.origin.x, rotation.origin.y, rotation.origin.z]
-                                .into_iter()
-                                .all(f64::is_finite)
-                        {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has invalid body rotation",
-                                feature.id
-                            )));
-                        }
-                        properties
-                            .insert("RotationOrigin".into(), format_point3_mm(rotation.origin));
-                        properties
-                            .insert("RotationAxis".into(), format_vector3(rotation.direction));
-                        parameters.insert("Rotation".into(), format_angle_rad(rotation.angle.0));
-                    }
-                    None => {
-                        properties.remove("RotationOrigin");
-                        properties.remove("RotationAxis");
-                        parameters.remove("Rotation");
-                    }
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "MoveBody".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Dome {
-                faces,
-                height,
-                elliptical,
-                reverse,
-            } => {
-                let faces = face_selection_value(faces);
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Dome"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported dome semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none()
-                    && (faces.is_none()
-                        || height.is_none()
-                        || elliptical.is_none()
-                        || reverse.is_none())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved dome construction",
-                        feature.id
-                    )));
-                }
-                if height.is_some_and(|height| !height.0.is_finite()) {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has a non-finite dome height",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                if let Some(height) = height {
-                    parameters.insert("Height".into(), format_length_mm(height.0));
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(faces) = faces {
-                    properties.insert("Faces".into(), faces);
-                }
-                if let Some(elliptical) = elliptical {
-                    properties.insert("Elliptical".into(), elliptical.to_string());
-                }
-                if let Some(reverse) = reverse {
-                    properties.insert("Reverse".into(), reverse.to_string());
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Dome".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Flex { axis, mode } => {
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Flex"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported flex semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none()
-                    && (axis.is_none() || matches!(mode, FlexMode::Unresolved { .. }))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved flex construction",
-                        feature.id
-                    )));
-                }
-                if let Some(axis) = axis {
-                    require_direction(*axis, &feature.id, "flex axis")?;
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let mut properties = feature.source_properties.clone();
-                if let Some(axis) = axis {
-                    properties.insert("Axis".into(), format_vector3(*axis));
-                    properties.remove("AxisDirection");
-                }
-                match mode {
-                    FlexMode::Unresolved { .. } => {}
-                    FlexMode::Bending { angle } => {
-                        if !angle.0.is_finite() {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has a non-finite flex angle",
-                                feature.id
-                            )));
-                        }
-                        parameters.remove("Factor");
-                        parameters.remove("Distance");
-                        properties.insert("Mode".into(), "Bending".into());
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                    }
-                    FlexMode::Twisting { angle } => {
-                        if !angle.0.is_finite() {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has a non-finite flex angle",
-                                feature.id
-                            )));
-                        }
-                        parameters.remove("Factor");
-                        parameters.remove("Distance");
-                        properties.insert("Mode".into(), "Twisting".into());
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                    }
-                    FlexMode::Tapering { factor } => {
-                        if !factor.is_finite() || *factor <= 0.0 {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has an invalid flex taper factor",
-                                feature.id
-                            )));
-                        }
-                        parameters.remove("Angle");
-                        parameters.remove("Distance");
-                        properties.insert("Mode".into(), "Tapering".into());
-                        parameters.insert("Factor".into(), factor.to_string());
-                    }
-                    FlexMode::Stretching { distance } => {
-                        if !distance.0.is_finite() {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has a non-finite flex distance",
-                                feature.id
-                            )));
-                        }
-                        parameters.remove("Angle");
-                        parameters.remove("Factor");
-                        properties.insert("Mode".into(), "Stretching".into());
-                        parameters.insert("Distance".into(), format_length_mm(distance.0));
-                    }
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Flex".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Scale {
-                bodies,
-                center,
-                factors,
-            } => {
-                let selection = body_selection_value(bodies);
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Scale"))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported scale semantics",
-                        feature.id
-                    )));
-                }
-                let center_valid = center.as_ref().is_none_or(|center| match center {
-                    ScaleCenter::Point(point) => {
-                        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-                    }
-                    ScaleCenter::Native(reference) => !reference.is_empty(),
-                    ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
-                });
-                let resolved_factors = factors.resolved();
-                if existing.is_none()
-                    && (selection.is_none() || center.is_none() || resolved_factors.is_none())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved scale construction",
-                        feature.id
-                    )));
-                }
-                let factors_valid = [factors.uniform, factors.x, factors.y, factors.z]
-                    .into_iter()
-                    .flatten()
-                    .all(|factor| factor.is_finite() && factor != 0.0);
-                if !factors_valid || !center_valid {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has an invalid scale transform",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                if let Some(factor) = factors.uniform {
-                    parameters.insert("Factor".into(), factor.to_string());
-                } else {
-                    if [factors.x, factors.y, factors.z]
-                        .into_iter()
-                        .all(|factor| factor.is_some())
-                    {
-                        parameters.remove("Factor");
-                    }
-                    if let Some(factor) = factors.x {
-                        parameters.insert("ScaleX".into(), factor.to_string());
-                    }
-                    if let Some(factor) = factors.y {
-                        parameters.insert("ScaleY".into(), factor.to_string());
-                    }
-                    if let Some(factor) = factors.z {
-                        parameters.insert("ScaleZ".into(), factor.to_string());
-                    }
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(selection) = selection {
-                    properties.insert("Bodies".into(), selection);
-                }
-                match center {
-                    Some(ScaleCenter::Centroid) => {
-                        properties.remove("Center");
-                        properties.remove("CenterRef");
-                        properties.insert("CenterType".into(), "Centroid".into());
-                    }
-                    Some(ScaleCenter::ModelOrigin) => {
-                        properties.remove("Center");
-                        properties.remove("CenterRef");
-                        properties.insert("CenterType".into(), "ModelOrigin".into());
-                    }
-                    Some(ScaleCenter::Point(point)) => {
-                        properties.remove("CenterRef");
-                        properties.insert("CenterType".into(), "Point".into());
-                        properties.insert("Center".into(), format_point3_mm(*point));
-                    }
-                    Some(ScaleCenter::Native(reference)) => {
-                        properties.remove("Center");
-                        properties.insert("CenterType".into(), "Reference".into());
-                        properties.insert("CenterRef".into(), reference.clone());
-                    }
-                    None => {}
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Scale".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Hole {
-                profile,
-                profile_filter,
-                face,
-                position,
-                direction,
-                placements,
-                kind,
-                exit_kind,
-                diameter,
-                extent,
-                bottom,
-                taper_angle,
-                specification,
-                allow_multi_profile_faces,
-            } => {
-                if profile.is_some()
-                    || profile_filter.is_some()
-                    || position.is_some()
-                    || direction.is_some()
-                    || exit_kind.is_some()
-                    || bottom.is_some()
-                    || taper_angle.is_some()
-                    || specification.is_some()
-                    || allow_multi_profile_faces.is_some()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported hole construction semantics",
-                        feature.id
-                    )));
-                }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| classify(record) != Some(FeatureClass::Hole))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported hole semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none() && diameter.is_none() {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has an unresolved hole diameter",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                if let Some(diameter) = diameter {
-                    parameters.insert("Diameter".into(), format_length_mm(diameter.0));
-                }
-                match kind {
-                    HoleKind::Unresolved { .. } if existing.is_some() => {}
-                    HoleKind::Unresolved { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has unresolved hole entry construction",
-                            feature.id
-                        )));
-                    }
-                    HoleKind::Simple => {
-                        parameters.remove("CounterboreDiameter");
-                        parameters.remove("CounterboreDepth");
-                        parameters.remove("CountersinkDiameter");
-                        parameters.remove("CountersinkAngle");
-                        parameters.remove("ThreadMajorDiameter");
-                        parameters.remove("ThreadDepth");
-                        parameters.remove("ThreadPitch");
-                        parameters.remove("DrillPointAngle");
-                    }
-                    HoleKind::SimpleDrilled { drill_point_angle } => {
-                        parameters.remove("CounterboreDiameter");
-                        parameters.remove("CounterboreDepth");
-                        parameters.remove("CountersinkDiameter");
-                        parameters.remove("CountersinkAngle");
-                        parameters.remove("ThreadMajorDiameter");
-                        parameters.remove("ThreadDepth");
-                        parameters.remove("ThreadPitch");
-                        parameters.insert(
-                            "DrillPointAngle".into(),
-                            format_angle_rad(drill_point_angle.0),
-                        );
-                    }
-                    HoleKind::Counterbore { diameter, depth } => {
-                        parameters.remove("CountersinkDiameter");
-                        parameters.remove("CountersinkAngle");
-                        parameters.remove("ThreadMajorDiameter");
-                        parameters.remove("ThreadDepth");
-                        parameters.remove("ThreadPitch");
-                        parameters
-                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
-                        parameters.remove("DrillPointAngle");
-                    }
-                    HoleKind::CounterboreDrilled {
-                        diameter,
-                        depth,
-                        drill_point_angle,
-                    } => {
-                        parameters.remove("CountersinkDiameter");
-                        parameters.remove("CountersinkAngle");
-                        parameters.remove("ThreadMajorDiameter");
-                        parameters.remove("ThreadDepth");
-                        parameters.remove("ThreadPitch");
-                        parameters
-                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
-                        parameters.insert(
-                            "DrillPointAngle".into(),
-                            format_angle_rad(drill_point_angle.0),
-                        );
-                    }
-                    HoleKind::Countersink { diameter, angle } => {
-                        parameters.remove("CounterboreDiameter");
-                        parameters.remove("CounterboreDepth");
-                        parameters.remove("ThreadMajorDiameter");
-                        parameters.remove("ThreadDepth");
-                        parameters.remove("ThreadPitch");
-                        parameters.remove("DrillPointAngle");
-                        parameters
-                            .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
-                        parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
-                    }
-                    HoleKind::Threaded {
-                        major_diameter,
-                        thread_depth,
-                        pitch,
-                        drill_point_angle,
-                    } => {
-                        parameters.remove("CounterboreDiameter");
-                        parameters.remove("CounterboreDepth");
-                        parameters.remove("CountersinkDiameter");
-                        parameters.remove("CountersinkAngle");
-                        parameters.insert(
-                            "ThreadMajorDiameter".into(),
-                            format_length_mm(major_diameter.0),
-                        );
-                        parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
-                        if let Some(pitch) = pitch {
-                            parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
-                        } else {
-                            parameters.remove("ThreadPitch");
-                        }
-                        parameters.insert(
-                            "DrillPointAngle".into(),
-                            format_angle_rad(drill_point_angle.0),
-                        );
-                    }
-                    HoleKind::Counterdrill { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has unsupported counterdrill construction",
-                            feature.id
-                        )));
-                    }
-                    HoleKind::Chamfer { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has unsupported chamfered-hole construction",
-                            feature.id
-                        )));
-                    }
-                }
-                let mut properties = feature.source_properties.clone();
-                match face {
-                    Some(face) if face_selection_value(face).is_some() => {
-                        properties.insert(
-                            "Face".into(),
-                            face_selection_value(face).expect("guarded above"),
-                        );
-                    }
-                    Some(FaceSelection::Unresolved) if existing.is_some() => {}
-                    Some(FaceSelection::Unresolved) => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has an unresolved hole face selection",
-                            feature.id
-                        )));
-                    }
-                    Some(_) => {
-                        return Err(CodecError::Malformed(format!(
-                            "SLDPRT feature {} has an empty hole face selection",
-                            feature.id
-                        )));
-                    }
-                    None => {
-                        properties.remove("Face");
-                    }
-                }
-                match placements.as_slice() {
-                    [cadmpeg_ir::features::HolePlacement::Directed {
-                        position,
-                        direction,
-                    }] => {
-                        if !position.x.is_finite()
-                            || !position.y.is_finite()
-                            || !position.z.is_finite()
-                        {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has a non-finite hole position",
-                                feature.id
-                            )));
-                        }
-                        require_direction(*direction, &feature.id, "hole direction")?;
-                        properties.insert("Position".into(), format_point3_mm(*position));
-                        properties.insert("Direction".into(), format_vector3(*direction));
-                    }
-                    [] if existing.is_none() => {
-                        properties.remove("Position");
-                        properties.remove("Direction");
-                    }
-                    [] => {}
-                    placements
-                        if existing.is_some()
-                            && placements.iter().all(|placement| {
-                                matches!(
-                                    placement,
-                                    cadmpeg_ir::features::HolePlacement::Axis { .. }
-                                )
-                            }) => {}
-                    _ => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has placements that require native generated-surface identities",
-                            feature.id
-                        )));
-                    }
-                }
-                match extent {
-                    Some(Termination::Blind {
-                        length: Length(depth),
-                    }) => {
-                        parameters.insert("Depth".into(), format_length_mm(*depth));
-                        properties.insert("EndCondition".into(), "Blind".into());
-                    }
-                    Some(Termination::ThroughAll) => {
-                        parameters.remove("Depth");
-                        properties.insert("EndCondition".into(), "ThroughAll".into());
-                    }
-                    Some(_) => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} changes unsupported hole termination",
-                            feature.id
-                        )))
-                    }
-                    None if existing.is_some() => {}
-                    None => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has unresolved hole termination",
-                            feature.id
-                        )))
-                    }
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Hole".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Revolve { construction, op } => {
-                if construction.axis_reference.is_some()
-                    || construction.solid == Some(false)
-                    || construction.face_maker_class.is_some()
-                    || construction.fuse_order.is_some()
-                    || construction.allow_multi_profile_faces.is_some()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} uses unsupported revolution construction controls",
-                        feature.id
-                    )));
-                }
-                if existing
-                    .as_deref()
-                    .is_some_and(|record| !is_revolve(record))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported revolution semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none()
-                    && (construction.profile.is_none()
-                        || construction.axis.is_none()
-                        || construction.extent.is_none()
-                        || *op == BooleanOp::Unresolved)
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved revolution construction",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let mut properties = feature.source_properties.clone();
-                if let Some(extent) = &construction.extent {
-                    parameters.remove("Angle");
-                    parameters.remove("Angle2");
-                    match extent {
-                        RevolveExtent::OneSided {
-                            termination: Termination::Angle { angle },
-                        } => {
-                            properties.insert("EndCondition".into(), "OneSided".into());
-                            parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                        }
-                        RevolveExtent::Symmetric {
-                            termination: Termination::Angle { angle },
-                        } => {
-                            properties.insert("EndCondition".into(), "Symmetric".into());
-                            parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                        }
-                        RevolveExtent::TwoSided {
-                            first: Termination::Angle { angle: first },
-                            second: Termination::Angle { angle: second },
-                        } => {
-                            properties.insert("EndCondition".into(), "TwoSided".into());
-                            parameters.insert("Angle".into(), format_angle_rad(first.0));
-                            parameters.insert("Angle2".into(), format_angle_rad(second.0));
-                        }
-                        _ => {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} uses a linear revolution extent",
-                                feature.id
-                            )));
-                        }
-                    }
-                }
-                if let Some(axis) = construction.axis {
-                    if !valid_direction(axis.direction) {
-                        return Err(CodecError::Malformed(format!(
-                            "SLDPRT feature {} has a degenerate revolution axis",
-                            feature.id
-                        )));
-                    }
-                    properties.insert("AxisOrigin".into(), format_point3_mm(axis.origin));
-                    properties.insert("AxisDirection".into(), format_vector3(axis.direction));
-                }
-                if *op != BooleanOp::Unresolved {
-                    properties.insert(
-                        "Operation".into(),
-                        resolved_boolean_op(*op, &feature.id)?.into(),
-                    );
-                }
-                if let Some(profile) = &construction.profile {
-                    let profile_source =
-                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
-                            .ok_or_else(|| {
-                                CodecError::Malformed(format!(
-                                    "SLDPRT feature {} references a missing revolution profile",
-                                    feature.id
-                                ))
-                            })?;
-                    properties.insert("Profile".into(), profile_source);
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Revolve".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Sweep {
-                section,
-                sections,
-                path,
-                mode,
-                orientation,
-                transition,
-                transformation,
-                path_tangent,
-                linearize,
-                twist,
-                path_extent,
-                guide_rail,
-                taper,
-                scale,
-                allow_multi_profile_faces,
-            } => {
-                if !sections.is_empty()
-                    || orientation.is_some()
-                    || transition.is_some()
-                    || transformation.is_some()
-                    || *path_tangent
-                    || *linearize
-                    || path_extent.is_some()
-                    || guide_rail.is_some()
-                    || taper.is_some()
-                    || allow_multi_profile_faces.is_some()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported sweep construction semantics",
-                        feature.id
-                    )));
-                }
-                if existing.as_deref().is_some_and(|record| !is_sweep(record)) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes operation family",
-                        feature.id
-                    )));
-                }
-                let profile_source = match section {
-                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
-                        ..
-                    }) if existing.is_some() => None,
-                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_))
-                        if existing
-                            .as_deref()
-                            .is_some_and(|record| !record.properties.contains_key("Profile")) =>
-                    {
-                        None
-                    }
-                    cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
-                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
-                            .ok_or_else(|| {
-                                CodecError::Malformed(format!(
-                                    "SLDPRT feature {} references a missing sweep profile",
-                                    feature.id
-                                ))
-                            })?,
-                    ),
-                    cadmpeg_ir::features::SweepSection::Unresolved(_) => None,
-                    cadmpeg_ir::features::SweepSection::Generated(_) => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses an unsupported generated sweep section",
-                            feature.id
-                        )));
-                    }
-                };
-                let path_source = match path {
-                    Some(path) => Some(
-                        path_source(path, &record_sources, &sketch_sources).ok_or_else(|| {
-                            CodecError::Malformed(format!(
-                                "SLDPRT feature {} references a missing sweep path",
-                                feature.id
-                            ))
-                        })?,
-                    ),
-                    None => None,
-                };
-                if existing.is_none() && (profile_source.is_none() || path_source.is_none()) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved sweep operands",
-                        feature.id
-                    )));
-                }
-                if existing.is_none() && *mode == SweepMode::Unresolved {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved sweep result semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none()
-                    && matches!(
-                        mode,
-                        SweepMode::Solid {
-                            op: BooleanOp::Unresolved
-                        }
-                    )
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has an unresolved boolean operation",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                match twist {
-                    Some(twist) => {
-                        parameters.insert("Twist".into(), format_angle_rad(twist.0));
-                    }
-                    None => {
-                        parameters.remove("Twist");
-                    }
-                }
-                match scale {
-                    Some(scale) if scale.is_finite() && *scale > 0.0 => {
-                        parameters.insert("Scale".into(), scale.to_string());
-                    }
-                    Some(_) => {
-                        return Err(CodecError::Malformed(format!(
-                            "SLDPRT feature {} has an invalid sweep scale",
-                            feature.id
-                        )))
-                    }
-                    None => {
-                        parameters.remove("Scale");
-                    }
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(profile) = profile_source {
-                    properties.insert("Profile".into(), profile);
-                }
-                if let Some(path) = path_source {
-                    properties.insert("Path".into(), path);
-                }
-                match mode {
-                    SweepMode::Solid { op } if *op != BooleanOp::Unresolved => {
-                        properties.insert(
-                            "Operation".into(),
-                            resolved_boolean_op(*op, &feature.id)?.into(),
-                        );
-                    }
-                    SweepMode::Solid { .. } => {}
-                    SweepMode::Surface => {
-                        properties.remove("Operation");
-                    }
-                    SweepMode::Unresolved => {}
-                }
-                (
-                    existing.as_deref().map_or_else(
-                        || {
-                            match mode {
-                                SweepMode::Surface => "Surface-Sweep",
-                                SweepMode::Solid { .. } | SweepMode::Unresolved => "Sweep",
-                            }
-                            .into()
-                        },
-                        |record| record.kind.clone(),
-                    ),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Loft {
-                sections,
-                guides,
-                centerline,
-                op,
-                closed,
-                solid,
-                ruled,
-                max_degree,
-                check_compatibility,
-                allow_multi_profile_faces,
-            } => {
-                if centerline.is_some()
-                    || !solid
-                    || *ruled
-                    || max_degree.is_some()
-                    || check_compatibility.is_some()
-                    || allow_multi_profile_faces.is_some()
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported loft result semantics",
-                        feature.id
-                    )));
-                }
-                if existing.as_deref().is_some_and(|record| !is_loft(record)) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes unsupported loft semantics",
-                        feature.id
-                    )));
-                }
-                if existing.is_none() && (sections.len() < 2 || *op == BooleanOp::Unresolved) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved loft construction semantics",
-                        feature.id
-                    )));
-                }
-                if sections
-                    .iter()
-                    .any(|section| matches!(section, cadmpeg_ir::features::LoftSection::Point(_)))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} uses a point loft section",
-                        feature.id
-                    )));
-                }
-                let profile_sources = sections
-                    .iter()
-                    .filter_map(|section| match section {
-                        cadmpeg_ir::features::LoftSection::Profile(profile) => Some(profile),
-                        cadmpeg_ir::features::LoftSection::Point(_) => None,
-                    })
-                    .map(|profile| {
-                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
-                    })
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing loft profile",
-                            feature.id
-                        ))
-                    })?;
-                let guide_sources = guides
-                    .iter()
-                    .map(|path| path_source(path, &record_sources, &sketch_sources))
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing loft guide",
-                            feature.id
-                        ))
-                    })?;
-                let mut properties = feature.source_properties.clone();
-                if !profile_sources.is_empty() || existing.is_none() {
-                    properties.insert("Profiles".into(), profile_sources.join(","));
-                }
-                if guide_sources.is_empty() && existing.is_none() {
-                    properties.remove("Guides");
-                } else if !guide_sources.is_empty() {
-                    properties.insert("Guides".into(), guide_sources.join(","));
-                }
-                if *op != BooleanOp::Unresolved {
-                    properties.insert(
-                        "Operation".into(),
-                        resolved_boolean_op(*op, &feature.id)?.into(),
-                    );
-                }
-                if *closed || existing.is_none() || properties.contains_key("Closed") {
-                    properties.insert("Closed".into(), closed.to_string());
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Loft".into(), |record| record.kind.clone()),
-                    existing
-                        .as_deref()
-                        .map(|record| record.parameters.clone())
-                        .unwrap_or_default(),
-                    properties,
-                )
-            }
-            FeatureDefinition::Rib { construction, op } => {
-                require_same_family(existing.as_deref(), &feature.id, &["Rib"])?;
-                if existing.is_none()
-                    && (construction.profile.is_none()
-                        || construction.direction.is_none()
-                        || construction.thickness.is_none()
-                        || construction.side.is_none()
-                        || construction.draft == RibDraft::Unresolved
-                        || *op == BooleanOp::Unresolved)
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved rib construction",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                if let Some(thickness) = construction.thickness {
-                    parameters.insert("Thickness".into(), format_length_mm(thickness.0));
-                }
-                match construction.draft {
-                    RibDraft::Angle(draft) => {
-                        parameters.insert("Draft".into(), format_angle_rad(draft.0));
-                    }
-                    RibDraft::None => {
-                        parameters.remove("Draft");
-                    }
-                    RibDraft::Unresolved => {}
-                }
-                let mut properties = feature.source_properties.clone();
-                if let Some(profile) = &construction.profile {
-                    let profile_source =
-                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
-                            .ok_or_else(|| {
-                                CodecError::Malformed(format!(
-                                    "SLDPRT feature {} references a missing rib profile",
-                                    feature.id
-                                ))
-                            })?;
-                    properties.insert("Profile".into(), profile_source);
-                }
-                if let Some(direction) = construction.direction {
-                    require_direction(direction, &feature.id, "rib direction")?;
-                    properties.insert("Direction".into(), format_vector3(direction));
-                }
-                if let Some(side) = construction.side {
-                    properties.insert("BothSides".into(), (side == RibSide::Centered).to_string());
-                }
-                if *op != BooleanOp::Unresolved {
-                    properties.insert(
-                        "Operation".into(),
-                        resolved_boolean_op(*op, &feature.id)?.into(),
-                    );
-                }
-                (
-                    existing
-                        .as_deref()
-                        .map_or_else(|| "Rib".into(), |record| record.kind.clone()),
-                    parameters,
-                    properties,
-                )
-            }
-            FeatureDefinition::Pattern { seeds, pattern } => {
-                let expected_form = match pattern {
-                    PatternKind::Unresolved { form } => *form,
-                    PatternKind::Linear { .. } | PatternKind::LinearOffsets { .. } => {
-                        Some(PatternForm::Linear)
-                    }
-                    PatternKind::Circular { .. } | PatternKind::CircularAngles { .. } => {
-                        Some(PatternForm::Circular)
-                    }
-                    PatternKind::CurveDriven { .. } => Some(PatternForm::CurveDriven),
-                    PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => {
-                        Some(PatternForm::Mirror)
-                    }
-                    PatternKind::Scale { .. } => Some(PatternForm::Scale),
-                    PatternKind::Composite { .. } => Some(PatternForm::Composite),
-                };
-                if existing.as_deref().is_some_and(|record| {
-                    expected_form.is_some_and(|form| pattern_form(record) != Some(form))
-                }) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} changes pattern form",
-                        feature.id
-                    )));
-                }
-                let mut seed_sources = Vec::new();
-                for seed in seeds {
-                    match seed {
-                        PatternSeed::Feature(seed) => seed_sources.push(
-                            parent_sources.get(seed).cloned().ok_or_else(|| {
-                                CodecError::Malformed(format!(
-                                    "SLDPRT feature {} references a missing pattern seed",
-                                    feature.id
-                                ))
-                            })?,
-                        ),
-                        PatternSeed::Faces(_) | PatternSeed::Bodies(_) if existing.is_some() => {}
-                        PatternSeed::Faces(_) | PatternSeed::Bodies(_) => {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} has a source-less topology pattern seed",
-                                feature.id
-                            )));
-                        }
-                        PatternSeed::Occurrences(_) => {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} has component-occurrence pattern seeds",
-                                feature.id
-                            )));
-                        }
-                    }
-                }
-                if seed_sources.is_empty()
-                    && (!matches!(
-                        expected_form,
-                        Some(PatternForm::Linear | PatternForm::CurveDriven)
-                    ) || existing.is_none())
-                    && !matches!(pattern, PatternKind::Unresolved { .. })
-                {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no pattern seeds",
-                        feature.id
-                    )));
-                }
-                let mut parameters = existing
-                    .as_deref()
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default();
-                let mut properties = feature.source_properties.clone();
-                if !seed_sources.is_empty() {
-                    properties.insert("Seeds".into(), seed_sources.join(","));
-                }
-                match pattern {
-                    PatternKind::Unresolved { .. } => {
-                        if existing.is_none() {
-                            return Err(CodecError::NotImplemented(format!(
-                                "SLDPRT feature {} has unresolved pattern construction",
-                                feature.id
-                            )));
-                        }
-                    }
-                    PatternKind::Linear {
-                        direction,
-                        spacing,
-                        count,
-                        second,
-                    } => {
-                        match direction {
-                            Some(direction) => {
-                                require_direction(*direction, &feature.id, "pattern")?;
-                                properties.insert("Direction".into(), format_vector3(*direction));
-                            }
-                            None if existing.is_some() => {}
-                            None => {
-                                return Err(CodecError::NotImplemented(format!(
-                                    "SLDPRT feature {} has an unresolved pattern direction",
-                                    feature.id
-                                )));
-                            }
-                        }
-                        require_count(*count, &feature.id)?;
-                        if !spacing.0.is_finite() || spacing.0 <= 0.0 {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has invalid linear-pattern spacing",
-                                feature.id
-                            )));
-                        }
-                        let spacing_key = if parameters.contains_key("D3")
-                            && !parameters.contains_key("Spacing")
-                        {
-                            "D3"
-                        } else {
-                            "Spacing"
-                        };
-                        let count_key =
-                            if parameters.contains_key("D1") && !parameters.contains_key("Count") {
-                                "D1"
-                            } else {
-                                "Count"
-                            };
-                        parameters.insert(
-                            spacing_key.into(),
-                            format_length_like(
-                                spacing.0,
-                                existing
-                                    .as_deref()
-                                    .and_then(|record| record.parameters.get(spacing_key))
-                                    .map(String::as_str),
-                            ),
-                        );
-                        parameters.insert(count_key.into(), count.to_string());
-                        if let Some(second) = second {
-                            require_direction(second.direction, &feature.id, "second pattern")?;
-                            require_count(second.count, &feature.id)?;
-                            if !second.spacing.0.is_finite() || second.spacing.0 <= 0.0 {
-                                return Err(CodecError::Malformed(format!(
-                                    "SLDPRT feature {} has invalid second linear-pattern spacing",
-                                    feature.id
-                                )));
-                            }
-                            properties
-                                .insert("Direction2".into(), format_vector3(second.direction));
-                            parameters
-                                .insert("D4".into(), format_length_like(second.spacing.0, None));
-                            parameters.insert("D2".into(), second.count.to_string());
-                        }
-                    }
-                    PatternKind::Circular {
-                        axis_origin,
-                        axis_dir,
-                        angle,
-                        count,
-                    } => {
-                        require_direction(*axis_dir, &feature.id, "pattern axis")?;
-                        require_count(*count, &feature.id)?;
-                        properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
-                        properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
-                        parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                        parameters.insert("Count".into(), count.to_string());
-                    }
-                    PatternKind::CurveDriven {
-                        path,
-                        spacing,
-                        count,
-                    } => {
-                        require_count(*count, &feature.id)?;
-                        if !spacing.0.is_finite() || spacing.0 <= 0.0 {
-                            return Err(CodecError::Malformed(format!(
-                                "SLDPRT feature {} has invalid curve-pattern spacing",
-                                feature.id
-                            )));
-                        }
-                        match path {
-                            Some(path) => {
-                                let path = path_source(path, &record_sources, &sketch_sources)
-                                    .ok_or_else(|| {
-                                        CodecError::Malformed(format!(
-                                            "SLDPRT feature {} references a missing pattern path",
-                                            feature.id
-                                        ))
-                                    })?;
-                                properties.insert("Path".into(), path);
-                            }
-                            None if existing.is_some() => {}
-                            None => {
-                                return Err(CodecError::NotImplemented(format!(
-                                    "SLDPRT feature {} has an unresolved curve-pattern path",
-                                    feature.id
-                                )));
-                            }
-                        }
-                        let spacing_key = if parameters.contains_key("D3")
-                            && !parameters.contains_key("Spacing")
-                        {
-                            "D3"
-                        } else {
-                            "Spacing"
-                        };
-                        let count_key =
-                            if parameters.contains_key("D1") && !parameters.contains_key("Count") {
-                                "D1"
-                            } else {
-                                "Count"
-                            };
-                        parameters.insert(
-                            spacing_key.into(),
-                            format_length_like(
-                                spacing.0,
-                                existing
-                                    .as_deref()
-                                    .and_then(|record| record.parameters.get(spacing_key))
-                                    .map(String::as_str),
-                            ),
-                        );
-                        parameters.insert(count_key.into(), count.to_string());
-                    }
-                    PatternKind::Mirror {
-                        plane_origin,
-                        plane_normal,
-                    } => {
-                        require_direction(*plane_normal, &feature.id, "mirror plane normal")?;
-                        properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
-                        properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
-                    }
-                    PatternKind::MirrorReference { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} has an unresolved mirror plane",
-                            feature.id
-                        )));
-                    }
-                    PatternKind::LinearOffsets { .. }
-                    | PatternKind::CircularAngles { .. }
-                    | PatternKind::Scale { .. }
-                    | PatternKind::Composite { .. } => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} uses a pattern form that cannot be written",
-                            feature.id
-                        )));
-                    }
-                }
-                let kind = existing.as_deref().map_or_else(
-                    || match expected_form {
-                        Some(PatternForm::Linear) => "LinearPattern".into(),
-                        Some(PatternForm::Circular) => "CircularPattern".into(),
-                        Some(PatternForm::CurveDriven) => "CrvPattern".into(),
-                        Some(PatternForm::Mirror) => "Mirror".into(),
-                        Some(PatternForm::Scale | PatternForm::Composite) => "Pattern".into(),
-                        None => "Pattern".into(),
-                    },
-                    |record| record.kind.clone(),
-                );
-                (kind, parameters, properties)
-            }
-            FeatureDefinition::HelicalSweep { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses a helical sweep that cannot be written",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::Binder { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses design-binder semantics that cannot be written",
-                    feature.id
-                )));
-            }
-            FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::Block { .. }
-            | FeatureDefinition::ExtractBody { .. }
-            | FeatureDefinition::LoftUnresolved
-            | FeatureDefinition::FreeformSurfaceUnresolved
-            | FeatureDefinition::DraftUnresolved
-            | FeatureDefinition::FaceBlend { .. }
-            | FeatureDefinition::SewBodies { .. }
-            | FeatureDefinition::TrimBodies { .. } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses semantics that cannot be written",
-                    feature.id
-                )));
-            }
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} uses semantics that cannot be written",
-                    feature.id
-                )));
-            }
-        };
+        let (kind, mut parameters, mut properties) = NeutralFeatureEncoder {
+            feature,
+            existing: existing.as_deref(),
+            principal_planes_by_record: &principal_planes_by_record,
+            record_sources: &record_sources,
+            retained_tree_node_roles: &retained_tree_node_roles,
+            feature_sources: &feature_sources,
+            sketch_sources: &sketch_sources,
+            parent_sources: &parent_sources,
+            resolved_parameter_names: &resolved_parameter_names,
+        }
+        .encode()?;
         if let Some(record) = existing.as_deref() {
             restore_equivalent_parameter_expressions(
                 record,
@@ -17340,7 +17760,7 @@ fn extrude_op(kind: &str) -> Option<BooleanOp> {
         .collect::<Vec<_>>();
     match kind.as_slice() {
         b"bossextrude" => Some(BooleanOp::Join),
-        b"cutextrude" => Some(BooleanOp::Cut),
+        b"cutextrude" | b"cutextrudethin" => Some(BooleanOp::Cut),
         _ => None,
     }
 }

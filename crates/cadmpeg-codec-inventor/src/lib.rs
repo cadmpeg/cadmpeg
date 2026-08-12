@@ -12,7 +12,9 @@ mod design;
 mod external_reference;
 mod feature;
 #[cfg(feature = "fuzzing")]
-pub mod fuzzing;
+#[doc(hidden)]
+#[path = "fuzzing.rs"]
+pub mod fuzz;
 mod kernel;
 mod materials;
 mod native;
@@ -28,7 +30,7 @@ mod validate;
 use cadmpeg_container::compound::CompoundPrefixProbe;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
 use cadmpeg_ir::{CadIr, Finding};
 
 pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
@@ -43,7 +45,7 @@ pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct InventorCodec;
 
-impl Codec for InventorCodec {
+impl CodecBackend for InventorCodec {
     fn id(&self) -> &'static str {
         "inventor"
     }

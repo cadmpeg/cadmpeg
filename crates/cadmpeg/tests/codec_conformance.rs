@@ -17,7 +17,7 @@ mod budget {
         DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimits,
     };
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     const CATIA: &[u8] = include_bytes!("../../cadmpeg-fuzz/seeds/catia_container/standard_nested");
     const CATIA_WORK: &[u8] = include_bytes!("fixtures/catia_tetrahedron_topology.CATPart");
@@ -66,7 +66,7 @@ mod budget {
 
     struct Case {
         name: &'static str,
-        codec: &'static dyn CodecEntry,
+        codec: &'static dyn Codec,
         bytes: &'static [u8],
         starvation: Starvation,
     }
@@ -202,7 +202,7 @@ mod product_roundtrip {
 
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_codec_step::StepCodec;
-    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput};
     use cadmpeg_ir::products::{AssemblyGraph, Occurrence, OccurrenceParent, PrototypeReference};
     use cadmpeg_ir::{CadIr, Encoder};
 

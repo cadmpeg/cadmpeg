@@ -8,10 +8,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 
 use crate::writer::patch::edits::encode_sketch_relation_state;
-use crate::writer::patch::geometry::{
-    patch_framed_geometry, patch_tagged_integer_at, GeometryEdits,
-};
+use crate::writer::patch::geometry::{patch_framed_geometry, GeometryEdits};
 use crate::writer::primitives::normalized_face_sense_to_native;
+use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::sab;
 
 #[test]
@@ -451,7 +450,7 @@ fn generated_binaryfile4_integer_patch_preserves_following_token() {
     bytes.extend_from_slice(&(-3i32).to_le_bytes());
     bytes.extend_from_slice(&[0x0d, 0x03, b'n', b'e', b'x']);
 
-    patch_tagged_integer_at(&mut bytes, 0, 4, 7).expect("width-4 enum patch");
+    AsmEditSet::patch_tagged_integer_at(&mut bytes, 0, 4, 7).expect("width-4 enum patch");
 
     assert_eq!(&bytes[1..5], &7i32.to_le_bytes());
     assert_eq!(&bytes[5..], &[0x0d, 0x03, b'n', b'e', b'x']);

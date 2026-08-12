@@ -473,12 +473,20 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "carrier_summary",
+        "code": {
+          "namespace": "shared",
+          "code": "carrier_summary",
+          "kind": "carrier_summary"
+        },
         "severity": "info",
         "message": "1 procedural curve record(s) were decoded into NURBS carriers from their inline cached 3D B-spline block."
       },
       {
-        "code": "material_not_transferred",
+        "code": {
+          "namespace": "shared",
+          "code": "material_not_transferred",
+          "kind": "material_not_transferred"
+        },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
       }

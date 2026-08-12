@@ -57,8 +57,8 @@ pub struct Scan<'a> {
     pub document: DocumentFacts,
     /// Exact physical archive partition.
     pub ledger: Vec<ArchiveSpan>,
-    /// Inflated entry data.
-    pub data: BTreeMap<String, &'a [u8]>,
+    /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
+    pub data: BTreeMap<String, View<'a>>,
 }
 
 /// Scan an archive through the session resource budget.
@@ -70,11 +70,12 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
         let name = file.name.clone();
         validate_name(&name)?;
         let view = archive.open(ctx, file)?;
-        data.insert(name, view.window());
+        data.insert(name, view);
     }
 
     let document_bytes = data
         .get("Document.xml")
+        .map(|view| view.window())
         .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
     let document = parse_document(document_bytes)?;
     let ledger = archive

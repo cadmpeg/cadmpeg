@@ -1,4 +1,4 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_codec_iges
 pub enum cadmpeg_codec_iges::IgesVersion
 pub cadmpeg_codec_iges::IgesVersion::V5_1
@@ -23,14 +23,11 @@ impl core::marker::UnsafeUnpin for cadmpeg_codec_iges::IgesVersion
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_iges::IgesVersion
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_iges::IgesVersion
 pub struct cadmpeg_codec_iges::IgesCodec
-impl cadmpeg_ir::codec::Codec for cadmpeg_codec_iges::IgesCodec
+impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_iges::IgesCodec
 pub fn cadmpeg_codec_iges::IgesCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_iges::IgesCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_iges::IgesCodec::id(&self) -> &'static str
 pub fn cadmpeg_codec_iges::IgesCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
-impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_iges::IgesCodec
-pub fn cadmpeg_codec_iges::IgesCodec::id(&self) -> &'static str
-pub fn cadmpeg_codec_iges::IgesCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
 impl core::clone::Clone for cadmpeg_codec_iges::IgesCodec
 pub fn cadmpeg_codec_iges::IgesCodec::clone(&self) -> cadmpeg_codec_iges::IgesCodec
 impl core::default::Default for cadmpeg_codec_iges::IgesCodec

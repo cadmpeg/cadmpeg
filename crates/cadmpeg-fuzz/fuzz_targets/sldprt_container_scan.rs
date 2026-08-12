@@ -6,9 +6,7 @@
 
 #![no_main]
 
-use cadmpeg_codec_sldprt::container::scan_bytes;
+use cadmpeg_codec_sldprt::fuzz::container;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| {
-    let _ = scan_bytes(data);
-});
+fuzz_target!(|data: &[u8]| container(data));

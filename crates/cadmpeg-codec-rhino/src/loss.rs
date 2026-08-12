@@ -10,14 +10,15 @@
 //! [`RhinoLossCode::note`] is the single construction path for a
 //! [`LossNote`] in this crate: it fixes the shared loss category and the
 //! severity from the code so the two cannot drift apart across sites, and it
-//! leaves only the per-instance message to the caller.
+//! leaves only the per-instance message to the caller. Local codes appear on
+//! [`LossNote::code`] under the `rhino` namespace.
 //!
 //! [`RhinoLossCode::shared_code`] is an exhaustive match with no fall-through
 //! arm. A default arm would silently assign a category to a code added later,
 //! and the categories this codec spans (geometry, annotation, attribute,
 //! diagnostic) have no honest common default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
 ///
@@ -167,7 +168,7 @@ impl RhinoLossCode {
     }
 
     /// The shared cross-codec category this loss reports under.
-    const fn shared_code(self) -> LossKind {
+    const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::ContainerScanDiagnostic
             | Self::ContainerInstanceDefinitionDegraded
@@ -175,43 +176,60 @@ impl RhinoLossCode {
             | Self::ObjectDecodeDiagnostic
             | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
-            | Self::ReferenceMemberAmbiguous => LossKind::DecodeDiagnostic,
-            Self::TrimPcurveDropped => LossKind::PcurveOmitted,
-            Self::IntegrityFailure => LossKind::IntegrityFailure,
-            Self::PresentationRecordDropped => LossKind::AssetNotTransferred,
-            Self::MeshNgonGroupingDropped => LossKind::RecordNotTyped,
-            Self::HistoryEmbeddedGeometryDropped => LossKind::GeometryNotTransferred,
-            Self::DimensionOverrideDropped => LossKind::PmiOmitted,
-            Self::HistoryDependencyDropped => LossKind::ReferenceGraphNotClosed,
-            Self::ObjectRecordCensus => LossKind::ObjectRecordsUntransferred,
-            Self::ObjectFamilyNotTransferred => LossKind::UnsupportedObjectFamily,
-            Self::ObjectAttributesDegraded => LossKind::AttributesNotTransferred,
-            Self::TopologyBrepFallback => LossKind::TopologyNotTransferred,
+            | Self::ReferenceMemberAmbiguous => LossTaxonomy::DecodeDiagnostic,
+            Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
+            Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
+            Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
+            Self::MeshNgonGroupingDropped => LossTaxonomy::RecordNotTyped,
+            Self::HistoryEmbeddedGeometryDropped => LossTaxonomy::GeometryNotTransferred,
+            Self::DimensionOverrideDropped => LossTaxonomy::PmiOmitted,
+            Self::HistoryDependencyDropped => LossTaxonomy::ReferenceGraphNotClosed,
+            Self::ObjectRecordCensus => LossTaxonomy::ObjectRecordsUntransferred,
+            Self::ObjectFamilyNotTransferred => LossTaxonomy::UnsupportedObjectFamily,
+            Self::ObjectAttributesDegraded => LossTaxonomy::AttributesNotTransferred,
+            Self::TopologyBrepFallback => LossTaxonomy::TopologyNotTransferred,
             Self::HatchFillNotTransferred
             | Self::PolyedgeReferencesNotResolved
             | Self::DetailViewNotTransferred
             | Self::CageLatticeNotTransferred
             | Self::MorphDeformationNotApplied
             | Self::CurveOnSurfaceBindingNotTransferred
-            | Self::HistoryGeometryNotTransferred => LossKind::RecordNotTyped,
+            | Self::HistoryGeometryNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::DimensionStyleUnresolved | Self::DimensionDetailReferenceUnresolved => {
-                LossKind::PmiOmitted
+                LossTaxonomy::PmiOmitted
             }
             Self::MeshVertexPrecisionReduced | Self::MeshNormalPrecisionReduced => {
-                LossKind::MeshVertexPrecision
+                LossTaxonomy::MeshVertexPrecision
             }
         }
     }
 
+    /// Strict floor pinned from this local code (independent of taxonomy remap).
+    ///
+    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
+    /// silently change rejection. `ObjectFramingUndecodable` pins Warning above
+    /// its `DecodeDiagnostic` taxonomy (which is otherwise tolerable).
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::IntegrityFailure | Self::ObjectFramingUndecodable => Some(Severity::Warning),
+            other => other.shared_taxonomy().strict_floor(),
+        }
+    }
+
+    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    #[must_use]
+    pub fn kind(self) -> LossKind {
+        LossKind::namespaced("rhino", self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
+    }
+
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// Message form is `"<code>: <message>"`. Severity comes from the code;
-    /// provenance is absent unless the caller adds it with
-    /// [`LossNote::with_provenance`].
+    /// The structured code is `rhino/<local>`; the message is the per-instance
+    /// text only. Severity and strict floor come from the local code.
     #[must_use]
     pub fn note(self, message: impl std::fmt::Display) -> LossNote {
-        LossNote::new(self.shared_code(), format!("{}: {message}", self.code()))
-            .with_severity(self.severity())
+        LossNote::new(self.kind(), message.to_string()).with_severity(self.severity())
     }
 }
 
@@ -282,7 +300,9 @@ mod tests {
         for code in RhinoLossCode::ALL {
             let note = code.note("x");
             assert_eq!(note.severity, code.severity());
-            assert_eq!(note.message, format!("{}: x", code.code()));
+            assert_eq!(note.message, "x");
+            assert_eq!(note.code.namespace(), "rhino");
+            assert_eq!(note.code.local_code(), code.code());
             assert!(note.provenance.is_none());
         }
     }

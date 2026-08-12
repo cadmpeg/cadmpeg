@@ -6,7 +6,7 @@ use std::io::Read;
 use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use flate2::bufread::ZlibDecoder as BufferedZlibDecoder;
-use flate2::read::{DeflateDecoder, ZlibDecoder};
+use flate2::read::DeflateDecoder;
 
 /// Inflates exactly one zlib member and rejects truncation or trailing input.
 pub fn inflate_zlib_exact<'a>(
@@ -34,46 +34,7 @@ pub fn inflate_zlib_exact<'a>(
 }
 
 /// Inflates a zlib member under the decode budget, retaining a nonempty prefix
-/// when the compressed stream is truncated or followed by another stream.
-pub fn inflate_zlib_prefix<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'_>,
-) -> Result<Option<View<'a>>, CodecError> {
-    inflate_prefix(ctx, source, |bytes| Box::new(ZlibDecoder::new(bytes)))
-}
-
 /// Inflates a raw-DEFLATE member under the decode budget, retaining a nonempty
-/// prefix when the compressed stream is truncated or followed by another stream.
-pub fn inflate_raw_prefix<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'_>,
-) -> Result<Option<View<'a>>, CodecError> {
-    inflate_prefix(ctx, source, |bytes| Box::new(DeflateDecoder::new(bytes)))
-}
-
-fn inflate_prefix<'a, 'input>(
-    ctx: &DecodeContext<'a>,
-    source: View<'input>,
-    decoder: impl FnOnce(&'input [u8]) -> Box<dyn Read + 'input>,
-) -> Result<Option<View<'a>>, CodecError> {
-    let mut decoder = decoder(source.window());
-    let mut writer = ctx.begin_expand(source, ExpandSpec::Unknown)?;
-    let mut chunk = [0_u8; 8192];
-    loop {
-        match decoder.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(read) => writer.write(&chunk[..read])?,
-            Err(_) if writer.written() != 0 => break,
-            Err(_) => return Ok(None),
-        }
-    }
-    if writer.written() == 0 {
-        Ok(None)
-    } else {
-        writer.finalize().map(Some)
-    }
-}
-
 /// Inflates at most `cap` raw-DEFLATE output bytes for format detection.
 ///
 /// This helper is context-free because detection runs before a decode session
@@ -103,28 +64,6 @@ mod tests {
     use flate2::{write::DeflateEncoder, write::ZlibEncoder, Compression};
 
     use super::*;
-
-    #[test]
-    fn inflates_complete_member_with_trailing_bytes() {
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder
-            .write_all(b"parasolid")
-            .expect("writing to an in-memory zlib encoder succeeds");
-        let mut compressed = encoder
-            .finish()
-            .expect("finishing an in-memory zlib encoder succeeds");
-        compressed.extend_from_slice(b"next stream");
-        let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default())
-                .expect("test input fits the root allowance");
-        assert_eq!(
-            inflate_zlib_prefix(&ctx, root)
-                .expect("test output fits the expansion allowance")
-                .map(View::window),
-            Some(b"parasolid".as_slice())
-        );
-    }
 
     #[test]
     fn exact_inflate_rejects_trailing_bytes() {

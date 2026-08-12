@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural comparison of IR documents.
 //!
-//! Numbers compare through [`cadmpeg_core::compare`], so a coordinate that
+//! Numbers compare through [`cadmpeg_ir::compare`], so a coordinate that
 //! differs only in the last place — what the same file decoded under two
 //! platforms' libm produces — is not reported as a change, while an integer
 //! count, index, or degree that moved by one always is. That module states the
@@ -14,7 +14,7 @@
 //! what it read out of the container.
 //!
 //! One class of attribute is carved out. A machine-local digest, named by the
-//! [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
+//! [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
 //! fingerprint of the very values this module compares tolerantly: two decodes
 //! that agree to fourteen significant digits hash differently, and no tolerance
 //! can reconcile them. Reporting such a difference as a difference would make
@@ -30,7 +30,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::compare::{floats_agree, is_local_digest_attribute, values_agree};
+use crate::compare::{floats_agree, is_local_digest_attribute, values_agree};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -300,7 +300,7 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
 /// entity ID.
 ///
 /// Fractional numbers compare within the tolerance stated by
-/// [`cadmpeg_core::compare`]; integers, strings, enums, and structure
+/// [`cadmpeg_ir::compare`]; integers, strings, enums, and structure
 /// compare exactly. Source attributes are strings and compare exactly; a
 /// machine-local digest among them is reported without counting as a difference.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
@@ -324,8 +324,8 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::diff;
+    use crate::compare;
     use crate::examples::unit_cube;
-    use cadmpeg_core::compare;
 
     #[test]
     fn detects_changes_in_all_document_dimensions() {

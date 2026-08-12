@@ -1071,6 +1071,49 @@ fn offset_plane_frame_pair_stores_result_before_reference() {
 }
 
 #[test]
+fn offset_plane_frame_pair_uses_matrix_axes_instead_of_fixed_prefixes() {
+    let frame = |origin_x: f64| {
+        let mut bytes = [0; MATRIX_REFERENCE_PLANE_FRAME_LEN];
+        for (offset, value) in [
+            (0, origin_x),
+            (24, 1.0),
+            (49, 0.0),
+            (57, 0.0),
+            (65, 1.0),
+            (73, 0.0),
+            (81, 1.0),
+            (89, 0.0),
+            (97, -1.0),
+            (105, 0.0),
+            (113, 0.0),
+        ] {
+            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[48] = 1;
+        bytes
+    };
+    let mut payload = frame(-0.037).to_vec();
+    payload.extend([0; 13]);
+    payload.extend(frame(0.0));
+
+    assert_eq!(
+        offset_reference_plane_frame_pair(&payload, 37.0),
+        Some((
+            (
+                Point3::new(-37.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+            ),
+            (
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+            ),
+        ))
+    );
+}
+
+#[test]
 fn offset_plane_frame_pair_accepts_ordered_mixed_frame_layouts() {
     let mut result = [0; MINIMAL_REFERENCE_PLANE_FRAME_LEN];
     for (offset, value) in [
@@ -1562,6 +1605,44 @@ fn matrix_reference_plane_uses_basis_columns() {
 
     payload[root + 113..root + 121].copy_from_slice(&1.0f64.to_le_bytes());
     assert_eq!(matrix_reference_plane_frame(&payload), None);
+}
+
+#[test]
+fn matrix_reference_plane_owns_its_fixed_frame_prefix() {
+    let root = 9;
+    let mut payload = vec![0; root + MATRIX_REFERENCE_PLANE_FRAME_LEN];
+    for (relative, value) in [
+        (24, 1.0_f64),
+        (49, 0.0),
+        (57, 0.0),
+        (65, 1.0),
+        (73, 0.0),
+        (81, 1.0),
+        (89, 0.0),
+        (97, -1.0),
+        (105, 0.0),
+        (113, 0.0),
+    ] {
+        payload[root + relative..root + relative + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    payload[root + 48] = 1;
+
+    assert_eq!(
+        fixed_reference_plane_frame(&payload[root..root + FIXED_REFERENCE_PLANE_FRAME_LEN]),
+        Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+    assert_eq!(
+        explicit_reference_plane_frame(&payload),
+        Ok(Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        )))
+    );
 }
 
 #[test]

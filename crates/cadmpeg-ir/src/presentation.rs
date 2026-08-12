@@ -201,7 +201,7 @@ mod tests {
     use crate::document::CadIr;
     use crate::report::Check;
     use crate::units::Units;
-    use crate::validate;
+    use crate::validate::validate_neutral;
 
     #[test]
     fn source_layer_items_validate_without_fabricated_geometry() {
@@ -215,7 +215,7 @@ mod tests {
             }],
         });
 
-        assert!(validate(&ir, Vec::new()).is_ok());
+        assert!(validate_neutral(&ir, Vec::new()).is_ok());
     }
 
     #[test]
@@ -230,7 +230,7 @@ mod tests {
             }],
         });
 
-        assert!(validate(&ir, Vec::new())
+        assert!(validate_neutral(&ir, Vec::new())
             .findings
             .iter()
             .any(|finding| finding.check == Check::Presentation));

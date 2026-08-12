@@ -1,63 +1,5 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_codec_rhino
-pub mod cadmpeg_codec_rhino::loss
-#[non_exhaustive] pub enum cadmpeg_codec_rhino::loss::RhinoLossCode
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::CageLatticeNotTransferred
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ContainerScanDiagnostic
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::CurveOnSurfaceBindingNotTransferred
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::DetailViewNotTransferred
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::DimensionDetailReferenceUnresolved
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::DimensionOverrideDropped
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::DimensionStyleUnresolved
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::HatchFillNotTransferred
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::HistoryDependencyDropped
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::HistoryEmbeddedGeometryDropped
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::HistoryGeometryNotTransferred
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::IntegrityFailure
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::MeshNgonGroupingDropped
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::MeshNormalPrecisionReduced
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::MeshVertexPrecisionReduced
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::MorphDeformationNotApplied
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ObjectAttributesDegraded
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ObjectDecodeDiagnostic
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ObjectFamilyNotTransferred
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ObjectFramingUndecodable
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ObjectRecordCensus
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::PolycurveJoinGap
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::PolyedgeReferencesNotResolved
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::PresentationRecordDropped
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ReferenceMemberAmbiguous
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::ReferenceMemberUnresolved
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::TopologyBrepFallback
-pub cadmpeg_codec_rhino::loss::RhinoLossCode::TrimPcurveDropped
-impl cadmpeg_codec_rhino::loss::RhinoLossCode
-pub const cadmpeg_codec_rhino::loss::RhinoLossCode::ALL: &'static [cadmpeg_codec_rhino::loss::RhinoLossCode]
-pub const fn cadmpeg_codec_rhino::loss::RhinoLossCode::code(self) -> &'static str
-pub fn cadmpeg_codec_rhino::loss::RhinoLossCode::note(self, impl core::fmt::Display) -> cadmpeg_ir::report::LossNote
-pub const fn cadmpeg_codec_rhino::loss::RhinoLossCode::severity(self) -> cadmpeg_ir::report::Severity
-impl core::clone::Clone for cadmpeg_codec_rhino::loss::RhinoLossCode
-pub fn cadmpeg_codec_rhino::loss::RhinoLossCode::clone(&self) -> cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::cmp::Eq for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::cmp::Ord for cadmpeg_codec_rhino::loss::RhinoLossCode
-pub fn cadmpeg_codec_rhino::loss::RhinoLossCode::cmp(&self, &cadmpeg_codec_rhino::loss::RhinoLossCode) -> core::cmp::Ordering
-impl core::cmp::PartialEq for cadmpeg_codec_rhino::loss::RhinoLossCode
-pub fn cadmpeg_codec_rhino::loss::RhinoLossCode::eq(&self, &cadmpeg_codec_rhino::loss::RhinoLossCode) -> bool
-impl core::cmp::PartialOrd for cadmpeg_codec_rhino::loss::RhinoLossCode
-pub fn cadmpeg_codec_rhino::loss::RhinoLossCode::partial_cmp(&self, &cadmpeg_codec_rhino::loss::RhinoLossCode) -> core::option::Option<core::cmp::Ordering>
-impl core::fmt::Debug for cadmpeg_codec_rhino::loss::RhinoLossCode
-pub fn cadmpeg_codec_rhino::loss::RhinoLossCode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::hash::Hash for cadmpeg_codec_rhino::loss::RhinoLossCode
-pub fn cadmpeg_codec_rhino::loss::RhinoLossCode::hash<__H: core::hash::Hasher>(&self, &mut __H)
-impl core::marker::Copy for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::marker::StructuralPartialEq for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::marker::Freeze for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::marker::Send for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::marker::Sync for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::marker::Unpin for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::marker::UnsafeUnpin for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_rhino::loss::RhinoLossCode
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_rhino::loss::RhinoLossCode
 pub enum cadmpeg_codec_rhino::RhinoArchiveVersion
 pub cadmpeg_codec_rhino::RhinoArchiveVersion::V5
 pub cadmpeg_codec_rhino::RhinoArchiveVersion::V6
@@ -80,7 +22,7 @@ impl core::marker::UnsafeUnpin for cadmpeg_codec_rhino::RhinoArchiveVersion
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_rhino::RhinoArchiveVersion
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_rhino::RhinoArchiveVersion
 pub struct cadmpeg_codec_rhino::RhinoCodec
-impl cadmpeg_ir::codec::Codec for cadmpeg_codec_rhino::RhinoCodec
+impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_rhino::RhinoCodec
 pub fn cadmpeg_codec_rhino::RhinoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_rhino::RhinoCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_rhino::RhinoCodec::id(&self) -> &'static str

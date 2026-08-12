@@ -22,7 +22,7 @@ pub struct Annotations {
     pub streams: Vec<String>,
     /// Source location for each annotated entity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub provenance: BTreeMap<String, Provenance>,
+    pub provenance: BTreeMap<String, StreamProvenance>,
     /// Non-byte-exact entity or field annotations.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub exactness: BTreeMap<String, ExactnessNote>,
@@ -31,7 +31,7 @@ pub struct Annotations {
 /// Source location using an index into [`Annotations::streams`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct Provenance {
+pub struct StreamProvenance {
     /// Index of the source stream in [`Annotations::streams`].
     pub stream: u32,
     /// Byte offset of the source record within the stream.
@@ -108,7 +108,7 @@ impl AnnotationBuilder {
         let id = id.to_string();
         self.annotations.provenance.insert(
             id.clone(),
-            Provenance {
+            StreamProvenance {
                 stream: stream.0,
                 offset,
                 tag: None,
@@ -195,7 +195,7 @@ impl AnnotationBuilder {
 
 /// In-progress provenance annotation returned by [`AnnotationBuilder::note`].
 pub struct ProvenanceNote<'a> {
-    provenance: &'a mut Provenance,
+    provenance: &'a mut StreamProvenance,
 }
 
 impl ProvenanceNote<'_> {
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(annotations.streams.len(), 1);
         assert_eq!(
             annotations.provenance["f3d:body#0"],
-            Provenance {
+            StreamProvenance {
                 stream: 0,
                 offset: 42,
                 tag: Some("body".to_string()),

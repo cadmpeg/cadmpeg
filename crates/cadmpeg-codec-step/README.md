@@ -17,7 +17,7 @@ cargo add cadmpeg-codec-step cadmpeg-ir
 ## Decode a Part 21 file
 
 ```rust,no_run
-use cadmpeg_ir::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_codec_step::StepCodec;
 use std::fs::File;
 
@@ -146,7 +146,7 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21
 [`CadIr`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/document/struct.CadIr.html
 [`Codec`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html
-[`CodecEntry`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.CodecEntry.html
+[`Codec`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html
 [`Encoder`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Encoder.html
 [`EntityCensus::total`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.EntityCensus.html#method.total
 [`ExportReport::census`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.census

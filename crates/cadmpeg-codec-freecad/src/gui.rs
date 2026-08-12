@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::cursor::Cursor as ByteCursor;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -34,7 +34,7 @@ pub(crate) fn requires_alpha_conversion(program_version: Option<&str>) -> bool {
 pub(crate) fn transfer(
     ir: &mut CadIr,
     bytes: &[u8],
-    entries: &BTreeMap<String, &[u8]>,
+    entries: &BTreeMap<String, View<'_>>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
@@ -983,7 +983,7 @@ struct GuiMaterial {
 
 fn validate_gui_list_payloads(
     properties: &[GuiPropertyRecord],
-    entries: &BTreeMap<String, &[u8]>,
+    entries: &BTreeMap<String, View<'_>>,
     requires_alpha_conversion: bool,
 ) -> Result<HashMap<String, Vec<GuiMaterial>>, CodecError> {
     let mut material_lists = HashMap::new();
@@ -997,7 +997,7 @@ fn validate_gui_list_payloads(
                 property.id
             )));
         }
-        let bytes = entries.get(entry_name).ok_or_else(|| {
+        let view = *entries.get(entry_name).ok_or_else(|| {
             CodecError::Malformed(format!(
                 "GUI property {} references missing side entry {entry_name}",
                 property.id
@@ -1005,7 +1005,7 @@ fn validate_gui_list_payloads(
         })?;
         match property.type_name.as_str() {
             "App::PropertyColorList" => {
-                parse_color_list(bytes, entry_name, requires_alpha_conversion)?;
+                parse_color_list(view, entry_name, requires_alpha_conversion)?;
             }
             "App::PropertyMaterialList" => {
                 let version = property
@@ -1025,7 +1025,7 @@ fn validate_gui_list_payloads(
                     .unwrap_or(0);
                 material_lists.insert(
                     property.id.clone(),
-                    parse_material_list(bytes, version, &property.id, requires_alpha_conversion)?,
+                    parse_material_list(view, version, &property.id, requires_alpha_conversion)?,
                 );
             }
             _ => {}
@@ -1035,22 +1035,19 @@ fn validate_gui_list_payloads(
 }
 
 fn parse_color_list(
-    bytes: &[u8],
+    mut view: View<'_>,
     entry_name: &str,
     requires_alpha_conversion: bool,
 ) -> Result<Vec<u32>, CodecError> {
-    let mut cursor = ByteCursor::new(bytes);
-    let count = cursor.u32_le().ok_or_else(|| {
-        CodecError::Malformed(format!("color-list entry {entry_name} is truncated"))
-    })?;
-    let colors = cursor
-        .read_counted(count.into(), 4, ByteCursor::u32_le)
+    let count = view.req_u32_le()?;
+    let colors = view
+        .read_counted(count.into(), 4, View::u32_le)
         .ok_or_else(|| {
             CodecError::Malformed(format!(
                 "color-list entry {entry_name} count exceeds its payload"
             ))
         })?;
-    if !cursor.is_empty() {
+    if !view.is_empty() {
         return Err(CodecError::Malformed(format!(
             "color-list entry {entry_name} has trailing bytes"
         )));
@@ -1062,19 +1059,18 @@ fn parse_color_list(
 }
 
 fn parse_material_list(
-    bytes: &[u8],
+    mut view: View<'_>,
     version: u32,
     property_id: &str,
     requires_alpha_conversion: bool,
 ) -> Result<Vec<GuiMaterial>, CodecError> {
-    let mut cursor = ByteCursor::new(bytes);
     let (count, has_strings) = match version {
         0 | 1 => {
-            let header = cursor.i32_le().ok_or_else(|| {
+            let header = view.i32_le().ok_or_else(|| {
                 CodecError::Malformed(format!("GUI material list {property_id} is truncated"))
             })?;
             let count = if header < 0 {
-                cursor.u32_le().ok_or_else(|| {
+                view.u32_le().ok_or_else(|| {
                     CodecError::Malformed(format!("GUI material list {property_id} is truncated"))
                 })?
             } else {
@@ -1083,13 +1079,13 @@ fn parse_material_list(
             (count, false)
         }
         2 => (
-            cursor.u32_le().ok_or_else(|| {
+            view.u32_le().ok_or_else(|| {
                 CodecError::Malformed(format!("GUI material list {property_id} is truncated"))
             })?,
             false,
         ),
         3 => (
-            cursor.u32_le().ok_or_else(|| {
+            view.u32_le().ok_or_else(|| {
                 CodecError::Malformed(format!("GUI material list {property_id} is truncated"))
             })?,
             true,
@@ -1100,15 +1096,15 @@ fn parse_material_list(
             )));
         }
     };
-    let mut materials = cursor
-        .read_counted(count.into(), 24, |cursor| {
+    let mut materials = view
+        .read_counted(count.into(), 24, |view| {
             Some(GuiMaterial {
-                ambient: cursor.u32_le()?,
-                diffuse: cursor.u32_le()?,
-                specular: cursor.u32_le()?,
-                emissive: cursor.u32_le()?,
-                shininess: cursor.f32_le()?,
-                transparency: cursor.f32_le()?,
+                ambient: view.u32_le()?,
+                diffuse: view.u32_le()?,
+                specular: view.u32_le()?,
+                emissive: view.u32_le()?,
+                shininess: view.f32_le()?,
+                transparency: view.f32_le()?,
                 image: String::new(),
                 image_path: String::new(),
                 uuid: String::new(),
@@ -1136,12 +1132,12 @@ fn parse_material_list(
     }
     if has_strings {
         for material in &mut materials {
-            material.image = read_material_string(&mut cursor, property_id)?;
-            material.image_path = read_material_string(&mut cursor, property_id)?;
-            material.uuid = read_material_string(&mut cursor, property_id)?;
+            material.image = read_material_string(&mut view, property_id)?;
+            material.image_path = read_material_string(&mut view, property_id)?;
+            material.uuid = read_material_string(&mut view, property_id)?;
         }
     }
-    if !cursor.is_empty() {
+    if !view.is_empty() {
         return Err(CodecError::Malformed(format!(
             "GUI material list {property_id} has trailing bytes"
         )));
@@ -1149,27 +1145,21 @@ fn parse_material_list(
     Ok(materials)
 }
 
-fn read_material_string(
-    cursor: &mut ByteCursor<'_>,
-    property_id: &str,
-) -> Result<String, CodecError> {
-    let length = cursor.u32_le().ok_or_else(|| {
+fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String, CodecError> {
+    let length = view.u32_le().ok_or_else(|| {
         CodecError::Malformed(format!(
             "GUI material list {property_id} string is truncated"
         ))
     })?;
-    let length = cursor.counted(length.into(), 1).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "GUI material list {property_id} string exceeds its payload"
-        ))
-    })?;
-    String::from_utf8(
-        cursor
-            .take(length)
-            .expect("counted material string")
-            .to_vec(),
-    )
-    .map_err(|_| {
+    let length = view
+        .counted(length.into(), 1)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "GUI material list {property_id} string exceeds its payload"
+            ))
+        })?
+        .get();
+    String::from_utf8(view.take(length).expect("counted material string").to_vec()).map_err(|_| {
         CodecError::Malformed(format!(
             "GUI material list {property_id} string is not UTF-8"
         ))
@@ -1412,17 +1402,17 @@ fn transfer_topology_colors(
     provider_name: &str,
     object_id: &str,
     entry_name: &str,
-    entries: &BTreeMap<String, &[u8]>,
+    entries: &BTreeMap<String, View<'_>>,
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
     kind: TopologyColorKind,
     requires_alpha_conversion: bool,
 ) -> Result<(), CodecError> {
-    let bytes = entries.get(entry_name).ok_or_else(|| {
+    let view = *entries.get(entry_name).ok_or_else(|| {
         CodecError::Malformed(format!("color list references missing entry {entry_name}"))
     })?;
-    let colors = parse_color_list(bytes, entry_name, requires_alpha_conversion)?;
+    let colors = parse_color_list(view, entry_name, requires_alpha_conversion)?;
     let count = colors.len();
     let Some(group) =
         displayed_shape_group(object_id, properties, payloads, element_maps, kind.name())
@@ -1578,7 +1568,13 @@ mod color_tests {
         bytes.extend_from_slice(&0.5_f32.to_le_bytes());
         bytes.extend_from_slice(&0.25_f32.to_le_bytes());
 
-        let materials = parse_material_list(&bytes, 0, "property", true).expect("material list");
+        let materials = parse_material_list(
+            cadmpeg_core::decode::View::over_retained(&bytes),
+            0,
+            "property",
+            true,
+        )
+        .expect("material list");
         assert_eq!(materials.len(), 1);
         assert_eq!(materials[0].ambient, 0x1122_33ff);
         assert_eq!(materials[0].diffuse, 0x4455_66bf);

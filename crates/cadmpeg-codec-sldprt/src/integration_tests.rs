@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
 use super::*;
+use cadmpeg_ir::codec::CodecBackend;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     SldprtCodec
@@ -10,7 +11,7 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     let native = crate::validate_native(&result.ir);
     assert!(native.is_empty(), "{native:#?}");

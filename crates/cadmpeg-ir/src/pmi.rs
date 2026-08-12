@@ -253,7 +253,7 @@ mod tests {
     use crate::document::CadIr;
     use crate::report::Check;
     use crate::units::Units;
-    use crate::validate;
+    use crate::validate::validate_neutral;
 
     #[test]
     fn datum_system_references_resolve_with_precedence() {
@@ -284,7 +284,7 @@ mod tests {
         });
         ir.finalize();
 
-        assert!(validate(&ir, Vec::new()).is_ok());
+        assert!(validate_neutral(&ir, Vec::new()).is_ok());
     }
 
     #[test]
@@ -301,7 +301,7 @@ mod tests {
             },
         });
 
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         assert!(report
             .findings
             .iter()
@@ -355,7 +355,7 @@ mod tests {
             },
         });
 
-        let findings = validate(&ir, Vec::new()).findings;
+        let findings = validate_neutral(&ir, Vec::new()).findings;
         assert!(
             findings
                 .iter()
@@ -380,7 +380,7 @@ mod tests {
                 semantics: Vec::new(),
             },
         });
-        assert!(validate(&ir, Vec::new())
+        assert!(validate_neutral(&ir, Vec::new())
             .findings
             .iter()
             .any(|finding| finding.check == Check::Pmi && finding.message.contains("non-finite")));

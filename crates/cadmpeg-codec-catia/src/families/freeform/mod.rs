@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -290,11 +290,12 @@ pub(crate) fn try_decode_freeform_surfaces(
         &scan.data,
         container::consolidated_record_ranges(scan),
     );
-    let mut b5_graph = crate::families::b5::graph::parse_from_records(
+    let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
         &object_source,
         &selected_object_records,
         &object_frames,
         true,
+        Some(&selection_budget),
     );
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.faces.iter().fold([0usize; 3], |mut counts, face| {
@@ -577,7 +578,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         Vec::new()
     } else if topology_transferred && b5_complete {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             severity: Severity::Warning,
             message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
                 .to_string(),
@@ -585,7 +586,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         }]
     } else if topology_transferred {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             severity: Severity::Blocking,
             message: "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph."
                 .to_string(),
@@ -593,7 +594,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         }]
     } else if object_stream_selection_exhausted {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             severity: Severity::Blocking,
             message: "The object-stream graph exceeds the bounded frame-index and record-materialization work slice; its topology remains native."
                 .to_string(),
@@ -601,7 +602,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         }]
     } else {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             severity: Severity::Blocking,
             message: "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
                 .to_string(),
@@ -2678,7 +2679,7 @@ mod tests {
         assert_eq!(ir.model.points[1].position, Point3::new(2.0, 3.0, 5.0));
         assert_eq!(ir.model.points[0].position, Point3::new(7.0, 11.0, 13.0));
         ir.finalize();
-        let validation = cadmpeg_ir::validate(&ir, Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 
@@ -2710,7 +2711,7 @@ mod tests {
             assert!((actual.z - expected.z).abs() < 1e-12);
         }
         ir.finalize();
-        let validation = cadmpeg_ir::validate(&ir, Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
         assert!(validation.is_ok(), "{:?}", validation.findings);
     }
 

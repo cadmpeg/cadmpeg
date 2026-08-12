@@ -16,7 +16,7 @@ use crate::provenance::SourceObjectAssociation;
 use crate::report::{Check, Severity, ValidationReport};
 use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use crate::units::Units;
-use crate::validate::{entity_census, validate};
+use crate::validate::{entity_census, validate_neutral};
 
 const SEG: &str = "[a-z][a-z0-9_-]{0,7}";
 
@@ -136,7 +136,7 @@ proptest! {
 
     #[test]
     fn generated_documents_validate_clean(ir in ir_strategy()) {
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         prop_assert_eq!(
             report.error_count(),
             0,
@@ -149,7 +149,7 @@ proptest! {
     fn census_matches_arena_lengths(ir in ir_strategy()) {
         let census = entity_census(&ir);
         prop_assert_eq!(census["points"], ir.model.points.len());
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         prop_assert_eq!(&census, &report.entity_counts);
     }
 
@@ -159,7 +159,7 @@ proptest! {
             let mut broken = ir.clone();
             broken.model.points[0].id.0 =
                 strip_one_namespace_component(&broken.model.points[0].id.0);
-            let report = validate(&broken, Vec::new());
+            let report = validate_neutral(&broken, Vec::new());
             prop_assert!(
                 has_error(&report, Check::Identity),
                 "findings: {:?}",
@@ -170,7 +170,7 @@ proptest! {
         {
             let mut broken = ir.clone();
             broken.model.points.push(broken.model.points[0].clone());
-            let report = validate(&broken, Vec::new());
+            let report = validate_neutral(&broken, Vec::new());
             prop_assert!(
                 has_error(&report, Check::Identity),
                 "findings: {:?}",
@@ -181,7 +181,7 @@ proptest! {
         if ir.model.points.len() >= 2 {
             let mut broken = ir.clone();
             broken.model.points.swap(0, 1);
-            let report = validate(&broken, Vec::new());
+            let report = validate_neutral(&broken, Vec::new());
             prop_assert!(
                 has_error(&report, Check::ArenaOrder),
                 "findings: {:?}",
@@ -197,7 +197,7 @@ proptest! {
                 tolerance: None,
             });
             broken.finalize();
-            let report = validate(&broken, Vec::new());
+            let report = validate_neutral(&broken, Vec::new());
             prop_assert!(
                 has_error(&report, Check::ReferentialIntegrity),
                 "findings: {:?}",
@@ -208,8 +208,8 @@ proptest! {
 
     #[test]
     fn validation_is_deterministic(ir in ir_strategy()) {
-        let a = validate(&ir, Vec::new());
-        let b = validate(&ir, Vec::new());
+        let a = validate_neutral(&ir, Vec::new());
+        let b = validate_neutral(&ir, Vec::new());
         prop_assert_eq!(a.findings, b.findings);
     }
 
@@ -260,7 +260,7 @@ proptest! {
         let mut base = CadIr::empty(Units::default());
         draft.commit_model(&mut base).unwrap();
         base.finalize();
-        let report = validate(&base, Vec::new());
+        let report = validate_neutral(&base, Vec::new());
         prop_assert_eq!(
             report.error_count(),
             0,

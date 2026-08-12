@@ -1,4 +1,4 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_core
 pub mod cadmpeg_core::be
 pub fn cadmpeg_core::be::f32_at(&[u8], usize) -> core::option::Option<f32>
@@ -16,17 +16,10 @@ pub fn cadmpeg_core::be::take_i64(&[u8], &mut usize) -> core::option::Option<i64
 pub fn cadmpeg_core::be::take_u16(&[u8], &mut usize) -> core::option::Option<u16>
 pub fn cadmpeg_core::be::take_u32(&[u8], &mut usize) -> core::option::Option<u32>
 pub fn cadmpeg_core::be::take_u64(&[u8], &mut usize) -> core::option::Option<u64>
-pub fn cadmpeg_core::be::take_vec3(&[u8], &mut usize) -> core::option::Option<[f64; 3]>
 pub fn cadmpeg_core::be::u16_at(&[u8], usize) -> core::option::Option<u16>
 pub fn cadmpeg_core::be::u32_at(&[u8], usize) -> core::option::Option<u32>
 pub fn cadmpeg_core::be::u64_at(&[u8], usize) -> core::option::Option<u64>
 pub fn cadmpeg_core::be::vec3_at(&[u8], usize) -> core::option::Option<[f64; 3]>
-pub mod cadmpeg_core::compare
-pub const cadmpeg_core::compare::FLOAT_TOLERANCE: f64
-pub const cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX: &str
-pub fn cadmpeg_core::compare::floats_agree(f64, f64) -> bool
-pub fn cadmpeg_core::compare::is_local_digest_attribute(&str) -> bool
-pub fn cadmpeg_core::compare::values_agree(&serde_json::value::Value, &serde_json::value::Value) -> core::result::Result<(), alloc::string::String>
 pub mod cadmpeg_core::container
 pub struct cadmpeg_core::container::ContainerEntry
 pub cadmpeg_core::container::ContainerEntry::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
@@ -78,49 +71,27 @@ impl core::marker::Unpin for cadmpeg_core::container::ContainerSummary
 impl core::marker::UnsafeUnpin for cadmpeg_core::container::ContainerSummary
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::container::ContainerSummary
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::container::ContainerSummary
-pub mod cadmpeg_core::cursor
-pub struct cadmpeg_core::cursor::Cursor<'a>
-impl cadmpeg_core::cursor::Cursor<'_>
-pub fn cadmpeg_core::cursor::Cursor<'_>::f32_le(&mut self) -> core::option::Option<f32>
-pub fn cadmpeg_core::cursor::Cursor<'_>::f64_be(&mut self) -> core::option::Option<f64>
-pub fn cadmpeg_core::cursor::Cursor<'_>::f64_le(&mut self) -> core::option::Option<f64>
-pub fn cadmpeg_core::cursor::Cursor<'_>::i16_le(&mut self) -> core::option::Option<i16>
-pub fn cadmpeg_core::cursor::Cursor<'_>::i32_le(&mut self) -> core::option::Option<i32>
-pub fn cadmpeg_core::cursor::Cursor<'_>::i64_le(&mut self) -> core::option::Option<i64>
-pub fn cadmpeg_core::cursor::Cursor<'_>::u16_be(&mut self) -> core::option::Option<u16>
-pub fn cadmpeg_core::cursor::Cursor<'_>::u16_le(&mut self) -> core::option::Option<u16>
-pub fn cadmpeg_core::cursor::Cursor<'_>::u32_be(&mut self) -> core::option::Option<u32>
-pub fn cadmpeg_core::cursor::Cursor<'_>::u32_le(&mut self) -> core::option::Option<u32>
-pub fn cadmpeg_core::cursor::Cursor<'_>::u64_be(&mut self) -> core::option::Option<u64>
-pub fn cadmpeg_core::cursor::Cursor<'_>::u64_le(&mut self) -> core::option::Option<u64>
-impl<'a> cadmpeg_core::cursor::Cursor<'a>
-pub fn cadmpeg_core::cursor::Cursor<'a>::array<const N: usize>(&mut self) -> core::option::Option<[u8; N]>
-pub fn cadmpeg_core::cursor::Cursor<'a>::counted(&self, u64, usize) -> core::option::Option<usize>
-pub fn cadmpeg_core::cursor::Cursor<'a>::is_empty(&self) -> bool
-pub fn cadmpeg_core::cursor::Cursor<'a>::new(&'a [u8]) -> Self
-pub fn cadmpeg_core::cursor::Cursor<'a>::peek(&self, usize, usize) -> core::option::Option<&'a [u8]>
-pub fn cadmpeg_core::cursor::Cursor<'a>::position(&self) -> usize
-pub fn cadmpeg_core::cursor::Cursor<'a>::read_counted<T>(&mut self, u64, usize, impl core::ops::function::FnMut(&mut Self) -> core::option::Option<T>) -> core::option::Option<alloc::vec::Vec<T>>
-pub fn cadmpeg_core::cursor::Cursor<'a>::remaining(&self) -> usize
-pub fn cadmpeg_core::cursor::Cursor<'a>::seek(&mut self, usize) -> core::option::Option<()>
-pub fn cadmpeg_core::cursor::Cursor<'a>::skip(&mut self, usize) -> core::option::Option<()>
-pub fn cadmpeg_core::cursor::Cursor<'a>::take(&mut self, usize) -> core::option::Option<&'a [u8]>
-pub fn cadmpeg_core::cursor::Cursor<'a>::u8(&mut self) -> core::option::Option<u8>
-pub fn cadmpeg_core::cursor::Cursor<'a>::with_bounds(&'a [u8], usize, usize) -> core::option::Option<Self>
-impl<'a> core::clone::Clone for cadmpeg_core::cursor::Cursor<'a>
-pub fn cadmpeg_core::cursor::Cursor<'a>::clone(&self) -> cadmpeg_core::cursor::Cursor<'a>
-impl<'a> core::fmt::Debug for cadmpeg_core::cursor::Cursor<'a>
-pub fn cadmpeg_core::cursor::Cursor<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<'a> core::marker::Copy for cadmpeg_core::cursor::Cursor<'a>
-impl<'a> core::marker::Freeze for cadmpeg_core::cursor::Cursor<'a>
-impl<'a> core::marker::Send for cadmpeg_core::cursor::Cursor<'a>
-impl<'a> core::marker::Sync for cadmpeg_core::cursor::Cursor<'a>
-impl<'a> core::marker::Unpin for cadmpeg_core::cursor::Cursor<'a>
-impl<'a> core::marker::UnsafeUnpin for cadmpeg_core::cursor::Cursor<'a>
-impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::cursor::Cursor<'a>
-impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_core::cursor::Cursor<'a>
-pub fn cadmpeg_core::cursor::bounded_len(u64, usize, usize) -> core::option::Option<usize>
 pub mod cadmpeg_core::decode
+pub enum cadmpeg_core::decode::AddressStepKind
+pub cadmpeg_core::decode::AddressStepKind::ExpandedMember
+pub cadmpeg_core::decode::AddressStepKind::Root
+pub cadmpeg_core::decode::AddressStepKind::StoredMember
+impl core::clone::Clone for cadmpeg_core::decode::AddressStepKind
+pub fn cadmpeg_core::decode::AddressStepKind::clone(&self) -> cadmpeg_core::decode::AddressStepKind
+impl core::cmp::Eq for cadmpeg_core::decode::AddressStepKind
+impl core::cmp::PartialEq for cadmpeg_core::decode::AddressStepKind
+pub fn cadmpeg_core::decode::AddressStepKind::eq(&self, &cadmpeg_core::decode::AddressStepKind) -> bool
+impl core::fmt::Debug for cadmpeg_core::decode::AddressStepKind
+pub fn cadmpeg_core::decode::AddressStepKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_core::decode::AddressStepKind
+impl core::marker::StructuralPartialEq for cadmpeg_core::decode::AddressStepKind
+impl core::marker::Freeze for cadmpeg_core::decode::AddressStepKind
+impl core::marker::Send for cadmpeg_core::decode::AddressStepKind
+impl core::marker::Sync for cadmpeg_core::decode::AddressStepKind
+impl core::marker::Unpin for cadmpeg_core::decode::AddressStepKind
+impl core::marker::UnsafeUnpin for cadmpeg_core::decode::AddressStepKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::AddressStepKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::AddressStepKind
 pub enum cadmpeg_core::decode::DecodeMode
 pub cadmpeg_core::decode::DecodeMode::Salvage
 pub cadmpeg_core::decode::DecodeMode::Strict
@@ -251,6 +222,49 @@ impl core::marker::Unpin for cadmpeg_core::decode::ResourceFailure
 impl core::marker::UnsafeUnpin for cadmpeg_core::decode::ResourceFailure
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::ResourceFailure
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::ResourceFailure
+pub enum cadmpeg_core::decode::SpaceDerivation
+pub cadmpeg_core::decode::SpaceDerivation::Concatenated
+pub cadmpeg_core::decode::SpaceDerivation::Concatenated::parents: alloc::vec::Vec<cadmpeg_core::decode::SpaceId>
+pub cadmpeg_core::decode::SpaceDerivation::Expanded
+pub cadmpeg_core::decode::SpaceDerivation::Expanded::parent: cadmpeg_core::decode::SpaceId
+pub cadmpeg_core::decode::SpaceDerivation::Expanded::source_range: cadmpeg_core::decode::ByteRange
+pub cadmpeg_core::decode::SpaceDerivation::Root
+pub cadmpeg_core::decode::SpaceDerivation::StoredSlice
+pub cadmpeg_core::decode::SpaceDerivation::StoredSlice::parent: cadmpeg_core::decode::SpaceId
+pub cadmpeg_core::decode::SpaceDerivation::StoredSlice::range: cadmpeg_core::decode::ByteRange
+impl core::clone::Clone for cadmpeg_core::decode::SpaceDerivation
+pub fn cadmpeg_core::decode::SpaceDerivation::clone(&self) -> cadmpeg_core::decode::SpaceDerivation
+impl core::cmp::Eq for cadmpeg_core::decode::SpaceDerivation
+impl core::cmp::PartialEq for cadmpeg_core::decode::SpaceDerivation
+pub fn cadmpeg_core::decode::SpaceDerivation::eq(&self, &cadmpeg_core::decode::SpaceDerivation) -> bool
+impl core::fmt::Debug for cadmpeg_core::decode::SpaceDerivation
+pub fn cadmpeg_core::decode::SpaceDerivation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_core::decode::SpaceDerivation
+impl core::marker::Freeze for cadmpeg_core::decode::SpaceDerivation
+impl core::marker::Send for cadmpeg_core::decode::SpaceDerivation
+impl core::marker::Sync for cadmpeg_core::decode::SpaceDerivation
+impl core::marker::Unpin for cadmpeg_core::decode::SpaceDerivation
+impl core::marker::UnsafeUnpin for cadmpeg_core::decode::SpaceDerivation
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::SpaceDerivation
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::SpaceDerivation
+pub struct cadmpeg_core::decode::AddressStep
+pub cadmpeg_core::decode::AddressStep::kind: cadmpeg_core::decode::AddressStepKind
+pub cadmpeg_core::decode::AddressStep::label: alloc::string::String
+impl core::clone::Clone for cadmpeg_core::decode::AddressStep
+pub fn cadmpeg_core::decode::AddressStep::clone(&self) -> cadmpeg_core::decode::AddressStep
+impl core::cmp::Eq for cadmpeg_core::decode::AddressStep
+impl core::cmp::PartialEq for cadmpeg_core::decode::AddressStep
+pub fn cadmpeg_core::decode::AddressStep::eq(&self, &cadmpeg_core::decode::AddressStep) -> bool
+impl core::fmt::Debug for cadmpeg_core::decode::AddressStep
+pub fn cadmpeg_core::decode::AddressStep::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_core::decode::AddressStep
+impl core::marker::Freeze for cadmpeg_core::decode::AddressStep
+impl core::marker::Send for cadmpeg_core::decode::AddressStep
+impl core::marker::Sync for cadmpeg_core::decode::AddressStep
+impl core::marker::Unpin for cadmpeg_core::decode::AddressStep
+impl core::marker::UnsafeUnpin for cadmpeg_core::decode::AddressStep
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::AddressStep
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::AddressStep
 pub struct cadmpeg_core::decode::BoundedCount(_)
 impl cadmpeg_core::decode::BoundedCount
 pub fn cadmpeg_core::decode::BoundedCount::get(self) -> usize
@@ -306,7 +320,10 @@ impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::DecodeAr
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::DecodeArena
 pub struct cadmpeg_core::decode::DecodeContext<'a>
 impl<'a> cadmpeg_core::decode::DecodeContext<'a>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::admit_entities(&self, u64, &mut u64, &'static str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::alloc_filled<T: core::clone::Clone>(&self, usize, T, &'static str) -> core::result::Result<alloc::vec::Vec<T>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::begin_expand(&self, cadmpeg_core::decode::View<'_>, cadmpeg_core::decode::ExpandSpec) -> core::result::Result<cadmpeg_core::decode::ExpandWriter<'_, 'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::begin_expand_as(&self, cadmpeg_core::decode::View<'_>, cadmpeg_core::decode::ExpandSpec, impl core::convert::Into<alloc::string::String>) -> core::result::Result<cadmpeg_core::decode::ExpandWriter<'_, 'a>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::charge_collection_items(&self, u64, &'static str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::charge_entities(&self, u64, &'static str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::charge_retained(&self, u64, &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
@@ -320,8 +337,11 @@ pub fn cadmpeg_core::decode::DecodeContext<'a>::from_root_bytes(&'a [u8], &'a ca
 pub fn cadmpeg_core::decode::DecodeContext<'a>::policy(&self) -> &cadmpeg_core::decode::DecodePolicy
 pub fn cadmpeg_core::decode::DecodeContext<'a>::read_root(&mut dyn cadmpeg_core::io::ReadSeek, &'a cadmpeg_core::decode::DecodeArena, &cadmpeg_core::decode::DecodePolicy) -> core::result::Result<(Self, cadmpeg_core::decode::View<'a>), cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::register_slice_as<'v>(&self, cadmpeg_core::decode::View<'v>, cadmpeg_core::decode::ByteRange, impl core::convert::Into<alloc::string::String>) -> core::result::Result<cadmpeg_core::decode::View<'v>, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::reserve_scoped(&self, u64, &'static str, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> core::result::Result<cadmpeg_core::decode::ScopedReservation<'_>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::DecodeContext<'a>::resolve_location(&self, cadmpeg_core::decode::SourceLocation) -> cadmpeg_core::decode::ResolvedAddress
 pub fn cadmpeg_core::decode::DecodeContext<'a>::set_container_only(&mut self, bool)
+pub fn cadmpeg_core::decode::DecodeContext<'a>::space_descriptors(&self) -> alloc::vec::Vec<cadmpeg_core::decode::SpaceDescriptor>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::work_budget(&self, u64) -> cadmpeg_core::decode::WorkBudget<'_>
 impl<'a> core::fmt::Debug for cadmpeg_core::decode::DecodeContext<'a>
 pub fn cadmpeg_core::decode::DecodeContext<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -452,6 +472,27 @@ impl core::marker::Unpin for cadmpeg_core::decode::ParseError
 impl core::marker::UnsafeUnpin for cadmpeg_core::decode::ParseError
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::ParseError
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::ParseError
+pub struct cadmpeg_core::decode::ResolvedAddress
+pub cadmpeg_core::decode::ResolvedAddress::offset: u64
+pub cadmpeg_core::decode::ResolvedAddress::steps: alloc::vec::Vec<cadmpeg_core::decode::AddressStep>
+impl cadmpeg_core::decode::ResolvedAddress
+pub fn cadmpeg_core::decode::ResolvedAddress::inspect_commands(&self, &str) -> alloc::vec::Vec<alloc::string::String>
+pub fn cadmpeg_core::decode::ResolvedAddress::path(&self) -> alloc::string::String
+impl core::clone::Clone for cadmpeg_core::decode::ResolvedAddress
+pub fn cadmpeg_core::decode::ResolvedAddress::clone(&self) -> cadmpeg_core::decode::ResolvedAddress
+impl core::cmp::Eq for cadmpeg_core::decode::ResolvedAddress
+impl core::cmp::PartialEq for cadmpeg_core::decode::ResolvedAddress
+pub fn cadmpeg_core::decode::ResolvedAddress::eq(&self, &cadmpeg_core::decode::ResolvedAddress) -> bool
+impl core::fmt::Debug for cadmpeg_core::decode::ResolvedAddress
+pub fn cadmpeg_core::decode::ResolvedAddress::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_core::decode::ResolvedAddress
+impl core::marker::Freeze for cadmpeg_core::decode::ResolvedAddress
+impl core::marker::Send for cadmpeg_core::decode::ResolvedAddress
+impl core::marker::Sync for cadmpeg_core::decode::ResolvedAddress
+impl core::marker::Unpin for cadmpeg_core::decode::ResolvedAddress
+impl core::marker::UnsafeUnpin for cadmpeg_core::decode::ResolvedAddress
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::ResolvedAddress
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::ResolvedAddress
 pub struct cadmpeg_core::decode::ResourceLimit
 pub cadmpeg_core::decode::ResourceLimit::additional: u64
 pub cadmpeg_core::decode::ResourceLimit::context: cadmpeg_core::decode::ErrorContext
@@ -546,6 +587,25 @@ impl core::marker::Unpin for cadmpeg_core::decode::SourceLocation
 impl core::marker::UnsafeUnpin for cadmpeg_core::decode::SourceLocation
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::SourceLocation
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::SourceLocation
+pub struct cadmpeg_core::decode::SpaceDescriptor
+pub cadmpeg_core::decode::SpaceDescriptor::derivation: cadmpeg_core::decode::SpaceDerivation
+pub cadmpeg_core::decode::SpaceDescriptor::id: cadmpeg_core::decode::SpaceId
+pub cadmpeg_core::decode::SpaceDescriptor::label: alloc::string::String
+impl core::clone::Clone for cadmpeg_core::decode::SpaceDescriptor
+pub fn cadmpeg_core::decode::SpaceDescriptor::clone(&self) -> cadmpeg_core::decode::SpaceDescriptor
+impl core::cmp::Eq for cadmpeg_core::decode::SpaceDescriptor
+impl core::cmp::PartialEq for cadmpeg_core::decode::SpaceDescriptor
+pub fn cadmpeg_core::decode::SpaceDescriptor::eq(&self, &cadmpeg_core::decode::SpaceDescriptor) -> bool
+impl core::fmt::Debug for cadmpeg_core::decode::SpaceDescriptor
+pub fn cadmpeg_core::decode::SpaceDescriptor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_core::decode::SpaceDescriptor
+impl core::marker::Freeze for cadmpeg_core::decode::SpaceDescriptor
+impl core::marker::Send for cadmpeg_core::decode::SpaceDescriptor
+impl core::marker::Sync for cadmpeg_core::decode::SpaceDescriptor
+impl core::marker::Unpin for cadmpeg_core::decode::SpaceDescriptor
+impl core::marker::UnsafeUnpin for cadmpeg_core::decode::SpaceDescriptor
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::SpaceDescriptor
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::SpaceDescriptor
 pub struct cadmpeg_core::decode::SpaceId(_)
 impl cadmpeg_core::decode::SpaceId
 pub const cadmpeg_core::decode::SpaceId::ROOT: cadmpeg_core::decode::SpaceId
@@ -603,9 +663,12 @@ pub fn cadmpeg_core::decode::View<'a>::array<const N: usize>(&mut self) -> core:
 pub fn cadmpeg_core::decode::View<'a>::child(self, usize, usize) -> core::option::Option<cadmpeg_core::decode::View<'a>>
 pub fn cadmpeg_core::decode::View<'a>::counted(self, u64, usize) -> core::option::Option<cadmpeg_core::decode::BoundedCount>
 pub fn cadmpeg_core::decode::View<'a>::end(self) -> usize
+pub fn cadmpeg_core::decode::View<'a>::is_empty(self) -> bool
 pub fn cadmpeg_core::decode::View<'a>::location(self) -> cadmpeg_core::decode::SourceLocation
 pub fn cadmpeg_core::decode::View<'a>::location_at(self, usize) -> cadmpeg_core::decode::SourceLocation
+pub fn cadmpeg_core::decode::View<'a>::over_retained(&'a [u8]) -> cadmpeg_core::decode::View<'a>
 pub fn cadmpeg_core::decode::View<'a>::position(self) -> usize
+pub fn cadmpeg_core::decode::View<'a>::read_counted<T>(&mut self, u64, usize, impl core::ops::function::FnMut(&mut Self) -> core::option::Option<T>) -> core::option::Option<alloc::vec::Vec<T>>
 pub fn cadmpeg_core::decode::View<'a>::remaining(self) -> usize
 pub fn cadmpeg_core::decode::View<'a>::req_take(&mut self, usize) -> core::result::Result<&'a [u8], cadmpeg_core::decode::ParseError>
 pub fn cadmpeg_core::decode::View<'a>::req_u8(&mut self) -> core::result::Result<u8, cadmpeg_core::decode::ParseError>
@@ -650,7 +713,10 @@ impl<'a> core::marker::Unpin for cadmpeg_core::decode::WorkBudget<'a>
 impl<'a> core::marker::UnsafeUnpin for cadmpeg_core::decode::WorkBudget<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::decode::WorkBudget<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for cadmpeg_core::decode::WorkBudget<'a>
+pub fn cadmpeg_core::decode::alloc_filled<T: core::clone::Clone>(usize, T, &'static str) -> core::result::Result<alloc::vec::Vec<T>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_core::decode::bounded_len(u64, usize, usize) -> core::option::Option<usize>
 pub fn cadmpeg_core::decode::refuse_local_limit(&'static str, u64, u64, core::option::Option<cadmpeg_core::decode::SourceLocation>) -> cadmpeg_core::error::CodecError
+pub fn cadmpeg_core::decode::resolve_address(&[cadmpeg_core::decode::SpaceDescriptor], cadmpeg_core::decode::SourceLocation) -> cadmpeg_core::decode::ResolvedAddress
 pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError
 pub cadmpeg_core::error::CodecError::Io(core::io::error::Error)
@@ -681,8 +747,8 @@ impl core::marker::UnsafeUnpin for cadmpeg_core::error::CodecError
 impl !core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::error::CodecError
 impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_core::error::CodecError
 pub mod cadmpeg_core::io
-pub trait cadmpeg_core::io::ReadSeek: std::io::Read + core::io::seek::Seek
-impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
+pub trait cadmpeg_core::io::ReadSeek: alloc::io::read::Read + core::io::seek::Seek
+impl<T: alloc::io::read::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
 pub mod cadmpeg_core::le
 pub fn cadmpeg_core::le::f32_at(&[u8], usize) -> core::option::Option<f32>
 pub fn cadmpeg_core::le::f64_at(&[u8], usize) -> core::option::Option<f64>
@@ -703,7 +769,6 @@ pub fn cadmpeg_core::le::take_lp_u32_bytes<'a>(&'a [u8], &mut usize) -> core::op
 pub fn cadmpeg_core::le::take_u16(&[u8], &mut usize) -> core::option::Option<u16>
 pub fn cadmpeg_core::le::take_u32(&[u8], &mut usize) -> core::option::Option<u32>
 pub fn cadmpeg_core::le::take_u64(&[u8], &mut usize) -> core::option::Option<u64>
-pub fn cadmpeg_core::le::take_vec3(&[u8], &mut usize) -> core::option::Option<[f64; 3]>
 pub fn cadmpeg_core::le::u16_at(&[u8], usize) -> core::option::Option<u16>
 pub fn cadmpeg_core::le::u32_at(&[u8], usize) -> core::option::Option<u32>
 pub fn cadmpeg_core::le::u64_at(&[u8], usize) -> core::option::Option<u64>
@@ -790,5 +855,5 @@ impl core::marker::Unpin for cadmpeg_core::container::ContainerSummary
 impl core::marker::UnsafeUnpin for cadmpeg_core::container::ContainerSummary
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_core::container::ContainerSummary
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_core::container::ContainerSummary
-pub trait cadmpeg_core::ReadSeek: std::io::Read + core::io::seek::Seek
-impl<T: std::io::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
+pub trait cadmpeg_core::ReadSeek: alloc::io::read::Read + core::io::seek::Seek
+impl<T: alloc::io::read::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T

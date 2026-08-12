@@ -132,17 +132,29 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "code": "geometry_not_transferred",
+        "code": {
+          "code": "geometry_not_transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "shared"
+        },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
       },
       {
-        "code": "metadata_not_transferred",
+        "code": {
+          "code": "metadata_not_transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "shared"
+        },
         "message": "STEP drawing #10 DRAUGHTING_MODEL relationship items references source-typed record #9 without a neutral identity; the raw source parameter is retained",
         "severity": "warning"
       },
       {
-        "code": "metadata_not_transferred",
+        "code": {
+          "code": "metadata_not_transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "shared"
+        },
         "message": "STEP drawing #10 DRAUGHTING_MODEL relationship presentation_context references source-typed record #2 without a neutral identity; the raw source parameter is retained",
         "severity": "warning"
       }

@@ -14,6 +14,9 @@ keywords = ["cad", "step", "iso-10303", "ap242", "brep"]
 categories = ["encoding", "graphics"]
 exclude = ["tests/golden/**"]
 
+[features]
+fuzzing = []
+
 [dependencies]
 base64.workspace = true
 cadmpeg-container.workspace = true
@@ -25,8 +28,8 @@ encoding_rs = { workspace = true }
 [dev-dependencies]
 # Tests and the doctest build `cadmpeg_ir::examples`; the feature keeps those
 # fixtures out of the normal library build.
-cadmpeg-ir = { workspace = true }
-cadmpeg-core = { workspace = true, features = ["golden"] }
+cadmpeg-ir = { workspace = true, features = ["examples"] }
+cadmpeg-test-support = { workspace = true }
 serde_json.workspace = true
 zip.workspace = true
 

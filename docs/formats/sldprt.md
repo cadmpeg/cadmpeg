@@ -361,7 +361,7 @@ A profile-locus marker with role u16 `2` and body `00 00 80 bf 00 00 0c 00` is a
 
 Keywords feature attributes that contain object identifiers use the feature's `id` namespace. `DissectableChildren` is a separator-delimited ordered list of child object identifiers. A single sketch child of an extrusion is that extrusion's profile dependency.
 
-A classless Keywords `Extrusion` element is a joined blind solid extrusion. Its sole positive dimension is the blind depth independently of the dimension name. When it has no explicit profile attribute or dissected child, the sketch with the greatest positive source identifier smaller than the extrusion's source identifier is its profile; the built-in `moOriginProfileFeature_c` record does not participate.
+A classless Keywords `Extrusion` element is a joined blind solid extrusion. Its sole distinct positive Keywords dimension is the blind depth independently of the dimension name and of additional dimensions recovered from the feature-input stream. Repeated references to that same Keywords dimension do not make the depth ambiguous. When it has no explicit profile attribute or dissected child, the sketch with the greatest positive source identifier smaller than the extrusion's source identifier is its profile; the built-in `moOriginProfileFeature_c` record does not participate.
 
 Keywords records bound to `moAlignGroup_c`, `moAttribute_c`, and `moConfigCommentsFolder_c` are metadata objects, not regeneration features. A classless source `-1` `Feature` record with type `Attribute-Definition` and a nonempty name defines an attribute family. A classless source `-1` record whose name prefixes an `moAttribute_c` instance name also defines that attribute family.
 
@@ -369,15 +369,21 @@ A classless Keywords `Note` element whose type is `Note`, whose text is nonempty
 
 A classless Keywords `Feature` whose ordered dimension children exactly cover its parameters uses the parameter schema as its operation class. A `D2` value with a diameter modifier and no parameter outside `D1` and `D2` is a cosmetic thread. Exactly `D1` and `D2`, with positive distance `D1` and an explicitly unit-suffixed `D2` angle strictly between zero and pi, is a distance-angle chamfer.
 
-An extrusion bound to `moCut_c` has Boolean operation cut independently of its localized Keywords type token.
+An extrusion bound to `moCut_c` has Boolean operation cut independently of its localized Keywords type token. A Keywords type token that normalizes to `CutExtrudeThin` also has Boolean operation cut. Its feature-input scalars named `D5`, `D6`, and `D7` are lengths stored in metres.
+
+Counterbore and drilled-countersink axial profile topology is independent of the sketch origin. All required profile segments must match after one common planar translation; each segment cannot use a different translation.
+
+An explicitly owned generated profile with one diameter dimension and one length dimension defines a simple blind hole from those dimensions. Without explicit ownership, that dimension pair participates in ordered Hole-profile pairing only when at least two sides of its closed axial rectangle are nonconstruction lines and the other sides have both endpoint markers. A completed Hole's transient profile ownership removes that profile from later ordered pairing.
 
 In the legacy repeated-class form, a non-direct feature name carries a u16 class token immediately before its name marker. A token group is a Hole Wizard group when the feature-input lane declares exactly one Hole Wizard class and every uniquely named history feature in the group is immediately followed by two consecutive profile-feature records. The two profiles are the operation's position and generated-profile sketches. When a Hole operation's direct child list contains exactly two typed sketches and exactly one carries a complete axial Hole profile, the other sketch is its position sketch. Child order does not assign these roles. When the operation has no direct child list, it owns the unique generated Hole profile at the next two history ordinals. A Hole operation with a typed position-sketch reference owns the unique generated Hole profile adjacent to that position sketch by source identity. Without an adjacent profile, it owns the sole complete generated Hole profile whose source identity lies strictly between the position-sketch and operation source identities. Without either source-identity form, it owns the unique generated profile adjacent to the position sketch by history ordinal. When those forms yield no profile, the operation owns the sole complete generated Hole profile whose source identity lies strictly between its source identity and the next Hole operation source identity. Source adjacency, bounded position-to-operation identity, and the ordinal or operation-interval forms apply in that precedence order. A generated profile has one Hole owner; an existing owner or multiple equal-precedence claims leave later ownership unresolved. When a history contains the same nonzero number of unowned Holes and unclaimed complete generated profiles, increasing Hole ordinal owns increasing profile ordinal. Unequal cardinalities leave this ownership form unresolved. A missing source identity on the generated profile leaves the native history-record identity as the child identity.
 
-A generated Hole Wizard profile with two diameter-displayed dimensions, two length dimensions, and one angle dimension is threaded when its ordered dimension roles are diameter, length, diameter, length, angle. These fields are the drill diameter, drill depth, nominal thread major diameter, thread depth, and drill-point included angle. The profile is counterbored when the same dimension multiset terminates with a diameter-displayed dimension: the smaller and larger diameters are the drill and counterbore diameters, the smaller and larger lengths are the counterbore and drill depths, and the angle is the drill-point included angle. A profile with two diameter-displayed dimensions, two lengths, and two angles carries a tapered threaded hole. The smaller and larger diameters are the drill and thread-major diameters, the smaller and larger lengths are the thread and drill depths, and the smaller and larger angles are the included thread taper and drill-point angles. Ordered roles length, diameter, angle, length, diameter, diameter carry a counterbored through hole with a countersunk exit. The three increasing diameters are the bore, exit-countersink, and counterbore diameters; the two increasing lengths are the counterbore depth and current through-body span; and the angle is the exit-countersink included angle. The through-body span locates the generated far-side profile and does not change the through-all termination. A profile with three diameter-displayed dimensions, two lengths, and two angles carries a counterdrilled blind hole. The three increasing diameters are the bore, cylindrical recess, and surface-entry diameters; the two increasing lengths are the recess and drill depths; and the two increasing angles are the entry-transition and drill-point included angles. A profile with one diameter and one length carries a flat-bottomed simple hole with bore diameter and blind depth. Adding one angle changes the bottom to the conical drill point with that included angle. A closed four-line axial profile with one axis segment, entry and terminal radial segments, and one full-depth sloping wall carries a tapered flat-bottomed hole. Its entry diameter is the radial span at axial zero, its blind depth is the axis length, and its included taper angle is twice the arctangent of the absolute radial-span difference divided by the depth.
+A generated Hole Wizard profile with two diameter-displayed dimensions, two length dimensions, and one angle dimension is threaded when its ordered dimension roles are diameter, length, diameter, length, angle. These fields are the drill diameter, drill depth, nominal thread major diameter, thread depth, and drill-point included angle. The profile is counterbored when the same dimension multiset terminates with a diameter-displayed dimension: the smaller and larger diameters are the drill and counterbore diameters, the smaller and larger lengths are the counterbore and drill depths, and the angle is the drill-point included angle. A profile with two diameter-displayed dimensions, two lengths, and two angles carries a tapered threaded hole. The smaller and larger diameters are the drill and thread-major diameters, the smaller and larger lengths are the thread and drill depths, and the smaller and larger angles are the included thread taper and drill-point angles. Ordered roles length, diameter, angle, length, diameter, diameter carry a counterbored through hole with a countersunk exit. The three increasing diameters are the bore, exit-countersink, and counterbore diameters; the two increasing lengths are the counterbore depth and current through-body span; and the angle is the exit-countersink included angle. The through-body span locates the generated far-side profile and does not change the through-all termination. A generated axial profile with two diameter-displayed dimensions, two lengths, and no angle carries a counterbored through hole when at least two of its entry-wall, radial-step, and bore-wall segments are nonconstruction lines and the remaining segment has both endpoint markers. The smaller and larger diameters are the bore and counterbore diameters, and the smaller and larger lengths are the counterbore depth and current through-body span. The bore wall terminates at that span, 0.000025 mm beyond it, 0.00005 mm beyond it, or 0.001 mm beyond it. A 180° drill angle changes this construction to a blind flat-bottom counterbore and makes the larger length its depth. A generated axial profile with two diameter-displayed dimensions, one length, and one angle carries a countersunk through hole when its nonconstruction lines contain the countersink wall and the adjoining bore wall. The two walls can occupy the same radial half or opposite radial halves of the axial profile. The smaller and larger diameters are the bore and countersink diameters, the angle is the countersink included angle, and the length is the current through-body span. The bore wall terminates at that span, 0.000025 mm beyond it, 0.00005 mm beyond it, or 0.001 mm beyond it. A generated axial profile with two diameter-displayed dimensions, one length, and two angles carries a drilled countersink when at least two of its countersink, bore-wall, and drill-tip segments are nonconstruction lines and the remaining segment has both endpoint markers. The smaller and larger diameters are the bore and countersink diameters, the smaller and larger angles are the countersink and drill-point included angles, and the length is the blind drill depth. A profile with three diameter-displayed dimensions, two lengths, and two angles carries a counterdrilled blind hole. The three increasing diameters are the bore, cylindrical recess, and surface-entry diameters; the two increasing lengths are the recess and drill depths; and the two increasing angles are the entry-transition and drill-point included angles. A profile with one diameter and one length carries a flat-bottomed simple hole with bore diameter and blind depth. Adding one angle changes the bottom to the conical drill point with that included angle. A closed four-line axial profile with one axis segment, entry and terminal radial segments, and one full-depth sloping wall carries a tapered flat-bottomed hole. Its entry diameter is the radial span at axial zero, its blind depth is the axis length, and its included taper angle is twice the arctangent of the absolute radial-span difference divided by the depth.
 
-Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order. In a history containing a classless `Extrusion` element with one dimension, positive source identifiers order otherwise unrelated features before dependency ordering.
+Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order. In a history containing a classless `Extrusion` element with one distinct Keywords dimension, positive source identifiers order otherwise unrelated features before dependency ordering.
 
 Feature-tree node roles are invariant across configurations. A configuration snapshot changes a tree node's suppression and graph state without changing its role.
+
+Late neutral resolution of active-model hole placement and construction fields propagates to the active configuration snapshot only when the corresponding snapshot fields are empty or unresolved. It does not replace resolved configuration-local fields or inactive configuration state.
 
 A named feature-input object bound to a classless history `Sketch` record with a nonzero source identifier is a profile-feature object. It participates in the same object-order ownership rules as an object whose class is `moProfileFeature_c`.
 
@@ -385,7 +391,7 @@ An extrusion feature-input object stores a little-endian u32 form code before it
 
 An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word, a one-byte Boolean operation, one schema byte, the repeated little-endian u32 object identifier, and four zero bytes. The terminated trailer then stores `ff fe ff`. The 40-byte sparse form stores six zero bytes at trailer +16, u16 `1` at +22, a nonzero u16 token at +24, an optional u32 identity at +26, eight zero bytes at +30, and a second nonzero u16 token at +38. The optional identity is zero or non-null. The family word establishes the operation family independently of a shared class token. Family `0x0140` with operation byte `00` joins the extrusion result. Family `0x01ca` with operation byte `00` or `02` subtracts it. The zero byte in the `0x01ca` form is not an operation discriminator independent of the family word. Objects without a complete recognized trailer use class-scoped form semantics. `moExtrusion_c` form codes `1`, `4`, and `82` join. `moICE_c` form codes `6`, `21`, and `0x3ee4f8b5` join; codes `0`, `1`, `2`, `5`, `7`, `10`, `14`, `15`, `22993`, and `0xffffffff` subtract. Form code `3` joins for either class. Form code `11` does not determine the Boolean operation.
 
-A compact extrusion end-spec child carries its class either as a lane-scoped class token whose high byte has its high bit set and which is not `ff ff`, or as a direct `ff ff 01 00 0b 00 moEndSpec_c` declaration followed by two zero bytes. The direct form uses the declaration's final `_c` bytes as its anchor; the declaration ends at anchor +2. Header-shaped byte runs with zeros at the class position belong to fillet edge-set records of the `edgeRadiusObject_c` family, not to end specs; those runs carry a class token at anchor +24, the constant `02 02 01 00` at anchor −32, and two f64 `0.5` values ending at anchor −11 and anchor −3. Anchor +2 is zero, anchor +4 and anchor +8 are little-endian Boolean words, anchor +12 is a Boolean direction flag, and anchor +16 is zero. The little-endian u32 first-direction termination code is at anchor +18 and the little-endian u32 second-direction termination code is at anchor +22. A second-direction code `0` means the extrusion travels in one direction only, and code `1` is a through-all second direction. Code `0` is blind, code `1` is through-all, code `2` is through-next, and code `9` is through-all in both directions and always carries second-direction code `1`. A blind child has second-direction code `0` and owns its depth as the display-distance dimension child at anchor +26; the dimension name does not alter its role. When the feature has no Keywords depth, the first following value-only scalar named `D1` or `Depth` in the same object supplies the depth in metres. The compact blind form omits the second-direction word and begins the same dimension child at anchor +22. A single-direction through-all or through-next child has two zero u32 words after the first-direction code, `01 00 00 01`, 56 zero bytes, a control word `00 00 01 00` or little-endian u32 `1`, and six zero bytes. Its follow-on is a u16 object token with two zero bytes or the direct-class prefix `ff ff 01 00`. A third form stores a u16 object token, little-endian u32 `5`, and a complete display-distance dimension child. A single-direction through-all child may instead own a display-distance dimension child immediately at anchor +26; that retained display dimension does not change the termination. The dimensioned traversal form has two zero u32 words after the first-direction code, `01 00 00 01`, ten zero bytes, little-endian u32 `1`, twenty zero bytes, and the display-distance dimension child at anchor +68; its retained dimension likewise does not change the termination. A two-direction child with first-direction code `1` continues after a zero u32 word at +26 with the same `01 00 00 01` run; both directions are through-all. A two-direction child with first-direction code `9` continues at +26 with a display-distance dimension child carrying the retained blind depth, which the through-all-both termination does not consume. A blind child with a through-all second direction carries first-direction code `0`, `1` at +4, second-direction code `1`, and its first-direction depth as the dimension child at +26. End-spec children belong to the extrusion object whose bound feature-name record precedes them; native classes `moExtrusion_c`, `moICE_c`, and `moCut_c` establish that object independently of its Keywords element tag. Repeated feature-name records bound to the same feature are segments of one object. The object extends through immediately following profile-feature and `moCosmeticThread_c` child objects to the next distinct feature-name record.
+A compact extrusion end-spec child carries its class either as a lane-scoped class token whose high byte has its high bit set and which is not `ff ff`, or as a direct `ff ff 01 00 0b 00 moEndSpec_c` declaration followed by two zero bytes. The direct form uses the declaration's final `_c` bytes as its anchor; the declaration ends at anchor +2. Header-shaped byte runs with zeros at the class position belong to fillet edge-set records of the `edgeRadiusObject_c` family, not to end specs; those runs carry a class token at anchor +24, the constant `02 02 01 00` at anchor −32, and two f64 `0.5` values ending at anchor −11 and anchor −3. Anchor +2 is zero, anchor +4 and anchor +8 are little-endian Boolean words, anchor +12 is a Boolean direction flag, and anchor +16 is zero. The little-endian u32 first-direction termination code is at anchor +18 and the little-endian u32 second-direction termination code is at anchor +22. A second-direction code `0` means the extrusion travels in one direction only, and code `1` is a through-all second direction. Code `0` is blind, code `1` is through-all, code `2` is through-next, and code `9` is through-all in both directions and always carries second-direction code `1`. A blind child has second-direction code `0` and owns its depth as the display-distance dimension child at anchor +26; the dimension name does not alter its role. When the feature has no Keywords depth, the first following value-only scalar named `D1` or `Depth` in the same object supplies the depth in metres. The compact blind form omits the second-direction word and begins the same dimension child at anchor +22. A single-direction through-all or through-next child has two zero u32 words after the first-direction code, `01 00 00 01`, 56 zero bytes, a control word `00 00 01 00` or little-endian u32 `1`, and six zero bytes. Its follow-on is a u16 object token with two zero bytes or the direct-class prefix `ff ff 01 00`. A third form stores a u16 object token, little-endian u32 `5`, and a complete display-distance dimension child. A single-direction through-all child may instead own a display-distance dimension child immediately at anchor +26; that retained display dimension does not change the termination. The dimensioned traversal form has two zero u32 words after the first-direction code, `01 00 00 01`, ten zero bytes, little-endian u32 `1`, twenty zero bytes, and the display-distance dimension child at anchor +68; its retained dimension likewise does not change the termination. A two-direction child with first-direction code `1` continues after a zero u32 word at +26 with the same `01 00 00 01` run; both directions are through-all. A two-direction child with first-direction code `9` continues at +26 with a display-distance dimension child carrying the retained blind depth, which the through-all-both termination does not consume. A blind child with a through-all second direction carries first-direction code `0`, `1` at +4, second-direction code `1`, and its first-direction depth as the dimension child at +26. End-spec children belong to the extrusion object whose bound feature-name record precedes them; native classes `moExtrusion_c`, `moICE_c`, and `moCut_c` establish that object independently of its Keywords element tag. Repeated feature-name records bound to the same feature are segments of one object. The end-spec header and its reference operands end before the next distinct feature-name record. The extrusion object extends through immediately following profile-feature and `moCosmeticThread_c` child objects to the next non-child feature-name record, but those child objects do not extend the end-spec operand interval.
 
 When operation objects and their dimension children form separate ordered groups, a blind end-spec belongs to the unique extrusion whose sole dimension has the same name and value as the first named scalar following that end-spec. A zero or multiple matching extrusion leaves the end-spec unbound.
 
@@ -403,7 +409,7 @@ An extrusion object without `Profile` or `DissectableChildren` has an unresolved
 
 An extrusion immediately followed by an `moProfileFeature_c` object whose `Description` equals its name and whose name ends in `<n>` for decimal `n` uses that following feature as its dissected profile. This child signature applies when the extrusion omits its `Dissectable` property and supersedes an immediately preceding generic profile object. An ordinary following profile without the child signature is not an extrusion operand.
 
-A dissected child with exactly one dependency on a planar sketch feature selects that feature's complete profile when the sketch contains exactly one profile chain. The child is a profile-selection tree record, not another owner of the sketch. A sketch with multiple profile chains does not identify which chain the child selects and leaves the child profile unresolved.
+A dissected child with exactly one dependency on a planar sketch feature selects that feature's complete profile when the sketch contains exactly one profile chain. The child is a profile-selection tree record, not another owner of the sketch. Named scalars serialized after this child and before the next feature object belong to the parent extrusion. A sketch with multiple profile chains does not identify which chain the child selects and leaves the child profile unresolved.
 
 A planar Parasolid profile stream is enclosed by the feature object whose bound feature-name record precedes the stream offset and whose next bound feature-name record follows it. A sweep object with exactly one enclosed planar profile stream uses the transferred sketch as its cross-section profile. Zero or multiple enclosed profile streams leave the sweep profile unresolved.
 
@@ -461,6 +467,8 @@ A compact legacy non-coordinate kind `0` profile line may carry its endpoint inc
 
 A referenced line-or-circle handle with exactly two incident coordinate-bearing point handles carries the line from the first point in marker order to the second. Point incidence may be stored by a link in either direction. Every admissible sketch placement must produce the same two distinct endpoints. When the endpoint pair identifies one existing profile line under every admissible placement, the handle identifies that line; otherwise it carries a construction line and retains its native identity there. Geometry-handle reachability is the undirected transitive closure of dimensional operands and marker links.
 
+A coordinate-less line-or-circle handle with one linked coordinate-bearing point can complete its line through one radius-relation marker owned by the same feature and carrying the same non-null object index. The radius-relation marker has exactly two distinct linked coordinate-bearing points, and one is the line handle's linked point. The relation's ordered point pair is the line endpoint pair. Zero or multiple matching radius-relation markers leave the line unresolved.
+
 A horizontal, vertical, or fixed relation marker constrains its sole resolved reverse-owner curve when every forward entity is either that curve or a relation-owned construction point. Otherwise, a horizontal or vertical relation constrains the single profile entity common to all of its resolved linked loci. When its two linked markers instead identify two distinct profile loci, it aligns those loci along the corresponding sketch coordinate. A fixed relation marker constrains the single profile entity common to all of its resolved linked loci. The relation remains native when none of these arity forms resolves uniquely.
 
 A recognized relation marker whose resolved operands do not satisfy the relation's typed arity and locus-kind invariants remains a native constraint with its ordered local identifiers and resolved native references.
@@ -482,6 +490,8 @@ A merge-points relation has two or more point loci at one solved sketch position
 Ellipse-angle codes `33`, `34`, and `35` constrain a bounded ellipse's positive parameter sweep to π/2, π, and 3π/2 radians. The sweep is `(end − start) mod 2π`; a nonzero whole-turn difference represents 2π. The relation is invalid on a full ellipse or another geometry family.
 
 A named scalar begins with `04 80 ff fe ff`, followed by a u8 UTF-16 code-unit count, that many UTF-16LE code units, a scalar header, and a finite little-endian f64 value. The primary and legacy layouts use the 22-byte header `00 00 00 00 00 00 00 40 ff ff ff ff 00 00 00 00 ff fe ff 00 00 00`. Scalar trailer offsets are relative to the byte immediately after the f64. Trailer +3 stores the little-endian u32 scalar object identifier. In the primary layout trailer +24 stores `00 00 00 02 00`, trailer +29 stores role `0` for driving or `1` for display, and operand cells begin at trailer +35. In the legacy layout trailer +24 stores `0f 00 00 00 02 00`, trailer +30 stores the same role, and operand cells begin at trailer +36. These operand cells repeat every 12 bytes. Each cell stores its little-endian u16 tag at +0, its u16 marker address at +2, `ff ff ff ff` at +4, and four zero bytes at +8. The compact layout uses the 18-byte header `00 00 00 00 00 00 00 40 ff ff ff ff 00 00 00 00 00 00`; trailer +21 stores `01 00 00 00 02 00`, trailer +27 stores the same role, and two adjacent eight-byte operand cells begin at trailer +35. Each compact cell stores its tag and marker address at +0 and +2 and `ff ff ff ff` at +4. A value-only scalar uses the 14-byte header `00 00 00 00 00 00 00 40 ff ff ff ff 00 00`; its trailer does not assign a driving or display role or carry relation operands. The name length therefore moves the value and every trailer field together.
+
+When a 12-byte operand cell introduces a lane-local class token, the defining class declaration begins at cell +12. Every reference cell with that tag in the same lane uses the declared class. The declaration is unambiguous only when the tag introduces exactly one class.
 
 The last class declaration before the scalar's linked name supplies the unit when it is `moLengthParameter_c` or `moAngleParameter_c` and no other name record intervenes. Length values use metres and angular values use radians. A sketch-relation family supplies the unit instead when it owns the scalar.
 
@@ -508,6 +518,10 @@ A point or constrained-point marker addressed by a sketch relation and absent fr
 When a circular-dimension operand with tag `83fe` has no explicit line-or-circle marker, the feature's non-origin coordinate point markers form ordered center/radial-point pairs. The operand index addresses the pair ordinal. The pair is accepted only when its Euclidean radius equals the driving radius or half the driving diameter.
 
 An `sgCircleDim` operand that selects an arc marker carries a bounded arc when inline center, start, and end coordinates or exactly two endpoint markers provide finite distinct endpoints with equal nonzero radius equal to the driving radius. When neither endpoint form resolves, the arc marker carries a full circle only when exactly one later point or constrained-point marker owned by the same feature has finite distance equal to the driving radius. A missing, repeated, or inconsistent radial witness leaves the relation native. A relation or native operand handle uses the unique duplicated-link distance relation and its following radial point to select the same arc center; the radius must equal the driving radius.
+
+An `sgCircleDim` operand whose lane-local token declares `sgEntHandle` uses two adjacent markers in the feature's coordinate-bearing point, constrained-point, line-or-circle, and arc roster. The first marker identifies the circular carrier's center. The second marker is a point or constrained point. The center's nonzero local identifier equals the second marker's object index, and the second marker has local identifier zero. Their finite nonzero distance equals the driving radius or half the driving diameter. Exactly one matching linked pair defines the circular carrier; zero or multiple pairs leave the relation native.
+
+A uniquely enclosed planar B-rep belongs to that sketch only when it contains every circle or arc defined by an `sgEntHandle` operand at the same transformed center and radius. A B-rep that omits any such circular carrier is the sketch's planar support geometry. Its faces, profile entities, and derived endpoint constraints are not neutral sketch records.
 
 An explicit point center binds a circular dimension to an existing same-sketch circle or arc only when exactly one point entity has that marker as its native reference and exactly one circular entity has the same quantized center and driving radius. Multiple center points or circular entities leave the relation native.
 
@@ -573,13 +587,15 @@ A `moCompSurfaceBody_c` child of `moThicken_c` carries the selected surface comp
 
 A `moCompSurfaceBody_c` child of a face or surface operation carries selected surface components in the same compact vector grammar. The vector marker is the unique duplicated marker in the bounded feature-object interval after the class body. Marker −12 is the little-endian schema word `6`; marker −8 begins with `04 02 00 00`; two zero bytes follow the marker. Entries contain a four-byte instance cell, one 12-byte type signature, and one little-endian u32 feature-local component identifier. Entries are adjacent or separated by one four-byte instance ordinal. The vector ends when the entry signature changes or the bounded feature-object interval ends.
 
-An `moPLine_c` feature-input object containing exactly one `moPLineProject_c` class in its bounded feature-object interval is a projected split-line operation. Its splitting tool is the unique planar `moProfileFeature_c` object in the same history whose positive object ID is smaller than the split-line object ID and whose complete nonempty named dimension map equals the split-line dimension map. No match or multiple matches leave the tool unresolved.
+An `moPLine_c` feature-input object containing exactly one `moPLineProject_c` class in its bounded feature-object interval is a projected split-line operation. Its splitting tool is the unique planar `moProfileFeature_c` object in the same history whose positive object ID is smaller than the split-line object ID and whose complete nonempty named dimension map equals the split-line dimension map before evaluated scalar substitution. No match or multiple matches leave the tool unresolved.
 
 `moPLineProjIdRep_c` and `moPLineSurfIdRep_c` records carry repeated persistent target-face paths. The first typed component's type-signature object ID equals the consuming `moPLine_c` object ID. The terminal typed component's type-signature object ID identifies the earlier feature result owning the selected face, and its local identifier is that result's feature-local face ID. The records can occur outside the bounded split-line feature object and bind by the consuming object ID. Repeated paths with one terminal producer and local face ID are one target face. Distinct terminal producer and local face-ID pairs are distinct target faces in stream order. The split-line operation depends on the splitting sketch and every uniquely identified target-face producer.
 
 `moExtrusion_c` and `moICE_c` are extrusion feature classes. `moProfileFeature_c` and `mo3DProfileFeature_c` are planar and spatial sketch feature classes. `moOriginProfileFeature_c` is the built-in model-origin tree node and carries no sketch geometry. `moCombineBodies_c` is the body-Boolean feature class. `moConstSurfRef_w`, `moEndPointRef_w`, `moGeneralCurveRef_w`, `moLineRef_w`, `moSingleFaceRef_w`, `moSolidRef_w`, `moCompReferenceCurve_c`, and `moCompSurfaceBody_c` identify reference objects rather than feature operations.
 
-A spatial-sketch vertex record begins with `ff fe ff 06` followed by the UTF-16LE string `Vertex`. At record offset `+43`, `0e 00` identifies three little-endian f64 model-space coordinates at offsets `+45`, `+53`, and `+61`. A vertex-record run contains a positive even number of records. Each consecutive pair owns one bounded line in stored vertex order. An object-indexed marker-backed spatial point begins with `ff ff 07 00 01` or `ff ff 1f 00 03`, eight `ff` bytes, little-endian f32 `-1.0`, role bytes `04 00 02 00`, and profile role u16 `1`. Its non-sentinel little-endian u32 feature-local object ID immediately precedes the marker. In the first form, marker +56 contains `0e 00` and the three little-endian f64 model-space coordinates begin at marker +58. In the second form, marker +64 contains `0e 00` and the coordinates begin at marker +66. Each coordinate is zero or a normal finite f64. Point and line records retain their byte order within one spatial-sketch feature object. These spatial point records identify a spatial profile independently of its feature-class declaration. Spatial geometry is not projected into a planar sketch coordinate system.
+A spatial-sketch vertex record begins with `ff fe ff 06` followed by the UTF-16LE string `Vertex`. At record offset `+43`, `0e 00` identifies three little-endian f64 model-space coordinates at offsets `+45`, `+53`, and `+61`. A vertex-record run contains a positive even number of records. Each consecutive pair owns one bounded line in stored vertex order. An object-indexed marker-backed spatial point begins with `ff ff 07 00 01`, `ff ff 1f 00 01`, or `ff ff 1f 00 03`, eight `ff` bytes, little-endian f32 `-1.0`, role bytes `04 00 02 00`, and profile role u16 `1`. Its non-sentinel little-endian u32 feature-local object ID immediately precedes the marker. In the `ff ff 07 00 01` form, marker +56 contains `0e 00` and the three little-endian f64 model-space coordinates begin at marker +58. In either `ff ff 1f` form, the native kind is at marker +17, marker +48 stores f64 `1`, marker +56 through +63 are zero, marker +64 contains `0e 00`, and the coordinates begin at marker +66. These wide forms use native kind zero for a point or a constraint-taxonomy kind from 1 through 85 for a relation handle. Each coordinate is zero or a normal finite f64. Point and line records retain their byte order within one spatial-sketch feature object. These spatial point records identify a spatial profile independently of its feature-class declaration. Spatial geometry is not projected into a planar sketch coordinate system.
+
+A detached spatial relation-manager object begins with `moRelMgr_c`, contains `sg3DPlaneHandle`, and ends before the following `suObList`. Its owner is the unique `mo3DProfileFeature_c` whose complete `D`-numbered length-parameter name set equals the object's non-display `D`-numbered scalar name set and whose parameter lengths equal corresponding native scalar values after metre-to-millimetre conversion. No match or multiple matches leave the object unbound. Object-indexed coordinate-bearing relation handles in the bound object are the spatial-sketch point roster; coordinate-bearing native-kind-zero records are reference-geometry points. Three or more distinct, noncollinear roster points that lie on one plane define the normal axis of a hole-position sketch. Every roster point is one hole-axis origin. A collinear or noncoplanar roster does not define hole placements.
 
 A compact `moCombineBodies_c` object carries its target and tool as the outermost recognized type-3 component-path vectors in its feature-object interval. Additional type-3 vectors may occur between these operands and are auxiliary carriers, not operands. A type-3 vector uses the duplicated component marker, a positive count at marker −12, `00 03 00 00` at marker −8, two zero bytes after the marker, and typed path entries with the same separator grammar as edge component paths. A 20-byte entry contains an instance cell, a 12-byte type signature, and a local identifier. A 16-byte identifier-less continuation entry contains the type signature and local identifier and retains a null instance. The count either equals the entry count or includes one terminal null slot. The standard null slot is `ff ff ff ff 00 00 00 00`; the alternate null slot is ten zero bytes and may be followed by two zero alignment bytes. The two paths retain their ordered native identities independently of the Boolean operation.
 
@@ -645,6 +661,8 @@ Keywords `Feature` elements use the `Type` attribute as their operation-family t
 
 Sketch relations use named scalar records with reference cells at fixed scalar-record slots. Point references use `d6 80`, `cc 80`, `52 81`, `7b 83`, or `7c bc`; line references use `e1 80`, `86 83`, or `87 bc`. Point-point, line-line, and point-line distance relations follow from the operand pair. Two `52 81` or two `cb 8d` cells carry horizontal or vertical point-point distance according to the relation declaration. Two `da 8d` cells carry an angular relation. An `sgCircleDim` declaration followed by one `cc 80`, `fe 83`, `b6 8a`, `9d 92`, or `69 bd` cell carries a diameter dimension. A relation declaration owns the first following scalar within 128 bytes in the same feature interval when its operand signature matches. A scalar claimed by zero or multiple declarations remains native. Adjacent scalar records can continue an anchored relation only within the same feature interval, with the same operands, and without an intervening relation declaration; after a complete relation, an adjacent driving scalar starts a new instance with the anchored family. A display-role scalar names an existing dimension owned by the same sketch when no driving relation or earlier display-only relation claims that dimension. The relation family supplies the dimension unit independently of the display scalar value. Scalar records with the same owning sketch, relation family, and ordered operand sequence belong to one relation instance. Display-role and driving-role scalars are distinct. A unique driving scalar stores the target parameter. An operandless driving scalar separated from its display records by another complete relation belongs to the unique unresolved relation with the same owning sketch and dimension name.
 
+An explicit scalar feature reference assigns the scalar to that feature independently of top-level feature-object byte boundaries. Byte-interval ownership applies only when the scalar has no feature reference. A driving scalar named by a declared sketch dimension stores an angle when the dimension expression has an angular unit and otherwise stores a length when the expression is a dimension display. Native lengths are metres and convert to millimetres in CADIR. A diameter display retains its diameter role after conversion.
+
 When neither `e1 80` cell of an `sgLLDist` relation selects an explicit curve marker, the cells' u16 values are zero-based indices in a solver-line roster. Coordinate-bearing point and constrained-point markers owned by the feature form that roster in marker order: each consecutive pair defines one line. The addressed pair is valid when the two transformed endpoint pairs are unique, nondegenerate, parallel, and their perpendicular separation equals the relation's driving distance.
 
 For an `fe 83` circular-dimension operand, the one-based operand index selects a distance-relation marker by object index. Both links of that marker select the same coordinate-bearing center marker. The next coordinate-bearing marker in the same feature object is the radial point. The finite nonzero center-to-radial distance is the circle radius. Other coordinate-bearing markers in the feature object do not participate in this center/radial roster.
@@ -655,13 +673,15 @@ Two `0f 82` reference cells in a driving scalar address solver-point indices thr
 
 In a Hole Wizard position sketch, `52 81` marker addresses are opaque point-node identities shared across its dimensional relations. Matching bore-cylinder axes and the sketch origin are candidate node loci. A placement set is defined when exactly one set of loci admits an injective node assignment satisfying every driving point distance, horizontal distance, and vertical distance. Horizontal and vertical relation axes may be exchanged as a pair to account for the native-to-sketch coordinate ordering. The bore origins are projected onto the sketch plane and the placement direction is the sketch normal. Multiple satisfying bore sets leave the placements unresolved.
 
-A Hole Wizard position sketch may instead store each authored position as the coordinate pair of an object-indexed line-or-circle marker. The complete marker-position set selects bore axes of the hole radius when exactly one set of consistently directed parallel axes is congruent to it: a bijection must preserve every pairwise distance. Coaxial cylindrical surfaces form one candidate axis. A Hole Wizard temporary-axis record selects the surface direction on each carrier. Without that record, oppositely directed surfaces on the same axis leave the carrier unresolved. Multiple congruent axis sets or an incomplete marker set leave the placements unresolved.
+A Hole Wizard position sketch may instead store each authored position as the coordinate pair of an object-indexed line-or-circle or arc marker. The complete marker-position set selects bore axes of the hole radius when exactly one set of consistently directed parallel axes is congruent to it: a bijection must preserve every pairwise distance. A uniquely congruent curve-marker set has precedence over paired object-locus point handles in the same sketch. Coaxial cylindrical surfaces form one candidate axis. A Hole Wizard temporary-axis record selects the surface direction on each carrier. Without that record, oppositely directed surfaces on the same axis leave the carrier unresolved. Multiple congruent axis sets or an incomplete marker set leave the placements unresolved.
 
 When exactly one active Hole Wizard operation has a given diameter, its typed position-sketch plane owns every reversed cylindrical face of that radius whose carrier is normal to the plane. A reversed cylinder bounds excluded material; a forward cylinder bounds material on its radial exterior. Each owned carrier intersects the position plane at the placement origin, and the position-sketch normal is the placement direction. Another active hole with the same diameter, a nonparallel carrier, an inconsistent position plane, or an empty carrier set leaves this ownership form unresolved.
 
 When a typed position-sketch frame does not own carriers through plane incidence, its Hole Wizard operation owns every reversed cylindrical carrier of the hole radius when exactly one active operation has that diameter. Coaxial face segments are one carrier. Each distinct carrier supplies one placement axis. Another active hole of the same diameter or an empty carrier set leaves this ownership form unresolved.
 
-A spatial Hole Wizard position sketch may contain construction points and paired points on bore axes. An object-indexed point selects a placement only when its model-space position lies on exactly one cylinder carrier of the hole radius. The cylinder origin and axis define the placement. Multiple points selecting the same carrier collapse to one placement. Points selecting no carrier are construction geometry. A point selecting multiple distinct carriers leaves the placements unresolved.
+A spatial Hole Wizard position sketch may contain construction points, relation handles, and paired points on bore axes. An object-indexed coordinate-bearing marker selects a placement only when its model-space position lies on exactly one cylinder carrier of the hole radius. The cylinder origin and axis define the placement. Multiple markers selecting the same carrier collapse to one placement. Markers selecting no carrier are construction geometry. A marker selecting multiple distinct carriers leaves the placements unresolved.
+
+Identical blind drilled-hole siblings with nonempty exact placements partition the remaining reversed cylindrical carriers of their primary diameter when each sibling's seeds have one direction, sibling directions are distinct, and every residual carrier has exactly one seed direction. Placements from other complete holes of the same diameter claim their matching carriers before the partition. An unplaced same-diameter hole, an unowned carrier direction, a shared seed direction, or a seed absent from the carrier set leaves the sibling placements unexpanded.
 
 A `7b 83` point reference is qualified by its local identifier. The identifier can select a point, constrained-point, line-or-circle, or arc marker.
 
@@ -719,7 +739,7 @@ A Keywords dimension name `TXD` followed by one or more decimal digits is format
 
 A nonempty Keywords parameter value with no scalar literal, operator, grouping delimiter, function delimiter, or definite parameter-reference spelling is literal text. Leading and trailing whitespace are not part of the text value. A double-quoted identifier, an identifier containing `@`, and `D` followed only by decimal digits remain parameter-reference spellings.
 
-A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot `N`. Scalars from configuration-scoped lanes do not replace the document-level parameter value or its native identity. Every evaluable document expression and every scalar resolved in the scoped lane contributes its typed value to that configuration's parameter state.
+A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot `N`. Scalars from configuration-scoped lanes do not replace the document-level parameter value or its native identity. Every evaluable document expression and every scalar resolved in the scoped lane contributes its typed value to that configuration's parameter state. A dependency-free document expression has the same evaluated value in every resolved configuration unless that configuration supplies a typed scalar override.
 
 The same lane supplies configuration-local feature operation state. Feature classes, operation discriminators, compact termination records, profile adjacency, path references, and selection records are evaluated within their `Config-N-ResolvedFeatures` lane. Sketch geometry and relation records in the lane belong to the configuration-local sketch owner and sketch identity. Configuration-local records do not define document-global feature semantics unless every applicable lane yields the same state. A resolved configuration carries one evaluated feature state for every document feature.
 
@@ -759,7 +779,7 @@ Point-distance operands select explicit profile loci. Line-distance and angular 
 
 A dimensional relation instance carries authoritative operand identities whenever every stored operand resolves to the relation family's required locus or entity family. Paired display and driving scalars repeat the same ordered operands. Point-point distance uses Euclidean locus distance; horizontal and vertical distance use absolute displacement on the corresponding sketch axis; point-line and line-line distance use perpendicular distance; angle uses the unsigned line direction angle; radius and diameter use the circular entity radius. A typed relation whose evaluated measurement differs from the driving scalar is inactive. Evaluated measurement resolves only missing or ambiguous operand identities; the relation remains native when no unique satisfying assignment exists. An unresolved `8386` address that uniquely identifies a coordinate-bearing point marker restricts its line candidate to bounded profile lines containing that point. The stored distance must leave one candidate relative to the resolved line operand. When distinct line operand identifiers resolve through compatibility fallback to the same line, the resolved line and its unique partner at the stored distance are the ordered operands.
 
-Horizontal and vertical relation codes determine the neutral axis and are not inferred from evaluated geometry. A uniquely resolved line or two-point relation maps to that native axis. An axis relation with intermediate relation handles maps to a two-point relation only when exactly two distinct point loci resolve through the handle graph. The typed relation is inactive when its evaluated line or point-locus operands are not aligned on the corresponding sketch axis.
+Horizontal and vertical relation codes determine the neutral axis and are not inferred from evaluated geometry. A uniquely resolved line or two-point relation maps to that native axis. An axis relation with intermediate relation handles maps to a two-point relation only when exactly two distinct point loci resolve through the handle graph. An axis relation with no reverse geometry owner and exactly two forward point or constrained-point links uses both links as operands even when one link's local identifier equals the relation marker's local identifier or object index. A coordinate-bearing target selects its unique same-native point entity. A coordinate-less point proxy selects its unique linked point locus. The typed relation is inactive when its evaluated line or point-locus operands are not aligned on the corresponding sketch axis.
 
 Parallel, perpendicular, collinear, tangent, equal-size, and concentric relations require the resolved entities to satisfy the corresponding evaluated geometric invariant. Parallel and perpendicular compare line directions; collinearity additionally requires zero line separation; tangency compares line-to-circle or circle-to-circle contact; equal-size compares line length, circular radius, or both ellipse radii; concentricity compares centered-entity centers. Unsupported entity-family combinations and geometrically inconsistent operands retain native relation semantics.
 
@@ -785,7 +805,7 @@ An `moMoveFace_c` feature with exactly one `moDirectionSpec_c` declaration and e
 
 An `moMoveCopyBody_c` non-copy translation owns one `moMoveCopyBodyData_c` child. The child stores a positive u32 body count followed by that many nonzero u32 feature-local body identities, `ff ff ff ff`, and eight zero bytes. Nine little-endian f64 values form an identity 3 by 3 matrix. Little-endian u64 `1`, three finite origin coordinates, f64 `1.0`, and three finite translation coordinates follow. Coordinates use metres. The non-copy trailer at matrix offset +200 is `01 00 00 00 00 00 01 00`. A non-identity matrix or a different trailer does not use this translation form.
 
-An `moMirrorPattern_c` seed vector uses the duplicated 16-byte component marker. Marker −12 stores a little-endian u32 slot count from 2 through 65, marker −8 through marker −1 are zero, and marker +16 through marker +17 are zero. The count either equals the component count or includes one or two root slots that have no component. A component is a tagged 20-byte path entry or an anonymous 16-byte entry consisting of the 12-byte type signature and u32 local id. Tagged-only paths use the edge component-path separator grammar. Mixed paths use zero or `ff` word fill of 4, 8, or 12 bytes; a root boundary within a mixed path is `01 00 00 00` followed by four or six zero bytes. The path is valid only when the count, entry widths, separators, and root slots yield one complete parse. The last uniquely identified history feature traversed by each path is its mirror seed. A terminal component whose signature has no history feature does not invalidate the preceding seed identity. Separate paths supply an ordered seed set. An immediately following `moDerivedCosmeticThread_c` object is the mirror's generated child and does not terminate the mirror interval; when the interval has no seed vector, the nearest preceding `moCosmeticThread_c` history feature is the seed. The seed set and mirror plane resolve independently. Multiple configuration lanes must yield the same ordered seed set.
+An `moMirrorPattern_c` or `moMirrorSolid_c` seed vector uses the duplicated 16-byte component marker. Marker −12 stores a little-endian u32 slot count from 2 through 65, marker −8 through marker −1 are zero, and marker +16 through marker +17 are zero. The count either equals the component count or includes one or two root slots that have no component. A component is a tagged 20-byte path entry or an anonymous 16-byte entry consisting of the 12-byte type signature and u32 local id. Tagged-only paths use the edge component-path separator grammar. Mixed paths use zero or `ff` word fill of 4, 8, or 12 bytes; a root boundary within a mixed path is `01 00 00 00` followed by four or six zero bytes. The path is valid only when the count, entry widths, separators, and root slots yield one complete parse. The last uniquely identified history feature traversed by each path is its mirror seed. A terminal component whose signature has no history feature does not invalidate the preceding seed identity. Separate paths supply an ordered seed set. An immediately following `moDerivedCosmeticThread_c` object is the mirror's generated child and does not terminate the mirror interval; when the interval has no seed vector, the nearest preceding `moCosmeticThread_c` history feature is the seed. The seed set and mirror plane resolve independently. Multiple configuration lanes must yield the same ordered seed set.
 
 The mirror-plane surface vector uses the same duplicated marker with selector `00 02 00 00` at marker −8. Its little-endian u32 count at marker −12 either equals the mixed component count or includes one root slot that has no component. The terminal component's feature source identifier and feature-local identity select the surviving face through `ATOM_ID_2001`. Exactly one planar face supplies the mirror-plane origin and normal. A proper-rigid transformed plane supplies its transformed origin and normal.
 
@@ -805,9 +825,11 @@ Within the current layout, classless `Feature` source ID `6` is the lights-and-c
 
 `moConstraintPerpPlnTanOneCylinderRefplaneData_c`, `moFacePtRefPlnData_c`, and `moFixedRefPlnData_c` store a 97-byte constructed reference-plane frame immediately after the class name. `moDefaultRefPlnData_c` and `moConstraintPrllPlnTanOneCylinderRefplaneData_c` store the 81-byte minimal frame at the same position. `moFaceRefPlnData_c` stores either frame. Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres. Three f64 values at `+24`, `+32`, and `+40` store the unit normal. Byte `+48` is `1` in the 97-byte frame. Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`. The three basis vectors are pairwise orthogonal. The 81-byte frame has zero bytes at `+48` through `+55`, byte `+56` equal to `0x80`, an f64 `-0.0` at `+57`, the negated origin z at `+65`, and f64 `1` at `+73`. The frame belongs to the immediately preceding feature object and precedes the next feature object.
 
+An `moFaceRefPlnData_c` record may carry the supporting face after its frame as one counted component-path vector. The vector has the duplicated 16-byte component marker, a positive little-endian u32 slot count at marker −12, `00 02 00 00` at marker −8, and two zero bytes at marker +16. Its tagged and identifier-less entries use the compact mixed component-path grammar. The slot count equals the entry count or includes one serialized root slot. Exactly one complete vector in the reference-plane object identifies the supporting face. The final component identifier is the feature-local face identifier, and the final component source is the producing feature.
+
 `moConstraintCoincLineAtAnglePlaneRefplaneData_c` stores a 121-byte matrix reference-plane frame immediately after the class name. Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame. A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order. The first matrix column is the plane u-axis, and the third column is codirectional with the stored normal.
 
-When no data-class anchor selects a reference-plane frame layout, every structurally valid encoding in the feature interval participates in one uniqueness check. A distinct valid frame leaves the reference plane unresolved; encoding length or a shorter incidental scalar run is not a precedence rule.
+When no data-class anchor selects a reference-plane frame layout, every structurally valid encoding in the feature interval participates in one uniqueness check. A valid 121-byte matrix frame owns the 97-byte prefix at the same byte offset; the prefix is not a separate fixed frame. Distinct frames at different offsets leave the reference plane unresolved.
 
 An offset reference-plane object may store two ordered frame records using the same or different frame layouts. The first frame is the constructed plane and the second is its support plane. Their normals are codirectional, and the support origin equals the constructed origin plus `D1` times the constructed normal. A support frame that does not identify another reference-plane object denotes the coincident planar face. When the second frame is omitted, the same translation recovers the support plane from the constructed frame.
 
@@ -822,6 +844,198 @@ A compact reference-plane frame stores xyz origin coordinates in metres at offse
 Legacy coordinate-frame groups without serialized plane-reference wrappers contain three consecutive `moRefPlane_c` history records followed by three consecutive `moRefAxis_c` records. All six history ordinals and source IDs are consecutive. The axes use ordered plane pairs `(0,1)`, `(0,2)`, and `(2,1)` in axis-record order. The three axis directions form the ordered right-handed relations `d0 = d2 × d1`, `d1 = d0 × d2`, and `d2 = d1 × d0`. If two stored axis lines are perpendicular and intersect, their intersection point and the applicable relation define the third axis line.
 
 Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. `dimItems` is a one-element array whose element is a `DimSemData` map. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode one equivalent semantic dimension with the same subtype, value, precision, display text, and flags. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
+
+### 2.1 SWIFT semantic PMI
+
+A `SWIFT/ConfigN-SchemaM` stream contains one GDT-analysis part object. The
+part object begins with the Pascal string `Entity`, the Pascal string
+`PrizMetrik.GdtAnalysisSupport.GdtPart`, an assembly-name Pascal string, and a
+u32 LE object version. A Pascal string is one u8 byte length followed by that
+many UTF-8 bytes. The complete stream can contain other data before and after
+the part object. Exactly one complete part object selects the semantic graph.
+
+Each entity has this header and terminator:
+
+| Field | Encoding | Semantics |
+| --- | --- | --- |
+| marker | Pascal string `Entity` | Entity start |
+| class | Pascal string | Qualified runtime class |
+| assembly | Pascal string | Runtime assembly name |
+| version | u32 LE | Serialization version |
+| sections | section sequence | Typed fields and relations |
+| terminator | Pascal string `EndEntity` | Entity end |
+
+Entity sections use these grammars:
+
+| Start token | Counted values | End token |
+| --- | --- | --- |
+| `Strings` | u32 LE count; Pascal-string key and Pascal-string value | `EndStrings` |
+| `Integers` | u32 LE count; Pascal-string key and i32 LE value | `EndIntegers` |
+| `Doubles` | u32 LE count; Pascal-string key and f64 LE value | `EndDoubles` |
+| `Features` | u32 LE count; feature ID and type Pascal-string pairs; owned entity definitions follow the roster | `EndFeatures` |
+| `Annotations` | u32 LE count; annotation ID and type Pascal-string pairs; owned entity definitions follow the roster | `EndAnnotations` |
+| `RelatedObjects` | u32 LE count; relation name and type Pascal-string pairs; one entity for each pair | `EndRelatedObjects` |
+
+The part `Features` section owns the semantic feature definitions. The part
+`Annotations` section owns the semantic annotation definitions. Other feature
+and annotation rosters reference these part-owned identities. A
+`GdtAppliedDatumCollection` owns its ordered `GdtAppliedDatum` objects through
+`SubAnnotationN` related objects. Each applied datum references one part-owned
+`GdtDatum` annotation. The relation names `PrimaryDatums`, `SecondaryDatums`,
+and `TertiaryDatums` set datum precedence 1, 2, and 3.
+
+A `GdtPattern` owns its ordered members through the `SubFeatures`
+`GdtAppliedFeatureCollection`. Each `SubFeatureN` related object is one
+`GdtAppliedFeature` with one feature reference. An annotation that references
+the pattern applies to these member feature identities in collection order.
+Nested patterns apply the same rule recursively.
+
+GDT-analysis double fields use millimetres for lengths and radians for angles.
+`Tolerance` is the geometric-tolerance magnitude. `Nominal`, `LowerLimit`,
+`UpperLimit`, `MinusTolerance`, and `PlusTolerance` are dimension values. A
+signed `MinusTolerance` is already the lower deviation. A zero `Nominal` with
+an absent or zero integer `Dimension` is an omitted nominal sentinel, not a
+zero-length dimension. A nonzero `Dimension` retains zero as the dimension
+value. `ToleranceLowerTier` is the lower segment of a composite surface-profile
+tolerance. A zero `LowerLimit` or `UpperLimit` is an omitted limit sentinel and
+does not replace a zero `MinusTolerance` or `PlusTolerance`. A nonzero limit
+supplies the corresponding deviation relative to the recovered nominal when
+the tolerance field is zero.
+
+SWIFT rendered strings use bytes `ff fe ff`, a u8 UTF-16 code-unit count, and
+that many UTF-16LE code units. In a rendered dimension string,
+`<MOD-DIAM>` or `<HOLE-DEPTH>` followed by optional whitespace and a positive
+decimal literal marks an explicit diameter or hole-depth nominal in the
+document display length unit. The number of digits after the decimal point
+equals `BlockToleranceDecimalPlaces` on the corresponding `GdtDiameter` or
+`GdtDepth`.
+
+An omitted `GdtDiameter.Nominal` is recoverable from the rendered literal and
+the applied nominal geometry. Feature references traverse direct child feature
+references and `SubFeatures` applied-feature collections recursively. A
+`GdtCylinder` contributes twice `NomCylinder.R`; a `GdtSphere` contributes
+twice `NomSphere.R`. Reachable diameter contributors agree when their absolute
+difference is at most the greater of `1e-5` millimetres and `1e-9` times their
+largest absolute value or one millimetre. The rendered literal binds when
+rounding this geometric diameter in a SolidWorks display length unit to
+`BlockToleranceDecimalPlaces` produces the literal. Conversion of every
+matching literal and unit must produce one millimetre value; multiple values
+leave the nominal absent.
+
+When no rendered literal binds, the common diameter of all reachable
+contributors supplies the evaluated nominal. This applies to direct features,
+patterns, and compound holes. A binding rendered literal has precedence over
+the unrounded evaluated geometry. A compound stack containing different
+diameters remains unresolved; the decoder does not select one contributor by
+position or magnitude. An empty `SubFeatures` collection contributes no
+geometry. A `CadRef` whose `CadIdentifier` string is empty contributes no
+topology identity or nominal geometry. A rendered literal cannot bind without
+applied nominal geometry.
+
+A `GdtDiameter` on a multi-diameter counterbore pattern pairs with a
+`GdtCounterBore` annotation whose non-cylinder feature-reference set equals the
+diameter annotation's feature-reference set. The counterbore annotation's
+direct cylinder defines the counterbore diameter. Contributors equal to that
+diameter are removed from the diameter annotation's reachable geometry. At
+least one contributor must be removed, and every remaining contributor must
+agree. Their common value is the hole diameter. The rule does not depend on
+cylinder order or relative magnitude.
+
+An omitted `GdtDepth.Nominal` uses the same rendered-literal binding. Each
+reachable `GdtCylinder` contributes the axial distance from its `NomBottom`
+plane origin to its `NomTop` plane origin. `NomCylinder.I`, `J`, and `K` must
+form a unit vector, and the complete top-to-bottom displacement must be
+parallel to that vector. All reachable cylindrical contributors must agree. If
+the annotation also references one direct operation-specific `GdtCylinder`,
+that cylinder's axial distance supplies the nominal when no rendered literal
+binds. A binding rendered literal has precedence because it carries the
+displayed nominal rather than the unrounded evaluated geometry.
+
+A `GdtDepth` with nonzero `IsThreadDepth` uses the positive `ThreadDepth` of
+its direct `GdtCylinder`. The cylinder must have nonzero `IsThreaded`; ordinary
+cylinder depth does not replace the named thread-depth field.
+
+A counterbore-depth annotation can reference the counterbore bottom as a
+direct `GdtPlane` instead of referencing the counterbore cylinder. It pairs
+with a `GdtCounterBore` annotation whose non-operation feature-reference set is
+identical. The counterbore annotation has one direct `GdtCylinder`, and the
+depth annotation has one direct `GdtPlane`. The plane's `NomOrigin` equals the
+cylinder's `NomBottom` origin, the origin lies on `NomPlane`, and the plane
+normal is parallel to the cylinder axis. The cylinder's axial top-to-bottom
+distance supplies the depth. Multiple valid sibling cylinders must agree.
+
+An omitted `GdtDistanceBetween.Nominal` with `ComputeAnswerBy` zero,
+`Direction` 4, `NormalTo` 1, and an identity `NominalTransform` uses its unit
+`DirectionVector` and exactly two applied features. A `GdtPlane` or
+`GdtIntersectPlane` contributes the projection of `NomPlane.X`, `Y`, and `Z`
+when its unit normal is parallel to the direction. A direct `GdtCylinder` or
+`GdtCone` contributes the projection of its nominal-axis origin when its unit
+axis is perpendicular to the direction. A `GdtCompoundHole` recursively uses
+its cylindrical and conical axes; all such axes must have one common
+projection. Support planes do not define the compound-hole location. The
+positive absolute difference between the two feature projections is the
+location nominal.
+
+When `FeatureFosUsage` and `OriginFeatureFosUsage` are both 2, a directional
+distance can pair one `GdtCompoundClosedSlot3D` with one descendant
+`GdtCylinder`. `NomClosedSlot.LongitudeI`, `LongitudeJ`, and `LongitudeK` form
+a unit vector parallel to the measurement direction. The cylinder diameter
+equals `NomClosedSlot.Width`, its unit axis is parallel to the slot normal, and
+its origin lies on the slot longitude at `(Length - Width) / 2` from the slot
+origin. Under these invariants, the positive `NomClosedSlot.Length` is the
+location nominal.
+
+An omitted `GdtWidth.Nominal` is the positive millimetre `Width` field of its
+applied nominal slot geometry. `GdtCompoundWidth` uses
+`NomCompoundWidth.Width`, and `GdtCompoundClosedSlot3D` uses
+`NomClosedSlot.Width`. Feature references use the same recursive direct-child
+and `SubFeatures` traversal. All reachable width contributors must agree.
+`NomHeight` and `NomLength` are feature extents and do not define the width
+dimension.
+
+An omitted `GdtRadius.Nominal` is the positive millimetre radius of its
+applied semantic geometry. `GdtFillet` uses its `Radius` field,
+`GdtCylinder` uses `NomCylinder.R`, and `GdtSphere` uses `NomSphere.R`.
+Feature references use the same recursive traversal, and all reachable radius
+contributors must agree.
+
+An omitted `GdtLength.Nominal` applied to a `GdtCompoundClosedSlot3D` is the
+positive millimetre `NomClosedSlot.Length`. Feature references use the same
+recursive traversal, and all reachable length contributors must agree.
+
+Compound-hole size annotations reference the complete hole feature or pattern
+and the operation-specific nominal geometry as separate direct features. An
+omitted `GdtCounterBore.Nominal` is twice `NomCylinder.R` from its direct
+`GdtCylinder` feature. It does not use cylinders reached through the companion
+pattern. An omitted `GdtCounterSinkAngle.Nominal` is `NomCone.FullAngle` in
+radians from its direct `GdtCone` feature.
+
+An omitted `GdtCounterSinkDiameter.Nominal` is the top diameter of its direct
+`GdtCone`. `NomCone.X`, `Y`, and `Z` define the cone apex, and `NomCone.I`,
+`J`, and `K` define its unit axis. The `NomTop` plane origin lies on that axis,
+and the plane normal is parallel to the axis. If the axial apex-to-plane
+distance is `h` and `NomCone.FullAngle` is `a`, the diameter is
+`2 h tan(a / 2)`. The axis and plane-normal vectors must be unit vectors, the
+complete apex-to-plane displacement must be axial, and `a` must be positive
+and less than pi.
+
+The geometric-tolerance classes map by their suffix: `GdtStraightness`,
+`GdtFlatness`, `GdtRoundness`, `GdtCircularity`, `GdtCylindricity`,
+`GdtCoaxiality`, `GdtLineProfile`, `GdtSurfaceProfile`,
+`GdtCompositeSurfaceProfile`, `GdtAngularity`, `GdtPerpendicularity`,
+`GdtParallelism`, `GdtPosition`, `GdtConcentricity`, `GdtSymmetry`,
+`GdtCircularRunout`, and `GdtTotalRunout`. Dimension classes include
+`GdtDiameter`, `GdtRadius`, `GdtAngle`, `GdtAngleBetween`,
+`GdtCounterSinkAngle`, `GdtDistanceBetween`, `GdtWidth`, `GdtLength`,
+`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`.
+
+The integer field `Modifier` uses `0` for no material requirement, `1` for
+maximum material requirement, and `2` for least material requirement. The same
+values apply to `GdtAppliedDatum.Modifier`. `ProjectedZoneEnabled` selects the
+millimetre value in `ProjectedZoneValue`. `IsMaxTolerance` selects the
+millimetre value in `MaxTolerance`. `PerUnitAreaType` value `0` defines a
+rectangular unit from `PerUnitAreaLength` and `PerUnitAreaWidth`; value `1`
+defines a circular unit from `PerUnitAreaDiameter`.
 
 ---
 

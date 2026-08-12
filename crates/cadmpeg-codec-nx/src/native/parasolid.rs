@@ -3264,7 +3264,7 @@ mod tests {
         assert_eq!(events.residual_spans[1].byte_len, 2);
     }
 
-    use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
@@ -4183,7 +4183,7 @@ mod tests {
                 &carrier.geometry,
                 SurfaceGeometry::Procedural { construction } if construction == &procedural.id
             ));
-            assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4212,7 +4212,7 @@ mod tests {
             result.ir.model.edges[0].curve.as_ref(),
             Some(&result.ir.model.curves[0].id)
         );
-        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
     }
 
     #[test]
@@ -4277,7 +4277,7 @@ mod tests {
                 .map(|association| association.object_id.as_str()),
             Some(records[0].id.as_str())
         );
-        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
     }
 
     #[test]
@@ -4318,7 +4318,7 @@ mod tests {
             loss.code.category() == LossCategory::Geometry
                 && loss.message.starts_with("1 surface-intersection record(s)")
         }));
-        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
     }
 
     #[test]
@@ -4354,7 +4354,7 @@ mod tests {
             result.ir.model.edges[0].curve.as_ref(),
             Some(&result.ir.model.procedural_curves[0].curve)
         );
-        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
     }
 
     #[test]
@@ -4449,7 +4449,7 @@ mod tests {
             loss.code.category() == LossCategory::Geometry
                 && loss.message.contains("surface-intersection record(s)")
         }));
-        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 
@@ -4508,6 +4508,6 @@ mod tests {
         assert_eq!(records[0].basis_xmt, 9);
         assert_eq!(records[0].points, [[0.0; 3]; 2]);
         assert_eq!(records[0].parameters, [0.000_25, 0.000_75]);
-        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
     }
 }

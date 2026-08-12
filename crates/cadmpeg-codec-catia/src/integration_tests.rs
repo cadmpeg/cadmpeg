@@ -3,6 +3,7 @@
 
 use super::*;
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::report::{LossCategory, Severity};
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -12,7 +13,7 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     assert_every_entity_has_v1_annotation(&result.ir, &result.source_fidelity.annotations);
     assert!(result.ir.native.namespace("catia").is_some());

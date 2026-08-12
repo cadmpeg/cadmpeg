@@ -5,7 +5,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::CodecEntry;
+use cadmpeg_ir::codec::Codec;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

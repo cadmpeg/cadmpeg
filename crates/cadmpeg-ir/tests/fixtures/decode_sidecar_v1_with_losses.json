@@ -1,0 +1,22 @@
+{
+  "version": "1",
+  "ir_sha256": "abc",
+  "report": {
+    "format": "f3d",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "metadata_not_transferred",
+        "severity": "info",
+        "message": "thumbnail"
+      }
+    ],
+    "notes": []
+  },
+  "fidelity": {
+    "version": "3",
+    "annotations": { "streams": [], "provenance": {}, "exactness": {} },
+    "retained_records": []
+  }
+}

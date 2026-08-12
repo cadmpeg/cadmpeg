@@ -3,7 +3,8 @@
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};
 use super::*;
 use crate::records::{
-    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputOperand,
+    FeatureInputOperandKind, FeatureInputReference, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
     SketchRelationKind,
 };
@@ -15,7 +16,85 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+
+#[test]
+fn declared_entity_handle_precedes_generic_operand_resolution() {
+    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let operand = FeatureInputOperand {
+        offset: 100,
+        reference_ref: "reference".into(),
+        kind,
+        entity_index: 0,
+        entity_ref: Some("wrong".into()),
+    };
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: u32::try_from(offset).unwrap(),
+        offset,
+        object_index,
+        local_id,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let wrong = marker("wrong", 5, Some(1), Some(1), Some([0.100, 0.100]));
+    let center = marker("center", 10, Some(50), Some(49), Some([0.010, 0.020]));
+    let radial = marker("radial", 20, Some(49), Some(0), Some([0.013, 0.024]));
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 112,
+            name: "sgEntHandle".into(),
+            role: FeatureInputClassRole::SketchEntity,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![FeatureInputReference {
+            id: operand.reference_ref.clone(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: operand.offset,
+            kind,
+            class_ref: Some("class".into()),
+            object_index: 0,
+        }],
+        sketch_entities: vec![wrong, center, radial],
+    };
+    let markers_by_id = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+
+    let carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&lane),
+        &markers_by_id,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .expect("declared entity-handle carrier");
+
+    assert_eq!(carrier.marker.id, "center");
+    assert_eq!(carrier.center, [0.010, 0.020]);
+}
 
 #[test]
 fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {

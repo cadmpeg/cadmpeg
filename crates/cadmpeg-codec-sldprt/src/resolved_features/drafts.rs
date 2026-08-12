@@ -1,6 +1,7 @@
 //! Draft-operation plane and face operands.
 
 use super::axes::canonical_unit_direction;
+use super::is_class_token;
 use super::scalars::feature_object_name;
 use super::selections::{
     compact_mixed_component_path, component_vector_path_at, COMPACT_EDGE_VECTOR_MARKER,
@@ -220,7 +221,7 @@ fn unique_declared_plane_reference_token(lane: &FeatureInputLane) -> Option<[u8;
             .checked_add(6 + class.name.len())?;
         let token: [u8; 2] = lane.native_payload.get(body..body + 2)?.try_into().ok()?;
         let value = u16::from_le_bytes(token);
-        (value & 0x8000 != 0 && value != u16::MAX).then_some(token)
+        is_class_token(value).then_some(token)
     });
     let first = tokens.next()?;
     tokens.all(|token| token == first).then_some(first)
@@ -237,7 +238,7 @@ fn draft_plane_reference_at(
             .try_into()
             .ok()
             .map(u16::from_le_bytes)
-            .is_some_and(|token| token & 0x8000 != 0 && token != u16::MAX)
+            .is_some_and(is_class_token)
         || header[4..8] != 2u32.to_le_bytes()
         || !matches!(&header[8..11], [0 | 0x40, 0, 0])
         || header[11..15] == [0; 4]
@@ -249,7 +250,7 @@ fn draft_plane_reference_at(
             .try_into()
             .ok()
             .map(u16::from_le_bytes)
-            .is_some_and(|token| token & 0x8000 != 0 && token != u16::MAX)
+            .is_some_and(is_class_token)
         || header[78..82] != [0; 4]
         || !matches!(&header[86..90], [0, 2 | 3, 0, 0])
     {

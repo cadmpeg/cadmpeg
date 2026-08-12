@@ -19,6 +19,9 @@ documentation = "https://docs.rs/cadmpeg-codec-creo"
 keywords = ["cad", "creo", "pro-engineer", "prt", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
+[features]
+fuzzing = []
+
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
@@ -27,10 +30,8 @@ sha2.workspace = true
 regex.workspace = true
 
 [dev-dependencies]
-# Enables `cadmpeg_core::golden`, the shared snapshot harness.
-# Feature unification applies it to the test build only, so the published
-# library is unchanged.
-cadmpeg-core = { workspace = true, features = ["golden"] }
+# Test-only golden harness and round-trip helpers.
+cadmpeg-test-support = { workspace = true }
 serde_json.workspace = true
 
 [lints]

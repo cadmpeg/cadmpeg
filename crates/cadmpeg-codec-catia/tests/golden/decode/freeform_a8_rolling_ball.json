@@ -608,7 +608,11 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "topology_not_transferred",
+        "code": {
+          "code": "topology_not_transferred",
+          "kind": "topology_not_transferred",
+          "namespace": "shared"
+        },
         "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close.",
         "severity": "blocking"
       }

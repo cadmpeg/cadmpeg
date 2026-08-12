@@ -13,7 +13,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity, TransferLedger};
+use cadmpeg_ir::report::{
+    DecodeReport, LossKind, LossNote, LossTaxonomy, Severity, TransferLedger,
+};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
@@ -73,6 +75,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let unresolved_feature_states = feature_projection.unresolved_states;
     ir.model.features = feature_projection.features;
     ir.model.feature_result_topologies = feature_projection.result_topologies;
+    // Charge semantic IR before native-arena materialization and kernel BREP
+    // transfer so max_entities refuses that work.
+    let mut admitted_entities = 0_u64;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        &mut admitted_entities,
+        "admit Inventor semantic entities",
+    )?;
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".into(),
@@ -1295,7 +1305,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("segment_bulk_issues", &segment_bulk_issues)?;
     namespace.set_arena("unpaired_segments", &unpaired_segments)?;
     namespace.set_arena("active_carrier", std::slice::from_ref(&active_carrier))?;
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit Inventor entities")?;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        &mut admitted_entities,
+        "admit Inventor entities",
+    )?;
 
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
@@ -1389,7 +1403,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let mut losses = Vec::new();
     if ctx.container_only() {
         losses.push(LossNote::new(
-            LossKind::ContainerOnly,
+            LossKind::shared(LossTaxonomy::ContainerOnly),
             "Container-only decode was requested.",
         ));
     } else if !matches!(document_kind, DocumentKind::Assembly) && !geometry_transferred {
@@ -1408,14 +1422,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             }
         });
         losses.push(
-            LossNote::new(LossKind::GeometryNotTransferred, detail)
-                .with_severity(Severity::Blocking),
+            LossNote::new(
+                LossKind::shared(LossTaxonomy::GeometryNotTransferred),
+                detail,
+            )
+            .with_severity(Severity::Blocking),
         );
     }
     if !ctx.container_only() {
         if kernel_stats.unknown_surface_faces != 0 {
             losses.push(LossNote::new(
-                LossKind::GeometryNotTransferred,
+                LossKind::shared(LossTaxonomy::GeometryNotTransferred),
                 format!(
                     "{} face(s) use procedural surfaces without a decoded carrier.",
                     kernel_stats.unknown_surface_faces
@@ -1424,7 +1441,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !segment_pairs.is_empty() {
             losses.push(LossNote::new(
-                LossKind::RecordNotTyped,
+                LossKind::shared(LossTaxonomy::RecordNotTyped),
                 format!(
                     "Retained {} structurally paired RSe segment(s) without record semantics.",
                     segment_pairs.len()
@@ -1433,7 +1450,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !segment_meta_issues.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
                     segment_meta_issues.len()
@@ -1442,7 +1459,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !segment_bulk_issues.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
                     segment_bulk_issues.len()
@@ -1451,7 +1468,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !assembly_record_issues.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
                     assembly_record_issues.len()
@@ -1460,7 +1477,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !presentation_record_issues.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
                     presentation_record_issues.len()
@@ -1469,7 +1486,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !design_inventory.issues.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
                     design_inventory.issues.len()
@@ -1478,7 +1495,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !sketch_inventory.issues.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "{} typed Inventor sketch record(s) could not be parsed exactly.",
                     sketch_inventory.issues.len()
@@ -1487,7 +1504,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !feature_inventory.issues.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "{} typed Inventor feature record(s) could not be parsed exactly.",
                     feature_inventory.issues.len()
@@ -1496,7 +1513,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if unresolved_features != 0 {
             losses.push(LossNote::new(
-                LossKind::FeatureHistoryRetained,
+                LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
                 format!(
                     "Retained {unresolved_features} typed Inventor feature record(s) whose operation graph is not closed."
                 ),
@@ -1504,7 +1521,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if unresolved_feature_states != 0 {
             losses.push(LossNote::new(
-                LossKind::FeatureHistoryRetained,
+                LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
                 format!(
                     "Transferred {unresolved_feature_states} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state."
                 ),
@@ -1512,7 +1529,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if unresolved_design_parameters != 0 {
             losses.push(LossNote::new(
-                LossKind::ParametricRecordOmitted,
+                LossKind::shared(LossTaxonomy::ParametricRecordOmitted),
                 format!(
                     "Retained {unresolved_design_parameters} Inventor parameter record(s) whose unit or expression graph is not closed."
                 ),
@@ -1523,7 +1540,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             || unresolved_sketch_constraints != 0
         {
             losses.push(LossNote::new(
-                LossKind::FeatureHistoryRetained,
+                LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
                 format!(
                     "Retained {unresolved_sketches} Inventor sketch record(s), {unresolved_sketch_entities} sketch-entity record(s), and {unresolved_sketch_constraints} sketch-constraint record(s) whose neutral graph is not closed."
                 ),
@@ -1531,7 +1548,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
                     container.rse.unpaired_metadata.len(),
@@ -1541,7 +1558,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if !property_set_issues.is_empty() {
             losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 format!(
                     "{} OLE property-set stream(s) are malformed.",
                     property_set_issues.len()
@@ -1550,7 +1567,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         if metadata.unmapped != 0 {
             losses.push(LossNote::new(
-                LossKind::MetadataNotTransferred,
+                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                 format!(
                     "Retained {} property value(s) without neutral metadata mapping.",
                     metadata.unmapped
@@ -1561,13 +1578,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ProteinState::Package(_) => {
                 if let Some(detail) = &protein_semantic_issue {
                     losses.push(LossNote::new(
-                        LossKind::MaterialNotTransferred,
+                        LossKind::shared(LossTaxonomy::MaterialNotTransferred),
                         format!("The Protein asset catalog could not be decoded: {detail}"),
                     ));
                 } else {
                     if !protein_rejections.is_empty() {
                         losses.push(LossNote::new(
-                            LossKind::MaterialNotTransferred,
+                            LossKind::shared(LossTaxonomy::MaterialNotTransferred),
                             format!(
                                 "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
                                 protein_rejections.len()
@@ -1576,12 +1593,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     }
                     if ir.model.appearances.is_empty() {
                         losses.push(LossNote::new(
-                            LossKind::MaterialNotTransferred,
+                            LossKind::shared(LossTaxonomy::MaterialNotTransferred),
                             "The Protein package contains no decoded appearance assets.",
                         ));
                     } else if presentation_projection.unresolved_defaults != 0 {
                         losses.push(LossNote::new(
-                            LossKind::MaterialNotTransferred,
+                            LossKind::shared(LossTaxonomy::MaterialNotTransferred),
                             format!(
                                 "Could not resolve {} PmApp document-default appearance assignment(s).",
                                 presentation_projection.unresolved_defaults
@@ -1591,7 +1608,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 }
                 if !material_catalog.duplicate_guids.is_empty() {
                     losses.push(LossNote::new(
-                        LossKind::MaterialNotTransferred,
+                        LossKind::shared(LossTaxonomy::MaterialNotTransferred),
                         format!(
                             "The Protein catalog contains {} duplicate asset GUID(s); ambiguous texture joins were refused.",
                             material_catalog.duplicate_guids.len()
@@ -1600,14 +1617,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 }
             }
             ProteinState::Malformed { .. } => losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 "The Inventor Protein stream is malformed.",
             )),
             ProteinState::Absent | ProteinState::Empty { .. } => {}
         }
         if presentation_projection.unresolved_face_overrides != 0 {
             losses.push(LossNote::new(
-                LossKind::MaterialNotTransferred,
+                LossKind::shared(LossTaxonomy::MaterialNotTransferred),
                 format!(
                     "Could not resolve {} PmGraphics face appearance override(s).",
                     presentation_projection.unresolved_face_overrides
@@ -1616,14 +1633,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
         match &container.ufrx {
             UfrxState::Malformed { .. } => losses.push(LossNote::new(
-                LossKind::DecodeDiagnostic,
+                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
                 "The UFRxDoc external-reference table is malformed.",
             )),
             UfrxState::Unsupported { schema, .. } => {
                 let kind = if matches!(document_kind, DocumentKind::Assembly) {
-                    LossKind::AssemblyComponentsExternal
+                    LossKind::shared(LossTaxonomy::AssemblyComponentsExternal)
                 } else {
-                    LossKind::RecordNotTyped
+                    LossKind::shared(LossTaxonomy::RecordNotTyped)
                 };
                 losses.push(LossNote::new(
                     kind,
@@ -1635,7 +1652,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
                 if !external_references.is_empty() {
                     losses.push(LossNote::new(
-                        LossKind::AssemblyComponentsExternal,
+                        LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
                         format!(
                             "Retained {} unresolved external component reference(s).",
                             external_references.len()
@@ -1644,7 +1661,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 }
                 if assembly_projection.unresolved_placements != 0 {
                     losses.push(LossNote::new(
-                        LossKind::AssemblyPlacementsNotTransferred,
+                        LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred),
                         format!(
                             "Could not transfer {} assembly occurrence placement(s).",
                             assembly_projection.unresolved_placements

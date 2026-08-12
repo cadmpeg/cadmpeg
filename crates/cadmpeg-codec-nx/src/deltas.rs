@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::framing::read_xmt_width as read_xmt;
 use cadmpeg_core::be;
 
 /// One complete admitted deltas record.
@@ -3283,16 +3284,6 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         19 => REGION,
         _ => return None,
     })
-}
-
-fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
-    let first = i16::from_be_bytes([*stream.get(at)?, *stream.get(at + 1)?]);
-    if first >= 0 {
-        return Some((first as u32, 2));
-    }
-    let remainder = first.unsigned_abs();
-    let quotient = u16::from_be_bytes([*stream.get(at + 2)?, *stream.get(at + 3)?]);
-    Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
 }
 
 #[cfg(test)]

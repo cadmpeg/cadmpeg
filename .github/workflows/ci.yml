@@ -60,6 +60,14 @@ jobs:
         # start. Catches a reference that names no paragraph or several.
         run: python3 scripts/check-doc-anchors.py
 
+      - name: Convergence ratchet
+        # Mechanical anti-pattern ceilings in docs/convergence-ledger.toml.
+        # Counts may only fall; a deliberate increase needs a [reasons] entry.
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts/test_convergence_ratchet.py
+          python3 scripts/convergence-ratchet.py
+
       - name: Format check
         run: cargo fmt --all --check
 
@@ -101,6 +109,9 @@ jobs:
 
       - name: Independent Inventor evidence test
         run: python3 -m unittest -v scripts/test_inventor_evidence.py
+
+      - name: Convergence ratchet unit tests
+        run: python3 -m unittest -v scripts/test_convergence_ratchet.py
 
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this
@@ -144,6 +155,10 @@ jobs:
         # harnesses' imports. A stable `check` catches that drift without the
         # nightly toolchain `cargo fuzz build` needs.
         run: cargo check --manifest-path crates/cadmpeg-fuzz/Cargo.toml
+
+      - name: Single-codec CLI feature gate
+        # Per-codec optional deps must keep a one-feature binary compiling.
+        run: cargo build -q -p cadmpeg --no-default-features --features sldprt
 
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.

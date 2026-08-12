@@ -138,6 +138,91 @@ fn generate_sldprt_submodule_seeds() {
         0x00, 0x00, 0x00, 0x00, // name len
     ];
     write_seed("seeds/sldprt_container_scan", "minimal", &container);
+
+    // PMISemanticDataDB MessagePack seeds for sldprt_pmi.
+    write_seed(
+        "seeds/sldprt_pmi",
+        "minimal",
+        &sldprt_pmi_seed(&[("Linear", 0.025)], false, false),
+    );
+    write_seed(
+        "seeds/sldprt_pmi",
+        "array16",
+        &sldprt_pmi_seed(&[("Linear", 0.025); 16], false, false),
+    );
+    write_seed(
+        "seeds/sldprt_pmi",
+        "reordered",
+        &sldprt_pmi_seed(&[("Linear", 0.025)], true, false),
+    );
+    write_seed(
+        "seeds/sldprt_pmi",
+        "malformed",
+        &sldprt_pmi_seed(&[("Linear", 0.025)], false, true),
+    );
+}
+
+fn sldprt_pmi_seed(items: &[(&str, f64)], reorder: bool, truncate: bool) -> Vec<u8> {
+    fn fixstr(bytes: &mut Vec<u8>, value: &str) {
+        bytes.push(0xa0 | value.len() as u8);
+        bytes.extend_from_slice(value.as_bytes());
+    }
+    let mut payload = b"unqlite".to_vec();
+    payload.extend_from_slice(&[0; 57]);
+    payload.extend_from_slice(b"01234567-89ab-cdef-0123-456789abcdef");
+    let outer = if reorder { 8 } else { 7 };
+    payload.push(0x80 | outer);
+    if reorder {
+        fixstr(&mut payload, "cadText");
+        fixstr(&mut payload, "D1@Sketch1");
+        fixstr(&mut payload, "extraKey");
+        fixstr(&mut payload, "ignored");
+        fixstr(&mut payload, "annoType");
+        payload.push(1);
+    } else {
+        fixstr(&mut payload, "annoType");
+        payload.push(1);
+        fixstr(&mut payload, "cadText");
+        fixstr(&mut payload, "D1@Sketch1");
+    }
+    fixstr(&mut payload, "dimItems");
+    if truncate {
+        payload.push(0x91);
+        return payload;
+    }
+    if items.len() < 16 {
+        payload.push(0x90 | items.len() as u8);
+    } else {
+        payload.push(0xdc);
+        payload.extend_from_slice(&(items.len() as u16).to_be_bytes());
+    }
+    for (subtype, value) in items {
+        payload.push(0x87);
+        fixstr(&mut payload, "class");
+        fixstr(&mut payload, "DimSemData");
+        fixstr(&mut payload, "dimSubType");
+        fixstr(&mut payload, subtype);
+        fixstr(&mut payload, "isBasic");
+        payload.push(0xc3);
+        fixstr(&mut payload, "isInspection");
+        payload.push(0xc2);
+        fixstr(&mut payload, "isReferenceOnly");
+        payload.push(0xc3);
+        fixstr(&mut payload, "valPrecision");
+        payload.push(3);
+        fixstr(&mut payload, "value");
+        payload.push(0xcb);
+        payload.extend_from_slice(&value.to_be_bytes());
+    }
+    fixstr(&mut payload, "dimText");
+    fixstr(&mut payload, "25.000 mm");
+    fixstr(&mut payload, "dimType");
+    payload.push(0);
+    fixstr(&mut payload, "iDString");
+    fixstr(&mut payload, "native-id");
+    fixstr(&mut payload, "reserved");
+    payload.push(0xc0);
+    payload
 }
 
 // ============================================================================

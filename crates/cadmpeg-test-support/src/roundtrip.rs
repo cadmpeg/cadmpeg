@@ -35,16 +35,15 @@
 //! can be checked against the edit. `Fusion` needs both: it refuses the first
 //! and patches the second.
 //!
-//! This lives in `cadmpeg-ir` rather than beside the golden harness in
-//! `cadmpeg_core::golden` because it drives [`Encoder`], which
-//! `cadmpeg-core` cannot name: the dependency runs the other way.
+//! This crate also owns the golden harness in [`crate::golden`]. Both helpers
+//! are test-only and must not be depended on by production builds.
 
 use cadmpeg_core::CodecError;
 
-use crate::codec::{Codec, CodecEntry, DecodeOptions, EncodeInput, Encoder, ExportPlan};
-use crate::document::CadIr;
-use crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
-use crate::report::{ExportReport, WritePath};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
+use cadmpeg_ir::report::{ExportReport, WritePath};
 
 /// Encodes an unedited decode of `fixture` and asserts the encoder replayed the
 /// retained bytes verbatim, producing `fixture` again.
@@ -61,7 +60,7 @@ pub fn verbatim_replay_holds<C>(codec: &C, label: &str, fixture: &[u8]) -> Expor
 where
     C: Codec + Encoder,
 {
-    let decoded = CodecEntry::decode(
+    let decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
@@ -134,7 +133,7 @@ pub fn semantic_roundtrip<C>(
 ) where
     C: Codec + Encoder,
 {
-    let mut decoded = CodecEntry::decode(
+    let mut decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
@@ -239,7 +238,7 @@ where
         "{label}: this helper edits the document, so replaying the retained bytes would discard the edit; \
          no caller may name that path as expected"
     );
-    let mut decoded = CodecEntry::decode(
+    let mut decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),

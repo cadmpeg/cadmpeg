@@ -1325,7 +1325,7 @@ fn source_less_lanes(
         lane.names = object_names(&lane.native_payload, &lane.id);
         lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names);
         lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars);
-        lane.references = reference_cells(&lane.scalars);
+        lane.references = reference_cells(&lane.scalars, &lane.classes);
         lane.sketch_entities = sketch_input_entities(&lane.native_payload, &lane.id);
     }
     bind_scalar_operands(&native.feature_histories, &mut lanes);

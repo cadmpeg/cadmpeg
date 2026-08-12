@@ -16,7 +16,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,7 +29,7 @@
 //! # }
 //! ```
 //!
-//! [`CodecEntry::inspect`](cadmpeg_ir::CodecEntry::inspect) classifies the ZIP entries and reads ASM B-rep headers
+//! [`Codec::inspect`](cadmpeg_ir::Codec::inspect) classifies the ZIP entries and reads ASM B-rep headers
 //! without building geometry. `DecodeOptions::container_only` provides the
 //! corresponding metadata-only `CadIr`.
 //!
@@ -37,7 +37,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::{Codec, CodecEntry, DecodeOptions, Encoder};
+//! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions, Encoder};
 //! use std::fs::File;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -81,36 +81,44 @@
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
 mod act;
-pub mod brep;
+pub(crate) mod brep;
 mod bytes;
-pub mod container;
-pub mod decode;
-pub mod design;
-pub mod f3z;
-pub mod history;
+#[allow(dead_code)] // Internal container records remain available to crate tests.
+pub(crate) mod container;
+pub(crate) mod decode;
+pub(crate) mod design;
+#[allow(dead_code)] // Multi-document helpers remain behind the codec facade.
+pub(crate) mod f3z;
+pub(crate) mod history;
 mod history_records;
 mod ids;
 mod manifest;
-pub mod materials;
+pub(crate) mod materials;
 mod metastream;
 mod native;
 mod paramesh;
-pub mod records;
+#[allow(dead_code)] // Native record surface remains behind the codec facade.
+pub(crate) mod records;
 mod tsm;
-pub mod validate;
+pub(crate) mod validate;
 mod value_tree;
 mod writer;
-pub mod xref;
+pub(crate) mod xref;
 mod zip_write;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
 use std::io::Write;
+
+/// Validate the typed Fusion-native namespace.
+pub fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::Finding> {
+    validate::validate_native(ir)
+}
 
 /// The ZIP local-file-header magic.
 const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
@@ -167,7 +175,7 @@ impl F3dCodec {
     }
 }
 
-impl Codec for F3dCodec {
+impl CodecBackend for F3dCodec {
     fn id(&self) -> &'static str {
         "f3d"
     }
@@ -230,7 +238,6 @@ impl Encoder for F3dCodec {
             WritePath::Patched => "preserved source container replayed with semantic patches",
             WritePath::Synthesized => "source container regenerated from IR",
         };
-        let validation = cadmpeg_ir::validate(input.ir, Vec::new());
         let expects_preserved_source = input
             .ir
             .source
@@ -245,7 +252,9 @@ impl Encoder for F3dCodec {
         };
         let losses = matches!(fidelity, FidelityResolution::Degraded { .. })
             .then(|| cadmpeg_ir::LossNote {
-                code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
+                code: cadmpeg_ir::LossKind::shared(
+                    cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable,
+                ),
                 severity: cadmpeg_ir::Severity::Blocking,
                 message: "preserved F3D source image is unavailable; regenerated from IR".into(),
                 provenance: None,
@@ -256,7 +265,7 @@ impl Encoder for F3dCodec {
             format: "f3d".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: validation.entity_counts,
+                counts: input.ir.census(),
             },
             fidelity,
             write_path,

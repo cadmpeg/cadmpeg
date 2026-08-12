@@ -32,13 +32,13 @@
 //! A byte-exact comparison therefore reports a platform as a regression. That
 //! is the case the repository rule against comparing decoded doubles for exact
 //! equality already covers, so [`snapshots_agree`] parses both sides and defers
-//! to [`crate::compare::values_agree`], which holds structure exact, tolerates
+//! to [`cadmpeg_ir::compare::values_agree`], which holds structure exact, tolerates
 //! fractional numbers, and also tolerates fractional tokens embedded in string
 //! fields (IGES encode goldens). Byte equality remains the fast path, and the
 //! determinism check stays byte-exact because two runs in one process share one
 //! libm and must agree bit for bit.
 //!
-//! The tolerance hides drift below [`crate::compare::FLOAT_TOLERANCE`] relative
+//! The tolerance hides drift below [`cadmpeg_ir::compare::FLOAT_TOLERANCE`] relative
 //! magnitude. It does not make decode reproducible across platforms; it only
 //! stops the goldens from reporting that as codec drift.
 //!
@@ -60,7 +60,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::compare::{is_local_digest_attribute, values_agree};
+use cadmpeg_ir::compare::{is_local_digest_attribute, values_agree};
 
 /// One snapshot branch: a subdirectory of `tests/golden` and the function that
 /// produces the text pinned there.
@@ -321,7 +321,7 @@ fn compare_branch_snapshot(expected: &str, actual: &str) -> Result<(), String> {
 /// Compares a golden against a fresh snapshot, tolerating only last-place
 /// disagreement in fractional numbers.
 ///
-/// Byte-equal fast path; otherwise JSON via [`crate::compare::values_agree`],
+/// Byte-equal fast path; otherwise JSON via [`cadmpeg_ir::compare::values_agree`],
 /// or a line diff for non-JSON text.
 ///
 /// # Errors
@@ -400,7 +400,7 @@ mod tests {
     use std::sync::{Mutex, MutexGuard};
 
     use super::{compare_branch_snapshot, snapshots_agree};
-    use crate::compare::FLOAT_TOLERANCE;
+    use cadmpeg_ir::compare::FLOAT_TOLERANCE;
 
     /// Serializes tests that mutate `GOLDEN_STRICT` so parallel workers cannot
     /// observe a half-applied environment.

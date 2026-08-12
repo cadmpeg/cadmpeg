@@ -6,8 +6,8 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::compare::floats_agree;
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::transform::Transform;
 
 use crate::tests::{sldprt_with_body, triangle_body};
@@ -33,7 +33,7 @@ fn mutated_semantic_write_round_trips() {
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written triangle should decode");
-    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&round_trip.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert_eq!(round_trip.ir.model.bodies.len(), expected_bodies);
     assert_eq!(round_trip.ir.model.faces.len(), expected_faces);
@@ -70,7 +70,7 @@ fn bake_transform_is_applied_and_output_stays_valid() {
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("written translated triangle should decode");
-    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&round_trip.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(
         floats_agree(round_trip.ir.model.points[0].position.x, original_x + 10.0),

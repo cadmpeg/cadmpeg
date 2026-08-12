@@ -276,8 +276,12 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "object_records_untransferred",
-        "message": "object.record-census: decoded 1/1 Rhino object records",
+        "code": {
+          "code": "object.record-census",
+          "kind": "object_records_untransferred",
+          "namespace": "rhino"
+        },
+        "message": "decoded 1/1 Rhino object records",
         "severity": "info"
       }
     ],

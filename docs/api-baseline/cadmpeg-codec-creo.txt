@@ -1,4 +1,4 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_codec_creo
 pub mod cadmpeg_codec_creo::container
 pub mod cadmpeg_codec_creo::container::role
@@ -28,6 +28,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::container::
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::container::FamilyTablePointer
 pub enum cadmpeg_codec_creo::container::Layout
 pub cadmpeg_codec_creo::container::Layout::Depdb
+pub cadmpeg_codec_creo::container::Layout::LegacyAscii
 pub cadmpeg_codec_creo::container::Layout::Nd
 pub cadmpeg_codec_creo::container::Layout::Unknown
 impl cadmpeg_codec_creo::container::Layout
@@ -160,9 +161,10 @@ pub cadmpeg_codec_creo::container::FramingScan::expanded_sections: alloc::vec::V
 pub cadmpeg_codec_creo::container::FramingScan::family_table: core::option::Option<cadmpeg_codec_creo::container::FamilyTableRecord>
 pub cadmpeg_codec_creo::container::FramingScan::first_quilt_ptr: core::option::Option<u32>
 pub cadmpeg_codec_creo::container::FramingScan::layout: cadmpeg_codec_creo::container::Layout
+pub cadmpeg_codec_creo::container::FramingScan::legacy_ascii: core::option::Option<cadmpeg_codec_creo::container::LegacyAsciiFraming>
 pub cadmpeg_codec_creo::container::FramingScan::model_name: core::option::Option<alloc::string::String>
 pub cadmpeg_codec_creo::container::FramingScan::model_name_offset: core::option::Option<usize>
-pub cadmpeg_codec_creo::container::FramingScan::principal_unit: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_creo::container::FramingScan::principal_unit: core::option::Option<cadmpeg_codec_creo::legacy::PrincipalUnitSystem>
 pub cadmpeg_codec_creo::container::FramingScan::sections: alloc::vec::Vec<cadmpeg_codec_creo::container::Section>
 pub cadmpeg_codec_creo::container::FramingScan::version_line: alloc::string::String
 impl<'a> core::marker::Freeze for cadmpeg_codec_creo::container::FramingScan<'a>
@@ -188,6 +190,27 @@ impl core::marker::Unpin for cadmpeg_codec_creo::container::GeomCensus
 impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::container::GeomCensus
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::container::GeomCensus
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::container::GeomCensus
+pub struct cadmpeg_codec_creo::container::LegacyAsciiFraming
+pub cadmpeg_codec_creo::container::LegacyAsciiFraming::banner_offset: usize
+pub cadmpeg_codec_creo::container::LegacyAsciiFraming::object_offset: usize
+pub cadmpeg_codec_creo::container::LegacyAsciiFraming::persistence: cadmpeg_codec_creo::legacy::Persistence
+pub cadmpeg_codec_creo::container::LegacyAsciiFraming::product_release: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_creo::container::LegacyAsciiFraming::schema: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_creo::container::LegacyAsciiFraming
+pub fn cadmpeg_codec_creo::container::LegacyAsciiFraming::clone(&self) -> cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::cmp::Eq for cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::cmp::PartialEq for cadmpeg_codec_creo::container::LegacyAsciiFraming
+pub fn cadmpeg_codec_creo::container::LegacyAsciiFraming::eq(&self, &cadmpeg_codec_creo::container::LegacyAsciiFraming) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::container::LegacyAsciiFraming
+pub fn cadmpeg_codec_creo::container::LegacyAsciiFraming::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::marker::Freeze for cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::marker::Send for cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::marker::Sync for cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::marker::Unpin for cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::container::LegacyAsciiFraming
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::container::LegacyAsciiFraming
 pub struct cadmpeg_codec_creo::container::ModelDoubleXarTable
 pub cadmpeg_codec_creo::container::ModelDoubleXarTable::count: u32
 pub cadmpeg_codec_creo::container::ModelDoubleXarTable::entries: alloc::vec::Vec<cadmpeg_codec_creo::scalar::DoubleXarEntry>
@@ -225,6 +248,7 @@ impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::container::PlaneScan
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::container::PlaneScan
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::container::PlaneScan
 pub struct cadmpeg_codec_creo::container::PrimitiveScan
+pub cadmpeg_codec_creo::container::PrimitiveScan::conflicting_triangle_strip_representation_count: usize
 pub cadmpeg_codec_creo::container::PrimitiveScan::double_xar_tables: alloc::vec::Vec<cadmpeg_codec_creo::container::ModelDoubleXarTable>
 pub cadmpeg_codec_creo::container::PrimitiveScan::scalar_arrays: alloc::vec::Vec<cadmpeg_codec_creo::primdata::PrimitiveScalarArray>
 pub cadmpeg_codec_creo::container::PrimitiveScan::triangle_strips: alloc::vec::Vec<cadmpeg_codec_creo::primdata::PrimitiveTriangleStrip>
@@ -949,32 +973,6 @@ pub fn cadmpeg_codec_creo::curve::prototype_pcurve_endpoints(&[u8]) -> alloc::ve
 pub fn cadmpeg_codec_creo::curve::prototype_topology(&[u8]) -> alloc::vec::Vec<cadmpeg_codec_creo::curve::CurvePrototypeTopology>
 pub fn cadmpeg_codec_creo::curve::prototypes(&[u8]) -> alloc::vec::Vec<cadmpeg_codec_creo::curve::CurvePrototype>
 pub fn cadmpeg_codec_creo::curve::topology_rows(&[u8]) -> alloc::vec::Vec<cadmpeg_codec_creo::curve::CurveTopologyRow>
-pub mod cadmpeg_codec_creo::datum
-pub struct cadmpeg_codec_creo::datum::DatumPlane
-pub cadmpeg_codec_creo::datum::DatumPlane::corners: [[core::option::Option<f64>; 3]; 2]
-pub cadmpeg_codec_creo::datum::DatumPlane::feature_id: u32
-pub cadmpeg_codec_creo::datum::DatumPlane::id: u32
-pub cadmpeg_codec_creo::datum::DatumPlane::normal: [f64; 3]
-pub cadmpeg_codec_creo::datum::DatumPlane::offset: f64
-pub cadmpeg_codec_creo::datum::DatumPlane::offset_in_payload: usize
-impl core::clone::Clone for cadmpeg_codec_creo::datum::DatumPlane
-pub fn cadmpeg_codec_creo::datum::DatumPlane::clone(&self) -> cadmpeg_codec_creo::datum::DatumPlane
-impl core::cmp::PartialEq for cadmpeg_codec_creo::datum::DatumPlane
-pub fn cadmpeg_codec_creo::datum::DatumPlane::eq(&self, &cadmpeg_codec_creo::datum::DatumPlane) -> bool
-impl core::fmt::Debug for cadmpeg_codec_creo::datum::DatumPlane
-pub fn cadmpeg_codec_creo::datum::DatumPlane::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::datum::DatumPlane
-impl core::marker::Freeze for cadmpeg_codec_creo::datum::DatumPlane
-impl core::marker::Send for cadmpeg_codec_creo::datum::DatumPlane
-impl core::marker::Sync for cadmpeg_codec_creo::datum::DatumPlane
-impl core::marker::Unpin for cadmpeg_codec_creo::datum::DatumPlane
-impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::datum::DatumPlane
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::datum::DatumPlane
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::datum::DatumPlane
-pub fn cadmpeg_codec_creo::datum::named_plane(&[u8]) -> core::option::Option<cadmpeg_codec_creo::datum::DatumPlane>
-pub fn cadmpeg_codec_creo::datum::planes(&[u8]) -> alloc::vec::Vec<cadmpeg_codec_creo::datum::DatumPlane>
-pub mod cadmpeg_codec_creo::decode
-pub fn cadmpeg_codec_creo::decode::decode(&cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub mod cadmpeg_codec_creo::feature
 pub enum cadmpeg_codec_creo::feature::AffectedIdKind
 pub cadmpeg_codec_creo::feature::AffectedIdKind::Contours
@@ -1816,12 +1814,14 @@ impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::feature::Fe
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::feature::FeatureOpaqueSegment
 pub struct cadmpeg_codec_creo::feature::FeatureOperation
 pub cadmpeg_codec_creo::feature::FeatureOperation::display_name_stored: bool
+pub cadmpeg_codec_creo::feature::FeatureOperation::display_state_conflict: bool
 pub cadmpeg_codec_creo::feature::FeatureOperation::feature_id: u32
 pub cadmpeg_codec_creo::feature::FeatureOperation::identifier_keyword: core::option::Option<alloc::string::String>
 pub cadmpeg_codec_creo::feature::FeatureOperation::kind: alloc::string::String
 pub cadmpeg_codec_creo::feature::FeatureOperation::offset: usize
 pub cadmpeg_codec_creo::feature::FeatureOperation::parent_feature_id: core::option::Option<u32>
 pub cadmpeg_codec_creo::feature::FeatureOperation::recipe: core::option::Option<cadmpeg_codec_creo::feature::FeatureRecipe>
+pub cadmpeg_codec_creo::feature::FeatureOperation::recipe_conflict: bool
 pub cadmpeg_codec_creo::feature::FeatureOperation::root_schema_class: core::option::Option<u32>
 pub cadmpeg_codec_creo::feature::FeatureOperation::state_offset: usize
 pub cadmpeg_codec_creo::feature::FeatureOperation::stored_name: core::option::Option<alloc::string::String>
@@ -2707,29 +2707,352 @@ pub fn cadmpeg_codec_creo::feature::replay_affected_ids(&[cadmpeg_codec_creo::fe
 pub fn cadmpeg_codec_creo::feature::revolution_extents(&[cadmpeg_codec_creo::feature::FeatureRow]) -> alloc::vec::Vec<cadmpeg_codec_creo::feature::FeatureRevolutionExtent>
 pub fn cadmpeg_codec_creo::feature::rows(&[u8], &alloc::collections::btree::set::BTreeSet<u32>) -> alloc::vec::Vec<cadmpeg_codec_creo::feature::FeatureRow>
 pub fn cadmpeg_codec_creo::feature::surface_merge_replay_affected_ids(&[cadmpeg_codec_creo::feature::FeatureRow], &[cadmpeg_codec_creo::feature::FeatureAffectedIds]) -> alloc::vec::Vec<cadmpeg_codec_creo::feature::FeatureSurfaceMergeAffectedIds>
-pub mod cadmpeg_codec_creo::placement
-pub struct cadmpeg_codec_creo::placement::FeatureSectionTransform
-pub cadmpeg_codec_creo::placement::FeatureSectionTransform::definition_id: u32
-pub cadmpeg_codec_creo::placement::FeatureSectionTransform::feature_id: core::option::Option<u32>
-pub cadmpeg_codec_creo::placement::FeatureSectionTransform::normal: [f64; 3]
-pub cadmpeg_codec_creo::placement::FeatureSectionTransform::offset: usize
-pub cadmpeg_codec_creo::placement::FeatureSectionTransform::origin: [f64; 3]
-pub cadmpeg_codec_creo::placement::FeatureSectionTransform::u_axis: [f64; 3]
-pub cadmpeg_codec_creo::placement::FeatureSectionTransform::v_axis: [f64; 3]
-impl core::clone::Clone for cadmpeg_codec_creo::placement::FeatureSectionTransform
-pub fn cadmpeg_codec_creo::placement::FeatureSectionTransform::clone(&self) -> cadmpeg_codec_creo::placement::FeatureSectionTransform
-impl core::cmp::PartialEq for cadmpeg_codec_creo::placement::FeatureSectionTransform
-pub fn cadmpeg_codec_creo::placement::FeatureSectionTransform::eq(&self, &cadmpeg_codec_creo::placement::FeatureSectionTransform) -> bool
-impl core::fmt::Debug for cadmpeg_codec_creo::placement::FeatureSectionTransform
-pub fn cadmpeg_codec_creo::placement::FeatureSectionTransform::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::placement::FeatureSectionTransform
-impl core::marker::Freeze for cadmpeg_codec_creo::placement::FeatureSectionTransform
-impl core::marker::Send for cadmpeg_codec_creo::placement::FeatureSectionTransform
-impl core::marker::Sync for cadmpeg_codec_creo::placement::FeatureSectionTransform
-impl core::marker::Unpin for cadmpeg_codec_creo::placement::FeatureSectionTransform
-impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::placement::FeatureSectionTransform
-impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::placement::FeatureSectionTransform
-impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::placement::FeatureSectionTransform
+pub mod cadmpeg_codec_creo::legacy
+pub enum cadmpeg_codec_creo::legacy::NumericPayload<T>
+pub cadmpeg_codec_creo::legacy::NumericPayload::Array
+pub cadmpeg_codec_creo::legacy::NumericPayload::Array::dimensions: alloc::vec::Vec<u32>
+pub cadmpeg_codec_creo::legacy::NumericPayload::Array::runs: alloc::vec::Vec<cadmpeg_codec_creo::legacy::NumericRun<T>>
+pub cadmpeg_codec_creo::legacy::NumericPayload::Scalar
+pub cadmpeg_codec_creo::legacy::NumericPayload::Scalar::value: T
+impl<T> cadmpeg_codec_creo::legacy::NumericPayload<T>
+pub fn cadmpeg_codec_creo::legacy::NumericPayload<T>::element_count(&self) -> u64
+impl<T: core::clone::Clone> core::clone::Clone for cadmpeg_codec_creo::legacy::NumericPayload<T>
+pub fn cadmpeg_codec_creo::legacy::NumericPayload<T>::clone(&self) -> cadmpeg_codec_creo::legacy::NumericPayload<T>
+impl<T: core::cmp::Eq> core::cmp::Eq for cadmpeg_codec_creo::legacy::NumericPayload<T>
+impl<T: core::cmp::PartialEq> core::cmp::PartialEq for cadmpeg_codec_creo::legacy::NumericPayload<T>
+pub fn cadmpeg_codec_creo::legacy::NumericPayload<T>::eq(&self, &cadmpeg_codec_creo::legacy::NumericPayload<T>) -> bool
+impl<T: core::cmp::PartialEq> core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::NumericPayload<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for cadmpeg_codec_creo::legacy::NumericPayload<T>
+pub fn cadmpeg_codec_creo::legacy::NumericPayload<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> serde_core::ser::Serialize for cadmpeg_codec_creo::legacy::NumericPayload<T> where T: serde_core::ser::Serialize
+pub fn cadmpeg_codec_creo::legacy::NumericPayload<T>::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<T> core::marker::Freeze for cadmpeg_codec_creo::legacy::NumericPayload<T> where T: core::marker::Freeze
+impl<T> core::marker::Send for cadmpeg_codec_creo::legacy::NumericPayload<T> where T: core::marker::Send
+impl<T> core::marker::Sync for cadmpeg_codec_creo::legacy::NumericPayload<T> where T: core::marker::Sync
+impl<T> core::marker::Unpin for cadmpeg_codec_creo::legacy::NumericPayload<T> where T: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::NumericPayload<T> where T: core::marker::UnsafeUnpin
+impl<T> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::NumericPayload<T> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::NumericPayload<T> where T: core::panic::unwind_safe::UnwindSafe
+pub enum cadmpeg_codec_creo::legacy::ObjectPayload
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Array
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Array::complete: bool
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Array::dimensions: alloc::vec::Vec<u32>
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Array::elements: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Arrow
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Inline
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Null
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Opaque
+pub cadmpeg_codec_creo::legacy::ObjectPayload::Opaque::bytes: alloc::vec::Vec<u8>
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::ObjectPayload
+pub fn cadmpeg_codec_creo::legacy::ObjectPayload::clone(&self) -> cadmpeg_codec_creo::legacy::ObjectPayload
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::ObjectPayload
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::ObjectPayload
+pub fn cadmpeg_codec_creo::legacy::ObjectPayload::eq(&self, &cadmpeg_codec_creo::legacy::ObjectPayload) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::ObjectPayload
+pub fn cadmpeg_codec_creo::legacy::ObjectPayload::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::ObjectPayload
+impl serde_core::ser::Serialize for cadmpeg_codec_creo::legacy::ObjectPayload
+pub fn cadmpeg_codec_creo::legacy::ObjectPayload::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::ObjectPayload
+impl core::marker::Send for cadmpeg_codec_creo::legacy::ObjectPayload
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::ObjectPayload
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::ObjectPayload
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::ObjectPayload
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::ObjectPayload
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::ObjectPayload
+pub enum cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+pub cadmpeg_codec_creo::legacy::PrincipalUnitSystem::InchPoundMassSecond
+pub cadmpeg_codec_creo::legacy::PrincipalUnitSystem::MillimeterKilogramSecond
+pub cadmpeg_codec_creo::legacy::PrincipalUnitSystem::MillimeterNewtonSecond
+pub cadmpeg_codec_creo::legacy::PrincipalUnitSystem::UnknownBinarySelector(u8)
+impl cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+pub const fn cadmpeg_codec_creo::legacy::PrincipalUnitSystem::length_scale_mm(self) -> core::option::Option<f64>
+pub fn cadmpeg_codec_creo::legacy::PrincipalUnitSystem::token(self) -> alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+pub fn cadmpeg_codec_creo::legacy::PrincipalUnitSystem::clone(&self) -> cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+pub fn cadmpeg_codec_creo::legacy::PrincipalUnitSystem::eq(&self, &cadmpeg_codec_creo::legacy::PrincipalUnitSystem) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+pub fn cadmpeg_codec_creo::legacy::PrincipalUnitSystem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::marker::Send for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::PrincipalUnitSystem
+pub enum cadmpeg_codec_creo::legacy::StringPayload
+pub cadmpeg_codec_creo::legacy::StringPayload::Array
+pub cadmpeg_codec_creo::legacy::StringPayload::Array::complete: bool
+pub cadmpeg_codec_creo::legacy::StringPayload::Array::dimensions: alloc::vec::Vec<u32>
+pub cadmpeg_codec_creo::legacy::StringPayload::Array::values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::StringValue>
+pub cadmpeg_codec_creo::legacy::StringPayload::Scalar
+pub cadmpeg_codec_creo::legacy::StringPayload::Scalar::value: cadmpeg_codec_creo::legacy::StringValue
+impl cadmpeg_codec_creo::legacy::StringPayload
+pub fn cadmpeg_codec_creo::legacy::StringPayload::element_count(&self) -> usize
+pub fn cadmpeg_codec_creo::legacy::StringPayload::undecoded_encoding_count(&self) -> usize
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::StringPayload
+pub fn cadmpeg_codec_creo::legacy::StringPayload::clone(&self) -> cadmpeg_codec_creo::legacy::StringPayload
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::StringPayload
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::StringPayload
+pub fn cadmpeg_codec_creo::legacy::StringPayload::eq(&self, &cadmpeg_codec_creo::legacy::StringPayload) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::StringPayload
+pub fn cadmpeg_codec_creo::legacy::StringPayload::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::StringPayload
+impl serde_core::ser::Serialize for cadmpeg_codec_creo::legacy::StringPayload
+pub fn cadmpeg_codec_creo::legacy::StringPayload::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::StringPayload
+impl core::marker::Send for cadmpeg_codec_creo::legacy::StringPayload
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::StringPayload
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::StringPayload
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::StringPayload
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::StringPayload
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::StringPayload
+pub enum cadmpeg_codec_creo::legacy::StringValue
+pub cadmpeg_codec_creo::legacy::StringValue::Bytes
+pub cadmpeg_codec_creo::legacy::StringValue::Bytes::bytes: alloc::vec::Vec<u8>
+pub cadmpeg_codec_creo::legacy::StringValue::Null
+pub cadmpeg_codec_creo::legacy::StringValue::Utf8
+pub cadmpeg_codec_creo::legacy::StringValue::Utf8::text: alloc::string::String
+impl cadmpeg_codec_creo::legacy::StringValue
+pub fn cadmpeg_codec_creo::legacy::StringValue::undecoded_encoding_count(&self) -> usize
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::StringValue
+pub fn cadmpeg_codec_creo::legacy::StringValue::clone(&self) -> cadmpeg_codec_creo::legacy::StringValue
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::StringValue
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::StringValue
+pub fn cadmpeg_codec_creo::legacy::StringValue::eq(&self, &cadmpeg_codec_creo::legacy::StringValue) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::StringValue
+pub fn cadmpeg_codec_creo::legacy::StringValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::StringValue
+impl serde_core::ser::Serialize for cadmpeg_codec_creo::legacy::StringValue
+pub fn cadmpeg_codec_creo::legacy::StringValue::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::StringValue
+impl core::marker::Send for cadmpeg_codec_creo::legacy::StringValue
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::StringValue
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::StringValue
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::StringValue
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::StringValue
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::StringValue
+pub struct cadmpeg_codec_creo::legacy::AttributeDeclaration
+pub cadmpeg_codec_creo::legacy::AttributeDeclaration::id: u32
+pub cadmpeg_codec_creo::legacy::AttributeDeclaration::name: alloc::string::String
+pub cadmpeg_codec_creo::legacy::AttributeDeclaration::offset: usize
+pub cadmpeg_codec_creo::legacy::AttributeDeclaration::type_code: u8
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::AttributeDeclaration
+pub fn cadmpeg_codec_creo::legacy::AttributeDeclaration::clone(&self) -> cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::AttributeDeclaration
+pub fn cadmpeg_codec_creo::legacy::AttributeDeclaration::eq(&self, &cadmpeg_codec_creo::legacy::AttributeDeclaration) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::AttributeDeclaration
+pub fn cadmpeg_codec_creo::legacy::AttributeDeclaration::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::marker::Send for cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::AttributeDeclaration
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::AttributeDeclaration
+pub struct cadmpeg_codec_creo::legacy::AttributeValue
+pub cadmpeg_codec_creo::legacy::AttributeValue::attribute_id: u32
+pub cadmpeg_codec_creo::legacy::AttributeValue::continuation_count: usize
+pub cadmpeg_codec_creo::legacy::AttributeValue::continuation_rows: core::option::Option<core::ops::range::Range<usize>>
+pub cadmpeg_codec_creo::legacy::AttributeValue::depth: u32
+pub cadmpeg_codec_creo::legacy::AttributeValue::offset: usize
+pub cadmpeg_codec_creo::legacy::AttributeValue::payload: core::ops::range::Range<usize>
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::AttributeValue
+pub fn cadmpeg_codec_creo::legacy::AttributeValue::clone(&self) -> cadmpeg_codec_creo::legacy::AttributeValue
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::AttributeValue
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::AttributeValue
+pub fn cadmpeg_codec_creo::legacy::AttributeValue::eq(&self, &cadmpeg_codec_creo::legacy::AttributeValue) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::AttributeValue
+pub fn cadmpeg_codec_creo::legacy::AttributeValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::AttributeValue
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::AttributeValue
+impl core::marker::Send for cadmpeg_codec_creo::legacy::AttributeValue
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::AttributeValue
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::AttributeValue
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::AttributeValue
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::AttributeValue
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::AttributeValue
+pub struct cadmpeg_codec_creo::legacy::NumericRun<T>
+pub cadmpeg_codec_creo::legacy::NumericRun::count: u32
+pub cadmpeg_codec_creo::legacy::NumericRun::value: T
+impl<T: core::clone::Clone> core::clone::Clone for cadmpeg_codec_creo::legacy::NumericRun<T>
+pub fn cadmpeg_codec_creo::legacy::NumericRun<T>::clone(&self) -> cadmpeg_codec_creo::legacy::NumericRun<T>
+impl<T: core::cmp::Eq> core::cmp::Eq for cadmpeg_codec_creo::legacy::NumericRun<T>
+impl<T: core::cmp::PartialEq> core::cmp::PartialEq for cadmpeg_codec_creo::legacy::NumericRun<T>
+pub fn cadmpeg_codec_creo::legacy::NumericRun<T>::eq(&self, &cadmpeg_codec_creo::legacy::NumericRun<T>) -> bool
+impl<T: core::cmp::PartialEq> core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::NumericRun<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for cadmpeg_codec_creo::legacy::NumericRun<T>
+pub fn cadmpeg_codec_creo::legacy::NumericRun<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> serde_core::ser::Serialize for cadmpeg_codec_creo::legacy::NumericRun<T> where T: serde_core::ser::Serialize
+pub fn cadmpeg_codec_creo::legacy::NumericRun<T>::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<T> core::marker::Freeze for cadmpeg_codec_creo::legacy::NumericRun<T> where T: core::marker::Freeze
+impl<T> core::marker::Send for cadmpeg_codec_creo::legacy::NumericRun<T> where T: core::marker::Send
+impl<T> core::marker::Sync for cadmpeg_codec_creo::legacy::NumericRun<T> where T: core::marker::Sync
+impl<T> core::marker::Unpin for cadmpeg_codec_creo::legacy::NumericRun<T> where T: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::NumericRun<T> where T: core::marker::UnsafeUnpin
+impl<T> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::NumericRun<T> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::NumericRun<T> where T: core::panic::unwind_safe::UnwindSafe
+pub struct cadmpeg_codec_creo::legacy::ObjectRecord
+pub cadmpeg_codec_creo::legacy::ObjectRecord::attribute_id: u32
+pub cadmpeg_codec_creo::legacy::ObjectRecord::depth: u32
+pub cadmpeg_codec_creo::legacy::ObjectRecord::id: alloc::string::String
+pub cadmpeg_codec_creo::legacy::ObjectRecord::name: alloc::string::String
+pub cadmpeg_codec_creo::legacy::ObjectRecord::offset: usize
+pub cadmpeg_codec_creo::legacy::ObjectRecord::parent: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_creo::legacy::ObjectRecord::payload: cadmpeg_codec_creo::legacy::ObjectPayload
+pub cadmpeg_codec_creo::legacy::ObjectRecord::scope_offset: usize
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::ObjectRecord
+pub fn cadmpeg_codec_creo::legacy::ObjectRecord::clone(&self) -> cadmpeg_codec_creo::legacy::ObjectRecord
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::ObjectRecord
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::ObjectRecord
+pub fn cadmpeg_codec_creo::legacy::ObjectRecord::eq(&self, &cadmpeg_codec_creo::legacy::ObjectRecord) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::ObjectRecord
+pub fn cadmpeg_codec_creo::legacy::ObjectRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::ObjectRecord
+impl serde_core::ser::Serialize for cadmpeg_codec_creo::legacy::ObjectRecord
+pub fn cadmpeg_codec_creo::legacy::ObjectRecord::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::ObjectRecord
+impl core::marker::Send for cadmpeg_codec_creo::legacy::ObjectRecord
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::ObjectRecord
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::ObjectRecord
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::ObjectRecord
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::ObjectRecord
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::ObjectRecord
+pub struct cadmpeg_codec_creo::legacy::Persistence
+pub cadmpeg_codec_creo::legacy::Persistence::incomplete_object_array_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::incomplete_string_array_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::integer_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::IntegerRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::objects: alloc::vec::Vec<cadmpeg_codec_creo::legacy::ObjectRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::real_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::RealRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::scopes: alloc::vec::Vec<cadmpeg_codec_creo::legacy::Scope>
+pub cadmpeg_codec_creo::legacy::Persistence::string_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::StringRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::type_11_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::UnsignedRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::type_3_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::ScalarStringRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::type_4_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::ScalarStringRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::type_5_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::UnsignedRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::type_6_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::RealRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::type_7_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::UnsignedRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::type_9_values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::UnsignedRecord>
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_integer_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_object_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_real_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_string_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_type_11_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_type_3_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_type_4_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_type_5_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_type_6_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_type_7_value_count: usize
+pub cadmpeg_codec_creo::legacy::Persistence::unresolved_type_9_value_count: usize
+impl cadmpeg_codec_creo::legacy::Persistence
+pub fn cadmpeg_codec_creo::legacy::Persistence::conflicting_declaration_count(&self) -> usize
+pub fn cadmpeg_codec_creo::legacy::Persistence::continuation_count(&self) -> usize
+pub fn cadmpeg_codec_creo::legacy::Persistence::declaration_count(&self) -> usize
+pub fn cadmpeg_codec_creo::legacy::Persistence::principal_unit_system(&self) -> core::option::Option<cadmpeg_codec_creo::legacy::PrincipalUnitSystem>
+pub fn cadmpeg_codec_creo::legacy::Persistence::unresolved_value_count(&self) -> usize
+pub fn cadmpeg_codec_creo::legacy::Persistence::value_count(&self) -> usize
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::Persistence
+pub fn cadmpeg_codec_creo::legacy::Persistence::clone(&self) -> cadmpeg_codec_creo::legacy::Persistence
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::Persistence
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::Persistence
+pub fn cadmpeg_codec_creo::legacy::Persistence::eq(&self, &cadmpeg_codec_creo::legacy::Persistence) -> bool
+impl core::default::Default for cadmpeg_codec_creo::legacy::Persistence
+pub fn cadmpeg_codec_creo::legacy::Persistence::default() -> cadmpeg_codec_creo::legacy::Persistence
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::Persistence
+pub fn cadmpeg_codec_creo::legacy::Persistence::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::Persistence
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::Persistence
+impl core::marker::Send for cadmpeg_codec_creo::legacy::Persistence
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::Persistence
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::Persistence
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::Persistence
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::Persistence
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::Persistence
+pub struct cadmpeg_codec_creo::legacy::Real(_)
+impl cadmpeg_codec_creo::legacy::Real
+pub fn cadmpeg_codec_creo::legacy::Real::value(self) -> f64
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::Real
+pub fn cadmpeg_codec_creo::legacy::Real::clone(&self) -> cadmpeg_codec_creo::legacy::Real
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::Real
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::Real
+pub fn cadmpeg_codec_creo::legacy::Real::eq(&self, &cadmpeg_codec_creo::legacy::Real) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::Real
+pub fn cadmpeg_codec_creo::legacy::Real::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_creo::legacy::Real
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::Real
+impl serde_core::ser::Serialize for cadmpeg_codec_creo::legacy::Real
+pub fn cadmpeg_codec_creo::legacy::Real::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::Real
+impl core::marker::Send for cadmpeg_codec_creo::legacy::Real
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::Real
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::Real
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::Real
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::Real
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::Real
+pub struct cadmpeg_codec_creo::legacy::Scope
+pub cadmpeg_codec_creo::legacy::Scope::conflicting_declaration_count: usize
+pub cadmpeg_codec_creo::legacy::Scope::declarations: alloc::vec::Vec<cadmpeg_codec_creo::legacy::AttributeDeclaration>
+pub cadmpeg_codec_creo::legacy::Scope::range: core::ops::range::Range<usize>
+pub cadmpeg_codec_creo::legacy::Scope::unresolved_value_count: usize
+pub cadmpeg_codec_creo::legacy::Scope::values: alloc::vec::Vec<cadmpeg_codec_creo::legacy::AttributeValue>
+impl core::clone::Clone for cadmpeg_codec_creo::legacy::Scope
+pub fn cadmpeg_codec_creo::legacy::Scope::clone(&self) -> cadmpeg_codec_creo::legacy::Scope
+impl core::cmp::Eq for cadmpeg_codec_creo::legacy::Scope
+impl core::cmp::PartialEq for cadmpeg_codec_creo::legacy::Scope
+pub fn cadmpeg_codec_creo::legacy::Scope::eq(&self, &cadmpeg_codec_creo::legacy::Scope) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::legacy::Scope
+pub fn cadmpeg_codec_creo::legacy::Scope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::Scope
+impl core::marker::Freeze for cadmpeg_codec_creo::legacy::Scope
+impl core::marker::Send for cadmpeg_codec_creo::legacy::Scope
+impl core::marker::Sync for cadmpeg_codec_creo::legacy::Scope
+impl core::marker::Unpin for cadmpeg_codec_creo::legacy::Scope
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::Scope
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::Scope
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::Scope
+pub struct cadmpeg_codec_creo::legacy::ValueRecord<T>
+pub cadmpeg_codec_creo::legacy::ValueRecord::attribute_id: u32
+pub cadmpeg_codec_creo::legacy::ValueRecord::depth: u32
+pub cadmpeg_codec_creo::legacy::ValueRecord::id: alloc::string::String
+pub cadmpeg_codec_creo::legacy::ValueRecord::name: alloc::string::String
+pub cadmpeg_codec_creo::legacy::ValueRecord::offset: usize
+pub cadmpeg_codec_creo::legacy::ValueRecord::parent: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_creo::legacy::ValueRecord::payload: T
+pub cadmpeg_codec_creo::legacy::ValueRecord::scope_offset: usize
+impl<T: core::clone::Clone> core::clone::Clone for cadmpeg_codec_creo::legacy::ValueRecord<T>
+pub fn cadmpeg_codec_creo::legacy::ValueRecord<T>::clone(&self) -> cadmpeg_codec_creo::legacy::ValueRecord<T>
+impl<T: core::cmp::Eq> core::cmp::Eq for cadmpeg_codec_creo::legacy::ValueRecord<T>
+impl<T: core::cmp::PartialEq> core::cmp::PartialEq for cadmpeg_codec_creo::legacy::ValueRecord<T>
+pub fn cadmpeg_codec_creo::legacy::ValueRecord<T>::eq(&self, &cadmpeg_codec_creo::legacy::ValueRecord<T>) -> bool
+impl<T: core::cmp::PartialEq> core::marker::StructuralPartialEq for cadmpeg_codec_creo::legacy::ValueRecord<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for cadmpeg_codec_creo::legacy::ValueRecord<T>
+pub fn cadmpeg_codec_creo::legacy::ValueRecord<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> serde_core::ser::Serialize for cadmpeg_codec_creo::legacy::ValueRecord<T> where T: serde_core::ser::Serialize
+pub fn cadmpeg_codec_creo::legacy::ValueRecord<T>::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<T> core::marker::Freeze for cadmpeg_codec_creo::legacy::ValueRecord<T> where T: core::marker::Freeze
+impl<T> core::marker::Send for cadmpeg_codec_creo::legacy::ValueRecord<T> where T: core::marker::Send
+impl<T> core::marker::Sync for cadmpeg_codec_creo::legacy::ValueRecord<T> where T: core::marker::Sync
+impl<T> core::marker::Unpin for cadmpeg_codec_creo::legacy::ValueRecord<T> where T: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for cadmpeg_codec_creo::legacy::ValueRecord<T> where T: core::marker::UnsafeUnpin
+impl<T> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::legacy::ValueRecord<T> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::legacy::ValueRecord<T> where T: core::panic::unwind_safe::UnwindSafe
+pub type cadmpeg_codec_creo::legacy::IntegerPayload = cadmpeg_codec_creo::legacy::NumericPayload<i32>
+pub type cadmpeg_codec_creo::legacy::IntegerRecord = cadmpeg_codec_creo::legacy::NumericRecord<i32>
+pub type cadmpeg_codec_creo::legacy::IntegerRun = cadmpeg_codec_creo::legacy::NumericRun<i32>
+pub type cadmpeg_codec_creo::legacy::NumericRecord<T> = cadmpeg_codec_creo::legacy::ValueRecord<cadmpeg_codec_creo::legacy::NumericPayload<T>>
+pub type cadmpeg_codec_creo::legacy::RealPayload = cadmpeg_codec_creo::legacy::NumericPayload<cadmpeg_codec_creo::legacy::Real>
+pub type cadmpeg_codec_creo::legacy::RealRecord = cadmpeg_codec_creo::legacy::NumericRecord<cadmpeg_codec_creo::legacy::Real>
+pub type cadmpeg_codec_creo::legacy::RealRun = cadmpeg_codec_creo::legacy::NumericRun<cadmpeg_codec_creo::legacy::Real>
+pub type cadmpeg_codec_creo::legacy::ScalarStringRecord = cadmpeg_codec_creo::legacy::ValueRecord<cadmpeg_codec_creo::legacy::StringValue>
+pub type cadmpeg_codec_creo::legacy::StringRecord = cadmpeg_codec_creo::legacy::ValueRecord<cadmpeg_codec_creo::legacy::StringPayload>
+pub type cadmpeg_codec_creo::legacy::UnsignedPayload = cadmpeg_codec_creo::legacy::NumericPayload<u32>
+pub type cadmpeg_codec_creo::legacy::UnsignedRecord = cadmpeg_codec_creo::legacy::NumericRecord<u32>
 pub mod cadmpeg_codec_creo::primdata
 pub struct cadmpeg_codec_creo::primdata::PrimitiveScalarArray
 pub cadmpeg_codec_creo::primdata::PrimitiveScalarArray::count: u32
@@ -2769,8 +3092,25 @@ impl core::marker::Unpin for cadmpeg_codec_creo::primdata::PrimitiveTriangleStri
 impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::primdata::PrimitiveTriangleStrip
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::primdata::PrimitiveTriangleStrip
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::primdata::PrimitiveTriangleStrip
+pub struct cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+pub cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan::conflicting_representation_count: usize
+pub cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan::strips: alloc::vec::Vec<cadmpeg_codec_creo::primdata::PrimitiveTriangleStrip>
+impl core::clone::Clone for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+pub fn cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan::clone(&self) -> cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+impl core::cmp::PartialEq for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+pub fn cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan::eq(&self, &cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan) -> bool
+impl core::fmt::Debug for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+pub fn cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+impl core::marker::Freeze for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+impl core::marker::Send for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+impl core::marker::Sync for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+impl core::marker::Unpin for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+impl core::marker::UnsafeUnpin for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
 pub fn cadmpeg_codec_creo::primdata::scalar_arrays(&[u8]) -> alloc::vec::Vec<cadmpeg_codec_creo::primdata::PrimitiveScalarArray>
-pub fn cadmpeg_codec_creo::primdata::triangle_strips(&[u8]) -> alloc::vec::Vec<cadmpeg_codec_creo::primdata::PrimitiveTriangleStrip>
+pub fn cadmpeg_codec_creo::primdata::triangle_strips(&[u8]) -> cadmpeg_codec_creo::primdata::PrimitiveTriangleStripScan
 pub mod cadmpeg_codec_creo::psb
 pub mod cadmpeg_codec_creo::psb::token
 pub const cadmpeg_codec_creo::psb::token::ARRAY_CLOSE: u8
@@ -3413,6 +3753,7 @@ pub fn cadmpeg_codec_creo::surface::SurfaceParameterRecord::torus_outline_frame(
 pub fn cadmpeg_codec_creo::surface::SurfaceParameterRecord::torus_radius_overrides(&self, u8) -> core::option::Option<cadmpeg_codec_creo::surface::TorusRadiusOverrides>
 pub fn cadmpeg_codec_creo::surface::SurfaceParameterRecord::type24_round_radius(&self, u8) -> core::option::Option<f64>
 pub fn cadmpeg_codec_creo::surface::SurfaceParameterRecord::type24_scalar_frame_round_envelope(&self, u8) -> core::option::Option<cadmpeg_codec_creo::surface::Type24RoundEnvelope>
+pub fn cadmpeg_codec_creo::surface::SurfaceParameterRecord::type24_terminal_corner_envelope(&self, u8) -> core::option::Option<[[f64; 3]; 2]>
 pub fn cadmpeg_codec_creo::surface::SurfaceParameterRecord::type26_five_coordinate_envelope(&self, u8) -> core::option::Option<cadmpeg_codec_creo::surface::Type26FiveCoordinateEnvelope>
 pub fn cadmpeg_codec_creo::surface::SurfaceParameterRecord::type26_replayed_minor_radius(&self, u8, f64) -> core::option::Option<f64>
 pub fn cadmpeg_codec_creo::surface::SurfaceParameterRecord::type26_split_coordinate_envelope(&self, u8) -> core::option::Option<cadmpeg_codec_creo::surface::Type26SplitCoordinateEnvelope>
@@ -3809,7 +4150,7 @@ pub fn cadmpeg_codec_creo::topology::face_components(&[cadmpeg_codec_creo::curve
 pub fn cadmpeg_codec_creo::topology::vertex_incident_faces(&[cadmpeg_codec_creo::topology::TopologicalVertex], &[cadmpeg_codec_creo::topology::HalfEdge]) -> alloc::collections::btree::map::BTreeMap<u32, alloc::collections::btree::set::BTreeSet<u32>>
 pub fn cadmpeg_codec_creo::topology::vertex_orbits(&[cadmpeg_codec_creo::topology::HalfEdge]) -> (alloc::vec::Vec<cadmpeg_codec_creo::topology::TopologicalVertex>, alloc::vec::Vec<cadmpeg_codec_creo::topology::HalfEdgeVertexIncidence>)
 pub struct cadmpeg_codec_creo::CreoCodec
-impl cadmpeg_ir::codec::Codec for cadmpeg_codec_creo::CreoCodec
+impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_creo::CreoCodec
 pub fn cadmpeg_codec_creo::CreoCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_codec_creo::CreoCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_codec_creo::CreoCodec::id(&self) -> &'static str

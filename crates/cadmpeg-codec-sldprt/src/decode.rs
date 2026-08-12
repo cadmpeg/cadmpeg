@@ -100,32 +100,44 @@ struct EvaluatedFeatureState<'a> {
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
+    // Charge container cardinality before BREP/IR construction so max_entities
+    // can refuse the expensive path rather than only the finalizer.
+    let container_entities =
+        (scan.blocks.len() + scan.compound_streams.len() + scan.directory.len()) as u64;
+    ctx.charge_entities(container_entities, "admit SLDPRT container entities")?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
-        let report = build_container_report(&scan, true);
-        return decode_result(ctx, ir, report, annotations, unknowns);
+        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
+        ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
+        let mut report = build_container_report(&scan, true);
+        report.losses.append(&mut pmi_losses);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
+        ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
-            let (ir, annotations, unknowns) = build_geometry_ir(
+            let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 &scan,
                 &streams[decoded.selected].header,
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
+            ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
+            report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(&ir, &mut report);
-            return decode_result(ctx, ir, report, annotations, unknowns);
+            return decode_result(ir, report, annotations, unknowns);
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
     let mut report = build_container_report(&scan, false);
+    report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
-    decode_result(ctx, ir, report, annotations, unknowns)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
@@ -145,17 +157,12 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
 }
 
 fn decode_result(
-    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
-        annotations,
-        ..cadmpeg_ir::SourceFidelity::default()
-    };
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     let source_image = unknowns
         .iter()
         .position(|record| record.id.0 == "sldprt:file:source-image#0")
@@ -2077,7 +2084,15 @@ fn build_geometry_ir(
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
-) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        Annotations,
+        Vec<UnknownRecord>,
+        Vec<cadmpeg_ir::LossNote>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
     let materials = crate::appearance::materials(scan);
     let unique_material = materials.len() == 1;
@@ -2106,16 +2121,10 @@ fn build_geometry_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
+    let mut pmi_losses = Vec::new();
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
+    ir.model.pmi = crate::swift::annotations(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    let (spatial_sketches, spatial_sketch_entities) =
-        crate::resolved_features::markers::spatial_sketches(
-            &mut ir.model.features,
-            &histories,
-            &lanes,
-        );
-    ir.model.spatial_sketches = spatial_sketches;
-    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut ir.model.features,
         &histories,
@@ -2151,17 +2160,19 @@ fn build_geometry_ir(
         &lanes,
     );
     crate::history::align_configuration_parameter_kinds(&mut ir);
+    complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
     let (mut sketches, mut sketch_entities, mut sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
-        &sketch_entities,
+        &mut sketch_entities,
+        &mut sketch_constraints,
         &ir.model.parameters,
         &histories,
         &lanes,
-        &annotations,
+        &mut annotations,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
@@ -2187,6 +2198,14 @@ fn build_geometry_ir(
     // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
+    let (spatial_sketches, spatial_sketch_entities) =
+        crate::resolved_features::markers::spatial_sketches(
+            &mut ir.model.features,
+            &histories,
+            &sketch_lanes,
+        );
+    ir.model.spatial_sketches = spatial_sketches;
+    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
         &mut ir.model.features,
         &mut sketches,
@@ -2372,6 +2391,14 @@ fn build_geometry_ir(
         &histories,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::holes::project_generated_hole_axes(
+        &mut ir.model.features,
+        &histories,
+        &native.feature_input_lanes,
+        &face_identities,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
@@ -2399,6 +2426,18 @@ fn build_geometry_ir(
         &histories,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::holes::project_hole_topology_axes(
+        &mut ir.model.features,
+        &crate::resolved_features::holes::HoleTopology {
+            surfaces: &ir.model.surfaces,
+            faces: &ir.model.faces,
+            loops: &ir.model.loops,
+            coedges: &ir.model.coedges,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+            points: &ir.model.points,
+        },
+    );
     crate::resolved_features::holes::project_bore_backed_position_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -2421,7 +2460,7 @@ fn build_geometry_ir(
         &mut ir,
         &histories,
         &native.feature_input_lanes,
-        &annotations,
+        &mut annotations,
     );
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
@@ -2436,7 +2475,7 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
-    sync_active_configuration_face_selections(&mut ir);
+    sync_active_configuration_resolutions(&mut ir);
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
@@ -2690,7 +2729,7 @@ fn build_geometry_ir(
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     stamp_local_digests(&mut ir);
-    Ok((ir, annotations, unknowns))
+    Ok((ir, annotations, unknowns, pmi_losses))
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -2943,6 +2982,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             ),
         );
     }
+    append_swift_pmi_losses(scan, &mut losses);
     DecodeReport {
         format: "sldprt".to_string(),
         container_only: false,
@@ -2956,7 +2996,15 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
 fn build_metadata_ir(
     scan: &ContainerScan,
-) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        Annotations,
+        Vec<UnknownRecord>,
+        Vec<cadmpeg_ir::LossNote>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -2970,7 +3018,9 @@ fn build_metadata_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
+    let mut pmi_losses = Vec::new();
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
+    ir.model.pmi = crate::swift::annotations(scan, &mut annotations);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
@@ -3023,14 +3073,6 @@ fn build_metadata_ir(
         attributes,
     });
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    let (spatial_sketches, spatial_sketch_entities) =
-        crate::resolved_features::markers::spatial_sketches(
-            &mut ir.model.features,
-            &histories,
-            &lanes,
-        );
-    ir.model.spatial_sketches = spatial_sketches;
-    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -3048,15 +3090,17 @@ fn build_metadata_ir(
         &lanes,
     );
     crate::history::align_configuration_parameter_kinds(&mut ir);
+    complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
-        &ir.model.sketch_entities,
+        &mut ir.model.sketch_entities,
+        &mut ir.model.sketch_constraints,
         &ir.model.parameters,
         &histories,
         &lanes,
-        &annotations,
+        &mut annotations,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
@@ -3082,6 +3126,14 @@ fn build_metadata_ir(
     // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
+    let (spatial_sketches, spatial_sketch_entities) =
+        crate::resolved_features::markers::spatial_sketches(
+            &mut ir.model.features,
+            &histories,
+            &sketch_lanes,
+        );
+    ir.model.spatial_sketches = spatial_sketches;
+    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -3213,6 +3265,18 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
+    crate::resolved_features::holes::project_hole_topology_axes(
+        &mut ir.model.features,
+        &crate::resolved_features::holes::HoleTopology {
+            surfaces: &ir.model.surfaces,
+            faces: &ir.model.faces,
+            loops: &ir.model.loops,
+            coedges: &ir.model.coedges,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+            points: &ir.model.points,
+        },
+    );
     crate::resolved_features::holes::project_bore_backed_position_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -3241,9 +3305,14 @@ fn build_metadata_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
-    sync_active_configuration_face_selections(&mut ir);
+    sync_active_configuration_resolutions(&mut ir);
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
+    crate::history::project_configuration_sketch_states(
+        &mut ir,
+        &histories,
+        &lanes,
+        &mut annotations,
+    );
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);
@@ -3260,7 +3329,7 @@ fn build_metadata_ir(
     snapshot_active_configuration(&mut ir);
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     stamp_local_digests(&mut ir);
-    Ok((ir, annotations, unknowns))
+    Ok((ir, annotations, unknowns, pmi_losses))
 }
 
 fn project_design_history(
@@ -3363,6 +3432,32 @@ fn stamp_parameter_baseline(ir: &mut CadIr) {
         source
             .attributes
             .insert("sldprt_neutral_parameter_local_sha256".into(), hash);
+    }
+}
+
+fn complete_resolved_configuration_parameter_snapshots(ir: &mut CadIr) {
+    let independent_values = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.dependencies.is_empty())
+        .filter_map(|parameter| {
+            parameter
+                .value
+                .clone()
+                .map(|value| (parameter.id.clone(), value))
+        })
+        .collect::<Vec<_>>();
+    for configuration in &mut ir.model.configurations {
+        if configuration.parameter_values.is_empty() && configuration.feature_states.is_empty() {
+            continue;
+        }
+        for (parameter, value) in &independent_values {
+            configuration
+                .parameter_values
+                .entry(parameter.clone())
+                .or_insert_with(|| value.clone());
+        }
     }
 }
 
@@ -3478,7 +3573,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     }
 }
 
-fn sync_active_configuration_face_selections(ir: &mut CadIr) {
+fn sync_active_configuration_resolutions(ir: &mut CadIr) {
     let mut active = ir
         .model
         .configurations
@@ -3491,6 +3586,88 @@ fn sync_active_configuration_face_selections(ir: &mut CadIr) {
     };
     if active.next().is_some() {
         return;
+    }
+    let resolved = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.suppressed != Some(true))
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Hole {
+                placements,
+                kind,
+                diameter,
+                extent,
+                bottom,
+                taper_angle,
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((
+                feature.id.clone(),
+                placements.clone(),
+                *kind,
+                *diameter,
+                extent.clone(),
+                *bottom,
+                *taper_angle,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    for (
+        feature,
+        resolved_placements,
+        resolved_kind,
+        resolved_diameter,
+        resolved_extent,
+        resolved_bottom,
+        resolved_taper_angle,
+    ) in resolved
+    {
+        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+            continue;
+        };
+        if state.suppressed {
+            continue;
+        }
+        let cadmpeg_ir::features::FeatureDefinition::Hole {
+            placements,
+            kind,
+            diameter,
+            extent,
+            bottom,
+            taper_angle,
+            ..
+        } = &mut state.definition
+        else {
+            continue;
+        };
+        if placements.is_empty() && !resolved_placements.is_empty() {
+            *placements = resolved_placements;
+        }
+        let incomplete = diameter.is_none()
+            || extent.as_ref().is_none_or(|extent| {
+                matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
+            })
+            || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. });
+        let resolved_complete = resolved_diameter.is_some()
+            && resolved_extent.as_ref().is_some_and(|extent| {
+                !matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
+            })
+            && !matches!(
+                resolved_kind,
+                cadmpeg_ir::features::HoleKind::Unresolved { .. }
+            );
+        if incomplete && resolved_complete {
+            *kind = resolved_kind;
+            *diameter = resolved_diameter;
+            *extent = resolved_extent;
+            *bottom = resolved_bottom;
+            *taper_angle = resolved_taper_angle;
+        }
     }
     let resolved = ir
         .model
@@ -3834,6 +4011,15 @@ fn stamp_local_digests(ir: &mut CadIr) {
             }
         }
     }
+    if !ir.model.pmi.is_empty() {
+        if let Ok(hash) = crate::writer::pmi_local_sha256(ir) {
+            if let Some(source) = &mut ir.source {
+                source
+                    .attributes
+                    .insert(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash);
+            }
+        }
+    }
     let hash = document_local_sha256(ir);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -3855,15 +4041,28 @@ fn stamp_local_digests(ir: &mut CadIr) {
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
-    // Normalize with a field-by-field clone so the dropped namespaces (source
-    // image, native records, annotations) are never copied.
-    let mut normalized = CadIr {
-        ir_version: ir.ir_version.clone(),
-        source: None,
-        units: ir.units.clone(),
-        tolerances: ir.tolerances,
-        model: ir.model.clone(),
-        native: cadmpeg_ir::Native::default(),
+    // Admit only B-rep arenas so a new design, presentation, or product arena
+    // cannot silently change retained-partition eligibility.
+    let mut normalized = CadIr::empty(ir.units.clone());
+    normalized.tolerances = ir.tolerances;
+    normalized.model = cadmpeg_ir::document::Model {
+        bodies: ir.model.bodies.clone(),
+        regions: ir.model.regions.clone(),
+        shells: ir.model.shells.clone(),
+        faces: ir.model.faces.clone(),
+        loops: ir.model.loops.clone(),
+        coedges: ir.model.coedges.clone(),
+        edges: ir.model.edges.clone(),
+        vertices: ir.model.vertices.clone(),
+        points: ir.model.points.clone(),
+        surfaces: ir.model.surfaces.clone(),
+        curves: ir.model.curves.clone(),
+        pcurves: ir.model.pcurves.clone(),
+        procedural_surfaces: ir.model.procedural_surfaces.clone(),
+        procedural_curves: ir.model.procedural_curves.clone(),
+        appearances: ir.model.appearances.clone(),
+        appearance_bindings: ir.model.appearance_bindings.clone(),
+        ..Default::default()
     };
     normalized.model.bodies.iter_mut().for_each(|body| {
         body.name = None;
@@ -3886,13 +4085,6 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
         .model
         .appearances
         .retain(|appearance| face_appearances.contains(&appearance.id));
-    normalized.model.tessellations.clear();
-    normalized.model.attributes.clear();
-    normalized.model.features.clear();
-    normalized.model.parameters.clear();
-    normalized.model.sketches.clear();
-    normalized.model.sketch_entities.clear();
-    normalized.model.sketch_constraints.clear();
     cadmpeg_ir::hash::canonical_json_sha256(&normalized)
 }
 
@@ -3965,6 +4157,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             ),
         );
     }
+    append_swift_pmi_losses(scan, &mut losses);
 
     DecodeReport {
         format: "sldprt".to_string(),
@@ -3975,6 +4168,22 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         losses,
         notes: summary.notes,
     }
+}
+
+fn append_swift_pmi_losses(scan: &ContainerScan<'_>, losses: &mut Vec<cadmpeg_ir::LossNote>) {
+    let unsupported = crate::swift::unsupported_annotation_classes(scan);
+    if unsupported.is_empty() {
+        return;
+    }
+    let count = unsupported.values().sum::<usize>();
+    let classes = unsupported
+        .iter()
+        .map(|(class, count)| format!("{class} ({count})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    losses.push(SldprtLossCode::PmiSwiftAnnotationUnsupported.note(format!(
+        "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
+    )));
 }
 
 #[cfg(test)]
@@ -3991,9 +4200,10 @@ mod design_loss_tests {
     use cadmpeg_ir::features::{
         Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
         ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, FaceSelection,
-        Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, Length,
-        ParameterId, ParameterPmi, ParameterValue, PathRef, PatternKind, PatternSeed,
-        PmiDimensionSubtype, RadiusSpec, RuledSurfaceMode, SurfaceContinuity,
+        Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
+        HoleBottom, HoleKind, HolePlacement, Length, ParameterId, ParameterPmi, ParameterValue,
+        PathRef, PatternKind, PatternSeed, PmiDimensionSubtype, RadiusSpec, RuledSurfaceMode,
+        SurfaceContinuity, Termination,
     };
     use cadmpeg_ir::ids::{BodyId, EdgeId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -4257,7 +4467,7 @@ mod design_loss_tests {
     }
 
     #[test]
-    fn active_configuration_inherits_face_resolved_mirror_plane() {
+    fn active_configuration_inherits_late_feature_resolutions() {
         let mut ir = CadIr::empty(Units::default());
         let feature_id = FeatureId("mirror".into());
         let seed = PatternSeed::Feature(FeatureId("seed".into()));
@@ -4282,6 +4492,42 @@ mod design_loss_tests {
             },
             native_ref: None,
         });
+        let hole_id = FeatureId("hole".into());
+        ir.model.features.push(Feature {
+            id: hole_id.clone(),
+            ordinal: 1,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                position: None,
+                direction: None,
+                placements: vec![HolePlacement::Axis {
+                    origin: Point3::new(1.0, 2.0, 3.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                }],
+                kind: HoleKind::Simple,
+                exit_kind: None,
+                diameter: Some(Length(4.0)),
+                extent: Some(Termination::Blind {
+                    length: Length(12.0),
+                }),
+                bottom: Some(HoleBottom::Flat),
+                taper_angle: None,
+                specification: None,
+                allow_multi_profile_faces: None,
+            },
+            native_ref: None,
+        });
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
@@ -4294,22 +4540,48 @@ mod design_loss_tests {
             parameter_values: BTreeMap::new(),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
-            feature_states: BTreeMap::from([(
-                feature_id.clone(),
-                ConfigurationFeatureState {
-                    suppressed: false,
-                    dependencies: Vec::new(),
-                    outputs: Vec::new(),
-                    definition: FeatureDefinition::Pattern {
-                        seeds: vec![seed],
-                        pattern: PatternKind::Unresolved { form: None },
+            feature_states: BTreeMap::from([
+                (
+                    feature_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: FeatureDefinition::Pattern {
+                            seeds: vec![seed],
+                            pattern: PatternKind::Unresolved { form: None },
+                        },
                     },
-                },
-            )]),
+                ),
+                (
+                    hole_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: FeatureDefinition::Hole {
+                            profile: None,
+                            profile_filter: None,
+                            face: None,
+                            position: None,
+                            direction: None,
+                            placements: Vec::new(),
+                            kind: HoleKind::Simple,
+                            exit_kind: None,
+                            diameter: None,
+                            extent: None,
+                            bottom: None,
+                            taper_angle: None,
+                            specification: None,
+                            allow_multi_profile_faces: None,
+                        },
+                    },
+                ),
+            ]),
             native_ref: None,
         });
 
-        sync_active_configuration_face_selections(&mut ir);
+        sync_active_configuration_resolutions(&mut ir);
 
         assert!(matches!(
             ir.model.configurations[0].feature_states[&feature_id].definition,
@@ -4317,6 +4589,48 @@ mod design_loss_tests {
                 pattern: PatternKind::Mirror { .. },
                 ..
             }
+        ));
+        assert!(matches!(
+            &ir.model.configurations[0].feature_states[&hole_id].definition,
+            FeatureDefinition::Hole {
+                placements,
+                diameter: Some(Length(4.0)),
+                extent: Some(Termination::Blind {
+                    length: Length(12.0)
+                }),
+                bottom: Some(HoleBottom::Flat),
+                ..
+            } if placements.len() == 1
+        ));
+
+        let FeatureDefinition::Hole {
+            placements,
+            diameter,
+            extent,
+            bottom,
+            ..
+        } = &mut ir.model.configurations[0]
+            .feature_states
+            .get_mut(&hole_id)
+            .expect("hole state")
+            .definition
+        else {
+            unreachable!();
+        };
+        placements.clear();
+        *diameter = Some(Length(8.0));
+        *extent = Some(Termination::ThroughAll);
+        *bottom = None;
+        sync_active_configuration_resolutions(&mut ir);
+        assert!(matches!(
+            &ir.model.configurations[0].feature_states[&hole_id].definition,
+            FeatureDefinition::Hole {
+                placements,
+                diameter: Some(Length(8.0)),
+                extent: Some(Termination::ThroughAll),
+                bottom: None,
+                ..
+            } if placements.len() == 1
         ));
     }
 
@@ -4504,6 +4818,80 @@ mod design_loss_tests {
             ParameterValue::Length(Length(25.0))
         );
         assert!(!ir.model.configurations[0].feature_states[&feature_id].suppressed);
+    }
+
+    #[test]
+    fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() {
+        let mut ir = CadIr::empty(Units::default());
+        let independent = ParameterId("independent".into());
+        let overridden = ParameterId("overridden".into());
+        let dependent = ParameterId("dependent".into());
+        let parameter = |id: ParameterId, value, dependencies| DesignParameter {
+            id,
+            owner: None,
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "12mm".into(),
+            value: Some(value),
+            dependencies,
+            display: None,
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        ir.model.parameters = vec![
+            parameter(
+                independent.clone(),
+                ParameterValue::Length(Length(12.0)),
+                Vec::new(),
+            ),
+            parameter(
+                overridden.clone(),
+                ParameterValue::Length(Length(20.0)),
+                Vec::new(),
+            ),
+            parameter(
+                dependent.clone(),
+                ParameterValue::Length(Length(24.0)),
+                vec![independent.clone()],
+            ),
+        ];
+        let configuration = |id: &str, parameter_values| DesignConfiguration {
+            id: ConfigurationId(id.into()),
+            ordinal: 0,
+            active: false.into(),
+            source_index: Some(0),
+            name: id.into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values,
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        };
+        ir.model.configurations = vec![
+            configuration(
+                "resolved",
+                BTreeMap::from([(overridden.clone(), ParameterValue::Length(Length(25.0)))]),
+            ),
+            configuration("unresolved", BTreeMap::new()),
+        ];
+
+        complete_resolved_configuration_parameter_snapshots(&mut ir);
+
+        assert_eq!(
+            ir.model.configurations[0].parameter_values,
+            BTreeMap::from([
+                (independent, ParameterValue::Length(Length(12.0))),
+                (overridden, ParameterValue::Length(Length(25.0))),
+            ])
+        );
+        assert!(!ir.model.configurations[0]
+            .parameter_values
+            .contains_key(&dependent));
+        assert!(ir.model.configurations[1].parameter_values.is_empty());
     }
 
     #[test]
@@ -6557,7 +6945,7 @@ mod design_loss_tests {
 
         let report = super::build_geometry_report(&scan, &decoded);
         assert!(report.losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::report::LossKind::PcurveOmitted
+            loss.code == crate::loss::SldprtLossCode::GeometryPcurveAmbiguous.kind()
                 && loss.message.contains("2 pcurve(s)")
         }));
     }

@@ -183,12 +183,13 @@ impl<'a> ArchiveSnapshot<'a> {
         })?;
         match entry.compression {
             EntryCompression::Stored => {
-                let view = ctx.register_slice(
+                let view = ctx.register_slice_as(
                     self.root,
                     ByteRange {
                         start: absolute_start,
                         end: absolute_end,
                     },
+                    entry.name.clone(),
                 )?;
                 if view.window().len() as u64 != entry.uncompressed_size {
                     return Err(CodecError::Malformed(format!(
@@ -233,8 +234,11 @@ impl<'a> ArchiveSnapshot<'a> {
                     ),
                     EntryCompression::Stored => unreachable!("stored entries use borrowed views"),
                 };
-                let mut writer =
-                    ctx.begin_expand(source, ExpandSpec::Exact(entry.uncompressed_size))?;
+                let mut writer = ctx.begin_expand_as(
+                    source,
+                    ExpandSpec::Exact(entry.uncompressed_size),
+                    entry.name.clone(),
+                )?;
                 let mut chunk = [0_u8; 16 * 1024];
                 loop {
                     let read = decoder.read(&mut chunk).map_err(|error| {
@@ -795,5 +799,43 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn labeled_deflate_member_resolves_for_inspect() {
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        archive
+            .start_file(
+                "GuiDocument.xml",
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+            )
+            .expect("GuiDocument entry starts");
+        archive
+            .write_all(b"<GuiDocument SchemaVersion=\"1\"/>")
+            .expect("GuiDocument entry writes");
+        let zip_bytes = archive.finish().expect("archive finishes").into_inner();
+
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&zip_bytes, &arena, &DecodePolicy::default())
+                .expect("archive fits root policy");
+        let archive = ArchiveSnapshot::new(root).expect("archive snapshots");
+        let entry = archive.entry("GuiDocument.xml").expect("member present");
+        let view = archive.open(&ctx, entry).expect("GuiDocument member opens");
+        let address = ctx.resolve_location(view.location_at(5));
+        assert!(
+            address.path().ends_with("GuiDocument.xml@5"),
+            "path={}",
+            address.path()
+        );
+        let commands = address.inspect_commands("part.FCStd");
+        assert_eq!(
+            commands[0],
+            "cadmpeg inspect extract part.FCStd GuiDocument.xml -o part.FCStd.member"
+        );
+        assert_eq!(
+            commands[1],
+            "cadmpeg inspect hex part.FCStd.member --offset 5 --len 64"
+        );
     }
 }

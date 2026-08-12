@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
 use super::*;
+use cadmpeg_ir::codec::CodecBackend;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     F3dCodec
@@ -10,7 +11,7 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert_f3d_native_parity(&result.ir);
 }

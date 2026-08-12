@@ -3,6 +3,7 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 use super::*;
+use cadmpeg_ir::codec::CodecBackend;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     FcstdCodec

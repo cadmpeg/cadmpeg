@@ -175,13 +175,21 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "code": "object_records_untransferred",
-        "message": "object.record-census: decoded 0/1 Rhino object records",
+        "code": {
+          "code": "object.record-census",
+          "kind": "object_records_untransferred",
+          "namespace": "rhino"
+        },
+        "message": "decoded 0/1 Rhino object records",
         "severity": "info"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.instance-definition-degraded: retained 1 malformed, ambiguous, or checksum-degraded instance-definition record(s); first: instance definition CRC mismatch at offset 179",
+        "code": {
+          "code": "container.instance-definition-degraded",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "retained 1 malformed, ambiguous, or checksum-degraded instance-definition record(s); first: instance definition CRC mismatch at offset 179",
         "provenance": {
           "format": "rhino",
           "offset": 111,
@@ -191,8 +199,12 @@
         "severity": "warning"
       },
       {
-        "code": "unsupported_object_family",
-        "message": "object.family-not-transferred: retained 1 object record(s) for class f9cfb638-b9d4-4340-87e3-c56e7865d96a; geometry is not decoded",
+        "code": {
+          "code": "object.family-not-transferred",
+          "kind": "unsupported_object_family",
+          "namespace": "rhino"
+        },
+        "message": "retained 1 object record(s) for class f9cfb638-b9d4-4340-87e3-c56e7865d96a; geometry is not decoded",
         "provenance": {
           "format": "rhino",
           "offset": 534,
@@ -202,18 +214,30 @@
         "severity": "warning"
       },
       {
-        "code": "integrity_failure",
-        "message": "container.integrity-failure: CRC mismatch at offset 534 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino"
+        },
+        "message": "CRC mismatch at offset 534 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
         "severity": "error"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.scan-diagnostic: object at 534 has nil object UUID",
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "object at 534 has nil object UUID",
         "severity": "warning"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "object.decode-diagnostic: f9cfb638-b9d4-4340-87e3-c56e7865d96a: instance retained: document units are unavailable",
+        "code": {
+          "code": "object.decode-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "f9cfb638-b9d4-4340-87e3-c56e7865d96a: instance retained: document units are unavailable",
         "severity": "warning"
       }
     ],

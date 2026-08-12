@@ -7,7 +7,7 @@ use std::fs;
 use std::io::{Cursor, Write};
 
 use assert_cmd::Command;
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::*;
@@ -669,7 +669,7 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -1113,8 +1113,10 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "convert");
+    assert_eq!(value["status"], "ok");
+    assert!(value["refusal"].is_null());
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
     assert_eq!(value["export"]["format"], "step");
@@ -1141,6 +1143,14 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(refusal_report).unwrap()).unwrap();
     assert_eq!(value["command"], "convert");
+    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["status"], "refused");
+    assert_eq!(value["refusal"]["stage"], "export");
+    assert_eq!(value["refusal"]["code"], "empty_geometry");
+    assert!(value["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("geometry"));
     assert!(value["decode_report"].is_object());
     assert!(value["validation_report"].is_object());
     assert!(value["export"].is_null());
@@ -1167,7 +1177,7 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["export"]["format"], "f3d");
     assert!(value["export"]["notes"]
         .as_array()
@@ -1329,7 +1339,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "validate");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -1343,7 +1353,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -1360,7 +1370,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "inspect");
 }
 
@@ -1417,7 +1427,7 @@ fn inspect_report_writes_versioned_summary_to_file() {
         .success()
         .stdout(predicate::str::contains("format: rhino (detected high)"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -1440,7 +1450,7 @@ fn validate_report_writes_versioned_result_to_file() {
         .success()
         .stdout(predicate::str::contains("validation: OK"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "validate");
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
@@ -1545,7 +1555,7 @@ fn diff_report_writes_versioned_result_to_file() {
         .success()
         .stdout(predicate::str::contains("identical"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "diff");
     assert_eq!(value["different"], false);
     assert!(value["diff"].is_object());
@@ -1776,4 +1786,48 @@ fn from_and_to_aliases_match_input_format_and_format() {
     assert!(long.status.success());
     assert!(aliased.status.success());
     assert_eq!(long.stdout, aliased.stdout);
+}
+
+#[test]
+fn wrong_target_flags_refuse_before_reading_input() {
+    let dir = tempdir().unwrap();
+    // Absent path: wrong-target must fail before open/read.
+    let missing = dir.path().join("does-not-exist.cadir.json");
+    let path = missing.to_str().unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["export", path, "-f", "step", "--iges-target", "5.3"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--iges-target requires IGES output",
+        ));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "-f", "cadir", "--step-target", "ap214"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--step-target/--reject-step-losses require STEP output",
+        ));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["export", path, "-f", "iges", "--reject-step-losses"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--step-target/--reject-step-losses require STEP output",
+        ));
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "-f", "step", "--rhino-version", "80"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--rhino-version requires Rhino output",
+        ));
 }

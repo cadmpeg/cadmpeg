@@ -3751,7 +3751,7 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
@@ -4972,7 +4972,7 @@ mod tests {
             )) if value == 120_f64.to_radians()
         ));
         assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
-        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 
@@ -5139,7 +5139,7 @@ mod tests {
         let mut duplicate = attributes.clone();
         duplicate.push(attributes[0].clone());
         assert!(super::configuration_attribute_uses(&configurations, &duplicate).is_empty());
-        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 
@@ -5529,7 +5529,7 @@ mod tests {
                 .map(String::as_str),
             Some("rmfastload_object_id_membership")
         );
-        let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
         assert!(
             validation.findings.is_empty(),
             "findings: {:?}",

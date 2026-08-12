@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -928,9 +928,9 @@ pub(crate) fn try_decode_zero_entity(
             transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: vec![LossNote {
                 code: if topology_counts.is_some() {
-                    cadmpeg_ir::report::LossKind::TopologyGaugeSubstituted
+                    cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyGaugeSubstituted)
                 } else {
-                    cadmpeg_ir::report::LossKind::TopologyNotTransferred
+                    cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred)
                 },
                 severity: if topology_counts.is_some() {
                     Severity::Warning

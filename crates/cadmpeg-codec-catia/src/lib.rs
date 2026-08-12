@@ -17,7 +17,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_catia::CatiaCodec;
-//! use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 //!
 //! # fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.CATPart")?;
@@ -57,6 +57,7 @@ pub(crate) mod variant;
 pub(crate) mod wire;
 
 #[cfg(feature = "fuzzing")]
+#[doc(hidden)]
 pub mod fuzz;
 
 /// Maximum number of exact rational-quadratic spans materialized for one
@@ -76,13 +77,13 @@ pub(crate) fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Opt
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult};
 
 /// The CATIA V5 `.CATPart` codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CatiaCodec;
 
-impl Codec for CatiaCodec {
+impl CodecBackend for CatiaCodec {
     fn id(&self) -> &'static str {
         "catia"
     }

@@ -33,6 +33,10 @@ const SPATIAL_VERTEX_PREFIX: &[u8] = &[
     0xff, 0xfe, 0xff, 0x06, b'V', 0x00, b'e', 0x00, b'r', 0x00, b't', 0x00, b'e', 0x00, b'x', 0x00,
 ];
 
+fn is_class_token(token: u16) -> bool {
+    token & 0x8000 != 0 && token != u16::MAX
+}
+
 pub(crate) mod assembly;
 
 pub(crate) mod axes;

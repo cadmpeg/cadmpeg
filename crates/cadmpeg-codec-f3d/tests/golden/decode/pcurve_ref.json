@@ -428,7 +428,11 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "material_not_transferred",
+        "code": {
+          "namespace": "shared",
+          "code": "material_not_transferred",
+          "kind": "material_not_transferred"
+        },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
       }

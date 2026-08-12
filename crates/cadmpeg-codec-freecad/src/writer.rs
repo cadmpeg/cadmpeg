@@ -135,12 +135,11 @@ pub(crate) fn write_seekable(
             CodecError::Malformed(format!("cannot finish FCStd archive: {error}"))
         })?;
     }
-    let validation = cadmpeg_ir::validate(ir, Vec::new());
     Ok(ExportReport {
         format: "fcstd".into(),
         census: cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,
-            counts: validation.entity_counts,
+            counts: ir.census(),
         },
         fidelity: cadmpeg_ir::FidelityResolution::NotProvided,
         // Refuses without a retained `fcstd` native graph, then rewrites

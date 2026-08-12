@@ -1385,7 +1385,7 @@ fn component_vector_cell_count_includes_interleaved_path_slots() {
 }
 
 #[test]
-fn mirror_surface_path_preserves_tagged_and_anonymous_nodes() {
+fn counted_surface_path_preserves_tagged_and_anonymous_nodes() {
     let marker = 12;
     let mut payload = vec![0; marker];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -1400,7 +1400,7 @@ fn mirror_surface_path_preserves_tagged_and_anonymous_nodes() {
     payload.extend([0x34, 0x80, 1, 0, 56, 0, 0, 0, 2, 0, 0, 0]);
     payload.extend(4u32.to_le_bytes());
 
-    let path = mirror_surface_component_path_at(&payload, marker).expect("required invariant");
+    let path = counted_surface_component_path_at(&payload, marker).expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[0].instance, Some(0x803e));
     assert_eq!(path[0].local_id, Some(9));
@@ -1411,13 +1411,135 @@ fn mirror_surface_path_preserves_tagged_and_anonymous_nodes() {
 
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
-        mirror_surface_component_path_at(&payload, marker)
+        counted_surface_component_path_at(&payload, marker)
             .expect("one root slot")
             .len(),
         2
     );
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
-    assert!(mirror_surface_component_path_at(&payload, marker).is_none());
+    assert!(counted_surface_component_path_at(&payload, marker).is_none());
+}
+
+#[test]
+fn face_reference_plane_owns_its_counted_surface_path() {
+    let class_name = "moFaceRefPlnData_c";
+    let class_offset = 32;
+    let class_body = class_offset + 6 + class_name.len();
+    let marker = class_body + 109;
+    let mut payload = vec![0; marker + 18];
+    payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..class_body].copy_from_slice(class_name.as_bytes());
+    payload[marker - 12..marker - 8].copy_from_slice(&3u32.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    for (index, local_id) in [11u32, 7].into_iter().enumerate() {
+        payload.extend((0x8038 + index as u16).to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0x23, 0x80, 1, 0]);
+        payload.extend((40 + index as u32).to_le_bytes());
+        payload.extend((90 + index as u32).to_le_bytes());
+        payload.extend(local_id.to_le_bytes());
+    }
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "face-plane-data".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Reference,
+        }],
+        names: vec![
+            FeatureInputName {
+                id: "producer-40-name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                object_id: Some(40),
+                value: "Producer40".into(),
+            },
+            FeatureInputName {
+                id: "producer-41-name".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 8,
+                object_id: Some(41),
+                value: "Producer41".into(),
+            },
+            FeatureInputName {
+                id: "plane-name".into(),
+                parent: "lane".into(),
+                ordinal: 2,
+                offset: 16,
+                object_id: Some(37),
+                value: "Plane".into(),
+            },
+        ],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let candidates = face_reference_plane_selection_candidates(&lane, 0, lane.native_payload.len());
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].0, marker);
+    assert_eq!(
+        candidates[0]
+            .1
+            .iter()
+            .filter_map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [11, 7]
+    );
+
+    let native_feature = |id: &str, source: u32, input_class: &str| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some(source.to_string()),
+        parent_source_id: None,
+        ordinal: source,
+        name: id.into(),
+        kind: "Feature".into(),
+        input_class: Some(input_class.into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            native_feature("producer-40", 40, "moExtrusion_c"),
+            native_feature("producer-41", 41, "moExtrusion_c"),
+            native_feature("plane", 37, "moRefPlane_c"),
+        ],
+    }];
+    let selections = compact_surface_selections(&histories, &lane);
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].feature_ref, "plane");
+    assert_eq!(
+        selections[0].terminal_feature_ref.as_deref(),
+        Some("producer-41")
+    );
 }
 
 #[test]

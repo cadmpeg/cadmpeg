@@ -4,9 +4,7 @@
 
 #![no_main]
 
-use cadmpeg_codec_nx::deltas;
+use cadmpeg_codec_nx::fuzz;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| {
-    let _ = deltas::walk(data);
-});
+fuzz_target!(|data: &[u8]| fuzz::deltas(data));

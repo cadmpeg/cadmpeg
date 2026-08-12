@@ -2,35 +2,43 @@
 //! Input detection and loading into CADIR.
 
 use std::fs::File;
-use std::io::Read;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use cadmpeg_ir::codec::{CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Confidence, DecodeOptions};
+use cadmpeg_ir::CadIr;
 
-use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar, DocumentArtifact, DocumentOrigin};
-
-use crate::registry::{DetectionOutcome, Registry};
-use crate::ForcedInput;
+use crate::application::{
+    ArtifactStore, ForcedInput, InputCatalog, LoadOrigin, LoadedDocument, ResolvedSource,
+};
 
 /// Leading byte window available to content-based codec detection.
 pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
 
+/// Non-fatal notice produced while loading an input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadNotice {
+    /// Content detection succeeded below high confidence.
+    LowConfidenceDetection {
+        /// Selected codec id.
+        format_id: &'static str,
+        /// Detection confidence.
+        confidence: Confidence,
+    },
+}
+
+/// A loaded document plus presentation notices for the CLI.
+#[derive(Debug)]
+pub struct LoadOutcome {
+    /// Loaded document.
+    pub document: LoadedDocument,
+    /// Notices the presentation layer may print.
+    pub notices: Vec<LoadNotice>,
+}
+
 /// Read at most `n` leading bytes for content-based format detection.
 pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
-    let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let mut buf = Vec::with_capacity(n);
-    let mut chunk = vec![0_u8; 64 * 1024].into_boxed_slice();
-    while buf.len() < n {
-        let remaining = n - buf.len();
-        let chunk_len = remaining.min(chunk.len());
-        let read = f.read(&mut chunk[..chunk_len])?;
-        if read == 0 {
-            break;
-        }
-        buf.extend_from_slice(&chunk[..read]);
-    }
-    Ok(buf)
+    ArtifactStore::read_prefix(path, n)
 }
 
 /// Load CADIR from a native CAD file or CADIR JSON.
@@ -39,59 +47,38 @@ pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
 /// codec with the strongest match decodes the file. An input beginning with a
 /// JSON object is parsed as CADIR when no native codec recognizes it.
 pub fn load_artifact(
-    registry: &Registry,
+    catalog: &InputCatalog,
     path: &Path,
     options: DecodeOptions,
     forced: Option<ForcedInput>,
-) -> Result<DocumentArtifact> {
-    let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
-    let detected = match forced {
-        Some(ForcedInput::Codec(id)) => Some((
-            registry
-                .by_id(id)
-                .ok_or_else(|| anyhow!("unsupported input format {id}"))?,
-            None,
-        )),
-        Some(ForcedInput::Cadir) => None,
-        None => match registry.detect(&prefix) {
-            DetectionOutcome::None => None,
-            DetectionOutcome::Detected {
-                descriptor,
-                confidence,
-            } => Some((
-                descriptor
-                    .codec
-                    .as_deref()
-                    .expect("detected descriptor has codec"),
-                Some(confidence),
-            )),
-            DetectionOutcome::Ambiguous {
-                confidence,
-                candidates,
-            } => {
-                return Err(anyhow!(
-                    "ambiguous {confidence}-confidence input format: {}; pass --input-format",
-                    candidates
-                        .iter()
-                        .map(|candidate| candidate.id)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
+) -> Result<LoadOutcome> {
+    let prefix = ArtifactStore::read_prefix(path, DETECTION_PREFIX_LEN)?;
+    let resolved = catalog
+        .resolve_source(&prefix, forced)
+        .map_err(|error| anyhow!(error.to_string()))?;
+    let mut notices = Vec::new();
+    match resolved {
+        ResolvedSource::Native {
+            codec,
+            format_id,
+            confidence,
+        } => {
+            if let Some(confidence) = confidence.filter(|value| *value < Confidence::High) {
+                notices.push(LoadNotice::LowConfidenceDetection {
+                    format_id,
+                    confidence,
+                });
             }
-        },
-    };
-    if let Some((codec, confidence)) = detected {
-        if let Some(confidence) = confidence.filter(|value| *value < Confidence::High) {
-            eprintln!(
-                "warning: detected {} with {confidence} confidence; use --input-format to override",
-                codec.id()
-            );
+            let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+            let result = codec
+                .decode(&mut f, &options)
+                .with_context(|| format!("decoding {} as {}", path.display(), format_id))?;
+            return Ok(LoadOutcome {
+                document: LoadedDocument::decoded(result),
+                notices,
+            });
         }
-        let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-        let result = codec
-            .decode(&mut f, &options)
-            .with_context(|| format!("decoding {} as {}", path.display(), codec.id()))?;
-        return Ok(DocumentArtifact::decoded(result));
+        ResolvedSource::Cadir => {}
     }
 
     if forced.is_none() && prefix.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
@@ -102,7 +89,7 @@ pub fn load_artifact(
     }
 
     let max_bytes = options.policy.limits.max_input_bytes;
-    let text = read_bounded_text(path, max_bytes)
+    let text = ArtifactStore::read_bounded_text(path, max_bytes)
         .with_context(|| format!("reading {} as a .cadir.json document", path.display()))?;
     let ir = CadIr::from_json(&text).map_err(|e| {
         anyhow!(
@@ -110,45 +97,23 @@ pub fn load_artifact(
             path.display()
         )
     })?;
-    let sidecar_path = decode_sidecar_path(path);
-    if !sidecar_path.exists() {
-        return Ok(DocumentArtifact::neutral(ir));
-    }
-    let sidecar_text = read_bounded_text(&sidecar_path, max_bytes)
-        .with_context(|| format!("reading decode sidecar {}", sidecar_path.display()))?;
-    let sidecar = DecodeSidecar::from_json(&sidecar_text)
-        .with_context(|| format!("parsing decode sidecar {}", sidecar_path.display()))?;
-    if !sidecar.matches(text.as_bytes()) {
-        return Err(anyhow!(
-            "decode sidecar {} does not match {}",
-            sidecar_path.display(),
-            path.display()
-        ));
-    }
-    Ok(DocumentArtifact {
-        ir,
-        origin: DocumentOrigin::Decoded {
-            report: sidecar.report,
-            fidelity: sidecar.fidelity,
+    let Some(sidecar) = ArtifactStore::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
+    else {
+        return Ok(LoadOutcome {
+            document: LoadedDocument::neutral(ir),
+            notices,
+        });
+    };
+    Ok(LoadOutcome {
+        document: LoadedDocument {
+            ir,
+            origin: LoadOrigin::Decoded {
+                report: sidecar.report,
+                fidelity: sidecar.fidelity,
+            },
         },
+        notices,
     })
-}
-
-fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
-    let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let mut limited = file.take(max_bytes.saturating_add(1));
-    let mut text = String::new();
-    limited
-        .read_to_string(&mut text)
-        .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
-    if text.len() as u64 > max_bytes {
-        return Err(anyhow!(
-            "{} exceeds the configured {}-byte input limit",
-            path.display(),
-            max_bytes
-        ));
-    }
-    Ok(text)
 }
 
 #[cfg(test)]
@@ -156,7 +121,7 @@ fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
 mod tests {
     use super::*;
     use cadmpeg_ir::units::Units;
-    use cadmpeg_ir::{DecodeReport, SourceFidelity};
+    use cadmpeg_ir::{DecodeReport, DecodeSidecar, SourceFidelity};
 
     #[test]
     fn matching_sidecar_restores_decoded_origin_and_mismatch_is_hard_error() {
@@ -175,37 +140,31 @@ mod tests {
         };
         let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
-            decode_sidecar_path(&path),
+            ArtifactStore::sidecar_path(&path),
             sidecar.to_canonical_json().unwrap(),
         )
         .unwrap();
 
-        let artifact = load_artifact(
-            &Registry::with_builtins(),
+        let outcome = load_artifact(
+            &InputCatalog::with_builtins(),
             &path,
             DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
         .unwrap();
-        assert!(matches!(artifact.origin, DocumentOrigin::Decoded { .. }));
+        assert!(matches!(
+            outcome.document.origin,
+            LoadOrigin::Decoded { .. }
+        ));
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
         let error = load_artifact(
-            &Registry::with_builtins(),
+            &InputCatalog::with_builtins(),
             &path,
             DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
         .unwrap_err();
         assert!(error.to_string().contains("does not match"));
-    }
-
-    #[test]
-    fn text_reader_refuses_input_above_the_configured_limit() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("large.json");
-        std::fs::write(&path, "12345").unwrap();
-        let error = read_bounded_text(&path, 4).unwrap_err();
-        assert!(error.to_string().contains("4-byte input limit"));
     }
 }

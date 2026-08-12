@@ -17,12 +17,15 @@ mod view;
 mod tests;
 
 pub use arena::DecodeArena;
-pub use budget::{refuse_local_limit, DepthGuard, ScopedReservation, WorkBudget};
+pub use budget::{alloc_filled, refuse_local_limit, DepthGuard, ScopedReservation, WorkBudget};
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
-pub use space::{ByteRange, SpaceId};
-pub use view::{BoundedCount, View};
+pub use space::{
+    resolve_address, AddressStep, AddressStepKind, ByteRange, ResolvedAddress, SpaceDerivation,
+    SpaceDescriptor, SpaceId,
+};
+pub use view::{bounded_len, BoundedCount, View};

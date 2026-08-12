@@ -302,17 +302,29 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "code": "decode_diagnostic",
+        "code": {
+          "code": "decode_diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "shared"
+        },
         "message": "PRODUCT_DEFINITION #6 has a shape representation with no committed topology body",
         "severity": "warning"
       },
       {
-        "code": "decode_diagnostic",
+        "code": {
+          "code": "decode_diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "shared"
+        },
         "message": "PRODUCT_DEFINITION #10 has a shape representation with no committed topology body",
         "severity": "warning"
       },
       {
-        "code": "geometry_not_transferred",
+        "code": {
+          "code": "geometry_not_transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "shared"
+        },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
       }

@@ -638,7 +638,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     losses.extend(scan.definitions.diagnostics.iter().map(|diagnostic| {
         crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded
             .note(diagnostic.message.clone())
-            .with_provenance(cadmpeg_ir::LossProvenance {
+            .with_provenance(cadmpeg_ir::SourceProvenance {
                 format: "rhino".to_string(),
                 stream: String::new(),
                 offset: diagnostic.source_range.start as u64,

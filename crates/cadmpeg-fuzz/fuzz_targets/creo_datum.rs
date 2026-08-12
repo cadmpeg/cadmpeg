@@ -4,10 +4,7 @@
 
 #![no_main]
 
-use cadmpeg_codec_creo::datum::{named_plane, planes};
+use cadmpeg_codec_creo::fuzz::datum;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| {
-    let _ = planes(data);
-    let _ = named_plane(data);
-});
+fuzz_target!(|data: &[u8]| datum(data));

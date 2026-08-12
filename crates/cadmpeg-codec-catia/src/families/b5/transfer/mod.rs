@@ -3349,7 +3349,7 @@ mod tests {
         assert_eq!(ir.model.coedges.len(), 6);
         assert_eq!(ir.model.vertices.len(), 6);
         assert_eq!(ir.model.pcurves.len(), 2);
-        let unsorted_arenas = cadmpeg_ir::validate::validate(&ir, Vec::new())
+        let unsorted_arenas = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
             .findings
             .iter()
             .filter(|finding| finding.check == cadmpeg_ir::report::Check::ArenaOrder)

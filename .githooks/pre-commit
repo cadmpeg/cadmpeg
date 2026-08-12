@@ -22,6 +22,9 @@ if ! git diff --cached --name-only \
   exit 0
 fi
 
+echo "pre-commit: scripts/convergence-ratchet.py"
+python3 scripts/convergence-ratchet.py
+
 echo "pre-commit: cargo fmt --all --check"
 cargo fmt --all --check
 

@@ -140,13 +140,3 @@ impl Point2 {
         Point2 { u, v }
     }
 }
-
-/// An axis-aligned bounding box, in the document's length unit.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct Aabb {
-    /// Minimum corner.
-    pub min: Point3,
-    /// Maximum corner.
-    pub max: Point3,
-}

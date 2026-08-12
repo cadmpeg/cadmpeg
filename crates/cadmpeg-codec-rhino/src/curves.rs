@@ -139,6 +139,29 @@ impl From<FramingError> for GeometryError {
     }
 }
 
+impl From<cadmpeg_core::decode::ParseError> for GeometryError {
+    fn from(error: cadmpeg_core::decode::ParseError) -> Self {
+        use cadmpeg_core::decode::ParseErrorKind;
+        let offset = error.location.offset as usize;
+        match error.kind {
+            ParseErrorKind::UnexpectedEof { needed, .. } => {
+                Self::Malformed(FramingError::Truncated {
+                    offset,
+                    needed: needed as usize,
+                })
+            }
+            ParseErrorKind::InvalidValue => Self::Malformed(FramingError::Structural {
+                offset,
+                message: format!("invalid value during {}", error.operation),
+            }),
+            ParseErrorKind::InvalidFraming => Self::Malformed(FramingError::Structural {
+                offset,
+                message: format!("invalid framing during {}", error.operation),
+            }),
+        }
+    }
+}
+
 /// Dispatches a class UUID to the supported simple-geometry reader.
 pub(crate) fn supported_class(uuid: Uuid) -> bool {
     matches!(

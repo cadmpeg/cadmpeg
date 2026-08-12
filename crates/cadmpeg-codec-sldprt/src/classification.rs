@@ -262,7 +262,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::Pattern),
             None,
         ),
-        "moMirrorPattern_c" => (
+        "moMirrorPattern_c" | "moMirrorSolid_c" => (
             NativeClassKind::MirrorPattern,
             Feature,
             Some(FeatureClass::Pattern),
@@ -701,6 +701,7 @@ mod tests {
             ("moRevCut_c", FeatureClass::Revolve),
             ("moRefAxis_c", FeatureClass::ReferenceAxis),
             ("moMirrorPattern_c", FeatureClass::Pattern),
+            ("moMirrorSolid_c", FeatureClass::Pattern),
             ("moDome_c", FeatureClass::Dome),
             ("moRib_c", FeatureClass::Rib),
             ("moBlendRefSurface_c", FeatureClass::Loft),

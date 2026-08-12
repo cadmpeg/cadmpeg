@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::annotations::{Annotations, ExactnessNote, Provenance};
+use cadmpeg_ir::annotations::{Annotations, ExactnessNote, StreamProvenance};
 use cadmpeg_ir::Exactness;
 
 pub(crate) fn note(
@@ -27,7 +27,7 @@ pub(crate) fn note(
     let id = id.into();
     annotations.provenance.insert(
         id.clone(),
-        Provenance {
+        StreamProvenance {
             stream,
             offset,
             tag: Some(tag.to_string()),

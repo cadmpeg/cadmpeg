@@ -9,17 +9,20 @@
 //! carries neutral construction features, tessellation, appearance, source
 //! attributes, source-native namespaces, and uninterpreted [`UnknownRecord`]s.
 //!
-//! Start a hand-built document with [`CadIr::empty`], populate its arenas,
-//! call [`CadIr::finalize`] to establish canonical identity order, then call
-//! [`validate()`] to check structural and numeric invariants. Use
-//! [`CadIr::to_canonical_json`] and [`CadIr::from_json`] for the versioned JSON
-//! form, and [`diff()`] for identity-based structural comparison.
+//! Document state machine: [`draft::ModelDraft`] (plan name `DocumentDraft`)
+//! commits into [`CadIr`]; [`validate_neutral()`] then yields a
+//! [`ValidationReport`]. Decode produces [`DecodeResult`] without embedding
+//! validation. Start a hand-built document with [`CadIr::empty`], populate its
+//! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
+//! call [`validate_neutral()`]. Use [`CadIr::to_canonical_json`] (sorted view)
+//! and [`CadIr::from_json`] for the versioned JSON form, and [`diff()`] for
+//! identity-based structural comparison.
 //!
-//! Format crates implement [`Codec`]. Detection selects a codec from a byte
-//! prefix, inspection enumerates a container, and decoding returns a
-//! [`DecodeResult`]. Operation failures use [`cadmpeg_core::CodecError`].
-//! A successful decode reports partial transfer through [`DecodeReport`] and
-//! [`LossNote`].
+//! Format crates implement [`CodecBackend`]; callers use the sealed [`Codec`]
+//! entry points. Detection selects a codec from a byte prefix, inspection
+//! enumerates a container, and decoding returns a [`DecodeResult`]. Operation
+//! failures use [`cadmpeg_core::CodecError`]. A successful decode reports
+//! partial transfer through [`DecodeReport`] and [`LossNote`].
 //!
 //! [`Annotations`] records source locations and fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
@@ -32,17 +35,20 @@
 
 pub mod annotations;
 pub mod appearance;
-pub mod artifact;
 pub mod assets;
 pub mod attributes;
 pub mod bytes;
 pub mod codec;
+pub mod compare;
 
 pub mod diff;
 pub mod document;
 pub mod draft;
 pub mod drawings;
 pub mod eval;
+// `test` keeps fixtures available for this crate's unit tests; dependents that
+// need them in their test graphs still enable the `examples` feature explicitly.
+#[cfg(any(feature = "examples", test))]
 pub mod examples;
 pub mod features;
 pub mod geometry;
@@ -57,7 +63,6 @@ pub mod presentation;
 pub mod products;
 mod provenance;
 pub mod report;
-pub mod roundtrip;
 pub mod schema;
 pub mod semantic_annotations;
 pub mod sketches;
@@ -70,13 +75,13 @@ pub mod transform;
 pub mod units;
 pub mod validate;
 
-pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
-pub use artifact::{DocumentArtifact, DocumentOrigin};
+pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, StreamProvenance};
 pub use codec::{
-    CadirEncoder, Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult, Encoder,
+    CadirEncoder, Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult, Encoder,
 };
 pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
+pub use draft::{DocumentDraft, ModelDraft};
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
     CoilResult, CoilSection, CoilSectionPlacement, ConfigurationActivation, ConfigurationBodies,
@@ -85,6 +90,7 @@ pub use features::{
     ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
     SketchSpace,
 };
+pub use ids::{format_identity, is_valid_identity, IdentityError};
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
@@ -100,12 +106,12 @@ pub use products::{
     Occurrence, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
-pub use provenance::Provenance as LossProvenance;
-pub use provenance::{Exactness, SourceObjectAssociation};
+pub use provenance::{Exactness, SourceObjectAssociation, SourceProvenance};
+
 pub use report::{
     CensusBasis, Check, CoverageKey, DecodeReport, EntityCensus, ExportReport, FidelityResolution,
-    Finding, LossCategory, LossKind, LossNote, Severity, StrictConsequence, ValidationReport,
-    WritePath,
+    Finding, LossCategory, LossKind, LossNote, LossTaxonomy, Severity, StrictConsequence,
+    ValidationReport, WritePath, SHARED_LOSS_NAMESPACE,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
@@ -116,7 +122,7 @@ pub use sketches::{
 };
 pub use source_fidelity::{
     decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
-    SourceFidelity, DECODE_SIDECAR_VERSION, SOURCE_FIDELITY_VERSION,
+    SourceFidelity, DECODE_SIDECAR_VERSION, DECODE_SIDECAR_VERSION_V1, SOURCE_FIDELITY_VERSION,
 };
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
@@ -124,7 +130,12 @@ pub use subd::{
     SubdVertexTag,
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
-pub use validate::{validate, validate_with_source_fidelity};
+pub use validate::admit::{
+    admit, admit_with_additional_native_identities, admit_with_annotations, filter_checks,
+    CATIA_ADMISSION_CHECKS, DRAFT_CORE_CHECKS, RHINO_DRAFT_CHECKS, RHINO_INSTANCE_CHECKS,
+    SLDPRT_EXPORT_PRECONDITION_CHECKS,
+};
+pub use validate::{entity_census, validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
 

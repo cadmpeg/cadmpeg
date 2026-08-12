@@ -3,19 +3,14 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_ir::report::{LossKind, LossNote};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
 
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
+use super::StageOutcome;
 
-pub(super) struct DependencyResult {
-    pub typed_records: HashSet<u64>,
-    pub notes: Vec<String>,
-    pub losses: Vec<LossNote>,
-}
-
-pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
+pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
     let mut losses = Vec::new();
     let documents = exchange
         .records
@@ -34,7 +29,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                                 &mut losses,
                                 id,
                                 "document identifier",
-                                LossKind::MetadataNotTransferred,
+                                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                             )
                         })
                         .unwrap_or_default(),
@@ -47,7 +42,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                                 &mut losses,
                                 id,
                                 "document name",
-                                LossKind::MetadataNotTransferred,
+                                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                             )
                         })
                         .unwrap_or_default(),
@@ -90,7 +85,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                         &mut losses,
                         id,
                         "document reference source",
-                        LossKind::MetadataNotTransferred,
+                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     )
                 })
                 .unwrap_or_default();
@@ -115,8 +110,10 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
         }
     }
 
-    DependencyResult {
-        typed_records: typed,
+    StageOutcome {
+        value: (),
+        claims: typed,
+        warnings: Vec::new(),
         notes: notes.into_iter().collect(),
         losses,
     }
@@ -150,7 +147,7 @@ fn source_text(
             losses,
             record_id,
             field,
-            LossKind::MetadataNotTransferred,
+            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
         ),
         Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field),
         _ => None,

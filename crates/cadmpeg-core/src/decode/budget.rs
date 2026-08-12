@@ -435,6 +435,23 @@ pub fn refuse_local_limit(
     local_limit_error(what, limit, requested, what, location)
 }
 
+/// Allocates `count` copies of `value` with `try_reserve_exact` and no panic on OOM.
+///
+/// Use [`DecodeContext::alloc_filled`] when a decode session can also charge
+/// collection items. This helper is for call sites that only need the
+/// allocation bound.
+pub fn alloc_filled<T: Clone>(
+    count: usize,
+    value: T,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut out = Vec::new();
+    out.try_reserve_exact(count)
+        .map_err(|_| refuse_local_limit(operation, count as u64, count as u64, None))?;
+    out.resize(count, value);
+    Ok(out)
+}
+
 fn local_limit_error(
     what: &'static str,
     limit: u64,

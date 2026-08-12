@@ -176,6 +176,8 @@ pub fn render_json(entries: &[EntryRecord]) -> String {
     let envelope = serde_json::json!({
         "schema_version": crate::commands::CLI_SCHEMA_VERSION,
         "command": "inspect container",
+        "status": "ok",
+        "refusal": null,
         "entries": entries,
     });
     let mut rendered = serde_json::to_string_pretty(&envelope).expect("the envelope serializes");

@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::framing::read_xmt_width as read_xmt;
 use crate::topology::Graph;
 use cadmpeg_core::be::{f64_at as be_f64, u16_at as be_u16, u32_at as be_u32};
 use cadmpeg_ir::geometry::{
@@ -794,16 +795,6 @@ fn insert_unique<T>(
         records.remove(&xmt);
         duplicates.insert(xmt);
     }
-}
-
-fn read_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
-    let first = i16::from_be_bytes([*bytes.get(at)?, *bytes.get(at + 1)?]);
-    if first >= 0 {
-        return Some((first as u32, 2));
-    }
-    let remainder = first.unsigned_abs();
-    let quotient = u16::from_be_bytes([*bytes.get(at + 2)?, *bytes.get(at + 3)?]);
-    Some((u32::from(quotient) * 32_767 + u32::from(remainder), 4))
 }
 
 fn read_enveloped_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {

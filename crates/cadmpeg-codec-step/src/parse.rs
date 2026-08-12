@@ -20,6 +20,7 @@ use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
+#[allow(clippy::enum_variant_names)] // STEP names mirror the EXPRESS value kinds.
 pub enum Value {
     /// Reference to a DATA entity instance.
     Reference(u64),

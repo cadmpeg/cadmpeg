@@ -6,6 +6,7 @@ use super::axes::{
     declared_line_reference_directions, linear_pattern_display_directions,
     typed_linear_pattern_dimensions,
 };
+use super::component_paths::is_dissected_profile_feature;
 use super::endpoints::{
     alternate_current_indexed_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
     compact_legacy_curve_endpoint_indices, extended_compact_indexed_curve_endpoint_indices,
@@ -84,7 +85,9 @@ pub(crate) fn bind_pattern_inputs(
                     .and_then(|(offset, _)| usize::try_from(*offset).ok())
                     .unwrap_or(lane.native_payload.len())
             };
-            if feature.input_class.as_deref() == Some("moMirrorPattern_c") {
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                == NativeClassKind::MirrorPattern
+            {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
@@ -509,7 +512,10 @@ pub(crate) fn bind_mirror_surface_planes(
     let mirror_native_refs = histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter(|feature| feature.input_class.as_deref() == Some("moMirrorPattern_c"))
+        .filter(|feature| {
+            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                == NativeClassKind::MirrorPattern
+        })
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
     let mut faces_by_identity = HashMap::<(u32, u32), Vec<&str>>::new();
@@ -766,6 +772,42 @@ pub(crate) fn bind_scalar_operands(
             }
         }
         bind_detached_legacy_sketch_objects(histories, &represented_sketches, lane);
+        let features_by_id = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|feature| (feature.id.as_str(), feature))
+            .collect::<HashMap<_, _>>();
+        for pair in starts.windows(2) {
+            let [(_, parent_id), (child_start, child_id)] = pair else {
+                continue;
+            };
+            let (Some(parent), Some(child)) = (
+                features_by_id.get(parent_id).copied(),
+                features_by_id.get(child_id).copied(),
+            ) else {
+                continue;
+            };
+            if native_object_class(parent.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::Extrusion
+                && !matches!(parent.xml_tag.as_str(), "Extrusion" | "Cut")
+            {
+                continue;
+            }
+            if !is_dissected_profile_feature(child) {
+                continue;
+            }
+            let child_end = starts
+                .iter()
+                .find(|(offset, _)| offset > child_start)
+                .map_or(u64::MAX, |(offset, _)| *offset);
+            for scalar in lane.scalars.iter_mut().filter(|scalar| {
+                scalar.offset > *child_start
+                    && scalar.offset < child_end
+                    && scalar.feature_ref.as_deref() == Some(*child_id)
+            }) {
+                scalar.feature_ref = Some((*parent_id).to_string());
+            }
+        }
         finalize_lane_bindings(histories, lane);
     }
 }
@@ -936,10 +978,16 @@ pub(super) fn bind_detached_legacy_sketch_objects(
             || u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX),
             |class| class.offset,
         );
+    let relation_bindings = bind_detached_spatial_relation_objects(histories, represented, lane);
     let markers = lane
         .sketch_entities
         .iter()
         .filter(|entity| entity.offset < limit)
+        .filter(|entity| {
+            relation_bindings
+                .iter()
+                .all(|(start, end, _)| entity.offset < *start || entity.offset >= *end)
+        })
         .map(|entity| entity.offset)
         .collect::<Vec<_>>();
     let Some(&first) = markers.first() else {
@@ -961,6 +1009,11 @@ pub(super) fn bind_detached_legacy_sketch_objects(
                 != NativeClassKind::OriginProfileFeature
         })
         .filter(|feature| !represented.contains(&feature.id))
+        .filter(|feature| {
+            relation_bindings
+                .iter()
+                .all(|(_, _, owner)| owner != &feature.id)
+        })
         .filter_map(|feature| Some((feature.source_id.as_deref()?.parse::<u32>().ok()?, feature)))
         .collect::<Vec<_>>();
     owners.sort_unstable_by_key(|(source, _)| *source);
@@ -992,6 +1045,149 @@ pub(super) fn bind_detached_legacy_sketch_objects(
             scalar.feature_ref = Some(owner.id.clone());
         }
     }
+}
+
+pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
+    let mut ranges = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "sg3DPlaneHandle")
+        .filter_map(|plane| {
+            let start = lane
+                .classes
+                .iter()
+                .filter(|class| class.name == "moRelMgr_c" && class.offset < plane.offset)
+                .max_by_key(|class| class.offset)?
+                .offset;
+            let end = lane
+                .classes
+                .iter()
+                .filter(|class| class.name == "suObList" && class.offset > plane.offset)
+                .min_by_key(|class| class.offset)?
+                .offset;
+            (start < plane.offset && plane.offset < end).then_some((start, end))
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_unstable();
+    ranges.dedup();
+    ranges
+}
+
+fn bind_detached_spatial_relation_objects(
+    histories: &[crate::records::FeatureHistory],
+    represented: &HashSet<String>,
+    lane: &mut FeatureInputLane,
+) -> Vec<(u64, u64, String)> {
+    let ranges = spatial_relation_manager_ranges(lane);
+    if ranges.is_empty() {
+        return Vec::new();
+    }
+    let names = lane
+        .names
+        .iter()
+        .map(|name| (name.id.as_str(), name.value.as_str()))
+        .collect::<HashMap<_, _>>();
+    let is_dimension_name = |name: &str| {
+        name.strip_prefix('D').is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    };
+    let owners = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.input_class.as_deref() == Some("mo3DProfileFeature_c"))
+        .filter(|feature| !represented.contains(&feature.id))
+        .filter_map(|feature| {
+            let dimensions = feature
+                .parameters
+                .iter()
+                .filter(|(name, _)| is_dimension_name(name))
+                .map(|(name, value)| {
+                    Some((
+                        name.as_str(),
+                        crate::history::parse_dimension_length_mm(value)?,
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            (dimensions.len() >= 3).then_some((feature, dimensions))
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for &(start, end) in &ranges {
+        let scalars = lane
+            .scalars
+            .iter()
+            .filter(|scalar| scalar.offset > start && scalar.offset < end)
+            .filter(|scalar| scalar.role != crate::records::FeatureInputScalarRole::Display)
+            .filter_map(|scalar| Some((names.get(scalar.name.as_str()).copied()?, scalar.value)))
+            .filter(|(name, _)| is_dimension_name(name))
+            .collect::<Vec<_>>();
+        let scalar_names = scalars
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<HashSet<_>>();
+        for (owner, dimensions) in &owners {
+            let dimension_names = dimensions
+                .iter()
+                .map(|(name, _)| *name)
+                .collect::<HashSet<_>>();
+            if scalar_names != dimension_names {
+                continue;
+            }
+            let exact = dimensions.iter().all(|(name, expected_mm)| {
+                scalars.iter().any(|(candidate, value_m)| {
+                    candidate == name
+                        && (value_m * 1000.0 - expected_mm).abs()
+                            <= expected_mm.abs().max(1.0) * 1.0e-9
+                })
+            });
+            if exact {
+                candidates.push((start, end, owner.id.clone()));
+            }
+        }
+    }
+    let bound = candidates
+        .iter()
+        .filter(|(start, end, owner)| {
+            candidates
+                .iter()
+                .filter(|(candidate_start, candidate_end, _)| {
+                    candidate_start == start && candidate_end == end
+                })
+                .count()
+                == 1
+                && candidates
+                    .iter()
+                    .filter(|(_, _, candidate_owner)| candidate_owner == owner)
+                    .count()
+                    == 1
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    for (start, end, owner) in &bound {
+        for entity in lane
+            .sketch_entities
+            .iter_mut()
+            .filter(|entity| entity.offset > *start && entity.offset < *end)
+        {
+            entity.feature_ref = Some(owner.clone());
+        }
+        for reference in lane
+            .references
+            .iter_mut()
+            .filter(|reference| reference.offset > *start && reference.offset < *end)
+        {
+            reference.feature_ref = Some(owner.clone());
+        }
+        for scalar in lane
+            .scalars
+            .iter_mut()
+            .filter(|scalar| scalar.offset > *start && scalar.offset < *end)
+        {
+            scalar.feature_ref = Some(owner.clone());
+        }
+    }
+    bound
 }
 
 pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {

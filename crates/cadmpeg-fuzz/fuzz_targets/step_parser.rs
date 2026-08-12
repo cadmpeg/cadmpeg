@@ -6,5 +6,5 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = cadmpeg_codec_step::parse::parse(data);
+    cadmpeg_codec_step::fuzz::parse(data);
 });

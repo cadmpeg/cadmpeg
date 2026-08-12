@@ -4,7 +4,9 @@ use super::endpoints::{
     compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
 };
 use super::markers::{inline_arc_coordinates, marker_native_code, sketch_marker_prefix_at};
-use super::relation_geometry::{implicit_circle_marker, owned_relation_parameters};
+use super::relation_geometry::{
+    declared_entity_handle_circular_marker, implicit_circle_marker, owned_relation_parameters,
+};
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
     dimensioned_circle_surface_transforms, dimensioned_circle_transform,
@@ -166,23 +168,32 @@ fn dimensioned_relation_carrier<'a>(
         .entity_ref
         .as_deref()
         .and_then(|id| markers_by_id.get(id).copied());
-    let implicit =
-        implicit_circle_marker(lanes, feature, operand.kind, operand.entity_index, radius);
-    let (marker, encoded_radius) = match explicit {
-        Some(marker)
-            if matches!(
-                marker.kind,
-                SketchInputKind::Point
-                    | SketchInputKind::ConstrainedPoint
-                    | SketchInputKind::LineOrCircle
-                    | SketchInputKind::Arc
-            ) =>
-        {
-            (marker, None)
-        }
-        _ => {
-            let (marker, radius) = implicit?;
-            (marker, Some(radius))
+    let declared = declared_entity_handle_circular_marker(lanes, feature, operand, radius);
+    let (marker, encoded_radius) = if let Some((marker, radius)) = declared {
+        (marker, Some(radius))
+    } else {
+        match explicit {
+            Some(marker)
+                if matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                ) =>
+            {
+                (marker, None)
+            }
+            _ => {
+                let (marker, radius) = implicit_circle_marker(
+                    lanes,
+                    feature,
+                    operand.kind,
+                    operand.entity_index,
+                    radius,
+                )?;
+                (marker, Some(radius))
+            }
         }
     };
     let curve = (marker.kind == SketchInputKind::Arc)

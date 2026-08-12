@@ -203,7 +203,8 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             &lane.classes,
             &lane.scalars,
         );
-        lane.references = crate::resolved_features::markers::reference_cells(&lane.scalars);
+        lane.references =
+            crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes);
     }
     crate::resolved_features::bindings::bind_scalar_operands(
         &native.feature_histories,

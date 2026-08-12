@@ -59,27 +59,9 @@ fn refused(offset: usize, error: &CodecError) -> GeometryError {
     structural(offset, format!("hatch allocation refused: {error}"))
 }
 
-fn req_u8(view: &mut View<'_>) -> Result<u8, GeometryError> {
-    let offset = view.position();
-    view.req_u8()
-        .map_err(|_| structural(offset, "hatch record truncated"))
-}
-
-fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
-    let offset = view.position();
-    view.req_i32_le()
-        .map_err(|_| structural(offset, "hatch record truncated"))
-}
-
-fn req_f64(view: &mut View<'_>) -> Result<f64, GeometryError> {
-    let offset = view.position();
-    view.req_f64_le()
-        .map_err(|_| structural(offset, "hatch record truncated"))
-}
-
 fn coordinate3(view: &mut View<'_>, label: &str) -> Result<[f64; 3], GeometryError> {
     let offset = view.position();
-    let values = [req_f64(view)?, req_f64(view)?, req_f64(view)?];
+    let values = [view.req_f64_le()?, view.req_f64_le()?, view.req_f64_le()?];
     if values.iter().all(|value| value.is_finite()) {
         Ok(values)
     } else {
@@ -97,10 +79,10 @@ fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
     let zaxis = Vector3(coordinate3(view, "vector")?);
     let equation_offset = view.position();
     let equation = [
-        req_f64(view)?,
-        req_f64(view)?,
-        req_f64(view)?,
-        req_f64(view)?,
+        view.req_f64_le()?,
+        view.req_f64_le()?,
+        view.req_f64_le()?,
+        view.req_f64_le()?,
     ];
     if !equation.iter().all(|value| value.is_finite()) {
         return Err(structural(
@@ -130,7 +112,7 @@ pub(crate) fn decode(
         .ok_or_else(|| structural(range.start, "hatch body out of range"))?;
 
     let version_offset = body.position();
-    let version = req_u8(&mut body)?;
+    let version = body.req_u8()?;
     let (major, minor) = (version >> 4, version & 0x0f);
     if major != 1 || minor > 2 {
         return Err(GeometryError::UnsupportedVersion {
@@ -140,7 +122,7 @@ pub(crate) fn decode(
     }
     let plane = read_plane(&mut body)?;
     let scale_offset = body.position();
-    let pattern_scale = req_f64(&mut body)?;
+    let pattern_scale = body.req_f64_le()?;
     if !pattern_scale.is_finite() {
         return Err(structural(
             scale_offset,
@@ -154,20 +136,23 @@ pub(crate) fn decode(
         ));
     }
     let rotation_offset = body.position();
-    let pattern_rotation = req_f64(&mut body)?;
+    let pattern_rotation = body.req_f64_le()?;
     if !pattern_rotation.is_finite() {
         return Err(structural(
             rotation_offset,
             "hatch pattern rotation is not finite",
         ));
     }
-    let pattern_index = req_i32(&mut body)?;
+    let pattern_index = body.req_i32_le()?;
 
     let count_offset = body.position();
-    let signed_count = req_i32(&mut body)?;
-    let count = usize::try_from(signed_count).map_err(|_| FramingError::Overflow {
-        offset: count_offset,
-    })?;
+    let signed_count = body.req_i32_le()?;
+    let Ok(count) = usize::try_from(signed_count) else {
+        return Err(FramingError::Overflow {
+            offset: count_offset,
+        }
+        .into());
+    };
     if count > MAX_LOOPS {
         return Err(structural(count_offset, "hatch loop count exceeds cap"));
     }
@@ -177,12 +162,14 @@ pub(crate) fn decode(
     let loop_bound = body
         .counted(count as u64, 5)
         .ok_or_else(|| structural(count_offset, "hatch loop count exceeds remaining window"))?;
-    let mut loops =
-        ExactVec::<HatchLoop>::new(loop_bound).map_err(|error| refused(body.position(), &error))?;
+    let mut loops = match ExactVec::<HatchLoop>::new(loop_bound) {
+        Ok(loops) => loops,
+        Err(error) => return Err(refused(body.position(), &error)),
+    };
     let mut warnings = Vec::new();
     for loop_index in 0..count {
         let loop_offset = body.position();
-        let loop_version = req_u8(&mut body)?;
+        let loop_version = body.req_u8()?;
         if loop_version >> 4 != 1 || loop_version & 0x0f > 1 {
             return Err(GeometryError::UnsupportedVersion {
                 offset: loop_offset,
@@ -193,7 +180,7 @@ pub(crate) fn decode(
                 ),
             });
         }
-        let kind = match req_i32(&mut body)? {
+        let kind = match body.req_i32_le()? {
             0 => LoopKind::Outer,
             1 => LoopKind::Inner,
             _ => return Err(structural(loop_offset + 1, "invalid hatch loop type")),
@@ -217,16 +204,16 @@ pub(crate) fn decode(
                 "hatch loop object is not a curve",
             ));
         };
-        loops
-            .push(HatchLoop { kind, curve })
-            .map_err(|error| refused(body.position(), &error))?;
+        if let Err(error) = loops.push(HatchLoop { kind, curve }) {
+            return Err(refused(body.position(), &error));
+        }
         for warning in loop_warnings {
             warnings.push(warning);
         }
     }
     let basepoint = if minor >= 2 {
         let offset = body.position();
-        let basepoint = [req_f64(&mut body)?, req_f64(&mut body)?];
+        let basepoint = [body.req_f64_le()?, body.req_f64_le()?];
         if !basepoint.into_iter().all(f64::is_finite) {
             return Err(structural(offset, "hatch basepoint is invalid"));
         }
@@ -237,9 +224,10 @@ pub(crate) fn decode(
     if body.remaining() != 0 {
         return Err(structural(body.position(), "hatch has trailing bytes"));
     }
-    let loops = loops
-        .finish()
-        .map_err(|error| refused(body.position(), &error))?;
+    let loops = match loops.finish() {
+        Ok(loops) => loops,
+        Err(error) => return Err(refused(body.position(), &error)),
+    };
     Ok(Hatch {
         source_range: range,
         plane,

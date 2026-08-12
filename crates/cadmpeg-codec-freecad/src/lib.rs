@@ -36,7 +36,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+    CodecBackend, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
@@ -46,7 +46,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::FidelityResolution;
@@ -1120,7 +1120,7 @@ fn validate_logical_chain(
     }
 }
 
-impl Codec for FcstdCodec {
+impl CodecBackend for FcstdCodec {
     fn id(&self) -> &'static str {
         "fcstd"
     }
@@ -1156,6 +1156,11 @@ impl Codec for FcstdCodec {
             policy: *ctx.policy(),
         };
         let scan = container::scan(ctx, root)?;
+        // Charge document object cardinality before persistence/geometry work.
+        ctx.charge_entities(
+            scan.document.object_count as u64,
+            "admit FCStd document objects",
+        )?;
         if !options.container_only
             && !matches!(scan.document.schema_version.as_str(), "2" | "3" | "4")
         {
@@ -1194,11 +1199,11 @@ impl Codec for FcstdCodec {
         let thumbnail = scan
             .data
             .get("thumbnails/Thumbnail.png")
-            .map(|bytes| ("thumbnails/Thumbnail.png", bytes))
+            .map(|view| ("thumbnails/Thumbnail.png", view.window()))
             .or_else(|| {
                 scan.data
                     .get("Thumbnail.png")
-                    .map(|bytes| ("Thumbnail.png", bytes))
+                    .map(|view| ("Thumbnail.png", view.window()))
             });
         if let Some((_, thumbnail)) = thumbnail {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
@@ -1231,9 +1236,13 @@ impl Codec for FcstdCodec {
         namespace.set_arena("physical_ledger", &scan.ledger)?;
         #[allow(clippy::if_not_else)]
         if !options.container_only {
-            let document_bytes = scan.data.get("Document.xml").ok_or_else(|| {
-                CodecError::Malformed("Document.xml disappeared after scan".into())
-            })?;
+            let document_bytes = scan
+                .data
+                .get("Document.xml")
+                .map(|view| view.window())
+                .ok_or_else(|| {
+                    CodecError::Malformed("Document.xml disappeared after scan".into())
+                })?;
             let graph = persistence::parse(document_bytes)?;
             for property in &graph.properties {
                 for side_entry in &property.side_entries {
@@ -1249,12 +1258,16 @@ impl Codec for FcstdCodec {
                 .entries
                 .iter()
                 .map(|entry| {
-                    let bytes = scan.data.get(&entry.name).ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "entry {} disappeared after scan",
-                            entry.name
-                        ))
-                    })?;
+                    let bytes = scan
+                        .data
+                        .get(&entry.name)
+                        .map(|view| view.window())
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "entry {} disappeared after scan",
+                                entry.name
+                            ))
+                        })?;
                     let referenced_by = graph
                         .properties
                         .iter()
@@ -1347,10 +1360,10 @@ impl Codec for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena("design_census", &design_census)?;
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
-            let gui_graph = if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
+            let gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     &mut ir,
-                    gui_bytes,
+                    gui_view.window(),
                     &scan.data,
                     &graph.objects,
                     &graph.properties,
@@ -1434,6 +1447,7 @@ impl Codec for FcstdCodec {
         } else {
             semantic_losses(&ir)
         };
+        ctx.charge_entities(ir.model.entity_count() as u64, "admit FCStd entities")?;
         Ok(DecodeResult::new(
             ir,
             DecodeReport {
@@ -1488,12 +1502,12 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
                 return None;
             };
             Some(LossNote {
-                code: cadmpeg_ir::LossKind::FeatureHistoryRetained,
+                code: cadmpeg_ir::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
                 severity: Severity::Blocking,
                 message: format!(
                     "FCStd design operation {kind} is retained natively but has no neutral semantics"
                 ),
-                provenance: Some(cadmpeg_ir::LossProvenance {
+                provenance: Some(cadmpeg_ir::SourceProvenance {
                     format: "fcstd".into(),
                     stream: "Document.xml".into(),
                     offset: 0,
@@ -1507,12 +1521,12 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
-            code: cadmpeg_ir::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Blocking,
             message: format!(
                 "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
             ),
-            provenance: Some(cadmpeg_ir::LossProvenance {
+            provenance: Some(cadmpeg_ir::SourceProvenance {
                 format: "fcstd".into(),
                 stream: "Document.xml".into(),
                 offset: 0,
@@ -1527,12 +1541,12 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
-            code: cadmpeg_ir::LossKind::RecordNotTyped,
+            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
             severity: Severity::Blocking,
             message: format!(
                 "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
             ),
-            provenance: Some(cadmpeg_ir::LossProvenance {
+            provenance: Some(cadmpeg_ir::SourceProvenance {
                 format: "fcstd".into(),
                 stream: "Document.xml".into(),
                 offset: 0,

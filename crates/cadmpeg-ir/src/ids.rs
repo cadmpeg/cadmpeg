@@ -5,10 +5,104 @@
 //! between incompatible entity arenas and state-local member sets. Entity IDs
 //! must be stable and globally unique within a document. State-local IDs need
 //! only be unique within their owning state.
+//!
+//! Entity IDs follow `<format>:<scope>:<kind>#<key>` (exactly three colon
+//! components before `#`). Use [`is_valid_identity`] / [`format_identity`] at
+//! mint time; validation repeats the same grammar.
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::fmt::{self, Display};
+
+/// True when `id` matches `<format>:<scope>:<kind>#<key>`.
+///
+/// The key is non-empty, contains no `#`, and the whole id has no whitespace.
+#[must_use]
+pub fn is_valid_identity(id: &str) -> bool {
+    let Some((namespace, key)) = id.split_once('#') else {
+        return false;
+    };
+    if key.is_empty() || key.contains('#') || id.chars().any(char::is_whitespace) {
+        return false;
+    }
+    let mut components = namespace.split(':');
+    components.next().is_some_and(|value| !value.is_empty())
+        && components.next().is_some_and(|value| !value.is_empty())
+        && components.next().is_some_and(|value| !value.is_empty())
+        && components.next().is_none()
+}
+
+/// Format a three-component identity and reject grammar violations.
+///
+/// # Errors
+///
+/// Returns [`IdentityError`] when any component is empty, contains `:`, `#`, or
+/// whitespace, or when the composed string fails [`is_valid_identity`].
+pub fn format_identity(
+    format: &str,
+    scope: &str,
+    kind: &str,
+    key: impl Display,
+) -> Result<String, IdentityError> {
+    for (label, part) in [("format", format), ("scope", scope), ("kind", kind)] {
+        if part.is_empty()
+            || part.contains(':')
+            || part.contains('#')
+            || part.chars().any(char::is_whitespace)
+        {
+            return Err(IdentityError::InvalidComponent {
+                label,
+                value: part.to_owned(),
+            });
+        }
+    }
+    let key = key.to_string();
+    if key.is_empty() || key.contains('#') || key.chars().any(char::is_whitespace) {
+        return Err(IdentityError::InvalidKey { value: key });
+    }
+    let id = format!("{format}:{scope}:{kind}#{key}");
+    if !is_valid_identity(&id) {
+        return Err(IdentityError::InvalidId { value: id });
+    }
+    Ok(id)
+}
+
+/// Failure to mint an entity identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdentityError {
+    /// A colon-separated namespace component is empty or contains separators.
+    InvalidComponent {
+        /// Component name (`format`, `scope`, or `kind`).
+        label: &'static str,
+        /// Rejected value.
+        value: String,
+    },
+    /// The `#` key is empty or contains `#` / whitespace.
+    InvalidKey {
+        /// Rejected key.
+        value: String,
+    },
+    /// Composed id failed [`is_valid_identity`].
+    InvalidId {
+        /// Rejected id.
+        value: String,
+    },
+}
+
+impl fmt::Display for IdentityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidComponent { label, value } => {
+                write!(f, "identity {label} component is invalid: {value:?}")
+            }
+            Self::InvalidKey { value } => write!(f, "identity key is invalid: {value:?}"),
+            Self::InvalidId { value } => write!(f, "identity is invalid: {value:?}"),
+        }
+    }
+}
+
+impl std::error::Error for IdentityError {}
 
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident) => {
@@ -189,3 +283,23 @@ id_type!(
     /// Identifies a [`crate::presentation::PresentationLayer`].
     LayerId
 );
+
+#[cfg(test)]
+mod tests {
+    use super::{format_identity, is_valid_identity, IdentityError};
+
+    #[test]
+    fn three_component_ids_are_valid() {
+        assert!(is_valid_identity("step:file:signature#0"));
+        assert!(format_identity("step", "file", "signature", 0u8).is_ok());
+    }
+
+    #[test]
+    fn two_component_ids_are_rejected() {
+        assert!(!is_valid_identity("step:signature#0"));
+        assert!(matches!(
+            format_identity("step", "", "signature", 0u8),
+            Err(IdentityError::InvalidComponent { label: "scope", .. })
+        ));
+    }
+}

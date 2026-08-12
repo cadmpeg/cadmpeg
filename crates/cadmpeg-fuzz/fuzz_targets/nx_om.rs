@@ -4,11 +4,7 @@
 
 #![no_main]
 
-use cadmpeg_codec_nx::om::indexed_sections;
+use cadmpeg_codec_nx::fuzz;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| {
-    for section in indexed_sections(data) {
-        let _ = section.numeric_expressions();
-    }
-});
+fuzz_target!(|data: &[u8]| fuzz::om(data));

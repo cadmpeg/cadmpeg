@@ -72,8 +72,18 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     for (face, component) in face_components.iter().copied().enumerate() {
         component_faces[component].push(face);
     }
-    let mut closed_components = vec![true; component_faces.len()];
-    let mut component_has_edges = vec![false; component_faces.len()];
+    let mut closed_components = cadmpeg_core::decode::alloc_filled(
+        component_faces.len(),
+        true,
+        "catia b5 closed components",
+    )
+    .ok()?;
+    let mut component_has_edges = cadmpeg_core::decode::alloc_filled(
+        component_faces.len(),
+        false,
+        "catia b5 component edge marks",
+    )
+    .ok()?;
     for (&edge, &uses) in &edge_uses {
         let component = face_components[first_face_by_edge[&edge]];
         component_has_edges[component] = true;

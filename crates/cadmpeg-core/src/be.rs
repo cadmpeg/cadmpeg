@@ -13,7 +13,7 @@ readers!(from_be_bytes, "big-endian";
 
 #[cfg(test)]
 mod tests {
-    use super::{f64_at, f64s_at, take_f64s, take_u32, take_vec3};
+    use super::{f64_at, f64s_at, take_f64s, take_u32};
 
     #[test]
     fn failed_take_does_not_advance() {
@@ -29,7 +29,6 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         assert_eq!(f64_at(&bytes, 8), Some(2.0));
-        assert_eq!(take_vec3(&bytes, &mut 0), Some([1.0, 2.0, 3.0]));
         assert_eq!(f64s_at(&bytes, 8, 2), Some(vec![2.0, 3.0]));
         let mut position = 8;
         assert_eq!(take_f64s(&bytes, &mut position, 2), Some(vec![2.0, 3.0]));

@@ -21,6 +21,10 @@ use crate::source_fidelity::SourceFidelity;
 use crate::topology::Coedge;
 use crate::units::LengthUnit;
 
+/// Frozen accept/reject IR builders for Phase 5 gate swaps.
+pub mod admissibility_freeze;
+/// Narrow admissibility predicates as documented `Check` subsets.
+pub mod admit;
 mod annotations_native;
 mod assets;
 mod carriers_parameterization;
@@ -66,32 +70,12 @@ fn nonpositive(x: f64) -> bool {
     !(x.is_finite() && x > 0.0)
 }
 
-macro_rules! define_registered_entity_census {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
-        fn registered_entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
-            BTreeMap::from([
-                $((stringify!($field).into(), ir.model.$field.len())),*
-            ])
-        }
-    };
-}
-crate::document::arena_registry!(define_registered_entity_census);
-
 /// Count the records represented by the IR arenas without running validation.
-pub(crate) fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
-    let mut counts = registered_entity_census(ir);
-    counts.insert(
-        "surfaces_unknown_geometry".into(),
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
-            .count(),
-    );
-    for loss in ir.native.loss_counts() {
-        counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
-    }
-    counts
+///
+/// Prefer [`CadIr::census`](crate::CadIr::census); this alias remains for
+/// existing `cadmpeg_ir::entity_census` call sites.
+pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+    crate::document::entity_census(ir)
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
@@ -146,7 +130,7 @@ fn validate_model_with_index(
 }
 
 /// Validates a model while treating staged retained-record identities as native entities.
-pub fn validate_with_additional_native_identities<'a>(
+pub fn validate_neutral_with_additional_native_identities<'a>(
     ir: &'a CadIr,
     additional: impl IntoIterator<Item = &'a str>,
     losses: Vec<LossNote>,
@@ -156,12 +140,12 @@ pub fn validate_with_additional_native_identities<'a>(
 }
 
 /// Validate one neutral product model.
-pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
+pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     validate_model(ir, losses)
 }
 
 /// Validate one neutral product model together with borrowed annotations.
-pub fn validate_with_annotations(
+pub fn validate_neutral_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
@@ -176,7 +160,7 @@ pub fn validate_with_annotations(
 }
 
 /// Validate a neutral product model together with its decode-time source sidecar.
-pub fn validate_with_source_fidelity(
+pub fn validate_neutral_with_source_fidelity(
     ir: &CadIr,
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
@@ -212,7 +196,7 @@ pub fn validate_with_source_fidelity(
 
 #[cfg(test)]
 mod tests {
-    use super::validate;
+    use super::validate_neutral;
     use crate::features::{
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FaceSelection, Feature,
         FeatureDefinition, FeatureId, PrincipalPlane, SplitFaceTool,
@@ -286,7 +270,7 @@ mod tests {
             native_ref: None,
         });
 
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
@@ -343,7 +327,7 @@ mod tests {
             ),
         ];
 
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         assert!(report.findings.is_empty(), "{:?}", report.findings);
 
         if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
@@ -353,7 +337,7 @@ mod tests {
         } else {
             unreachable!();
         }
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         assert!(report.findings.iter().any(|finding| {
             finding.message == "split-face plane set has fewer than two planes"
         }));
@@ -365,7 +349,7 @@ mod tests {
         } else {
             unreachable!();
         }
-        let report = validate(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new());
         assert!(report
             .findings
             .iter()

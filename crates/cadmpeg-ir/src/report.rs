@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::provenance::Provenance;
+use crate::provenance::SourceProvenance;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -87,12 +87,17 @@ pub enum StrictConsequence {
     Tolerate,
 }
 
-/// Stable machine-readable loss kinds.
+/// Shared cross-codec loss taxonomy.
+///
+/// Category and default severity live here. Codec-local loss enums map into a
+/// taxonomy variant for subsystem reporting; strict-mode floors on a
+/// [`LossKind`] are pinned at construction so a later local→taxonomy remap in
+/// source does not silently change rejection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
-pub enum LossKind {
+pub enum LossTaxonomy {
     /// Container-only decode was requested; entity decode was not attempted.
     ContainerOnly,
     /// No geometry stream was located in the container, so no B-rep could be
@@ -192,9 +197,9 @@ pub enum LossKind {
     PreservedSourceUnavailable,
 }
 
-impl LossKind {
-    /// The stable `snake_case` identifier, matching the serialized form.
-    pub fn as_str(self) -> &'static str {
+impl LossTaxonomy {
+    /// The stable `snake_case` identifier for this taxonomy variant.
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::ContainerOnly => "container_only",
             Self::MissingGeometryStream => "missing_geometry_stream",
@@ -237,6 +242,53 @@ impl LossKind {
             Self::AppearanceReduced => "appearance_reduced",
             Self::PreservedSourceUnavailable => "preserved_source_unavailable",
         }
+    }
+
+    /// Parse a v1 bare `snake_case` taxonomy identifier.
+    pub fn from_v1_str(text: &str) -> Option<Self> {
+        Some(match text {
+            "container_only" => Self::ContainerOnly,
+            "missing_geometry_stream" => Self::MissingGeometryStream,
+            "topology_not_transferred" => Self::TopologyNotTransferred,
+            "source_topology_invalid" => Self::SourceTopologyInvalid,
+            "geometry_not_transferred" => Self::GeometryNotTransferred,
+            "reference_graph_not_closed" => Self::ReferenceGraphNotClosed,
+            "topology_gauge_substituted" => Self::TopologyGaugeSubstituted,
+            "carrier_axis_inferred" => Self::CarrierAxisInferred,
+            "carrier_summary" => Self::CarrierSummary,
+            "material_not_transferred" => Self::MaterialNotTransferred,
+            "metadata_not_transferred" => Self::MetadataNotTransferred,
+            "attributes_not_transferred" => Self::AttributesNotTransferred,
+            "feature_history_retained" => Self::FeatureHistoryRetained,
+            "assembly_components_external" => Self::AssemblyComponentsExternal,
+            "assembly_placements_not_transferred" => Self::AssemblyPlacementsNotTransferred,
+            "record_not_typed" => Self::RecordNotTyped,
+            "decode_diagnostic" => Self::DecodeDiagnostic,
+            "integrity_failure" => Self::IntegrityFailure,
+            "noncanonical_source_syntax" => Self::NoncanonicalSourceSyntax,
+            "mesh_vertex_precision" => Self::MeshVertexPrecision,
+            "object_records_untransferred" => Self::ObjectRecordsUntransferred,
+            "unsupported_object_family" => Self::UnsupportedObjectFamily,
+            "asset_not_transferred" => Self::AssetNotTransferred,
+            "no_exportable_solids" => Self::NoExportableSolids,
+            "hidden_body_omitted" => Self::HiddenBodyOmitted,
+            "body_transform_not_applied" => Self::BodyTransformNotApplied,
+            "analytic_surface_normalized" => Self::AnalyticSurfaceNormalized,
+            "elliptical_cone_reduced" => Self::EllipticalConeReduced,
+            "curveless_edge_omitted" => Self::CurvelessEdgeOmitted,
+            "unknown_surface_face_omitted" => Self::UnknownSurfaceFaceOmitted,
+            "pcurve_omitted" => Self::PcurveOmitted,
+            "subd_omitted" => Self::SubdOmitted,
+            "tessellation_omitted" => Self::TessellationOmitted,
+            "pmi_omitted" => Self::PmiOmitted,
+            "source_association_omitted" => Self::SourceAssociationOmitted,
+            "passthrough_record_omitted" => Self::PassthroughRecordOmitted,
+            "procedural_reduced" => Self::ProceduralReduced,
+            "parametric_record_omitted" => Self::ParametricRecordOmitted,
+            "appearance_reduced" => Self::AppearanceReduced,
+            "preserved_source_unavailable" => Self::PreservedSourceUnavailable,
+            _ => return None,
+        })
     }
 
     /// Returns the subsystem affected by this kind of loss.
@@ -315,9 +367,205 @@ impl LossKind {
     }
 }
 
-impl fmt::Display for LossKind {
+impl fmt::Display for LossTaxonomy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+/// Namespace for shared (non-codec-local) loss codes.
+pub const SHARED_LOSS_NAMESPACE: &str = "shared";
+
+/// Namespaced machine-readable loss code on the decode/export wire.
+///
+/// Wire form (sidecar v2 / report payloads):
+/// `{ "namespace": "rhino", "code": "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" }`.
+/// The optional `strict_floor` field is omitted when it matches [`LossTaxonomy::strict_floor`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename_all = "snake_case"))]
+pub struct LossKind {
+    /// Codec namespace, or [`SHARED_LOSS_NAMESPACE`].
+    pub namespace: String,
+    /// Local code within the namespace.
+    pub code: String,
+    /// Shared taxonomy for category and default severity.
+    pub taxonomy: LossTaxonomy,
+    /// Pinned strict-mode floor; omitted on the wire when equal to the taxonomy floor.
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    strict_floor: Option<Severity>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct LossKindWire {
+    namespace: String,
+    code: String,
+    kind: LossTaxonomy,
+    /// Present when the floor differs from [`LossTaxonomy::strict_floor`]; may be JSON null.
+    #[serde(default, deserialize_with = "deserialize_optional_strict_floor")]
+    strict_floor: StrictFloorWire,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum StrictFloorWire {
+    /// Field absent: use the taxonomy default.
+    #[default]
+    Absent,
+    /// Field present, including explicit JSON null.
+    Explicit(Option<Severity>),
+}
+
+impl Serialize for StrictFloorWire {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Absent => serializer.serialize_none(),
+            Self::Explicit(floor) => floor.serialize(serializer),
+        }
+    }
+}
+
+fn deserialize_optional_strict_floor<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<StrictFloorWire, D::Error> {
+    Ok(StrictFloorWire::Explicit(Option::<Severity>::deserialize(
+        deserializer,
+    )?))
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde skip_serializing_if requires &T
+fn strict_floor_wire_is_absent(value: &StrictFloorWire) -> bool {
+    matches!(value, StrictFloorWire::Absent)
+}
+
+#[derive(Serialize)]
+struct LossKindSerializeWire<'a> {
+    namespace: &'a str,
+    code: &'a str,
+    kind: LossTaxonomy,
+    #[serde(skip_serializing_if = "strict_floor_wire_is_absent")]
+    strict_floor: StrictFloorWire,
+}
+
+impl Serialize for LossKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let taxonomy_floor = self.taxonomy.strict_floor();
+        let strict_floor = if self.strict_floor == taxonomy_floor {
+            StrictFloorWire::Absent
+        } else {
+            StrictFloorWire::Explicit(self.strict_floor)
+        };
+        LossKindSerializeWire {
+            namespace: &self.namespace,
+            code: &self.code,
+            kind: self.taxonomy,
+            strict_floor,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for LossKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = LossKindWire::deserialize(deserializer)?;
+        let strict_floor = match wire.strict_floor {
+            StrictFloorWire::Absent => wire.kind.strict_floor(),
+            StrictFloorWire::Explicit(floor) => floor,
+        };
+        Ok(Self {
+            namespace: wire.namespace,
+            code: wire.code,
+            taxonomy: wire.kind,
+            strict_floor,
+        })
+    }
+}
+
+impl LossKind {
+    /// Shared-namespace code whose local id equals the taxonomy `snake_case` name.
+    pub fn shared(taxonomy: LossTaxonomy) -> Self {
+        Self {
+            namespace: SHARED_LOSS_NAMESPACE.into(),
+            code: taxonomy.as_str().into(),
+            taxonomy,
+            strict_floor: taxonomy.strict_floor(),
+        }
+    }
+
+    /// Codec-local code under `namespace`, classified by `taxonomy` for category.
+    ///
+    /// Strict floor defaults to the taxonomy floor; override with
+    /// [`LossKind::with_strict_floor`] so a local→taxonomy remap cannot change
+    /// rejection without an explicit local-floor change.
+    pub fn namespaced(
+        namespace: impl Into<String>,
+        code: impl Into<String>,
+        taxonomy: LossTaxonomy,
+    ) -> Self {
+        Self {
+            namespace: namespace.into(),
+            code: code.into(),
+            taxonomy,
+            strict_floor: taxonomy.strict_floor(),
+        }
+    }
+
+    /// Pins the strict-mode severity floor independently of taxonomy.
+    #[must_use]
+    pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
+        self.strict_floor = floor;
+        self
+    }
+
+    /// Codec or `shared` namespace.
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    /// Local code within the namespace.
+    pub fn local_code(&self) -> &str {
+        &self.code
+    }
+
+    /// Shared taxonomy used for category and default severity.
+    pub const fn taxonomy(&self) -> LossTaxonomy {
+        self.taxonomy
+    }
+
+    /// Stable display form `namespace/code`.
+    pub fn as_str(&self) -> String {
+        format!("{}/{}", self.namespace, self.code)
+    }
+
+    /// Returns the subsystem affected by this kind of loss.
+    pub const fn category(&self) -> LossCategory {
+        self.taxonomy.category()
+    }
+
+    /// Returns the default severity from the taxonomy.
+    pub const fn default_severity(&self) -> Severity {
+        self.taxonomy.default_severity()
+    }
+
+    /// Returns the pinned strict-mode severity floor.
+    pub const fn strict_floor(&self) -> Option<Severity> {
+        self.strict_floor
+    }
+
+    /// Reconstruct from a v1 bare taxonomy string (`"geometry_not_transferred"`).
+    pub fn from_v1_str(text: &str) -> Option<Self> {
+        LossTaxonomy::from_v1_str(text).map(Self::shared)
+    }
+}
+
+impl From<LossTaxonomy> for LossKind {
+    fn from(taxonomy: LossTaxonomy) -> Self {
+        Self::shared(taxonomy)
+    }
+}
+
+impl fmt::Display for LossKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.namespace, self.code)
     }
 }
 
@@ -333,15 +581,16 @@ pub struct LossNote {
     pub message: String,
     /// Where in the source the loss occurred, when attributable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provenance: Option<Provenance>,
+    pub provenance: Option<SourceProvenance>,
 }
 
 impl LossNote {
     /// Creates a loss note with the kind's default severity and no provenance.
-    pub fn new(code: LossKind, message: impl Into<String>) -> Self {
+    pub fn new(code: impl Into<LossKind>, message: impl Into<String>) -> Self {
+        let code = code.into();
         Self {
-            code,
             severity: code.default_severity(),
+            code,
             message: message.into(),
             provenance: None,
         }
@@ -349,14 +598,14 @@ impl LossNote {
 
     /// Overrides this note's severity.
     #[must_use]
-    pub const fn with_severity(mut self, severity: Severity) -> Self {
+    pub fn with_severity(mut self, severity: Severity) -> Self {
         self.severity = severity;
         self
     }
 
     /// Attaches source provenance to this note.
     #[must_use]
-    pub fn with_provenance(mut self, provenance: Provenance) -> Self {
+    pub fn with_provenance(mut self, provenance: SourceProvenance) -> Self {
         self.provenance = Some(provenance);
         self
     }
@@ -493,9 +742,12 @@ impl TransferLedger {
 pub struct CoverageKey(pub &'static str);
 
 impl DecodeReport {
-    /// Records one observation for a statically declared coverage measure.
-    pub fn record_coverage(&mut self, key: CoverageKey) {
-        *self.coverage.entry(key.0.to_owned()).or_default() += 1;
+    /// Records a coverage measure count for a statically declared key.
+    ///
+    /// Producers pass the observed count (not an implied +1). Repeated calls
+    /// for the same key replace the prior value.
+    pub fn record_coverage(&mut self, key: CoverageKey, count: usize) {
+        self.coverage.insert(key.0.to_owned(), count);
     }
 
     /// Returns a coverage measure, treating an unobserved measure as zero.
@@ -762,34 +1014,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loss_code_serializes_under_its_stable_identifier() {
+    fn loss_code_serializes_as_namespaced_object() {
         let note = LossNote {
-            code: LossKind::TopologyNotTransferred,
+            code: LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             severity: Severity::Blocking,
             message: "topology graph not transferred".to_owned(),
             provenance: None,
         };
         let value: serde_json::Value = serde_json::to_value(&note).expect("required invariant");
-        assert_eq!(value["code"], "topology_not_transferred");
-        assert_eq!(value["code"], LossKind::TopologyNotTransferred.as_str());
+        assert_eq!(value["code"]["namespace"], SHARED_LOSS_NAMESPACE);
+        assert_eq!(value["code"]["code"], "topology_not_transferred");
+        assert_eq!(value["code"]["kind"], "topology_not_transferred");
+        assert!(value["code"].get("strict_floor").is_none());
+        assert_eq!(
+            note.code.as_str(),
+            format!("{SHARED_LOSS_NAMESPACE}/topology_not_transferred")
+        );
     }
 
     #[test]
     fn loss_kind_strict_consequence_depends_on_severity() {
         assert_eq!(
-            LossNote::new(LossKind::TopologyNotTransferred, "missing topology")
-                .strict_consequence(),
+            LossNote::new(
+                LossKind::shared(LossTaxonomy::TopologyNotTransferred),
+                "missing topology"
+            )
+            .strict_consequence(),
             StrictConsequence::Reject
         );
         assert_eq!(
-            LossNote::new(LossKind::TopologyNotTransferred, "diagnostic")
-                .with_severity(Severity::Info)
-                .strict_consequence(),
+            LossNote::new(
+                LossKind::shared(LossTaxonomy::TopologyNotTransferred),
+                "diagnostic"
+            )
+            .with_severity(Severity::Info)
+            .strict_consequence(),
             StrictConsequence::Tolerate
         );
         assert_eq!(
-            LossNote::new(LossKind::PassthroughRecordOmitted, "retained source")
-                .strict_consequence(),
+            LossNote::new(
+                LossKind::shared(LossTaxonomy::PassthroughRecordOmitted),
+                "retained source"
+            )
+            .strict_consequence(),
             StrictConsequence::Tolerate
         );
     }
@@ -797,23 +1064,26 @@ mod tests {
     #[test]
     fn assembly_losses_belong_to_the_product_domain() {
         assert_eq!(
-            LossKind::AssemblyComponentsExternal.category(),
+            LossKind::shared(LossTaxonomy::AssemblyComponentsExternal).category(),
             LossCategory::Product
         );
         assert_eq!(
-            LossKind::AssemblyPlacementsNotTransferred.category(),
+            LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred).category(),
             LossCategory::Product
         );
         assert_eq!(
-            LossKind::AssemblyPlacementsNotTransferred.as_str(),
-            "assembly_placements_not_transferred"
+            LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred).as_str(),
+            format!("{SHARED_LOSS_NAMESPACE}/assembly_placements_not_transferred")
         );
     }
 
     #[test]
     fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
-        let kind = LossKind::NoncanonicalSourceSyntax;
-        assert_eq!(kind.as_str(), "noncanonical_source_syntax");
+        let kind = LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax);
+        assert_eq!(
+            kind.as_str(),
+            format!("{SHARED_LOSS_NAMESPACE}/noncanonical_source_syntax")
+        );
         assert_eq!(kind.category(), LossCategory::Other);
         assert_eq!(kind.default_severity(), Severity::Warning);
         assert_eq!(kind.strict_floor(), Some(Severity::Warning));
@@ -825,14 +1095,37 @@ mod tests {
 
     #[test]
     fn integrity_failure_is_a_strict_rejectable_error() {
-        let kind = LossKind::IntegrityFailure;
-        assert_eq!(kind.as_str(), "integrity_failure");
+        let kind = LossKind::shared(LossTaxonomy::IntegrityFailure);
+        assert_eq!(
+            kind.as_str(),
+            format!("{SHARED_LOSS_NAMESPACE}/integrity_failure")
+        );
         assert_eq!(kind.category(), LossCategory::Other);
         assert_eq!(kind.default_severity(), Severity::Error);
         assert_eq!(kind.strict_floor(), Some(Severity::Warning));
         assert_eq!(
             LossNote::new(kind, "stored checksum differs").strict_consequence(),
             StrictConsequence::Reject
+        );
+    }
+
+    #[test]
+    fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
+        let kind = LossKind::namespaced(
+            "sldprt",
+            "geometry.pcurve-ambiguous",
+            LossTaxonomy::PcurveOmitted,
+        )
+        .with_strict_floor(None);
+        let roundtrip: LossKind =
+            serde_json::from_value(serde_json::to_value(&kind).unwrap()).unwrap();
+        assert_eq!(roundtrip.namespace(), "sldprt");
+        assert_eq!(roundtrip.local_code(), "geometry.pcurve-ambiguous");
+        assert_eq!(roundtrip.taxonomy(), LossTaxonomy::PcurveOmitted);
+        assert_eq!(roundtrip.strict_floor(), None);
+        assert_eq!(
+            LossNote::new(roundtrip, "ambiguous").strict_consequence(),
+            StrictConsequence::Tolerate
         );
     }
 }
