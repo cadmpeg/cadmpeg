@@ -57,15 +57,17 @@ pub(crate) fn annotate(
 /// Judge one candidate neutral model after canonicalizing arena order.
 ///
 /// Matches [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new), which
-/// sorts arenas by entity id before a document leaves the codec.
+/// sorts arenas by entity id before a document leaves the codec. Admission uses
+/// [`cadmpeg_ir::CATIA_ADMISSION_CHECKS`], not full final-document validation.
 pub(crate) fn neutral_model_is_admissible(
     ir: &mut CadIr,
     pending_unknowns: &[UnknownRecord],
 ) -> bool {
     ir.model.finalize();
-    cadmpeg_ir::validate::validate_neutral_with_additional_native_identities(
+    cadmpeg_ir::admit_with_additional_native_identities(
         ir,
         pending_unknowns.iter().map(|record| record.id.as_str()),
+        cadmpeg_ir::CATIA_ADMISSION_CHECKS,
         Vec::new(),
     )
     .is_ok()
