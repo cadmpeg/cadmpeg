@@ -464,13 +464,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the mapping to bind the selected operation edge.
 
-### DI-26. Compact edge-identity vectors
+### DI-26. Compact edge-vector B-rep reconciliation
 
-**Question.** What grammar and identity namespace does a compact edge vector use?
+**Question.** How does a compact edge vector map its feature-local edge path to a final B-rep edge?
 
-**Known.** Entry-form `moCompEdge_c` paths have a defined component-path grammar. Compact vectors remain separate native records.
+**Known.** `sldprt.md` §2 defines the duplicated-marker framing, count, lane-local selector, typed and reference-list entry forms, separators, terminal slots, and lane-local type signatures. The decoder retains the ordered compact vector and its producer-feature paths. The terminal component identifies a feature-local generated edge, but it does not by itself identify the final B-rep edge.
 
-**Need.** We must know the grammar and namespace to bind their selected edges.
+**Need.** We must define the topology join from the retained compact edge identity to the final B-rep edge before projecting the selected edge.
 
 ### DI-27. Component-surface-body reconciliation
 
