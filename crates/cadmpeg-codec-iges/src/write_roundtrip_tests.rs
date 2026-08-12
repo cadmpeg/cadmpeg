@@ -6,12 +6,12 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::golden::Harness;
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::SourceFidelity;
+use cadmpeg_test_support::golden::Harness;
 
-use super::IgesCodec;
+use super::{IgesCodec, IgesEncoder};
 
 /// Extension of the committed fixture inputs (matches `golden_tests`).
 const FIXTURE_EXTENSION: &str = "igs";
@@ -29,7 +29,7 @@ fn try_lossless_round_trip(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
 ) -> bool {
-    let Ok(plan) = Encoder::plan(&IgesCodec, EncodeInput { ir, fidelity }) else {
+    let Ok(plan) = Encoder::plan(&IgesEncoder::default(), EncodeInput { ir, fidelity }) else {
         return false;
     };
     let mut produced = Vec::new();
@@ -42,7 +42,7 @@ fn try_lossless_round_trip(
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(produced), &DecodeOptions::default())
         .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
-    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&round_trip.ir, Vec::new());
     assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
     let d = cadmpeg_ir::diff::diff(original, &round_trip.ir);
     assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");

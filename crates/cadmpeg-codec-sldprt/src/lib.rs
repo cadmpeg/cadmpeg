@@ -16,7 +16,7 @@
 //! use std::io::Cursor;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{CodecEntry, DecodeOptions};
+//! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
 //! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_core::CodecError> {
 //! let decoded = SldprtCodec.decode(
@@ -57,7 +57,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{CodecEntry, DecodeOptions, Encoder};
+//! use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.sldprt")?;
@@ -93,21 +93,31 @@
 
 mod annotations;
 mod appearance;
-pub mod brep;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
+#[allow(unused_imports)] // Preserve the parser's crate-facing research names.
+pub(crate) mod brep;
 mod classification;
-pub mod container;
-pub mod decode;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
+pub(crate) mod container;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
+pub(crate) mod decode;
 mod feature_schema;
 #[cfg(feature = "fuzzing")]
-pub mod fuzzing;
+#[doc(hidden)]
+#[path = "fuzzing.rs"]
+pub mod fuzz;
 mod history;
-pub mod loss;
+#[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
+pub(crate) mod loss;
 mod metadata;
 mod native;
-pub mod parasolid;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
+pub(crate) mod parasolid;
 mod pmi;
-pub mod records;
+#[allow(dead_code)] // Internal record surface is retained for fuzz and crate tests.
+pub(crate) mod records;
 mod resolved_features;
+mod swift;
 mod tessellation;
 mod writer;
 mod writer_patch;
@@ -115,7 +125,7 @@ mod writer_transform;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
@@ -219,7 +229,7 @@ impl SldprtCodec {
     }
 }
 
-impl Codec for SldprtCodec {
+impl CodecBackend for SldprtCodec {
     fn id(&self) -> &'static str {
         "sldprt"
     }
@@ -281,7 +291,9 @@ impl Encoder for SldprtCodec {
         };
         if matches!(report.fidelity, FidelityResolution::Degraded { .. }) {
             report.losses.push(LossNote {
-                code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
+                code: cadmpeg_ir::LossKind::shared(
+                    cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable,
+                ),
                 severity: Severity::Blocking,
                 message: "preserved SLDPRT source image is unavailable; regenerated from IR".into(),
                 provenance: None,
@@ -308,12 +320,11 @@ impl SldprtCodec {
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
         let write_path = Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
         Ok(ExportReport {
             format: "sldprt".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
-                counts: validation.entity_counts,
+                counts: ir.census(),
             },
             fidelity: FidelityResolution::NotProvided,
             write_path,

@@ -15,12 +15,6 @@ rust-version.workspace = true
 # generating them costs 22% of this crate tree's compile time.
 schema = ["dep:schemars"]
 
-# `golden` builds the shared snapshot harness the codec crates' golden tests
-# use. It is off by default and enabled through a dev-dependency, because the
-# harness reads a repository checkout and a registry consumer cannot run it.
-# `compare`, which the harness compares through, is not gated: `cadmpeg-ir`
-# compares IR documents with it at run time.
-golden = []
 
 [dependencies]
 serde.workspace = true

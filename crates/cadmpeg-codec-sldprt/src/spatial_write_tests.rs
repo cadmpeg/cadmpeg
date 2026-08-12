@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Spatial-sketch semantic write-back integration tests.
 //!
-//! These drive the crate through its public `Encoder`/`CodecEntry` surface and
+//! These drive the crate through its public `Encoder`/`Codec` surface and
 //! live in the library test tree so they share the existing lib test binary.
 
 use std::{collections::BTreeMap, io::Cursor};
 
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{

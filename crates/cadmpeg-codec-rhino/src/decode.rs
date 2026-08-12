@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
-use cadmpeg_ir::annotations::{ExactnessNote, Provenance};
+use cadmpeg_ir::annotations::{ExactnessNote, StreamProvenance};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
@@ -21,7 +21,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
-use cadmpeg_ir::LossProvenance;
+use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -92,7 +92,7 @@ struct ArenaLengths {
 #[derive(Debug)]
 struct AnnotationCheckpoint {
     stream_count: usize,
-    provenance: BTreeMap<String, Provenance>,
+    provenance: BTreeMap<String, StreamProvenance>,
     exactness: BTreeMap<String, ExactnessNote>,
 }
 
@@ -600,14 +600,12 @@ impl<'a> DecodeContext<'a> {
         let appended = before
             .appended_ids(&self.ir)
             .expect("Rhino candidate builders only append IR entities");
-        let mut validation = cadmpeg_ir::validate::validate_with_annotations(
+        let validation = cadmpeg_ir::admit_with_annotations(
             &self.ir,
             &self.annotations,
+            cadmpeg_ir::RHINO_DRAFT_CHECKS,
             Vec::new(),
         );
-        validation
-            .findings
-            .retain(|finding| finding.check != cadmpeg_ir::report::Check::ArenaOrder);
         if validation.is_ok() {
             let unknowns = match self.ir.native_unknowns("rhino") {
                 Ok(unknowns) => unknowns,
@@ -1779,7 +1777,8 @@ impl<'a> DecodeContext<'a> {
         let mut rejection_warning = None;
         let accepted = match outcome {
             Ok(links) => {
-                let validation = cadmpeg_ir::validate::validate(&self.ir, Vec::new());
+                let validation =
+                    cadmpeg_ir::admit(&self.ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new());
                 if validation.is_ok() {
                     self.append_links(source_order, &links);
                     self.mark_decoded(source_order);
@@ -1787,7 +1786,7 @@ impl<'a> DecodeContext<'a> {
                     true
                 } else {
                     rejection_warning = Some(format!(
-                        "instance expansion rejected atomically by IR validation: {}",
+                        "instance expansion rejected atomically by IR admission: {}",
                         validation_findings(&validation)
                     ));
                     false
@@ -2314,7 +2313,7 @@ impl<'a> DecodeContext<'a> {
                         self.scan.definitions.diagnostics.len(),
                         first.message
                     ))
-                    .with_provenance(LossProvenance {
+                    .with_provenance(SourceProvenance {
                         format: "rhino".to_string(),
                         stream: String::new(),
                         offset: first.source_range.start as u64,
@@ -2365,10 +2364,7 @@ impl<'a> DecodeContext<'a> {
             RETAINED_DOCUMENT_CAP,
             RETAINED_RECORD_CAP
         )];
-        let mut source_fidelity = cadmpeg_ir::SourceFidelity {
-            annotations: self.annotations,
-            ..Default::default()
-        };
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
         source_fidelity
             .attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)
             .expect("Rhino source records separate from product identities");
@@ -3051,16 +3047,12 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
-        let (raw, warnings, semantic_error) = match parsed {
-            crate::brep::BrepParse::Valid(value) => (value.raw, value.warnings, None),
-            crate::brep::BrepParse::SemanticInvalid {
-                raw,
-                error,
-                warnings,
-            } => (raw, warnings, Some(error)),
+        let warnings = match &parsed {
+            crate::brep::BrepParse::Valid(value) => value.warnings(),
+            crate::brep::BrepParse::SemanticInvalid { warnings, .. } => warnings,
         };
         for warning in warnings {
-            self.scan_warning(source_order, &warning);
+            self.scan_warning(source_order, warning);
         }
         let Some(identity) = object.identity.as_ref() else {
             self.scan_warning(
@@ -3079,20 +3071,36 @@ impl<'a> DecodeContext<'a> {
         let association = self.source_association(identity);
         let key = self.object_key(identity, source_order);
         let unknown = self.unknowns[source_order].id.clone();
-        let transfer = BrepTransferInput {
-            expand: self.expand,
-            data: self.scan.data,
-            archive: self.archive(),
-            writer_version: self.scan.metadata.properties.writer_version,
-            raw: &raw,
-            key: &key,
-            association: &association,
-            unknown: &unknown,
-            scale,
-            semantic_error: semantic_error.as_ref(),
-            mesh_budget: &mut self.mesh_budget,
+        let staged = match &parsed {
+            crate::brep::BrepParse::Valid(brep) => stage_brep(BrepTransferInput {
+                expand: self.expand,
+                data: self.scan.data,
+                archive: self.archive(),
+                writer_version: self.scan.metadata.properties.writer_version,
+                brep,
+                key: &key,
+                association: &association,
+                unknown: &unknown,
+                scale,
+                mesh_budget: &mut self.mesh_budget,
+            }),
+            crate::brep::BrepParse::SemanticInvalid { raw, error, .. } => Ok(stage_invalid_brep(
+                BrepCarrierInput {
+                    expand: self.expand,
+                    data: self.scan.data,
+                    archive: self.archive(),
+                    writer_version: self.scan.metadata.properties.writer_version,
+                    raw,
+                    key: &key,
+                    association: &association,
+                    unknown: &unknown,
+                    scale,
+                    mesh_budget: &mut self.mesh_budget,
+                },
+                error,
+            )),
         };
-        match stage_brep(transfer) {
+        match staged {
             Ok(staged) => {
                 let links = staged.links.clone();
                 let warnings = staged.warnings.clone();
@@ -3511,13 +3519,33 @@ struct BrepTransferInput<'a> {
     data: &'a [u8],
     archive: ArchiveVersion,
     writer_version: Option<i64>,
+    brep: &'a crate::brep::ValidatedRawBrep,
+    key: &'a str,
+    association: &'a SourceObjectAssociation,
+    unknown: &'a UnknownId,
+    scale: f64,
+    mesh_budget: &'a mut crate::mesh::MeshBudget,
+}
+
+struct BrepCarrierInput<'a> {
+    expand: crate::mesh::MeshExpand<'a>,
+    data: &'a [u8],
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
     raw: &'a crate::brep::RawBrep,
     key: &'a str,
     association: &'a SourceObjectAssociation,
     unknown: &'a UnknownId,
     scale: f64,
-    semantic_error: Option<&'a crate::curves::GeometryError>,
     mesh_budget: &'a mut crate::mesh::MeshBudget,
+}
+
+struct BrepCarrierDraft {
+    staged: BrepDraft,
+    c3: BTreeMap<i32, cadmpeg_ir::ids::CurveId>,
+    surfaces: BTreeMap<i32, cadmpeg_ir::ids::SurfaceId>,
+    child_failed: bool,
+    child_cause: Option<String>,
 }
 
 struct BrepStageContext<'a> {
@@ -3591,8 +3619,8 @@ impl BrepDraft {
     }
 }
 
-fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::GeometryError> {
-    let BrepTransferInput {
+fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
+    let BrepCarrierInput {
         expand,
         data,
         archive,
@@ -3602,7 +3630,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         association,
         unknown,
         scale,
-        semantic_error,
         mesh_budget,
     } = input;
     let mut staged = BrepDraft {
@@ -3773,28 +3800,59 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             }
         }
     }
-    if semantic_error.is_some() || child_failed {
-        staged.links.extend(
-            staged
-                .draft
-                .model()
-                .curves
-                .iter()
-                .map(|curve| curve.id.to_string())
-                .chain(
-                    staged
-                        .draft
-                        .model()
-                        .surfaces
-                        .iter()
-                        .map(|surface| surface.id.to_string()),
-                ),
-        );
-        return Ok(staged.free_carrier_fallback(
-            semantic_error
-                .map(ToString::to_string)
-                .or(child_cause)
-                .unwrap_or_else(|| "child geometry decode failed".to_string()),
+    BrepCarrierDraft {
+        staged,
+        c3,
+        surfaces,
+        child_failed,
+        child_cause,
+    }
+}
+
+fn stage_invalid_brep(
+    input: BrepCarrierInput<'_>,
+    semantic_error: &crate::curves::GeometryError,
+) -> BrepDraft {
+    let carriers = stage_brep_carriers(input);
+    finish_brep_fallback(carriers.staged, semantic_error.to_string())
+}
+
+fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::GeometryError> {
+    let BrepTransferInput {
+        expand,
+        data,
+        archive,
+        writer_version,
+        brep,
+        key,
+        association,
+        unknown,
+        scale,
+        mesh_budget,
+    } = input;
+    let raw = brep.raw();
+    let BrepCarrierDraft {
+        mut staged,
+        c3,
+        surfaces,
+        child_failed,
+        child_cause,
+    } = stage_brep_carriers(BrepCarrierInput {
+        expand,
+        data,
+        archive,
+        writer_version,
+        raw,
+        key,
+        association,
+        unknown,
+        scale,
+        mesh_budget,
+    });
+    if child_failed {
+        return Ok(finish_brep_fallback(
+            staged,
+            child_cause.unwrap_or_else(|| "child geometry decode failed".to_string()),
         ));
     }
     let (c2, pcurves, pcurve_warnings) = decode_pcurves(data, archive, raw, key);
@@ -4063,6 +4121,26 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     Ok(staged)
 }
 
+fn finish_brep_fallback(mut staged: BrepDraft, cause: impl Into<String>) -> BrepDraft {
+    staged.links.extend(
+        staged
+            .draft
+            .model()
+            .curves
+            .iter()
+            .map(|curve| curve.id.to_string())
+            .chain(
+                staged
+                    .draft
+                    .model()
+                    .surfaces
+                    .iter()
+                    .map(|surface| surface.id.to_string()),
+            ),
+    );
+    staged.free_carrier_fallback(cause)
+}
+
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
     expand: crate::mesh::MeshExpand<'_>,
@@ -4073,8 +4151,8 @@ pub(crate) fn embedded_brep_json(
     scale: f64,
 ) -> Option<String> {
     let parsed = crate::brep::parse(data, range, archive, writer_version).ok()?;
-    let raw = match parsed {
-        crate::brep::BrepParse::Valid(value) => value.raw,
+    let brep = match parsed {
+        crate::brep::BrepParse::Valid(value) => value,
         crate::brep::BrepParse::SemanticInvalid { .. } => return None,
     };
     let association = SourceObjectAssociation {
@@ -4093,12 +4171,11 @@ pub(crate) fn embedded_brep_json(
         data,
         archive,
         writer_version,
-        raw: &raw,
+        brep: &brep,
         key: "history:embedded-brep",
         association: &association,
         unknown: &unknown,
         scale,
-        semantic_error: None,
         mesh_budget: &mut mesh_budget,
     })
     .ok()?;
@@ -4992,8 +5069,8 @@ fn body(
     }
 }
 
-fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
-    LossProvenance {
+fn loss_provenance(class: &str, outcome: &ClassOutcome) -> SourceProvenance {
+    SourceProvenance {
         format: "rhino".to_string(),
         stream: String::new(),
         offset: outcome.first_offset,
@@ -5635,7 +5712,7 @@ mod tests {
                 .links,
             vec![curve_id.to_string()]
         );
-        let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
+        let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
 
@@ -5662,6 +5739,8 @@ mod tests {
     #[test]
     fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         let (data, raw) = source_shaped_plane_brep();
+        let brep =
+            crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
         let association = SourceObjectAssociation {
             format: "rhino".to_string(),
             object_id: "plane-brep".to_string(),
@@ -5678,12 +5757,11 @@ mod tests {
                 data: &data,
                 archive: ArchiveVersion::V5,
                 writer_version: Some(200_206_180),
-                raw: &raw,
+                brep: &brep,
                 key: "plane",
                 association: &association,
                 unknown: &unknown,
                 scale: 25.4,
-                semantic_error: None,
                 mesh_budget: &mut crate::mesh::MeshBudget::new(),
             })
         })
@@ -5732,14 +5810,16 @@ mod tests {
             .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
             .expect("commit staged plane B-rep");
         append_record_links(&mut candidate, &unknown, &links);
-        let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
+        let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
 
     #[test]
     fn failed_trim_pcurve_does_not_discard_brep_topology() {
         let (data, mut raw) = source_shaped_plane_brep();
-        raw.c2.slots[1] = None;
+        raw.c2.slots[1].as_mut().expect("C2 slot").class_uuid = class_uuid([0; 16]);
+        let brep =
+            crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
         let association = SourceObjectAssociation {
             format: "rhino".to_string(),
             object_id: "plane-brep".to_string(),
@@ -5756,12 +5836,11 @@ mod tests {
                 data: &data,
                 archive: ArchiveVersion::V5,
                 writer_version: Some(200_206_180),
-                raw: &raw,
+                brep: &brep,
                 key: "plane",
                 association: &association,
                 unknown: &unknown,
                 scale: 1.0,
-                semantic_error: None,
                 mesh_budget: &mut crate::mesh::MeshBudget::new(),
             })
         })
@@ -6127,7 +6206,10 @@ mod tests {
                 assert_eq!(ir.model.faces[0].sense, Sense::Reversed);
                 assert_eq!(ir.model.faces[1].sense, Sense::Forward);
             }
-            assert_eq!(cadmpeg_ir::validate(&ir, Vec::new()).error_count(), 0);
+            assert_eq!(
+                cadmpeg_ir::validate_neutral(&ir, Vec::new()).error_count(),
+                0
+            );
         }
     }
 
@@ -6147,5 +6229,36 @@ mod tests {
         ));
         assert_eq!(candidate, original);
         assert!(links.is_empty());
+    }
+
+    /// Phase 5 freeze: draft/instance admit predicates vs shared accept/reject builders.
+    #[test]
+    fn phase5_freeze_shared_admissibility_fixtures() {
+        let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+        let rejected =
+            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("rhino:test");
+        let annotations = cadmpeg_ir::Annotations::default();
+
+        assert!(cadmpeg_ir::admit_with_annotations(
+            &accepted,
+            &annotations,
+            cadmpeg_ir::RHINO_DRAFT_CHECKS,
+            Vec::new(),
+        )
+        .is_ok());
+        assert!(
+            cadmpeg_ir::admit(&accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new()).is_ok()
+        );
+
+        assert!(!cadmpeg_ir::admit_with_annotations(
+            &rejected,
+            &annotations,
+            cadmpeg_ir::RHINO_DRAFT_CHECKS,
+            Vec::new(),
+        )
+        .is_ok());
+        assert!(
+            !cadmpeg_ir::admit(&rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new()).is_ok()
+        );
     }
 }

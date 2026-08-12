@@ -755,7 +755,7 @@
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "fe72aa6bf89e4cf34eab3b389be02624e1a8cefdf6961ed1abae227166e80333",
+        "sldprt_native_sketch_sha256": "00632df76d942182285bc213dc95a035ceac582474de632934349bcabaa266e1",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -778,12 +778,20 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "topology_gauge_substituted",
+        "code": {
+          "code": "topology.body-hierarchy-derived",
+          "kind": "topology_gauge_substituted",
+          "namespace": "sldprt"
+        },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "config.inferred-without-native",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt"
+        },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
       }

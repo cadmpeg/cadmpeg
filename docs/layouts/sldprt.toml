@@ -16,6 +16,48 @@ Parasolid payload words are big-endian. Where a §1 field states no endianness
 the table says `unstated` and says so in the field note.
 """
 
+[[record]]
+name = "feature_input_operand_cell12"
+kind = "byte"
+section = "2"
+anchor = "Each cell stores its little-endian u16 tag at +0"
+size = 12
+endianness = "little"
+note = "Primary and legacy named-scalar operand cell. A lane-local class declaration can begin immediately after this cell."
+
+[[record.field]]
+name = "class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "little-endian u16 tag at +0"
+
+[[record.field]]
+name = "marker_address"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "u16 marker address at +2"
+
+[[record.field]]
+name = "reference_sentinel"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff` at +4"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 8
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at +8"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
+contains = "let cell = payload.get(offset..offset + 12)?;"
+note = "The scalar parser reads the primary and legacy operand as one 12-byte cell."
+
 # --- Container envelopes ---------------------------------------------------
 
 [[record]]
@@ -4880,7 +4922,7 @@ section = "2"
 anchor = "store a 97-byte constructed reference-plane frame immediately after the class name"
 size = 97
 endianness = "little"
-note = "Offsets begin immediately after the data-class name."
+note = "Offsets begin immediately after the data-class name. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix."
 
 [[record.field]]
 name = "origin"
@@ -5426,6 +5468,93 @@ path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
 contains = "const EXTENDED_DIRECTION_OFFSET: usize = 129;"
 note = "The parser reads the extended-form pull direction only after the nine-byte zero discriminator."
 
+[[record]]
+name = "wide_spatial_marker_coordinate_prefix"
+kind = "byte"
+section = "2"
+anchor = "In either `ff ff 1f` form, the native kind is at marker +17"
+size = 90
+endianness = "little"
+note = "The fixed coordinate prefix is shared by point and relation-handle markers. The record trailer follows the third coordinate."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An object-indexed marker-backed spatial point begins with `ff ff 07 00 01`, `ff ff 1f 00 01`, or `ff ff 1f 00 03`"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes"
+
+[[record.field]]
+name = "sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "little-endian f32 `-1.0`"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "the native kind is at marker +17"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "Reserved bytes before the profile locus."
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "role bytes `04 00 02 00`"
+
+[[record.field]]
+name = "profile_role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "profile role u16 `1`"
+
+[[record.gap]]
+offset = 29
+size = 19
+note = "Marker state, selector, and reserved bytes precede the state value."
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "marker +48 stores f64 `1`"
+
+[[record.gap]]
+offset = 56
+size = 8
+note = "Zero bytes before the coordinate tag."
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "marker +64 contains `0e 00`"
+
+[[record.field]]
+name = "coordinates"
+offset = 66
+type = "f64[3]"
+source = "spec"
+anchor = "the coordinates begin at marker +66"
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]
@@ -5445,6 +5574,12 @@ area = "Inline record framing (§10)"
 reason = "Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. Specification section 5 gives the supported schema, disc, and flo slot-count table."
 section = "10"
 anchor = "For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, and the first byte after the slot run is `00`"
+
+[[not_applicable]]
+area = "SWIFT semantic PMI object graph (§2.1)"
+reason = "Token-framed variable-length grammar. Every entity and section is delimited by Pascal-string tokens and counted key/value or relation rosters; no field has a fixed offset from the stream or entity start."
+section = "2.1"
+anchor = "Entity sections use these grammars"
 
 [[not_applicable]]
 area = "Compound File Binary directory entry (§1)"

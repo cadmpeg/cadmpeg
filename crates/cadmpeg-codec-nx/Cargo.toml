@@ -19,6 +19,10 @@ documentation = "https://docs.rs/cadmpeg-codec-nx"
 keywords = ["cad", "siemens-nx", "parasolid", "prt", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
+[features]
+fuzzing = []
+profile = []
+
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
@@ -29,10 +33,15 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
-# Enables `cadmpeg_core::golden`, the shared snapshot harness.
-# Feature unification applies it to the test build only, so the published
-# library is unchanged.
-cadmpeg-core = { workspace = true, features = ["golden"] }
+cadmpeg-ir = { workspace = true, features = ["examples"] }
+
+# Test-only golden harness and round-trip helpers.
+cadmpeg-test-support = { workspace = true }
+
+[[bin]]
+name = "nx_profile"
+path = "src/bin/nx_profile.rs"
+required-features = ["profile"]
 
 [lints]
 workspace = true

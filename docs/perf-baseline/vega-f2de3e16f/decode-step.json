@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "command": "timeout 120 'target/release/cadmpeg' decode '/Users/irvel/side2/cadmpeg/.worktrees/feat/refactor-convergence/crates/cadmpeg-codec-step/tests/fixtures/ap242_tessellation.p21' >/dev/null",
+      "mean": 0.00896829192,
+      "stddev": 0.0007734378665288503,
+      "median": 0.008547400719999999,
+      "user": 0.00304684,
+      "system": 0.00341442,
+      "min": 0.00823110872,
+      "max": 0.009915399719999999,
+      "times": [
+        0.009915399719999999,
+        0.008547400719999999,
+        0.00846019172,
+        0.00823110872,
+        0.009687358719999999
+      ],
+      "memory_usage_byte": [
+        7536640,
+        7536640,
+        7536640,
+        7536640,
+        7536640
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

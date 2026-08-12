@@ -71,7 +71,7 @@ fn feature_input_lane(
     let names = object_names(payload, &parent);
     let scalars = named_scalars(payload, &parent, &names);
     let relation_bindings = relation_bindings(&parent, &classes, &scalars);
-    let references = reference_cells(&scalars);
+    let references = reference_cells(&scalars, &classes);
     let sketch_entities = sketch_input_entities(payload, &parent);
     for entity in &sketch_entities {
         let signature = usize::try_from(entity.offset)

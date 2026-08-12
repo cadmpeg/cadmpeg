@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::RhinoCodec;
 
@@ -68,7 +68,7 @@ fn decode_counts(path: &Path) -> Option<(u64, usize, usize)> {
             eprintln!("  {}: {}", loss.code, loss.message);
         }
     }
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
     assert!(
         validation.findings.iter().all(|finding| !matches!(
             finding.severity,

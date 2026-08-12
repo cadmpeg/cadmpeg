@@ -5,20 +5,22 @@
 //! `tests/golden/fixtures/*.sldprt` are the frozen inputs.
 //! Fixtures stay frozen; `UPDATE_GOLDEN=1` rewrites goldens only.
 //! `inspect` pins the container summary; `decode` pins the IR, losses, and
-//! source fidelity. Shared harness: [`cadmpeg_core::golden`].
+//! source fidelity. Shared harness: [`cadmpeg_test_support::golden`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::golden::{elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, Termination};
-use cadmpeg_ir::roundtrip::{
+use cadmpeg_ir::WritePath;
+use cadmpeg_test_support::golden::{
+    elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
+};
+use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
 };
-use cadmpeg_ir::WritePath;
 
 use super::SldprtCodec;
 

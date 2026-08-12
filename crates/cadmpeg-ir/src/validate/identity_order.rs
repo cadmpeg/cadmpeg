@@ -5,35 +5,21 @@
 use super::*;
 
 pub(super) fn check_version(ir: &CadIr, findings: &mut Vec<Finding>) {
-    if ir.ir_version != IR_VERSION {
+    if ir.ir_version() != IR_VERSION {
         findings.push(Finding {
             check: Check::Version,
             severity: Severity::Error,
             message: format!(
                 "unsupported ir_version {:?}; expected {IR_VERSION}",
-                ir.ir_version
+                ir.ir_version()
             ),
             entity: None,
         });
     }
 }
 
-fn valid_id(id: &str) -> bool {
-    let Some((namespace, key)) = id.split_once('#') else {
-        return false;
-    };
-    if key.is_empty() || key.contains('#') || id.chars().any(char::is_whitespace) {
-        return false;
-    }
-    let mut components = namespace.split(':');
-    components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_none()
-}
-
 fn push_identity(seen: &mut HashSet<String>, findings: &mut Vec<Finding>, id: &str) {
-    if !valid_id(id) {
+    if !crate::ids::is_valid_identity(id) {
         findings.push(Finding {
             check: Check::Identity,
             severity: Severity::Error,

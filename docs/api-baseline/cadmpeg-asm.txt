@@ -1,4 +1,4 @@
-# generated at dbbb6f9e0
+# generated at 3ba4e05c9
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -565,6 +565,92 @@ pub fn cadmpeg_asm::brep::id(cadmpeg_asm::ids::IdFormat<'_>, i64) -> alloc::stri
 pub fn cadmpeg_asm::brep::remap_owned_ids(&mut serde_value::Value, &std::collections::hash::map::HashMap<alloc::string::String, alloc::string::String>)
 pub fn cadmpeg_asm::brep::retain_root_entities(&mut serde_value::Value, &std::collections::hash::set::HashSet<alloc::string::String>)
 pub fn cadmpeg_asm::brep::value_string(&serde_value::Value) -> core::option::Option<&str>
+pub mod cadmpeg_asm::edit
+pub struct cadmpeg_asm::edit::AsmEditSet
+impl cadmpeg_asm::edit::AsmEditSet
+pub fn cadmpeg_asm::edit::AsmEditSet::apply<T>(&mut [u8], impl core::ops::function::FnOnce(&mut [u8], &Self) -> core::result::Result<T, cadmpeg_core::error::CodecError>) -> core::result::Result<T, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::frame(&[u8]) -> core::result::Result<Self, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::from_framed(alloc::vec::Vec<cadmpeg_asm::sab::Record>, usize, f64) -> core::result::Result<Self, cadmpeg_core::error::CodecError>
+pub const fn cadmpeg_asm::edit::AsmEditSet::header_scale(&self) -> f64
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_ascii_field(&self, &mut [u8], &cadmpeg_asm::sab::Record, usize, &str) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_blend_radii(&self, &mut [u8], &cadmpeg_asm::sab::Record, [f64; 2]) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_boolean_at(&mut [u8], usize, bool) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_boolean_field(&self, &mut [u8], &cadmpeg_asm::sab::Record, usize, bool) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_decimal_rgb_field(&self, &mut [u8], &cadmpeg_asm::sab::Record, usize, u32) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_extrusion_definition(&self, &mut [u8], &cadmpeg_asm::sab::Record, [f64; 2], cadmpeg_ir::math::Vector3, cadmpeg_ir::math::Point3) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_f64_payload(&mut [u8], usize, f64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_f64_payloads(&mut [u8], usize, impl core::iter::traits::collect::IntoIterator<Item = (usize, f64)>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_integer_field(&self, &mut [u8], &cadmpeg_asm::sab::Record, usize, u8, i64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_knot_structure(&mut [u8], usize, &cadmpeg_asm::nurbs::core::KnotPatchLayout, &[f64], usize) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_layout_integer(&mut [u8], usize, usize, i64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_nurbs_curve(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::edit::NurbsCurveEdit<'_>, bool) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_nurbs_pcurve(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::edit::NurbsPcurveEdit<'_>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_nurbs_surface(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::edit::NurbsSurfaceEdit<'_>, core::option::Option<usize>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_procedural_curve_definition(&self, &mut [u8], &cadmpeg_asm::sab::Record, &cadmpeg_ir::geometry::ProceduralCurveDefinition) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_procedural_curve_fit(&self, &mut [u8], &cadmpeg_asm::sab::Record, f64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_procedural_surface_fit(&self, &mut [u8], &cadmpeg_asm::sab::Record, f64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_ref_pcurve(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_asm::edit::NurbsPcurveEdit<'_>) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_sense_field(&self, &mut [u8], &cadmpeg_asm::sab::Record, usize, cadmpeg_ir::topology::Sense) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_tagged_i64(&mut [u8], u64, usize, u8, i64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_tagged_integer_at(&mut [u8], usize, usize, i64) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_transform(&self, &mut [u8], &cadmpeg_asm::sab::Record, cadmpeg_ir::transform::Transform) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_truecolor_field(&self, &mut [u8], &cadmpeg_asm::sab::Record, usize, u32) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::patch_vector_payload(&mut [u8], usize, [f64; 3]) -> core::result::Result<(), cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::record(&self, usize) -> core::option::Option<&cadmpeg_asm::sab::Record>
+pub fn cadmpeg_asm::edit::AsmEditSet::records(&self) -> &[cadmpeg_asm::sab::Record]
+pub const fn cadmpeg_asm::edit::AsmEditSet::ref_width(&self) -> usize
+pub fn cadmpeg_asm::edit::AsmEditSet::required_payload_field(&self, &[u8], &cadmpeg_asm::sab::Record, usize, u8) -> core::result::Result<usize, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::edit::AsmEditSet::required_payload_field_at(&[u8], &cadmpeg_asm::sab::Record, usize, usize, u8) -> core::result::Result<usize, cadmpeg_core::error::CodecError>
+impl core::marker::Freeze for cadmpeg_asm::edit::AsmEditSet
+impl core::marker::Send for cadmpeg_asm::edit::AsmEditSet
+impl core::marker::Sync for cadmpeg_asm::edit::AsmEditSet
+impl core::marker::Unpin for cadmpeg_asm::edit::AsmEditSet
+impl core::marker::UnsafeUnpin for cadmpeg_asm::edit::AsmEditSet
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::edit::AsmEditSet
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::edit::AsmEditSet
+pub struct cadmpeg_asm::edit::NurbsCurveEdit<'a>
+pub cadmpeg_asm::edit::NurbsCurveEdit::curve: &'a cadmpeg_ir::geometry::NurbsCurve
+pub cadmpeg_asm::edit::NurbsCurveEdit::periodic: core::option::Option<bool>
+impl<'a> core::clone::Clone for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+pub fn cadmpeg_asm::edit::NurbsCurveEdit<'a>::clone(&self) -> cadmpeg_asm::edit::NurbsCurveEdit<'a>
+impl<'a> core::marker::Copy for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+impl<'a> core::marker::Freeze for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+impl<'a> core::marker::Send for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+impl<'a> core::marker::Sync for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+impl<'a> core::marker::Unpin for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::edit::NurbsCurveEdit<'a>
+pub struct cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+pub cadmpeg_asm::edit::NurbsPcurveEdit::fit_tolerance: core::option::Option<f64>
+pub cadmpeg_asm::edit::NurbsPcurveEdit::native_geometry: &'a cadmpeg_ir::geometry::PcurveGeometry
+pub cadmpeg_asm::edit::NurbsPcurveEdit::native_tail_flags: core::option::Option<[bool; 4]>
+pub cadmpeg_asm::edit::NurbsPcurveEdit::parameter_range: core::option::Option<[f64; 2]>
+pub cadmpeg_asm::edit::NurbsPcurveEdit::periodic: core::option::Option<bool>
+pub cadmpeg_asm::edit::NurbsPcurveEdit::wrapper_reversed: core::option::Option<bool>
+impl<'a> core::clone::Clone for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+pub fn cadmpeg_asm::edit::NurbsPcurveEdit<'a>::clone(&self) -> cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+impl<'a> core::marker::Copy for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+impl<'a> core::marker::Freeze for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+impl<'a> core::marker::Send for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+impl<'a> core::marker::Sync for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+impl<'a> core::marker::Unpin for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::edit::NurbsPcurveEdit<'a>
+pub struct cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+pub cadmpeg_asm::edit::NurbsSurfaceEdit::periodic: core::option::Option<[bool; 2]>
+pub cadmpeg_asm::edit::NurbsSurfaceEdit::surface: &'a cadmpeg_ir::geometry::NurbsSurface
+impl<'a> core::clone::Clone for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+pub fn cadmpeg_asm::edit::NurbsSurfaceEdit<'a>::clone(&self) -> cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+impl<'a> core::marker::Copy for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+impl<'a> core::marker::Freeze for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+impl<'a> core::marker::Send for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+impl<'a> core::marker::Sync for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+impl<'a> core::marker::Unpin for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+impl<'a> core::marker::UnsafeUnpin for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_asm::edit::NurbsSurfaceEdit<'a>
 pub mod cadmpeg_asm::ids
 pub struct cadmpeg_asm::ids::IdFormat<'a>(pub &'a str)
 impl core::fmt::Display for cadmpeg_asm::ids::IdFormat<'_>

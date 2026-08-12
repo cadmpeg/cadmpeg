@@ -56,6 +56,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:626-699` inserts bridges, vertex uses, and points by attribute, so a later valid occurrence replaces the earlier one. `:403-447` keeps the latest candidate occurrence for edge and coedge attributes. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:477-484` and `:565-573` likewise keep the record with the greatest sequence for duplicate entity attributes. If two complete records share an attribute but point to different loops or coordinates, the later or highest-sequence record controls the emitted topology without a decoded native conflict rule. Candidate evidence rejects some ambiguous edge and coedge shapes, but the other tables have no uniqueness gate. Confidence: high.
 
+### BC-05. Extended topology reference form
+
+**Question.** Does a SolidWorks Parasolid topology stream encode a reference wider than `u16`?
+
+**Known.** Typed topology records store `refs` as big-endian `u16` values at fixed strides in `brep/topology.rs`. The `u16` ceiling is real for every settled fixed-offset call site. Siemens NX encodes an extended XMT form as a negative signed remainder plus a quotient (`quotient * 32767 + remainder`).
+
+**Need.** Corpus bytes that exercise a topology reference above `65535` before any encoding change. A confirmed extended form changes record length and turns the fixed-offset call sites into a running cursor.
+
+**Note.** The NX extended form is a hypothesis for SolidWorks, not evidence. Do not invent the encoding without corpus bytes. Confidence: open.
+
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV
@@ -521,6 +531,22 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 **Need.** We must know the record width and direction field to decode each line reference without choosing a candidate by plausibility.
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs:258-444` accepts finite direction triples whose norm is within tolerance, and several layout branches return the first matching direction. The final ambiguous branch rejects distinct vectors, but the test in `axes_tests.rs:26-46` covers only that branch. If one record satisfies two layout predicates with different valid unit triples, the first branch wins without proving the other candidate invalid. Commit `e0037cf23` added negative coverage but did not establish the native width or trailer semantics from an independent record. Confidence: high.
+
+### DI-33. SWIFT feature-to-topology identity
+
+**Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid body, face, edge, or vertex identity?
+
+**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature can own a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. An empty identifier supplies no topology identity. The annotation target remains the stable GDT-analysis feature identity when that identifier does not resolve to one neutral topology object.
+
+**Need.** We must know the identity conversion to attach semantic PMI to the exact neutral topology object.
+
+### DI-34. SWIFT implicit nominal construction
+
+**Question.** Which nominal-geometry rule applies to each remaining feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent or zero?
+
+**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel when `Dimension` is absent or zero. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width and length from named slot-geometry fields and radius from the named radius field of fillet, cylindrical, or spherical geometry. It defines counterbore diameter from the direct nominal cylinder and countersink diameter and angle from the direct nominal cone. An empty applied-feature graph and empty CAD identifiers supply no geometry and do not bind an unrelated rendered literal. Directional distance annotations recover plane, axis, compound-hole, and closed-slot feature-of-size locations from their named geometry.
+
+**Need.** We must define nonidentity `NominalTransform` semantics and the other `ComputeAnswerBy`, `Direction`, and `NormalTo` modes before those forms can supply a nominal.
 
 ## 6. Write-path evidence
 

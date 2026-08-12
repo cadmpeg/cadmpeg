@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-test-support"
+description = "Test-only golden harness and round-trip helpers for cadmpeg codecs."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+cadmpeg-core.workspace = true
+cadmpeg-ir.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

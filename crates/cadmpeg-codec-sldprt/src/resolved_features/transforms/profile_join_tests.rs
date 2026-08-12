@@ -4,10 +4,12 @@ use super::*;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchInputLink, SketchRelationKind,
+    FeatureInputOperandKind, FeatureInputReference, FeatureInputRelationFamily,
+    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
+    SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
+use cadmpeg_ir::annotations::{Annotations, ExactnessNote, StreamProvenance};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
     Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, PathRef,
@@ -17,8 +19,9 @@ use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    SketchPlacement,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -641,6 +644,95 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert!(replacement_entities
         .iter()
         .all(|entity| entity.sketch == expected_sketch));
+}
+
+#[test]
+fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
+    let native_feature = NativeFeature {
+        id: "feature-native".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: Some("1".into()),
+        parent_source_id: None,
+        ordinal: 1,
+        name: "generated-profile".into(),
+        kind: String::new(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native_feature],
+    }];
+    let mut features = vec![Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: Some("generated-profile".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: None,
+        },
+        native_ref: Some("feature-native".into()),
+    }];
+    let lanes = vec![FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0],
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![marker("point", Some([0.001, 0.002]))],
+    }];
+    let mut sketches = Vec::new();
+    let mut entities = Vec::new();
+
+    project_marker_backed_sketches(
+        &mut features,
+        &mut sketches,
+        &mut entities,
+        &histories,
+        &lanes,
+    );
+
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
+    assert!(matches!(
+        entities.as_slice(),
+        [SketchEntity {
+            geometry: SketchGeometry::Point { position },
+            ..
+        }] if *position == Point2::new(1.0, 2.0)
+    ));
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Sketch { sketch: Some(sketch), .. }
+            if sketch == &sketches[0].id
+    ));
 }
 
 #[test]
@@ -2031,6 +2123,71 @@ fn axis_relation_expands_intermediate_relation_handle() {
             &HashMap::new(),
         ),
         Some(SketchConstraintDefinition::Native { .. })
+    ));
+}
+
+#[test]
+fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
+    let sketch = SketchId("sketch".into());
+    let first_id = SketchEntityId("first-entity".into());
+    let second_id = SketchEntityId("second-entity".into());
+    let mut first = marker("first", Some([0.0, 0.0]));
+    first.kind = SketchInputKind::Point;
+    let mut proxy = marker("proxy", None);
+    proxy.kind = SketchInputKind::Point;
+    let mut relation = marker("horizontal", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.object_index = Some(4);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 4,
+            entity_ref: first.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: proxy.id.clone(),
+        },
+    ];
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (proxy.id.as_str(), &proxy),
+        (relation.id.as_str(), &relation),
+    ]);
+    let second_locus = SketchLocus::Entity(second_id.clone());
+    let loci = HashMap::from([(proxy.id.clone(), vec![second_locus.clone()])]);
+    let point = |id, native_ref, position| SketchEntity {
+        id,
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let entities = vec![
+        point(
+            first_id.clone(),
+            Some(first.id.clone()),
+            Point2::new(0.0, 0.0),
+        ),
+        point(second_id, None, Point2::new(1.0, 2.0)),
+    ];
+
+    let definition =
+        typed_marker_relation_definition_in_sketch(&relation, &sketch, &entities, &markers, &loci)
+            .expect("typed horizontal point relation");
+
+    assert_eq!(
+        definition,
+        SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(first_id),
+            second: second_locus,
+        }
+    );
+    assert!(marker_relation_is_inactive(
+        &relation,
+        &definition,
+        &entities,
     ));
 }
 
@@ -4979,7 +5136,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     ));
 
     let mut mirror_history = history.clone();
-    mirror_history.features[1].input_class = Some("moMirrorPattern_c".into());
+    mirror_history.features[1].input_class = Some("moMirrorSolid_c".into());
     mirror_history.features[2].input_class = Some("moDerivedCosmeticThread_c".into());
     let mut mirror_lane = lane.clone();
     mirror_lane.names[2].offset = 150;
@@ -6445,6 +6602,381 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
 
     assert_eq!(resolved.id, "center");
     assert!((radius - 5.0).abs() < 1.0e-12);
+}
+
+#[test]
+fn declared_entity_handle_uses_one_linked_center_radial_pair() {
+    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let operand = FeatureInputOperand {
+        offset: 100,
+        reference_ref: "reference".into(),
+        kind,
+        entity_index: 0,
+        entity_ref: None,
+    };
+    let class = FeatureInputClass {
+        id: "class".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 112,
+        name: "sgEntHandle".into(),
+        role: FeatureInputClassRole::SketchEntity,
+    };
+    let reference = FeatureInputReference {
+        id: operand.reference_ref.clone(),
+        parent: "lane".into(),
+        feature_ref: Some("feature-native".into()),
+        ordinal: 0,
+        offset: operand.offset,
+        kind,
+        class_ref: Some(class.id.clone()),
+        object_index: 0,
+    };
+    let mut center = marker("center", Some([0.010, 0.020]));
+    center.offset = 10;
+    center.object_index = Some(50);
+    center.local_id = Some(49);
+    let mut radial = marker("radial", Some([0.013, 0.024]));
+    radial.offset = 20;
+    radial.object_index = Some(49);
+    radial.local_id = Some(0);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![class],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![reference],
+        sketch_entities: vec![center, radial],
+    };
+
+    let (resolved, radius) = declared_entity_handle_circular_marker(
+        std::slice::from_ref(&lane),
+        "feature-native",
+        &operand,
+        5.0,
+    )
+    .expect("declared entity-handle circle");
+
+    assert_eq!(resolved.id, "center");
+    assert!((radius - 5.0).abs() < 1.0e-12);
+
+    for kind in [SketchInputKind::LineOrCircle, SketchInputKind::Arc] {
+        let mut lane = lane.clone();
+        lane.sketch_entities[0].kind = kind;
+        assert!(declared_entity_handle_circular_marker(
+            std::slice::from_ref(&lane),
+            "feature-native",
+            &operand,
+            5.0,
+        )
+        .is_some());
+    }
+    let mut invalid_radial = lane.clone();
+    invalid_radial.sketch_entities[1].kind = SketchInputKind::Arc;
+    assert!(declared_entity_handle_circular_marker(
+        std::slice::from_ref(&invalid_radial),
+        "feature-native",
+        &operand,
+        5.0,
+    )
+    .is_none());
+
+    let mut ambiguous = lane;
+    let mut second_center = marker("second-center", Some([0.020, 0.030]));
+    second_center.offset = 30;
+    second_center.object_index = Some(52);
+    second_center.local_id = Some(51);
+    let mut second_radial = marker("second-radial", Some([0.023, 0.034]));
+    second_radial.offset = 40;
+    second_radial.object_index = Some(51);
+    second_radial.local_id = Some(0);
+    ambiguous
+        .sketch_entities
+        .extend([second_center, second_radial]);
+    assert!(declared_entity_handle_circular_marker(
+        std::slice::from_ref(&ambiguous),
+        "feature-native",
+        &operand,
+        5.0,
+    )
+    .is_none());
+}
+
+#[test]
+fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
+    let sketch_id = SketchId("nested".into());
+    let sketch = Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: Some("lane".into()),
+    };
+    let circle = SketchEntity {
+        id: SketchEntityId("circle".into()),
+        sketch: sketch_id,
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(10.0, 20.0),
+            radius: Length(5.0),
+        },
+    };
+    let declared = [([0.010, 0.020], 5.0)];
+
+    assert!(nested_profile_contains_declared_circular_carriers(
+        &sketch,
+        std::slice::from_ref(&circle),
+        &declared,
+    ));
+    let mut arc = circle;
+    arc.geometry = SketchGeometry::Arc {
+        center: Point2::new(10.0, 20.0),
+        radius: Length(5.0),
+        start_angle: Angle(0.0),
+        end_angle: Angle(std::f64::consts::PI),
+    };
+    assert!(nested_profile_contains_declared_circular_carriers(
+        &sketch,
+        std::slice::from_ref(&arc),
+        &declared,
+    ));
+    assert!(!nested_profile_contains_declared_circular_carriers(
+        &sketch,
+        &[],
+        &declared,
+    ));
+}
+
+#[test]
+fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
+    let native_feature = NativeFeature {
+        id: "feature-native".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("7".into()),
+        parent_source_id: None,
+        ordinal: 7,
+        name: "Sketch1".into(),
+        kind: String::new(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native_feature],
+    };
+    let mut features = vec![Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: None,
+        },
+        native_ref: Some("feature-native".into()),
+    }];
+    let parameter = DesignParameter {
+        id: ParameterId("diameter".into()),
+        owner: Some(features[0].id.clone()),
+        ordinal: 0,
+        name: "diameter".into(),
+        expression: "10".into(),
+        display: Some(DimensionDisplay::Diameter),
+        value: Some(ParameterValue::Length(Length(10.0))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: Some("parameter-scalar".into()),
+    };
+    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let operand = FeatureInputOperand {
+        offset: 300,
+        reference_ref: "reference".into(),
+        kind,
+        entity_index: 0,
+        entity_ref: None,
+    };
+    let class = FeatureInputClass {
+        id: "class".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 312,
+        name: "sgEntHandle".into(),
+        role: FeatureInputClassRole::SketchEntity,
+    };
+    let mut center = marker("center", Some([0.010, 0.020]));
+    center.offset = 400;
+    center.object_index = Some(50);
+    center.local_id = Some(49);
+    let mut radial = marker("radial", Some([0.013, 0.024]));
+    radial.offset = 410;
+    radial.object_index = Some(49);
+    radial.local_id = Some(0);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![class.clone()],
+        names: vec![FeatureInputName {
+            id: "feature-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 100,
+            value: "Sketch1".into(),
+            object_id: Some(7),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![FeatureInputRelationInstance {
+            id: "circle-dimension".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 280,
+            family: FeatureInputRelationFamily::CircleDiameter,
+            class_ref: class.id.clone(),
+            feature_ref: "feature-native".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: Some("parameter-scalar".into()),
+            display_scalar_ref: None,
+            operands: vec![operand.clone()],
+        }],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![FeatureInputReference {
+            id: operand.reference_ref,
+            parent: "lane".into(),
+            feature_ref: Some("feature-native".into()),
+            ordinal: 0,
+            offset: operand.offset,
+            kind,
+            class_ref: Some(class.id),
+            object_index: 0,
+        }],
+        sketch_entities: vec![center, radial],
+    };
+    let sketch_id = SketchId("support-sketch".into());
+    let entity_id = SketchEntityId("support-entity".into());
+    let constraint_id = SketchConstraintId("support-constraint".into());
+    let mut sketches = vec![Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: Some("lane".into()),
+    }];
+    let mut entities = vec![SketchEntity {
+        id: entity_id.clone(),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        },
+    }];
+    let mut constraints = vec![SketchConstraint {
+        id: constraint_id.clone(),
+        sketch: sketch_id.clone(),
+        definition: SketchConstraintDefinition::Native {
+            native_kind: "endpoint".into(),
+            native_state: None,
+            native_flags: None,
+            native_properties: BTreeMap::new(),
+            entities: vec![entity_id.clone()],
+            parameter: None,
+            operands: Vec::new(),
+        },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    }];
+    let mut annotations = Annotations::default();
+    annotations.provenance.insert(
+        sketch_id.0.clone(),
+        StreamProvenance {
+            stream: 0,
+            offset: 200,
+            tag: Some("support".into()),
+        },
+    );
+    for id in [&sketch_id.0, &entity_id.0, &constraint_id.0] {
+        annotations
+            .exactness
+            .insert(id.clone(), ExactnessNote::default());
+    }
+
+    bind_sketch_profiles(
+        &mut features,
+        &mut sketches,
+        &mut entities,
+        &mut constraints,
+        &[parameter],
+        &[history],
+        &[lane],
+        &mut annotations,
+    );
+
+    assert!(sketches.is_empty());
+    assert!(entities.is_empty());
+    assert!(constraints.is_empty());
+    assert!(annotations.provenance.is_empty());
+    assert!(annotations.exactness.is_empty());
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Sketch { sketch: None, .. }
+    ));
 }
 
 #[test]

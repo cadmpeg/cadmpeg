@@ -6,11 +6,12 @@ use std::fmt::Write as _;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
-use cadmpeg_ir::report::{LossKind, LossNote};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::{decode_text, opaque_record_id, record_targets};
+use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
 
 const DRAWING_ENTITIES: &[&str] = &[
     "DRAWING_DEFINITION",
@@ -21,11 +22,6 @@ const DRAWING_ENTITIES: &[&str] = &[
     "DRAUGHTING_MODEL",
     "DRAUGHTING_CALLOUT",
 ];
-
-pub(super) struct DrawingResult {
-    pub typed_records: HashSet<u64>,
-    pub losses: Vec<LossNote>,
-}
 
 struct TargetContext<'a> {
     target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
@@ -51,7 +47,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
     known_typed: &HashSet<u64>,
-) -> DrawingResult {
+) -> StageOutcome<()> {
     let mut losses = Vec::new();
     let mut candidates = exchange
         .records
@@ -62,7 +58,7 @@ pub(super) fn decode(
                 .is_none_or(|count| source_parameters(&exchange.records[id], name).len() >= count);
             if !valid {
                 losses.push(LossNote::new(
-                    LossKind::RecordNotTyped,
+                    LossKind::shared(LossTaxonomy::RecordNotTyped),
                     format!(
                         "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
                     ),
@@ -74,9 +70,12 @@ pub(super) fn decode(
     candidates.sort_by_key(|(id, _)| exchange.records[id].span.start);
 
     if candidates.is_empty() {
-        return DrawingResult {
-            typed_records: HashSet::new(),
+        return StageOutcome {
+            value: (),
+            claims: HashSet::new(),
+            warnings: Vec::new(),
             losses,
+            notes: Vec::new(),
         };
     }
 
@@ -164,9 +163,12 @@ pub(super) fn decode(
 
     let typed_records = drawings.keys().copied().collect::<HashSet<_>>();
     ir.model.drawings.extend(drawings.into_values());
-    DrawingResult {
-        typed_records,
+    StageOutcome {
+        value: (),
+        claims: typed_records,
+        warnings: Vec::new(),
         losses,
+        notes: Vec::new(),
     }
 }
 
@@ -187,7 +189,7 @@ fn drawing_kind(name: &str) -> DrawingKind {
 }
 
 fn drawing_identity(id: u64, name: &str) -> String {
-    format!("step:drawing:{}#{id}", name.to_ascii_lowercase())
+    StepIdentity::drawing(&name.to_ascii_lowercase(), id)
 }
 
 fn required_parameter_count(name: &str) -> Option<usize> {
@@ -266,7 +268,7 @@ fn add_reference_fields(
         for target_id in references {
             let Some(target) = target_context.target(target_id) else {
                 losses.push(LossNote::new(
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     format!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
                     ),
@@ -308,7 +310,7 @@ fn add_sheet_revision_usages(
                     .push(target);
             } else {
                 losses.push(LossNote::new(
-                    LossKind::ReferenceGraphNotClosed,
+                    LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
                     format!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
                     ),
@@ -337,7 +339,7 @@ fn add_sheet_revision_usages(
                     .push(target);
             } else {
                 losses.push(LossNote::new(
-                    LossKind::ReferenceGraphNotClosed,
+                    LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
                     format!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
                     ),
@@ -373,7 +375,7 @@ fn add_draughting_model_associations(
                 .push(definition);
         } else if parameters.get(2).and_then(value_reference).is_some() {
             losses.push(LossNote::new(
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     format!(
                         "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
                 ),
@@ -393,7 +395,7 @@ fn add_draughting_model_associations(
                     .push(item);
             } else {
                 losses.push(LossNote::new(
-                    LossKind::MetadataNotTransferred,
+                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
                     format!(
                         "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
                     ),
@@ -482,7 +484,7 @@ fn value_text(
             losses,
             record_id,
             field,
-            LossKind::MetadataNotTransferred,
+            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
         ),
         Value::Binary(value) => Some(format!(
             "binary:{}:{}",

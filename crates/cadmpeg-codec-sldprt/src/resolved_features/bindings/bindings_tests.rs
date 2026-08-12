@@ -2,18 +2,129 @@
 
 use super::super::LEGACY_SKETCH_MARKER;
 use super::{
-    bind_mirror_surface_planes, bind_resolved_curve_vertices, normalize_indexed_curve_entities,
+    bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_resolved_curve_vertices,
+    bind_scalar_operands, normalize_indexed_curve_entities,
 };
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
-    FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind,
+    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+    FeatureInputComponentPathEntry, FeatureInputLane, FeatureInputName, FeatureInputScalar,
+    FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternForm, PatternKind};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, Sense};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+
+#[test]
+fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
+    let native_feature = |id: &str,
+                          source_id: &str,
+                          ordinal,
+                          name: &str,
+                          xml_tag: &str,
+                          input_class: Option<&str>| NativeFeature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: xml_tag.into(),
+        tree_parent: None,
+        source_id: Some(source_id.into()),
+        parent_source_id: None,
+        ordinal,
+        name: name.into(),
+        kind: name.into(),
+        input_class: input_class.map(str::to_string),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let mut extrusion = native_feature("extrusion", "10", 0, "Cut-Extrude-Thin", "Extrusion", None);
+    extrusion.parameters.insert("D5".into(), "0.3".into());
+    let mut child = native_feature(
+        "profile-child",
+        "11",
+        1,
+        "Sketch4<3>",
+        "Sketch",
+        Some("moProfileFeature_c"),
+    );
+    child
+        .properties
+        .insert("Description".into(), child.name.clone());
+    let following = native_feature("following", "12", 2, "Following", "Feature", None);
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![extrusion, child, following],
+    };
+    let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        id: id.into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset,
+        object_id: Some(object_id),
+        value: value.into(),
+    };
+    let scalar = |id: &str, offset, name: &str| FeatureInputScalar {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: None,
+        ordinal: 0,
+        offset,
+        object_id: 20,
+        name: name.into(),
+        value: 0.001,
+        role: FeatureInputScalarRole::Driving,
+        entity_indices: Vec::new(),
+        operands: Vec::new(),
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; 500],
+        classes: Vec::new(),
+        names: vec![
+            name("extrusion-name", 100, 10, "Cut-Extrude-Thin"),
+            name("child-name", 200, 11, "Sketch4<3>"),
+            name("d5-name", 240, 20, "D5"),
+            name("d6-name", 280, 21, "D6"),
+            name("d7-name", 320, 22, "D7"),
+            name("following-name", 400, 12, "Following"),
+            name("later-name", 440, 23, "later"),
+        ],
+        scalars: vec![
+            scalar("d5", 250, "d5-name"),
+            scalar("d6", 290, "d6-name"),
+            scalar("d7", 330, "d7-name"),
+            scalar("later", 450, "later-name"),
+        ],
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    bind_scalar_operands(
+        std::slice::from_ref(&history),
+        std::slice::from_mut(&mut lane),
+    );
+
+    assert!(lane.scalars[..3]
+        .iter()
+        .all(|scalar| scalar.feature_ref.as_deref() == Some("extrusion")));
+    assert_eq!(lane.scalars[3].feature_ref.as_deref(), Some("following"));
+}
 
 #[test]
 fn mirror_plane_binds_through_one_persistent_face_identity() {
@@ -86,7 +197,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             ordinal: 0,
             name: "Mirror".into(),
             kind: "Mirror".into(),
-            input_class: Some("moMirrorPattern_c".into()),
+            input_class: Some("moMirrorSolid_c".into()),
             suppressed: false,
             parameters: BTreeMap::new(),
             dimension_properties: BTreeMap::new(),
@@ -263,4 +374,138 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
     bind_resolved_curve_vertices(&mut lane);
 
     assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Point);
+}
+
+#[test]
+fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
+    let feature = NativeFeature {
+        id: "spatial".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: Some("7".into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: "Position".into(),
+        kind: "3DSketch".into(),
+        input_class: Some("mo3DProfileFeature_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::from([
+            ("D1".into(), "10".into()),
+            ("D2".into(), "20".into()),
+            ("D3".into(), "30".into()),
+            ("Mode".into(), "authored".into()),
+        ]),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let class = |offset, name: &str| FeatureInputClass {
+        id: format!("class-{offset}"),
+        parent: "sldprt:feature-input:config-objects#1".into(),
+        ordinal: 0,
+        offset,
+        name: name.into(),
+        role: FeatureInputClassRole::Native,
+    };
+    let name = |index, value: &str| FeatureInputName {
+        id: format!("name-{index}"),
+        parent: "sldprt:feature-input:config-objects#1".into(),
+        ordinal: index,
+        offset: 250 + u64::from(index),
+        object_id: None,
+        value: value.into(),
+    };
+    let scalar = |index, value| FeatureInputScalar {
+        id: format!("scalar-{index}"),
+        parent: "sldprt:feature-input:config-objects#1".into(),
+        feature_ref: None,
+        ordinal: index,
+        offset: 300 + 20 * u64::from(index),
+        object_id: index,
+        name: format!("name-{index}"),
+        value,
+        role: FeatureInputScalarRole::Driving,
+        entity_indices: Vec::new(),
+        operands: Vec::new(),
+    };
+    let entity = |id: &str, offset| SketchInputEntity {
+        id: id.into(),
+        parent: "sldprt:feature-input:config-objects#1".into(),
+        feature_ref: None,
+        ordinal: 0,
+        offset,
+        object_index: Some(1),
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let mut lane = FeatureInputLane {
+        id: "sldprt:feature-input:config-objects#1".into(),
+        configuration: Some("0".into()),
+        native_payload: vec![0; 700],
+        classes: vec![
+            class(100, "moRelMgr_c"),
+            class(200, "sg3DPlaneHandle"),
+            class(500, "suObList"),
+        ],
+        names: vec![name(0, "D1"), name(1, "D2"), name(2, "D3")],
+        scalars: vec![scalar(0, 0.01), scalar(1, 0.02), scalar(2, 0.03)],
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![entity("inside", 150), entity("outside", 550)],
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature.clone()],
+    };
+
+    bind_detached_legacy_sketch_objects(
+        std::slice::from_ref(&history),
+        &HashSet::default(),
+        &mut lane,
+    );
+    assert_eq!(
+        lane.sketch_entities[0].feature_ref.as_deref(),
+        Some("spatial")
+    );
+    assert_eq!(lane.sketch_entities[1].feature_ref, None);
+    assert!(lane
+        .scalars
+        .iter()
+        .all(|scalar| scalar.feature_ref.as_deref() == Some("spatial")));
+
+    let mut ambiguous = lane;
+    for entity in &mut ambiguous.sketch_entities {
+        entity.feature_ref = None;
+    }
+    for scalar in &mut ambiguous.scalars {
+        scalar.feature_ref = None;
+    }
+    let mut second = feature;
+    second.id = "other-spatial".into();
+    let mut ambiguous_history = history;
+    ambiguous_history.features.push(second);
+    bind_detached_legacy_sketch_objects(
+        std::slice::from_ref(&ambiguous_history),
+        &HashSet::default(),
+        &mut ambiguous,
+    );
+    assert!(ambiguous
+        .sketch_entities
+        .iter()
+        .all(|entity| entity.feature_ref.is_none()));
 }

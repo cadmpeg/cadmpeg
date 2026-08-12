@@ -9,7 +9,7 @@
 use std::io::Cursor;
 use std::mem::size_of;
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 
@@ -4536,7 +4536,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     );
 
     // The produced IR validates (free carriers, no dangling references).
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -5172,7 +5172,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -5311,7 +5311,7 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -5388,7 +5388,7 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -5420,7 +5420,7 @@ fn decode_transfers_unset_non_numeric_legacy_parameters() {
         assert_eq!(parameter.value, None);
         assert!(parameter.expression.is_empty());
         assert_eq!(parameter.properties["value_type"], parameter_type);
-        assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
     }
 }
 
@@ -5476,7 +5476,7 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         2
     );
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -5674,7 +5674,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
-    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 
     let mismatched = CatiaCodec
@@ -5957,7 +5957,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 
     let mismatched = CatiaCodec
         .decode(
@@ -6036,7 +6036,7 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -6096,7 +6096,7 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert_eq!(context.sides[1].surface, None);
     assert_eq!(context.sides[1].pcurve, None);
 
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -6130,7 +6130,7 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
     ));
     assert!(result.ir.model.procedural_curves.is_empty());
 
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -6714,7 +6714,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -7349,7 +7349,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
                     && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
             )
     }));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
     assert!(matches!(
         &revolution.definition,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
@@ -7454,7 +7454,7 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
         decoded.ir.model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -7483,7 +7483,7 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
             ..
         }
     ));
-    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -12614,7 +12614,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
             && loss.message.contains("1 design object(s)")
             && loss.message.contains("2 object-graph field record(s)")
     }));
-    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new());
     assert!(validation
         .findings
         .iter()
@@ -19343,9 +19343,11 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
             .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
-        .findings
-        .is_empty());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+            .findings
+            .is_empty()
+    );
 }
 
 #[test]
@@ -19654,9 +19656,11 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         decoded.source_fidelity.annotations.exactness[&output.id.0].fields["properties"],
         cadmpeg_ir::Exactness::Derived
     );
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
-        .findings
-        .is_empty());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+            .findings
+            .is_empty()
+    );
 }
 
 #[test]
@@ -20800,9 +20804,11 @@ fn decode_transfers_typed_integer_to_angle_formula() {
     assert_eq!(input.value, Some(ParameterValue::Integer(2)));
     assert_eq!(output.value, Some(ParameterValue::Angle(Angle(0.5))));
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
-        .findings
-        .is_empty());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+            .findings
+            .is_empty()
+    );
 }
 
 #[test]
@@ -20892,7 +20898,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
             .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         5
     );
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -20978,7 +20984,7 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert!(input.dependencies.is_empty());
         assert_eq!(input.properties["value_type"], parameter_type);
         assert_eq!(input.properties["catia_binding"], "#1_ /2");
-        assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
     }
 }
 
@@ -21010,7 +21016,7 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
     assert_eq!(output.expression, "#1_");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(output.properties["value_type"], "String");
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -21110,9 +21116,11 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
         [width.id.clone(), count.id.clone()].as_slice()
     );
     assert_eq!(output.value, Some(ParameterValue::Real(15.0)));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
-        .findings
-        .is_empty());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+            .findings
+            .is_empty()
+    );
 }
 
 #[test]
@@ -21226,9 +21234,11 @@ fn decode_transfers_a_chained_formula_definition_once() {
     assert_eq!(intermediate.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(output.expression, "#2_ /3+1mm");
     assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
-        .findings
-        .is_empty());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+            .findings
+            .is_empty()
+    );
 }
 
 #[test]
@@ -21275,9 +21285,11 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     assert!(intermediate.dependencies.is_empty());
     assert_eq!(output.expression, "#2_ /3+1mm");
     assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
-        .findings
-        .is_empty());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+            .findings
+            .is_empty()
+    );
 }
 
 #[test]
@@ -21298,9 +21310,11 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
     assert_eq!(intermediate.name, "Intermediate");
     assert_eq!(intermediate.expression, "#1_ /2+1mm");
     assert_eq!(intermediate.dependencies, std::slice::from_ref(&input.id));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
-        .findings
-        .is_empty());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+            .findings
+            .is_empty()
+    );
 }
 
 #[test]
@@ -21319,9 +21333,11 @@ fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
 
     assert_eq!(input.name, "Input");
     assert!(input.dependencies.is_empty());
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
-        .findings
-        .is_empty());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+            .findings
+            .is_empty()
+    );
 }
 
 #[test]
@@ -22953,7 +22969,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -22988,7 +23004,7 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -23041,7 +23057,7 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -23064,7 +23080,10 @@ fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
     assert!(result.ir.model.bodies.is_empty());
     assert!(result.ir.model.faces.is_empty());
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossKind::TopologyNotTransferred
+        loss.code
+            == cadmpeg_ir::report::LossKind::shared(
+                cadmpeg_ir::LossTaxonomy::TopologyNotTransferred,
+            )
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
 }
@@ -23347,7 +23366,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
     assert!(result.ir.native_unknowns("catia").unwrap()[0]
         .links
         .contains(&"catia:e5:surf#0".to_string()));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -23402,7 +23421,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
             && loss.message.contains("two trailing orientation signs")
     }));
 
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

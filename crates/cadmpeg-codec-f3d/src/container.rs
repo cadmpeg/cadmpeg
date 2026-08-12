@@ -24,7 +24,11 @@ use cadmpeg_asm::kernel_header::KernelHeader;
 
 use crate::manifest;
 
+/// Write-path local cap for nested Protein rewriting (`patch_protein_appearances`).
+/// Decode opens nested archives through `ArchiveSnapshot` / `begin_expand`, so
+/// session `ResourceLimits` bind there instead of these constants.
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
+/// Write-path per-entry inflate cap for `read_entry_bounded`.
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].

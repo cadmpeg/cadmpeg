@@ -13,6 +13,60 @@ use crate::records::{
 use cadmpeg_ir::math::Point3;
 
 #[test]
+fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
+    let parent = "sldprt:feature-input:resolved-features#synthetic";
+    let kind = FeatureInputOperandKind::Native(0x81d5);
+    let reference = |offset| FeatureInputOperand {
+        offset,
+        reference_ref: format!("sldprt:feature-input:reference#synthetic:{offset}"),
+        kind,
+        entity_index: 0,
+        entity_ref: None,
+    };
+    let scalars = [FeatureInputScalar {
+        id: "scalar".into(),
+        parent: parent.into(),
+        feature_ref: None,
+        ordinal: 0,
+        offset: 100,
+        object_id: 1,
+        name: "name".into(),
+        value: 1.0,
+        role: FeatureInputScalarRole::Driving,
+        entity_indices: Vec::new(),
+        operands: vec![reference(143), reference(287)],
+    }];
+    let classes = [FeatureInputClass {
+        id: "sldprt:feature-input:class#synthetic:155".into(),
+        parent: parent.into(),
+        ordinal: 0,
+        offset: 155,
+        name: "sgEntHandle".into(),
+        role: FeatureInputClassRole::SketchEntity,
+    }];
+
+    let references = reference_cells(&scalars, &classes);
+
+    assert_eq!(references.len(), 2);
+    assert!(references
+        .iter()
+        .all(|reference| { reference.class_ref.as_deref() == Some(classes[0].id.as_str()) }));
+
+    let mut ambiguous_classes = classes.to_vec();
+    ambiguous_classes.push(FeatureInputClass {
+        id: "sldprt:feature-input:class#synthetic:299".into(),
+        parent: parent.into(),
+        ordinal: 1,
+        offset: 299,
+        name: "sgArcHandle".into(),
+        role: FeatureInputClassRole::SketchEntity,
+    });
+    assert!(reference_cells(&scalars, &ambiguous_classes)
+        .iter()
+        .all(|reference| reference.class_ref.is_none()));
+}
+
+#[test]
 fn current_spatial_point_marker_decodes_model_coordinates() {
     let mut payload = vec![0; 90];
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -67,6 +121,7 @@ fn legacy_spatial_point_marker_decodes_model_coordinates() {
 #[test]
 fn relation_backed_spatial_point_markers_decode_model_coordinates() {
     for (marker, sentinel, coordinates) in [
+        (SKETCH_MARKER, 64, 66),
         (LEGACY_SKETCH_MARKER, 64, 66),
         (LEGACY_EXTENDED_SKETCH_MARKER, 56, 58),
     ] {
@@ -79,6 +134,7 @@ fn relation_backed_spatial_point_markers_decode_model_coordinates() {
         payload[offset + 17..offset + 21].copy_from_slice(&3u32.to_le_bytes());
         payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+        payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
         payload[offset + sentinel..offset + sentinel + 2].copy_from_slice(&[0x0e, 0x00]);
         for (index, value) in [-0.08_f64, 0.075, 0.0055].into_iter().enumerate() {
             let start = offset + coordinates + index * 8;
@@ -89,6 +145,13 @@ fn relation_backed_spatial_point_markers_decode_model_coordinates() {
             marker_spatial_coordinates(&payload, offset),
             Some(Point3::new(-80.0, 75.0, 5.5))
         );
+        if marker == SKETCH_MARKER {
+            payload[offset + 17..offset + 21].copy_from_slice(&86u32.to_le_bytes());
+            assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+            payload[offset + 17..offset + 21].copy_from_slice(&3u32.to_le_bytes());
+            payload[offset + 56] = 1;
+            assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+        }
     }
 }
 
@@ -211,6 +274,33 @@ fn extended_kind_one_spatial_point_uses_wide_coordinate_offset() {
         marker_spatial_coordinates(&payload, 0),
         Some(Point3::new(-125.0, 250.0, -375.0))
     );
+}
+
+#[test]
+fn extended_spatial_relation_handle_uses_wide_model_coordinates() {
+    let offset = 4;
+    let mut payload = vec![0; offset + 90];
+    payload[..offset].copy_from_slice(&7u32.to_le_bytes());
+    payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+        .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[offset + 5..offset + 13].fill(0xff);
+    payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[offset + 17..offset + 21].copy_from_slice(&4u32.to_le_bytes());
+    payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+    payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[offset + 64..offset + 66].copy_from_slice(&[0x0e, 0x00]);
+    for (index, value) in [0.0235_f64, 0.01, -0.075].into_iter().enumerate() {
+        let start = offset + 66 + index * 8;
+        payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    assert_eq!(
+        marker_spatial_coordinates(&payload, offset),
+        Some(Point3::new(23.5, 10.0, -75.0))
+    );
+    payload[offset + 56] = 1;
+    assert_eq!(marker_spatial_coordinates(&payload, offset), None);
 }
 
 #[test]

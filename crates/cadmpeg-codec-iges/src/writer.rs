@@ -15,8 +15,8 @@ use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{
-    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossKind, LossNote, Severity,
-    WritePath,
+    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossKind, LossNote, LossTaxonomy,
+    Severity, WritePath,
 };
 use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Sense};
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -72,7 +72,7 @@ pub(crate) fn plan(
     if source_expected && !source_available {
         losses.push(
             LossNote::new(
-                LossKind::PreservedSourceUnavailable,
+                LossKind::shared(LossTaxonomy::PreservedSourceUnavailable),
                 "preserved IGES source image is unavailable; semantic regeneration is required",
             )
             .with_severity(Severity::Blocking),
@@ -433,7 +433,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
     }
     Ok(vec![
         LossNote::new(
-            LossKind::ProceduralReduced,
+            LossKind::shared(LossTaxonomy::ProceduralReduced),
             format!(
                 "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
             ),
@@ -3556,8 +3556,11 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             _ => continue,
         };
         losses.push(
-            LossNote::new(LossKind::PassthroughRecordOmitted, message)
-                .with_severity(Severity::Warning),
+            LossNote::new(
+                LossKind::shared(LossTaxonomy::PassthroughRecordOmitted),
+                message,
+            )
+            .with_severity(Severity::Warning),
         );
     }
     Ok(losses)
@@ -5105,7 +5108,7 @@ fn number(value: f64) -> String {
 
 /// Quantize a real so Fixed ASCII card layout does not depend on platform libm.
 ///
-/// Near-zeros within [`cadmpeg_core::compare::FLOAT_TOLERANCE`] collapse to
+/// Near-zeros within [`cadmpeg_ir::compare::FLOAT_TOLERANCE`] collapse to
 /// `0`. Other values round-trip through twelve significant digits before the
 /// sixteen-digit write format runs, absorbing last-place disagreement that
 /// would otherwise change token width and reflow parameter cards.
@@ -5113,7 +5116,7 @@ fn stabilize_real(value: f64) -> f64 {
     if !value.is_finite() {
         return value;
     }
-    if value.abs() <= cadmpeg_core::compare::FLOAT_TOLERANCE {
+    if value.abs() <= cadmpeg_ir::compare::FLOAT_TOLERANCE {
         return 0.0;
     }
     format!("{value:.12e}").parse().unwrap_or(value)

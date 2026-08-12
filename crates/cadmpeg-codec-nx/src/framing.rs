@@ -99,6 +99,16 @@ pub(crate) fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     Some((value, 2))
 }
 
+/// Decode XMT and return the full encoded width (2 or 4 bytes).
+///
+/// Prefer this when the caller advances by the returned length. Topology keeps
+/// [`read_xmt`]'s extra-bytes convention (`at += 2 + extra`) so its offsets stay
+/// correct.
+pub(crate) fn read_xmt_width(stream: &[u8], at: usize) -> Option<(u32, usize)> {
+    let (value, extra) = read_xmt(stream, at)?;
+    Some((value, 2 + extra))
+}
+
 fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Option<usize> {
     if kind == 14 {
         let mut at = pos + 8 + header_shift;

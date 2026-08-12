@@ -6,27 +6,23 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{LossKind, LossNote};
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::SourceObjectAssociation;
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::geometry::GeometryResult;
-use super::topology::TopologyResult;
-
-pub(super) struct TessellationResult {
-    pub typed_records: HashSet<u64>,
-    pub warnings: Vec<String>,
-    pub losses: Vec<LossNote>,
-}
+use super::geometry::GeometryData;
+use super::topology::TopologyData;
+use super::StageOutcome;
 
 pub(super) fn decode(
     exchange: &Exchange,
-    geometry: &GeometryResult,
-    topology: &TopologyResult,
+    geometry: &GeometryData,
+    topology: &TopologyData,
     ir: &mut CadIr,
-) -> TessellationResult {
+) -> StageOutcome<()> {
     let coordinates = exchange
         .records
         .iter()
@@ -86,7 +82,10 @@ pub(super) fn decode(
             let message =
                 format!("tessellation item #{item} has {detail}; mesh retained as detached");
             warnings.push(message.clone());
-            losses.push(LossNote::new(LossKind::ReferenceGraphNotClosed, message));
+            losses.push(LossNote::new(
+                LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
+                message,
+            ));
         }
     }
     for (&id, record) in &exchange.records {
@@ -214,7 +213,7 @@ pub(super) fn decode(
             }
         };
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
-            let surface_id = format!("step:data:surface#{surface_step}");
+            let surface_id = StepIdentity::data("surface", surface_step);
             if let Some(surface) = ir
                 .model
                 .surfaces
@@ -239,12 +238,15 @@ pub(super) fn decode(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
             );
             warnings.push(message.clone());
-            losses.push(LossNote::new(LossKind::ReferenceGraphNotClosed, message));
+            losses.push(LossNote::new(
+                LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
+                message,
+            ));
         }
         ir.model.tessellations.push(Tessellation {
             faces: Vec::new(),
             chordal_deflection: None,
-            id: format!("step:tessellation:mesh#{id}"),
+            id: StepIdentity::tessellation("mesh", id),
             body: (!unresolved_items.contains(&id))
                 .then(|| item_bodies.get(&id))
                 .flatten()
@@ -284,10 +286,12 @@ pub(super) fn decode(
             }
         }
     }
-    TessellationResult {
-        typed_records: typed,
+    StageOutcome {
+        value: (),
+        claims: typed,
         warnings,
         losses,
+        notes: Vec::new(),
     }
 }
 
@@ -298,7 +302,7 @@ fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
         .and_then(ValueExt::reference)
 }
 
-fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyResult) -> BTreeSet<BodyId> {
+fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyData) -> BTreeSet<BodyId> {
     let Some(link) = entity_parameter(record, kind, 1, 1).and_then(ValueExt::reference) else {
         return BTreeSet::new();
     };

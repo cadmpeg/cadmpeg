@@ -115,13 +115,21 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "code": "object_records_untransferred",
-        "message": "object.record-census: decoded 0/1 Rhino object records",
+        "code": {
+          "code": "object.record-census",
+          "kind": "object_records_untransferred",
+          "namespace": "rhino"
+        },
+        "message": "decoded 0/1 Rhino object records",
         "severity": "info"
       },
       {
-        "code": "unsupported_object_family",
-        "message": "object.family-not-transferred: retained 1 object record(s) for class c3101a1d-f157-11d3-bfe7-0010830122f0; geometry is not decoded",
+        "code": {
+          "code": "object.family-not-transferred",
+          "kind": "unsupported_object_family",
+          "namespace": "rhino"
+        },
+        "message": "retained 1 object record(s) for class c3101a1d-f157-11d3-bfe7-0010830122f0; geometry is not decoded",
         "provenance": {
           "format": "rhino",
           "offset": 87,
@@ -131,18 +139,30 @@
         "severity": "warning"
       },
       {
-        "code": "integrity_failure",
-        "message": "container.integrity-failure: CRC mismatch at offset 87 for typecode 0x20008070: expected 0x0, got 0x75b2f733",
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino"
+        },
+        "message": "CRC mismatch at offset 87 for typecode 0x20008070: expected 0x0, got 0x75b2f733",
         "severity": "error"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "container.scan-diagnostic: object at 87 has nil object UUID",
+        "code": {
+          "code": "container.scan-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "object at 87 has nil object UUID",
         "severity": "warning"
       },
       {
-        "code": "decode_diagnostic",
-        "message": "object.decode-diagnostic: c3101a1d-f157-11d3-bfe7-0010830122f0: simple geometry retained because document units are unavailable",
+        "code": {
+          "code": "object.decode-diagnostic",
+          "kind": "decode_diagnostic",
+          "namespace": "rhino"
+        },
+        "message": "c3101a1d-f157-11d3-bfe7-0010830122f0: simple geometry retained because document units are unavailable",
         "severity": "warning"
       }
     ],

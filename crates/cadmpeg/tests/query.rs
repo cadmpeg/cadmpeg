@@ -21,8 +21,10 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const VALIDATE_REPORT: &str = r#"{
-  "schema_version": 5,
+  "schema_version": 6,
   "command": "validate",
+  "status": "ok",
+  "refusal": null,
   "decode_report": null,
   "validation_report": {
     "entity_counts": {"faces": 2, "edges": 12},
@@ -31,7 +33,15 @@ const VALIDATE_REPORT: &str = r#"{
       {"check": "units", "severity": "warning", "message": "non-canonical unit"}
     ],
     "losses": [
-      {"code": "topology_not_transferred", "severity": "warning", "message": "wire dropped"}
+      {
+        "code": {
+          "namespace": "shared",
+          "code": "topology_not_transferred",
+          "kind": "topology_not_transferred"
+        },
+        "severity": "warning",
+        "message": "wire dropped"
+      }
     ]
   }
 }"#;
@@ -95,7 +105,7 @@ fn findings_and_losses_project_tsv_with_a_header() {
         .success()
         .stdout(
             "severity\tcode\tmessage\n\
-             warning\ttopology_not_transferred\twire dropped\n",
+             warning\tshared/topology_not_transferred\twire dropped\n",
         );
 }
 
@@ -200,7 +210,7 @@ fn query_json_wraps_the_projection_in_the_versioned_envelope() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "query findings");
     assert_eq!(value["findings"].as_array().unwrap().len(), 2);
     assert_eq!(value["findings"][0]["check"], "identity");
@@ -510,7 +520,7 @@ fn item_json_envelope_uses_item_payload_key() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "query item");
     assert_eq!(value["item"].as_array().unwrap().len(), 1);
     assert_eq!(

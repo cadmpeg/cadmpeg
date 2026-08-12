@@ -239,7 +239,7 @@ fn class_root_attrs_at(body: &[u8], offset: usize) -> Option<Vec<u16>> {
         return None;
     }
     let remaining = body.len().saturating_sub(roots_at);
-    let count = cadmpeg_core::cursor::bounded_len(u64::from(count), 2, remaining)?;
+    let count = cadmpeg_core::decode::bounded_len(u64::from(count), 2, remaining)?;
     if count == 0 {
         return None;
     }

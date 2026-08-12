@@ -1,6 +1,6 @@
 //! Object name and class declaration records.
 
-use super::{CLASS_MARKER, NAME_MARKER};
+use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::classification::native_object_class;
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputName, FeatureInputOperandKind,
@@ -87,7 +87,7 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
                     .try_into()
                     .ok()?,
             );
-            if token & 0x8000 == 0 || token == 0xffff {
+            if !is_class_token(token) {
                 return None;
             }
             if payload.get(token_offset + 2..token_offset + 5) != Some(&[0xff, 0xfe, 0xff]) {

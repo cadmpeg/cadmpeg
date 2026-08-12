@@ -3,6 +3,7 @@
 use super::component_paths::{
     component_path_features, component_path_terminal_feature, is_profile_feature_object,
 };
+use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
 use super::scalars::feature_object_name;
 use super::selections::{
@@ -113,6 +114,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let Ok(start) = usize::try_from(*start) else {
                 continue;
             };
+            let end_spec_end = objects[index + 1..]
+                .iter()
+                .find(|(_, next_id)| next_id != feature_id)
+                .and_then(|object| usize::try_from(object.0).ok())
+                .unwrap_or(lane.native_payload.len());
             let mut end_index = index + 1;
             while let Some((_, next_id)) = objects.get(end_index) {
                 if next_id == feature_id {
@@ -140,7 +146,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let candidates = (start..end.saturating_sub(103))
+            let candidates = (start..end_spec_end.saturating_sub(103))
                 .filter_map(|offset| {
                     if compact_extrusion_blind_at(&lane.native_payload, offset) {
                         let depth_m = lane
@@ -180,9 +186,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             depth_m: None,
                         });
                     }
-                    if let Some(reference) =
-                        compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
-                    {
+                    if let Some(reference) = compact_extrusion_offset_from_face_at(
+                        &lane.native_payload,
+                        offset,
+                        end_spec_end,
+                    ) {
                         return Some(compact_termination_face_vote(
                             "OffsetFromFace",
                             lane,
@@ -238,7 +246,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             depth_m: None,
                         })
                     } else if let Some((reference, kind)) =
-                        compact_extrusion_to_vertex_at(&lane.native_payload, offset, end)
+                        compact_extrusion_to_vertex_at(&lane.native_payload, offset, end_spec_end)
                     {
                         let prefix = match kind {
                             CompactPointReferenceKind::Point => "point-ref",
@@ -255,13 +263,12 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             second_condition: None,
                         })
                     } else {
-                        compact_extrusion_to_face_at(&lane.native_payload, offset, end).map(
-                            |reference| {
+                        compact_extrusion_to_face_at(&lane.native_payload, offset, end_spec_end)
+                            .map(|reference| {
                                 compact_termination_face_vote(
                                     "ToFace", lane, feature_id, lane_key, reference,
                                 )
-                            },
-                        )
+                            })
                     }
                 })
                 .collect::<Vec<_>>();
@@ -491,8 +498,7 @@ pub(super) fn compact_combine_operation_at(
 ) -> Option<&'static str> {
     let name_prefix = payload.get(name_offset..name_offset.checked_add(5)?)?;
     let name_token = u16::from_le_bytes(name_prefix[..2].try_into().ok()?);
-    if name_token & 0x8000 == 0 || name_token == u16::MAX || name_prefix[2..] != [0xff, 0xfe, 0xff]
-    {
+    if !is_class_token(name_token) || name_prefix[2..] != [0xff, 0xfe, 0xff] {
         return None;
     }
     let name_units = usize::from(*payload.get(name_offset.checked_add(5)?)?);
@@ -1371,7 +1377,6 @@ fn compact_tokenized_face_body_at(
         return false;
     };
     let token_at = |index: usize| u16::from_le_bytes([body[index * 2], body[index * 2 + 1]]);
-    let is_class_token = |token: u16| token & 0x8000 != 0 && token != 0xffff;
     (1..=2).contains(&leading_class_tokens)
         && (0..leading_class_tokens).all(|index| is_class_token(token_at(index)))
         && token_at(leading_class_tokens) == 2
@@ -1389,10 +1394,8 @@ fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
     };
     let class_token = u16::from_le_bytes([body[0], body[1]]);
     let component_token = u16::from_le_bytes([body[2], body[3]]);
-    class_token & 0x8000 != 0
-        && class_token != 0xffff
-        && component_token & 0x8000 != 0
-        && component_token != 0xffff
+    is_class_token(class_token)
+        && is_class_token(component_token)
         && body[4..8] == 2u32.to_le_bytes()
         && matches!(body[8], 0 | 0x40)
         && body[9..11] == [0, 0]
@@ -1404,7 +1407,7 @@ fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
 fn compact_end_spec_identity_at(payload: &[u8], offset: usize) -> bool {
     payload
         .get(offset..offset + 2)
-        .is_some_and(|bytes| bytes[1] & 0x80 != 0 && bytes != [0xff, 0xff])
+        .is_some_and(|bytes| is_class_token(u16::from_le_bytes([bytes[0], bytes[1]])))
         || offset
             .checked_sub(15)
             .and_then(|start| payload.get(start..offset + 2))
@@ -1446,10 +1449,8 @@ pub(super) fn legacy_single_face_reference_path_at(
     let class_token = u16::from_le_bytes(header[0..2].try_into().ok()?);
     let component_token = u16::from_le_bytes(header[2..4].try_into().ok()?);
     let owner = u32::from_le_bytes(header[11..15].try_into().ok()?);
-    if class_token & 0x8000 == 0
-        || class_token == 0xffff
-        || component_token & 0x8000 == 0
-        || component_token == 0xffff
+    if !is_class_token(class_token)
+        || !is_class_token(component_token)
         || header[4..8] != 2u32.to_le_bytes()
         || !matches!(header[8], 0 | 0x40)
         || header[9..11] != [0, 0]
@@ -1461,8 +1462,7 @@ pub(super) fn legacy_single_face_reference_path_at(
     let entry_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
         let instance = payload.get(offset..offset + 4)?;
         let signature: [u8; 12] = payload.get(offset + 4..offset + 16)?.try_into().ok()?;
-        (u16::from_le_bytes([instance[0], instance[1]]) & 0x8000 != 0
-            && instance[0..2] != [0xff, 0xff]
+        (is_class_token(u16::from_le_bytes([instance[0], instance[1]]))
             && instance[2..4] == [0, 0]
             && signature[0..2] != [0, 0])
         .then(|| FeatureInputComponentPathEntry {
@@ -1580,8 +1580,7 @@ pub(super) fn legacy_single_face_reference_path_at(
         }
         let token = u16::from_le_bytes(prefix[0..2].try_into().ok()?);
         let count = usize::try_from(u32::from_le_bytes(prefix[10..14].try_into().ok()?)).ok()?;
-        if token & 0x8000 == 0
-            || token == 0xffff
+        if !is_class_token(token)
             || prefix[2..6] != 1u32.to_le_bytes()
             || prefix[6..10] != [0; 4]
             || !(1..=64).contains(&count)

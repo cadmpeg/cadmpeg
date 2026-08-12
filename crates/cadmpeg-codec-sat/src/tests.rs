@@ -2,8 +2,9 @@
 //! Synthetic-stream tests for both encodings and the detection rules.
 
 use super::*;
-use cadmpeg_ir::codec::CodecEntry;
+use cadmpeg_ir::codec::{Codec, CodecBackend};
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::LossTaxonomy;
 use std::io::Cursor;
 
 fn decode_bytes(bytes: &[u8]) -> DecodeResult {
@@ -256,7 +257,7 @@ fn a_geometry_less_text_stream_reports_uncovered_coverage() {
         .report
         .losses
         .iter()
-        .find(|loss| loss.code == LossKind::GeometryNotTransferred)
+        .find(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred))
         .expect("coverage loss");
     assert!(loss.message.contains("End-of-ACIS-data"));
 }

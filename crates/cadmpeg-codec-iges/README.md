@@ -17,7 +17,7 @@ cargo add cadmpeg-codec-iges cadmpeg-ir
 
 ```rust,no_run
 use cadmpeg_codec_iges::IgesCodec;
-use cadmpeg_ir::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

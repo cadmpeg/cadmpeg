@@ -188,6 +188,9 @@ pub enum DraftError {
 }
 
 /// Transactional collection of staged model entities and decode accounting.
+///
+/// Plan prose calls this stage `DocumentDraft`. Prefer that name in docs; this
+/// type remains the runtime draft that commits into [`CadIr`].
 #[derive(Debug, Default)]
 pub struct ModelDraft {
     model: Model,
@@ -197,6 +200,10 @@ pub struct ModelDraft {
     notes: Vec<LossNote>,
     ledger: TransferLedger,
 }
+
+/// Plan name for [`ModelDraft`] in the
+/// `DocumentDraft → CadIr → ValidationReport` state machine.
+pub type DocumentDraft = ModelDraft;
 
 impl ModelDraft {
     /// Creates an empty draft.
@@ -547,64 +554,16 @@ impl CommitSession {
     }
 }
 
-/// A staged graph containing exactly one body and all of its typed dependencies.
-#[derive(Debug)]
-pub struct BrepAssembly(ModelDraft);
-
-impl BrepAssembly {
-    /// Checks that `draft` is one internally closed body graph.
-    pub fn new(draft: ModelDraft) -> Result<Self, DraftError> {
-        if draft.model.bodies.len() != 1 {
-            return Err(DraftError::InvalidBrep(format!(
-                "expected one body, found {}",
-                draft.model.bodies.len()
-            )));
-        }
-        let identity_index = index_model_identities(&draft.model)
-            .map_err(|error| DraftError::InvalidBrep(error.to_string()))?;
-        macro_rules! check_closure {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(for entity in &draft.model.$field {
-                    let mut missing = None;
-                    entity.visit_references(&mut |reference| {
-                        if missing.is_none()
-                            && !identity_index_contains(
-                                &draft.model,
-                                &identity_index,
-                                &reference.target,
-                            )
-                        {
-                            missing = Some(reference.target);
-                        }
-                    });
-                    if let Some(target) = missing {
-                        return Err(DraftError::InvalidBrep(format!(
-                            "entity {} references external identity {target}", entity.identity()
-                        )));
-                    }
-                })*
-            };
-        }
-        crate::document::arena_registry!(check_closure);
-        Ok(Self(draft))
-    }
-
-    /// Returns the validated draft for atomic commit.
-    pub fn into_draft(self) -> ModelDraft {
-        self.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BrepAssembly, CommitSession, DraftError, ModelDraft};
+    use super::{CommitSession, DraftError, ModelDraft};
     use crate::annotations::Annotations;
     use crate::document::CadIr;
-    use crate::ids::{BodyId, PointId, RegionId};
+    use crate::ids::PointId;
     use crate::math::Point3;
     use crate::native::NativeRecord;
-    use crate::report::{TransferDisposition, TransferLedger};
-    use crate::topology::{Body, BodyKind, Point, Region, Vertex};
+    use crate::report::TransferLedger;
+    use crate::topology::{Point, Vertex};
     use crate::units::Units;
 
     fn point(id: &str) -> Point {
@@ -711,66 +670,6 @@ mod tests {
             Err(DraftError::IdentityCollision(identity.into()))
         );
         assert!(ir.model.points.is_empty());
-    }
-
-    #[test]
-    fn brep_assembly_requires_one_closed_body_and_commits_without_cloning() {
-        let body_id = BodyId("test:model:body#1".into());
-        let mut draft = ModelDraft::new();
-        draft
-            .insert(Body {
-                id: body_id.clone(),
-                kind: BodyKind::Wire,
-                regions: Vec::new(),
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            })
-            .expect("insert body into empty draft");
-        draft.ledger_mut().record(
-            "source-body",
-            Some(body_id.0.clone()),
-            TransferDisposition::Emitted,
-            None,
-        );
-        let assembly = BrepAssembly::new(draft).expect("single body draft is closed");
-        let mut ir = CadIr::empty(Units::default());
-        let mut annotations = Annotations::default();
-        let mut notes = Vec::new();
-        let mut ledger = TransferLedger::default();
-        assembly
-            .into_draft()
-            .commit(&mut ir, &mut annotations, &mut notes, &mut ledger)
-            .expect("commit closed body draft");
-
-        assert_eq!(ir.model.bodies.len(), 1);
-        ledger
-            .verify(&crate::index::ModelIndex::new(&ir))
-            .expect("committed ledger targets resolve");
-    }
-
-    #[test]
-    fn brep_assembly_checks_entities_added_through_the_model_surface() {
-        let body_id = BodyId("test:model:body#direct".into());
-        let region_id = RegionId("test:model:region#direct".into());
-        let mut draft = ModelDraft::new();
-        draft.model_mut().bodies.push(Body {
-            id: body_id.clone(),
-            kind: BodyKind::Wire,
-            regions: vec![region_id.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
-        draft.model_mut().regions.push(Region {
-            id: region_id,
-            body: body_id,
-            shells: Vec::new(),
-        });
-
-        BrepAssembly::new(draft).expect("directly staged closed body");
     }
 
     #[test]

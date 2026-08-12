@@ -23,13 +23,13 @@ CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 
 
 ## Decode session
 
-The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`.
+The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the backend, and finalizes a `DecodeContext`.
 
 `DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`.
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 5`, including semantic refusal paths. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
+`decode`, `export`, and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
 
 Status 0 is success. Status 1 is semantic failure or a non-empty diff. Status 2 is operational failure.
 

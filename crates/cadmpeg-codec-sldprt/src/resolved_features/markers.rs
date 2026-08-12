@@ -1,5 +1,6 @@
 //! Sketch marker record decoding and profile point coordinates.
 
+use super::bindings::spatial_relation_manager_ranges;
 use super::curves::slot_curve_and_center_indices;
 use super::endpoints::{
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
@@ -17,11 +18,12 @@ use super::relation_records::unique_relation_declaration_candidates;
 use super::scalars::{feature_object_name, operand_kind};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
-    LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SPATIAL_VERTEX_PREFIX,
+    is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
+    SPATIAL_VERTEX_PREFIX,
 };
 use crate::records::{
-    FeatureInputClass, FeatureInputLane, FeatureInputReference, FeatureInputRelationBinding,
-    FeatureInputScalar, SketchInputEntity, SketchInputKind,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
+    FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::Point3;
@@ -58,12 +60,34 @@ pub(crate) fn spatial_sketches(
         };
         let mut point_candidates = Vec::new();
         for lane in lanes {
+            let relation_ranges = spatial_relation_manager_ranges(lane)
+                .into_iter()
+                .filter(|(start, end)| {
+                    lane.scalars.iter().any(|scalar| {
+                        scalar.feature_ref.as_deref() == Some(native_ref)
+                            && scalar.offset > *start
+                            && scalar.offset < *end
+                    })
+                })
+                .collect::<Vec<_>>();
             let points = lane
                 .sketch_entities
                 .iter()
                 .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
                 .filter_map(|marker| {
                     let offset = usize::try_from(marker.offset).ok()?;
+                    if !relation_ranges.is_empty()
+                        && (!relation_ranges
+                            .iter()
+                            .any(|(start, end)| marker.offset > *start && marker.offset < *end)
+                            || marker.object_index.is_none()
+                            || !matches!(
+                                marker_native_code(&lane.native_payload, offset),
+                                Some(1..=85)
+                            ))
+                    {
+                        return None;
+                    }
                     marker_spatial_coordinates(&lane.native_payload, offset)
                         .map(|point| (marker.id.clone(), point, offset))
                 })
@@ -263,6 +287,16 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 if prefix == SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(1)
                     && locus == [0x05, 0x00, 0x01, 0x00]
+                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(66)?, true)
+            }
+            prefix
+                if (prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER)
+                    && matches!(marker_native_code(payload, offset), Some(1..=85))
+                    && locus == [0x04, 0x00, 0x02, 0x00]
+                    && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+                    && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
                     && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
             {
                 (offset.checked_add(66)?, true)
@@ -705,7 +739,10 @@ pub(crate) fn relation_bindings_scoped(
         .collect()
 }
 
-pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInputReference> {
+pub(crate) fn reference_cells(
+    scalars: &[FeatureInputScalar],
+    classes: &[FeatureInputClass],
+) -> Vec<FeatureInputReference> {
     let mut cells = scalars
         .iter()
         .flat_map(|scalar| {
@@ -716,6 +753,7 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
                 ordinal: 0,
                 offset: operand.offset,
                 kind: operand.kind,
+                class_ref: None,
                 object_index: operand.entity_index,
             })
         })
@@ -724,6 +762,23 @@ pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInpu
     cells.dedup_by_key(|cell| cell.offset);
     for (ordinal, cell) in cells.iter_mut().enumerate() {
         cell.ordinal = ordinal as u32;
+    }
+    let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
+    for cell in &cells {
+        for class in classes.iter().filter(|class| {
+            class.parent == cell.parent && class.offset.checked_sub(cell.offset) == Some(12)
+        }) {
+            declarations.entry(cell.kind).or_default().push(class);
+        }
+    }
+    for declared in declarations.values_mut() {
+        declared.sort_unstable_by_key(|class| class.offset);
+        declared.dedup_by_key(|class| class.id.as_str());
+    }
+    for cell in &mut cells {
+        if let Some([class]) = declarations.get(&cell.kind).map(Vec::as_slice) {
+            cell.class_ref = Some(class.id.clone());
+        }
     }
     cells
 }
@@ -2412,10 +2467,8 @@ fn compact_linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
     matches!(
         cells,
         [Some(first), Some(second)]
-            if u16::from_le_bytes([first[0], first[1]]) & 0x8000 != 0
-                && first[..2] != [0xff; 2]
-                && u16::from_le_bytes([second[0], second[1]]) & 0x8000 != 0
-                && second[..2] != [0xff; 2]
+            if is_class_token(u16::from_le_bytes([first[0], first[1]]))
+                && is_class_token(u16::from_le_bytes([second[0], second[1]]))
                 && first[..4] != second[..4]
                 && first[4..8] == [0xff; 4]
                 && second[4..8] == [0xff; 4]

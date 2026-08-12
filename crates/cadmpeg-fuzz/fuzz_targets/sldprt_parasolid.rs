@@ -6,9 +6,7 @@
 
 #![no_main]
 
-use cadmpeg_codec_sldprt::parasolid::extract_streams;
+use cadmpeg_codec_sldprt::fuzz::parasolid;
 use libfuzzer_sys::fuzz_target;
 
-fuzz_target!(|data: &[u8]| {
-    let _ = extract_streams(data);
-});
+fuzz_target!(|data: &[u8]| parasolid(data));

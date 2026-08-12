@@ -1,0 +1,581 @@
+cadmpeg — Refactor Proposal
+
+Architecture review · cadmpeg · 874,565 LOC at audit baseline · 17 workspace packages · 11 codecs at HEAD
+
+Not slop.
+Very good code, written faster than it was ever re-read.
+
+The seams are deliberate, the substrate is well built, and the tests are load-bearing. What sits above them is a recurring pattern: a careful mechanism built once and then not applied, running beside the ad-hoc thing it was meant to replace — and a smaller set of places where nothing was designed at all. Almost nothing here needs inventing. It needs deleting, decoupling, applying — and enforcing.
+
+832klines of Rust at audit
+
+11codec packages at HEAD
+
+6gaps: 5 convergence, 1 design
+
+1,683error strings without an address
+
+HEAD rebaseline at 14a0a4dfc: 17 workspace packages, 11 codec packages, 11 codec golden directories (step and sat landed at a20c291fc, #116, after this rebaseline), and 4 registered native validators. Historical measurements remain labelled by their audit baseline; every phase-wide codec scope below includes the current Inventor codec. Inventor is read-only and has no encoder, so encoder-specific work must state its applicable codec set.
+
+What is already correct
+
+Three mechanisms are worth reading before changing anything, because they are the shapes the rest of the codebase should converge on.
+
+cadmpeg-core/src/decode/{view,space}.rs — every byte belongs to exactly one address space; View is a Copy bounded window carrying its SpaceId, so session-local error locations and attribution come from the type rather than from discipline. A SpaceId is only a dense index for one decode. It does not identify an archive member after the context is dropped; the stable descriptor and inspection path are missing. read_root uses try_reserve, clamps attacker-declared sizes, and never lets a declared length drive an allocation. The single unsafe block in the workspace is in DecodeArena, with a stated correctness argument and a test that interleaves allocation with live borrows.
+
+cadmpeg-ir/src/codec.rs — Codec has four required methods; the public entry points live on a sealed CodecEntry trait, blanket-implemented, so a codec cannot override an entry point and drop limit enforcement. A compile_fail doctest proves a rogue impl will not build.
+
+docs/layouts/*.toml — machine-readable byte layouts where every field cites a spec section and an anchor phrase that must occur in that section, records must tile their declared size exactly, and arithmetic contradictions must be declared as [[record.discrepancy]]. A field with invented numbers cannot pass, having nothing to cite.
+
+Commit 797abbe0 (#41) established the method for changing this codebase: pin behavior with golden snapshots first, refactor second, gate every commit on byte-identity — and stop adoption where a codec's shape genuinely differs, which it did for nx's scan loop, sldprt's seam-synthesis pipeline, catia's standard loops, and the f3d emission migration. Partial adoption is a recorded decision in those places. The gaps below separate what #41 settled from what it never addressed and what has drifted since.
+
+Mechanisms built once and not applied
+
+Each row is one place where the right mechanism exists, is not disputed, and lost anyway — because nothing forced the migration of the code that already worked.
+
+Bounded reads 3 readers, 1 dead30% adopted
+
+DesignedView — bounded, space-tagged · core::cursor::Cursor — a near-line-for-line twin, one current module user scheduled for migration574View call sites
+
+Actually usedle::u32_at(bytes, off+14) · from_le_bytes on hand-sliced arrays · rhino's own BoundedReader1,350call sites
+
+Geometric tolerance never designeddesign gap, not adoption
+
+Designednothing — CadIr.tolerances is a writer round-trip attribute, not a decode predicate; core cannot see IR0mechanism to adopt
+
+Actually usedbare literals: 1e-9 ×417, 1e-12 ×233, 1e-10 ×86, 1e-6 ×49785float literals
+
+Byte-layout source of truth never addressed10% adopted
+
+Designeddocs/layouts/*.toml — spec-anchored, arithmetically closed, CI-checked1,159fields tabulated
+
+Actually usedhand-written offsets in decoders + hand-built bytes in tests6,663restatement sites
+
+Resource policy never addressed2 of 11 codecs
+
+DesignedDecodePolicy / ResourceLimits — operator-set, input-proportional, fused9policy fields
+
+Actually usedhardcoded MAX_* constants per codec — catia 33, rhino 24, iges 10; f3d and nx make zero codec-local budget calls, although f3d's outer archive charges through container code101local constants
+
+Test module granularity decided, then driftedpartial, regressing
+
+Designedper-module colocated tests — sldprt/resolved_features/*/*_tests.rs, added Aug 424small files
+
+Actually usedflat monoliths — f3d/tests.rs is 25,642 lines with 2 mod statements; still growing Aug 9217ktest LOC in src/
+
+Fuzz-access boundary decided, then drifted2 boundaries, 11 codecs
+
+Designedfeature-gated fuzz access (catia, inventor, rhino, sldprt)4codecs gated
+
+Actually usedinternals just made pub — nx alone exports 807 items for the cadmpeg-fuzz consumer7codecs ungated
+
+Two of the six — tolerance and byte-layout truth — were never in scope for #41 or any other commit, and the tolerance row is the one entry this table's own frame overstates: CadIr.tolerances is a writer round-trip attribute, not a decode predicate, so there was never a decode-time mechanism to converge on. It is a design gap wearing a convergence gap's clothes; it stays in the table because the 785 literals are real, and phase 4 records its disposition as a convention, not a migration. Two more were decided and then drifted: the colocated-test pattern shipped Aug 4 while the monolithic files kept growing through Aug 9, and the fuzz-access boundary has two different implementations across eleven codecs. Only two are arguably settled-by-design, and even there the measurement below is not what #41 addressed — it unified which crate's cursor each codec uses, while cadmpeg-core itself still ships two competing read APIs (View and le::*_at) and the older one wins 2:1.
+
+PMI: a hand-rolled MessagePack parser missing eight marker classes
+
+A live decode defect, reachable from shipped code.
+
+sldprt/src/pmi.rs hand-rolls a MessagePack parser. The codebase knows it is MessagePack — records.rs:18 says "Byte offset of the MessagePack map" — and there is no rmp dependency in the workspace. parse_value handles 19 marker classes. The MessagePack specification defines more:
+
+// pmi.rs:656 — handled
+0x80..=0x8f => parse_map(..) // fixmap (≤15 entries)
+0x90..=0x9f => parse_array(..) // fixarray (≤15 items)
+0xde => parse_map(..) // map16
+
+// absent — each returns None, failing the whole parse silently
+0xdc array16 0xdd array32 0xdf map32
+0xcf uint64 0xd3 int64 0xdb str32
+0xc4..0xc6 bin 0xc7..0xc9, 0xd4..0xd8 ext
+
+A dimension whose dimItems array holds 16 or more entries hits 0xdc, returns None, and the PMI record is dropped. No panic, no loss note — a silently smaller document. Worse, map_offsets doesn't parse at all; it scans for the literal byte string \x87\xa8annoType — a 7-entry fixmap whose first key happens to be annoType. An 8-key map, or a reordered map, matches nothing.
+
+Why the parser is shaped this way
+
+map_offsets does not parse at all — it scans for the literal byte string \x87\xa8annoType, a 7-entry fixmap whose first key happens to be annoType. An 8-key map, or a reordered map, matches nothing. field_marker is the same idea: it searches a byte range for an encoded key, so a key string appearing inside a value silently returns the wrong field.
+
+MessagePack is a stable public specification, so the missing marker classes are not a reverse-engineering problem. But a plain library swap does not fit here, because this parser has a second contract: it records source spans. PmiDimension at records.rs:13-39 carries offset, value_offset, precision_offset and display_text_offset, and patch_payload at pmi.rs:249 writes edited values back in place at exactly those offsets. A high-level rmp value traversal returns values without the byte ranges they came from, so a literal swap either loses the writer's patch targets or keeps the scanners and fixes nothing.
+
+What the change actually requires: use rmp's low-level primitives to build a span-recording visitor that covers every marker class and returns each value with its byte range; keep the embedded-record locator explicit, since the maps are not at the payload root and guid_before associates each with the 36 preceding bytes; and pin it with round-trip tests through patch_payload plus the cases the current scanners miss — a map with 16 or more entries, reordered keys, and a key-like string inside a value.
+
+This does not generalize. Dependency hygiene is otherwise good — flate2, crc32fast, encoding_rs, zip, sha2, base64 are all used rather than reimplemented. MessagePack is the outlier. But it is the outlier that proves what the test architecture is blind to.
+
+Build and link cost
+
+323,863 lines of tests against 551,327 of production at the audit baseline — a 0.59:1 ratio that is healthy, and mostly inside src/ for reasons the repo documents. The cost lands in three different graphs and they must not be conflated: every codec depends on the whole 39k-line cadmpeg-ir; the CLI alone depends on all eleven current codecs; and each codec test binary links that codec's graph plus its dev-dependencies. A codec test binary does not link every sibling codec.
+
+SymptomHistorical observationGraph interpretation
+
+target/18 GBmany large codec-specific test graphs, the all-codec CLI graph, incremental artifacts and repeated shared dependencies; the historical directory is not available for a causal decomposition
+
+debug CLI binary415 MBthe CLI statically links all eleven codecs; #[cfg(test)] modules are excluded from this binary
+
+.cargo/config.tomljobs = 6concurrent link burst OOM-kills the terminal scope at default parallelism
+
+production codecs using ir::diff0yet any edit to these invalidates cadmpeg-ir, and therefore all eleven codecs and the CLI
+
+production codecs using ir::roundtrip0
+
+ir::eval refs from codecs9 cratescatia, creo, f3d, freecad, iges, nx, rhino, sldprt and step have production callers
+
+ir::schema importers inside irentity coreids, draft, index, document and arena modules import the compile-time entity contract; use the dependency shape, not a stale module count
+
+The project's own CLAUDE.md already names the fan-out: "Changes to cadmpeg-ir or cadmpeg-core fan out to every codec crate and diverge all goldens." The packaging is a real cost, but most of the crate cannot move. eval is the largest module and nine codecs call into it. schema is not the off-by-default schema cargo feature; it is the compile-time EntityKind/EntitySchema contract that ids.rs, draft.rs, index.rs and document.rs all import, so extracting it creates a cycle. diff (615 lines) and roundtrip (385) are free of production codec edges but small, and f3d and sldprt reach both from inline test modules. The one candidate with real production-build mass is validate at roughly 15,000 lines, held inside the crate by a single row-counting call at codec.rs:319 that phase 5 removes for unrelated reasons. Nine codec test trees still call the validator, so extraction converts their edge into a dev-dependency and does not remove it from the full test graph.
+
+Anatomy of the five largest files
+
+A 37,037-line decode.rs is not spaghetti, and that changes what to do about it. Size here is mostly filing, not entanglement.
+
+FileLOCFns w/o &mutMedian fnVerdict
+
+creo/decode.rs37,03791%27655 near-pure fns. Needs filing, not surgery. Except ~2,900 lines of coverage boilerplate (73 consecutive let mut …_count = 0;) that is data pretending to be code, and one 1,460-line loop body.
+
+sldprt/history.rs17,54184%23real debt sync_neutral_features is 3,846 lines holding one 61-arm match. The same enum is dispatched correctly in 111 lines, 300 lines later.
+
+nx/decode.rs13,28587%21Irreducible NURBS/blend math. One defect: 15 fns take >6 params, peaking at 11 — wants a context struct.
+
+catia/native.rs11,46497%2733% is #[cfg(test)], including a 1,132-line test-only load with 51 migration gates. Plus 41 record families named in 6 separate places.
+
+nx/native/features.rs10,908100%42fine Longest fn 126 lines; no match over 3 arms. This is format knowledge. Leave it alone.
+
+Nesting depth is not a problem in any of them. Duplication runs 1–5%. Do not sell this refactor on "deeply nested spaghetti" — it isn't, and the author will know it isn't. The recurring shape is narrower and more interesting: an abstraction exists but its signature is one degree too specific, so callers copy its body instead. In nx/native/features.rs, visit_feature_history_operation_records is generic over impl FnMut but does not pass section to its callback; it has 2 call sites, while 32 other functions paste its 13-line body — 27 byte-identical, 5 already drifted. That is gap #1 through #7 again, at the level of a single helper.
+
+Validation is wired into decode
+
+One coupling constrains the order of everything below it.
+
+rhino/src/decode.rs:1806 calls the full final validator to decide whether to accept a partially-built instance expansion:
+
+let accepted = match outcome {
+Ok(links) => {
+let validation = cadmpeg_ir::validate(&self.ir, Vec::new());
+if validation.is_ok() {
+self.append_links(source_order, &links);
+… true
+} else { /* rejected atomically */ false }
+
+So adding any new rule anywhere in the 15,310-line validator tree changes Rhino's decoder output. That inverts the dependency the architecture intends: validation is supposed to judge a finished document, not gate construction. Nothing that touches the validator is behavior-preserving until this is fixed.
+
+The same confusion appears from the other side. freecad/src/writer.rs:138 runs the whole validator and keeps one field:
+
+let validation = cadmpeg_ir::validate(ir, Vec::new());
+Ok(ExportReport {
+census: EntityCensus { basis: CensusBasis::IrArenas,
+counts: validation.entity_counts }, // every finding discarded
+
+Four of the six encoders do this, because entity_census is pub(crate) in cadmpeg-ir and codecs cannot reach it. f3d, freecad, rhino and sldprt run the full validator and keep only entity_counts; step and iges avoid it by counting target records instead. "Export skips validation" is documented behavior that, on the majority path, secretly runs the validator to count rows.
+
+sldprt is the exception, and in the other direction: its census call at lib.rs:317 is the third of three. writer.rs:50 validates the normalized IR and refuses the write on any error-severity finding, and writer.rs:78 validates again after writer_transform::bake and the prepare_*_for_write passes have rewritten the model. Both sit in write_semantic_with_records, reachable from the public write_preserved_with_source_fidelity, and tests.rs:7079 pins the rejection. That second call is a postcondition on the writer's own transformation rather than an admissibility check on its input, which makes it the one validator use in the workspace that a narrow predicate does not obviously replace.
+
+Two boundary failures reproducible today
+
+Decode succeeds, output is invalid. STEP builds unknown-record IDs as format!("step:signature#{index}") at reader/mod.rs:540. The IR grammar in validate/identity_order.rs:24 requires three colon-separated components before the #; this has two. So cadmpeg validate rejects a document the decoder just reported as successful, at Severity::Error.
+
+Illegal state accepted silently. cadmpeg export … -f cadir --step-target ap242e3 succeeds and ignores the flag, because ConversionPlan carries STEP, IGES and Rhino settings simultaneously and export_ir takes roughly thirteen arguments. --iges-target and --reject-step-losses fail the same way, and --iges-target's own help text at main.rs:466 claims it is "valid only for IGES output" — a restriction nothing enforces. The struct carries a documented #[allow(clippy::struct_excessive_bools)] at commands.rs:59-61, so splitting it per target reverses a deliberate decision and should say so. A target-specific flag on the wrong target should fail before the input is read.
+
+Native passthrough: most arenas have no reader
+
+Alongside the neutral IR, codecs retain raw format records in a native namespace. The stated justification is lossless passthrough for later reconstruction. What reads it back:
+
+CodecNative arenasEncoderDoes native reach output bytes?
+
+f3d64yesYes — diffs against baseline, computes per-record byte patches
+
+freecad21yesYes, and mandatory — refuses to write without a native namespace
+
+sldprt16yesNarrowly — selects which retained Parasolid blob to replay
+
+iges38yesNo — census plus a refusal gate. Only 7 of 38 are whitelisted as preservable
+
+rhino / step29 / 0yesNo — refusal gate, or loss-count text only
+
+inventor55noneRead-only decode with a registered native validator; no writer exists in this workspace
+
+nx229noneNo writer exists. No registered native validator either. Retained, never read.
+
+catia / creo / sat41 / 66 / 10none
+
+The majority of declared native families belong to formats that cannot be written at all in this workspace, and that have no registered native validator either. nx declares 229 arenas in its catalogue and catia 41; neither codec has an encoder. Within this workspace, nothing round-trips them.
+
+That is not the same as unused, and "no writer here" is not a removal criterion. CadIr.native is a serialized field, so these arenas are published product data. The specification states that an exporter preserves a supported namespace or reports its omission as loss, and that namespace versions change independently of ir_version — an external contract that does not depend on a writer existing in this tree. diff_native_namespaces compares every arena, and document_local_sha256 serializes native into the normalized document, so removing one changes document hashes and diffs. Neutral entities reference native identities through native_ref at scale — 371 production sites in sldprt, 303 in f3d, 58 in nx, 51 in creo — and validate/annotations_native.rs:167 raises an Error finding for any reference that does not resolve. CATIA carries a version ladder to CATIA_NATIVE_VERSION = 269 with named legacy constants going back to 212, so an arena change there is a versioned migration, not a deletion.
+
+So the open question is narrower than it looks: retention is already justified by the published contract, and what is missing is a per-arena record of which contract each one serves. Answer that before phase 6, and treat any removal as a native wire migration in phase 9 rather than cleanup.
+
+Resource limits do not govern decode
+
+Memory safety is not the gap. The codecs bypass the substrate but reimplemented bounds checking rather than skipping it.
+
+3,833 reads go through checked .get(a..b) with ?. Across the entire workspace: zero .unwrap() in production code, zero panic! in any codec, exactly one unsafe block. The six most dangerous-looking bare-capacity allocations and all twenty-eight parsed-index slice accesses were traced; every one is bounded. This is careful code. It is just careful by hand, 450,000 lines at a time.
+
+The real gap is not memory safety. It is that ResourceLimits does not actually govern decoding. An operator setting the service profile is configuring a system that mostly ignores them:
+
+CodecBudget callsWhat that means
+
+step~28genuine incremental integration — per-token work, per-record entity
+
+freecad / rhino3–5expansion charged; entity counts charged after the whole IR is built
+
+creo / sat / catia / sldprt1post-hoc charge_entities only
+
+f3d / nx0 codec-local callsnx adds no codec-local charges beyond the sealed entry substrate; f3d's outer ArchiveSnapshot charges through container code, while f3d's nested material archives enforce local limits without charging
+
+iges19work, entities, cards, parameter tokens and collection items, charged during the read rather than after it — the shape the other codecs need
+
+In catia and sldprt charge_entities is the first statement of the finalizer, in creo the third, in sat about seventeen in — but in all four the argument is ir.model.entity_count() — so max_entities reports a violation it did not prevent. Meanwhile 110 hardcoded MAX_* constants across the codecs form a second, parallel limit system, and that one is load-bearing. None of them respond to DecodePolicy::service(). Some of them should not — a share encode format grammar rather than resource ceilings, and the two have to be separated before either moves.
+
+Three concrete paths where that matters, all traced end to end:
+
+F3D runs two ZIP paths and only budgets one. The outer container goes through cadmpeg_container::ArchiveSnapshot, which charges every entry — register_slice for stored, ctx.begin_expand for compressed (container/archive.rs:216). The nested .protein layer bypasses it: the two decode-side zip::ZipArchive::new calls are at materials.rs:1675 and :1737, and inflate through f3d's own read_entry_bounded (container.rs:88), which enforces a local 128 MiB cap with try_reserve and charges nothing. The current material entry points take no DecodeContext, so the accounting is not merely skipped — it is unreachable from there. f3d makes zero ctx.charge_* or begin_expand calls of its own. Under the service profile the nested layer can exceed both the 1 GiB cumulative-decompressed and 512 MiB materialized ceilings without registering a byte.
+
+catia/families/b5/graph.rs:4438 is O(n²) with no work budget. records_from_frames scans every frame on each dependency-admission pass, and a single-successor reference chain can admit one record per pass. The other whole-record fixpoints at :897 and :931 are also unbudgeted. The loops at :1318 and :1753 are cycle-checked chain walkers, not fixpoints. The standard family has a work budget; the b5 route has none.
+
+f3d/design/geometry.rs:813 is O(V·E³) with no work budget. Terminates, charges nothing.
+
+The pattern already in the repo, and what it is missing
+
+rhino/src/brep.rs:973 — validate(RawBrep) -> Result<ValidatedRawBrep, …>. Every index array is bounds-checked and every reciprocity invariant verified once, at one site, instead of at each use. That half is right and is the shape the other B-rep assemblers should adopt.
+
+The type does not yet carry the proof. ValidatedRawBrep at brep.rs:283-288 has both fields pub(crate), so it is constructible without validate ever running, and both consumers discard it immediately: decode.rs:4098 takes value.raw, and decode.rs:3076 unifies the validated and the explicitly-invalid payloads into one RawBrep binding. What actually guards the direct indexing at decode.rs:3868-3980 is a runtime early return on semantic_error.is_some() at :3797. Propagating the pattern as-built would spread a discipline while implying a guarantee. Making it proof-carrying — private fields, an accessor, and no path that unifies valid with invalid — is the part that turns it into something a compiler enforces, and it has to be built before it is copied.
+
+Duplication
+
+Most cross-codec similarity is not duplication. Unit conversion, B-rep assembly, sketch profile reconstruction and ID minting differ per format because the formats differ; unifying them would be a correctness regression. What follows is the residue that is genuinely redundant.
+
+Worth collapsing
+
+WhatSitesNote
+
+sldprt class-token predicate40token & 0x8000 != 0 && token != 0xffff, named once as a local closure at terminations.rs:1308; 39 sites spell it out, inconsistently (!= 0xffff / != u16::MAX / != [0xff, 0xff]), with the sentinel check absent at terminations.rs:1082, :1087, :1152, :1168 and :1207. Needs a per-site decision, not a replace.
+
+nx read_xmt5deltas.rs:3160, nurbs.rs:776, intersection.rs:1034, topology.rs:1132, parasolid.rs:605 — three incompatible return conventions. Three return bytes consumed, topology.rs returns extra bytes, parasolid.rs mutates in place and returns a bare u32. A naive merge corrupts every offset in topology.rs.
+
+Byte-substring search15Hand-rolled windows(n).position(…) across freecad, sldprt, nx, creo, f3d, while f3d, catia and the CLI use memchr::memmem. Four of the copies omit the needle.is_empty() guard; slice::windows(0) panics.
+
+Fidelity / replay / integrity plumbing3f3d/lib.rs:228-262, sldprt/lib.rs:261-293, iges/writer.rs:41-135 each reimplement the retained-source integrity check, the replay decision, and the WritePath note strings. The f3d and sldprt match blocks are byte-identical apart from the format name.
+
+Local core::le reimplementations6sldprt/compound.rs:495,501,507, catia/entity_table.rs:951, nx/jt.rs:47 — sibling modules in the same crates already import cadmpeg_core::le.
+
+Byte-identical vector helpers~12f3d's compose_transforms duplicates Transform::compose exactly; four identical normalized in IGES entities/; two identical unit_vector in CATIA; six identical bbox folds in rhino/writer.rs.
+
+In-crate exact duplicates4xml_text in sldprt metadata.rs:171 and history.rs:16540; hollerith in iges global.rs:57 and parameter.rs:163; creo's PSB grammar implemented three times (psb.rs:174,193, feature/definitions.rs:1478).
+
+LossNote literals196Against 16 uses of the existing LossNote::new builder, with 185 verbatim provenance: None lines. sldprt and rhino also built the same loss-code scaffold independently, including two line-for-line identical tests.
+
+Leave alone
+
+Creo's cross/dot use mul_add (reference.rs:106, placement.rs:364, decode.rs:19255); FMA rounds differently and Creo gates on exact carrier equations. IGES's normalized guards norm > 0.0 where Vector3::unit guards length > f64::EPSILON, so the four copies can merge with each other but not into the shared helper. catia/families/b5/vecmath.rs:1-8 documents a deliberate non-merge of two unit implementations because affected profiles depend on the rounding. NX's JT transform is column-major, a transpose of the IR convention. The length-prefixed string readers differ in prefix width and unit within a single crate. CATIA's and Creo's local cursors are token readers for format-specific dialects, not general byte navigation.
+
+Parasolid: not worth extracting
+
+SolidWorks and NX both sit on the Parasolid kernel, and each carries an independently written decoder — 8,829 lines in nx, 11,010 in sldprt — agreeing on the bytes: the same eight analytic tags, the same 19 + 8·N record lengths, the same unusual sphere ordering (radius before axis), the same NURBS descriptor offsets written in hex on one side and decimal on the other. The specs document the same records twice, in two conventions.
+
+It still should not be extracted. The NURBS descriptors are the identity table on both sides — nx keys u32 into a BTreeMap, sldprt keys u16 into a HashMap — so they cannot move without reconciling the identity split, which is expensive and touches both graph layers. Escape handling and unit conversion are small, and the stream prologues genuinely diverge. Two consumers, no third.
+
+The asymmetry that motivated extraction is narrower than the totals suggest. nx reads the 1-byte 0xff escape at ~30 sites, including explicit escape branches at nurbs.rs:280,329,333,339,355,396,400 and topology.rs:674; the all-even SHIFTS table at geometry.rs:22 is a brute-force scanner heuristic that defers escapes to the graph path, and says so in the comment above it. What is genuinely one-sided: sldprt has no extended reference form at all. Record.refs is Vec<u16> and refs_be at brep/topology.rs:46-53 reads at a fixed stride of 2.
+
+Whether sldprt files actually carry an extended form is not established. NX has one and the two codecs share Parasolid ancestry, which makes it a reasonable hypothesis, but the sldprt reader and docs/formats/sldprt.md:782 both recognize only the adjacent and tripled forms, and nothing here demonstrates a third. Find the bytes in the corpus or a specification statement first. Adding an encoding by analogy would be inventing format behavior.
+
+If it is confirmed, the change is an offset-desync fix, not a value-width one. NX's extended form (quotient * 32767 + remainder) makes a record two bytes longer, so widening the element type to u32 would correct the value and leave every subsequent field misaligned. Six call sites read hard-coded offsets that assume the record length — :120 pairs refs_be(buf, p + 16, 5) with a marker at p + 26, :209 pairs p + 2 with p + 20 — and a third encoding refs_tripled already exists with its own stride and its own marker offsets, which :143 selects between at runtime. The work widens the field and its consumers, converts the fixed-offset parsers to a running cursor, reconciles the encodings behind a fixture that exercises the new branch, and amends the specification. Sizing it as a one-liner produces a partial fix that reads as complete.
+
+Unreferenced abstractions
+
+A surprising amount of the shared layer has no callers at all. In several cases the right move is subtraction, and doing it first makes the remaining decisions smaller.
+
+ItemCallersNote
+
+core::cursor::Cursor1222 lines. A near-line-for-line twin of View in the same crate — take, array, skip, u8, remaining byte-identical. Its doc says "new decoder modules should read through this cursor"; FreeCAD's gui.rs:6 is the current module user, and that adoption is the argument for removing it rather than keeping it — see below.
+
+DecodeReport::record_coverage0One occurrence in the tree: its own definition. Adopt, do not delete — see the coverage-table finding below.
+
+TransferLedger1iges now builds one per decode, records a disposition per directory entry, verifies it and serializes it (iges/reader.rs:229-262), with tests asserting on the entries. The other ten codecs still initialize default ledgers at their current decode construction sites because DecodeReport derives no Default. Adopt it or drop it per codec; removing the field is not available.
+
+decode::probe::ParseError0No codec names it directly, but it is the public return type of View::req_take and req_u8. Rhino invokes those error-producing reads at 9 sites, but every site uses map_err(|_| …), discards the ParseError payload, and rebuilds a FramingError or GeometryError. Under-adopted, not dead — do not delete it.
+
+step's omit23Byte-identical body to loss beside it. Adds a name, no type distinction, no guarantee.
+
+container::inflate_{zlib,raw}_prefix0–1One is called only by its own test; the other by nothing.
+
+The pattern is consistent with the diagnosis: these are abstractions built in anticipation of adoption that never arrived. The recommendation for the reader question is therefore "delete Cursor," not "migrate onto it." Adding a fourth caller to the type nobody chose would be the wrong direction. The decision on what View must absorb is settled in phase 2 rather than left open: typed reads, counted reads and error conversion — because every alternative has already been run as an experiment by the codecs themselves, and the results are named BoundedReader (wrapped three times over with near-identical helpers in hatch.rs, polyedge.rs and cage.rs), Cursor, and a four-digit count of hand-rolled reads.
+
+A test-integrity bug hiding in the same pattern
+
+catia and creo each ship a CoverageKey const table (837 and 422 lines) carrying #![cfg_attr(not(test), allow(dead_code))] — dead in the shipping binary. The producers bypass them entirely and write raw strings: creo does so at 273 sites, including coverage.insert(format!("visible_{family}_surface_row_count"), …). So renaming a producer string silently zeroes the corresponding test rather than failing to compile. Routing writes through record_coverage(CoverageKey) makes the tables load-bearing and removes the allow(dead_code) — one change that fixes a dead abstraction and a silent-pass test class together. The method needs a value parameter first: it is currently *entry += 1, and catia and creo write arbitrary counts, not increments. This is the one entry on the dead-code list that is unadopted rather than unwanted, and deleting it would remove the fix.
+
+Errors don't say where
+
+The substrate defines SourceLocation, ErrorContext, ParseError, and a CodecError::Truncated { location, context } variant, with a worked-out probe-versus-commit read distinction behind them. Adoption:
+
+ConstructionSites
+
+CodecError::Malformed(format!(…))1,037
+
+CodecError::Malformed("…".into())646
+
+CodecError::truncated(…)1
+
+req_* located reads9
+
+ParseErrorKind constructed outside core0
+
+Of the 1,037 codec Malformed(format!) messages, 3% mention an offset even as interpolated text, never structurally. So a fuzz crash or a user bug report yields a sentence rather than a structured address. A root-space offset can drive cadmpeg inspect hex; a derived-space (SpaceId, offset) cannot, because SpaceId is session-local and inspect hex accepts only a file and offset. Worse, Malformed(String) is doing double duty for two unrelated failures — "the bytes at X are wrong" and "the reconstructed model is inconsistent" — which a caller cannot distinguish. STEP found this limiting enough to define its own ParseError rather than use core's.
+
+How the location gets lost, and what keeps it lost
+
+freecad's container.rs:65 does the hard part correctly: it charges the ZIP entries against the session budget and opens each one through archive.open(ctx, file), which registers a space per entry. Then container.rs:73 writes data.insert(name, view.window()), flattening every View into a BTreeMap<String, &[u8]>. The SpaceId is discarded at the door, and every module downstream reads untagged bytes. gui.rs raises 50 Malformed(format!) errors and not one of them can name a position, because by then there is no position to name.
+
+View::over_space is pub(crate), so a codec can only hold a View by staying inside the space chain — the type enforces the discipline by construction. Cursor::new is public and accepts any slice. That is why Cursor is not merely a duplicate: it is the primitive that makes the flattened path comfortable, and its module doc actively recruits callers to it. The right reading of freecad's adoption is that the duplicate should have been removed sooner, not that it has earned its place. An unused abstraction that advertises for users is more expensive to leave in place than an inert one, and this workspace adds tens of thousands of lines per merge.
+
+Retaining View is necessary but not sufficient for reproducible diagnostics. Add a decode-session space registry whose descriptor records a stable label, parent SpaceId, source range and derivation kind for every registered slice or expansion. Keep compact (SpaceId, offset) locations inside the decoder; at the sealed codec boundary, resolve them into an owned root-to-leaf address before the DecodeContext is dropped. Archive helpers must register exact member names, including nested members. Extend cadmpeg inspect with the same address grammar, or emit the byte-exact inspect extract and inspect hex command sequence needed to reproduce the location. Acceptance requires a nested compressed-member failure whose printed address can be replayed after the original decode has ended; space 7 offset 120 alone does not pass.
+
+Further defects
+
+catia runs a third limit system. It has 78 work-charging call sites: 43 call WorkBudget::charge and 35 call WorkBudget::charge_by. Fourteen production call sites construct an independent WorkBudget::new(…) with session: None. Two root budgets are session-linked through ctx.work_budget, at families/standard/decode.rs:981 and families/zero_entity/decode.rs:766. Incidence solving has 15 session_child_slice call sites; each preserves its parent budget's session, including preserving None when the parent is the detached fallback at solve/incidence.rs:4294. The budget table above counts only ctx.charge_* and therefore understates the divergence.
+
+A dead rhino writer branch. writer.rs:762,766 gates rewritability on arenas named "byte_spans" and "opaque_records". No set_arena call anywhere writes either name, so that branch and the generated_comment check at :779-798 are unreachable for every document this workspace can produce.
+
+Native validators cover a small minority of the surface. Exactly four validate_native functions are registered — freecad, f3d, inventor and sldprt — so every other codec's native families have none, including iges (38 arenas) and rhino (29), both of which have encoders. Inventor is the read-only exception: it has a native validator but no encoder. The "no encoder and no validator" framing in the passthrough table above is therefore redundant in its second condition for the remaining no-writer rows; the encoder gap is the discriminating one.
+
+The proposal
+
+Phases are ordered by dependency: each removes a constraint the next one needs gone. Nothing here is sequenced by preference. They are also, roughly, ordered by value: if the effort is cut short, phases 0–3 and 5 are the load-bearing core, 4 is the security work that makes the operator profile true, 6 is conditional on its own compile spike, 7 is a long tail that is safe to stop anywhere, 8 records a cut, and 9 exists only if something before it shipped a break.
+
+Judge every phase against four independent compatibility axes
+
+A change can break Rust source compatibility, wire compatibility (CADIR, reports, sidecars), semantic output (identities, topology, losses, findings, ordering), or operational behavior (exit status, stdout/stderr, refusal rules, atomic writes). These are not one axis. A constructor change that fixes compilation preserves none of the other three by default, and the goldens only cover the third. State which axes each commit is allowed to move before writing it.
+
+Two standing rules bind every phase. First, re-measure the phase's counts and premises at HEAD before its first commit — this document's own premises drifted twice while it was being written. Second, when a phase changes a convention, the AGENTS.md line and the phase 0 ratchet update land in the same commit as the change that establishes it; a convention that exists only in this proposal will be re-decided from scratch by the next session that never read it.
+
+0
+
+Enforcement and baselines, before any migration
+
+New phase this revision · one-time setup · every later phase leans on it
+
+A convergence ratchet, because the gap table above is what unenforced convention does here. Every gap in it is a migration nothing forced, and this document's own premises drifted between its baseline and its recheck — two zero-caller entries acquired callers, an eleventh codec landed, and a five-day-old test-layout decision was already regressing. Add scripts/convergence-ratchet.py and a checked-in ledger (docs/convergence-ledger.toml): one script counts the mechanical patterns the same way every time — from_le_bytes/from_be_bytes in codec crates, le::*_at/be::*_at outside core, CodecError::Malformed(format!, LossNote struct literals beside the builder, bare 1e-6/1e-9/1e-10/1e-12 literals — and CI plus the pre-commit hook fail on any count above the ledger. A decrease updates the ledger in the same commit; a deliberate increase states its reason in the ledger diff. This converts every "migrate a thousand sites someday" below into "the number can only fall," and it is the one device in this plan that keeps working when code is written faster than it is re-read. Extend the pattern list as later phases land their mechanisms — the checked allocation helper, per-codec facade item counts.
+
+AGENTS.md is a deliverable of every phase, not documentation afterward. A decision that is not in the file agents load is re-made from scratch by the next session: sccache has been added and removed here repeatedly by different agents because "evaluated, no disk or speed win in this workspace — do not re-add" was never written down. Record that line now, record settled negatives generally, and land each phase's convention change in the same commit as the code that establishes it.
+
+Per-codec feature gates on the CLI, before the refactor's inner loop begins. crates/cadmpeg depends on all eleven codec crates unconditionally and the registry constructs each one inline, so every "rebuild the cadmpeg binary before a batch decode run" links the full 415 MB graph — the burst behind jobs = 6. Make each codec dependency optional behind a feature, default = all eleven, one cfg per registry entry: cargo build -p cadmpeg --no-default-features --features sldprt then links one codec during single-codec work. Release and dist artifacts build the default set and are unchanged; add one single-feature CLI build to CI so the gates cannot rot. Cross-format batch runs keep the full default binary.
+
+Capture the baselines later phases diff against. Run scripts/perf-baseline.sh at the starting commit — the harness exists and has exactly one recorded baseline — because phases 2 and 4 move hot read paths and put charging into admission loops, and goldens pin bytes, not time or peak memory. Audit golden breadth, not presence: fixture counts run from 317 (f3d) down to 4 (inventor) and 6 (sat, code-built inputs); measure which decode branches each codec's goldens actually execute, with the coverage machinery that already exists, and record per-codec floors. "Goldens unchanged" is the net under phases 1 and 7; its mesh size should be a measured number, not an assumption.
+
+One rule graduates from the footer into the phase structure: every phase re-measures its own counts and premises at HEAD before its first commit. The premises here drifted twice during drafting; expect the same for every phase that waits its turn.
+
+1
+
+Fix the live correctness defects
+
+Behavior changes on purpose · goldens will move and that is the point
+
+Structural work should not be sequenced ahead of a known silent-data-loss path. sldprt PMI drops records without saying so. parse_value at pmi.rs:813 still handles 19 marker classes and returns None for array16/32, map32, 64-bit integers, str32, and every bin and ext form; dimensions at :665 has no loss channel, so each failure is a bare continue and the document is simply smaller. Discovery still depends on the literal \x87\xa8annoType prefix at :791, so a map with any count other than seven, or with reordered keys, is invisible.
+
+Build the span-recording visitor described above: every marker class decoded, each value carrying its byte range so patch_payload keeps working, the embedded-record locator kept explicit, and a parse failure raising an attributed loss instead of a continue. Pin it with fixtures for array16, a reordered map, a key-like string inside a value, a malformed value, and an edited value round-tripped through patch_payload.
+
+Verify with the machinery the repo already owns, not only with fixtures. Add a sldprt_pmi fuzz target: cadmpeg-fuzz carries 92 targets and none covers the one component with a known parser defect. Its invariant is the writer's contract — parse, patch_payload, reparse, agree — seeded from the fixtures above; the nightly fuzz-smoke workflow picks it up unmodified because it iterates cargo fuzz list. Then run the corpus differential: decode every sldprt corpus file before and after the change and report how many documents' PMI content moved. That count is the measured blast radius of the silent-loss population and the release note, and no fixture can produce it. Two declarations, per the axes rule: the new attributed losses serialize inside sidecar v1 as additive data — permitted under v1, stated here rather than discovered later — and rmp is a new parser dependency inside the trust boundary: pin it and read it before it ships.
+
+STEP's step:signature#{index} identities belong here too, since they violate the three-component grammar every other codec satisfies and fixing them changes emitted output. The golden precondition this fix needs is satisfied at HEAD — step and sat golden trees landed at a20c291fc (#116) — and an intended identity change is only legible as intended against a net that catches unintended ones, so check STEP's net against the phase 0 breadth audit before moving it.
+
+The seek bounds bug in core::cursor::Cursor does not: with_bounds stores no lower bound and seek checks only the upper one, so a windowed cursor can seek behind its own start — but no caller pairs those two methods, and FreeCAD's current uses are counted reads that use neither with_bounds nor seek. It is latent, and the phase that deletes the type resolves it.
+
+2
+
+Delete and re-home
+
+Separate commits · shrinks every decision that follows
+
+Most of this phase is a public break, not internal cleanup. The affected library crates publish. The known affected surface includes core::cursor; core::golden; core::compare::{FLOAT_TOLERANCE, LOCAL_DIGEST_SUFFIX, floats_agree, is_local_digest_attribute, values_agree}; container::compression::{inflate_zlib_prefix, inflate_raw_prefix}; core::{le,be}::take_vec3; ir::roundtrip; ir::examples under the new feature; DecodeReport::record_coverage's signature; pub use validate::{validate, validate_with_source_fidelity}; Aabb; BrepAssembly; the duplicate IGES encoder surface; and phase 3's relocation of DocumentArtifact/DocumentOrigin. Phase 6 adds CadIr.ir_version, DecodeResult's three public fields and the codec facade reductions.
+
+The release rule is settled: every phase before 9 lands as unreleased implementation commits; phase 9 is the only release boundary. No version from an intermediate phase is published. Keep a checked public-API ledger against 14a0a4dfc, with one row for every public deletion, module move, visibility reduction, signature change, removed trait implementation and field encapsulation. Update the ledger in the same commit as the change. At phase 9, compare rustdoc public items against the baseline and reconcile every difference with the ledger. Workspace callers are not a substitute for this check because these crates publish independently.
+
+Re-run the census before deleting anything. Two entries that had no callers now do: freecad reads through core::cursor::Cursor at gui.rs:6, and iges builds, records, verifies and serializes a TransferLedger on every decode at reader.rs:229-262. They need opposite responses. The TransferLedger is now load-bearing and its removal is off the table. Cursor should still go, but it is a migration rather than a deletion: add read_counted to View, which absorbs freecad's two call sites and the five in rhino's hand-rolled read_counted_raw at mesh.rs:563; stop flattening at freecad/container.rs:73 so the entry map carries View and keeps its SpaceId; move #![warn(clippy::indexing_slicing)] onto the View module; then remove the type. That migration order buries the decision that matters, so make it explicit: the ergonomics come first. View's typed read surface today is u8 alone — the safe spelling of a little-endian u32 is le::u32_at(view.window(), off), which is why the older API wins 2:1, why rhino wrapped BoundedReader three times over, and why all 9 req_* call sites map_err the ParseError away and lose the location. Give View typed little-endian reads (u16/u32/u64/f32/f64 and arrays) and give each codec one From<ParseError> impl so ? propagates a located error with no per-site plumbing. Acceptance is a port, not a review: rewrite rhino/hatch.rs and one le::*_at module through the finished API — each port must be a net deletion with zero map_err lines, or the API is not done and the callers are not the problem. After the exemplar ports, the phase 0 ratchet carries the remaining four-digit from_le_bytes count down as a side effect of ordinary work; unenforced decree has never moved it. This slice touches hot read paths — re-run scripts/perf-baseline.sh against the phase 0 baseline before merging it. In the same domain slice, add the stable space descriptors and sealed-boundary address resolution specified above, then prove a nested FreeCAD member error is replayable through cadmpeg inspect. Retaining an opaque session-local id is not the acceptance condition. bounded_len stays — 40 non-test production call sites use it today, and 39 remain after Cursor::counted is removed. It is the half that was genuinely adopted. The list below is only as current as the commit it was taken against, and this codebase moves faster than an audit stays fresh — verify every deletion candidate's consumers and every zero-caller classification at HEAD as the first step of the phase, not as a formality.
+
+Dead or duplicated: Aabb, BrepAssembly, both unused inflate_*_prefix helpers, take_vec3, step's omit, the duplicate IGES encoder surface, the registry's display_name/extensions/capabilities (debug-assert consumers only), detection_priority (every built-in is zero), and the one-line single-caller export/convert wrappers. The sldprt cadmpeg-container dependency stays: container.rs uses its compound-file reader for CFB-backed inputs.
+
+Create a publish = false cadmpeg-test-support crate and move the golden harness, the shared validity assertions, and ir::roundtrip out of production crates — roundtrip belongs here rather than in phase 6's crate-split question, since its only consumers are golden and round-trip tests. Add a real examples feature, which several manifests already reference and which does not exist. Move IR-specific JSON comparison and _local_sha256 semantics out of core into IR, where the invariant lives. Update callers to the owning module in the same commit; no compatibility re-exports.
+
+On Cursor specifically: the core README mentions "checked cursors" generically, which View already satisfies, and cursor.rs:15 directs new decoder modules to use it. One existing module, FreeCAD, uses the older type for two counted-read helpers; migrate those calls to View and do not add new users. It also has a bounds bug — Cursor::seek checks only its upper bound where View::seek checks both, and with_bounds stores no lower bound, so seek(0) escapes the declared window. Delete it, keep bounded_len, correct the README.
+
+3
+
+Extract one typed application workflow
+
+No wire changes · CLI output byte-identical except the added refusals
+
+execute_conversion currently does eight things: format resolution, binary-stdout policy, source loading, diagnostics, decode-loss refusal, validation, empty-geometry refusal, command-report writing. Four more — encoder selection, export-loss refusal, destination writing, sidecar persistence — sit in export_ir, which the decode command also calls at commands.rs:205-218, so the split has a second caller to satisfy. Replace the cluster with Transcoder::prepare(source, target, policy) -> PreparedConversion | ConversionRefusal, pure with respect to presentation and destination writes.
+
+Introduce SourceRequest, ExportTarget and ConversionPolicy. Do not introduce a second loaded-document abstraction: cadmpeg_ir::DocumentArtifact and DocumentOrigin::{Neutral, Decoded { report, fidelity }} already encode the required state. Move them to the application owner, rename them LoadedDocument and LoadOrigin, update every caller to import from that owner, remove the IR exports, and add no compatibility re-export. Delete TargetOptions and construct the encoder at the CLI boundary, so Cadir + StepWriteOptions stops being representable and a wrong-target flag fails before the input is read. The type change alone is not sufficient to detect the wrong-target case: IgesTarget and StepOutputArgs.step_target both derive Default and are parsed into non-optional fields, so --iges-target 5.3 is indistinguishable from omitting it. Parse into Option<T>, or read clap's value source, or express the restriction as a conditional argument constraint. Note also that this refusal is a deliberate behavior change: a command that succeeds today will start failing, which is correct but is not "byte-identical CLI behavior" and should be pinned as a new expectation rather than an unchanged one.
+
+Split the current registry by responsibility; do not delete validator dispatch. InputCatalog owns source detection and codec lookup only, derives the format id from the codec instead of duplicating it in a descriptor, and provides one resolve_source shared by inspect and load. A separate application-owned NativeValidatorCatalog maps native namespace to the codec facade's validator function. Transcoder receives both catalogs; application validation asks NativeValidatorCatalog to run every validator whose namespace is present. Construct encoders at the CLI boundary, outside both catalogs. Land the split only with tests that preserve the four validators registered at 14a0a4dfc, run two validators for a document carrying two matching namespaces, and run none for an absent namespace. Phase 5 may change what neutral validation means, but it must not have to rediscover who owns native-validator dispatch.
+
+Give the CADIR-plus-sidecar pair a concrete owner: an application-level ArtifactStore holding bounded reads, sidecar naming, digest verification, staging, stale removal and atomic replacement — behavior currently spread across IR, the loader and commands.rs. No filesystem trait; Read/Write/ReadSeek already abstract byte I/O and there is no remote store. State the real guarantee honestly: two renames cannot be transactional, and a crash between them can leave a stale sidecar. The digest failing closed is what saves you, not the object.
+
+Replace SemanticFailure(String) and anyhow downcasting with a typed refusal enum — ValidationFailed, DecodeLossRejected, ExportLossRejected, EmptyGeometry, UnsupportedTarget, BinaryStdoutRejected. Messages stay presentation; stable codes become test data in this phase, and reach the command report only with report v6 in phase 9. That split is forced: refusal paths already persist a command report before returning (commands.rs:342), and its envelope is schema_version: 5, documented at docs/architecture.md:32 as covering semantic refusal paths. Serializing refusal codes here would change v5 without a version bump. Build the typed enum and test its variants directly; the status and refusal fields land with the version that announces them. export and convert collapse into one workflow with different validation policy, every refusal happens before the destination artifact or its sidecar is written, and the loader stops calling eprintln! and returns typed notices instead. State that invariant precisely rather than as "before anything is persisted": loss, validation and empty-geometry refusals deliberately write an explicitly requested --report before returning (commands.rs:342), and that behavior is documented. An acceptance test written against the looser wording would suppress the refusal reports the CLI is supposed to produce.
+
+4
+
+Make policy numbers flow from context, not literals
+
+Behavior-affecting, not mechanical
+
+110 hardcoded MAX_* constants are policy written as literals at the sites that use them. An earlier revision scheduled the 785 bare tolerance literals here as the same problem; they are not, and that half is cut — the decision and its reasons are recorded below so it stays decided.
+
+The limits half is adoption, but it starts with a classification pass, not a migration. ResourceLimits exists with nine fields, lives in cadmpeg-core, and is already reachable from every decode site through ctx.policy(). Its nine fields are generic workload ceilings — input bytes, decompressed bytes, materialized bytes, entities, collection items, recursion depth, work units. They are not per-format cardinalities, and a sizeable share of the 110 MAX_* constants are exactly that.
+
+Sort each constant into one of four kinds before moving any of them:
+
+Format invariant — stays a named constant. MAX_EDGE_WIDTH_DISTANCE_OWNERS = 2 at f3d/design/decode/scopes.rs:5068 encodes that the full-edge mode adds no width-distance owner, symmetric adds one, and two-sided adds two; a higher count means a frame form the reader does not account for. MAX_FRAME_BYTES = 12 * 9 at creo/reference.rs:426 is twelve scalar slots at their maximum serialized width. Routing either through an operator profile would let a high service limit accept unsupported forms and a low one reject legal files.
+
+Per-input allocation bound — enforce with the bounded-length helpers rather than a bare constant.
+
+Cumulative resource ceiling — charge through DecodeContext. This is the group ResourceLimits is for.
+
+Algorithmic work cap — a separate work budget, taking min(format_cap, policy_cap) where both apply.
+
+Only the third and fourth groups belong in DecodePolicy. The count that matters after the pass is how many are genuinely resource ceilings, which is not knowable from the grep that produced 101.
+
+The tolerance migration is cut. There is no mechanism to adopt: Tolerances at units.rs:47 is a writer round-trip attribute with no predicates on it, DecodeContext carries no tolerance, and cadmpeg-core does not depend on cadmpeg-ir, so a decode-time predicate layer would have to be designed from nothing. Worse, the migration has no detector: the thresholds gate near-degenerate inputs, corpus files do not sit near epsilon boundaries, so goldens are blind to a wrongly-migrated site — 785 changes of per-site behavior risk with no oracle behind them. The legibility problem is real — today you cannot tell which 1e-9 means "same point" and which means "non-zero" — and it is solved at zero risk by a convention rather than a phase: when touching a line that carries a bare tolerance literal, hoist it to a module-local named constant with the intent in the name (EPS_SAME_POINT, EPS_ORTHO) — same value, same module, 1:1 — and let the phase 0 ratchet keep the bare-literal count from growing. Record the convention in AGENTS.md together with the standing warning that survives the cut: never collapse distinct tolerance values. The orthonormality thresholds are acceptance gates, not style — 1e-6 in nx, 1e-9 in sldprt and f3d, 1e-10 in iges, 1e-12 in catia, some against ‖v‖ and some against ‖v‖² — and changing any of them changes which files decode. Same for the guards: IGES's normalized tests norm > 0.0 while Vector3::unit tests length > f64::EPSILON.
+
+On the limits side the same move buys security: route the constants the classification pass marks as resource ceilings through DecodePolicy so the service profile means something, move charge_entities from the finalizer to admission time so max_entities prevents rather than reports, and put catia's b5 fixpoint and f3d's arrangement walk under a work budget. Give the hardened modules a checked allocation helper and use it: vec![x; n] from a parsed count appears at 241 sites, and clippy.toml cannot reach it — disallowed-methods does not match a macro, and banning collect would flag every iterator in the workspace; the phase 0 ratchet counts what clippy cannot lint.
+
+The f3d nested-inflation gap is a separate axis and a work budget does not close it. max_work_units counts operations; that path's defect is bytes materialized, bounded only by a local 128 MiB constant per entry with no cumulative ceiling. Delete the two decode-side nested ZIP paths rather than instrumenting them. In the current code, materials::decode and decode_with_body_bindings call scan.entry_bytes at materials.rs:488; ContainerScan::entry_bytes is entry_view(name).map(View::window) at container.rs:221-226, so the SpaceId is discarded before instance_properties and nested_entry open their own archives at materials.rs:1675 and :1737. Change the material path to retain the View, thread DecodeContext through both current material entry points, called from decode.rs:1464 and :2377, then open the nested archives with ArchiveSnapshot::new(view) and archive.open(ctx, file) instead of zip::ZipArchive::new. The per-expand and cumulative decompressed ceilings then apply through begin_expand without any new accounting code. entry_view is already pub(crate) and used this way in f3z.rs:57 and :186.
+
+read_entry_bounded stays for the write path — patch_protein_appearances at materials.rs:201-227 is reached from writer/patch/mod.rs:546 and has no DecodeContext, which is correct, since bytes being rewritten were already charged when they were read. Pin the decode side with resource-limit fixtures, because nothing currently fails when those ceilings are exceeded — and prove the ceilings bind under adversarial input, not only under fixtures: run the existing fuzz targets for each touched codec under a deliberately small ResourceLimits profile and treat any run that materializes past a ceiling without failing as a defect. Charging moves into hot loops in this phase; re-run scripts/perf-baseline.sh against the phase 0 baseline before merging it.
+
+5
+
+Separate admissibility from validation
+
+Gates phase 6 · must not be skipped
+
+Three different checks are currently one function: draft admissibility (is this partially-built candidate acceptable?), final document validation (is this document semantically valid?), and export preconditions. Rhino uses the second for the first: it runs final document validation to decide draft admissibility, so the validator is load-bearing on decoder output.
+
+Eight production gates across four codecs, not two in one — and they are not all the same kind. Rhino has two: decode.rs:1806 runs the whole validator, and decode.rs:619 runs validate_with_annotations then strips Check::ArenaOrder at :626-628 — a hand-patched exception that is itself evidence the coupling is already hurting. CATIA has three, all routing through assemble.rs:65's neutral_model_is_admissible, which runs the full IR validator to choose between semantic topology and fallback output: families/freeform/mod.rs:204, families/e5/decode.rs:147, families/standard/decode.rs:1629. IGES adds a rejection gate, reject_invalid_semantic_ir at reader.rs:270, which fails the decode on any finding at Severity::Error or above. sldprt adds two on the write side, at writer.rs:50 and :78, both refusing the write on an error-severity finding.
+
+The sldprt pair needs separate treatment. The six decoder gates ask whether an input model is admissible, which a narrow predicate can express. writer.rs:78 asks whether writer_transform::bake and the prepare_*_for_write passes preserved validity — a postcondition on a substantial transformation, where the full validator is arguably the right tool. Decide explicitly whether it stays a full validation, and freeze accepted and rejected candidates on both sides of the transform, not just at its input.
+
+That changes what this phase has to freeze. A validator change today can silently flip CATIA from semantic topology to fallback and can turn an IGES decode into an error. Freezing rhino alone leaves both unprotected, so every route needs accepted and rejected fixtures before the predicate is introduced — and IGES's gate needs an explicit classification, since rejecting a document is a different contract from selecting an output shape. Write down the admissibility invariant as an explicit subset of the validator's checks before replacing anything — "whatever the validator currently accepts" is not a contract, and the rollback path at decode.rs:1820-1835 is driven by the rejections, so freezing only accepted inputs cannot detect a predicate that is too permissive. Freeze both accepted and rejected candidates, then introduce the predicate and switch the decoder onto it. Fixtures under-power the swap on their own; the corpus is the stronger oracle and it is nearly free — decode the full corpus under the old gate and the new predicate and require zero divergence in accepted-versus-rejected outcomes on every route, the six decoder gates and both sldprt writer gates, before the switch lands. Make entity_census public and cheap — or add CadIr::census — so encoders stop running the full validator to count rows and discarding every finding. Rename the dependency-free operation validate_neutral, and compose the application-level check as validate_neutral + validate_source_fidelity + the owning codec's native validator. Do not move native rules into cadmpeg-ir; that reverses the dependency direction.
+
+Do not make decode automatically validate. Successful decode and valid IR are deliberately distinct for salvage mode, and collapsing them destroys that. Make the distinction observable instead: convert requires validation unless overridden, decode may emit a document with findings, and the report says so. While here, settle STEP's inspect, which runs the full semantic decode and discards the IR — either make it a cheap syntactic census or rename it analysis, but stop calling a full decode "container inspection."
+
+6
+
+Narrow the codec facades; extract what little the IR can shed
+
+Wide blast radius · one domain slice at a time
+
+The validator is the candidate worth evaluating, and phase 5 is what makes it possible. validate is about 15,000 lines against diff and roundtrip's combined 1,000, so it is the high-churn module whose extraction can change the production codec rebuild graph. The one edge pointing into the validator is codec.rs:319, and that call is validate::entity_census — a row count, not semantic validation, pub(crate) only because it happens to live in the validator's file. Phase 5 already removes it. The full test graph is different: nine codec test trees call validation and will retain a dev-dependency on the extracted crate.
+
+Removing it makes a cadmpeg-validate crate acyclic, but not yet buildable. The validator reaches back into IR internals that are deliberately private: it expands the arena_registry! macro (document.rs:32, pub(crate) at :79) in four modules including validate/referential_integrity.rs:38, and validate/geometry_consistency.rs:11 imports curve_parameter_near_point and its neighbours from eval.rs:3178. Extraction therefore needs a stable arena-visitor boundary and a public evaluation API, designed rather than mechanically widened — the registry is intentionally the single source of truth for arena membership, and duplicating it across a crate boundary would be worse than the fan-out it fixes.
+
+The extraction reach is dependency-derived, not the total codec count. Re-run it at 14a0a4dfc before the compile spike. sldprt's writer gates are production code behind a public, tested method, so it keeps a normal dependency on the extracted crate — outward, so still acyclic, but its rebuild does not shrink. Inventor is read-only, has a separate native validator, and does not import the full IR validator; include it in the facade, resource, and native-validator audit, not in cadmpeg-validate merely for symmetry. Removing sldprt's gates instead would change a pinned public writer contract and is a separate decision from packaging.
+
+So gate this on an API design and a compile spike, not on a stale count. Measure four graphs separately: an ordinary participating codec library build, that codec's test build, the all-codec CLI build, and cargo test-fast's workspace build. Record clean and incremental compile time, linked artifact count and disk change for each. The extraction passes only if the production result justifies the new public visitor and eval surface; a test-graph win is not expected. If that surface cannot be made narrow, or the measured production gain is immaterial, the crate should not exist.
+
+What is definitely not available. eval is the biggest module in the crate and nine codecs call into it: catia, creo, f3d, freecad, iges, nx, rhino, sldprt and step. schema is the compile-time entity contract imported by ids.rs, draft.rs, index.rs, document.rs and arena modules — the exact "what codecs need" half — so moving it is an immediate cycle. Do not split further either; geometry/topology microcrates would add coordination with no independent consumer.
+
+roundtrip is already accounted for — phase 2 moves it to cadmpeg-test-support, since its only consumers are golden and round-trip tests. That leaves diff alone here, and 615 lines does not justify a crate on its own. Note that neither is production-only: f3d and sldprt reach both from inline #[cfg(test)] modules (f3d/src/tests.rs:300, sldprt/src/golden_tests.rs:30), so relocating them converts a dependency rather than removing one, and those test graphs stay linked. Measure the production and test builds separately before treating either as a build win.
+
+Then the state machine: DocumentDraft (mutable, indexed for construction) → CadIr (structurally canonical) → ValidationReport. CadIr remains the canonical public name; this phase does not introduce or imply a separate CadDocument wrapper. Make ir_version and the sidecar versions constructor-controlled rather than publicly mutable, make DecodeResult fields private behind its finalizing constructor, and fix to_canonical_json, which pretty-serializes and requires the caller to have called finalize first — either serialize a sorted view or rename it. Do not add a ValidatedDocument wrapper until something needs proof-carrying validity.
+
+Give Feature, SketchEntity, SketchInputEntity and their peers constructors that take every invariant-bearing field — Feature needs its FeatureId, ordinal and definition; SketchEntity its id, owning SketchId and geometry. Do not give them public Default: an empty id and an arbitrary definition variant is exactly the illegal state this phase exists to make unrepresentable. The boilerplate this removes is real — 10,723 lines of test code that are nothing but field: None, — but the fix is ergonomic builders in cadmpeg-test-support, where inventing placeholder identities is harmless, not a public default on the domain type. Finally, each codec's lib.rs exports only the applicable facade: XCodec, an XEncoder and options where a writer exists, and validate_native where a native validator exists. Read-only codecs such as Inventor export no invented encoder. Everything else becomes pub(crate), with fuzz access through one #[doc(hidden)] pub mod fuzz behind a fuzzing feature — apply the selected pattern once per applicable codec at the HEAD census. Budget the consumer migration with it: cadmpeg-fuzz carries 92 targets whose imports break as each facade narrows — migrate them inside the same codec slice and keep cargo +nightly fuzz build green, with the nightly smoke workflow as the detector; a red night there is a regression of this phase, not noise. Measure NX's export count at HEAD before setting the acceptance target; preserve the low-level parsers Creo and NX explicitly advertise; classify every remaining public symbol as stable API, feature-gated tooling, or private.
+
+Settle the native-retention question in the same window, and settle it as an audit rather than a cull. Produce an arena-disposition table covering, for each candidate: its serialized semantics and external contract; incoming neutral and native references; its use by diff, document_local_sha256, query and validation; its relationship to source fidelity; a retain, migrate or remove decision; and, for anything but retain, the namespace-version change and the behavior of a reader holding the old version. Absence of a writer in this workspace and absence of a registered validate_native are not entries in that table. Any removal that survives the audit is a native wire migration and belongs in phase 9 with the other incompatible changes, never here.
+
+7
+
+Deepen the codecs, one at a time
+
+Unchanged goldens after every codec · never two codecs in one migration
+
+The golden net now exists everywhere, but it is not equally strong everywhere. step and sat golden trees landed at a20c291fc (#116) — 38 and 6 files, sat's built from code-constructed inputs — so the gate this phase assumes is present for all eleven codecs. Presence is not breadth: inventor carries 4 golden files against a 55-arena decoder, and sat's 6 are the thinnest tree after it. Before restructuring any codec, check its net against the phase 0 coverage audit; STEP is restructured most aggressively here, and the same net covers the STEP inspect change in phase 5.
+
+F3D carries two copies of the same document-assembly pipeline — the geometry-present flow and the no-BREP flow — each repeating history, parameters, sketch expansion, dimensions, body bindings, configurations, materials, products, native storage, annotations, reports and fidelity. Introduce a private F3dDecodeSession owning the scan, optional geometry index, native design graph, IR, report and annotations, so geometry absence stops forking unrelated product decoding. The useful abstraction is the session and its finalizer, not dozens of one-caller helpers. Then move F3D's byte-level ASM framing, SAB records, tags and patch layouts into cadmpeg-asm behind an AsmEditSet; F3D should own the mapping from Fusion design changes to ASM edits, not the framing.
+
+STEP's central reader has nineteen resource-stage charges, nine result shapes repeating claims and warnings, seven near-identical warning-to-loss conversions, and manual unioning of claimed record sets. Introduce a StepDecodeSession accumulator and a small StageOutcome<T> that carries a domain value plus claims and diagnostics. Keep the explicit pass order — it encodes real dependencies — and do not generalize this into a cross-codec stage framework.
+
+Parasolid — rescoped. Do not extract a shared record layer. The NURBS descriptors are the identity table on both sides, and there is no third consumer. Instead do the two local things: settle whether sldprt has an extended reference form at all — the u16 ceiling at brep/topology.rs:28-53 is real, but the encoding is a hypothesis borrowed from nx and needs corpus bytes before it is implemented, and if confirmed it is a record-length change that turns six fixed-offset call sites into a running cursor — and collapse nx's five read_xmt definitions — deltas.rs:3160, nurbs.rs:776, intersection.rs:1034, topology.rs:1132, parasolid.rs:605 — being careful that they carry three different return conventions and a naive merge corrupts every offset in topology.rs.
+
+Then the local defects. Extract sync_neutral_features' 61 match arms into per-feature encoders — they share six read-only lookup maps and each returns the same triple. Turn creo's ~2,900 lines of coverage boilerplate into a table. Collapse catia's 41-family × 6-site fan-out with a macro. Widen visit_feature_history_operation_records' callback parameters so the 32 functions pasting its 13-line body can call it — 27 are byte-identical and 5 have diverged, which is the reason to converge them. The callback is already generic over impl FnMut; what blocks reuse is that it does not pass section through. Promote sldprt's class-token predicate — token & 0x8000 != 0 && token != 0xffff — out of the single local closure at terminations.rs:1308 that names it; the other 39 sites across 10 files spell it out inline, inconsistently (!= 0xffff vs != u16::MAX vs != [0xff, 0xff]) and with the sentinel check omitted entirely at terminations.rs:1082, :1087, :1152, :1168 and :1207, several of them in a byte-level byte & 0x80 form. Whether those omissions are deliberate is not determinable from the code, which is the finding — this one needs a per-site decision, not a find-and-replace. Make rhino's ValidatedRawBrep actually proof-carrying before propagating it to the other B-rep assemblers; propagating it in its current shape spreads the discipline without the guarantee. Split the flat test modules in place — f3d/src/tests.rs is 25,642 lines with two mod statements — without moving anything across the visibility boundary.
+
+Before reopening the monolith question: on 2026-08-04 four commits arguing against splitting these files were written and reverted within twenty minutes. The same day landed two splits — 2f563c9a1 on resolved_features and 47c36d572 on creo's feature.rs. The reasoning against was discarded and the practice went the other way, so whoever picks this up starts from zero.
+
+8
+
+Layout-table reader generation — cut
+
+Removed from scope this revision · decision recorded here so it is not re-litigated
+
+The earlier revision generated View-based readers from docs/layouts/*.toml. Cut, for three reasons that outweigh the appeal. It is the one speculative new mechanism in a plan whose central diagnosis is mechanisms built once and then abandoned. It creates a third representation — generator, generated readers, hand-written remainder — a new seam every future session must understand. And it covers only fixed-layout records, the minority surface of these formats; the bounded-read gap it was meant to close as a side effect is closed by phase 2's ergonomics and phase 0's ratchet instead.
+
+What stays is what already works: the tables keep growing under the existing rule — record a settled fixed-offset layout in docs/layouts/, rendered markdown beside it — and cargo test -p cadmpeg --test layout_tables keeps checking arithmetic closure and specification citations. Gap #3 in the table above remains real; its treatment is the rule, not a generator. Revisit trigger, recorded so the idea is neither lost nor re-invented: if phase 7's restructuring of a codec naturally produces addressable per-record parse functions, revisit table-driven tests — the table as an oracle driving offset assertions against those functions, parsers staying hand-written. That form needs the same prerequisite the generator would have had to build anyway, keeps decoder and table as two restatements that can disagree, and adds no production seam. Table-driven readers stay cut even then.
+
+9
+
+Batch the wire and public-API breaks
+
+Everything incompatible lands together or not at all
+
+The checked public-API ledger, not a prose sample, is authoritative. Its known phase 2 rows are core::cursor::Cursor and its pub mod; core::golden; the moved core::compare constants and functions; container::compression::{inflate_zlib_prefix, inflate_raw_prefix}; core::{le,be}::take_vec3; ir::roundtrip; default access to ir::examples; the changed DecodeReport::record_coverage signature; Aabb; BrepAssembly; and whichever public IGES encoder type or Encoder implementation the duplicate-surface decision removes. Phase 3 adds removal of cadmpeg_ir::{DocumentArtifact, DocumentOrigin} after their direct move to the application owner. DecodeReport.transfer_ledger stays: phase 2 establishes that it is load-bearing and serialized. Phase 6 adds the pub use validate::{validate, validate_with_source_fidelity} re-exports if the validator moves, CadIr.ir_version, DecodeResult's ir/report/source_fidelity fields, and codec facade narrowing. Add every later rustdoc difference to this ledger before merge; do not preserve a moved path through a compatibility re-export. Phases 1 through 8 remain unreleased, and phase 9 lands the ledger and version changes as the only release boundary.
+
+Namespaced structured loss codes, so Rhino stops prefixing its 29 stable codes into human messages and sldprt stops discarding its 31 entirely — LossNote.code is already a typed LossKind; it gains a codec namespace so the kinds stop colliding across formats, each codec keeps a typed local enum that constructs it, and changing a codec-to-category mapping stops accidentally changing strict-mode behavior. Codec-owned identity builders (StepIdentity::signature(index)) that validate the global grammar at construction, with the step:signature#0 failure as the first regression. Report v6 with explicit status and refusal { stage, code, message }, because the current null sections cannot say why a run refused. Rename the inverted codec traits so the safe consumer API is Codec and the raw hook is CodecBackend. Rename the two structurally different Provenance types by role rather than merging them. Keep TransferLedger; remove BrepAssembly only if the phase 2 census still finds no production consumer.
+
+Namespacing the loss codes needs a sidecar migration decision, and there are two version namespaces here, not one. Report v6 governs the CLI envelope. LossKind also serializes inside DecodeSidecar, which is at DECODE_SIDECAR_VERSION = "1" and carries a whole DecodeReport. Today the codes are bare snake_case strings from #[serde(rename_all = "snake_case")]. Changing that representation under version 1 leaves two incompatible schemas sharing a version. Bumping to 2 is worse on its own: DecodeSidecar::from_json rejects any version it does not equal, and loader.rs:119 turns a sidecar parse failure into a hard artifact-load failure, so every existing CADIR file with a sidecar becomes unloadable until the user deletes the sidecar and loses the decode fidelity it held.
+
+So: either choose a representation version 1 can still read, or ship a version 2 reader that migrates version 1 in place. Pin whichever with a fixture sidecar that carries losses, since a fixture without them passes either way.
+
+Any native arena removal surviving phase 6's audit lands here too, and it is a third version namespace again — per-codec, independent of both ir_version and the sidecar. Each removal increments its namespace version, states what a reader holding the previous version does with a document that no longer carries the arena, and clears every native_ref pointing into it first, or validation fails on documents that decoded cleanly before. CATIA's ladder already reaches 269 with named legacy constants back to 212; extend it rather than reusing a version for two schemas.
+
+Increment ir_version only if serialized CADIR actually changes incompatibly. Source-level encapsulation is not a wire change — but making the field non-public is still a source break, so it belongs in this batch.
+
+What not to do
+
+TemptingVerdictWhy
+
+Unify the codecs behind a shared decoder frameworkdon'tThey look similar and aren't — with the single Parasolid exception above. Convergent shape over divergent format semantics is the classic wrong unification. Verified non-targets: unit conversion is genuinely per-format; B-rep assembly is driven by different record fields everywhere; the three sketch-profile strategies differ because the formats differ (sldprt chains by stored endpoint identity, f3d welds geometrically because Fusion stores no endpoint markers, freecad walks greedily).
+
+Collapse the ~60 vector/transform copiespartlyThe byte-identical ones are free: f3d's compose_transforms duplicates Transform::compose exactly, IGES has four identical normalized, CATIA two identical unit_vector. But leave Creo's mul_add forms alone — FMA rounds differently and Creo gates on exact carrier equations — and leave NX's column-major JT transform alone. CATIA's b5/vecmath.rs already documents its deliberate non-merge; that reasoning still holds.
+
+Remove sldprt's cadmpeg-container dependencydon'tsldprt/container.rs already uses cadmpeg_container::compound to probe and open CFB-backed inputs. The shared crate owns generic compound-file expansion; sldprt keeps the format-specific stream selection and wrapped-payload decode.
+
+"Fix" cadmpeg-codec-sat for being only 712 linesleave itIt is a thin adapter over cadmpeg-asm, which it shares with f3d. Small because it is correctly factored. Fully wired, 9 tests, explicit "identified but not decoded" branch.
+
+Relocate the 217k lines of tests to tests/don'tThe reflex answer, and wrong here. Each tests/ file relinks the whole codec graph (two files cost 350 MB for three test functions), and 74.1% of test call sites reach non-pub functions, so relocation means publicizing ~4,778 internals. Split the flat modules in place instead.
+
+Rewrite cadmpeg-corekeepIt is the best code in the repo. The problem is that 70% of reads bypass it, not that it is wrong.
+
+Replace prose specs with the layout tableskeep bothThe tables carry numbers; the prose carries the reasoning and the open questions. Losing the prose loses the part that can't be regenerated.
+
+Generate the decoders from the layout tablescutPhase 8 records the decision and the revisit trigger — table-driven tests if phase 7 produces addressable per-record parse functions; table-driven readers, never.
+
+Chase the 832k LOC numberignoreEleven formats, most of them proprietary binaries, is genuinely a lot of code. Line count is not the defect; the specific mechanisms named above are. Deleting the dead surface in phase 2 barely moves the total and is still worth doing.
+
+Add a dynamic plugin/dylib system, or an open FormatId newtypedon'tThe Box<dyn Codec> dynamism already isn't needed — the registry hardcodes every format anyway. "Third-party format ids shouldn't require editing IR" is hypothetical extensibility for a third party that does not exist, and it fails the same test that kills the plugin framework.
+
+A ports-and-adapters layer, or a filesystem trait over std::fsdon'tRead, Write and ReadSeek already abstract byte I/O and there is no remote store. The ArtifactStore in phase 3 is a concrete owner, not a port.
+
+A cross-codec stage/pipeline frameworkdon'tF3D wants a session, STEP wants an accumulator, and their pass structures encode different real dependencies. Generalizing the two into one framework is the shallow-abstraction trap that produced half the dead code in phase 2.
+
+Make decode automatically validatedon'tSuccessful decode and valid IR are deliberately distinct so salvage mode can produce a document with findings. Collapsing them destroys that. Make the distinction observable instead — that is phase 5.
+
+Blanket-privatize every codec internalcarefulCreo and NX explicitly advertise low-level research parsers in their crate docs. Narrow the facades, but classify each symbol as stable API / feature-gated tooling / private rather than sweeping.
+
+Add an encoder wrapper type per format for symmetrydon'tNormalize writer ownership where state actually differs — stateless StepCodec plus StepEncoder { options }, a real FcstdEncoder, one IgesEncoder. Where a codec is genuinely stateless both ways, one type implementing both traits is correct.
+
+Regenerate goldens to make a refactor passneverRegeneration belongs only to an intentional semantic change whose expected result comes from the specification. This is the single rule most likely to be broken under time pressure, and it is the one that converts a refactor into a silent behavior change.
+
+Summary
+
+The architecture doesn't need replacing. The layering is acyclic and correct, the seams are deliberate, the substrate is well-built, the tests are load-bearing, and the docs are unusually good. cadmpeg-asm demonstrates the parse → model → emit flow the codecs should follow, but it is not a packaging model: its normal IR dependency spans thirteen production source files across B-rep and NURBS code, plus B-rep tests, rather than one isolated adapter.
+
+There is one type-level weakness worth fixing and it is in the application layer, not the IR: a conversion plan that holds STEP, IGES and Rhino settings at once, so a flag on the wrong target is accepted and silently ignored. The IR's references are already typed — 27 newtypes in ids.rs, enforced in every entity struct — so the validator's 170 ref_error sites are testing existence, not kind, and no handle type can remove them. Everything on this list is deletion, decoupling, or a shape the repo already demonstrates somewhere else.
+
+"Design that was never propagated" fits two of the six gaps; three were never designed at all. The more accurate reading is that this is very good code written far faster than anyone could read it — neither slop nor an incomplete migration. A 222-line safety primitive whose doc directs every new decoder module to read through it, which acquired its first caller only recently, and which ships with a bounds bug in seek that no one has hit, is not design that failed to propagate. It is design that was never re-read.
+
+What is left is a list of concrete code changes and one standing device: close the silent-loss path in PMI, delete what has no caller, make the conversion plan unable to represent a flag on the wrong target, decouple validation from construction — and put a ratchet under every convergence count, because in this codebase an unenforced mechanism has a measured half-life, and this document's own premises drifted twice while it was being written.
+
+Historical audit baseline: df2f8afff · 257 commits · no files modified. Phase scope rechecked at 14a0a4dfc · 263 commits · re-verified 2026-08-11 on the sldprt-l6 line after a20c291fc (#116 landed the step and sat golden trees).
+
+Counts produced by ripgrep over crates/**/src, excluding test files and inline #[cfg(test)] blocks unless stated. File anatomy from column-anchored span parsing verified against manual brace checks. Every claim carrying a file:line was read at source.
+
+Historical line numbers and call counts remain pinned to the audit baseline. The current workspace has 17 packages, 11 codec packages, 11 codec golden directories, and 4 registered native validators. Re-run any deletion, count, or zero-caller claim at HEAD before acting on it; phase-wide codec scopes above already include Inventor.
+
+Revision 2 (2026-08-11): phase 0 added — convergence ratchet, AGENTS.md-as-deliverable, per-codec CLI feature gates, perf and golden-coverage baselines. Tolerance migration cut to a convention with the never-collapse warning retained; reader generation (old phase 8) cut with a recorded revisit trigger; fuzz, corpus-differential and perf-baseline gates wired into phases 1, 2, 4, 5 and 6; step/sat golden premises updated to #116; View ergonomics made an explicit phase 2 acceptance criterion.

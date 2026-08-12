@@ -1419,7 +1419,75 @@ pub(super) fn output_curve_endpoint_markers<'a>(
             return roster;
         }
     }
-    marker_curve_endpoint_markers(payload, curve, markers_by_id, markers)
+    let endpoints = marker_curve_endpoint_markers(payload, curve, markers_by_id, markers);
+    if endpoints.len() == 2 {
+        return endpoints;
+    }
+    if let Some(completed) =
+        same_index_radius_relation_curve_endpoint_markers(curve, markers_by_id, markers)
+    {
+        return completed.to_vec();
+    }
+    endpoints
+}
+
+fn same_index_radius_relation_curve_endpoint_markers<'a>(
+    curve: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+    markers: &[&'a SketchInputEntity],
+) -> Option<[&'a SketchInputEntity; 2]> {
+    if curve.kind != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
+        return None;
+    }
+    let [direct_link] = curve.links.as_slice() else {
+        return None;
+    };
+    let direct = markers_by_id
+        .get(direct_link.entity_ref.as_str())
+        .copied()?;
+    if direct.coordinates_m.is_none()
+        || !matches!(
+            direct.kind,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        )
+    {
+        return None;
+    }
+    let object_index = curve.object_index?;
+    let mut candidates = markers.iter().copied().filter_map(|relation| {
+        if relation.feature_ref != curve.feature_ref
+            || relation.object_index != Some(object_index)
+            || relation.kind
+                != SketchInputKind::Relation(crate::records::SketchRelationKind::Radius)
+        {
+            return None;
+        }
+        let [first_link, second_link] = relation.links.as_slice() else {
+            return None;
+        };
+        let pair = [first_link, second_link].map(|link| {
+            markers_by_id
+                .get(link.entity_ref.as_str())
+                .copied()
+                .filter(|marker| {
+                    marker.coordinates_m.is_some()
+                        && matches!(
+                            marker.kind,
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        )
+                })
+        });
+        let [Some(first), Some(second)] = pair else {
+            return None;
+        };
+        (first.id != second.id && (first.id == direct.id || second.id == direct.id))
+            .then_some([first, second])
+    });
+    let pair = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    Some(pair)
 }
 
 pub(super) fn current_identity_linked_wide_curve_uses_one_based_roster(

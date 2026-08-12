@@ -8,19 +8,21 @@
 //! `.sldprt` output. See the package README for workflows, format limits, loss
 //! reporting, and exit-status semantics.
 
+mod application;
 mod commands;
 mod inspect;
 mod loader;
 mod query;
-mod registry;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use crate::registry::Registry;
+use crate::application::{ForcedInput, InputCatalog, NativeValidatorCatalog};
+use crate::commands::AppCatalogs;
 
+#[cfg(feature = "step")]
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
 enum StepTarget {
     Ap203e1,
@@ -32,6 +34,7 @@ enum StepTarget {
     Ap242e3,
 }
 
+#[cfg(feature = "step")]
 impl StepTarget {
     fn schema(self) -> cadmpeg_codec_step::StepSchema {
         match self {
@@ -45,6 +48,7 @@ impl StepTarget {
     }
 }
 
+#[cfg(feature = "iges")]
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
 enum IgesTarget {
     /// IGES 5.3 Fixed ASCII.
@@ -59,6 +63,7 @@ enum IgesTarget {
     V5_1,
 }
 
+#[cfg(feature = "iges")]
 impl IgesTarget {
     const fn options(self) -> cadmpeg_codec_iges::IgesWriteOptions {
         cadmpeg_codec_iges::IgesWriteOptions {
@@ -71,20 +76,27 @@ impl IgesTarget {
     }
 }
 
+#[cfg(feature = "step")]
 #[derive(Debug, Clone, Args)]
 struct StepOutputArgs {
-    /// STEP application protocol and edition for STEP output.
-    #[arg(long, value_enum, default_value_t)]
-    step_target: StepTarget,
+    /// STEP application protocol and edition; valid only for STEP output.
+    #[arg(long, value_enum)]
+    step_target: Option<StepTarget>,
     /// Reject STEP output before writing when any STEP loss note would be reported.
     #[arg(long)]
     reject_step_losses: bool,
 }
 
+#[cfg(feature = "step")]
 impl StepOutputArgs {
+    /// True when a STEP-only flag was present on the command line.
+    fn flag_present(&self) -> bool {
+        self.step_target.is_some() || self.reject_step_losses
+    }
+
     fn options(&self) -> cadmpeg_codec_step::StepWriteOptions {
         cadmpeg_codec_step::StepWriteOptions {
-            schema: self.step_target.schema(),
+            schema: self.step_target.unwrap_or_default().schema(),
             unsupported: if self.reject_step_losses {
                 cadmpeg_codec_step::StepUnsupportedPolicy::Reject
             } else {
@@ -109,26 +121,33 @@ struct Cli {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum Format {
+pub(crate) enum Format {
     /// Canonical CADIR JSON.
     #[value(alias = "json")]
     Cadir,
     /// ISO 10303-21 STEP AP214.
+    #[cfg(feature = "step")]
     Step,
     /// `FreeCAD` `.FCStd`.
+    #[cfg(feature = "fcstd")]
     Fcstd,
     /// Autodesk Fusion `.f3d`.
+    #[cfg(feature = "f3d")]
     F3d,
     /// `SolidWorks` `.sldprt`.
+    #[cfg(feature = "sldprt")]
     Sldprt,
     /// Rhino `.3dm`.
+    #[cfg(feature = "rhino")]
     #[value(alias = "3dm")]
     Rhino,
     /// IGES `.igs` or `.iges`.
+    #[cfg(feature = "iges")]
     #[value(alias = "igs")]
     Iges,
 }
 
+#[cfg(feature = "rhino")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum RhinoVersion {
     /// Rhino 5 archive version 50.
@@ -145,6 +164,7 @@ enum RhinoVersion {
     V8,
 }
 
+#[cfg(feature = "rhino")]
 impl RhinoVersion {
     const fn codec(self) -> cadmpeg_codec_rhino::RhinoArchiveVersion {
         match self {
@@ -160,27 +180,54 @@ impl Format {
     fn from_extension(extension: &str) -> Option<Self> {
         match extension.to_ascii_lowercase().as_str() {
             "cadir" | "json" => Some(Self::Cadir),
+            #[cfg(feature = "step")]
             "step" | "stp" => Some(Self::Step),
+            #[cfg(feature = "fcstd")]
             "fcstd" => Some(Self::Fcstd),
+            #[cfg(feature = "f3d")]
             "f3d" => Some(Self::F3d),
+            #[cfg(feature = "sldprt")]
             "sldprt" => Some(Self::Sldprt),
+            #[cfg(feature = "rhino")]
             "3dm" => Some(Self::Rhino),
+            #[cfg(feature = "iges")]
             "iges" | "igs" => Some(Self::Iges),
             _ => None,
         }
     }
 
     fn is_geometry_export(self) -> bool {
-        matches!(
-            self,
-            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino | Self::Iges
-        )
+        match self {
+            Self::Cadir => false,
+            #[cfg(feature = "step")]
+            Self::Step => true,
+            #[cfg(feature = "fcstd")]
+            Self::Fcstd => true,
+            #[cfg(feature = "f3d")]
+            Self::F3d => true,
+            #[cfg(feature = "sldprt")]
+            Self::Sldprt => true,
+            #[cfg(feature = "rhino")]
+            Self::Rhino => true,
+            #[cfg(feature = "iges")]
+            Self::Iges => true,
+        }
     }
 
     /// Whether this output format is a binary container, which is unsafe to
     /// stream to a terminal or a JSON-expecting pipe by accident.
     fn is_binary_container(self) -> bool {
-        matches!(self, Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino)
+        match self {
+            #[cfg(feature = "fcstd")]
+            Self::Fcstd => true,
+            #[cfg(feature = "f3d")]
+            Self::F3d => true,
+            #[cfg(feature = "sldprt")]
+            Self::Sldprt => true,
+            #[cfg(feature = "rhino")]
+            Self::Rhino => true,
+            _ => false,
+        }
     }
 
     fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
@@ -192,11 +239,17 @@ impl Format {
     fn name(self) -> &'static str {
         match self {
             Self::Cadir => "cadir",
+            #[cfg(feature = "step")]
             Self::Step => "step",
+            #[cfg(feature = "fcstd")]
             Self::Fcstd => "fcstd",
+            #[cfg(feature = "f3d")]
             Self::F3d => "f3d",
+            #[cfg(feature = "sldprt")]
             Self::Sldprt => "sldprt",
+            #[cfg(feature = "rhino")]
             Self::Rhino => "rhino",
+            #[cfg(feature = "iges")]
             Self::Iges => "iges",
         }
     }
@@ -205,55 +258,71 @@ impl Format {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum InputFormat {
     /// `FreeCAD` `.FCStd`.
+    #[cfg(feature = "fcstd")]
     Fcstd,
     /// Autodesk Fusion `.f3d`.
+    #[cfg(feature = "f3d")]
     F3d,
     /// Autodesk Inventor `.ipt` or `.iam`.
+    #[cfg(feature = "inventor")]
     #[value(alias = "ipt", alias = "iam")]
     Inventor,
     /// `SolidWorks` `.sldprt`.
+    #[cfg(feature = "sldprt")]
     Sldprt,
     /// CATIA V5 `.CATPart`.
+    #[cfg(feature = "catia")]
     #[value(alias = "catia")]
     Catpart,
     /// Siemens NX `.prt`.
+    #[cfg(feature = "nx")]
     Nx,
     /// Creo Parametric `.prt`.
+    #[cfg(feature = "creo")]
     Creo,
     /// Rhino `.3dm`.
+    #[cfg(feature = "rhino")]
     #[value(alias = "3dm")]
     Rhino,
     /// IGES `.igs` or `.iges`.
+    #[cfg(feature = "iges")]
     #[value(alias = "igs")]
     Iges,
     /// ISO 10303 STEP.
+    #[cfg(feature = "step")]
     Step,
     /// Bare ASM `.sat`/`.smt`/`.smb`/`.sab` stream.
+    #[cfg(feature = "sat")]
     #[value(alias = "smt", alias = "smb", alias = "sab")]
     Sat,
     /// Canonical CADIR JSON.
     Cadir,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum ForcedInput {
-    Codec(&'static str),
-    Cadir,
-}
-
 impl InputFormat {
     fn resolution(self) -> ForcedInput {
         match self {
+            #[cfg(feature = "fcstd")]
             Self::Fcstd => ForcedInput::Codec("fcstd"),
+            #[cfg(feature = "f3d")]
             Self::F3d => ForcedInput::Codec("f3d"),
+            #[cfg(feature = "inventor")]
             Self::Inventor => ForcedInput::Codec("inventor"),
+            #[cfg(feature = "sldprt")]
             Self::Sldprt => ForcedInput::Codec("sldprt"),
+            #[cfg(feature = "catia")]
             Self::Catpart => ForcedInput::Codec("catia"),
+            #[cfg(feature = "nx")]
             Self::Nx => ForcedInput::Codec("nx"),
+            #[cfg(feature = "creo")]
             Self::Creo => ForcedInput::Codec("creo"),
+            #[cfg(feature = "rhino")]
             Self::Rhino => ForcedInput::Codec("rhino"),
+            #[cfg(feature = "iges")]
             Self::Iges => ForcedInput::Codec("iges"),
+            #[cfg(feature = "step")]
             Self::Step => ForcedInput::Codec("step"),
+            #[cfg(feature = "sat")]
             Self::Sat => ForcedInput::Codec("sat"),
             Self::Cadir => ForcedInput::Cadir,
         }
@@ -358,6 +427,9 @@ enum Command {
         bytes: Option<inspect::ByteCommand>,
     },
     /// Decode a native CAD file to canonical CADIR JSON.
+    ///
+    /// Does not validate. A successful decode is not a valid IR; run
+    /// `cadmpeg validate` (or convert, which validates unless overridden).
     Decode {
         /// Native CAD file to decode.
         #[arg(required_unless_present = "input_flag")]
@@ -464,15 +536,18 @@ enum Command {
         #[arg(long)]
         reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
+        #[cfg(feature = "rhino")]
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
         /// Target IGES specification version; valid only for IGES output.
-        #[arg(long, value_enum, default_value_t)]
-        iges_target: IgesTarget,
+        #[cfg(feature = "iges")]
+        #[arg(long, value_enum)]
+        iges_target: Option<IgesTarget>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
         decode: DecodeArgs,
+        #[cfg(feature = "step")]
         #[command(flatten)]
         step: StepOutputArgs,
     },
@@ -542,15 +617,18 @@ enum Command {
         #[arg(long)]
         reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
+        #[cfg(feature = "rhino")]
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
         /// Target IGES specification version; valid only for IGES output.
-        #[arg(long, value_enum, default_value_t)]
-        iges_target: IgesTarget,
+        #[cfg(feature = "iges")]
+        #[arg(long, value_enum)]
+        iges_target: Option<IgesTarget>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
         decode: DecodeArgs,
+        #[cfg(feature = "step")]
         #[command(flatten)]
         step: StepOutputArgs,
     },
@@ -577,7 +655,10 @@ fn misdirected_json(command: &str) -> anyhow::Error {
 
 fn main() -> ExitCode {
     let command = Cli::parse().command;
-    let registry = Registry::with_builtins();
+    let catalogs = AppCatalogs {
+        inputs: InputCatalog::with_builtins(),
+        validators: NativeValidatorCatalog::with_builtins(),
+    };
     let result = match command {
         Command::Inspect {
             input,
@@ -593,7 +674,7 @@ fn main() -> ExitCode {
             None => {
                 let input = resolve_input(input, input_flag);
                 commands::inspect(
-                    &registry,
+                    &catalogs,
                     &input,
                     input_args.forced(),
                     json,
@@ -622,7 +703,7 @@ fn main() -> ExitCode {
                 ))
             } else {
                 commands::decode(
-                    &registry,
+                    &catalogs,
                     &resolve_input(input, input_flag),
                     output.as_deref(),
                     force,
@@ -643,7 +724,7 @@ fn main() -> ExitCode {
             input_args,
             decode,
         } => commands::validate_cmd(
-            &registry,
+            &catalogs,
             &resolve_input(input, input_flag),
             input_args.forced(),
             &decode,
@@ -663,32 +744,41 @@ fn main() -> ExitCode {
             report,
             allow_empty,
             reject_lossy,
+            #[cfg(feature = "rhino")]
             rhino_version,
+            #[cfg(feature = "iges")]
             iges_target,
             input_args,
             decode,
+            #[cfg(feature = "step")]
             step,
         } => {
             if json {
                 Err(misdirected_json("export"))
             } else {
+                let plan = commands::ConversionPlan {
+                    force,
+                    report,
+                    binary_stdout,
+                    validation: commands::ValidationMode::Skipped,
+                    allow_empty,
+                    reject_lossy,
+                    #[cfg(feature = "rhino")]
+                    rhino_version: rhino_version.map(RhinoVersion::codec),
+                    #[cfg(feature = "step")]
+                    step_options: step.flag_present().then(|| step.options()),
+                    #[cfg(feature = "step")]
+                    step_flag_present: step.flag_present(),
+                    #[cfg(feature = "iges")]
+                    iges_options: iges_target.map(IgesTarget::options),
+                    forced_input: input_args.forced(),
+                };
                 commands::export(
-                    &registry,
+                    &catalogs,
                     &resolve_input(input, input_flag),
                     format,
                     output.as_deref(),
-                    commands::ConversionPlan {
-                        force,
-                        report,
-                        binary_stdout,
-                        validation: commands::ValidationMode::Skipped,
-                        allow_empty,
-                        reject_lossy,
-                        rhino_version: rhino_version.map(RhinoVersion::codec),
-                        step_options: step.options(),
-                        iges_options: iges_target.options(),
-                        forced_input: input_args.forced(),
-                    },
+                    &plan,
                     &decode,
                 )
             }
@@ -704,7 +794,7 @@ fn main() -> ExitCode {
             force,
             decode,
         } => commands::diff(
-            &registry,
+            &catalogs,
             commands::DiffInput {
                 path: &a,
                 forced: input_format_a.map(InputFormat::resolution),
@@ -730,32 +820,41 @@ fn main() -> ExitCode {
             allow_invalid,
             allow_empty,
             reject_lossy,
+            #[cfg(feature = "rhino")]
             rhino_version,
+            #[cfg(feature = "iges")]
             iges_target,
             input_args,
             decode,
+            #[cfg(feature = "step")]
             step,
         } => {
             if json {
                 Err(misdirected_json("convert"))
             } else {
+                let plan = commands::ConversionPlan {
+                    force,
+                    report,
+                    binary_stdout,
+                    validation: commands::ValidationMode::Required { allow_invalid },
+                    allow_empty,
+                    reject_lossy,
+                    #[cfg(feature = "rhino")]
+                    rhino_version: rhino_version.map(RhinoVersion::codec),
+                    #[cfg(feature = "step")]
+                    step_options: step.flag_present().then(|| step.options()),
+                    #[cfg(feature = "step")]
+                    step_flag_present: step.flag_present(),
+                    #[cfg(feature = "iges")]
+                    iges_options: iges_target.map(IgesTarget::options),
+                    forced_input: input_args.forced(),
+                };
                 commands::convert(
-                    &registry,
+                    &catalogs,
                     &resolve_input(input, input_flag),
                     format,
                     output.as_deref(),
-                    commands::ConversionPlan {
-                        force,
-                        report,
-                        binary_stdout,
-                        validation: commands::ValidationMode::Required { allow_invalid },
-                        allow_empty,
-                        reject_lossy,
-                        rhino_version: rhino_version.map(RhinoVersion::codec),
-                        step_options: step.options(),
-                        iges_options: iges_target.options(),
-                        forced_input: input_args.forced(),
-                    },
+                    &plan,
                     &decode,
                 )
             }
@@ -764,8 +863,8 @@ fn main() -> ExitCode {
     };
     result.unwrap_or_else(|err| {
         eprintln!("error: {err:#}");
-        if err.downcast_ref::<commands::SemanticFailure>().is_some() {
-            ExitCode::from(1)
+        if let Some(refusal) = err.downcast_ref::<application::ConversionRefusal>() {
+            ExitCode::from(refusal.exit_code())
         } else {
             ExitCode::from(2)
         }

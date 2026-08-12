@@ -281,9 +281,203 @@ pub(crate) struct RawBrep {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ValidatedRawBrep {
     /// Validated Brep payload.
-    pub(crate) raw: RawBrep,
+    raw: RawBrep,
     /// Warnings for discarded optional caches or region topology.
-    pub(crate) warnings: Vec<String>,
+    warnings: Vec<String>,
+}
+
+impl ValidatedRawBrep {
+    /// Validates and normalizes one structurally decoded Brep.
+    pub(crate) fn try_new(mut raw: RawBrep) -> Result<Self, GeometryError> {
+        for vertex in &raw.vertices {
+            refs(&vertex.edges, raw.edges.len(), "vertex edge")?;
+            finite_tolerance(vertex.tolerance, "vertex tolerance")?;
+        }
+        for (index, edge) in raw.edges.iter().enumerate() {
+            if !typed_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) {
+                return Err(error(
+                    edge.source_range.start,
+                    "edge C3 reference is invalid",
+                ));
+            }
+            refs(&edge.vertices, raw.vertices.len(), "edge vertex")?;
+            refs(&edge.trims, raw.trims.len(), "edge trim")?;
+            unique(&edge.trims, "edge trim")?;
+            finite_interval(edge.proxy_domain, "edge proxy domain")?;
+            finite_interval(edge.domain, "edge domain")?;
+            finite_tolerance(edge.tolerance, "edge tolerance")?;
+            if edge.proxy_reversed != 0 && edge.proxy_reversed != 1 {
+                return Err(error(
+                    edge.source_range.start,
+                    "invalid edge proxy reversal",
+                ));
+            }
+            for trim in &edge.trims {
+                if !raw.trims[*trim as usize].edge.eq(&(index as i32)) {
+                    return Err(error(
+                        edge.source_range.start,
+                        "edge/trim reciprocity mismatch",
+                    ));
+                }
+            }
+        }
+        for trim in &raw.trims {
+            if trim.trim_type == 6 {
+                if trim.curve != -1 {
+                    return Err(error(
+                        trim.source_range.start,
+                        "point-on-surface trim must not require C2",
+                    ));
+                }
+            } else if !typed_slot(&raw.c2, trim.curve, RawBrepBaseType::Curve) {
+                return Err(error(
+                    trim.source_range.start,
+                    "trim C2 reference is invalid",
+                ));
+            }
+            refs(&trim.vertices, raw.vertices.len(), "trim vertex")?;
+            refs(&[trim.loop_index], raw.loops.len(), "trim loop")?;
+            if !raw.loops[trim.loop_index as usize]
+                .trims
+                .contains(&trim.index)
+            {
+                return Err(error(
+                    trim.source_range.start,
+                    "trim/loop reciprocity mismatch",
+                ));
+            }
+            finite_interval(trim.proxy_domain, "trim proxy domain")?;
+            finite_interval(trim.domain, "trim domain")?;
+            for tolerance in trim.tolerances.into_iter().chain(trim.legacy_tolerances) {
+                finite_tolerance(tolerance, "trim tolerance")?;
+            }
+            if trim.proxy_reversed > 1 || trim.reversed_3d != 0 && trim.reversed_3d != 1 {
+                return Err(error(trim.source_range.start, "invalid trim reversal"));
+            }
+            if !(0..=7).contains(&trim.trim_type) || !(0..=6).contains(&trim.iso) {
+                return Err(error(trim.source_range.start, "invalid trim enum value"));
+            }
+            if matches!(trim.trim_type, 4 | 6) {
+                if trim.edge != -1 || trim.vertices[0] != trim.vertices[1] {
+                    return Err(error(
+                        trim.source_range.start,
+                        "singular trim endpoints are invalid",
+                    ));
+                }
+            } else {
+                refs(&[trim.edge], raw.edges.len(), "trim edge")?;
+            }
+        }
+        validate_edge_incidences(&raw)?;
+        for (index, vertex) in raw.vertices.iter().enumerate() {
+            for edge in &vertex.edges {
+                if !raw.edges[*edge as usize].vertices.contains(&(index as i32)) {
+                    return Err(error(
+                        vertex.source_range.start,
+                        "vertex/edge reciprocity mismatch",
+                    ));
+                }
+            }
+        }
+        for (index, loop_record) in raw.loops.iter().enumerate() {
+            refs(&loop_record.trims, raw.trims.len(), "loop trim")?;
+            unique(&loop_record.trims, "loop trim")?;
+            refs(&[loop_record.face], raw.faces.len(), "loop face")?;
+            if !(0..=5).contains(&loop_record.loop_type) {
+                return Err(error(
+                    loop_record.source_range.start,
+                    "invalid loop enum value",
+                ));
+            }
+            if !raw.faces[loop_record.face as usize]
+                .loops
+                .contains(&(index as i32))
+            {
+                return Err(error(
+                    loop_record.source_range.start,
+                    "loop/face reciprocity mismatch",
+                ));
+            }
+            if loop_record.loop_type == 1
+                && raw.faces[loop_record.face as usize]
+                    .loops
+                    .first()
+                    .is_none_or(|first| *first != index as i32)
+            {
+                return Err(error(
+                    loop_record.source_range.start,
+                    "outer loop is not first",
+                ));
+            }
+        }
+        for face in &mut raw.faces {
+            if face.material_channel < 0 {
+                face.material_channel = 0;
+            }
+        }
+        for (index, face) in raw.faces.iter().enumerate() {
+            if !typed_slot(&raw.surfaces, face.surface, RawBrepBaseType::Surface) {
+                return Err(error(
+                    face.source_range.start,
+                    "face surface reference is invalid",
+                ));
+            }
+            if face.reversed_surface != 0 && face.reversed_surface != 1 {
+                return Err(error(
+                    face.source_range.start,
+                    "invalid face surface reversal",
+                ));
+            }
+            refs(&face.loops, raw.loops.len(), "face loop")?;
+            if face.loops.is_empty() {
+                return Err(error(face.source_range.start, "face has no loops"));
+            }
+            if raw.loops[face.loops[0] as usize].loop_type != 1 {
+                return Err(error(
+                    face.source_range.start,
+                    "face first loop is not outer",
+                ));
+            }
+            for loop_index in face.loops.iter().skip(1) {
+                let loop_type = raw.loops[*loop_index as usize].loop_type;
+                if loop_type == 0 || loop_type == 1 {
+                    return Err(error(
+                        face.source_range.start,
+                        "face boundary loop convention is invalid",
+                    ));
+                }
+            }
+            for loop_index in &face.loops {
+                if raw.loops[*loop_index as usize].face != index as i32 {
+                    return Err(error(
+                        face.source_range.start,
+                        "face/loop reciprocity mismatch",
+                    ));
+                }
+            }
+        }
+        validate_rings(&raw)?;
+        let mut warnings = Vec::new();
+        if raw.minor >= 3
+            && (!raw.face_sides.is_empty() || !raw.regions.is_empty())
+            && validate_regions(&raw).is_err()
+        {
+            raw.face_sides.clear();
+            raw.regions.clear();
+            warnings.push("invalid optional Brep region topology discarded".to_string());
+        }
+        Ok(Self { raw, warnings })
+    }
+
+    /// Returns the validated and normalized raw payload.
+    pub(crate) fn raw(&self) -> &RawBrep {
+        &self.raw
+    }
+
+    /// Returns warnings produced while validation normalized optional data.
+    pub(crate) fn warnings(&self) -> &[String] {
+        &self.warnings
+    }
 }
 
 /// Result of parsing a structurally framed Brep payload.
@@ -412,7 +606,7 @@ pub(crate) fn parse(
         loop_array_range,
         face_array_range,
     };
-    match validate(raw.clone()) {
+    match ValidatedRawBrep::try_new(raw.clone()) {
         Ok(mut validated) => {
             validated.warnings.splice(0..0, warnings);
             Ok(BrepParse::Valid(validated))
@@ -967,187 +1161,6 @@ fn region_element(
         reader.skip(chunk.next_offset - start)?;
         Ok((class.class_data_range, start..chunk.next_offset))
     }
-}
-
-fn validate(mut raw: RawBrep) -> Result<ValidatedRawBrep, GeometryError> {
-    for vertex in &raw.vertices {
-        refs(&vertex.edges, raw.edges.len(), "vertex edge")?;
-        finite_tolerance(vertex.tolerance, "vertex tolerance")?;
-    }
-    for (index, edge) in raw.edges.iter().enumerate() {
-        if !typed_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) {
-            return Err(error(
-                edge.source_range.start,
-                "edge C3 reference is invalid",
-            ));
-        }
-        refs(&edge.vertices, raw.vertices.len(), "edge vertex")?;
-        refs(&edge.trims, raw.trims.len(), "edge trim")?;
-        unique(&edge.trims, "edge trim")?;
-        finite_interval(edge.proxy_domain, "edge proxy domain")?;
-        finite_interval(edge.domain, "edge domain")?;
-        finite_tolerance(edge.tolerance, "edge tolerance")?;
-        if edge.proxy_reversed != 0 && edge.proxy_reversed != 1 {
-            return Err(error(
-                edge.source_range.start,
-                "invalid edge proxy reversal",
-            ));
-        }
-        for trim in &edge.trims {
-            if !raw.trims[*trim as usize].edge.eq(&(index as i32)) {
-                return Err(error(
-                    edge.source_range.start,
-                    "edge/trim reciprocity mismatch",
-                ));
-            }
-        }
-    }
-    for trim in &raw.trims {
-        if trim.trim_type == 6 {
-            if trim.curve != -1 {
-                return Err(error(
-                    trim.source_range.start,
-                    "point-on-surface trim must not require C2",
-                ));
-            }
-        } else if !typed_slot(&raw.c2, trim.curve, RawBrepBaseType::Curve) {
-            return Err(error(
-                trim.source_range.start,
-                "trim C2 reference is invalid",
-            ));
-        }
-        refs(&trim.vertices, raw.vertices.len(), "trim vertex")?;
-        refs(&[trim.loop_index], raw.loops.len(), "trim loop")?;
-        if !raw.loops[trim.loop_index as usize]
-            .trims
-            .contains(&trim.index)
-        {
-            return Err(error(
-                trim.source_range.start,
-                "trim/loop reciprocity mismatch",
-            ));
-        }
-        finite_interval(trim.proxy_domain, "trim proxy domain")?;
-        finite_interval(trim.domain, "trim domain")?;
-        for tolerance in trim.tolerances.into_iter().chain(trim.legacy_tolerances) {
-            finite_tolerance(tolerance, "trim tolerance")?;
-        }
-        if trim.proxy_reversed > 1 || trim.reversed_3d != 0 && trim.reversed_3d != 1 {
-            return Err(error(trim.source_range.start, "invalid trim reversal"));
-        }
-        if !(0..=7).contains(&trim.trim_type) || !(0..=6).contains(&trim.iso) {
-            return Err(error(trim.source_range.start, "invalid trim enum value"));
-        }
-        if matches!(trim.trim_type, 4 | 6) {
-            if trim.edge != -1 || trim.vertices[0] != trim.vertices[1] {
-                return Err(error(
-                    trim.source_range.start,
-                    "singular trim endpoints are invalid",
-                ));
-            }
-        } else {
-            refs(&[trim.edge], raw.edges.len(), "trim edge")?;
-        }
-    }
-    validate_edge_incidences(&raw)?;
-    for (index, vertex) in raw.vertices.iter().enumerate() {
-        for edge in &vertex.edges {
-            if !raw.edges[*edge as usize].vertices.contains(&(index as i32)) {
-                return Err(error(
-                    vertex.source_range.start,
-                    "vertex/edge reciprocity mismatch",
-                ));
-            }
-        }
-    }
-    for (index, loop_record) in raw.loops.iter().enumerate() {
-        refs(&loop_record.trims, raw.trims.len(), "loop trim")?;
-        unique(&loop_record.trims, "loop trim")?;
-        refs(&[loop_record.face], raw.faces.len(), "loop face")?;
-        if !(0..=5).contains(&loop_record.loop_type) {
-            return Err(error(
-                loop_record.source_range.start,
-                "invalid loop enum value",
-            ));
-        }
-        if !raw.faces[loop_record.face as usize]
-            .loops
-            .contains(&(index as i32))
-        {
-            return Err(error(
-                loop_record.source_range.start,
-                "loop/face reciprocity mismatch",
-            ));
-        }
-        if loop_record.loop_type == 1
-            && raw.faces[loop_record.face as usize]
-                .loops
-                .first()
-                .is_none_or(|first| *first != index as i32)
-        {
-            return Err(error(
-                loop_record.source_range.start,
-                "outer loop is not first",
-            ));
-        }
-    }
-    for face in &mut raw.faces {
-        if face.material_channel < 0 {
-            face.material_channel = 0;
-        }
-    }
-    for (index, face) in raw.faces.iter().enumerate() {
-        if !typed_slot(&raw.surfaces, face.surface, RawBrepBaseType::Surface) {
-            return Err(error(
-                face.source_range.start,
-                "face surface reference is invalid",
-            ));
-        }
-        if face.reversed_surface != 0 && face.reversed_surface != 1 {
-            return Err(error(
-                face.source_range.start,
-                "invalid face surface reversal",
-            ));
-        }
-        refs(&face.loops, raw.loops.len(), "face loop")?;
-        if face.loops.is_empty() {
-            return Err(error(face.source_range.start, "face has no loops"));
-        }
-        if raw.loops[face.loops[0] as usize].loop_type != 1 {
-            return Err(error(
-                face.source_range.start,
-                "face first loop is not outer",
-            ));
-        }
-        for loop_index in face.loops.iter().skip(1) {
-            let loop_type = raw.loops[*loop_index as usize].loop_type;
-            if loop_type == 0 || loop_type == 1 {
-                return Err(error(
-                    face.source_range.start,
-                    "face boundary loop convention is invalid",
-                ));
-            }
-        }
-        for loop_index in &face.loops {
-            if raw.loops[*loop_index as usize].face != index as i32 {
-                return Err(error(
-                    face.source_range.start,
-                    "face/loop reciprocity mismatch",
-                ));
-            }
-        }
-    }
-    validate_rings(&raw)?;
-    let mut warnings = Vec::new();
-    if raw.minor >= 3
-        && (!raw.face_sides.is_empty() || !raw.regions.is_empty())
-        && validate_regions(&raw).is_err()
-    {
-        raw.face_sides.clear();
-        raw.regions.clear();
-        warnings.push("invalid optional Brep region topology discarded".to_string());
-    }
-    Ok(ValidatedRawBrep { raw, warnings })
 }
 
 fn validate_rings(raw: &RawBrep) -> Result<(), GeometryError> {
@@ -1984,22 +1997,22 @@ mod tests {
 
     #[test]
     fn valid_one_face_raw_brep_validates_all_reciprocal_links() {
-        assert!(validate(one_face_raw()).is_ok());
+        assert!(ValidatedRawBrep::try_new(one_face_raw()).is_ok());
     }
 
     #[test]
     fn singular_trim_accepts_c2_without_a_real_edge() {
-        assert!(validate(degenerate_trim_raw(4, 0)).is_ok());
+        assert!(ValidatedRawBrep::try_new(degenerate_trim_raw(4, 0)).is_ok());
     }
 
     #[test]
     fn point_on_surface_trim_accepts_no_c2_or_real_edge() {
-        assert!(validate(degenerate_trim_raw(6, -1)).is_ok());
+        assert!(ValidatedRawBrep::try_new(degenerate_trim_raw(6, -1)).is_ok());
     }
 
     #[test]
     fn point_on_surface_trim_rejects_an_attributed_c2() {
-        assert!(validate(degenerate_trim_raw(6, 0)).is_err());
+        assert!(ValidatedRawBrep::try_new(degenerate_trim_raw(6, 0)).is_err());
     }
 
     #[test]
@@ -2038,9 +2051,9 @@ mod tests {
                 source_range: 0..0,
             },
         ];
-        let validated = validate(raw).expect("valid regions");
-        assert_eq!(validated.raw.regions.len(), 2);
-        assert!(validated.warnings.is_empty());
+        let validated = ValidatedRawBrep::try_new(raw).expect("valid regions");
+        assert_eq!(validated.raw().regions.len(), 2);
+        assert!(validated.warnings().is_empty());
     }
 
     #[test]
@@ -2079,8 +2092,8 @@ mod tests {
                 source_range: 0..0,
             },
         ];
-        let validated = validate(raw).expect("optional regions degrade");
-        assert!(validated.raw.regions.is_empty());
-        assert_eq!(validated.warnings.len(), 1);
+        let validated = ValidatedRawBrep::try_new(raw).expect("optional regions degrade");
+        assert!(validated.raw().regions.is_empty());
+        assert_eq!(validated.warnings().len(), 1);
     }
 }

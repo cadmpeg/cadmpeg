@@ -793,6 +793,16 @@ pub(crate) fn parse_from_records(
     frames: &[ObjectFrame],
     require_topology: bool,
 ) -> Option<B5Graph> {
+    parse_from_records_budgeted(bytes, records, frames, require_topology, None)
+}
+
+pub(crate) fn parse_from_records_budgeted(
+    bytes: &[u8],
+    records: &[B5Record],
+    frames: &[ObjectFrame],
+    require_topology: bool,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<B5Graph> {
     let by_id: HashMap<u32, &B5Record> = records
         .iter()
         .map(|record| (record.object_id, record))
@@ -938,6 +948,9 @@ pub(crate) fn parse_from_records(
         .collect::<Vec<_>>();
     let mut extrusion_surfaces = BTreeMap::<u32, B5ExtrusionSurface>::new();
     loop {
+        if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
+            return None;
+        }
         let mut changed = false;
         for record in records {
             if extrusion_surfaces.contains_key(&record.object_id) {
@@ -972,6 +985,9 @@ pub(crate) fn parse_from_records(
     let mut offset_surfaces = BTreeMap::new();
     let mut supported_surfaces = BTreeMap::new();
     loop {
+        if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
+            return None;
+        }
         let mut changed =
             resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
         for record in records {
@@ -4457,6 +4473,18 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
 }
 
 pub(crate) fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
+    records_from_frames_budgeted(bytes, frames, None)
+}
+
+/// Dependency-admission fixpoint with an optional session work budget.
+///
+/// Each pass may scan every frame. When `budget` is present, one pass costs
+/// `frames.len()` work units; exhaustion stops further admissions.
+pub(crate) fn records_from_frames_budgeted(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+    budget: Option<&WorkBudget<'_>>,
+) -> Vec<B5Record> {
     let mut records = framed_records(bytes, frames);
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
     let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
@@ -4464,6 +4492,9 @@ pub(crate) fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B
     loop {
         pending.retain(|object_id| !existing.contains(object_id) && !admitted.contains(object_id));
         if pending.is_empty() {
+            break;
+        }
+        if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
             break;
         }
         let mut candidates = HashMap::<u32, Option<B5Record>>::new();
@@ -4773,7 +4804,7 @@ pub(crate) fn select_object_stream_population(
             if budget.is_some_and(|budget| !budget.charge_by(run_frames.len())) {
                 return exhausted();
             }
-            let records = records_from_frames(stream, &run_frames);
+            let records = records_from_frames_budgeted(stream, &run_frames, budget);
             // Census and population selection each inspect every admitted
             // typed record.
             if budget.is_some_and(|budget| !budget.charge_by(records.len().saturating_mul(2))) {

@@ -1,11 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded navigation over one address space.
-
-use crate::cursor::bounded_len;
+#![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
 use super::error::SourceLocation;
 use super::probe::{ParseError, ParseErrorKind};
 use super::space::SpaceId;
+
+/// Converts a declared element count into a safe `Vec` capacity.
+///
+/// Returns `None` unless `count * element_size <= remaining`, i.e. unless
+/// the declared elements could actually be present in the unread input.
+/// `element_size` must be the minimum encoded size of one element and must
+/// be nonzero.
+pub fn bounded_len(count: u64, element_size: usize, remaining: usize) -> Option<usize> {
+    if element_size == 0 {
+        return None;
+    }
+    let count = usize::try_from(count).ok()?;
+    let bytes = count.checked_mul(element_size)?;
+    (bytes <= remaining).then_some(count)
+}
 
 /// A count proven to fit in the unread input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +54,15 @@ impl<'a> View<'a> {
         }
     }
 
+    /// Bounded window over retained bytes that left the live space chain.
+    ///
+    /// Prefer views returned by [`DecodeContext`](super::DecodeContext). This
+    /// constructor exists for opportunistic scanners over owned payloads that
+    /// were copied out of the arena; locations report [`SpaceId::ROOT`].
+    pub fn over_retained(bytes: &'a [u8]) -> View<'a> {
+        Self::over_space(bytes, SpaceId::ROOT)
+    }
+
     /// Returns the space this view navigates.
     pub(crate) fn space(self) -> SpaceId {
         self.space
@@ -63,6 +86,11 @@ impl<'a> View<'a> {
     /// Returns the number of unread bytes before the window's end.
     pub fn remaining(self) -> usize {
         self.end.saturating_sub(self.position)
+    }
+
+    /// Returns whether all bounded bytes have been read.
+    pub fn is_empty(self) -> bool {
+        self.remaining() == 0
     }
 
     /// Returns this view's current source location.
@@ -137,6 +165,24 @@ impl<'a> View<'a> {
         bounded_len(count, min_element_size, self.remaining()).map(BoundedCount)
     }
 
+    /// Reads `count` elements of at least `element_size` encoded bytes each.
+    ///
+    /// The count is validated with [`View::counted`] before any allocation, and
+    /// the reader closure's first failure aborts the read.
+    pub fn read_counted<T>(
+        &mut self,
+        count: u64,
+        element_size: usize,
+        mut read: impl FnMut(&mut Self) -> Option<T>,
+    ) -> Option<Vec<T>> {
+        let count = self.counted(count, element_size)?.get();
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            values.push(read(self)?);
+        }
+        Some(values)
+    }
+
     /// Builds an unexpected-eof error from the view's current state.
     fn eof(self, needed: u64) -> ParseError {
         ParseError {
@@ -201,3 +247,45 @@ view_readers!(
     (u64_be, req_u64_be, u64, from_be_bytes, 8),
     (f64_be, req_f64_be, f64, from_be_bytes, 8),
 );
+
+#[cfg(test)]
+mod tests {
+    use super::{bounded_len, BoundedCount, View};
+    use crate::decode::space::SpaceId;
+
+    #[test]
+    fn read_counted_allocates_only_plausible_lengths() {
+        let payload = [1u8, 0, 0, 0, 2, 0, 0, 0];
+        let mut view = View::over_space(&payload, SpaceId::ROOT);
+        let values = view
+            .read_counted(2, 4, View::u32_le)
+            .expect("two fixture values");
+        assert_eq!(values, [1, 2]);
+        let mut view = View::over_space(&payload, SpaceId::ROOT);
+        assert_eq!(
+            view.read_counted(u64::from(u32::MAX), 4, View::u32_le),
+            None
+        );
+    }
+
+    #[test]
+    fn counted_rejects_impossible_counts() {
+        let payload = [0u8; 40];
+        let view = View::over_space(&payload, SpaceId::ROOT);
+        assert_eq!(view.counted(10, 4).map(BoundedCount::get), Some(10));
+        assert_eq!(view.counted(11, 4), None);
+        assert_eq!(bounded_len(u64::MAX, 20, usize::MAX), None);
+    }
+
+    #[test]
+    fn seek_honors_lower_bound() {
+        let payload = [0u8; 8];
+        let mut view = View::over_space(&payload, SpaceId::ROOT)
+            .child(2, 6)
+            .expect("valid child");
+        assert_eq!(view.seek(0), None);
+        assert_eq!(view.seek(2), Some(()));
+        assert_eq!(view.seek(6), Some(()));
+        assert_eq!(view.seek(7), None);
+    }
+}

@@ -458,37 +458,65 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "code": "topology_gauge_substituted",
+        "code": {
+          "code": "topology.body-hierarchy-derived",
+          "kind": "topology_gauge_substituted",
+          "namespace": "sldprt"
+        },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "config.inferred-without-native",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt"
+        },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "config.incoherent-body-refs",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt"
+        },
         "message": "1 configuration record(s) have unresolved body membership; 0 configuration record(s) contain missing or repeated body references.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "config.incomplete-snapshot",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt"
+        },
         "message": "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "feature.unresolved-output-scope",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt"
+        },
         "message": "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "feature.native-kind-retained",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt"
+        },
         "message": "1 feature(s) retain their native kind without a complete neutral operation definition.",
         "severity": "warning"
       },
       {
-        "code": "feature_history_retained",
+        "code": {
+          "code": "feature.typed-operand-incomplete",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt"
+        },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
       }

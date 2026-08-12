@@ -1,0 +1,1170 @@
+{
+  "total": 145,
+  "counts": {
+    "agree_accept": 143,
+    "decode_fail": 2
+  },
+  "diverge": [],
+  "results": [
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/arc.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/brep.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/brep_singular_seam.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/circle.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/curves_mixed.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/extrusion.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/extrusion_hole.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/generated_point.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/instance_reference_expanded.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/instance_reference_retained.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/line.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/mesh_v1_0.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/mesh_v3_5.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/mesh_v3_8.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v3.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/metadata_only_v4.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/nurbs_curve.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/point.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/point_cloud.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/polycurve.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/polyline.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v1.3dm",
+      "status": "decode_fail",
+      "full_ok": null,
+      "admit_ok": null,
+      "detail": "error: decoding /Users/irvel/side2/cadmpeg/.worktrees/feat/refactor-convergence/crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v1.3dm as rhino: malformed container: range 32..36 exceeds bound 32\n"
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v2.3dm",
+      "status": "decode_fail",
+      "full_ok": null,
+      "admit_ok": null,
+      "detail": "error: decoding /Users/irvel/side2/cadmpeg/.worktrees/feat/refactor-convergence/crates/cadmpeg-codec-rhino/tests/golden/fixtures/reject_v2.3dm as rhino: malformed container: range 32..36 exceeds bound 32\n"
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/rev_surface.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v50.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v60.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v70.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "rhino",
+      "path": "crates/cadmpeg-codec-rhino/tests/golden/fixtures/subd_v80.3dm",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/consolidated_cylinder_surface_curve.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/consolidated_guide_curve.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/consolidated_nurbs_surface_curve.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/e5_circle.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/fbb_only_fallthrough.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_a5_surface.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_a8_nurbs.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_a8_rolling_ball.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_b2_cone.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/freeform_b5_topology.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/inner_no_directory_a8_nurbs.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/inner_no_directory_b2_cylinder.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directory_only.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/standard_a5_rolling_ball.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/standard_part.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/tetrahedron_topology.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/zero_entity_cylinder.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/zero_entity_markers.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "catia",
+      "path": "crates/cadmpeg-codec-catia/tests/golden/fixtures/zero_entity_nurbs.catpart",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_cone_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_cylinder_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_plane_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_sphere_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/analytic_torus_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/associativity_definition.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/attribute_definition_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/attribute_instance_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/bounded_associativity_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/bounded_plane.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/colored_explicit_vertex_loop.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/composite_curve.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/conic_ellipse.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/conic_hyperbola.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/conic_parabola.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/connected_network_subfigure.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/copious_linear_path.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/copious_points_vectors.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/copious_witness_line.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/definition_levels.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/dimension_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/direction.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/drawing_with_properties.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_cylinder_seam.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_multi_pcurve_loop.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_non_manifold_open_shell.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_open_shell.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_tetrahedron_solid.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_tetrahedron_solid_with_boolean.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_vertex_loop.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/external_reference_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/flow_associativity_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/function_offset_line.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/group_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/leader_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/legacy_dimension_and_label_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/line.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/line_font_definitions.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/linear_offset_line.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/mixed_analytic_composite_curve.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/multi_pcurve_boundary.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/nested_subfigure.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/nested_transformed_point.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/network_subfigure.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/null_entity.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/nurbs_curve.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/nurbs_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/offset_plane.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/parameter_domain_trimmed_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/parametric_spline_curve.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/parametric_spline_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/parametrically_bounded_plane.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/patterned_instance.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/placed_surface_of_revolution.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/plane.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/point.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/primitive_solids.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/procedural_and_boolean_solids.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/product_property.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/ruled_surface.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/scalar_property_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/solid_assembly.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/solid_instance.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/surface_of_revolution.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/symbol_and_sectioned_area.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/tabulated_cylinder.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/text_annotation.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/text_display_template_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/text_font_definition.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/trimmed_plane.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/trimmed_plane_inner_loop.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/uniform_offset_circle.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/units_data.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/variable_schema_property_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/view_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/view_visibility_forms.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "iges",
+      "path": "crates/cadmpeg-codec-iges/tests/golden/fixtures/weighted_line.igs",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/analytic_cylinder.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/analytic_planar.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/analytic_sphere.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/body_display_list.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/body_history.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/body_material.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/colliding_sites.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/compressed_nested_sketch.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/container_metadata.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/document_envelope.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_arc_sketch.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_circular_sketch.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_elliptical_sketch.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_nurbs_sketches.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nested_sketch_profile.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nurbs_curve_surface.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/nurbs_surface.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/partition_and_deltas.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/pmi_semantic_dimension.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    },
+    {
+      "route": "sldprt",
+      "path": "crates/cadmpeg-codec-sldprt/tests/golden/fixtures/resolved_features.sldprt",
+      "status": "agree_accept",
+      "full_ok": true,
+      "admit_ok": true,
+      "detail": ""
+    }
+  ]
+}

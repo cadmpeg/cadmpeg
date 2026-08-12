@@ -15,6 +15,7 @@
 pub mod acis_header;
 pub mod asm_header;
 pub mod brep;
+pub mod edit;
 pub mod ids;
 pub mod kernel_header;
 pub mod nurbs;
