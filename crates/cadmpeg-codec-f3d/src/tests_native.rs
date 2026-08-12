@@ -248,7 +248,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let original = decoded.ir.native.namespace("f3d").unwrap();
+    let original = decoded.ir().native.namespace("f3d").unwrap();
     let typed = crate::native::F3dNative::load(original).unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
@@ -286,7 +286,7 @@ fn diff_reports_design_material_assignment_changes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut edited = decoded.ir.clone();
+    let mut edited = decoded.ir().clone();
     let assignment = &mut edited
         .native
         .namespace_mut("f3d")
@@ -296,7 +296,7 @@ fn diff_reports_design_material_assignment_changes() {
     let mut assignment_fields = assignment.fields();
     assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
     *assignment = cadmpeg_ir::NativeRecord::new(assignment.id().to_string(), assignment_fields);
-    let report = cadmpeg_ir::diff(&decoded.ir, &edited);
+    let report = cadmpeg_ir::diff(decoded.ir(), &edited);
     let arena = report
         .per_arena
         .iter()
@@ -511,18 +511,18 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         )
         .expect("generated tolerant coedges must decode");
 
-    assert_eq!(decoded.ir.model.coedges.len(), 3);
-    assert_eq!(decoded.ir.model.edges.len(), 3);
-    assert_eq!(decoded.ir.model.shells[0].faces.len(), 1);
+    assert_eq!(decoded.ir().model.coedges.len(), 3);
+    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().model.shells[0].faces.len(), 1);
     assert_eq!(
-        f3d_native(&decoded.ir)
+        f3d_native(decoded.ir())
             .tolerant_coedge_parameters
             .iter()
             .map(|parameters| parameters.parameter_range)
             .collect::<Vec<_>>(),
         vec![[0.25, 0.75]; 3]
     );
-    assert!(f3d_native(&decoded.ir)
+    assert!(f3d_native(decoded.ir())
         .tolerant_coedge_parameters
         .iter()
         .all(|parameters| matches!(
@@ -530,23 +530,23 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
             cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None }
         )));
 
-    decoded.ir.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
-    update_f3d_native(&mut decoded.ir, |native| {
+    decoded.ir_mut().model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+    update_f3d_native(decoded.ir_mut(), |native| {
         native.tolerant_coedge_parameters[0].parameter_range = [-1.5, 2.25];
     });
     let mut edited = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut edited)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut edited)
         .expect("tolerant coedge sense edit");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(edited), &DecodeOptions::default())
         .expect("edited tolerant coedge round trip");
     assert_eq!(
-        round_trip.ir.model.coedges[0].sense,
+        round_trip.ir().model.coedges[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
         [-1.5, 2.25]
     );
 }
@@ -607,7 +607,7 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
             )
             .expect("release-selected tolerant coedges must decode");
         assert_eq!(
-            f3d_native(&decoded.ir)
+            f3d_native(decoded.ir())
                 .tolerant_coedge_parameters
                 .iter()
                 .map(|parameters| parameters.extension.clone())
@@ -653,7 +653,7 @@ fn tolerant_coedge_extension_ignores_payload_identifiers() {
         )
         .expect("ident-bearing tolerant coedges must decode");
     assert_eq!(
-        f3d_native(&decoded.ir)
+        f3d_native(decoded.ir())
             .tolerant_coedge_parameters
             .iter()
             .map(|parameters| parameters.extension.clone())
@@ -696,7 +696,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         .expect("embedded tolerant-coedge curves must decode");
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .coedges
             .iter()
@@ -704,19 +704,26 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             .count(),
         3
     );
-    assert!(decoded.ir.model.coedges.iter().all(|coedge| {
+    assert!(decoded.ir().model.coedges.iter().all(|coedge| {
         coedge.use_curve_parameter_range == Some([-2.0, 3.0])
             && coedge.use_curve.as_ref().is_some_and(|id| {
-                decoded.ir.model.curves.iter().any(|curve| {
+                decoded.ir().model.curves.iter().any(|curve| {
                     curve.id == *id
                         && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs) if nurbs.degree == 2)
                 })
             })
     }));
-    let first_use_curve = decoded.ir.model.coedges[0]
+    let first_use_curve = decoded.ir().model.coedges[0]
         .use_curve
         .as_ref()
-        .and_then(|id| decoded.ir.model.curves.iter().find(|curve| curve.id == *id))
+        .and_then(|id| {
+            decoded
+                .ir()
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *id)
+        })
         .expect("first embedded use curve");
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(first_use_curve) = &first_use_curve.geometry
     else {
@@ -732,7 +739,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     );
     assert_eq!(first_use_curve.knots, [-1.0, -1.0, -1.0, -0.0, -0.0, -0.0]);
 
-    let mut edited = decoded.ir.clone();
+    let mut edited = decoded.ir().clone();
     let use_curve = edited.model.coedges[0]
         .use_curve
         .clone()
@@ -750,12 +757,12 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut preserved)
+        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut preserved)
         .expect("embedded use-curve edit");
     let preserved = F3dCodec
         .decode(&mut Cursor::new(preserved), &DecodeOptions::default())
         .expect("embedded use-curve edit round trip");
-    assert!(preserved.ir.model.curves.iter().any(|curve| {
+    assert!(preserved.ir().model.curves.iter().any(|curve| {
         curve.id == use_curve
             && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref curve) if *curve == expected)
     }));
@@ -796,7 +803,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         .expect("source-less embedded use-curve round trip");
     assert_eq!(
         generated
-            .ir
+            .ir()
             .model
             .coedges
             .iter()
@@ -804,7 +811,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             .count(),
         1
     );
-    assert!(generated.ir.model.curves.iter().any(|curve| {
+    assert!(generated.ir().model.curves.iter().any(|curve| {
         matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref curve) if *curve == expected)
     }));
 }
@@ -831,9 +838,9 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
             &DecodeOptions::default(),
         )
         .expect("history-less stream must decode");
-    assert_eq!(decoded.ir.model.faces.len(), 1);
-    assert_eq!(decoded.ir.model.edges.len(), 3);
-    assert_eq!(decoded.ir.model.vertices.len(), 3);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().model.vertices.len(), 3);
 }
 
 pub(super) fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
@@ -1601,7 +1608,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         )
         .expect("stamped law intcurve decode");
     let procedural = decoded
-        .ir
+        .ir()
         .model
         .procedural_curves
         .iter()
@@ -1638,7 +1645,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     // Byte-exact re-emission of the subtype span. The solved cache uses
     // integer-valued control points so the cm->mm scaling round-trip is exact.
     let solved = decoded
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -1651,7 +1658,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     let mut regenerated = Vec::new();
     crate::writer::generate::native_geometry::native_procedural_curve(
         &mut regenerated,
-        &decoded.ir,
+        decoded.ir(),
         &procedural.curve,
         &solved,
     )
@@ -1673,7 +1680,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         )
         .expect("legacy law intcurve decode");
     let procedural = decoded
-        .ir
+        .ir()
         .model
         .procedural_curves
         .iter()
@@ -1695,7 +1702,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
             .to_vec()
     };
     let solved = decoded
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -1708,7 +1715,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
     let mut regenerated = Vec::new();
     crate::writer::generate::native_geometry::native_procedural_curve(
         &mut regenerated,
-        &decoded.ir,
+        decoded.ir(),
         &procedural.curve,
         &solved,
     )
@@ -2357,7 +2364,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
         discontinuity_flag,
         cache_first,
         direction,
-    } = &result.ir.model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition
     else {
         panic!("expected spring construction")
     };
@@ -2371,7 +2378,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     assert_eq!(*first_pcurve_parameter_range, None);
     assert_eq!(context.parameter_range, [-1.0, 2.0]);
 
-    let mut source_less = result.ir;
+    let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
@@ -2386,7 +2393,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first spring round trip");
     assert_eq!(
-        round_trip.ir.model.procedural_curves[0].definition,
+        round_trip.ir().model.procedural_curves[0].definition,
         source_less.model.procedural_curves[0].definition
     );
 }
@@ -2414,7 +2421,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
         family,
         context,
         tail,
-    } = &result.ir.model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition
     else {
         panic!("expected surface-curve construction")
     };
@@ -2427,7 +2434,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     assert_eq!(tail.solved_range, [Some(-1.0), Some(2.0)]);
     assert_eq!(context.parameter_range, [-1.0, 2.0]);
 
-    let mut source_less = result.ir;
+    let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
@@ -2442,7 +2449,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first parametric round trip");
     assert_eq!(
-        round_trip.ir.model.procedural_curves[0].definition,
+        round_trip.ir().model.procedural_curves[0].definition,
         source_less.model.procedural_curves[0].definition
     );
 }
@@ -2488,7 +2495,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         shift,
         scale,
         ..
-    } = &result.ir.model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition
     else {
         panic!("expected surface-offset construction")
     };
@@ -2505,7 +2512,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     assert_eq!(*shift, 0.75);
     assert_eq!(*scale, 1.25);
 
-    let mut source_less = result.ir;
+    let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
@@ -2520,7 +2527,9 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-first surface-offset round trip");
     let mut expected = source_less.model.procedural_curves[0].definition.clone();
-    let mut actual = round_trip.ir.model.procedural_curves[0].definition.clone();
+    let mut actual = round_trip.ir().model.procedural_curves[0]
+        .definition
+        .clone();
     let (
         ProceduralCurveDefinition::SurfaceOffset {
             base: expected_base,
@@ -2537,7 +2546,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     *actual_base = expected_base.clone();
     assert_eq!(actual, expected);
     assert!(round_trip
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -2637,7 +2646,7 @@ pub(super) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         )
         .expect("revision surface decode");
     let procedural = result
-        .ir
+        .ir()
         .model
         .procedural_surfaces
         .first()
@@ -2648,7 +2657,7 @@ pub(super) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .expect("kind string")
         .to_string();
     assert_eq!(kind, expected_kind);
-    let mut source_less = result.ir;
+    let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
@@ -2664,7 +2673,7 @@ pub(super) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .expect("source-less revision surface round trip");
     let actual = scrubbed_definition(
         &round_trip
-            .ir
+            .ir()
             .model
             .procedural_surfaces
             .first()
@@ -2708,7 +2717,7 @@ fn generated_revision_offset_surface_round_trips() {
         extension_flags,
         revision_form,
         ..
-    } = &result.ir.model.procedural_surfaces[0].definition
+    } = &result.ir().model.procedural_surfaces[0].definition
     else {
         panic!("expected offset surface construction")
     };
@@ -2746,7 +2755,7 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
             &DecodeOptions::default(),
         )
         .expect("parameterized revision offset decode");
-    let procedural = &result.ir.model.procedural_surfaces[0];
+    let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance, None);
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { revision_form, .. } =
@@ -2773,7 +2782,7 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
         ),
         (2, 3)
     );
-    assert_eq!(regenerated_procedural_surface_span(&result.ir), subtype);
+    assert_eq!(regenerated_procedural_surface_span(result.ir()), subtype);
 }
 
 #[test]
@@ -2819,7 +2828,7 @@ fn generated_revision_orthogonal_taper_decodes_sense_true() {
         )
         .expect("ortho revision decode");
     let definition = &result
-        .ir
+        .ir()
         .model
         .procedural_surfaces
         .first()
@@ -3042,7 +3051,7 @@ fn generated_parameterized_revision_loft_surface_round_trips() {
             &DecodeOptions::default(),
         )
         .expect("parameterized revision loft decode");
-    let procedural = &result.ir.model.procedural_surfaces[0];
+    let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance, None);
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft { revision_form, .. } =
@@ -3072,12 +3081,12 @@ fn revision_loft_member_omits_the_asm_integer_in_an_early_save_format_stream() {
             &DecodeOptions::default(),
         )
         .expect("early-era revision loft decode");
-    let member = decoded_revision_loft_member(&decoded.ir);
+    let member = decoded_revision_loft_member(decoded.ir());
     assert_eq!(member.type_code, 1);
     assert_eq!(member.data.first_flag, Some(false));
     assert_eq!(member.data.asm_extension, None);
     assert_eq!(member.data.secondary_pcurve, None);
-    assert_eq!(regenerated_procedural_surface_span(&decoded.ir), subtype);
+    assert_eq!(regenerated_procedural_surface_span(decoded.ir()), subtype);
 }
 
 #[test]
@@ -3091,7 +3100,7 @@ fn revision_loft_type_zero_member_stores_two_pcurve_slots() {
             &DecodeOptions::default(),
         )
         .expect("type-zero revision loft decode");
-    let member = decoded_revision_loft_member(&decoded.ir);
+    let member = decoded_revision_loft_member(decoded.ir());
     assert_eq!(member.type_code, 0);
     assert_eq!(member.data.surface, None);
     assert!(member.data.pcurve.is_some());
@@ -5922,9 +5931,9 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
     let result = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("an inconsistent cage must not fail the document decode");
-    assert!(result.ir.model.subds.is_empty());
+    assert!(result.ir().model.subds.is_empty());
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
@@ -5944,7 +5953,7 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("independent malformed mesh entry must not abort document decode");
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == LossCode::shared(LossTaxonomy::DecodeDiagnostic)
             && loss.severity == Severity::Error
             && loss.message.contains(entry)

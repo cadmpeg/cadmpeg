@@ -11,9 +11,9 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
-    assert_f3d_native_parity(&result.ir);
+    assert_f3d_native_parity(result.ir());
 }
 
 #[test]
@@ -31,9 +31,9 @@ fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
         .any(|entry| entry.role == role::BREP_SMBH));
 
     let result = decode(bytes);
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert!(!result.source_fidelity.retained_records.is_empty());
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(!result.source_fidelity().retained_records.is_empty());
     assert_valid(&result);
 }
 
@@ -53,24 +53,24 @@ fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families(
     let mut saw_procedural_surface = false;
     for (smbh, geometrically_consistent) in fixtures {
         let result = decode(f3d_with_smbh(&smbh));
-        saw_pcurve |= !result.ir.model.pcurves.is_empty();
-        saw_nurbs |= result.ir.model.curves.iter().any(|curve| {
+        saw_pcurve |= !result.ir().model.pcurves.is_empty();
+        saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
             matches!(
                 curve.geometry,
                 cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
             )
-        }) || result.ir.model.surfaces.iter().any(|surface| {
+        }) || result.ir().model.surfaces.iter().any(|surface| {
             matches!(
                 surface.geometry,
                 cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
             )
         });
-        saw_procedural_curve |= !result.ir.model.procedural_curves.is_empty();
-        saw_procedural_surface |= !result.ir.model.procedural_surfaces.is_empty();
+        saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();
+        saw_procedural_surface |= !result.ir().model.procedural_surfaces.is_empty();
         if geometrically_consistent {
             assert_valid(&result);
         } else {
-            assert!(result.ir.native.namespace("f3d").is_some());
+            assert!(result.ir().native.namespace("f3d").is_some());
         }
     }
     assert!(saw_pcurve && saw_nurbs && saw_procedural_curve && saw_procedural_surface);
@@ -81,10 +81,10 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     let protein = decode(f3d_with_smbh_and_protein(
         &synthetic_geometry_with_history_smbh(),
     ));
-    let native = f3d_native(&protein.ir);
+    let native = f3d_native(protein.ir());
     assert!(!native.design_record_headers.is_empty());
     assert!(!native.asm_histories.is_empty());
-    assert!(!protein.ir.model.appearances.is_empty());
+    assert!(!protein.ir().model.appearances.is_empty());
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
@@ -94,8 +94,8 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
         name,
         payload,
     ));
-    assert_eq!(configured.ir.model.configurations.len(), 1);
-    assert!(configured.ir.model.configurations[0].active.is_active());
+    assert_eq!(configured.ir().model.configurations.len(), 1);
+    assert!(configured.ir().model.configurations[0].active.is_active());
     assert_valid(&configured);
 }
 
@@ -103,17 +103,17 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
 fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_archive_entries() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = decode(source);
-    let mut edited = decoded.ir.clone();
+    let mut edited = decoded.ir().clone();
     edited.model.points[0].position.x = 2.5;
     edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     let mut bytes = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut bytes)
+        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut bytes)
         .expect("preserved F3D write");
     let round_trip = decode(bytes);
-    assert_eq!(round_trip.ir.model.points[0].position.x, 2.5);
+    assert_eq!(round_trip.ir().model.points[0].position.x, 2.5);
     assert_eq!(
-        round_trip.ir.model.faces[0].sense,
+        round_trip.ir().model.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert_valid(&round_trip);
@@ -134,8 +134,8 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
         .expect("source-less F3D encode");
     assert_eq!(F3dCodec.detect(&bytes), Confidence::High);
     let round_trip = decode(bytes);
-    assert_eq!(round_trip.ir.model.bodies.len(), 1);
-    assert_eq!(round_trip.ir.model.faces.len(), 6);
+    assert_eq!(round_trip.ir().model.bodies.len(), 1);
+    assert_eq!(round_trip.ir().model.faces.len(), 6);
     assert_valid(&round_trip);
 }
 
@@ -157,7 +157,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
             ("component.f3d", component.as_slice()),
         ],
     ));
-    assert!(merged.ir.model.bodies[0].id.0.contains(&format!(
+    assert!(merged.ir().model.bodies[0].id.0.contains(&format!(
         "xref/{XREF_ROLE}/occurrence-0/xref/{CHILD_ROLE}/occurrence-0/"
     )));
     assert_valid(&merged);
@@ -172,7 +172,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
         ],
     ));
     assert!(cyclic
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("reference cycle")));
@@ -190,9 +190,9 @@ fn container_only_pipeline_retains_native_sections_without_semantic_projection()
             },
         )
         .expect("container-only F3D decode");
-    assert!(result.report.container_only);
-    assert!(!result.report.geometry_transferred);
-    assert!(result.ir.model.bodies.is_empty());
-    assert!(!result.source_fidelity.retained_records.is_empty());
-    assert!(result.ir.native.namespace("f3d").is_some());
+    assert!(result.report().container_only);
+    assert!(!result.report().geometry_transferred);
+    assert!(result.ir().model.bodies.is_empty());
+    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(result.ir().native.namespace("f3d").is_some());
 }

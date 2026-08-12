@@ -4108,7 +4108,7 @@ fn decode_persists_external_references_in_native_namespace() {
         .expect("decode external-reference fixture");
     let native = crate::native::CatiaNative::load(
         decoded
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("CATIA native namespace"),
@@ -4245,7 +4245,7 @@ fn standard_decode_retains_native_surface_carrier_tags() {
         )
         .expect("standard decode");
     let identities = decoded
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -4278,7 +4278,7 @@ fn standard_decode_distinguishes_consolidated_surface_frames() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("standard decode");
     let identities = decoded
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -4310,7 +4310,7 @@ fn standard_decode_retains_vertex_allocation_tags() {
         )
         .expect("standard decode");
     let identities = decoded
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -4382,13 +4382,13 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report.geometry_transferred);
+    assert!(result.report().geometry_transferred);
     // Three vertex records → three points and three vertices.
-    assert_eq!(result.ir.model.points.len(), 3);
-    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().model.vertices.len(), 3);
     // A vertex coordinate is transferred verbatim in millimetres (no scaling).
     assert!(result
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -4396,22 +4396,22 @@ fn decode_standard_transfers_vertices_and_cylinder() {
 
     // Cylinder and tag-bridged plane carriers are decoded from their stored
     // parameters.
-    assert_eq!(result.ir.model.surfaces.len(), 2);
-    assert_eq!(result.ir.model.curves.len(), 1);
-    let unknowns = result.ir.native_unknowns("catia").unwrap();
+    assert_eq!(result.ir().model.surfaces.len(), 2);
+    assert_eq!(result.ir().model.curves.len(), 1);
+    let unknowns = result.ir().native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(unknowns[0].id.0, "catia:payload:unknown#brep-stream");
     assert!(unknowns[0]
         .links
         .contains(&"catia:standard:circle#0".to_string()));
-    match &result.ir.model.surfaces[0].geometry {
+    match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder { radius, axis, .. } => {
             assert!((radius - 5.0).abs() < 1e-6);
             assert!((axis.z - 1.0).abs() < 1e-6);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         SurfaceGeometry::Plane {
             origin,
@@ -4431,34 +4431,34 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     // Stored face/carrier rows do not establish a B-rep without a complete
     // trim and edge graph. Carriers remain free and vertices receive only the
     // neutral ownership required for a disconnected point set.
-    assert!(result.ir.model.faces.is_empty());
-    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert!(result.ir().model.faces.is_empty());
+    assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
-        result.ir.model.bodies[0].kind,
+        result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(result.ir.model.shells[0].free_vertices.len(), 3);
-    assert!(result.ir.model.edges.is_empty());
+    assert_eq!(result.ir().model.shells[0].free_vertices.len(), 3);
+    assert!(result.ir().model.edges.is_empty());
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|l| l.code.category() == cadmpeg_ir::report::LossCategory::Topology));
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         0
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage
             .iter()
             .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
@@ -4473,10 +4473,10 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| result.report.coverage.get(key).copied().unwrap_or(0))
+        .map(|key| result.report().coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
     );
     assert_eq!(
@@ -4486,29 +4486,29 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| result.report.coverage.get(key).copied().unwrap_or(0))
+        .map(|key| result.report().coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
             + result
-                .report
+                .report()
                 .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
             + result
-                .report
+                .report()
                 .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
     );
     assert!(
         result
-            .report
+            .report()
             .coverage
             .iter()
             .filter(|(key, _)| {
@@ -4522,21 +4522,21 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             <= 1
     );
     assert_eq!(
-        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
-        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
-            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
+        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
+        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
+            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
     );
     assert_eq!(
-        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
-        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
-            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
-            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
-            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
-            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
+        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
+        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
+            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
+            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
+            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
+            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
     );
 
     // The produced IR validates (free carriers, no dangling references).
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -4556,13 +4556,13 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
         )
         .expect("decode unresolved roster carrier");
 
-    assert_eq!(decoded.ir.model.surfaces.len(), 2);
-    assert!(decoded.ir.model.faces.is_empty());
+    assert_eq!(decoded.ir().model.surfaces.len(), 2);
+    assert!(decoded.ir().model.faces.is_empty());
     assert!(matches!(
-        decoded.ir.model.surfaces[1].geometry,
+        decoded.ir().model.surfaces[1].geometry,
         SurfaceGeometry::Unknown { record: Some(_) }
     ));
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 unresolved surface carriers")
@@ -4578,31 +4578,31 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         )
         .expect("decode generated topology part");
 
-    assert_eq!(decoded.ir.model.faces.len(), 4);
-    assert_eq!(decoded.ir.model.loops.len(), 4);
-    assert_eq!(decoded.ir.model.edges.len(), 6);
-    assert_eq!(decoded.ir.model.coedges.len(), 12);
+    assert_eq!(decoded.ir().model.faces.len(), 4);
+    assert_eq!(decoded.ir().model.loops.len(), 4);
+    assert_eq!(decoded.ir().model.edges.len(), 6);
+    assert_eq!(decoded.ir().model.coedges.len(), 12);
     assert!(decoded
-        .ir
+        .ir()
         .model
         .faces
         .iter()
         .all(|face| face.loops.len() == 1));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .coedges
         .iter()
         .all(|coedge| coedge.radial_next != coedge.id));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .edges
         .iter()
         .all(|edge| edge.curve.is_some()));
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .curves
             .iter()
@@ -4618,7 +4618,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             .map(|object_id| Some(object_id.as_str()))
             .collect::<Vec<_>>()
     );
-    assert!(!decoded.report.losses.iter().any(|loss| {
+    assert!(!decoded.report().losses.iter().any(|loss| {
         matches!(
             loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
@@ -4626,19 +4626,19 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     }));
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage
             .iter()
             .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
@@ -4653,10 +4653,10 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| decoded.report.coverage.get(key).copied().unwrap_or(0))
+        .map(|key| decoded.report().coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
     );
     assert_eq!(
@@ -4666,29 +4666,29 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| decoded.report.coverage.get(key).copied().unwrap_or(0))
+        .map(|key| decoded.report().coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
             + decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
             + decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage
             .iter()
             .filter(|(key, _)| {
@@ -4702,17 +4702,17 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
-        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
-            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
+        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
+        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
+            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
     );
     assert_eq!(
-        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
-        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
-            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
-            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
-            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
-            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
+        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
+        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
+            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
+            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
+            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
+            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
     );
 }
 
@@ -4726,8 +4726,8 @@ fn decode_fbb_only_without_parseable_counted_table_transfers_only_carriers() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.model.points.is_empty());
-    assert_eq!(result.ir.model.surfaces.len(), 2);
+    assert!(result.ir().model.points.is_empty());
+    assert_eq!(result.ir().model.surfaces.len(), 2);
 }
 
 #[test]
@@ -4741,14 +4741,14 @@ fn decode_zero_entity_falls_back_to_metadata() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(!result.report.geometry_transferred);
-    let source = result.ir.source.expect("source metadata");
+    assert!(!result.report().geometry_transferred);
+    let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(
         source.attributes.get("variant").map(String::as_str),
         Some("zero_entity")
     );
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|l| l.message.contains("zero_entity")));
@@ -4822,47 +4822,47 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
         .expect("decode legacy identity run");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_ENTITY_RUN_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_ENTITY_IDENTITY_COUNT),
         3
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_81_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_82_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_E5_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_FD_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_SELECTOR_COUNT),
         0
     );
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains("legacy design run")
     }));
@@ -4917,50 +4917,50 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         .expect("decode compound legacy fields");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_TEXT_FIELD_COUNT),
         6
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_E3_ROLE_TAIL_TEXT_FIELD_COUNT),
         6
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_TEXT_FIELD_COUNT),
         5
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_SELECTED_ROLE_COUNT),
         4
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT),
         5
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT),
         5
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_RELATION_COUNT),
         2
     );
 
     let native = crate::native::CatiaNative::load(
         decoded
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("CATIA native namespace"),
@@ -5039,37 +5039,37 @@ fn decode_retains_legacy_relation_synchronous_states() {
 
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_SYNCHRONOUS_STATE_COUNT),
         3
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_SYNCHRONOUS_RELATION_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_ASYNCHRONOUS_RELATION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT),
         3
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT),
         4
     );
     let native = crate::native::CatiaNative::load(
         decoded
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("CATIA native namespace"),
@@ -5151,7 +5151,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode typed legacy parameter");
 
-    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+    let [parameter] = decoded.ir().model.parameters.as_slice() else {
         panic!("one transferred legacy parameter")
     };
     assert_eq!(parameter.name, "Width");
@@ -5168,11 +5168,11 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
         .is_some_and(|id| id.starts_with("catia:legacy:entity-run#")));
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5199,7 +5199,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode typed legacy string");
 
-    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+    let [parameter] = decoded.ir().model.parameters.as_slice() else {
         panic!("one transferred legacy string")
     };
     assert_eq!(parameter.name, "Responsible");
@@ -5212,13 +5212,13 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
     assert_eq!(parameter.expression, "\"Cilas Evans\"");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_STRING_VALUE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_NAMED_STRING_VALUE_COUNT),
         1
     );
@@ -5278,7 +5278,7 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode input-bound legacy string formula");
     let result = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -5294,7 +5294,7 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         .iter()
         .map(|dependency| {
             decoded
-                .ir
+                .ir()
                 .model
                 .parameters
                 .iter()
@@ -5307,11 +5307,11 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
     assert_eq!(dependency_names, ["#1_", "#2_"]);
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5333,7 +5333,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode typed legacy integer");
 
-    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+    let [parameter] = decoded.ir().model.parameters.as_slice() else {
         panic!("one transferred legacy integer")
     };
     assert_eq!(parameter.name, "Count");
@@ -5344,13 +5344,13 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
     assert_eq!(parameter.expression, "11");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_INTEGER_VALUE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEGACY_NAMED_INTEGER_VALUE_COUNT),
         1
     );
@@ -5375,7 +5375,7 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode unset typed legacy parameter");
 
-    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+    let [parameter] = decoded.ir().model.parameters.as_slice() else {
         panic!("one transferred legacy parameter")
     };
     assert_eq!(parameter.name, "Width");
@@ -5384,11 +5384,11 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
     assert_eq!(parameter.properties["value_type"], "LENGTH");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5412,7 +5412,7 @@ fn decode_transfers_unset_non_numeric_legacy_parameters() {
         let decoded = CatiaCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode unset non-numeric legacy parameter");
-        let [parameter] = decoded.ir.model.parameters.as_slice() else {
+        let [parameter] = decoded.ir().model.parameters.as_slice() else {
             panic!("one transferred legacy parameter")
         };
 
@@ -5420,7 +5420,7 @@ fn decode_transfers_unset_non_numeric_legacy_parameters() {
         assert_eq!(parameter.value, None);
         assert!(parameter.expression.is_empty());
         assert_eq!(parameter.properties["value_type"], parameter_type);
-        assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }
 
@@ -5452,7 +5452,7 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode intrinsically typed evaluated parameters");
 
-    let [string, integer] = decoded.ir.model.parameters.as_slice() else {
+    let [string, integer] = decoded.ir().model.parameters.as_slice() else {
         panic!("two transferred evaluated parameters")
     };
     assert_eq!(string.name, "Revision");
@@ -5472,11 +5472,11 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
     assert_eq!(integer.properties["value_type"], "Integer");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         2
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5502,10 +5502,10 @@ fn decode_does_not_override_a_string_value_type_descriptor() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode string with an incompatible or unresolved descriptor");
 
-        assert!(decoded.ir.model.parameters.is_empty());
+        assert!(decoded.ir().model.parameters.is_empty());
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
             0
         );
@@ -5536,10 +5536,10 @@ fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode ambiguous legacy parameter");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         0
     );
@@ -5582,14 +5582,14 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
         )
         .expect("decode selected legacy type");
     assert_eq!(
-        decoded.ir.model.parameters[0].value,
+        decoded.ir().model.parameters[0].value,
         Some(cadmpeg_ir::ParameterValue::Length(
             cadmpeg_ir::features::Length(8.0)
         ))
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT),
         1
     );
@@ -5600,10 +5600,10 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
             &DecodeOptions::default(),
         )
         .expect("decode cyclic legacy type");
-    assert!(cyclic.ir.model.parameters.is_empty());
+    assert!(cyclic.ir().model.parameters.is_empty());
     assert_eq!(
         cyclic
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT),
         0
     );
@@ -5664,17 +5664,17 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode closed legacy formula");
-    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+    let [parameter] = decoded.ir().model.parameters.as_slice() else {
         panic!("one legacy formula parameter")
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 
     let mismatched = CatiaCodec
@@ -5683,10 +5683,10 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode mismatched legacy formula");
-    assert_eq!(mismatched.ir.model.parameters[0].expression, "6");
+    assert_eq!(mismatched.ir().model.parameters[0].expression, "6");
     assert_eq!(
         mismatched
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
@@ -5697,14 +5697,14 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode unset closed legacy formula");
-    let [parameter] = unset.ir.model.parameters.as_slice() else {
+    let [parameter] = unset.ir().model.parameters.as_slice() else {
         panic!("one unset legacy formula parameter")
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(parameter.value, None);
     assert_eq!(
         unset
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
@@ -5715,14 +5715,14 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode type-mismatched unset legacy formula");
-    let [parameter] = mismatched_unset.ir.model.parameters.as_slice() else {
+    let [parameter] = mismatched_unset.ir().model.parameters.as_slice() else {
         panic!("one unset legacy parameter")
     };
     assert!(parameter.expression.is_empty());
     assert_eq!(parameter.value, None);
     assert_eq!(
         mismatched_unset
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
@@ -5733,7 +5733,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode Boolean negation formula");
-    let [parameter] = boolean.ir.model.parameters.as_slice() else {
+    let [parameter] = boolean.ir().model.parameters.as_slice() else {
         panic!("one Boolean formula parameter")
     };
     assert_eq!(parameter.expression, "not false");
@@ -5744,7 +5744,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     );
     assert_eq!(
         boolean
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
@@ -5760,7 +5760,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode lazy conditional formula");
-    let [parameter] = conditional.ir.model.parameters.as_slice() else {
+    let [parameter] = conditional.ir().model.parameters.as_slice() else {
         panic!("one conditional formula parameter")
     };
     assert_eq!(parameter.expression, "true ? 5 ; 1 / 0");
@@ -5770,7 +5770,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     );
     assert_eq!(
         conditional
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
@@ -5836,13 +5836,13 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
             &DecodeOptions::default(),
         )
         .expect("decode output assignment");
-    let [parameter] = transferred.ir.model.parameters.as_slice() else {
+    let [parameter] = transferred.ir().model.parameters.as_slice() else {
         panic!("one legacy output parameter")
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(
         transferred
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
@@ -5853,8 +5853,8 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
             &DecodeOptions::default(),
         )
         .expect("decode unset output assignment");
-    assert_eq!(unset.ir.model.parameters[0].expression, "2+3");
-    assert_eq!(unset.ir.model.parameters[0].value, None);
+    assert_eq!(unset.ir().model.parameters[0].expression, "2+3");
+    assert_eq!(unset.ir().model.parameters[0].value, None);
 
     let mismatched_value = CatiaCodec
         .decode(
@@ -5867,10 +5867,10 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
             &DecodeOptions::default(),
         )
         .expect("decode mismatched output assignment");
-    assert_eq!(mismatched_value.ir.model.parameters[0].expression, "6");
+    assert_eq!(mismatched_value.ir().model.parameters[0].expression, "6");
     assert_eq!(
         mismatched_value
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
@@ -5886,10 +5886,12 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
             &DecodeOptions::default(),
         )
         .expect("decode type-mismatched output assignment");
-    assert!(mismatched_type.ir.model.parameters[0].expression.is_empty());
+    assert!(mismatched_type.ir().model.parameters[0]
+        .expression
+        .is_empty());
     assert_eq!(
         mismatched_type
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
@@ -5940,7 +5942,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode closed legacy string formula");
-    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+    let [parameter] = decoded.ir().model.parameters.as_slice() else {
         panic!("one legacy string formula parameter")
     };
     assert_eq!(
@@ -5953,11 +5955,11 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 
     let mismatched = CatiaCodec
         .decode(
@@ -5969,12 +5971,12 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         )
         .expect("decode mismatched legacy string formula");
     assert_eq!(
-        mismatched.ir.model.parameters[0].expression,
+        mismatched.ir().model.parameters[0].expression,
         "\"Cilas Evans\""
     );
     assert_eq!(
         mismatched
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
@@ -5988,7 +5990,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode closed legacy string-method formula");
-    let [parameter] = methods.ir.model.parameters.as_slice() else {
+    let [parameter] = methods.ir().model.parameters.as_slice() else {
         panic!("one legacy string-method formula parameter")
     };
     assert_eq!(
@@ -6001,7 +6003,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     );
     assert_eq!(
         methods
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
@@ -6013,13 +6015,13 @@ fn decode_zero_entity_transfers_framed_cylinder() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.surfaces.len(), 1);
-    assert!(result.ir.model.points.is_empty());
-    assert!(result.ir.model.vertices.is_empty());
-    assert!(result.ir.model.bodies.is_empty());
-    assert!(result.ir.model.shells.is_empty());
-    match &result.ir.model.surfaces[0].geometry {
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().model.vertices.is_empty());
+    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().model.shells.is_empty());
+    match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder {
             origin,
             axis,
@@ -6036,7 +6038,7 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -6051,20 +6053,20 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
 
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
         ),
         1
     );
-    let [curve] = result.ir.model.curves.as_slice() else {
+    let [curve] = result.ir().model.curves.as_slice() else {
         panic!("one transferred support curve")
     };
-    let [construction] = result.ir.model.procedural_curves.as_slice() else {
+    let [construction] = result.ir().model.procedural_curves.as_slice() else {
         panic!("one cacheless support construction")
     };
     assert!(matches!(
@@ -6090,13 +6092,13 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert_eq!(context.parameter_range, [0.0, 1.0]);
     assert_eq!(
         context.sides[0].surface.as_ref(),
-        Some(&result.ir.model.surfaces[0].id)
+        Some(&result.ir().model.surfaces[0].id)
     );
     assert!(context.sides[0].pcurve.is_some());
     assert_eq!(context.sides[1].surface, None);
     assert_eq!(context.sides[1].pcurve, None);
 
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -6111,26 +6113,26 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
 
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
         ),
         0
     );
     assert!(matches!(
-        result.ir.model.curves.as_slice(),
+        result.ir().model.curves.as_slice(),
         [cadmpeg_ir::geometry::Curve {
             geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(_),
             ..
         }]
     ));
-    assert!(result.ir.model.procedural_curves.is_empty());
+    assert!(result.ir().model.procedural_curves.is_empty());
 
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -6140,8 +6142,8 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.surfaces.len(), 1);
-    match &result.ir.model.surfaces[0].geometry {
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
             assert_eq!((surface.u_degree, surface.v_degree), (3, 3));
             assert_eq!((surface.u_count, surface.v_count), (7, 7));
@@ -6670,7 +6672,7 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    let SurfaceGeometry::Nurbs(surface) = &result.ir.model.surfaces[0].geometry else {
+    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
         panic!("NURBS surface");
     };
     assert_eq!(surface.control_points.len(), 9);
@@ -6698,23 +6700,23 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
             &DecodeOptions::default(),
         )
         .expect("decode elided A8 surface topology");
-    assert_eq!(result.ir.model.surfaces.len(), 1);
-    let SurfaceGeometry::Nurbs(surface) = &result.ir.model.surfaces[0].geometry else {
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
         panic!("NURBS surface");
     };
     assert_eq!(surface.control_points[8], Point3::new(1.0, 1.0, 0.0));
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 3);
-    assert_eq!(result.ir.model.edges.len(), 3);
-    assert_eq!(result.ir.model.pcurves.len(), 3);
-    assert!(result.report.losses.iter().all(|loss| {
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().model.pcurves.len(), 3);
+    assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -6724,8 +6726,8 @@ fn decode_object_stream_does_not_promote_unbound_a8_pcurve() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode unbound object-stream pcurve");
-    assert!(decoded.ir.model.pcurves.is_empty());
-    assert!(!decoded.ir.native_unknowns("catia").unwrap().is_empty());
+    assert!(decoded.ir().model.pcurves.is_empty());
+    assert!(!decoded.ir().native_unknowns("catia").unwrap().is_empty());
 }
 
 #[test]
@@ -6737,8 +6739,8 @@ fn decode_standard_does_not_promote_unbound_consolidated_pcurve() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode consolidated pcurve");
-    assert!(decoded.ir.model.pcurves.is_empty());
-    assert!(!decoded.ir.native_unknowns("catia").unwrap().is_empty());
+    assert!(decoded.ir().model.pcurves.is_empty());
+    assert!(!decoded.ir().native_unknowns("catia").unwrap().is_empty());
 }
 
 #[test]
@@ -6978,7 +6980,7 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
         .expect("decode CATIA plane carrier coverage");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT),
         3
     );
@@ -7237,13 +7239,13 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         .expect("decode CATIA cone-face chart");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT),
         4
     );
@@ -7300,7 +7302,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode resolved CATIA revolution");
     let directrix = decoded
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -7323,7 +7325,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
             && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
     ));
     let revolution = decoded
-        .ir
+        .ir()
         .model
         .procedural_surfaces
         .iter()
@@ -7334,7 +7336,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
                 .starts_with("catia:consolidated:surface-revolution#")
         })
         .expect("transferred revolution construction");
-    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id == revolution.surface
             && matches!(
                 surface.geometry,
@@ -7349,7 +7351,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
                     && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
             )
     }));
-    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     assert!(matches!(
         &revolution.definition,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
@@ -7360,11 +7362,11 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     ));
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT),
         1
     );
-    assert!(!decoded.report.losses.iter().any(|loss| loss
+    assert!(!decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("consolidated surface-of-revolution record")));
 }
@@ -7408,24 +7410,24 @@ fn decode_transfers_exact_consolidated_line_profiles() {
         .expect("decode consolidated line profile");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
         1
     );
-    assert!(decoded.ir.model.curves.iter().any(|curve| matches!(
+    assert!(decoded.ir().model.curves.iter().any(|curve| matches!(
         curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction }
             if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                 && direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
     )));
     assert!(!decoded
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("consolidated line-profile record(s)")));
@@ -7439,22 +7441,22 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
         .expect("decode line-profile-only nested stream");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(cadmpeg_ir::CoverageKey(
+        decoded.report().coverage_count(cadmpeg_ir::CoverageKey(
             "attached_standalone_wire_edge_count"
         )),
         1
     );
-    assert_eq!(decoded.ir.model.edges[0].param_range, Some([-4.0, 9.0]));
+    assert_eq!(decoded.ir().model.edges[0].param_range, Some([-4.0, 9.0]));
     assert_eq!(
-        decoded.ir.model.bodies[0].kind,
+        decoded.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7465,12 +7467,12 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         .expect("decode revolution-only nested stream");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT),
         1
     );
     let revolution = decoded
-        .ir
+        .ir()
         .model
         .procedural_surfaces
         .iter()
@@ -7483,7 +7485,7 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
             ..
         }
     ));
-    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7500,7 +7502,7 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode mixed-metric line profiles");
     let line_ids = decoded
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -8036,113 +8038,113 @@ fn decode_reports_zero_entity_surface_support_runs() {
         .expect("decode zero-entity support run");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_RUN_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT),
         1
     );
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss
                 .message
@@ -8166,71 +8168,71 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         .expect("decode zero-entity topology registries");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT),
         8
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT),
         5
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,),
         3
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
         ),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT),
         4
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT),
         3
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT),
         1
     );
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.message.contains("1 edge-stride allocation tuple(s)")
             && loss.message.contains("1 oriented-use pair(s)")
@@ -8262,7 +8264,7 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode exact consolidated analytic refinement");
     let surface = decoded
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -8276,7 +8278,7 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
     ));
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT),
         1
     );
@@ -8493,43 +8495,43 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .expect("decode consolidated edge-run coverage");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::PARTIALLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::FULLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT),
         0
     );
@@ -9026,7 +9028,7 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode resolved consolidated edge");
     let procedural = decoded
-        .ir
+        .ir()
         .model
         .procedural_curves
         .iter()
@@ -9073,7 +9075,7 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode resolved consolidated cone edge");
     let procedural = decoded
-        .ir
+        .ir()
         .model
         .procedural_curves
         .iter()
@@ -9102,7 +9104,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("decode resolved consolidated NURBS edge");
         let procedural = decoded
-            .ir
+            .ir()
             .model
             .procedural_curves
             .iter()
@@ -9123,7 +9125,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
 
         if offset == 0.0 {
             let surface = decoded
-                .ir
+                .ir()
                 .model
                 .surfaces
                 .iter()
@@ -9132,7 +9134,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
         } else {
             let construction = decoded
-                .ir
+                .ir()
                 .model
                 .procedural_surfaces
                 .iter()
@@ -9145,7 +9147,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                 panic!("resolved normal offset is retained as an offset construction");
             };
             assert!((*distance - offset).abs() < 1e-12);
-            assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+            assert!(decoded.ir().model.surfaces.iter().any(|surface| {
                 surface.id == *support && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
             }));
         }
@@ -9207,7 +9209,7 @@ fn decode_standard_transfers_exact_offset_construction() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("standard decode");
-    let [procedural] = decoded.ir.model.procedural_surfaces.as_slice() else {
+    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
@@ -9222,7 +9224,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         panic!("offset construction");
     };
     assert!(decoded
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -9264,7 +9266,7 @@ fn decode_standard_transfers_construction_use_offset() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("standard decode");
-    let [procedural] = decoded.ir.model.procedural_surfaces.as_slice() else {
+    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
@@ -9294,7 +9296,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("standard decode");
-    let [procedural] = decoded.ir.model.procedural_surfaces.as_slice() else {
+    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one rolling-ball construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
@@ -10770,7 +10772,7 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
         2
     );
@@ -10797,9 +10799,10 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode relation to unowned field");
-    let native =
-        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
-            .expect("load relation to unowned field");
+    let native = crate::native::CatiaNative::load(
+        decoded.ir().native.namespace("catia").expect("namespace"),
+    )
+    .expect("load relation to unowned field");
     let graph = &native.object_graphs[0];
 
     assert_eq!(native.design_objects.len(), 1);
@@ -10820,7 +10823,7 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT),
         1
     );
@@ -10836,9 +10839,10 @@ fn native_design_objects_preserve_reflexive_field_relations() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode reflexive field relation");
-    let native =
-        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
-            .expect("load reflexive field relation");
+    let native = crate::native::CatiaNative::load(
+        decoded.ir().native.namespace("catia").expect("namespace"),
+    )
+    .expect("load reflexive field relation");
     let field = &native.object_graphs[0].records[0];
 
     assert_eq!(
@@ -10858,13 +10862,13 @@ fn native_design_objects_preserve_reflexive_field_relations() {
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DESIGN_REFLEXIVE_FIELD_RELATION_COUNT),
         1
     );
@@ -11022,7 +11026,7 @@ fn null_storage_roles_are_not_unresolved_storage_links() {
 
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_STORAGE_RECORD_COUNT),
         0
     );
@@ -12503,7 +12507,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
         .expect("decode generated object graph part");
     let native = crate::native::CatiaNative::load(
         decoded
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("CATIA namespace"),
@@ -12538,83 +12542,83 @@ fn decode_retains_outer_object_graph_order_and_references() {
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DESIGN_FIELD_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_SKETCH_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
         0
     );
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 design object(s)")
             && loss.message.contains("2 object-graph field record(s)")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation
         .findings
         .iter()
@@ -12636,41 +12640,41 @@ fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
 
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::MODELING_OBJECT_GRAPH_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::MODELING_OBJECT_RECORD_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT),
         2
     );
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 retained object graph(s)")
@@ -12688,7 +12692,7 @@ fn decode_links_design_objects_through_their_owner_record_group() {
         .expect("decode nested design objects");
     let native = crate::native::CatiaNative::load(
         decoded
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("CATIA namespace"),
@@ -12705,7 +12709,7 @@ fn decode_links_design_objects_through_their_owner_record_group() {
     assert_eq!(native.design_objects[1].owner_design_object, None);
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_OWNER_LINK_COUNT),
         1
     );
@@ -13160,17 +13164,17 @@ fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() 
 
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PAIR_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT),
         0
     );
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             .contains("1 complete numeric entity-value pair(s)")
             && loss
@@ -13366,73 +13370,73 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("decode reference-signature incidences");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_2_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_35_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_MULTI_MEMBER_REFERENCE_SIGNATURE_COHORT_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_REFERENCE_SIGNATURE_COHORT_COUNT
         ),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_INSTRUCTION_COUNT),
         8
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_TOKEN_COUNT),
         8
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNRESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT),
         0
     );
@@ -13757,46 +13761,46 @@ fn decode_retains_an_opened_parser_version_expression_without_formula_incidence(
         )
         .expect("decode opened parser-version expression");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT
         ),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
         0
     );
@@ -13854,46 +13858,46 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
         )
         .expect("decode unprefixed parser-version expression");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
         0
     );
@@ -14062,25 +14066,25 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         .expect("decode lead-12 paramout relation-program instance");
     assert_eq!(
         lead12_decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_OUTPUT_COUNT),
         1
     );
     assert_eq!(
         lead12_decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT),
         1
     );
     assert_eq!(
         lead12_decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT),
         0
     );
     assert_eq!(
         lead12_decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT),
         0
     );
@@ -14486,108 +14490,108 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         .expect("decode lead-54 relation-program instance");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
         ),
         3
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_TYPED_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT
         ),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_RESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
         ),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNRESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
         ),
         0
@@ -14647,12 +14651,12 @@ fn decode_reports_exact_relation_program_instances() {
             .expect("decode relation-program instance");
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
             1
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
             ),
             8
@@ -14660,116 +14664,116 @@ fn decode_reports_exact_relation_program_instances() {
         let resolved_reference_incidences = 1 + usize::from(repeated_reference_entity_id == 1);
         let null_reference_incidences = usize::from(repeated_reference_entity_id == 3);
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
             ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
             ),
             null_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
             ),
             8 - resolved_reference_incidences - null_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
             ),
             resolved_reference_incidences
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
             1
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
             0
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
             ),
             1
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
             ),
             0
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
             ),
             0
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
             ),
             1
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
             ),
             0
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
             resolved
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT
             ),
             expression
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT),
             other
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
             unresolved,
             "program entity {program_entity_id}"
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT),
             usize::from(program_entity_id == 3)
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
             ),
             resolved_repeated
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
             ),
             usize::from(repeated_reference_entity_id > 3)
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
             ),
             usize::from(repeated_reference_entity_id == 3)
@@ -14777,78 +14781,78 @@ fn decode_reports_exact_relation_program_instances() {
         let classified_program = usize::from(program_entity_id <= 2);
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
             classified_program
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
             1 - classified_program
         );
         let classified_repeated = usize::from(repeated_reference_entity_id == 1);
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
             ),
             classified_repeated
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
             ),
             1 - classified_repeated
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_INSTANCED_RELATION_EXPRESSION_COUNT),
             expression
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
             expression
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT
             ),
             0
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT
             ),
             expression
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
             1 - expression
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
             ),
             expression * 3
         );
         assert_eq!(
-            decoded.report.coverage_count(
+            decoded.report().coverage_count(
                 crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
             ),
             expression * 3
         );
         assert_eq!(
             decoded
-                .report
+                .report()
                 .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
             0
         );
-        assert!(decoded.ir.model.parameters.is_empty());
+        assert!(decoded.ir().model.parameters.is_empty());
     }
 }
 
@@ -15216,95 +15220,95 @@ fn schema_configuration_productions_retain_exact_same_graph_incidence() {
         .expect("decode configuration incidences");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_RECORD_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_SELECTOR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
         ),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
         ),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
         ),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT
         ),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
         ),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
         ),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
         0
     );
-    assert!(decoded.ir.model.configurations.is_empty());
+    assert!(decoded.ir().model.configurations.is_empty());
 }
 
 #[test]
@@ -15368,13 +15372,13 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
         )
         .expect("decode configuration row intervals");
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT
         ),
         3
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_SCHEMA_CONFIGURATION_COUNT
         ),
         0
@@ -15426,19 +15430,19 @@ fn schema_configuration_productions_preserve_unresolved_identities() {
         .expect("decode cyclic configuration row");
     assert_eq!(
         cyclic
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT),
         0
     );
     assert_eq!(
         cyclic
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
         0
     );
     assert_eq!(
         cyclic
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT),
         1
     );
@@ -15480,49 +15484,49 @@ fn schema_configuration_productions_distinguish_terminal_null_identities() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode terminal-null configuration incidences");
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
         ),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
         ),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
         ),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
         ),
         0
@@ -15869,22 +15873,22 @@ fn decode_retains_a_parser_version_expression_without_fabricating_formula_incide
         )
         .expect("decode parser-version expression");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
         0
     );
@@ -16249,64 +16253,64 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("decode constraint range");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert!(!decoded
-        .report
+        .report()
         .coverage
         .contains_key("decoded_structurally_owned_constraint_range_count"));
     assert!(!decoded
-        .report
+        .report()
         .coverage
         .contains_key("unresolved_constraint_range_owner_count"));
 
@@ -16399,49 +16403,49 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("decode uniquely referenced constraint range");
     assert_eq!(
         uniquely_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        uniquely_referenced.report.coverage_count(
+        uniquely_referenced.report().coverage_count(
             crate::coverage::DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT
         ),
         usize::from(source_entity.class_name.is_some())
     );
     assert_eq!(
         uniquely_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT),
         usize::from(source_entity.class_name.is_none())
     );
     assert_eq!(
         uniquely_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         uniquely_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
         uniquely_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         uniquely_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_INCOMING_REFERENCE_COUNT),
         1
     );
     assert_eq!(
         uniquely_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::UNIQUELY_REFERENCED_RANGE_INTERVAL_COUNT),
         1
     );
@@ -16486,31 +16490,31 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("decode storage-referenced constraint range");
     assert_eq!(
         storage_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        storage_referenced.report.coverage_count(
+        storage_referenced.report().coverage_count(
             crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT
         ),
         0
     );
     assert_eq!(
-        storage_referenced.report.coverage_count(
+        storage_referenced.report().coverage_count(
             crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_STORAGE_REFERENCE_COUNT
         ),
         1
     );
     assert_eq!(
         storage_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         storage_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
@@ -16523,13 +16527,13 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("decode constraint range with both incidence forms");
     assert_eq!(
         combined
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         2
     );
     assert_eq!(
         combined
-            .report
+            .report()
             .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
@@ -16559,31 +16563,31 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("decode multiply referenced constraint range");
     assert_eq!(
         multiply_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         2
     );
     assert_eq!(
         multiply_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         multiply_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         multiply_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
         multiply_referenced
-            .report
+            .report()
             .coverage_count(crate::coverage::MULTIPLY_REFERENCED_RANGE_INTERVAL_COUNT),
         1
     );
@@ -16844,31 +16848,31 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         .expect("decode range interval");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT),
         0
     );
@@ -16883,13 +16887,13 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         .expect("decode no-slot range interval");
     assert_eq!(
         no_slot
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT),
         1
     );
     assert_eq!(
         no_slot
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT),
         0
     );
@@ -16907,7 +16911,7 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         .expect("decode unset range interval");
     assert_eq!(
         unset
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT),
         2
     );
@@ -17130,31 +17134,31 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
         .expect("decode unset complex constraint range");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT),
         1
     );
@@ -17192,91 +17196,92 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .expect("decode generic entity suffix");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT
         ),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_SCHEMA_ENTITY_SUFFIX_VALUE_COUNT
         ),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
-    let native =
-        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
-            .expect("load generic entity suffix");
+    let native = crate::native::CatiaNative::load(
+        decoded.ir().native.namespace("catia").expect("namespace"),
+    )
+    .expect("load generic entity suffix");
 
     assert_eq!(native.entity_records[0].parameter_value, None);
     assert_eq!(
@@ -17347,12 +17352,16 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .expect("decode wide-prefix scalar suffix");
     assert_eq!(
         wide_scalar
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let wide_scalar = crate::native::CatiaNative::load(
-        wide_scalar.ir.native.namespace("catia").expect("namespace"),
+        wide_scalar
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("namespace"),
     )
     .expect("load wide-prefix scalar suffix");
     assert_eq!(
@@ -17430,13 +17439,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .expect("decode generic unset entity suffix");
     assert_eq!(
         unset
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
         unset
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
@@ -17468,25 +17477,26 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .expect("decode generic control entity suffix");
     assert_eq!(
         control
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
         control
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
         control
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
-    let control =
-        crate::native::CatiaNative::load(control.ir.native.namespace("catia").expect("namespace"))
-            .expect("load generic control suffix");
+    let control = crate::native::CatiaNative::load(
+        control.ir().native.namespace("catia").expect("namespace"),
+    )
+    .expect("load generic control suffix");
     assert!(matches!(
         control.entity_records[0]
             .suffix_value
@@ -17506,24 +17516,28 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .expect("decode E9 control entity suffix");
     assert_eq!(
         control_e9
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
         control_e9
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
         control_e9
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let control_e9 = crate::native::CatiaNative::load(
-        control_e9.ir.native.namespace("catia").expect("namespace"),
+        control_e9
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("namespace"),
     )
     .expect("load E9 control suffix");
     assert!(matches!(
@@ -17570,12 +17584,12 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .expect("decode generic separator entity suffix");
     assert_eq!(
         separator
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let separator = crate::native::CatiaNative::load(
-        separator.ir.native.namespace("catia").expect("namespace"),
+        separator.ir().native.namespace("catia").expect("namespace"),
     )
     .expect("load generic separator suffix");
     assert!(matches!(
@@ -17602,12 +17616,12 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic atom entity suffix");
     assert_eq!(
-        atom.report
+        atom.report()
             .coverage_count(crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let atom =
-        crate::native::CatiaNative::load(atom.ir.native.namespace("catia").expect("namespace"))
+        crate::native::CatiaNative::load(atom.ir().native.namespace("catia").expect("namespace"))
             .expect("load generic atom suffix");
     assert!(matches!(
         atom.entity_records[0]
@@ -17647,20 +17661,20 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected atom entity suffix");
     assert_eq!(
-        schema_selected_atom.report.coverage_count(
+        schema_selected_atom.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT
         ),
         1
     );
     assert_eq!(
         schema_selected_atom
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let schema_selected_atom = crate::native::CatiaNative::load(
         schema_selected_atom
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("namespace"),
@@ -17761,14 +17775,14 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected scalar suffix");
     assert_eq!(
-        selected_scalar.report.coverage_count(
+        selected_scalar.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT
         ),
         1
     );
     let selected_scalar = crate::native::CatiaNative::load(
         selected_scalar
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("namespace"),
@@ -17836,20 +17850,20 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected control suffix");
     assert_eq!(
-        selected_control.report.coverage_count(
+        selected_control.report().coverage_count(
             crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT
         ),
         1
     );
     assert_eq!(
         selected_control
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let selected_control = crate::native::CatiaNative::load(
         selected_control
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("namespace"),
@@ -18119,55 +18133,56 @@ fn native_namespace_binds_two_definition_value_chains() {
         .expect("decode definition-chain evaluation");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_VALUE_COUNT
         ),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_EVALUATED_DEFINITION_CHAIN_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNSET_DEFINITION_CHAIN_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_EVALUATION_COUNT
         ),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT),
         0
     );
-    let mut native =
-        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
-            .expect("load definition-chain evaluation");
+    let mut native = crate::native::CatiaNative::load(
+        decoded.ir().native.namespace("catia").expect("namespace"),
+    )
+    .expect("load definition-chain evaluation");
     assert_eq!(
         native.entity_records[0].definition_chain_value,
         Some(CatiaDefinitionChainValue {
@@ -18239,22 +18254,22 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode definition-chain atom");
     assert_eq!(
-        atom.report
+        atom.report()
             .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        atom.report
+        atom.report()
             .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_ATOM_COUNT),
         1
     );
     assert_eq!(
-        atom.report
+        atom.report()
             .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT),
         0
     );
     let atom_native =
-        crate::native::CatiaNative::load(atom.ir.native.namespace("catia").expect("namespace"))
+        crate::native::CatiaNative::load(atom.ir().native.namespace("catia").expect("namespace"))
             .expect("load definition-chain atom");
     assert_eq!(
         atom_native.entity_records[0]
@@ -18277,7 +18292,12 @@ fn native_namespace_binds_two_definition_value_chains() {
             )
             .expect("decode definition-chain state");
         assert_eq!(
-            decoded.report.coverage.get(coverage).copied().unwrap_or(0),
+            decoded
+                .report()
+                .coverage
+                .get(coverage)
+                .copied()
+                .unwrap_or(0),
             1
         );
     }
@@ -18292,12 +18312,12 @@ fn native_namespace_binds_two_definition_value_chains() {
         .expect("decode nested definition-chain selector");
     assert_eq!(
         nested
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_SCHEMA_SELECTOR_COUNT),
         1
     );
     let nested_native =
-        crate::native::CatiaNative::load(nested.ir.native.namespace("catia").expect("namespace"))
+        crate::native::CatiaNative::load(nested.ir().native.namespace("catia").expect("namespace"))
             .expect("load nested definition-chain selector");
     assert_eq!(
         nested_native.entity_records[0]
@@ -18326,7 +18346,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         )
         .expect("decode typed definition-chain parameter");
 
-    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+    let [parameter] = decoded.ir().model.parameters.as_slice() else {
         panic!("expected one typed definition-chain parameter");
     };
     assert_eq!(parameter.name, "FeatureFEDGE");
@@ -18344,7 +18364,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
         1
     );
@@ -18358,7 +18378,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             &DecodeOptions::default(),
         )
         .expect("decode Boolean definition-chain parameter");
-    let [boolean_parameter] = boolean.ir.model.parameters.as_slice() else {
+    let [boolean_parameter] = boolean.ir().model.parameters.as_slice() else {
         panic!("expected one Boolean definition-chain parameter");
     };
     assert_eq!(
@@ -18380,7 +18400,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         .contains_key("catia_definition_evaluation_opcode_offset"));
     assert_eq!(
         boolean
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
         1
     );
@@ -18394,10 +18414,10 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             &DecodeOptions::default(),
         )
         .expect("decode invalid Boolean definition-chain atom");
-    assert!(invalid_boolean.ir.model.parameters.is_empty());
+    assert!(invalid_boolean.ir().model.parameters.is_empty());
     assert_eq!(
         invalid_boolean
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
         0
     );
@@ -18410,14 +18430,14 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             &DecodeOptions::default(),
         )
         .expect("decode unset definition-chain parameter");
-    let [unset_parameter] = unset.ir.model.parameters.as_slice() else {
+    let [unset_parameter] = unset.ir().model.parameters.as_slice() else {
         panic!("expected one unset definition-chain parameter");
     };
     assert!(unset_parameter.value.is_none());
     assert!(unset_parameter.expression.is_empty());
     assert_eq!(
         unset
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
         1
     );
@@ -18518,38 +18538,39 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
         .expect("decode literal owner slot");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_EVALUATION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_UNASSIGNED_OBJECT_OWNER_SLOT_COUNT),
         1
     );
 
-    let native =
-        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
-            .expect("load literal owner slot");
+    let native = crate::native::CatiaNative::load(
+        decoded.ir().native.namespace("catia").expect("namespace"),
+    )
+    .expect("load literal owner slot");
     let record = &native.object_graphs[0].records[0];
     assert_eq!(
         record.owner,
@@ -18613,25 +18634,26 @@ fn native_namespace_binds_and_validates_definition_values() {
         .expect("decode definition-bound value");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_DEFINITION_VALUE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_OWNED_DEFINITION_VALUE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_VALUE_OWNER_COUNT),
         0
     );
-    let mut native =
-        crate::native::CatiaNative::load(decoded.ir.native.namespace("catia").expect("namespace"))
-            .expect("load definition-bound value");
+    let mut native = crate::native::CatiaNative::load(
+        decoded.ir().native.namespace("catia").expect("namespace"),
+    )
+    .expect("load definition-bound value");
     assert_eq!(
         native.entity_records[0].definition_value,
         Some(CatiaDefinitionValue {
@@ -19316,7 +19338,7 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
             &DecodeOptions::default(),
         )
         .expect("decode formula with unresolved output");
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("independently typed formula input")
     };
 
@@ -19327,24 +19349,24 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert!(input.dependencies.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         1
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
             .is_empty()
     );
@@ -19416,37 +19438,37 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .expect("decode formula with null output");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_NULL_FORMULA_OUTPUT_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT),
         0
     );
@@ -19471,16 +19493,16 @@ fn formula_input_with_additional_object_payload_remains_unresolved() {
         )
         .expect("decode formula input with additional object payload");
 
-    assert_eq!(decoded.ir.model.parameters.len(), 1);
+    assert_eq!(decoded.ir().model.parameters.len(), 1);
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
         4
     );
@@ -19513,7 +19535,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode closed length formula");
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("closed formula parameters")
     };
 
@@ -19532,31 +19554,31 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         4
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         usize::from(output_entity.class_name.is_some())
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         usize::from(output_entity.class_name.is_none())
     );
@@ -19570,13 +19592,13 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .is_some();
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT),
         usize::from(expression_classified)
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT),
         usize::from(!expression_classified)
     );
@@ -19588,76 +19610,76 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .candidates[0];
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
         ),
         usize::from(dependency_candidate.class_name.is_some())
     );
     assert_eq!(
-        decoded.report.coverage_count(
+        decoded.report().coverage_count(
             crate::coverage::UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
         ),
         usize::from(dependency_candidate.class_name.is_none())
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
         0
     );
-    assert!(decoded.report.losses.iter().all(|loss| {
+    assert!(decoded.report().losses.iter().all(|loss| {
         loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
-        decoded.source_fidelity.annotations.exactness[&input.id.0].fields["expression"],
+        decoded.source_fidelity().annotations.exactness[&input.id.0].fields["expression"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
-        decoded.source_fidelity.annotations.exactness[&input.id.0].fields["properties"],
+        decoded.source_fidelity().annotations.exactness[&input.id.0].fields["properties"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
-        decoded.source_fidelity.annotations.exactness[&output.id.0].fields["properties"],
+        decoded.source_fidelity().annotations.exactness[&output.id.0].fields["properties"],
         cadmpeg_ir::Exactness::Derived
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
             .is_empty()
     );
@@ -19679,20 +19701,20 @@ fn decode_keeps_a_mismatched_formula_result_unresolved() {
         )
         .expect("decode formula with mismatched stored result");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Width");
     assert!(input.dependencies.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
         3
     );
@@ -19714,7 +19736,7 @@ fn decode_evaluates_formula_precedence_and_parentheses() {
         )
         .expect("decode parenthesized formula");
 
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("validated formula parameters")
     };
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
@@ -19742,7 +19764,7 @@ fn decode_transfers_a_closed_constant_formula() {
         )
         .expect("decode constant formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("constant formula output")
     };
     assert_eq!(output.name, "Result");
@@ -19755,7 +19777,7 @@ fn decode_transfers_a_closed_constant_formula() {
         ))
     );
     assert!(decoded
-        .source_fidelity
+        .source_fidelity()
         .annotations
         .exactness
         .get(&output.id.0)
@@ -19778,10 +19800,10 @@ fn decode_rejects_a_constant_formula_that_disagrees_with_its_stored_result() {
         )
         .expect("decode mismatched constant formula");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         0
     );
@@ -19803,7 +19825,7 @@ fn decode_converts_degree_literals_to_radians() {
         )
         .expect("decode degree formula");
 
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("degree formula parameters")
     };
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
@@ -19832,7 +19854,7 @@ fn decode_evaluates_the_dimensionless_pi_constant_in_an_angle_expression() {
         )
         .expect("decode formula with PI");
 
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("PI formula parameters")
     };
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
@@ -19860,7 +19882,7 @@ fn decode_evaluates_dimensionless_trigonometric_arguments_as_radians() {
         )
         .expect("decode scalar-radian trigonometric formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("scalar-radian trigonometric formula output")
     };
     assert_eq!(
@@ -19891,7 +19913,7 @@ fn decode_evaluates_dimension_checked_trigonometric_calls() {
         )
         .expect("decode trigonometric formula");
 
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("trigonometric formula parameters")
     };
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
@@ -19921,7 +19943,7 @@ fn decode_evaluates_nested_logarithm_and_extrema_calls() {
         )
         .expect("decode logarithmic formula");
 
-    let [first, second, output] = decoded.ir.model.parameters.as_slice() else {
+    let [first, second, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("logarithmic formula parameters")
     };
     assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
@@ -19947,7 +19969,7 @@ fn decode_distinguishes_common_and_natural_logarithms() {
         )
         .expect("decode logarithm formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("logarithm formula output")
     };
     assert_eq!(
@@ -19973,7 +19995,7 @@ fn decode_normalizes_every_admitted_formula_length_unit_to_millimetres() {
         )
         .expect("decode complete length-unit formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("length-unit formula output")
     };
     assert_eq!(
@@ -20001,7 +20023,7 @@ fn decode_normalizes_every_admitted_formula_angle_unit_to_radians() {
         )
         .expect("decode complete angle-unit formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("angle-unit formula output")
     };
     assert_eq!(
@@ -20028,7 +20050,7 @@ fn decode_evaluates_exponential_and_hyperbolic_functions() {
         )
         .expect("decode exponential and hyperbolic formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("exponential and hyperbolic formula output")
     };
     assert_eq!(
@@ -20053,7 +20075,7 @@ fn decode_evaluates_scalar_rounding_functions() {
         )
         .expect("decode scalar rounding formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("scalar rounding formula output")
     };
     assert_eq!(
@@ -20078,7 +20100,7 @@ fn decode_evaluates_dimensioned_rounding_in_the_selected_unit() {
         )
         .expect("decode dimensioned rounding formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("dimensioned rounding formula output")
     };
     assert_eq!(
@@ -20105,7 +20127,7 @@ fn decode_evaluates_integer_part_as_an_integer_result() {
         )
         .expect("decode integer-part formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("integer-part formula output")
     };
     assert_eq!(
@@ -20130,7 +20152,7 @@ fn decode_evaluates_variadic_extrema_and_integer_part_remainder() {
         )
         .expect("decode variadic extrema and remainder formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("variadic extrema and remainder formula output")
     };
     assert_eq!(
@@ -20155,7 +20177,7 @@ fn decode_evaluates_remainder_of_a_negative_real_dividend_integer_part() {
         )
         .expect("decode negative real remainder formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("negative real remainder formula output")
     };
     assert_eq!(
@@ -20183,7 +20205,7 @@ fn decode_evaluates_a_square_root_of_a_dimensioned_product() {
         )
         .expect("decode dimensioned square root");
 
-    let [first, second, output] = decoded.ir.model.parameters.as_slice() else {
+    let [first, second, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("square-root formula parameters")
     };
     assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
@@ -20211,7 +20233,7 @@ fn decode_evaluates_right_associative_exponentiation_above_unary_signs() {
         )
         .expect("decode exponent formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("exponent formula output")
     };
     assert_eq!(
@@ -20236,7 +20258,7 @@ fn decode_evaluates_an_integral_power_of_a_dimensioned_value() {
         )
         .expect("decode dimensioned exponent formula");
 
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("dimensioned exponent formula parameters")
     };
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
@@ -20265,7 +20287,7 @@ fn decode_evaluates_inverse_trigonometric_calls_as_angles() {
         )
         .expect("decode inverse trigonometric formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("inverse trigonometric formula output")
     };
     assert_eq!(
@@ -20295,7 +20317,7 @@ fn decode_evaluates_dimension_safe_absolute_and_tangent_calls() {
         )
         .expect("decode absolute and tangent formula");
 
-    let [first, second, output] = decoded.ir.model.parameters.as_slice() else {
+    let [first, second, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("absolute and tangent formula parameters")
     };
     assert_eq!(output.dependencies, [first.id.clone(), second.id.clone()]);
@@ -20323,7 +20345,7 @@ fn decode_rejects_a_square_root_with_an_odd_dimension_exponent() {
         )
         .expect("decode dimensionally invalid square root");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "AreaLike");
@@ -20345,7 +20367,7 @@ fn decode_rejects_a_fractional_power_of_a_dimensioned_value() {
         )
         .expect("decode dimensionally invalid exponent formula");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Width");
@@ -20367,7 +20389,7 @@ fn decode_rejects_dimension_exponent_overflow() {
         )
         .expect("decode exponent-overflow formula");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Width");
@@ -20389,7 +20411,7 @@ fn decode_rejects_inverse_trigonometry_outside_its_scalar_domain() {
         )
         .expect("decode dimensionally invalid inverse trigonometric formula");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Width");
@@ -20411,7 +20433,7 @@ fn decode_rejects_inverse_trigonometry_outside_its_numeric_domain() {
         )
         .expect("decode out-of-domain inverse trigonometric formula");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
 }
 
 #[test]
@@ -20430,7 +20452,7 @@ fn decode_rejects_scalar_functions_with_dimensioned_arguments() {
         )
         .expect("decode dimensionally invalid exponential formula");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Width");
@@ -20453,7 +20475,7 @@ fn decode_rejects_invalid_inverse_hyperbolic_domains() {
             )
             .expect("decode out-of-domain inverse hyperbolic formula");
 
-        assert!(decoded.ir.model.parameters.is_empty(), "{expression}");
+        assert!(decoded.ir().model.parameters.is_empty(), "{expression}");
     }
 }
 
@@ -20473,7 +20495,7 @@ fn decode_rejects_nonfinite_exponential_results() {
         )
         .expect("decode overflowing exponential formula");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
 }
 
 #[test]
@@ -20493,7 +20515,7 @@ fn decode_rejects_invalid_remainder_divisors() {
             )
             .expect("decode invalid remainder formula");
 
-        assert!(decoded.ir.model.parameters.is_empty(), "{expression}");
+        assert!(decoded.ir().model.parameters.is_empty(), "{expression}");
     }
 }
 
@@ -20513,7 +20535,7 @@ fn decode_rejects_a_logarithm_outside_its_dimensionless_positive_domain() {
         )
         .expect("decode out-of-domain logarithm");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Ratio");
@@ -20539,7 +20561,7 @@ fn decode_transfers_linear_interpolation_formula() {
         )
         .expect("decode linear interpolation formula");
 
-    let [start, end, fraction, output] = decoded.ir.model.parameters.as_slice() else {
+    let [start, end, fraction, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("linear interpolation parameters")
     };
     assert_eq!(start.value, Some(cadmpeg_ir::ParameterValue::Real(2.0)));
@@ -20572,7 +20594,7 @@ fn decode_transfers_cubic_interpolation_formula() {
         )
         .expect("decode cubic interpolation formula");
 
-    let [start, end, fraction, output] = decoded.ir.model.parameters.as_slice() else {
+    let [start, end, fraction, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("cubic interpolation parameters")
     };
     assert_eq!(start.value, Some(cadmpeg_ir::ParameterValue::Real(2.0)));
@@ -20605,7 +20627,7 @@ fn decode_rejects_a_dimensioned_cubic_interpolation_fraction() {
         )
         .expect("decode dimensionally invalid cubic interpolation");
 
-    assert_eq!(decoded.ir.model.parameters.len(), 3);
+    assert_eq!(decoded.ir().model.parameters.len(), 3);
 }
 
 #[test]
@@ -20628,7 +20650,7 @@ fn decode_transfers_dimensioned_linear_interpolation_formula() {
         )
         .expect("decode dimensioned linear interpolation formula");
 
-    let [start, end, fraction, output] = decoded.ir.model.parameters.as_slice() else {
+    let [start, end, fraction, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("dimensioned linear interpolation parameters")
     };
     assert_eq!(
@@ -20672,7 +20694,7 @@ fn decode_converts_metric_length_literals_to_millimetres() {
         )
         .expect("decode metric length formula");
 
-    let [output] = decoded.ir.model.parameters.as_slice() else {
+    let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("metric length formula output")
     };
     assert_eq!(
@@ -20703,7 +20725,7 @@ fn decode_rejects_mixed_dimension_linear_interpolation_endpoints() {
         )
         .expect("decode dimensionally invalid linear interpolation");
 
-    assert_eq!(decoded.ir.model.parameters.len(), 3);
+    assert_eq!(decoded.ir().model.parameters.len(), 3);
 }
 
 #[test]
@@ -20725,7 +20747,7 @@ fn decode_rejects_extrema_between_different_dimensions() {
         )
         .expect("decode dimensionally invalid maximum");
 
-    let [first, second] = decoded.ir.model.parameters.as_slice() else {
+    let [first, second] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed inputs")
     };
     assert_eq!(first.name, "Length");
@@ -20748,7 +20770,7 @@ fn decode_rejects_trigonometric_calls_with_length_arguments() {
         )
         .expect("decode dimensionally invalid trigonometric formula");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Offset");
@@ -20771,7 +20793,7 @@ fn decode_rejects_dimensionally_invalid_formula_output() {
         )
         .expect("decode dimensionally invalid formula");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Width");
@@ -20796,7 +20818,7 @@ fn decode_transfers_typed_integer_to_angle_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode typed formula");
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("typed formula parameters")
     };
 
@@ -20805,7 +20827,7 @@ fn decode_transfers_typed_integer_to_angle_formula() {
     assert_eq!(output.value, Some(ParameterValue::Angle(Angle(0.5))));
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
             .is_empty()
     );
@@ -20823,7 +20845,7 @@ fn decode_transfers_dimensionless_real_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode real formula");
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("real formula parameters")
     };
 
@@ -20835,7 +20857,7 @@ fn decode_transfers_dimensionless_real_formula() {
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     for parameter in [input, output] {
         assert_eq!(
-            decoded.source_fidelity.annotations.exactness[&parameter.id.0].fields["properties"],
+            decoded.source_fidelity().annotations.exactness[&parameter.id.0].fields["properties"],
             cadmpeg_ir::Exactness::Derived
         );
     }
@@ -20856,7 +20878,7 @@ fn decode_transfers_an_unset_typed_formula_result() {
             &DecodeOptions::default(),
         )
         .expect("decode unset formula result");
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("unset formula parameters")
     };
 
@@ -20884,7 +20906,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode Boolean predicate formula");
-    let [x, y, output] = decoded.ir.model.parameters.as_slice() else {
+    let [x, y, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("predicate formula parameters")
     };
 
@@ -20894,11 +20916,11 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
     assert_eq!(output.dependencies, [x.id.clone(), y.id.clone()]);
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         5
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -20917,7 +20939,7 @@ fn decode_rejects_a_conditional_with_different_branch_dimensions() {
         )
         .expect("decode dimensionally invalid conditional formula");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
 }
 
 #[test]
@@ -20938,7 +20960,7 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
             &DecodeOptions::default(),
         )
         .expect("decode unset formula input");
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("unset formula parameters")
     };
 
@@ -20974,7 +20996,7 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
                 &DecodeOptions::default(),
             )
             .expect("decode unset non-numeric formula input");
-        let [input] = decoded.ir.model.parameters.as_slice() else {
+        let [input] = decoded.ir().model.parameters.as_slice() else {
             panic!("only the independently typed unset input")
         };
 
@@ -20984,7 +21006,7 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert!(input.dependencies.is_empty());
         assert_eq!(input.properties["value_type"], parameter_type);
         assert_eq!(input.properties["catia_binding"], "#1_ /2");
-        assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }
 
@@ -21006,7 +21028,7 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
             &DecodeOptions::default(),
         )
         .expect("decode unset String formula result");
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("unset String formula parameters")
     };
 
@@ -21016,7 +21038,7 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
     assert_eq!(output.expression, "#1_");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(output.properties["value_type"], "String");
-    assert!(cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -21036,7 +21058,7 @@ fn decode_does_not_treat_numeric_packets_as_non_numeric_formula_values() {
             )
             .expect("decode non-numeric formula input with numeric packet");
 
-        assert!(decoded.ir.model.parameters.is_empty());
+        assert!(decoded.ir().model.parameters.is_empty());
     }
 }
 
@@ -21057,7 +21079,7 @@ fn decode_rejects_nonintegral_integer_formula_input() {
         )
         .expect("decode invalid integer formula");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
 }
 
 #[test]
@@ -21076,7 +21098,7 @@ fn decode_deduplicates_repeated_single_input_formula_symbols() {
             &DecodeOptions::default(),
         )
         .expect("decode repeated formula input");
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("repeated formula input parameters")
     };
 
@@ -21104,7 +21126,7 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
             &DecodeOptions::default(),
         )
         .expect("decode multi-input formula");
-    let [width, count, output] = decoded.ir.model.parameters.as_slice() else {
+    let [width, count, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("multi-input formula parameters")
     };
 
@@ -21117,7 +21139,7 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
     );
     assert_eq!(output.value, Some(ParameterValue::Real(15.0)));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
             .is_empty()
     );
@@ -21138,7 +21160,7 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .expect("decode bare-symbol formula");
-    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("closed bare-symbol formula parameters")
     };
 
@@ -21180,7 +21202,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
         )
         .expect("decode incomplete multi-input formula");
 
-    let [width, depth] = decoded.ir.model.parameters.as_slice() else {
+    let [width, depth] = decoded.ir().model.parameters.as_slice() else {
         panic!("independently bound formula inputs")
     };
     assert_eq!(width.name, "Width");
@@ -21199,17 +21221,17 @@ fn decode_transfers_each_supported_formula_input_independently() {
     assert!(depth.dependencies.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         2
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
         4
     );
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("4 modeling-scope field record(s)")
@@ -21226,7 +21248,7 @@ fn decode_transfers_a_chained_formula_definition_once() {
             &DecodeOptions::default(),
         )
         .expect("decode formula chain");
-    let [input, intermediate, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, intermediate, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("formula chain parameters")
     };
 
@@ -21235,7 +21257,7 @@ fn decode_transfers_a_chained_formula_definition_once() {
     assert_eq!(output.expression, "#2_ /3+1mm");
     assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
             .is_empty()
     );
@@ -21252,7 +21274,7 @@ fn decode_rejects_multiple_formula_definitions_for_one_output() {
         )
         .expect("decode duplicate formula output");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed formula input")
     };
     assert_eq!(input.name, "Input");
@@ -21269,7 +21291,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
             &DecodeOptions::default(),
         )
         .expect("decode ambiguous intermediate formula output");
-    let [input, intermediate, output] = decoded.ir.model.parameters.as_slice() else {
+    let [input, intermediate, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("scalar fallback and downstream formula parameters")
     };
 
@@ -21286,7 +21308,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     assert_eq!(output.expression, "#2_ /3+1mm");
     assert_eq!(output.dependencies, std::slice::from_ref(&intermediate.id));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
             .is_empty()
     );
@@ -21302,7 +21324,7 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
             &DecodeOptions::default(),
         )
         .expect("decode incompatible downstream formula");
-    let [input, intermediate] = decoded.ir.model.parameters.as_slice() else {
+    let [input, intermediate] = decoded.ir().model.parameters.as_slice() else {
         panic!("upstream formula parameters")
     };
 
@@ -21311,7 +21333,7 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
     assert_eq!(intermediate.expression, "#1_ /2+1mm");
     assert_eq!(intermediate.dependencies, std::slice::from_ref(&input.id));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
             .is_empty()
     );
@@ -21327,14 +21349,14 @@ fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
             &DecodeOptions::default(),
         )
         .expect("decode conflicting formula input types");
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the unambiguous scalar root")
     };
 
     assert_eq!(input.name, "Input");
     assert!(input.dependencies.is_empty());
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .findings
             .is_empty()
     );
@@ -21351,7 +21373,7 @@ fn decode_rejects_a_cyclic_formula_component() {
         )
         .expect("decode cyclic formula component");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
 }
 
 #[test]
@@ -21371,7 +21393,7 @@ fn decode_rejects_a_formula_exceeding_the_expression_depth_limit() {
             &DecodeOptions::default(),
         )
         .expect("decode formula at depth limit");
-    assert_eq!(boundary.ir.model.parameters.len(), 2);
+    assert_eq!(boundary.ir().model.parameters.len(), 2);
 
     let expression = format!("{}#1_ /2", "+".repeat(129));
     let decoded = CatiaCodec
@@ -21389,7 +21411,7 @@ fn decode_rejects_a_formula_exceeding_the_expression_depth_limit() {
         )
         .expect("decode depth-limited formula");
 
-    let [input] = decoded.ir.model.parameters.as_slice() else {
+    let [input] = decoded.ir().model.parameters.as_slice() else {
         panic!("only the independently typed input")
     };
     assert_eq!(input.name, "Thickness");
@@ -21405,28 +21427,28 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
         )
         .expect("decode ambiguous formula");
 
-    assert!(decoded.ir.model.parameters.is_empty());
+    assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         0
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::UNRESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
@@ -22249,11 +22271,11 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         .expect("decode container-bound legacy parameter");
     assert_eq!(
         decoded
-            .report
+            .report()
             .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
-    assert_eq!(decoded.ir.model.parameters.len(), 1);
+    assert_eq!(decoded.ir().model.parameters.len(), 1);
 }
 
 #[test]
@@ -22311,7 +22333,7 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
         .expect("decode generated catalog part");
     let native = crate::native::CatiaNative::load(
         decoded
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("CATIA namespace"),
@@ -22324,7 +22346,7 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
     assert_eq!(native.catalogs[0].entries[6].value, "GSMLoft");
     assert_eq!(native.catalogs[0].entries[7].value, "GSMPointBetweenValues");
     assert_eq!(native.catalogs[0].entries[8].value, "GSMPlaneAngle");
-    assert!(decoded.ir.model.features.is_empty());
+    assert!(decoded.ir().model.features.is_empty());
 }
 
 #[test]
@@ -22337,7 +22359,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         .expect("decode generated value block part");
     let native = crate::native::CatiaNative::load(
         decoded
-            .ir
+            .ir()
             .native
             .namespace("catia")
             .expect("CATIA namespace"),
@@ -22384,7 +22406,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
             },
         ]
     );
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("1 visualization value block(s)")
@@ -22392,7 +22414,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
                 .message
                 .contains("1 schema-selected presentation value(s)")
     }));
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("neutral features")
@@ -22409,12 +22431,12 @@ fn visualization_values_do_not_assert_missing_design_intent() {
         )
         .expect("decode visualization-only values");
 
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
             && loss.message.contains("schema-selected presentation value")
     }));
     assert!(decoded
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent));
@@ -22430,10 +22452,10 @@ fn decode_does_not_promote_operation_field_class_names_to_features() {
             )
             .expect("decode field-class vocabulary");
 
-        assert!(decoded.ir.model.features.is_empty());
+        assert!(decoded.ir().model.features.is_empty());
         let native = crate::native::CatiaNative::load(
             decoded
-                .ir
+                .ir()
                 .native
                 .namespace("catia")
                 .expect("CATIA native namespace"),
@@ -22447,7 +22469,7 @@ fn decode_does_not_promote_operation_field_class_names_to_features() {
                 .collect::<Vec<_>>(),
             ["CurrentFeature", class]
         );
-        assert!(decoded.report.losses.iter().any(|loss| {
+        assert!(decoded.report().losses.iter().any(|loss| {
             loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
                 && loss.message.contains("neutral features")
         }));
@@ -22771,7 +22793,7 @@ fn standard_decode_transfers_consolidated_guide_curve() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode guide fixture");
     let guide = decoded
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -22795,7 +22817,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode rolling-ball object stream");
-    let [procedural] = decoded.ir.model.procedural_surfaces.as_slice() else {
+    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one rolling-ball construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
@@ -22813,9 +22835,9 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     assert_eq!(sites.len(), 2);
     assert_eq!(sites[1].first_limit, Point3::new(2.0, 0.0, 0.0));
     assert_eq!(sites[1].angle, std::f64::consts::FRAC_PI_2);
-    let provenance = &decoded.source_fidelity.annotations.provenance[&procedural.id.0];
+    let provenance = &decoded.source_fidelity().annotations.provenance[&procedural.id.0];
     assert_eq!(
-        decoded.source_fidelity.annotations.streams[provenance.stream as usize],
+        decoded.source_fidelity().annotations.streams[provenance.stream as usize],
         "catia:object_stream_a8_03_32"
     );
     let tag = provenance
@@ -22825,7 +22847,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     assert!(tag.contains("object_id:12345678"));
     assert!(tag.contains("multiplicities:[6, 6]"));
     assert_eq!(
-        decoded.ir.model.surfaces[0]
+        decoded.ir().model.surfaces[0]
             .source_object
             .as_ref()
             .map(|source| (source.format.as_str(), source.object_id.as_str())),
@@ -22844,11 +22866,11 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Nurbs(_)
     ));
     assert_eq!(
-        result.ir.model.surfaces[0]
+        result.ir().model.surfaces[0]
             .source_object
             .as_ref()
             .map(|source| (source.format.as_str(), source.object_id.as_str())),
@@ -22879,24 +22901,24 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 3);
-    assert_eq!(result.ir.model.edges.len(), 3);
-    assert_eq!(result.ir.model.curves.len(), 3);
-    assert!(result.ir.model.surfaces.iter().all(|surface| {
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().model.curves.len(), 3);
+    assert!(result.ir().model.surfaces.iter().all(|surface| {
         surface.source_object.as_ref().is_some_and(|source| {
             source.format == "catia" && source.object_id.starts_with("cgm-surface:")
         })
     }));
-    assert!(result.ir.model.curves.iter().all(|curve| {
+    assert!(result.ir().model.curves.iter().all(|curve| {
         curve.source_object.as_ref().is_some_and(|source| {
             source.format == "catia" && source.object_id.starts_with("cgm-edge:")
         })
     }));
-    assert_eq!(result.ir.model.procedural_curves.len(), 3);
-    assert!(result.ir.model.procedural_curves.iter().all(|curve| {
+    assert_eq!(result.ir().model.procedural_curves.len(), 3);
+    assert!(result.ir().model.procedural_curves.iter().all(|curve| {
         matches!(
             curve.definition,
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
@@ -22907,69 +22929,69 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
                 && context.sides[1].surface.is_none()
         )
     }));
-    assert_eq!(result.ir.model.vertices.len(), 3);
-    assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.pcurves.len(), 3);
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT),
         0
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
         ),
         1
     );
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT
         ),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
         ),
         3
     );
     assert!(result
-        .ir
+        .ir()
         .model
         .pcurves
         .iter()
         .all(|pcurve| pcurve.parameter_range == Some([0.0, 1.0])));
-    assert!(result.report.losses.iter().all(|loss| {
+    assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -22994,17 +23016,17 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
             &DecodeOptions::default(),
         )
         .expect("decode complete native vertex chain");
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 3);
-    assert_eq!(result.ir.model.edges.len(), 3);
-    assert!(result.report.losses.iter().all(|loss| {
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.edges.len(), 3);
+    assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -23034,16 +23056,16 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
         )
         .expect("decode object-stream topology");
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 3);
-    assert_eq!(result.ir.model.edges.len(), 3);
-    assert_eq!(result.ir.model.vertices.len(), 3);
-    assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.pcurves.len(), 3);
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .edges
             .iter()
@@ -23051,13 +23073,13 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
             .collect::<Vec<_>>(),
         ["catia:b5:edge#10", "catia:b5:edge#11", "catia:b5:edge#9"]
     );
-    assert!(result.report.losses.iter().all(|loss| {
+    assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -23077,9 +23099,9 @@ fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
         )
         .expect("decode duplicate loop-owner stream");
 
-    assert!(result.ir.model.bodies.is_empty());
-    assert!(result.ir.model.faces.is_empty());
-    assert!(result.report.losses.iter().any(|loss| {
+    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().model.faces.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
         loss.code
             == cadmpeg_ir::report::LossKind::shared(
                 cadmpeg_ir::LossTaxonomy::TopologyNotTransferred,
@@ -23110,25 +23132,25 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
 
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
         1
     );
@@ -23157,7 +23179,7 @@ fn decode_reports_typed_distinct_surface_b5_faces() {
         .expect("decode typed multi-surface face");
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT),
         1
     );
@@ -23239,66 +23261,66 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         .expect("decode typed face without resolved topology");
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
         ),
         1
     );
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
         ),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT
         ),
         1
@@ -23316,11 +23338,11 @@ fn decode_inner_no_directory_transfers_a8_nurbs() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Nurbs(_)
     ));
     assert_eq!(
-        result.ir.model.surfaces[0]
+        result.ir().model.surfaces[0]
             .source_object
             .as_ref()
             .map(|source| (source.format.as_str(), source.object_id.as_str())),
@@ -23339,7 +23361,7 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Cylinder { radius: 2.0, .. }
     ));
 }
@@ -23352,21 +23374,21 @@ fn decode_e5_stream_transfers_circle_carrier() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.curves.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 2);
-    assert!(result.ir.model.edges.is_empty());
-    assert!(result.report.losses.iter().any(|loss| {
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 2);
+    assert!(result.ir().model.edges.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(matches!(
-        result.ir.model.curves[0].geometry,
+        result.ir().model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
     ));
-    assert!(result.ir.native_unknowns("catia").unwrap()[0]
+    assert!(result.ir().native_unknowns("catia").unwrap()[0]
         .links
         .contains(&"catia:e5:surf#0".to_string()));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -23385,43 +23407,43 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
     assert_eq!(
-        result.ir.model.loops[0].boundary_role,
+        result.ir().model.loops[0].boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
-    assert_eq!(result.ir.model.coedges.len(), 4);
-    assert_eq!(result.ir.model.edges.len(), 4);
-    assert_eq!(result.ir.model.vertices.len(), 4);
-    assert_eq!(result.ir.model.pcurves.len(), 4);
-    assert_eq!(result.ir.model.curves.len(), 4);
-    assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 4);
+    assert_eq!(result.ir().model.edges.len(), 4);
+    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_eq!(result.ir().model.pcurves.len(), 4);
+    assert_eq!(result.ir().model.curves.len(), 4);
+    assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert!(matches!(
-        result.ir.model.procedural_curves[0].definition,
+        result.ir().model.procedural_curves[0].definition,
         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
             family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
             ..
         }
     ));
     assert!(result
-        .ir
+        .ir()
         .model
         .edges
         .iter()
         .all(|edge| edge.curve.is_some() && edge.param_range.is_some()));
-    assert!(result.report.losses.iter().all(|loss| {
+    assert!(result.report().losses.iter().all(|loss| {
         loss.code.category() != cadmpeg_ir::report::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    assert!(result.report.losses.iter().any(|loss| {
+    assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("two trailing orientation signs")
     }));
 
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -23455,10 +23477,10 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
     let result = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("E5 decode");
-    assert_eq!(result.ir.model.points.len(), 4);
-    assert_eq!(result.ir.model.vertices.len(), 4);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.edges.len(), 4);
+    assert_eq!(result.ir().model.points.len(), 4);
+    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 4);
 }
 
 #[test]
@@ -23470,12 +23492,12 @@ fn container_only_stops_before_geometry() {
         ..DecodeOptions::default()
     };
     let result = CatiaCodec.decode(&mut cur, &opts).unwrap();
-    assert!(!result.report.geometry_transferred);
-    assert!(result.report.container_only);
+    assert!(!result.report().geometry_transferred);
+    assert!(result.report().container_only);
     // The reconstructed BREP stream is preserved as an unknown passthrough.
-    let unknowns = result.ir.native_unknowns("catia").unwrap();
+    let unknowns = result.ir().native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
-    let retained = &result.source_fidelity.retained_records[0];
+    let retained = &result.source_fidelity().retained_records[0];
     assert_eq!(retained.sha256.len(), 64);
     assert!(retained.data.is_some());
 }
@@ -23495,7 +23517,7 @@ fn every_decode_path_populates_v1_annotations() {
         let decoded = CatiaCodec
             .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
             .unwrap();
-        assert_every_entity_has_v1_annotation(&decoded.ir, &decoded.source_fidelity.annotations);
+        assert_every_entity_has_v1_annotation(decoded.ir(), &decoded.source_fidelity().annotations);
     }
 
     let container_only = CatiaCodec
@@ -23508,8 +23530,8 @@ fn every_decode_path_populates_v1_annotations() {
         )
         .unwrap();
     assert_every_entity_has_v1_annotation(
-        &container_only.ir,
-        &container_only.source_fidelity.annotations,
+        container_only.ir(),
+        &container_only.source_fidelity().annotations,
     );
 }
 

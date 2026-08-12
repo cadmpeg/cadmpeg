@@ -409,7 +409,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     let mut losses = BTreeMap::new();
     let mut loss_codes = BTreeMap::new();
     let mut loss_details = BTreeMap::new();
-    for loss in &decoded.report.losses {
+    for loss in &decoded.report().losses {
         if loss.severity >= Severity::Warning {
             *losses.entry(loss.code.category()).or_insert(0) += 1;
             *loss_codes
@@ -418,36 +418,36 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
             *loss_details.entry(loss.message.clone()).or_insert(0) += 1;
         }
     }
-    let validation_errors = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new())
+    let validation_errors = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .findings
         .iter()
         .filter(|finding| finding.severity >= Severity::Error)
         .count();
-    let (rederivation, rederivation_boundary) = neutral_rederivation_evidence(&decoded.ir);
+    let (rederivation, rederivation_boundary) = neutral_rederivation_evidence(decoded.ir());
     Ok(DecodedFixtureEvidence {
-        canonical_sha256: canonical_sha256(&decoded.ir)?,
+        canonical_sha256: canonical_sha256(decoded.ir())?,
         native_namespace_version: decoded
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .map(|namespace| namespace.version),
-        entities: EntityCounts::from_ir(&decoded.ir),
+        entities: EntityCounts::from_ir(decoded.ir()),
         losses,
         loss_codes,
         loss_details,
         validation_errors,
-        all_bodies_colored: !decoded.ir.model.bodies.is_empty()
-            && decoded.ir.model.bodies.iter().all(|body| {
+        all_bodies_colored: !decoded.ir().model.bodies.is_empty()
+            && decoded.ir().model.bodies.iter().all(|body| {
                 has_effective_color(
-                    &decoded.ir,
+                    decoded.ir(),
                     body.color,
                     &AppearanceTarget::Body(body.id.clone()),
                 )
             }),
-        all_faces_colored: !decoded.ir.model.faces.is_empty()
-            && decoded.ir.model.faces.iter().all(|face| {
+        all_faces_colored: !decoded.ir().model.faces.is_empty()
+            && decoded.ir().model.faces.iter().all(|face| {
                 has_effective_color(
-                    &decoded.ir,
+                    decoded.ir(),
                     face.color,
                     &AppearanceTarget::Face(face.id.clone()),
                 )

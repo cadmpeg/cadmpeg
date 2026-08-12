@@ -17,7 +17,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("generated configuration decode");
-    let native = f3d_native(&decoded.ir);
+    let native = f3d_native(decoded.ir());
     assert_eq!(native.design_configurations.len(), 1);
     assert_eq!(native.design_configurations[0].entry_name, name);
     assert_eq!(
@@ -37,9 +37,9 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         native.design_configurations[0].payload["extension"]["future"],
         7
     );
-    assert_eq!(decoded.ir.model.configurations.len(), 3);
+    assert_eq!(decoded.ir().model.configurations.len(), 3);
     let mut authored = decoded
-        .ir
+        .ir()
         .model
         .configurations
         .iter()
@@ -48,7 +48,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     authored.sort_by_key(|(_, ordinal)| *ordinal);
     assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
     let medium = decoded
-        .ir
+        .ir()
         .model
         .configurations
         .iter()
@@ -61,7 +61,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         medium.native_ref.as_deref(),
         Some(native.design_configurations[0].id.as_str())
     );
-    let mut invalid_order = decoded.ir.clone();
+    let mut invalid_order = decoded.ir().clone();
     update_f3d_native(&mut invalid_order, |native| {
         native.design_configurations[0].variant_order.pop();
     });
@@ -71,7 +71,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             .message
             .contains("invalid identity, payload, or variant order")));
 
-    let mut retained = decoded.ir.clone();
+    let mut retained = decoded.ir().clone();
     update_f3d_native(&mut retained, |native| {
         native.design_configurations[0].payload["active"] = "Narrow".into();
         native.design_configurations[0].payload["configurations"]["Narrow"] =
@@ -89,7 +89,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     F3dCodec
         .write_preserved_with_source_fidelity(
             &retained,
-            &decoded.source_fidelity,
+            decoded.source_fidelity(),
             &mut retained_bytes,
         )
         .expect("retained configuration edit");
@@ -97,12 +97,12 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
         .expect("retained configuration round trip");
     assert_eq!(
-        f3d_native(&retained_round_trip.ir).design_configurations,
+        f3d_native(retained_round_trip.ir()).design_configurations,
         expected_retained
     );
 
-    let expected_projected = decoded.ir.model.configurations.clone();
-    let mut source_less = decoded.ir;
+    let expected_projected = decoded.ir().model.configurations.clone();
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
@@ -135,10 +135,10 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less configuration round trip");
     assert_eq!(
-        f3d_native(&round_trip.ir).design_configurations,
+        f3d_native(round_trip.ir()).design_configurations,
         native.design_configurations
     );
-    assert_eq!(round_trip.ir.model.configurations, expected_projected);
+    assert_eq!(round_trip.ir().model.configurations, expected_projected);
 
     let rule_name = "FusionAssetName[Active]/DesignConfigurationRule.456.dsgcfgrule";
     let rule_result = F3dCodec
@@ -152,13 +152,13 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         )
         .expect("generated configuration-rule decode");
     assert!(rule_result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains(
             "configuration rule(s) were retained without an unambiguous neutral activation target"
         )));
-    let rule = f3d_native(&rule_result.ir).design_configurations.remove(0);
+    let rule = f3d_native(rule_result.ir()).design_configurations.remove(0);
     assert_eq!(rule.kind, crate::records::DesignConfigurationKind::Rule);
     assert_eq!(rule.payload["activate"], "wide");
 
@@ -219,14 +219,14 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("partial native rule remains decodable");
-    assert!(partial_rule.ir.model.configurations.is_empty());
-    let partial_native = f3d_native(&partial_rule.ir);
+    assert!(partial_rule.ir().model.configurations.is_empty());
+    let partial_native = f3d_native(partial_rule.ir());
     assert_eq!(
         partial_native.design_configurations[0].payload["vendorExtension"],
         7
     );
     assert!(partial_rule
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains(
@@ -243,11 +243,15 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
 
     let mut replayed = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut replayed)
+        .write_preserved_with_source_fidelity(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut replayed,
+        )
         .unwrap();
     assert_eq!(replayed, source);
 
-    let mut point_edited = decoded.ir.clone();
+    let mut point_edited = decoded.ir().clone();
     point_edited.model.points[0].position.x += 12.5;
     let cadmpeg_ir::geometry::SurfaceGeometry::Plane {
         origin,
@@ -264,7 +268,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     F3dCodec
         .write_preserved_with_source_fidelity(
             &point_edited,
-            &decoded.source_fidelity,
+            decoded.source_fidelity(),
             &mut regenerated,
         )
         .unwrap();
@@ -273,18 +277,18 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir.model.points[0].position,
+        round_trip.ir().model.points[0].position,
         point_edited.model.points[0].position
     );
     assert_eq!(
-        round_trip.ir.model.surfaces[0].geometry,
+        round_trip.ir().model.surfaces[0].geometry,
         point_edited.model.surfaces[0].geometry
     );
 
-    let mut modified = decoded.ir;
+    let (mut modified, _, fidelity) = decoded.into_parts();
     modified.model.bodies[0].name = Some("edited".into());
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(&modified, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&modified, &fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
@@ -295,7 +299,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.bodies[0].visible = Some(false);
@@ -443,46 +447,46 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             .contains("uses an ASM key different from body"));
     }
 
-    assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(round_trip.ir().model.bodies.len(), 1);
     assert_eq!(
-        f3d_native(&round_trip.ir).body_native_keys[0].asm_body_key,
+        f3d_native(round_trip.ir()).body_native_keys[0].asm_body_key,
         Some(42)
     );
-    assert_eq!(round_trip.ir.model.bodies[0].visible, Some(false));
-    assert_eq!(f3d_native(&round_trip.ir).body_visibilities.len(), 1);
-    assert!(!f3d_native(&round_trip.ir).body_visibilities[0].visible);
+    assert_eq!(round_trip.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(f3d_native(round_trip.ir()).body_visibilities.len(), 1);
+    assert!(!f3d_native(round_trip.ir()).body_visibilities[0].visible);
     assert_eq!(
-        f3d_native(&round_trip.ir).body_visibilities[0].id,
+        f3d_native(round_trip.ir()).body_visibilities[0].id,
         "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh:body-visibility#42"
     );
     assert_eq!(
-        round_trip.ir.model.bodies[0].kind,
+        round_trip.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    assert_eq!(round_trip.ir.model.faces.len(), 1);
-    assert_eq!(round_trip.ir.model.loops.len(), 1);
-    assert_eq!(round_trip.ir.model.coedges.len(), 3);
-    assert_eq!(round_trip.ir.model.edges.len(), 3);
-    assert_eq!(round_trip.ir.model.vertices.len(), 3);
-    assert_eq!(round_trip.ir.model.vertices[0].tolerance, Some(0.025));
-    assert_eq!(round_trip.ir.model.edges[0].tolerance, Some(0.035));
+    assert_eq!(round_trip.ir().model.faces.len(), 1);
+    assert_eq!(round_trip.ir().model.loops.len(), 1);
+    assert_eq!(round_trip.ir().model.coedges.len(), 3);
+    assert_eq!(round_trip.ir().model.edges.len(), 3);
+    assert_eq!(round_trip.ir().model.vertices.len(), 3);
+    assert_eq!(round_trip.ir().model.vertices[0].tolerance, Some(0.025));
+    assert_eq!(round_trip.ir().model.edges[0].tolerance, Some(0.035));
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_edge_tails[0].entity_revision,
+        f3d_native(round_trip.ir()).tolerant_edge_tails[0].entity_revision,
         22800
     );
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_field,
+        f3d_native(round_trip.ir()).tolerant_edge_tails[0].trailing_field,
         Some(1)
     );
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_vertex_tails[0].leading_tolerances,
+        f3d_native(round_trip.ir()).tolerant_vertex_tails[0].leading_tolerances,
         [-1.0, -1.0]
     );
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
         [0.25, 0.75]
     );
-    let ownerships = f3d_native(&round_trip.ir).vertex_ownerships;
+    let ownerships = f3d_native(round_trip.ir()).vertex_ownerships;
     assert_eq!(ownerships.len(), 3);
     assert_eq!(
         ownerships
@@ -491,25 +495,25 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             .collect::<Vec<_>>(),
         [0, 1, 0]
     );
-    let continuities = f3d_native(&round_trip.ir).edge_continuities;
+    let continuities = f3d_native(round_trip.ir()).edge_continuities;
     assert_eq!(continuities.len(), 3);
     assert_eq!(continuities[0].continuity, "tangent");
     assert_eq!(continuities[0].sense, cadmpeg_ir::topology::Sense::Reversed);
     assert_eq!(
-        f3d_native(&round_trip.ir).edge_ownerships[0].owner_coedge,
-        Some(round_trip.ir.model.coedges[0].id.clone())
+        f3d_native(round_trip.ir()).edge_ownerships[0].owner_coedge,
+        Some(round_trip.ir().model.coedges[0].id.clone())
     );
     assert!(continuities[1..]
         .iter()
         .all(|metadata| metadata.continuity == "unknown"));
     assert_eq!(
-        f3d_native(&round_trip.ir).face_sidedness[0].containment,
+        f3d_native(round_trip.ir()).face_sidedness[0].containment,
         Some(cadmpeg_asm::brep::records::FaceContainment::In)
     );
-    assert_eq!(round_trip.ir.model.points, source_less.model.points);
-    assert_eq!(round_trip.ir.model.surfaces, source_less.model.surfaces);
+    assert_eq!(round_trip.ir().model.points, source_less.model.points);
+    assert_eq!(round_trip.ir().model.surfaces, source_less.model.surfaces);
 
-    let mut edited = round_trip.ir;
+    let (mut edited, _, fidelity) = round_trip.into_parts();
     edited.model.bodies[0].visible = Some(true);
     edited.model.vertices[0].tolerance = Some(0.05);
     edited.model.edges[0].tolerance = Some(0.06);
@@ -522,37 +526,37 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     }
     let mut retained = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &round_trip.source_fidelity, &mut retained)
+        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut retained)
         .expect("retained double-sided containment edit");
     let retained = F3dCodec
         .decode(&mut Cursor::new(retained), &DecodeOptions::default())
         .expect("retained double-sided containment round trip");
     assert_eq!(
-        f3d_native(&retained.ir).face_sidedness[0].containment,
+        f3d_native(retained.ir()).face_sidedness[0].containment,
         Some(cadmpeg_asm::brep::records::FaceContainment::Out)
     );
-    assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
-    assert_eq!(retained.ir.model.edges[0].tolerance, Some(0.06));
+    assert_eq!(retained.ir().model.vertices[0].tolerance, Some(0.05));
+    assert_eq!(retained.ir().model.edges[0].tolerance, Some(0.06));
     assert_eq!(
-        f3d_native(&retained.ir).tolerant_edge_tails[0].entity_revision,
+        f3d_native(retained.ir()).tolerant_edge_tails[0].entity_revision,
         22800
     );
     assert_eq!(
-        f3d_native(&retained.ir).tolerant_edge_tails[0].trailing_field,
+        f3d_native(retained.ir()).tolerant_edge_tails[0].trailing_field,
         Some(1)
     );
-    assert_eq!(retained.ir.model.bodies[0].visible, Some(true));
+    assert_eq!(retained.ir().model.bodies[0].visible, Some(true));
     assert_eq!(
-        f3d_native(&retained.ir).body_native_keys[0].asm_body_key,
+        f3d_native(retained.ir()).body_native_keys[0].asm_body_key,
         Some(84)
     );
     assert_eq!(
-        f3d_native(&retained.ir).body_visibilities[0].asm_body_key,
+        f3d_native(retained.ir()).body_visibilities[0].asm_body_key,
         84
     );
-    assert!(f3d_native(&retained.ir).body_visibilities[0].visible);
+    assert!(f3d_native(retained.ir()).body_visibilities[0].visible);
     assert_eq!(
-        f3d_native(&retained.ir).tolerant_vertex_tails[0].leading_tolerances,
+        f3d_native(retained.ir()).tolerant_vertex_tails[0].leading_tolerances,
         [3.5, -4.5]
     );
 }
@@ -573,7 +577,7 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
         let decoded = F3dCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("generated planar triangle decode");
-        let mut source_less = decoded.ir;
+        let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         source_less.model.vertices[0].tolerance = Some(0.025);
@@ -606,15 +610,15 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("tolerant tail round trip");
         assert_eq!(
-            f3d_native(&round_trip.ir).tolerant_edge_tails[0].entity_revision,
+            f3d_native(round_trip.ir()).tolerant_edge_tails[0].entity_revision,
             22800
         );
         assert_eq!(
-            f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_field,
+            f3d_native(round_trip.ir()).tolerant_edge_tails[0].trailing_field,
             edge_trailing
         );
         assert_eq!(
-            f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_field,
+            f3d_native(round_trip.ir()).tolerant_vertex_tails[0].trailing_field,
             vertex_trailing
         );
     }
@@ -629,7 +633,7 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
@@ -653,19 +657,19 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("unset tolerant vertex round trip");
     let vertex = round_trip
-        .ir
+        .ir()
         .model
         .vertices
         .iter()
         .find(|vertex| {
-            f3d_native(&round_trip.ir)
+            f3d_native(round_trip.ir())
                 .tolerant_vertex_tails
                 .iter()
                 .any(|tail| tail.vertex == vertex.id)
         })
         .expect("tolerant vertex survives");
     assert_eq!(vertex.tolerance, None);
-    let tail = &f3d_native(&round_trip.ir).tolerant_vertex_tails[0];
+    let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
     assert!(tail.evaluated_unset);
     assert_eq!(tail.leading_tolerances, [-1.0, -1.0]);
 }
@@ -676,7 +680,7 @@ fn generated_source_less_f3d_rejects_subds() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.subds.push(cadmpeg_ir::SubdSurface {
@@ -708,7 +712,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less
@@ -818,7 +822,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less document parameter round trip");
-    let mut round_trip_parameters = decoded.ir.model.parameters.clone();
+    let mut round_trip_parameters = decoded.ir().model.parameters.clone();
     let mut expected_parameters = source_less.model.parameters.clone();
     for parameter in &mut round_trip_parameters {
         parameter.native_ref = None;
@@ -827,16 +831,16 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         parameter.native_ref = None;
     }
     assert_eq!(round_trip_parameters, expected_parameters);
-    assert_eq!(f3d_native(&decoded.ir).design_parameters.len(), 2);
+    assert_eq!(f3d_native(decoded.ir()).design_parameters.len(), 2);
     assert_eq!(
-        decoded.ir.model.parameters[0].dependencies,
+        decoded.ir().model.parameters[0].dependencies,
         [cadmpeg_ir::features::ParameterId(format!(
             "f3d:model:parameter#{}:f3d%3A{stream}701",
             "f3d%3A".len() + stream.len(),
         ))]
     );
     assert_eq!(
-        f3d_native(&decoded.ir).design_parameters[0].evaluated_value,
+        f3d_native(decoded.ir()).design_parameters[0].evaluated_value,
         3.0
     );
 }
@@ -847,7 +851,7 @@ fn generated_source_less_writes_document_tolerance_contract() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.tolerances.linear = 2.5e-7;
@@ -864,7 +868,7 @@ fn generated_source_less_writes_document_tolerance_contract() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less tolerance round trip");
-    assert_eq!(round_trip.ir.tolerances, source_less.tolerances);
+    assert_eq!(round_trip.ir().tolerances, source_less.tolerances);
 }
 
 #[test]
@@ -873,7 +877,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
@@ -903,7 +907,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("supported tolerant edge round trip");
-    assert_eq!(round_trip.ir.model.edges[0].tolerance, Some(0.03));
+    assert_eq!(round_trip.ir().model.edges[0].tolerance, Some(0.03));
 
     source_less.model.edges[0].tolerance = None;
     source_less.model.vertices[0].tolerance = Some(0.04);
@@ -918,7 +922,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("supported tolerant vertex round trip");
-    assert_eq!(round_trip.ir.model.vertices[0].tolerance, Some(0.04));
+    assert_eq!(round_trip.ir().model.vertices[0].tolerance, Some(0.04));
 }
 
 #[test]
@@ -931,7 +935,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let association = SourceObjectAssociation {
@@ -1015,7 +1019,7 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     assert_eq!(
@@ -1042,7 +1046,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
@@ -1114,13 +1118,13 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less polygon round trip");
 
-    assert_eq!(round_trip.ir.model.coedges.len(), 4);
-    assert_eq!(round_trip.ir.model.edges.len(), 4);
-    assert_eq!(round_trip.ir.model.vertices.len(), 4);
-    assert_eq!(round_trip.ir.model.points.len(), 4);
+    assert_eq!(round_trip.ir().model.coedges.len(), 4);
+    assert_eq!(round_trip.ir().model.edges.len(), 4);
+    assert_eq!(round_trip.ir().model.vertices.len(), 4);
+    assert_eq!(round_trip.ir().model.points.len(), 4);
     assert_eq!(
         round_trip
-            .ir
+            .ir()
             .model
             .points
             .iter()
@@ -1144,7 +1148,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
@@ -1213,8 +1217,8 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less line-carrier round trip");
-    assert_eq!(round_trip.ir.model.curves.len(), expected.len());
-    for (actual, expected) in round_trip.ir.model.curves.iter().zip(expected) {
+    assert_eq!(round_trip.ir().model.curves.len(), expected.len());
+    for (actual, expected) in round_trip.ir().model.curves.iter().zip(expected) {
         let (
             CurveGeometry::Line {
                 origin: actual_origin,
@@ -1234,7 +1238,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         assert!((actual_direction.z - expected_direction.z).abs() < 1e-14);
     }
     assert!(round_trip
-        .ir
+        .ir()
         .model
         .edges
         .iter()
@@ -1250,7 +1254,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId("generated:circle#0".into());
@@ -1279,23 +1283,26 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let mut round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less circle-carrier round trip");
-    assert_eq!(round_trip.ir.model.curves[0].geometry, expected);
-    assert_eq!(round_trip.ir.model.edges[0].param_range, Some([0.25, 1.75]));
-    assert!(round_trip.ir.model.edges[0].curve.is_some());
+    assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
+    assert_eq!(
+        round_trip.ir().model.edges[0].param_range,
+        Some([0.25, 1.75])
+    );
+    assert!(round_trip.ir().model.edges[0].curve.is_some());
     assert!(
-        !cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new())
+        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::Check::Annotations)
     );
-    round_trip.ir.model.curves[0].geometry = CurveGeometry::Line {
+    round_trip.ir_mut().model.curves[0].geometry = CurveGeometry::Line {
         origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
     };
     let error = F3dCodec
         .write_preserved_with_source_fidelity(
-            &round_trip.ir,
-            &round_trip.source_fidelity,
+            round_trip.ir(),
+            round_trip.source_fidelity(),
             &mut Vec::new(),
         )
         .expect_err("native ellipse record cannot silently retain a line edit");
@@ -1313,7 +1320,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId("generated:ellipse#0".into());
@@ -1343,10 +1350,10 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less ellipse-carrier round trip");
-    assert_eq!(round_trip.ir.model.curves[0].geometry, expected);
-    assert_eq!(round_trip.ir.model.edges[0].param_range, Some([0.5, 2.0]));
+    assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
+    assert_eq!(round_trip.ir().model.edges[0].param_range, Some([0.5, 2.0]));
     assert!(
-        !cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new())
+        !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::Check::Annotations)
@@ -1361,7 +1368,7 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Cylinder {
@@ -1383,7 +1390,7 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cylinder round trip");
-    assert_eq!(round_trip.ir.model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1539,12 +1546,12 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less closed cylinder band round trip");
 
-    assert_eq!(round_trip.ir.model.faces.len(), 1);
-    assert_eq!(round_trip.ir.model.loops.len(), 2);
-    assert_eq!(round_trip.ir.model.coedges.len(), 2);
-    assert_eq!(round_trip.ir.model.edges.len(), 2);
+    assert_eq!(round_trip.ir().model.faces.len(), 1);
+    assert_eq!(round_trip.ir().model.loops.len(), 2);
+    assert_eq!(round_trip.ir().model.coedges.len(), 2);
+    assert_eq!(round_trip.ir().model.edges.len(), 2);
     assert!(
-        round_trip.ir.model.edges.iter().all(|edge| {
+        round_trip.ir().model.edges.iter().all(|edge| {
             edge.start == edge.end
                 && edge.param_range.is_some_and(|range| {
                     (range[0] + std::f64::consts::PI).abs() < 1.0e-12
@@ -1552,12 +1559,12 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 })
         }),
         "{:?}",
-        round_trip.ir.model.edges
+        round_trip.ir().model.edges
     );
-    assert!(round_trip.ir.model.loops.iter().all(|loop_| {
+    assert!(round_trip.ir().model.loops.iter().all(|loop_| {
         loop_.coedges.len() == 1
             && round_trip
-                .ir
+                .ir()
                 .model
                 .coedges
                 .iter()
@@ -1578,7 +1585,7 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Sphere {
@@ -1600,7 +1607,7 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less sphere round trip");
-    assert_eq!(round_trip.ir.model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1611,7 +1618,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Cone {
@@ -1635,7 +1642,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cone round trip");
-    assert_eq!(round_trip.ir.model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1648,7 +1655,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
             &DecodeOptions::default(),
         )
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Cone {
@@ -1671,7 +1678,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     let retained_decode = F3dCodec
         .decode(&mut Cursor::new(initial), &DecodeOptions::default())
         .expect("generated cone decode");
-    let mut retained = retained_decode.ir;
+    let (mut retained, _, fidelity) = retained_decode.into_parts();
     let SurfaceGeometry::Cone {
         ratio, half_angle, ..
     } = &mut retained.model.surfaces[0].geometry
@@ -1683,17 +1690,13 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(
-            &retained,
-            &retained_decode.source_fidelity,
-            &mut regenerated,
-        )
+        .write_preserved_with_source_fidelity(&retained, &fidelity, &mut regenerated)
         .expect("cone ratio regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated cone decode");
     assert!(matches!(
-        round_trip.ir.model.surfaces[0].geometry,
+        round_trip.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Cone {
             ratio: 0.4,
             half_angle,
@@ -1712,7 +1715,7 @@ fn generated_f3d_rewrites_plane_frame() {
             &DecodeOptions::default(),
         )
         .expect("generated planar triangle decode");
-    let mut edited = decoded.ir.clone();
+    let mut edited = decoded.ir().clone();
     let expected = SurfaceGeometry::Plane {
         origin: cadmpeg_ir::math::Point3::new(10.0, -20.0, 30.0),
         normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -1722,12 +1725,12 @@ fn generated_f3d_rewrites_plane_frame() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut regenerated)
         .expect("plane frame regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated plane decode");
-    assert_eq!(round_trip.ir.model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1740,7 +1743,7 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
             &DecodeOptions::default(),
         )
         .expect("generated planar triangle decode");
-    let mut edited = decoded.ir.clone();
+    let mut edited = decoded.ir().clone();
     edited.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
         center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1749,7 +1752,7 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
     };
 
     let error = F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut Vec::new())
         .expect_err("native plane record cannot silently retain a sphere edit");
     assert!(error
         .to_string()
@@ -1764,7 +1767,7 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Torus {
@@ -1787,7 +1790,7 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less torus round trip");
-    assert_eq!(round_trip.ir.model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1798,7 +1801,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Nurbs(NurbsSurface {
@@ -1831,7 +1834,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less NURBS surface round trip");
-    assert_eq!(round_trip.ir.model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1842,7 +1845,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Nurbs(NurbsSurface {
@@ -1875,7 +1878,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less rational NURBS surface round trip");
-    assert_eq!(round_trip.ir.model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1887,7 +1890,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId("generated:nurbs_curve#0".into());
@@ -1921,8 +1924,11 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less rational NURBS curve round trip");
-    assert_eq!(round_trip.ir.model.curves[0].geometry, expected);
-    assert_eq!(round_trip.ir.model.edges[0].param_range, Some([-1.0, 2.0]));
+    assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
+    assert_eq!(
+        round_trip.ir().model.edges[0].param_range,
+        Some([-1.0, 2.0])
+    );
 }
 
 #[test]
@@ -1931,7 +1937,7 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated inline pcurve decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.pcurves[0].clone();
@@ -1947,27 +1953,27 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less inline pcurve round trip");
-    assert_eq!(round_trip.ir.model.pcurves.len(), 1);
-    assert_eq!(round_trip.ir.model.pcurves[0].geometry, expected.geometry);
+    assert_eq!(round_trip.ir().model.pcurves.len(), 1);
+    assert_eq!(round_trip.ir().model.pcurves[0].geometry, expected.geometry);
     assert_eq!(
-        round_trip.ir.model.pcurves[0].wrapper_reversed,
+        round_trip.ir().model.pcurves[0].wrapper_reversed,
         expected.wrapper_reversed
     );
     assert_eq!(
-        round_trip.ir.model.pcurves[0].native_tail_flags,
+        round_trip.ir().model.pcurves[0].native_tail_flags,
         expected.native_tail_flags
     );
     assert_eq!(
-        round_trip.ir.model.pcurves[0].parameter_range,
+        round_trip.ir().model.pcurves[0].parameter_range,
         expected.parameter_range
     );
     assert_eq!(
-        round_trip.ir.model.pcurves[0].fit_tolerance,
+        round_trip.ir().model.pcurves[0].fit_tolerance,
         expected.fit_tolerance
     );
     assert_eq!(
         round_trip
-            .ir
+            .ir()
             .model
             .coedges
             .iter()
@@ -1976,7 +1982,7 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         1
     );
     let pcurve_coedge = round_trip
-        .ir
+        .ir()
         .model
         .coedges
         .iter()
@@ -1986,7 +1992,7 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         .pcurves
         .first()
         .is_some_and(|use_| use_.parameter_range.is_some()));
-    assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
+    assert!(crate::validate::validate_native(round_trip.ir()).is_empty());
 }
 
 #[test]
@@ -1998,7 +2004,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated inline pcurve decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let pcurve = &mut source_less.model.pcurves[0];
@@ -2020,11 +2026,11 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less line pcurve round trip");
     assert_eq!(
-        round_trip.ir.model.pcurves[0].parameter_range,
+        round_trip.ir().model.pcurves[0].parameter_range,
         Some([-2.0, 3.0])
     );
     assert_eq!(
-        round_trip.ir.model.pcurves[0].geometry,
+        round_trip.ir().model.pcurves[0].geometry,
         PcurveGeometry::Nurbs {
             degree: 1,
             knots: vec![-2.0, -2.0, 3.0, 3.0],
@@ -2041,7 +2047,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated rational pcurve decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.pcurves[0].clone();
@@ -2064,8 +2070,8 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less rational pcurve round trip");
-    assert_eq!(round_trip.ir.model.pcurves.len(), 1);
-    let actual = &round_trip.ir.model.pcurves[0];
+    assert_eq!(round_trip.ir().model.pcurves.len(), 1);
+    let actual = &round_trip.ir().model.pcurves[0];
     assert_eq!(actual.geometry, expected.geometry);
     assert_eq!(actual.wrapper_reversed, expected.wrapper_reversed);
     assert_eq!(actual.native_tail_flags, expected.native_tail_flags);
@@ -2082,7 +2088,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated shared-edge decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected_surface = SurfaceGeometry::Cylinder {
@@ -2115,23 +2121,23 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less shared-edge round trip");
-    assert_eq!(round_trip.ir.model.faces.len(), 2);
-    assert_eq!(round_trip.ir.model.loops.len(), 2);
-    assert_eq!(round_trip.ir.model.coedges.len(), 6);
-    assert_eq!(round_trip.ir.model.edges.len(), 5);
-    assert_eq!(round_trip.ir.model.vertices.len(), 4);
-    assert_eq!(round_trip.ir.model.surfaces.len(), 2);
-    assert_eq!(round_trip.ir.model.surfaces[1].geometry, expected_surface);
-    assert_eq!(round_trip.ir.model.curves[0].geometry, expected_curve);
-    assert!(round_trip.ir.model.edges[0].curve.is_some());
+    assert_eq!(round_trip.ir().model.faces.len(), 2);
+    assert_eq!(round_trip.ir().model.loops.len(), 2);
+    assert_eq!(round_trip.ir().model.coedges.len(), 6);
+    assert_eq!(round_trip.ir().model.edges.len(), 5);
+    assert_eq!(round_trip.ir().model.vertices.len(), 4);
+    assert_eq!(round_trip.ir().model.surfaces.len(), 2);
+    assert_eq!(round_trip.ir().model.surfaces[1].geometry, expected_surface);
+    assert_eq!(round_trip.ir().model.curves[0].geometry, expected_curve);
+    assert!(round_trip.ir().model.edges[0].curve.is_some());
     let shared = round_trip
-        .ir
+        .ir()
         .model
         .edges
         .iter()
         .find(|edge| {
             round_trip
-                .ir
+                .ir()
                 .model
                 .coedges
                 .iter()
@@ -2141,7 +2147,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
         })
         .expect("shared radial edge");
     let radial = round_trip
-        .ir
+        .ir()
         .model
         .coedges
         .iter()
@@ -2160,7 +2166,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated planar triangle decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
@@ -2247,11 +2253,11 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less multiple-loop round trip");
-    assert_eq!(round_trip.ir.model.faces.len(), 1);
-    assert_eq!(round_trip.ir.model.loops.len(), 2);
-    assert_eq!(round_trip.ir.model.faces[0].loops.len(), 2);
-    assert_eq!(round_trip.ir.model.coedges.len(), 6);
-    assert_eq!(round_trip.ir.model.edges.len(), 6);
+    assert_eq!(round_trip.ir().model.faces.len(), 1);
+    assert_eq!(round_trip.ir().model.loops.len(), 2);
+    assert_eq!(round_trip.ir().model.faces[0].loops.len(), 2);
+    assert_eq!(round_trip.ir().model.coedges.len(), 6);
+    assert_eq!(round_trip.ir().model.edges.len(), 6);
 }
 
 #[test]
@@ -2267,13 +2273,14 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     let pcurve = F3dCodec
         .decode(&mut Cursor::new(pcurve_source), &DecodeOptions::default())
         .expect("generated pcurve decode")
-        .ir
+        .into_parts()
+        .0
         .model
         .pcurves
         .into_iter()
         .next()
         .expect("generated pcurve");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
@@ -2335,12 +2342,12 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less multi-face NURBS round trip");
-    assert_eq!(round_trip.ir.model.surfaces[1].geometry, expected_surface);
-    assert_eq!(round_trip.ir.model.curves[0].geometry, expected_curve);
-    assert_eq!(round_trip.ir.model.pcurves[0].geometry, expected_pcurve);
+    assert_eq!(round_trip.ir().model.surfaces[1].geometry, expected_surface);
+    assert_eq!(round_trip.ir().model.curves[0].geometry, expected_curve);
+    assert_eq!(round_trip.ir().model.pcurves[0].geometry, expected_pcurve);
     assert_eq!(
         round_trip
-            .ir
+            .ir()
             .model
             .coedges
             .iter()
@@ -2399,21 +2406,21 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less unit cube round trip");
-    assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(round_trip.ir().model.bodies.len(), 1);
     assert_eq!(
-        round_trip.ir.model.bodies[0].name.as_deref(),
+        round_trip.ir().model.bodies[0].name.as_deref(),
         source_less.model.bodies[0].name.as_deref()
     );
     assert_eq!(
-        round_trip.ir.model.bodies[0].kind,
+        round_trip.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Solid
     );
-    assert_eq!(round_trip.ir.model.regions.len(), 1);
-    assert_eq!(round_trip.ir.model.shells.len(), 1);
-    assert_eq!(round_trip.ir.model.faces.len(), 6);
+    assert_eq!(round_trip.ir().model.regions.len(), 1);
+    assert_eq!(round_trip.ir().model.shells.len(), 1);
+    assert_eq!(round_trip.ir().model.faces.len(), 6);
     assert_eq!(
         round_trip
-            .ir
+            .ir()
             .model
             .faces
             .iter()
@@ -2426,18 +2433,18 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .map(|face| face.name.as_deref())
             .collect::<Vec<_>>()
     );
-    assert_eq!(round_trip.ir.model.loops.len(), 6);
-    assert_eq!(round_trip.ir.model.coedges.len(), 24);
-    assert_eq!(round_trip.ir.model.edges.len(), 12);
-    assert_eq!(round_trip.ir.model.vertices.len(), 8);
-    assert_eq!(round_trip.ir.model.points.len(), 8);
+    assert_eq!(round_trip.ir().model.loops.len(), 6);
+    assert_eq!(round_trip.ir().model.coedges.len(), 24);
+    assert_eq!(round_trip.ir().model.edges.len(), 12);
+    assert_eq!(round_trip.ir().model.vertices.len(), 8);
+    assert_eq!(round_trip.ir().model.points.len(), 8);
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
         [-1.5, 2.25]
     );
-    assert!(round_trip.ir.model.edges.iter().all(|edge| {
+    assert!(round_trip.ir().model.edges.iter().all(|edge| {
         round_trip
-            .ir
+            .ir()
             .model
             .coedges
             .iter()
@@ -2445,7 +2452,7 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .count()
             == 2
     }));
-    let report = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -2458,7 +2465,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated shared-edge decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected_surface = SurfaceGeometry::Torus {
@@ -2495,9 +2502,12 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less multi-face torus round trip");
-    assert_eq!(round_trip.ir.model.surfaces[1].geometry, expected_surface);
-    assert_eq!(round_trip.ir.model.curves[0].geometry, expected_curve);
-    assert_eq!(round_trip.ir.model.edges[0].param_range, Some([0.25, 1.5]));
+    assert_eq!(round_trip.ir().model.surfaces[1].geometry, expected_surface);
+    assert_eq!(round_trip.ir().model.curves[0].geometry, expected_curve);
+    assert_eq!(
+        round_trip.ir().model.edges[0].param_range,
+        Some([0.25, 1.5])
+    );
 }
 
 #[test]
@@ -2510,7 +2520,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated shared-edge decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let cone = SurfaceGeometry::Cone {
@@ -2555,9 +2565,9 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less multi-face analytic round trip");
-    assert_eq!(round_trip.ir.model.surfaces[0].geometry, cone);
-    assert_eq!(round_trip.ir.model.surfaces[1].geometry, sphere);
-    assert_eq!(round_trip.ir.model.curves[0].geometry, ellipse);
+    assert_eq!(round_trip.ir().model.surfaces[0].geometry, cone);
+    assert_eq!(round_trip.ir().model.surfaces[1].geometry, sphere);
+    assert_eq!(round_trip.ir().model.curves[0].geometry, ellipse);
 }
 
 #[test]
@@ -2566,7 +2576,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated extrusion decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
@@ -2598,8 +2608,8 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less extrusion round trip");
-    assert_eq!(round_trip.ir.model.procedural_surfaces.len(), 1);
-    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
+    let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(actual.definition, expected.definition);
     assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
@@ -2613,14 +2623,14 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         panic!("expected extrusion definition")
     };
     assert!(round_trip
-        .ir
+        .ir()
         .model
         .curves
         .iter()
         .any(|curve| curve.id == *directrix));
     assert!(matches!(
         round_trip
-            .ir
+            .ir()
             .model
             .curves
             .iter()
@@ -2656,7 +2666,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
             &DecodeOptions::default(),
         )
         .expect("revision-gated extrusion decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
@@ -2685,7 +2695,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("revision-gated extrusion round trip");
-    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(actual.definition, expected.definition);
     assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
 
@@ -2708,7 +2718,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("reversed-directrix extrusion round trip");
     assert_eq!(
-        round_trip.ir.model.procedural_surfaces[0].definition,
+        round_trip.ir().model.procedural_surfaces[0].definition,
         expected.definition
     );
 }
@@ -2727,7 +2737,7 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
             &DecodeOptions::default(),
         )
         .expect("parameterized extrusion decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
@@ -2740,7 +2750,7 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("parameterized extrusion round trip");
-    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(actual.cache_fit_tolerance, None);
     let ProceduralSurfaceDefinition::Extrusion {
         revision_form: Some(form),
@@ -2768,8 +2778,8 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         )
         .expect("generated cache-less extrusion decode");
 
-    assert_eq!(decoded.ir.model.procedural_surfaces.len(), 1);
-    let procedural = &decoded.ir.model.procedural_surfaces[0];
+    assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
+    let procedural = &decoded.ir().model.procedural_surfaces[0];
     assert_eq!(procedural.cache_fit_tolerance, None);
     let ProceduralSurfaceDefinition::Extrusion {
         directrix,
@@ -2788,7 +2798,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix_geometry = decoded
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -2804,21 +2814,21 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         cadmpeg_ir::eval::curve_point(directrix_geometry.expect("typed extrusion directrix"), u)
             .expect("directrix evaluation");
     let surface_geometry = decoded
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
         .find(|surface| surface.id == procedural.surface)
         .map(|surface| &surface.geometry)
         .expect("extrusion surface carrier");
-    let surface_point = cadmpeg_ir::eval::model_surface_point(&decoded.ir, surface_geometry, u, v)
+    let surface_point = cadmpeg_ir::eval::model_surface_point(decoded.ir(), surface_geometry, u, v)
         .expect("procedural extrusion evaluation");
     assert_eq!(surface_point.x, directrix_point.x + v * direction.x);
     assert_eq!(surface_point.y, directrix_point.y + v * direction.y);
     assert_eq!(surface_point.z, directrix_point.z + v * direction.z);
     assert!(matches!(
         decoded
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
@@ -2828,7 +2838,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     ));
 
     let expected_definition = procedural.definition.clone();
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
@@ -2842,25 +2852,25 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cache-less extrusion round trip");
-    assert_eq!(round_trip.ir.model.procedural_surfaces.len(), 1);
+    assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(
-        round_trip.ir.model.procedural_surfaces[0].definition,
+        round_trip.ir().model.procedural_surfaces[0].definition,
         expected_definition
     );
     assert_eq!(
-        round_trip.ir.model.procedural_surfaces[0].cache_fit_tolerance,
+        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance,
         None
     );
     assert!(matches!(
         round_trip
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == round_trip.ir.model.procedural_surfaces[0].surface)
+            .find(|surface| surface.id == round_trip.ir().model.procedural_surfaces[0].surface)
             .map(|surface| &surface.geometry),
         Some(SurfaceGeometry::Procedural { construction })
-            if *construction == round_trip.ir.model.procedural_surfaces[0].id
+            if *construction == round_trip.ir().model.procedural_surfaces[0].id
     ));
 
     source_less.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.01);
@@ -2887,7 +2897,7 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
             &DecodeOptions::default(),
         )
         .expect("generated cache-less extrusion decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let ProceduralSurfaceDefinition::Extrusion {
@@ -2926,11 +2936,11 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less circle extrusion round trip");
     let surface = round_trip
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == round_trip.ir.model.procedural_surfaces[0].surface)
+        .find(|surface| surface.id == round_trip.ir().model.procedural_surfaces[0].surface)
         .expect("extrusion carrier");
     let SurfaceGeometry::Cylinder {
         origin,
@@ -2957,7 +2967,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated rolling-ball decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let supports = match &source_less.model.procedural_surfaces[0].definition {
@@ -3023,8 +3033,8 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less rolling-ball round trip");
-    assert_eq!(round_trip.ir.model.procedural_surfaces.len(), 1);
-    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
+    let actual = &round_trip.ir().model.procedural_surfaces[0];
     assert_eq!(actual.definition, expected.definition);
     assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend {
@@ -3036,7 +3046,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     for (support, expected) in supports.iter().zip(support_geometries) {
         let support = support.as_ref().expect("round-trip rolling-ball support");
         let actual = round_trip
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
@@ -3047,7 +3057,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let spine = spine.as_ref().expect("round-trip rolling-ball spine");
     assert!(matches!(
         round_trip
-            .ir
+            .ir()
             .model
             .curves
             .iter()
@@ -3086,8 +3096,8 @@ fn generated_source_less_unit_cube_writes_body_transform() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less transformed cube round trip");
-    assert_eq!(round_trip.ir.model.bodies[0].transform, Some(expected));
-    let hints = &f3d_native(&round_trip.ir).transform_hints[0];
+    assert_eq!(round_trip.ir().model.bodies[0].transform, Some(expected));
+    let hints = &f3d_native(round_trip.ir()).transform_hints[0];
     assert!(hints.rotation);
     assert!(!hints.reflection);
     assert!(!hints.shear);
@@ -3124,10 +3134,10 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less colored cube round trip");
-    assert_eq!(round_trip.ir.model.bodies[0].color, Some(body_color));
-    assert_eq!(round_trip.ir.model.faces[2].color, Some(face_color));
+    assert_eq!(round_trip.ir().model.bodies[0].color, Some(body_color));
+    assert_eq!(round_trip.ir().model.faces[2].color, Some(face_color));
     assert!(round_trip
-        .ir
+        .ir()
         .model
         .faces
         .iter()
@@ -3299,7 +3309,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             suffix_index(id)
         }
 
-        let attributes = &round_trip.ir.model.attributes;
+        let attributes = &round_trip.ir().model.attributes;
         assert!(!attributes.is_empty());
         for attribute in attributes {
             assert!(attribute.values.len() >= 5);
@@ -3349,7 +3359,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             );
         }
     }
-    let native = f3d_native(&round_trip.ir);
+    let native = f3d_native(round_trip.ir());
     assert_eq!(native.persistent_design_links.len(), 2);
     assert_eq!(native.persistent_design_links[0].design_id, "311");
     assert_eq!(native.persistent_design_links[0].entity_kind, 3);
@@ -3361,7 +3371,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
     }));
-    assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
+    assert!(crate::validate::validate_native(round_trip.ir()).is_empty());
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.token == "-1"
             && tag.design_references == [511]
@@ -3383,11 +3393,11 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             && timestamp.unix_microseconds == 1_579_392_000_000_005.0
     }));
     assert_eq!(
-        round_trip.ir.model.bodies[0].color,
+        round_trip.ir().model.bodies[0].color,
         source_less.model.bodies[0].color
     );
     assert_eq!(
-        round_trip.ir.model.faces[0].color,
+        round_trip.ir().model.faces[0].color,
         source_less.model.faces[0].color
     );
 
@@ -3562,20 +3572,20 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less two-body round trip");
-    assert_eq!(round_trip.ir.model.bodies.len(), 2);
-    assert_eq!(round_trip.ir.model.regions.len(), 2);
-    assert_eq!(round_trip.ir.model.shells.len(), 2);
-    assert_eq!(round_trip.ir.model.faces.len(), 12);
-    assert_eq!(round_trip.ir.model.edges.len(), 24);
-    assert_eq!(round_trip.ir.model.points.len(), 16);
+    assert_eq!(round_trip.ir().model.bodies.len(), 2);
+    assert_eq!(round_trip.ir().model.regions.len(), 2);
+    assert_eq!(round_trip.ir().model.shells.len(), 2);
+    assert_eq!(round_trip.ir().model.faces.len(), 12);
+    assert_eq!(round_trip.ir().model.edges.len(), 24);
+    assert_eq!(round_trip.ir().model.points.len(), 16);
     assert_eq!(
-        round_trip.ir.model.bodies[1]
+        round_trip.ir().model.bodies[1]
             .transform
             .expect("second body transform")
             .rows[0][3],
         30.0
     );
-    let report = cadmpeg_ir::validate::validate_neutral(&round_trip.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -3585,7 +3595,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated history decode");
-    let mut source_less = decoded.ir;
+    let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = f3d_native(&source_less).asm_histories[0].clone();
@@ -3619,11 +3629,11 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         )
         .expect("source-less preambleless history round trip");
     assert_eq!(
-        f3d_native(&preambleless_round_trip.ir).asm_histories[0].stream_size,
+        f3d_native(preambleless_round_trip.ir()).asm_histories[0].stream_size,
         None
     );
     assert_eq!(
-        f3d_native(&preambleless_round_trip.ir).asm_histories[0].history_entry_count,
+        f3d_native(preambleless_round_trip.ir()).asm_histories[0].history_entry_count,
         None
     );
     f3d_native_mut(&mut source_less).asm_histories[0].states[0].bulletin_boards[0].changes[0]
@@ -3657,7 +3667,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less history round trip");
-    let actual = &f3d_native(&round_trip.ir).asm_histories[0];
+    let actual = &f3d_native(round_trip.ir()).asm_histories[0];
     assert_eq!(actual.stream_size, expected.stream_size);
     assert_eq!(actual.history_entry_count, expected.history_entry_count);
     assert_eq!(actual.states.len(), expected.states.len());
@@ -3674,7 +3684,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated history decode");
-    let mut orphaned = decoded.ir.clone();
+    let mut orphaned = decoded.ir().clone();
     orphaned.source = None;
     orphaned.set_native_unknowns("f3d", &[]).unwrap();
     let orphan = &mut orphaned
@@ -3697,7 +3707,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .to_string()
         .contains("orphaned or ambiguously parented records"));
 
-    let mut duplicate = decoded.ir.clone();
+    let mut duplicate = decoded.ir().clone();
     duplicate.source = None;
     duplicate.set_native_unknowns("f3d", &[]).unwrap();
     let states = duplicate
@@ -3718,7 +3728,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .to_string()
         .contains("asm_delta_states contains duplicate record ids"));
 
-    let mut broken_chain = decoded.ir;
+    let (mut broken_chain, _, _) = decoded.into_parts();
     broken_chain.source = None;
     broken_chain.set_native_unknowns("f3d", &[]).unwrap();
     f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);

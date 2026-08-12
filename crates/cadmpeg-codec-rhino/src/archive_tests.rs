@@ -44,8 +44,8 @@ fn open_nurbs_object_record_short_typecodes_decode() {
 
     let result = decode(&archive(&[record]));
 
-    assert_eq!(result.ir.model.points.len(), 1, "{:?}", result.report);
-    assert!(result.report.geometry_transferred);
+    assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
+    assert!(result.report().geometry_transferred);
 }
 
 #[test]
@@ -58,13 +58,13 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
     );
     let result = decode(&archive(&[point, line]));
 
-    assert_eq!(result.ir.model.points.len(), 1, "{:?}", result.report);
+    assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
     assert_eq!(
-        result.ir.model.points[0].position,
+        result.ir().model.points[0].position,
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
-    assert_eq!(result.ir.model.curves.len(), 1);
-    let CurveGeometry::Nurbs(curve) = &result.ir.model.curves[0].geometry else {
+    assert_eq!(result.ir().model.curves.len(), 1);
+    let CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry else {
         panic!("bounded line must decode to an exact NURBS carrier");
     };
     assert_eq!(curve.degree, 1);
@@ -78,27 +78,27 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")
             .len(),
         2
     );
     assert!(result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
-        .contains(&result.ir.model.bodies[0].id.to_string()));
+        .contains(&result.ir().model.bodies[0].id.to_string()));
     assert!(result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
-        .contains(&result.ir.model.curves[0].id.to_string()));
-    assert!(result.report.geometry_transferred);
+        .contains(&result.ir().model.curves[0].id.to_string()));
+    assert!(result.report().geometry_transferred);
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
 }
 
@@ -111,32 +111,33 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
         let valid = object_record(1, POINT_CLASS, &point_payload([4.0, 5.0, 6.0]));
         let result = decode(&archive(&[malformed, valid]));
 
-        assert_eq!(result.ir.model.points.len(), 1, "{:?}", result.report);
+        assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
         assert_eq!(
-            result.ir.model.points[0].position,
+            result.ir().model.points[0].position,
             cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
         );
         assert!(result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
             .links
             .is_empty());
         assert!(!result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[1]
             .links
             .is_empty());
         assert!(result
-            .report
+            .report()
             .losses
             .iter()
             .any(|loss| loss.severity != Severity::Info));
-        assert!(
-            cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone())
-                .is_ok()
-        );
+        assert!(cadmpeg_ir::validate::validate_neutral(
+            result.ir(),
+            result.report().losses.clone()
+        )
+        .is_ok());
     }
 }
 
@@ -152,7 +153,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
         context.commit()
     });
 
-    let retained = &result.source_fidelity.retained_records;
+    let retained = &result.source_fidelity().retained_records;
     assert_eq!(retained[0].byte_len, large.len() as u64);
     assert_eq!(retained[0].sha256, sha256_hex(&large));
     assert_eq!(retained[0].data, None);
@@ -168,10 +169,10 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
         context.commit()
     });
     assert_eq!(
-        result.source_fidelity.retained_records[0].data.as_deref(),
+        result.source_fidelity().retained_records[0].data.as_deref(),
         Some(point.as_slice())
     );
-    assert_eq!(result.source_fidelity.retained_records[1].data, None);
+    assert_eq!(result.source_fidelity().retained_records[1].data, None);
 }
 
 #[test]
@@ -189,19 +190,19 @@ fn repeat_decode_is_byte_deterministic_for_ir_and_report() {
 
     assert_eq!(
         first
-            .ir
+            .ir()
             .to_canonical_json()
             .expect("required invariant")
             .as_bytes(),
         second
-            .ir
+            .ir()
             .to_canonical_json()
             .expect("required invariant")
             .as_bytes()
     );
     assert_eq!(
-        serde_json::to_vec(&first.report).expect("required invariant"),
-        serde_json::to_vec(&second.report).expect("required invariant")
+        serde_json::to_vec(first.report()).expect("required invariant"),
+        serde_json::to_vec(second.report()).expect("required invariant")
     );
 }
 
@@ -219,18 +220,19 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
             &super::subd::tests::quad_payload(archive_band),
         );
         let result = decode(&archive_version(version, &[object]));
-        assert_eq!(result.ir.model.subds.len(), 1, "archive {version}");
-        assert_eq!(result.ir.model.subds[0].faces[0].edges.len(), 4);
+        assert_eq!(result.ir().model.subds.len(), 1, "archive {version}");
+        assert_eq!(result.ir().model.subds[0].faces[0].edges.len(), 4);
         assert!(!result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
             .links
             .is_empty());
-        assert!(
-            cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone())
-                .is_ok()
-        );
+        assert!(cadmpeg_ir::validate::validate_neutral(
+            result.ir(),
+            result.report().losses.clone()
+        )
+        .is_ok());
     }
 }
 
@@ -281,18 +283,18 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         object_record(4, POLYCURVE_CLASS, &outer),
     ]));
 
-    assert_eq!(result.ir.model.points.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
     assert_eq!(
-        result.ir.model.points[0].position,
+        result.ir().model.points[0].position,
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
     assert_eq!(
-        result.ir.model.points[2].position,
+        result.ir().model.points[2].position,
         cadmpeg_ir::math::Point3::new(7.0, 8.0, 9.0)
     );
-    assert_eq!(result.ir.model.curves.len(), 7);
+    assert_eq!(result.ir().model.curves.len(), 7);
     let line = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -309,7 +311,7 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
     };
     assert_eq!(line.knots, vec![-1.0, -1.0, 3.0, 3.0]);
     let polyline = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -325,9 +327,9 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         panic!("polyline carrier");
     };
     assert_eq!(polyline.knots, vec![2.0, 2.0, 3.5, 9.0, 9.0]);
-    assert_eq!(result.ir.model.procedural_curves.len(), 2);
+    assert_eq!(result.ir().model.procedural_curves.len(), 2);
     let root = result
-        .ir
+        .ir()
         .model
         .procedural_curves
         .iter()
@@ -347,20 +349,20 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
     assert!(components[1].as_str().contains("component-1"));
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")
             .len(),
         6
     );
     assert!(result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")
         .iter()
         .all(|record| !record.links.is_empty()));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
 }
 
@@ -382,12 +384,12 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
             };
             let result = decode(&bytes);
             assert_eq!(
-                result.ir.model.tessellations.len(),
+                result.ir().model.tessellations.len(),
                 1,
                 "major {major} minor {minor}: {:?}",
-                result.report
+                result.report()
             );
-            let mesh = &result.ir.model.tessellations[0];
+            let mesh = &result.ir().model.tessellations[0];
             assert_eq!(mesh.vertices.len(), 4);
             assert_eq!(mesh.triangles, vec![[0, 1, 2], [0, 2, 3], [0, 3, 1]]);
             assert_eq!(mesh.normals.len(), 4);
@@ -410,8 +412,8 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)
             );
             assert!(cadmpeg_ir::validate::validate_neutral(
-                &result.ir,
-                result.report.losses.clone()
+                result.ir(),
+                result.report().losses.clone()
             )
             .is_ok());
         }
@@ -423,22 +425,22 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
     let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
     let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
     let result = decode(&archive(&[bad_mesh, point]));
-    assert!(result.ir.model.tessellations.is_empty());
-    assert_eq!(result.ir.model.points.len(), 1);
+    assert!(result.ir().model.tessellations.is_empty());
+    assert_eq!(result.ir().model.points.len(), 1);
     assert!(result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
         .is_empty());
     assert!(!result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
         .is_empty());
     let failure = result
-        .report
+        .report()
         .losses
         .iter()
         .find(|loss| loss.severity == Severity::Error)
@@ -463,14 +465,14 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
     optional_crc[normal_buffer + 4..normal_buffer + 8].copy_from_slice(&0_u32.to_le_bytes());
     let result = decode(&archive(&[object_record(0x20, MESH_CLASS, &optional_crc)]));
     assert_eq!(
-        result.ir.model.tessellations.len(),
+        result.ir().model.tessellations.len(),
         1,
         "{:?}",
-        result.report
+        result.report()
     );
-    assert!(result.ir.model.tessellations[0].normals.is_empty());
+    assert!(result.ir().model.tessellations[0].normals.is_empty());
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.severity == Severity::Error && loss.message.contains("normals")));
@@ -487,34 +489,38 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
         );
         let result = decode(&archive(&[object_record(0x10, EXTRUSION_CLASS, &payload)]));
         assert_eq!(
-            result.ir.model.procedural_surfaces.len(),
+            result.ir().model.procedural_surfaces.len(),
             1,
             "minor {minor}: {:?}",
-            result.report
+            result.report()
         );
         let expected_caps = if minor < 2 { 2 } else { 1 };
-        assert_eq!(result.ir.model.faces.len(), expected_caps);
-        assert_eq!(result.ir.model.tessellations.len(), usize::from(minor == 3));
+        assert_eq!(result.ir().model.faces.len(), expected_caps);
+        assert_eq!(
+            result.ir().model.tessellations.len(),
+            usize::from(minor == 3)
+        );
         assert!(!result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
             .links
             .is_empty());
-        assert!(
-            cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone())
-                .is_ok()
-        );
+        assert!(cadmpeg_ir::validate::validate_neutral(
+            result.ir(),
+            result.report().losses.clone()
+        )
+        .is_ok());
     }
 
     let payload = super::extrusion::tests::archive_payload(2, [true, true], true, false);
     let result = decode(&archive(&[object_record(0x10, EXTRUSION_CLASS, &payload)]));
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 2);
-    assert_eq!(result.ir.model.faces.len(), 2);
-    assert_eq!(result.ir.model.loops.len(), 4);
-    assert_eq!(result.ir.model.pcurves.len(), 4);
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().model.loops.len(), 4);
+    assert_eq!(result.ir().model.pcurves.len(), 4);
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
 }
 
@@ -532,12 +538,12 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
         object_record(0x10, EXTRUSION_CLASS, &malformed),
         point,
     ]));
-    assert!(result.ir.model.procedural_surfaces.is_empty());
-    assert!(result.ir.model.faces.is_empty());
-    assert!(result.ir.model.pcurves.is_empty());
+    assert!(result.ir().model.procedural_surfaces.is_empty());
+    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().model.pcurves.is_empty());
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
@@ -548,9 +554,9 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
             .count(),
         1
     );
-    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 1);
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
 }
 
@@ -569,8 +575,8 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         3,
         &[object_record(0x10, BREP_CLASS, &payload)],
     ));
-    let model = &result.ir.model;
-    assert_eq!(model.bodies.len(), 1, "{:?}", result.report);
+    let model = &result.ir().model;
+    assert_eq!(model.bodies.len(), 1, "{:?}", result.report());
     assert_eq!(model.regions.len(), 1);
     assert_eq!(model.shells.len(), 1);
     assert_eq!(model.faces.len(), 1);
@@ -609,24 +615,24 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .all(|pcurve| pcurve.fit_tolerance == Some(0.04)));
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")
             .len(),
         1
     );
     assert!(result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
         .contains(&body.id.to_string()));
-    assert!(result.report.geometry_transferred);
-    assert!(result.report.losses.iter().any(|loss| loss.code
+    assert!(result.report().geometry_transferred);
+    assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
 }
 
@@ -637,8 +643,8 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         BREP_CLASS,
         &singular_seam_brep_payload(false),
     )]));
-    let model = &valid.ir.model;
-    assert_eq!(model.bodies.len(), 1, "{:?}", valid.report);
+    let model = &valid.ir().model;
+    assert_eq!(model.bodies.len(), 1, "{:?}", valid.report());
     assert_eq!(model.faces.len(), 1);
     assert_eq!(model.loops.len(), 1);
     assert_eq!(model.coedges.len(), 4);
@@ -649,25 +655,28 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         model.coedges[3].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&valid.ir, valid.report.losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(valid.ir(), valid.report().losses.clone()).is_ok()
+    );
 
     let malformed = decode(&archive(&[object_record(
         0x10,
         BREP_CLASS,
         &singular_seam_brep_payload(true),
     )]));
-    assert!(malformed.ir.model.faces.is_empty());
-    assert!(malformed.ir.model.loops.is_empty());
-    assert!(malformed.ir.model.coedges.is_empty());
-    assert!(malformed.report.losses.iter().any(|loss| {
+    assert!(malformed.ir().model.faces.is_empty());
+    assert!(malformed.ir().model.loops.is_empty());
+    assert!(malformed.ir().model.coedges.is_empty());
+    assert!(malformed.report().losses.iter().any(|loss| {
         loss.severity == Severity::Warning
             && loss.message.contains("Brep topology fallback")
             && loss.message.contains("loop ring is discontinuous")
     }));
-    assert!(
-        cadmpeg_ir::validate::validate_neutral(&malformed.ir, malformed.report.losses.clone())
-            .is_ok()
-    );
+    assert!(cadmpeg_ir::validate::validate_neutral(
+        malformed.ir(),
+        malformed.report().losses.clone()
+    )
+    .is_ok());
 }
 
 #[test]
@@ -677,7 +686,7 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
         object_record(0x10, BREP_CLASS, &brep_payload(true)),
         point,
     ]));
-    let model = &result.ir.model;
+    let model = &result.ir().model;
     assert!(model.faces.is_empty());
     assert!(model.loops.is_empty());
     assert!(model.coedges.is_empty());
@@ -687,26 +696,26 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
     assert_eq!(model.surfaces.len(), 1);
     assert_eq!(model.points.len(), 1);
     assert!(!result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
         .is_empty());
     assert!(!result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
         .is_empty());
     assert!(
-        result.report.losses.iter().any(|loss| {
+        result.report().losses.iter().any(|loss| {
             loss.severity == Severity::Warning && loss.message.contains("Brep topology fallback")
         }),
         "{:?}",
-        result.report
+        result.report()
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
 }
 
@@ -734,39 +743,40 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
     for failure in failures {
         let point = object_record(1, POINT_CLASS, &point_payload([6.0, 7.0, 8.0]));
         let result = decode(&archive(&[failure.clone(), point]));
-        assert_eq!(result.ir.model.points.len(), 1, "{:?}", result.report);
+        assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
         assert_eq!(
             result
-                .ir
+                .ir()
                 .native_unknowns("rhino")
                 .expect("required invariant")
                 .len(),
             2
         );
         let unknown = &result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0];
-        let retained = &result.source_fidelity.retained_records[0];
+        let retained = &result.source_fidelity().retained_records[0];
         assert_eq!(retained.byte_len, failure.len() as u64);
         assert_eq!(retained.sha256, sha256_hex(&failure));
         assert_eq!(retained.data.as_deref(), Some(failure.as_slice()));
         assert!(unknown.links.is_empty());
         assert!(!result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[1]
             .links
             .is_empty());
         assert!(result
-            .report
+            .report()
             .losses
             .iter()
             .any(|loss| loss.severity >= Severity::Warning));
-        assert!(
-            cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone())
-                .is_ok()
-        );
+        assert!(cadmpeg_ir::validate::validate_neutral(
+            result.ir(),
+            result.report().losses.clone()
+        )
+        .is_ok());
     }
 }
 
@@ -780,16 +790,16 @@ fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let brep = object_record(0x10, BREP_CLASS, &payload);
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 1.0, 1.0]));
     let result = decode(&archive(&[brep, point]));
-    assert_eq!(result.ir.model.bodies.len(), 2);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.points.len(), 4);
-    assert!(result.report.losses.iter().any(|loss| {
+    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 4);
+    assert!(result.report().losses.iter().any(|loss| {
         loss.severity == Severity::Error
             && loss.message.contains("Brep anonymous CRC mismatch")
             && loss.provenance.is_none()
     }));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&result.ir, result.report.losses.clone()).is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
     );
 }
 

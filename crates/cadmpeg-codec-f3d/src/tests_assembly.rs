@@ -116,30 +116,30 @@ fn assembly_root_without_brep_is_not_a_blocking_loss() {
         .unwrap();
     assert!(
         decoded
-            .report
+            .report()
             .losses
             .iter()
             .all(|loss| loss.severity < cadmpeg_ir::report::Severity::Error),
         "assembly document must not report blocking/error losses: {:?}",
-        decoded.report.losses
+        decoded.report().losses
     );
     assert!(decoded
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("assembly document")));
     assert!(decoded
-        .report
+        .report()
         .notes
         .iter()
         .any(|note| note.contains("comp.f3d") && note.contains(XREF_ROLE)));
     let native =
-        crate::native::F3dNative::load(decoded.ir.native.namespace("f3d").unwrap()).unwrap();
+        crate::native::F3dNative::load(decoded.ir().native.namespace("f3d").unwrap()).unwrap();
     assert_eq!(native.xref_designs.len(), 2);
     assert_eq!(native.xref_references.len(), 1);
     assert_eq!(native.xref_references[0].relative_path, "comp.f3d");
     assert_eq!(native.xref_references[0].neutron_role, XREF_ROLE);
-    let source = decoded.ir.source.unwrap();
+    let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(
         source.attributes.get("docstruct_type").map(String::as_str),
         Some("assembly-design")
@@ -155,7 +155,7 @@ fn part_without_brep_keeps_blocking_losses() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
     assert!(decoded
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Blocking));
@@ -172,11 +172,11 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
         .unwrap();
     let message = |code: LossCode| {
         let loss = decoded
-            .report
+            .report()
             .losses
             .iter()
             .find(|loss| loss.code == code)
-            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report().losses));
         loss.message.clone()
     };
 
@@ -204,12 +204,12 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
     // The decode ran; advising the reader to run it is container-only advice.
     assert!(
         !decoded
-            .report
+            .report()
             .notes
             .iter()
             .any(|note| note.starts_with("container-level inspection only")),
         "full decode must not carry container-only advice: {:?}",
-        decoded.report.notes
+        decoded.report().notes
     );
 }
 
@@ -229,11 +229,11 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
         .unwrap();
     let message = |code: LossCode| {
         let loss = decoded
-            .report
+            .report()
             .losses
             .iter()
             .find(|loss| loss.code == code)
-            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report().losses));
         loss.message.clone()
     };
 
@@ -297,10 +297,10 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.bodies.len(), 1);
-    assert_eq!(decoded.ir.model.faces.len(), 1);
-    assert_eq!(decoded.ir.model.surfaces.len(), 1);
-    let surface = &decoded.ir.model.surfaces[0];
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.surfaces.len(), 1);
+    let surface = &decoded.ir().model.surfaces[0];
     let cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. } = &surface.geometry else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
@@ -325,11 +325,11 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
         .unwrap();
     let message = |code: LossCode| {
         let loss = decoded
-            .report
+            .report()
             .losses
             .iter()
             .find(|loss| loss.code == code)
-            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report().losses));
         loss.message.clone()
     };
 
@@ -400,37 +400,37 @@ fn f3z_archive_merges_identity_occurrences() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.report.geometry_transferred);
+    assert!(decoded.report().geometry_transferred);
     assert!(
         decoded
-            .report
+            .report()
             .losses
             .iter()
             .all(|loss| loss.severity < cadmpeg_ir::report::Severity::Error),
         "{:?}",
-        decoded.report.losses
+        decoded.report().losses
     );
     assert!(decoded
-        .report
+        .report()
         .notes
         .iter()
         .any(|note| note.contains("merged 1 external occurrence")));
     assert_eq!(
-        decoded.ir.model.bodies.len(),
-        component_alone.ir.model.bodies.len()
+        decoded.ir().model.bodies.len(),
+        component_alone.ir().model.bodies.len()
     );
     assert_eq!(
-        decoded.ir.model.faces.len(),
-        component_alone.ir.model.faces.len()
+        decoded.ir().model.faces.len(),
+        component_alone.ir().model.faces.len()
     );
     assert_eq!(
-        decoded.ir.model.points.len(),
-        component_alone.ir.model.points.len()
+        decoded.ir().model.points.len(),
+        component_alone.ir().model.points.len()
     );
     let prefix = format!("f3d:xref/{XREF_ROLE}/");
-    let body = &decoded.ir.model.bodies[0];
+    let body = &decoded.ir().model.bodies[0];
     assert!(body.id.0.starts_with(&prefix), "{}", body.id.0);
-    for shell_owner in &decoded.ir.model.shells {
+    for shell_owner in &decoded.ir().model.shells {
         assert!(
             shell_owner.id.0.starts_with(&prefix),
             "occurrence graph must stay internally consistent: {}",
@@ -438,15 +438,19 @@ fn f3z_archive_merges_identity_occurrences() {
         );
     }
     assert!(decoded
-        .source_fidelity
+        .source_fidelity()
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .is_none());
     assert_eq!(
-        decoded.source_fidelity.annotations.provenance.len(),
-        component_alone.source_fidelity.annotations.provenance.len()
+        decoded.source_fidelity().annotations.provenance.len(),
+        component_alone
+            .source_fidelity()
+            .annotations
+            .provenance
+            .len()
     );
     assert!(decoded
-        .source_fidelity
+        .source_fidelity()
         .annotations
         .provenance
         .keys()
@@ -454,8 +458,8 @@ fn f3z_archive_merges_identity_occurrences() {
     let mut regenerated = Vec::new();
     let report = F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         })
         .and_then(|plan| plan.write_to(&mut regenerated))
         .expect("merged F3Z regenerates instead of replaying a member");
@@ -475,7 +479,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let component_unknowns = component_alone.ir.native_unknowns("f3d").unwrap();
+    let component_unknowns = component_alone.ir().native_unknowns("f3d").unwrap();
     assert!(!component_unknowns.is_empty());
 
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
@@ -491,12 +495,12 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
         .unwrap();
 
     let prefix = format!("f3d:xref/{XREF_ROLE}/occurrence-0/");
-    let merged_unknowns = decoded.ir.native_unknowns("f3d").unwrap();
+    let merged_unknowns = decoded.ir().native_unknowns("f3d").unwrap();
     assert_eq!(merged_unknowns.len(), component_unknowns.len());
     assert!(merged_unknowns
         .iter()
         .all(|record| record.id.0.starts_with(&prefix)));
-    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, decoded.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(
         !validation
             .findings
@@ -515,14 +519,14 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .unwrap();
 
     assert!(decoded
-        .source_fidelity
+        .source_fidelity()
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .is_some());
     let mut replayed = Vec::new();
     F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         })
         .and_then(|plan| plan.write_to(&mut replayed))
         .expect("unmerged F3Z root member remains replayable");
@@ -559,15 +563,15 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
         .unwrap();
 
     assert_eq!(
-        decoded.ir.model.bodies.len(),
-        component_alone.ir.model.bodies.len()
+        decoded.ir().model.bodies.len(),
+        component_alone.ir().model.bodies.len()
     );
     assert!(decoded
-        .report
+        .report()
         .notes
         .iter()
         .any(|note| note.contains("merged 2 external occurrence")));
-    let body_id = &decoded.ir.model.bodies[0].id.0;
+    let body_id = &decoded.ir().model.bodies[0].id.0;
     assert!(body_id.contains(&format!(
         "xref/{XREF_ROLE}/occurrence-0/xref/{CHILD_ROLE}/occurrence-0/"
     )));
@@ -590,7 +594,7 @@ fn f3z_archive_reports_reference_cycles_without_recursing() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("reference cycle through root.f3d")
     }));

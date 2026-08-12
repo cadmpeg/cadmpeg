@@ -31,8 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "{} bodies, {} surfaces",
-        result.ir.model.bodies.len(),
-        result.ir.model.surfaces.len()
+        result.ir().model.bodies.len(),
+        result.ir().model.surfaces.len()
     );
     Ok(())
 }

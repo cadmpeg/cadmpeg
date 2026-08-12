@@ -58,7 +58,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let original = decoded.ir.native.namespace("sldprt").unwrap();
+    let original = decoded.ir().native.namespace("sldprt").unwrap();
     let typed = crate::native::SldprtNative::load(original).unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
@@ -92,7 +92,7 @@ fn native_version_one_migrates_the_body_selection_arena() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
     legacy.version = 1;
     legacy.arenas.remove("feature_input_body_selections");
 
@@ -107,12 +107,12 @@ fn native_version_one_migrates_the_body_selection_arena() {
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current.arenas.contains_key("feature_input_body_selections"));
 
-    *decoded.ir.native.namespace_mut("sldprt") = legacy;
-    assert!(crate::validate_native(&decoded.ir).is_empty());
+    *decoded.ir_mut().native.namespace_mut("sldprt") = legacy;
+    assert!(crate::validate_native(decoded.ir()).is_empty());
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
@@ -126,7 +126,7 @@ fn native_version_two_migrates_the_edge_selection_arena() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
     legacy.version = 2;
     legacy.arenas.remove("feature_input_edge_selections");
 
@@ -150,7 +150,7 @@ fn native_version_three_migrates_the_surface_selection_arena() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
     legacy.version = 3;
     legacy.arenas.remove("feature_input_surface_selections");
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
@@ -177,7 +177,7 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
     legacy.version = 4;
     for record in legacy.arenas.get_mut("sketch_input_entities").unwrap() {
         let mut fields = record.fields();
@@ -196,7 +196,7 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
 
-    let mut sentinel = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let mut sentinel = decoded.ir().native.namespace("sldprt").unwrap().clone();
     sentinel.version = 6;
     let sentinel_entity = &mut sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0];
     let mut sentinel_fields = sentinel_entity.fields();
@@ -218,7 +218,7 @@ fn native_future_version_remains_rejected() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut future = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let mut future = decoded.ir().native.namespace("sldprt").unwrap().clone();
     future.version = crate::native::SLDPRT_NATIVE_VERSION + 1;
     let error = crate::native::SldprtNative::load(&future).unwrap_err();
     assert!(matches!(
@@ -2318,7 +2318,12 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode metadata fixture");
-    let attributes = &decoded.ir.source.expect("source metadata").attributes;
+    let attributes = &decoded
+        .ir()
+        .source
+        .as_ref()
+        .expect("source metadata")
+        .attributes;
     assert_eq!(attributes["png_preview_count"], "1");
     assert_eq!(attributes["png_preview_0_width"], "640");
     assert_eq!(attributes["png_preview_0_height"], "480");
@@ -2571,19 +2576,19 @@ fn decode_without_geometry_falls_back_to_metadata() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(!result.report.geometry_transferred);
-    assert_eq!(result.ir.native_unknowns("sldprt").unwrap().len(), 1);
-    assert_eq!(result.source_fidelity.retained_records.len(), 2);
+    assert!(!result.report().geometry_transferred);
+    assert_eq!(result.ir().native_unknowns("sldprt").unwrap().len(), 1);
+    assert_eq!(result.source_fidelity().retained_records.len(), 2);
     assert!(result
-        .source_fidelity
+        .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
         .is_some_and(|record| record.data.is_some()));
     assert!(result
-        .source_fidelity
+        .source_fidelity()
         .retained_records
         .iter()
         .any(|record| record.id != "sldprt:file:source-image#0" && record.sha256.len() == 64));
-    let source = result.ir.source.as_ref().expect("source metadata");
+    let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.format, "sldprt");
     assert_eq!(
         source
@@ -2601,9 +2606,9 @@ fn decode_explicit_empty_partition_and_deltas_as_an_empty_model() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.report.geometry_transferred);
-    assert!(decoded.ir.model.bodies.is_empty());
-    assert!(!decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().geometry_transferred);
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(!decoded.report().losses.iter().any(|loss| {
         loss.message.contains("geometry was not transferred")
             || loss.message.contains("topology graph")
     }));
@@ -2626,16 +2631,16 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.report.geometry_transferred);
+    assert!(!decoded.report().geometry_transferred);
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Round1"))
         .expect("metadata fillet feature");
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -2648,7 +2653,7 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
         ))
     );
     assert!(parameter.native_ref.is_some());
-    assert!(decoded.report.losses.iter().any(|loss| loss
+    assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("typed feature(s) retain native or unresolved required operation operands")));
 }
@@ -2660,10 +2665,10 @@ fn retained_source_image_round_trips_byte_exactly() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(!result.source_fidelity.annotations.provenance.is_empty());
-    for coedge in &result.ir.model.coedges {
+    assert!(!result.source_fidelity().annotations.provenance.is_empty());
+    for coedge in &result.ir().model.coedges {
         assert!(result
-            .ir
+            .ir()
             .model
             .coedges
             .iter()
@@ -2686,7 +2691,7 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     decoded
-        .ir
+        .ir_mut()
         .source
         .as_mut()
         .unwrap()
@@ -2695,14 +2700,14 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
 
     let mut encoded = Vec::new();
     let path = SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     assert_eq!(path, cadmpeg_ir::WritePath::Patched);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let retained = regenerated
-        .source_fidelity
+        .source_fidelity()
         .retained_records
         .iter()
         .find(|record| record.stream == "SWObjects")
@@ -2716,7 +2721,7 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
+    decoded.ir_mut().model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
         r: 1.0,
         g: 0.0,
         b: 0.0,
@@ -2725,8 +2730,8 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -2765,10 +2770,10 @@ fn encoder_writes_source_less_ir() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(decoded.ir.model.bodies.len(), 1);
-    assert_eq!(decoded.ir.model.faces.len(), 6);
-    assert_eq!(decoded.ir.model.edges.len(), 12);
-    assert_eq!(decoded.ir.model.vertices.len(), 8);
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 6);
+    assert_eq!(decoded.ir().model.edges.len(), 12);
+    assert_eq!(decoded.ir().model.vertices.len(), 8);
 }
 
 #[test]
@@ -3154,7 +3159,7 @@ fn encoder_writes_source_less_line_sketches() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let marker_lane = &sldprt_native(&decoded.ir).feature_input_lanes[0];
+    let marker_lane = &sldprt_native(decoded.ir()).feature_input_lanes[0];
     assert_eq!(
         marker_lane
             .sketch_entities
@@ -3179,18 +3184,18 @@ fn encoder_writes_source_less_line_sketches() {
             .iter()
             .any(|candidate| candidate.id == link.entity_ref
                 && candidate.local_id == Some(u32::from(link.local_id))))));
-    assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketches[0].profiles.len(), 1);
-    assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 3);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 4);
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    assert_eq!(decoded.ir().model.sketches[0].profiles.len(), 1);
+    assert_eq!(decoded.ir().model.sketches[0].profiles[0].len(), 3);
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 4);
     assert_eq!(
-        decoded.ir.model.sketch_constraints.len(),
+        decoded.ir().model.sketch_constraints.len(),
         6,
         "{:?}",
-        decoded.ir.model.sketch_constraints
+        decoded.ir().model.sketch_constraints
     );
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -3201,7 +3206,7 @@ fn encoder_writes_source_less_line_sketches() {
             )
         }));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -3212,7 +3217,7 @@ fn encoder_writes_source_less_line_sketches() {
             )
         }));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -3224,7 +3229,7 @@ fn encoder_writes_source_less_line_sketches() {
         }));
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .sketch_entities
             .iter()
@@ -3233,7 +3238,7 @@ fn encoder_writes_source_less_line_sketches() {
         3
     );
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -3243,7 +3248,7 @@ fn encoder_writes_source_less_line_sketches() {
                 if (position.u - 4.0).abs() < 1.0e-12
                     && (position.v - 5.0).abs() < 1.0e-12
         )));
-    assert!(decoded.ir.model.features.iter().any(|feature| matches!(
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.definition,
         FeatureDefinition::Sketch {
             space: cadmpeg_ir::features::SketchSpace::Planar,
@@ -3251,7 +3256,7 @@ fn encoder_writes_source_less_line_sketches() {
             ..
         }
     )));
-    assert!(decoded.ir.model.features.iter().any(|feature| matches!(
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         &feature.definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(_),
@@ -3268,31 +3273,31 @@ fn encoder_writes_source_less_line_sketches() {
         }
     )));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Revolve { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Sweep { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Loft { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Rib { .. })));
     let point = decoded
-        .ir
+        .ir_mut()
         .model
         .sketch_entities
         .iter_mut()
@@ -3305,13 +3310,17 @@ fn encoder_writes_source_less_line_sketches() {
     point.v = 8.0;
     let mut rewritten = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut rewritten)
+        .write_preserved_with_source_fidelity(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut rewritten,
+        )
         .unwrap();
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
     assert!(rewritten
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -3414,65 +3423,65 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.model.spatial_sketches.len(), 1);
-    assert_eq!(regenerated.ir.model.spatial_sketch_entities.len(), 3);
+    assert_eq!(regenerated.ir().model.spatial_sketches.len(), 1);
+    assert_eq!(regenerated.ir().model.spatial_sketch_entities.len(), 3);
     assert!(matches!(
-        regenerated.ir.model.spatial_sketch_entities[0].geometry,
+        regenerated.ir().model.spatial_sketch_entities[0].geometry,
         SpatialSketchGeometry::Point { position }
             if (position.x - point.x).abs() < 1.0e-12
                 && (position.y - point.y).abs() < 1.0e-12
                 && (position.z - point.z).abs() < 1.0e-12
     ));
     assert!(matches!(
-        regenerated.ir.model.spatial_sketch_entities[1].geometry,
+        regenerated.ir().model.spatial_sketch_entities[1].geometry,
         SpatialSketchGeometry::Line {
             start: regenerated_start,
             end: regenerated_end,
         } if regenerated_start == start && regenerated_end == end
     ));
     assert!(matches!(
-        regenerated.ir.model.spatial_sketch_entities[2].geometry,
+        regenerated.ir().model.spatial_sketch_entities[2].geometry,
         SpatialSketchGeometry::Line {
             start: regenerated_start,
             end: regenerated_end,
         } if regenerated_start == second_start && regenerated_end == second_end
     ));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::SpatialSketch { sketch: Some(_) }
     ));
 
     let edited_start = Point3::new(13.0, 14.0, 15.0);
     let edited_end = Point3::new(-16.0, 17.0, 18.0);
     let edited_point = Point3::new(19.0, -20.0, 21.5);
-    regenerated.ir.model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Point {
+    regenerated.ir_mut().model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Point {
         position: edited_point,
     };
-    regenerated.ir.model.spatial_sketch_entities[2].geometry = SpatialSketchGeometry::Line {
+    regenerated.ir_mut().model.spatial_sketch_entities[2].geometry = SpatialSketchGeometry::Line {
         start: edited_start,
         end: edited_end,
     };
     let mut rewritten = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &regenerated.ir,
-            &regenerated.source_fidelity,
+            regenerated.ir(),
+            regenerated.source_fidelity(),
             &mut rewritten,
         )
         .unwrap();
     let rewritten = SldprtCodec
         .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(rewritten.ir.model.spatial_sketch_entities.len(), 3);
+    assert_eq!(rewritten.ir().model.spatial_sketch_entities.len(), 3);
     assert!(matches!(
-        rewritten.ir.model.spatial_sketch_entities[0].geometry,
+        rewritten.ir().model.spatial_sketch_entities[0].geometry,
         SpatialSketchGeometry::Point { position }
             if (position.x - edited_point.x).abs() < 1.0e-12
                 && (position.y - edited_point.y).abs() < 1.0e-12
                 && (position.z - edited_point.z).abs() < 1.0e-12
     ));
     assert!(matches!(
-        rewritten.ir.model.spatial_sketch_entities[2].geometry,
+        rewritten.ir().model.spatial_sketch_entities[2].geometry,
         SpatialSketchGeometry::Line { start, end }
             if start == edited_start && end == edited_end
     ));
@@ -4057,10 +4066,10 @@ fn encoder_writes_source_less_curved_sketches() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 29);
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 29);
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4069,7 +4078,7 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::Coradial { .. }
         )));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4078,7 +4087,7 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::EllipseAngle { .. }
         )));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4087,7 +4096,7 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::DistanceLoci { .. }
         )));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4095,16 +4104,16 @@ fn encoder_writes_source_less_curved_sketches() {
             constraint.definition,
             SketchConstraintDefinition::Radius { .. }
         )));
-    assert!(decoded.ir.model.parameters.iter().any(|parameter| {
+    assert!(decoded.ir().model.parameters.iter().any(|parameter| {
         parameter.name == "D10" && parameter.value == Some(ParameterValue::Length(Length(4.0)))
     }));
-    assert!(decoded.ir.model.parameters.iter().any(|parameter| {
+    assert!(decoded.ir().model.parameters.iter().any(|parameter| {
         parameter.name == "R1" && parameter.display == Some(DimensionDisplay::Radius)
     }));
     for name in ["D11", "D12", "H1", "V1", "A1", "DIA1"] {
         assert!(
             decoded
-                .ir
+                .ir()
                 .model
                 .parameters
                 .iter()
@@ -4115,7 +4124,7 @@ fn encoder_writes_source_less_curved_sketches() {
     for expected in ["line-line", "horizontal", "vertical", "angle", "diameter"] {
         assert!(
             decoded
-                .ir
+                .ir()
                 .model
                 .sketch_constraints
                 .iter()
@@ -4136,7 +4145,7 @@ fn encoder_writes_source_less_curved_sketches() {
             "missing regenerated {expected} dimension"
         );
     }
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let circle_relation = native.feature_input_lanes[0]
         .relation_instances
         .iter()
@@ -4144,7 +4153,7 @@ fn encoder_writes_source_less_curved_sketches() {
             relation.family == crate::records::FeatureInputRelationFamily::CircleDiameter
                 && relation.parameter_scalar_ref.as_deref()
                     == decoded
-                        .ir
+                        .ir()
                         .model
                         .parameters
                         .iter()
@@ -4187,7 +4196,7 @@ fn encoder_writes_source_less_curved_sketches() {
                 .is_some_and(|marker| marker.local_id != Some(u32::from(operand.entity_index)))
         }));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4211,14 +4220,14 @@ fn encoder_writes_source_less_curved_sketches() {
         crate::records::SketchRelationKind::Midpoint,
         crate::records::SketchRelationKind::Tangent,
     ] {
-        assert!(sldprt_native(&decoded.ir)
+        assert!(sldprt_native(decoded.ir())
             .feature_input_lanes
             .iter()
             .flat_map(|lane| &lane.sketch_entities)
             .any(|marker| marker.kind == crate::records::SketchInputKind::Relation(expected)));
     }
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4227,7 +4236,7 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::Parallel { .. }
         )));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4236,7 +4245,7 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::Perpendicular { .. }
         )));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4245,7 +4254,7 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::Collinear { .. }
         )));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -4255,7 +4264,7 @@ fn encoder_writes_source_less_curved_sketches() {
         )));
     assert!(
         decoded
-            .ir
+            .ir()
             .model
             .sketch_constraints
             .iter()
@@ -4273,7 +4282,7 @@ fn encoder_writes_source_less_curved_sketches() {
         "tangent",
     ] {
         assert!(decoded
-            .ir
+            .ir()
             .model
             .sketch_constraints
             .iter()
@@ -4293,7 +4302,7 @@ fn encoder_writes_source_less_curved_sketches() {
     }
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .sketch_entities
             .iter()
@@ -4303,7 +4312,7 @@ fn encoder_writes_source_less_curved_sketches() {
     );
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .sketch_entities
             .iter()
@@ -4312,13 +4321,13 @@ fn encoder_writes_source_less_curved_sketches() {
         7
     );
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
         .any(|entity| matches!(entity.geometry, SketchGeometry::Ellipse { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -4414,10 +4423,10 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.sketches.len(), 2);
+    assert_eq!(decoded.ir().model.sketches.len(), 2);
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .sketches
             .iter()
@@ -4426,7 +4435,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         ["Profile", "Profile"]
     );
     let bound = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -4656,7 +4665,7 @@ fn encoder_writes_source_less_native_features() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -4671,10 +4680,10 @@ fn encoder_writes_source_less_native_features() {
         }
     ));
     assert_eq!(
-        sldprt_native(&decoded.ir).feature_histories[0].features[0].xml_tag,
+        sldprt_native(decoded.ir()).feature_histories[0].features[0].xml_tag,
         "Extrusion"
     );
-    let native_features = &sldprt_native(&decoded.ir).feature_histories[0].features;
+    let native_features = &sldprt_native(decoded.ir()).feature_histories[0].features;
     let source_ids = native_features
         .iter()
         .map(|feature| {
@@ -4688,12 +4697,12 @@ fn encoder_writes_source_less_native_features() {
         .collect::<std::collections::HashSet<_>>();
     assert_eq!(source_ids.len(), native_features.len());
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Fillet { .. })));
-    assert!(decoded.ir.model.features.iter().any(|feature| matches!(
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.definition,
         FeatureDefinition::Pattern {
             pattern: PatternKind::Linear {
@@ -4712,56 +4721,56 @@ fn encoder_writes_source_less_native_features() {
         }
     )));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Chamfer { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Shell { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Draft { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Combine { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::DeleteFace { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::MoveFace { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Dome { .. })));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Hole { .. })));
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -4784,7 +4793,7 @@ fn semantic_writer_round_trips_flex_operations() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let FeatureDefinition::Flex { axis, mode } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Flex { axis, mode } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed flex feature");
     };
@@ -4798,17 +4807,17 @@ fn semantic_writer_round_trips_flex_operations() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].xml_tag,
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].xml_tag,
         "Flex"
     );
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Flex {
             axis,
             mode: FlexMode::Twisting { angle },
@@ -4835,7 +4844,7 @@ fn semantic_writer_round_trips_all_flex_modes() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    for feature in &mut decoded.ir.model.features {
+    for feature in &mut decoded.ir_mut().model.features {
         if let FeatureDefinition::Flex { mode, .. } = &mut feature.definition {
             *mode = match feature.name.as_deref().unwrap() {
                 "Bend" => FlexMode::Bending { angle: Angle(0.1) },
@@ -4853,13 +4862,13 @@ fn semantic_writer_round_trips_all_flex_modes() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let modes = regenerated
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -4897,9 +4906,9 @@ fn semantic_writer_retains_partial_native_flex_construction() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.features.len(), 4);
+    assert_eq!(decoded.ir().model.features.len(), 4);
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Flex {
             axis: None,
             mode: FlexMode::Bending { .. },
@@ -4910,7 +4919,7 @@ fn semantic_writer_retains_partial_native_flex_construction() {
         .enumerate()
     {
         assert!(matches!(
-            decoded.ir.model.features[index + 1].definition,
+            decoded.ir().model.features[index + 1].definition,
             FeatureDefinition::Flex {
                 axis: Some(_),
                 mode: FlexMode::Unresolved {
@@ -4924,29 +4933,29 @@ fn semantic_writer_retains_partial_native_flex_construction() {
     }
 
     for index in 0..4 {
-        let mut detached = decoded.ir.clone();
+        let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
         let error = SldprtCodec
             .write_preserved_with_source_fidelity(
                 &detached,
-                &decoded.source_fidelity,
+                decoded.source_fidelity(),
                 &mut Vec::new(),
             )
             .unwrap_err();
         assert!(error.to_string().contains("unresolved flex construction"));
     }
 
-    for (index, feature) in decoded.ir.model.features.iter_mut().enumerate() {
+    for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
         feature.name = Some(format!("Renamed flex {}", index + 1));
     }
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].properties["Axis"], "0,0,0");
     assert_eq!(native[1].parameters["Angle"], "NaNrad");
     assert_eq!(native[2].parameters["Factor"], "0");
@@ -4972,9 +4981,9 @@ fn decode_degrades_nonfinite_feature_dimensions() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.features.len(), 5);
+    assert_eq!(decoded.ir().model.features.len(), 5);
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -4987,7 +4996,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -4998,7 +5007,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         }])
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        decoded.ir().model.features[2].definition,
         FeatureDefinition::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
@@ -5007,7 +5016,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[3].definition,
+        decoded.ir().model.features[3].definition,
         FeatureDefinition::Dome {
             faces: cadmpeg_ir::features::FaceSelection::Native(_),
             height: None,
@@ -5016,7 +5025,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[4].definition,
+        decoded.ir().model.features[4].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: None,
@@ -5049,9 +5058,9 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.features.len(), 6);
+    assert_eq!(decoded.ir().model.features.len(), 6);
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -5064,7 +5073,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -5075,7 +5084,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }])
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        decoded.ir().model.features[2].definition,
         FeatureDefinition::Shell {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
@@ -5084,7 +5093,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[3].definition,
+        decoded.ir().model.features[3].definition,
         FeatureDefinition::Dome {
             faces: cadmpeg_ir::features::FaceSelection::Native(_),
             height: None,
@@ -5093,7 +5102,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[4].definition,
+        decoded.ir().model.features[4].definition,
         FeatureDefinition::Hole {
             kind: cadmpeg_ir::features::HoleKind::Simple,
             diameter: None,
@@ -5104,7 +5113,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[5].definition,
+        &decoded.ir().model.features[5].definition,
         FeatureDefinition::Chamfer {
             ref groups,
             ..
@@ -5138,9 +5147,9 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.features.len(), 7);
+    assert_eq!(decoded.ir().model.features.len(), 7);
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::Pattern {
             pattern: PatternKind::Unresolved {
                 form: Some(PatternForm::Linear),
@@ -5149,7 +5158,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[4].definition,
+        decoded.ir().model.features[4].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: None,
@@ -5161,7 +5170,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[6].definition,
+        decoded.ir().model.features[6].definition,
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile: Some(_),
@@ -5174,7 +5183,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[3].definition,
+        &decoded.ir().model.features[3].definition,
         FeatureDefinition::Chamfer {
             ref groups,
             ..
@@ -5187,7 +5196,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
     ));
     for index in [2, 5] {
         assert!(matches!(
-            decoded.ir.model.features[index].definition,
+            decoded.ir().model.features[index].definition,
             FeatureDefinition::Native { .. }
         ));
     }
@@ -5207,7 +5216,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let definition = native.feature_histories[0]
         .features
         .iter()
@@ -5232,7 +5241,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
         ]
     );
     let neutral_macro = decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -5253,7 +5262,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     };
     *prefix = "lead & more".into();
     let neutral_definition = decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -5265,12 +5274,12 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     let definition = native.feature_histories[0]
         .features
         .iter()
@@ -5280,7 +5289,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     assert_eq!(definition.properties["Language"], "expr");
     assert!(definition.tree_parent.is_some());
     let neutral_definition = regenerated
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -5319,30 +5328,30 @@ fn semantic_writer_removes_deleted_history_records() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .retain(|feature| feature.name.as_deref() == Some("Keep"));
     decoded
-        .ir
+        .ir_mut()
         .model
         .configurations
         .retain(|configuration| configuration.name == "Keep");
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(regenerated.ir.model.features.len(), 1);
+    assert_eq!(regenerated.ir().model.features.len(), 1);
     assert_eq!(
-        regenerated.ir.model.features[0].name.as_deref(),
+        regenerated.ir().model.features[0].name.as_deref(),
         Some("Keep")
     );
-    assert_eq!(regenerated.ir.model.configurations.len(), 1);
-    assert_eq!(regenerated.ir.model.configurations[0].name, "Keep");
+    assert_eq!(regenerated.ir().model.configurations.len(), 1);
+    assert_eq!(regenerated.ir().model.configurations[0].name, "Keep");
 }
 
 #[test]
@@ -5358,7 +5367,7 @@ fn semantic_writer_reorders_nested_history_records() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    for feature in &mut decoded.ir.model.features {
+    for feature in &mut decoded.ir_mut().model.features {
         match feature.name.as_deref() {
             Some("A") => feature.ordinal = 2,
             Some("B") => feature.ordinal = 1,
@@ -5368,12 +5377,12 @@ fn semantic_writer_reorders_nested_history_records() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     let history = &native.feature_histories[0];
     let parent = history
         .features
@@ -5460,15 +5469,15 @@ fn encoder_writes_source_less_datum_features() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumPlane { .. }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::DatumAxis { .. }
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        decoded.ir().model.features[2].definition,
         FeatureDefinition::DatumPoint { .. }
     ));
 }
@@ -5539,7 +5548,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         .unwrap();
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .configurations
             .iter()
@@ -5548,20 +5557,20 @@ fn encoder_writes_source_less_neutral_configurations() {
         vec!["Metric", "Empty"]
     );
     assert_eq!(
-        sldprt_native(&decoded.ir).feature_histories[0]
+        sldprt_native(decoded.ir()).feature_histories[0]
             .configurations
             .iter()
             .map(|configuration| configuration.ordinal)
             .collect::<Vec<_>>(),
         vec![0, 1]
     );
-    assert_eq!(decoded.ir.model.configurations[0].source_index, Some(0));
-    assert_eq!(decoded.ir.model.configurations[1].source_index, Some(1));
-    assert!(sldprt_native(&decoded.ir).feature_histories[0]
+    assert_eq!(decoded.ir().model.configurations[0].source_index, Some(0));
+    assert_eq!(decoded.ir().model.configurations[1].source_index, Some(1));
+    assert!(sldprt_native(decoded.ir()).feature_histories[0]
         .configurations
         .iter()
         .all(|configuration| !configuration.properties.contains_key("SourceIndex")));
-    let configuration = &decoded.ir.model.configurations[0];
+    let configuration = &decoded.ir().model.configurations[0];
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert_eq!(configuration.properties["Finish"], "Ground");
@@ -5569,23 +5578,23 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert_eq!(
         configuration.bodies,
         decoded
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
             .map(|body| body.id.clone())
             .collect::<Vec<_>>()
     );
-    assert!(decoded.ir.model.configurations[1].bodies.is_empty());
+    assert!(decoded.ir().model.configurations[1].bodies.is_empty());
 
-    let mut inactive = decoded.ir;
+    let (mut inactive, _, fidelity) = decoded.into_parts();
     inactive
         .model
         .configurations
         .iter_mut()
         .for_each(|configuration| configuration.active = false.into());
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&inactive, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&inactive, &fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(error
         .to_string()
@@ -5608,22 +5617,24 @@ fn semantic_writer_round_trips_active_configuration() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir.model.configurations[0].active.is_active());
-    assert!(decoded.ir.model.configurations[1].active.is_inactive());
+    assert!(decoded.ir().model.configurations[0].active.is_active());
+    assert!(decoded.ir().model.configurations[1].active.is_inactive());
 
-    decoded.ir.model.configurations[0].active = false.into();
-    decoded.ir.model.configurations[1].active = true.into();
+    decoded.ir_mut().model.configurations[0].active = false.into();
+    decoded.ir_mut().model.configurations[1].active = true.into();
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert!(regenerated.ir.model.configurations[0].active.is_inactive());
-    assert!(regenerated.ir.model.configurations[1].active.is_active());
+    assert!(regenerated.ir().model.configurations[0]
+        .active
+        .is_inactive());
+    assert!(regenerated.ir().model.configurations[1].active.is_active());
     assert_eq!(
-        regenerated.ir.source.as_ref().unwrap().attributes["sw_configuration_name"],
+        regenerated.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],
         "Manufacturing & QA"
     );
 }
@@ -5651,16 +5662,16 @@ fn decode_preserves_unresolved_active_configuration() {
         .unwrap();
 
     assert!(decoded
-        .ir
+        .ir()
         .model
         .configurations
         .iter()
         .all(|configuration| configuration.active.is_inactive()));
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
     }));
-    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5672,9 +5683,9 @@ fn decode_reports_partition_inferred_configuration() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.configurations.len(), 1);
-    assert!(decoded.ir.model.configurations[0].native_ref.is_none());
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert_eq!(decoded.ir().model.configurations.len(), 1);
+    assert!(decoded.ir().model.configurations[0].native_ref.is_none());
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "1 configuration state(s) are inferred from geometry partitions without native configuration definitions."
     }));
@@ -5699,7 +5710,8 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             &DecodeOptions::default(),
         )
         .unwrap()
-        .ir;
+        .into_parts()
+        .0;
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
     ir.model.bodies.iter_mut().for_each(|body| body.name = None);
@@ -5794,16 +5806,16 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.bodies.len(), 2);
-    assert_eq!(decoded.ir.model.configurations[0].bodies.len(), 1);
-    assert_eq!(decoded.ir.model.configurations[1].bodies.len(), 1);
-    assert!(decoded.ir.model.configurations[1].active.is_active());
+    assert_eq!(decoded.ir().model.bodies.len(), 2);
+    assert_eq!(decoded.ir().model.configurations[0].bodies.len(), 1);
+    assert_eq!(decoded.ir().model.configurations[1].bodies.len(), 1);
+    assert!(decoded.ir().model.configurations[1].active.is_active());
     assert_ne!(
-        decoded.ir.model.configurations[0].bodies,
-        decoded.ir.model.configurations[1].bodies
+        decoded.ir().model.configurations[0].bodies,
+        decoded.ir().model.configurations[1].bodies
     );
     let mesh_x = decoded
-        .ir
+        .ir()
         .model
         .tessellations
         .iter()
@@ -5824,12 +5836,12 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.configurations.len(), 1);
-    assert!(decoded.ir.model.configurations[0].active.is_active());
+    assert_eq!(decoded.ir().model.configurations.len(), 1);
+    assert!(decoded.ir().model.configurations[0].active.is_active());
     assert_eq!(
-        decoded.ir.model.configurations[0].bodies,
+        decoded.ir().model.configurations[0].bodies,
         decoded
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
@@ -5838,15 +5850,15 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
     );
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir.model.configurations[0].bodies,
+        round_trip.ir().model.configurations[0].bodies,
         round_trip
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
@@ -5870,8 +5882,8 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.configurations.len(), 1);
-    let configuration = &decoded.ir.model.configurations[0];
+    assert_eq!(decoded.ir().model.configurations.len(), 1);
+    let configuration = &decoded.ir().model.configurations[0];
     assert_eq!(configuration.ordinal, 0);
     assert_eq!(configuration.source_index, Some(3));
     assert!(configuration.active.is_active());
@@ -5879,7 +5891,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     assert_eq!(
         configuration.bodies,
         decoded
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
@@ -5887,11 +5899,11 @@ fn decode_synthesizes_sparse_partition_configuration() {
             .collect::<Vec<_>>()
     );
 
-    let mut edited = decoded.ir;
+    let (mut edited, _, fidelity) = decoded.into_parts();
     edited.model.points[0].position.x += 1.0;
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut written)
         .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
@@ -5930,13 +5942,13 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.configurations[0].source_index, Some(3));
-    assert!(decoded.ir.model.configurations[0].active.is_active());
+    assert_eq!(decoded.ir().model.configurations[0].source_index, Some(3));
+    assert!(decoded.ir().model.configurations[0].active.is_active());
 
-    decoded.ir.model.configurations[0].source_index = Some(5);
+    decoded.ir_mut().model.configurations[0].source_index = Some(5);
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
@@ -5975,7 +5987,10 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(round_trip.ir.model.configurations[0].source_index, Some(5));
+    assert_eq!(
+        round_trip.ir().model.configurations[0].source_index,
+        Some(5)
+    );
 }
 
 #[test]
@@ -6004,11 +6019,11 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.model.configurations[0].source_index = None;
+    decoded.ir_mut().model.configurations[0].source_index = None;
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
@@ -6032,7 +6047,10 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(round_trip.ir.model.configurations[0].source_index, Some(0));
+    assert_eq!(
+        round_trip.ir().model.configurations[0].source_index,
+        Some(0)
+    );
 }
 
 #[test]
@@ -6043,7 +6061,7 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut duplicate = decoded.ir.model.configurations[0].clone();
+    let mut duplicate = decoded.ir().model.configurations[0].clone();
     duplicate.id.0.push_str("-duplicate");
     duplicate.ordinal += 1;
     duplicate
@@ -6052,12 +6070,12 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
         .expect("resolved configuration name")
         .push_str(" Duplicate");
     duplicate.native_ref = None;
-    decoded.ir.model.configurations.push(duplicate);
+    decoded.ir_mut().model.configurations.push(duplicate);
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -6077,32 +6095,32 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.configurations[0]
+    decoded.ir_mut().model.configurations[0]
         .name
         .resolved_mut()
         .expect("resolved configuration name")
         .clear();
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
     assert!(error.to_string().contains("empty name"), "{error}");
 
-    decoded.ir.model.configurations[0].name = "Default".into();
-    let mut duplicate = decoded.ir.model.configurations[0].clone();
+    decoded.ir_mut().model.configurations[0].name = "Default".into();
+    let mut duplicate = decoded.ir().model.configurations[0].clone();
     duplicate.id.0.push_str("-duplicate");
     duplicate.ordinal += 1;
     duplicate.source_index = None;
     duplicate.native_ref = None;
     duplicate.active = false.into();
-    decoded.ir.model.configurations.push(duplicate);
+    decoded.ir_mut().model.configurations.push(duplicate);
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -6179,10 +6197,13 @@ fn encoder_writes_source_less_neutral_parameters() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.parameters.len(), 1);
-    assert_eq!(decoded.ir.model.parameters[0].expression, "D1@Sketch1 * 2");
+    assert_eq!(decoded.ir().model.parameters.len(), 1);
+    assert_eq!(
+        decoded.ir().model.parameters[0].expression,
+        "D1@Sketch1 * 2"
+    );
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Native { properties, .. }
             if properties.get("EquationSet").map(String::as_str) == Some("Global")
     ));
@@ -6238,16 +6259,16 @@ fn encoder_bakes_rigid_body_transform() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.ir.model.points.iter().any(|point| {
+    assert!(decoded.ir().model.points.iter().any(|point| {
         (point.position.x - expected_point.x).abs() < 1e-9
             && (point.position.y - expected_point.y).abs() < 1e-9
             && (point.position.z - expected_point.z).abs() < 1e-9
     }));
-    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane { normal, .. } if normal == expected_normal)
     }));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .bodies
         .iter()
@@ -6306,7 +6327,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         .decode(&mut Cursor::new(base_bytes), &DecodeOptions::default())
         .unwrap();
     let reference_points: Vec<Point3> = reference
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -6332,7 +6353,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         for reference_point in &reference_points {
             let expected = apply(*reference_point);
             assert!(
-                decoded.ir.model.points.iter().any(|point| {
+                decoded.ir().model.points.iter().any(|point| {
                     (point.position.x - expected.x).abs() < 1e-9
                         && (point.position.y - expected.y).abs() < 1e-9
                         && (point.position.z - expected.z).abs() < 1e-9
@@ -6341,7 +6362,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
             );
         }
         assert!(decoded
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
@@ -6356,13 +6377,13 @@ fn decode_encode_decode_reaches_fixpoint() {
     let first = SldprtCodec
         .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
         .expect("first decode");
-    assert!(first.report.geometry_transferred);
+    assert!(first.report().geometry_transferred);
 
     let mut reencoded = Vec::new();
     SldprtCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &first.ir,
-            fidelity: Some(&first.source_fidelity),
+            ir: first.ir(),
+            fidelity: Some(first.source_fidelity()),
         })
         .and_then(|plan| plan.write_to(&mut reencoded))
         .expect("re-encode");
@@ -6372,27 +6393,33 @@ fn decode_encode_decode_reaches_fixpoint() {
         .expect("second decode");
 
     assert_eq!(
-        first.ir.model.points, second.ir.model.points,
+        first.ir().model.points,
+        second.ir().model.points,
         "points diverged at the fixpoint"
     );
     assert_eq!(
-        first.ir.model.surfaces, second.ir.model.surfaces,
+        first.ir().model.surfaces,
+        second.ir().model.surfaces,
         "surfaces diverged at the fixpoint"
     );
     assert_eq!(
-        first.ir.model.faces, second.ir.model.faces,
+        first.ir().model.faces,
+        second.ir().model.faces,
         "faces diverged at the fixpoint"
     );
     assert_eq!(
-        first.ir.model.edges, second.ir.model.edges,
+        first.ir().model.edges,
+        second.ir().model.edges,
         "edges diverged at the fixpoint"
     );
     assert_eq!(
-        first.ir.model.coedges, second.ir.model.coedges,
+        first.ir().model.coedges,
+        second.ir().model.coedges,
         "coedges diverged at the fixpoint"
     );
     assert_eq!(
-        first.report.geometry_transferred, second.report.geometry_transferred,
+        first.report().geometry_transferred,
+        second.report().geometry_transferred,
         "geometry-transferred flag diverged at the fixpoint"
     );
 }
@@ -6404,17 +6431,17 @@ fn semantic_writer_regenerates_modified_planar_brep() {
     let mut result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    result.ir.model.points[0].position.x += 1.0;
+    result.ir_mut().model.points[0].position.x += 1.0;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&result.ir, &result.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(result.ir(), result.source_fidelity(), &mut encoded)
         .unwrap();
     let mut regenerated = Cursor::new(encoded);
     let decoded = SldprtCodec
         .decode(&mut regenerated, &DecodeOptions::default())
         .unwrap();
     assert!(decoded
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -6429,10 +6456,10 @@ fn semantic_writer_uses_schema_specific_face_families() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    solid.ir.model.points[0].position.z += 1.0;
+    solid.ir_mut().model.points[0].position.z += 1.0;
     let mut solid_bytes = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&solid.ir, &solid.source_fidelity, &mut solid_bytes)
+        .write_preserved_with_source_fidelity(solid.ir(), solid.source_fidelity(), &mut solid_bytes)
         .unwrap();
     let solid_scan = container::scan_bytes(&solid_bytes);
     let solid_payload = &solid_scan.blocks[0].payload;
@@ -6449,10 +6476,10 @@ fn semantic_writer_uses_schema_specific_face_families() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    sheet.ir.model.points[0].position.z += 1.0;
+    sheet.ir_mut().model.points[0].position.z += 1.0;
     let mut sheet_bytes = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&sheet.ir, &sheet.source_fidelity, &mut sheet_bytes)
+        .write_preserved_with_source_fidelity(sheet.ir(), sheet.source_fidelity(), &mut sheet_bytes)
         .unwrap();
     let sheet_scan = container::scan_bytes(&sheet_bytes);
     let sheet_payload = &sheet_scan.blocks[0].payload;
@@ -6468,10 +6495,10 @@ fn semantic_writer_preserves_outer_header() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir_mut().model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
 
     assert_eq!(
@@ -6548,28 +6575,38 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
         let mut result = SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap();
-        translate_model_x(&mut result.ir, 1.0);
+        translate_model_x(result.ir_mut(), 1.0);
 
         let mut encoded = Vec::new();
         SldprtCodec
-            .write_preserved_with_source_fidelity(&result.ir, &result.source_fidelity, &mut encoded)
+            .write_preserved_with_source_fidelity(
+                result.ir(),
+                result.source_fidelity(),
+                &mut encoded,
+            )
             .unwrap();
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
 
-        assert_eq!(decoded.ir.model.faces.len(), result.ir.model.faces.len());
-        assert_eq!(decoded.ir.model.curves.len(), result.ir.model.curves.len());
+        assert_eq!(
+            decoded.ir().model.faces.len(),
+            result.ir().model.faces.len()
+        );
+        assert_eq!(
+            decoded.ir().model.curves.len(),
+            result.ir().model.curves.len()
+        );
         assert_eq!(
             decoded
-                .ir
+                .ir()
                 .model
                 .surfaces
                 .iter()
                 .map(|surface| &surface.geometry)
                 .collect::<Vec<_>>(),
             result
-                .ir
+                .ir()
                 .model
                 .surfaces
                 .iter()
@@ -6590,17 +6627,17 @@ fn decode_builds_valid_topology_and_plane() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 3);
-    assert_eq!(result.ir.model.edges.len(), 3);
-    assert_eq!(result.ir.model.vertices.len(), 3);
-    assert_eq!(result.ir.model.points.len(), 3);
-    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().model.surfaces.len(), 1);
 
-    match &result.ir.model.surfaces[0].geometry {
+    match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Plane {
             origin,
             normal,
@@ -6614,7 +6651,7 @@ fn decode_builds_valid_topology_and_plane() {
     }
 
     let xs: Vec<f64> = result
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -6622,11 +6659,11 @@ fn decode_builds_valid_topology_and_plane() {
         .collect();
     assert!(xs.contains(&1000.0));
 
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
-    assert_eq!(result.ir.model.loops[0].coedges.len(), 3);
+    assert_eq!(result.ir().model.loops[0].coedges.len(), 3);
     // Edges carry no analytic curve (their carriers were null), which is legal.
-    assert!(result.ir.model.edges.iter().all(|e| e.curve.is_none()));
+    assert!(result.ir().model.edges.iter().all(|e| e.curve.is_none()));
 }
 
 fn strict_options() -> DecodeOptions {
@@ -6659,19 +6696,19 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage decode keeps the partial result");
-    assert!(!salvaged.report.geometry_transferred);
+    assert!(!salvaged.report().geometry_transferred);
     assert!(salvaged
-        .report
+        .report()
         .losses
         .iter()
         .any(|note| note.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
     assert!(salvaged
-        .report
+        .report()
         .losses
         .iter()
         .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyNotTransferred));
     assert!(salvaged
-        .report
+        .report()
         .losses
         .iter()
         .any(|note| note.strict_consequence() == StrictConsequence::Reject));
@@ -6696,14 +6733,14 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
     let strict = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect("strict decode accepts a tolerable-loss geometry result");
-    assert!(strict.report.geometry_transferred);
+    assert!(strict.report().geometry_transferred);
     assert!(strict
-        .report
+        .report()
         .losses
         .iter()
         .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
     assert!(strict
-        .report
+        .report()
         .losses
         .iter()
         .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyGaugeSubstituted));
@@ -6719,7 +6756,7 @@ fn decode_does_not_report_derived_pcurves_as_stored_geometry_loss() {
         .unwrap();
 
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| !loss.message.contains("curve-on-surface")));
@@ -6736,9 +6773,9 @@ fn decode_merges_partition_and_deltas_records() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.points.len(), 3);
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 3);
 }
 
 #[test]
@@ -6760,10 +6797,10 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .appearance_bindings
             .iter()
@@ -6771,7 +6808,7 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -6780,34 +6817,34 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.faces.len(), 2);
+    assert_eq!(result.ir().model.faces.len(), 2);
     assert!(result
-        .ir
+        .ir()
         .model
         .points
         .iter()
         .any(|point| point.position.x == 0.0));
     assert!(result
-        .ir
+        .ir()
         .model
         .points
         .iter()
         .any(|point| point.position.x == 10_000.0));
     let ids: std::collections::HashSet<_> = result
-        .ir
+        .ir()
         .model
         .points
         .iter()
         .map(|point| &point.id)
         .collect();
-    assert_eq!(ids.len(), result.ir.model.points.len());
+    assert_eq!(ids.len(), result.ir().model.points.len());
     assert!(result
-        .ir
+        .ir()
         .model
         .points
         .iter()
         .all(|point| point.id.0.contains("@block@")));
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -6830,7 +6867,7 @@ fn decode_uses_the_active_configuration_source_site() {
         .unwrap();
 
     let active_points = result
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -6841,10 +6878,10 @@ fn decode_uses_the_active_configuration_source_site() {
         .iter()
         .all(|point| point.position.x >= 10_000.0));
     assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes["active_parasolid_block"],
+        result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -6881,7 +6918,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
         .unwrap();
 
     let surface_bindings = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -6896,7 +6933,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
         })
         .collect::<Vec<_>>();
     let curve_bindings = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -6926,14 +6963,14 @@ fn merged_opaque_geometry_retains_its_owning_site() {
             .collect::<std::collections::BTreeSet<_>>(),
         expected_records
     );
-    let unknowns = result.ir.native_unknowns("sldprt").unwrap();
+    let unknowns = result.ir().native_unknowns("sldprt").unwrap();
     for (geometry, record) in surface_bindings.into_iter().chain(curve_bindings) {
         assert!(unknowns
             .iter()
             .find(|unknown| unknown.id == record)
             .is_some_and(|unknown| unknown.links.contains(&geometry)));
     }
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -6947,7 +6984,7 @@ fn deltas_full_record_overrides_partition_record() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     let point = result
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -6991,9 +7028,9 @@ fn decode_reports_and_withholds_faces_without_body_membership() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#10");
-    assert!(result.report.losses.iter().any(|loss| {
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces[0].id.0, "sldprt:brep:face#10");
+    assert!(result.report().losses.iter().any(|loss| {
         loss.code.taxonomy() == LossTaxonomy::TopologyNotTransferred
             && loss
                 .message
@@ -7022,15 +7059,15 @@ fn class_root_index_selects_complete_cluster_body_relation() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.bodies[0].id.0, "sldprt:brep:body#32");
-    assert_eq!(result.ir.model.faces.len(), 2);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.bodies[0].id.0, "sldprt:brep:body#32");
+    assert_eq!(result.ir().model.faces.len(), 2);
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| loss.code.taxonomy() != LossTaxonomy::TopologyNotTransferred));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -7062,15 +7099,15 @@ fn class_root_body_relation_selects_missing_deltas_face() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.bodies[0].id.0, "sldprt:brep:body#32");
-    assert_eq!(result.ir.model.faces.len(), 2);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.bodies[0].id.0, "sldprt:brep:body#32");
+    assert_eq!(result.ir().model.faces.len(), 2);
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| loss.code.taxonomy() != LossTaxonomy::TopologyNotTransferred));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -7083,14 +7120,14 @@ fn unselected_deltas_bridges_do_not_enter_partition_membership() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
     assert!(result
-        .ir
+        .ir()
         .model
         .points
         .iter()
         .all(|point| point.position.x != 10_000.0));
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -7110,8 +7147,8 @@ fn duplicate_face_uses_emit_one_face() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#10");
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces[0].id.0, "sldprt:brep:face#10");
 }
 
 #[test]
@@ -7131,14 +7168,19 @@ fn decode_withholds_non_equivalent_face_uses_with_same_owner() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#210");
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces[0].id.0, "sldprt:brep:face#210");
     assert!(
-        result.report.losses.iter().any(|loss| loss.code.taxonomy()
-            == LossTaxonomy::TopologyGaugeSubstituted
-            && loss.message.contains("non-equivalent bridge uses")),
+        result
+            .report()
+            .losses
+            .iter()
+            .any(
+                |loss| loss.code.taxonomy() == LossTaxonomy::TopologyGaugeSubstituted
+                    && loss.message.contains("non-equivalent bridge uses")
+            ),
         "losses: {:?}",
-        result.report.losses
+        result.report().losses
     );
 }
 
@@ -7158,11 +7200,11 @@ fn sheet_body_faces_are_retained_and_classified() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 2);
-    assert_eq!(result.ir.model.faces.len(), 2);
+    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert_eq!(result.ir().model.faces.len(), 2);
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
@@ -7172,7 +7214,7 @@ fn sheet_body_faces_are_retained_and_classified() {
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
@@ -7195,9 +7237,9 @@ fn schema_33103_disc1d_flo2_is_not_a_sheet_region() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(
-        decoded.ir.model.bodies[0].kind,
+        decoded.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Solid
     );
 }
@@ -7214,27 +7256,27 @@ fn semantic_writer_preserves_sheet_body_classification() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
-    let validation = cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new());
+    decoded.ir_mut().model.points[0].position.z += 1.0;
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.model.bodies.len(), 1);
+    assert_eq!(regenerated.ir().model.bodies.len(), 1);
     assert_eq!(
-        regenerated.ir.model.bodies[0].kind,
+        regenerated.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    assert_eq!(regenerated.ir.model.faces.len(), 1);
+    assert_eq!(regenerated.ir().model.faces.len(), 1);
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .source
             .as_ref()
             .and_then(|source| source.attributes.get("parasolid_schema"))
@@ -7251,11 +7293,11 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId("missing".into());
+    decoded.ir_mut().model.faces[0].surface = cadmpeg_ir::ids::SurfaceId("missing".into());
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -7282,11 +7324,11 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.edges[0].param_range = Some([0.0, 1.0]);
+    decoded.ir_mut().model.edges[0].param_range = Some([0.0, 1.0]);
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -7301,7 +7343,7 @@ fn semantic_writer_rejects_subds() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.subds.push(cadmpeg_ir::SubdSurface {
+    decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId("test:sldprt:subd#0".into()),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         vertices: Vec::new(),
@@ -7312,8 +7354,8 @@ fn semantic_writer_rejects_subds() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -7358,7 +7400,7 @@ fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Ellipse {
+    decoded.ir_mut().model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Ellipse {
         center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         major_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -7368,8 +7410,8 @@ fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -7389,7 +7431,7 @@ fn semantic_writer_rejects_nonfinite_analytic_carriers() {
         )
         .unwrap();
     let cadmpeg_ir::geometry::CurveGeometry::Circle { center, .. } =
-        &mut decoded.ir.model.curves[0].geometry
+        &mut decoded.ir_mut().model.curves[0].geometry
     else {
         panic!("closed cylinder edge must use a circle carrier");
     };
@@ -7397,8 +7439,8 @@ fn semantic_writer_rejects_nonfinite_analytic_carriers() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -7465,12 +7507,12 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
     ];
 
     for (geometry, expected) in cases {
-        let mut ir = decoded.ir.clone();
+        let mut ir = decoded.ir().clone();
         let surface_id = ir.model.surfaces[0].id.0.clone();
         ir.model.surfaces[0].geometry = geometry;
 
         let error = SldprtCodec
-            .write_preserved_with_source_fidelity(&ir, &decoded.source_fidelity, &mut Vec::new())
+            .write_preserved_with_source_fidelity(&ir, decoded.source_fidelity(), &mut Vec::new())
             .unwrap_err();
 
         assert!(matches!(
@@ -7489,18 +7531,18 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.x = 50.8;
+    decoded.ir_mut().model.points[0].position.x = 50.8;
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -7517,18 +7559,18 @@ fn closed_cylinder_gets_derived_seam() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.faces[0].loops.len(), 1);
-    assert_eq!(result.ir.model.loops[0].coedges.len(), 4);
-    assert_eq!(result.ir.model.pcurves.len(), 4);
+    assert_eq!(result.ir().model.faces[0].loops.len(), 1);
+    assert_eq!(result.ir().model.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir().model.pcurves.len(), 4);
     assert!(result
-        .ir
+        .ir()
         .model
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
-    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir().model.edges.len(), 3);
     assert!(result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -7556,7 +7598,7 @@ fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
         .unwrap();
 
     let seam = decoded
-        .ir
+        .ir()
         .model
         .edges
         .iter()
@@ -7564,14 +7606,14 @@ fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
         .expect("derived seam");
     let positions = [&seam.start, &seam.end].map(|vertex_id| {
         let vertex = decoded
-            .ir
+            .ir()
             .model
             .vertices
             .iter()
             .find(|vertex| vertex.id == *vertex_id)
             .unwrap();
         decoded
-            .ir
+            .ir()
             .model
             .points
             .iter()
@@ -7611,19 +7653,19 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.faces.len(), 1);
-    assert_eq!(decoded.ir.model.loops[0].coedges.len(), 1);
-    let edge = &decoded.ir.model.edges[0];
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.loops[0].coedges.len(), 1);
+    let edge = &decoded.ir().model.edges[0];
     assert_eq!(edge.start, edge.end);
     let vertex = decoded
-        .ir
+        .ir()
         .model
         .vertices
         .iter()
         .find(|vertex| vertex.id == edge.start)
         .unwrap();
     let point = decoded
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -7634,7 +7676,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         [1500.0, 2000.0, 0.0]
     );
     assert!(matches!(
-        decoded.ir.model.pcurves[0].geometry,
+        decoded.ir().model.pcurves[0].geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Circle {
             center,
             radius: 500.0,
@@ -7642,7 +7684,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
             ..
         } if center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0)
     ));
-    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7672,9 +7714,9 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.pcurves.len(), 1);
+    assert_eq!(decoded.ir().model.pcurves.len(), 1);
     assert!(matches!(
-        decoded.ir.model.pcurves[0].geometry,
+        decoded.ir().model.pcurves[0].geometry,
         cadmpeg_ir::geometry::PcurveGeometry::PolarHarmonic {
             radial_center,
             radial_cos,
@@ -7688,7 +7730,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
             && radial_sin.u.abs() < 1e-9
             && (radial_sin.v - 1000.0).abs() < 1e-9
     ));
-    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7717,14 +7759,14 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
         )
         .unwrap();
     let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } =
-        decoded.ir.model.pcurves[0].geometry
+        decoded.ir().model.pcurves[0].geometry
     else {
         panic!("expected line pcurve");
     };
     assert!(origin.u.abs() < 1e-12);
     assert!((origin.v - 1000.0).abs() < 1e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
-    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7753,14 +7795,14 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
         )
         .unwrap();
     let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } =
-        decoded.ir.model.pcurves[0].geometry
+        decoded.ir().model.pcurves[0].geometry
     else {
         panic!("expected line pcurve");
     };
     assert!(origin.u.abs() < 1e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
-    assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7769,13 +7811,13 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.edges.len(), 4);
-    assert_eq!(result.ir.model.vertices.len(), 3);
-    assert_eq!(result.ir.model.points.len(), 3);
-    assert_eq!(result.ir.model.loops[0].coedges.len(), 4);
-    assert_eq!(result.ir.model.pcurves.len(), 4);
+    assert_eq!(result.ir().model.edges.len(), 4);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().model.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir().model.pcurves.len(), 4);
     let pole = result
-        .ir
+        .ir()
         .model
         .pcurves
         .iter()
@@ -7789,13 +7831,13 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     ));
     assert_eq!(pole.parameter_range, Some([0.0, std::f64::consts::TAU]));
     let seam = result
-        .ir
+        .ir()
         .model
         .edges
         .iter()
         .find(|edge| {
             result
-                .source_fidelity
+                .source_fidelity()
                 .annotations
                 .provenance
                 .get(&edge.id.0)
@@ -7805,7 +7847,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .expect("sphere seam");
     assert_eq!(seam.start, seam.end);
     let curve = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -7817,14 +7859,14 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
             if point == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
     ));
     let vertex = result
-        .ir
+        .ir()
         .model
         .vertices
         .iter()
         .find(|vertex| vertex.id == seam.start)
         .unwrap();
     let point = result
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -7845,13 +7887,13 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
         )
         .unwrap();
     let seam_curve = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
         .find(|curve| {
             result
-                .source_fidelity
+                .source_fidelity()
                 .annotations
                 .provenance
                 .get(&curve.id.0)
@@ -7860,21 +7902,21 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
         })
         .expect("existing sphere seam curve");
     let seam = result
-        .ir
+        .ir()
         .model
         .edges
         .iter()
         .find(|edge| edge.curve.as_ref() == Some(&seam_curve.id))
         .expect("existing sphere seam edge");
     let vertex = result
-        .ir
+        .ir()
         .model
         .vertices
         .iter()
         .find(|vertex| vertex.id == seam.start)
         .expect("sphere seam pole vertex");
     let point = result
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -7896,8 +7938,8 @@ fn decode_recovers_overlapping_topology_records() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.points.len(), 3);
-    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().model.vertices.len(), 3);
 }
 
 #[test]
@@ -7906,9 +7948,9 @@ fn decode_recovers_tripled_deltas_topology() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.coedges.len(), 3);
-    assert_eq!(result.ir.model.points.len(), 3);
-    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().model.faces.len(), 1);
 }
 
 #[test]
@@ -7919,7 +7961,7 @@ fn decode_resolves_prefixed_deltas_edge_curve() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -7934,7 +7976,7 @@ fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -7955,11 +7997,11 @@ fn decode_preserves_explicit_body_membership() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 2);
-    assert_eq!(result.ir.model.shells.len(), 2);
-    assert_eq!(result.ir.model.faces.len(), 2);
-    assert_eq!(result.ir.model.bodies[0].id.0, "sldprt:brep:body#500");
-    assert_eq!(result.ir.model.bodies[1].id.0, "sldprt:brep:body#501");
+    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert_eq!(result.ir().model.shells.len(), 2);
+    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().model.bodies[0].id.0, "sldprt:brep:body#500");
+    assert_eq!(result.ir().model.bodies[1].id.0, "sldprt:brep:body#501");
 }
 
 #[test]
@@ -7982,38 +8024,38 @@ fn decode_preserves_multiple_regions_and_shells_per_body() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.regions.len(), 2);
-    assert_eq!(result.ir.model.shells.len(), 2);
-    assert_eq!(result.ir.model.bodies[0].regions.len(), 2);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.regions.len(), 2);
+    assert_eq!(result.ir().model.shells.len(), 2);
+    assert_eq!(result.ir().model.bodies[0].regions.len(), 2);
     assert!(result
-        .ir
+        .ir()
         .model
         .regions
         .iter()
         .all(|region| region.shells.len() == 1));
     assert!(result
-        .ir
+        .ir()
         .model
         .shells
         .iter()
         .all(|shell| shell.faces.len() == 1));
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 
-    result.ir.model.points[0].position.z += 1.0;
+    result.ir_mut().model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&result.ir, &result.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(result.ir(), result.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(regenerated.ir.model.bodies.len(), 1);
-    assert_eq!(regenerated.ir.model.regions.len(), 2);
-    assert_eq!(regenerated.ir.model.shells.len(), 2);
+    assert_eq!(regenerated.ir().model.bodies.len(), 1);
+    assert_eq!(regenerated.ir().model.regions.len(), 2);
+    assert_eq!(regenerated.ir().model.shells.len(), 2);
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .shells
         .iter()
@@ -8038,12 +8080,12 @@ fn decode_follows_connector_region_lump_and_shell_chain() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.bodies.len(), 1);
-    assert_eq!(decoded.ir.model.regions[0].id.0, "sldprt:brep:region#520");
-    assert_eq!(decoded.ir.model.shells[0].id.0, "sldprt:brep:shell#550");
-    assert_eq!(decoded.ir.model.shells[0].faces.len(), 1);
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.regions[0].id.0, "sldprt:brep:region#520");
+    assert_eq!(decoded.ir().model.shells[0].id.0, "sldprt:brep:shell#550");
+    assert_eq!(decoded.ir().model.shells[0].faces.len(), 1);
     assert_eq!(
-        decoded.ir.model.bodies[0].kind,
+        decoded.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Solid
     );
 }
@@ -8067,10 +8109,13 @@ fn decode_binds_schema_32001_face_intervals_through_bridge_ids() {
         )
         .unwrap();
 
-    assert!(decoded.report.geometry_transferred);
-    assert_eq!(decoded.ir.model.bodies.len(), 1);
-    assert_eq!(decoded.ir.model.faces.len(), 1);
-    assert_eq!(decoded.ir.model.shells[0].faces[0].0, "sldprt:brep:face#10");
+    assert!(decoded.report().geometry_transferred);
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(
+        decoded.ir().model.shells[0].faces[0].0,
+        "sldprt:brep:face#10"
+    );
 }
 
 #[test]
@@ -8104,9 +8149,9 @@ fn decode_partitions_interleaved_schema_33103_faces_by_adjacency() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.shells.len(), 4);
+    assert_eq!(decoded.ir().model.shells.len(), 4);
     assert!(decoded
-        .ir
+        .ir()
         .model
         .shells
         .iter()
@@ -8114,7 +8159,7 @@ fn decode_partitions_interleaved_schema_33103_faces_by_adjacency() {
     for (native_shell, face_suffixes) in [(550, ["#10", "#210"]), (551, ["#410", "#610"])] {
         let prefix = format!("sldprt:brep:shell#{native_shell}");
         let faces = decoded
-            .ir
+            .ir()
             .model
             .shells
             .iter()
@@ -8156,28 +8201,28 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.bodies.len(), 1);
-    assert_eq!(decoded.ir.model.regions.len(), 1);
-    assert_eq!(decoded.ir.model.shells.len(), 4);
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.regions.len(), 1);
+    assert_eq!(decoded.ir().model.shells.len(), 4);
     assert!(decoded
-        .ir
+        .ir()
         .model
         .shells
         .iter()
         .all(|shell| shell.faces.len() == 1));
 
-    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir_mut().model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(regenerated.ir.model.regions.len(), 1);
-    assert_eq!(regenerated.ir.model.shells.len(), 4);
+    assert_eq!(regenerated.ir().model.regions.len(), 1);
+    assert_eq!(regenerated.ir().model.shells.len(), 4);
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .shells
         .iter()
@@ -8213,15 +8258,15 @@ fn decode_keeps_multiple_disc14_regions_as_separate_bodies() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.bodies.len(), 2);
-    assert_eq!(decoded.ir.model.regions.len(), 2);
+    assert_eq!(decoded.ir().model.bodies.len(), 2);
+    assert_eq!(decoded.ir().model.regions.len(), 2);
     for (body_attr, shell_prefix) in [
         (900, "sldprt:brep:shell#500"),
         (901, "sldprt:brep:shell#501"),
     ] {
         let body_id = format!("sldprt:brep:body#{body_attr}");
         let body = decoded
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
@@ -8231,7 +8276,7 @@ fn decode_keeps_multiple_disc14_regions_as_separate_bodies() {
         let region_id = &body.regions[0].0;
         assert_eq!(region_id, &format!("sldprt:brep:region#{body_attr}"));
         let region = decoded
-            .ir
+            .ir()
             .model
             .regions
             .iter()
@@ -8277,19 +8322,19 @@ fn decode_partitions_disc20_faces_by_native_single_shell_lattice() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir.model.bodies[0].id.0, "sldprt:brep:body#900");
-    assert_eq!(decoded.ir.model.regions[0].id.0, "sldprt:brep:region#900");
-    assert_eq!(decoded.ir.model.shells[0].id.0, "sldprt:brep:shell#500");
-    assert_eq!(decoded.ir.model.shells.len(), 2);
+    assert_eq!(decoded.ir().model.bodies[0].id.0, "sldprt:brep:body#900");
+    assert_eq!(decoded.ir().model.regions[0].id.0, "sldprt:brep:region#900");
+    assert_eq!(decoded.ir().model.shells[0].id.0, "sldprt:brep:shell#500");
+    assert_eq!(decoded.ir().model.shells.len(), 2);
     assert!(decoded
-        .ir
+        .ir()
         .model
         .shells
         .iter()
         .all(|shell| shell.faces.len() == 1));
-    assert_eq!(decoded.ir.model.regions[0].shells.len(), 2);
+    assert_eq!(decoded.ir().model.regions[0].shells.len(), 2);
     assert!(!decoded
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("No body record")));
@@ -8308,33 +8353,33 @@ fn semantic_writer_preserves_multiple_body_ownership() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.model.bodies.len(), 2);
-    assert_eq!(regenerated.ir.model.regions.len(), 2);
-    assert_eq!(regenerated.ir.model.shells.len(), 2);
+    assert_eq!(regenerated.ir().model.bodies.len(), 2);
+    assert_eq!(regenerated.ir().model.regions.len(), 2);
+    assert_eq!(regenerated.ir().model.shells.len(), 2);
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .shells
         .iter()
         .all(|shell| shell.faces.len() == 1));
-    assert!(regenerated.ir.model.regions.iter().all(|region| {
-        regenerated.source_fidelity.annotations.provenance[&region.id.0]
+    assert!(regenerated.ir().model.regions.iter().all(|region| {
+        regenerated.source_fidelity().annotations.provenance[&region.id.0]
             .tag
             .as_deref()
             == Some("00_51_region")
     }));
-    assert!(regenerated.ir.model.shells.iter().all(|shell| {
-        regenerated.source_fidelity.annotations.provenance[&shell.id.0]
+    assert!(regenerated.ir().model.shells.iter().all(|shell| {
+        regenerated.source_fidelity().annotations.provenance[&shell.id.0]
             .tag
             .as_deref()
             == Some("00_51_shell")
@@ -8374,14 +8419,14 @@ fn edge_uses_decoded_line_curve() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.curves.len(), 1);
-    match &result.ir.model.curves[0].geometry {
+    assert_eq!(result.ir().model.curves.len(), 1);
+    match &result.ir().model.curves[0].geometry {
         CurveGeometry::Line { direction, .. } => assert_eq!(direction.x, 1.0),
         other => panic!("expected line, got {other:?}"),
     }
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .edges
             .iter()
@@ -8389,14 +8434,14 @@ fn edge_uses_decoded_line_curve() {
             .count(),
         1
     );
-    assert_eq!(result.ir.model.pcurves.len(), 1);
+    assert_eq!(result.ir().model.pcurves.len(), 1);
     assert!(result
-        .ir
+        .ir()
         .model
         .coedges
         .iter()
         .any(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -8419,7 +8464,7 @@ fn edge_uses_decode_nurbs_curve() {
         .unwrap();
 
     let nurbs = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -8453,7 +8498,7 @@ fn edge_uses_decode_typed_reference_nurbs_curve() {
         .unwrap();
 
     let nurbs = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -8497,11 +8542,11 @@ fn reused_carrier_attribute_resolves_by_geometry_kind() {
         .unwrap();
 
     assert!(matches!(
-        result.ir.model.curves[0].geometry,
+        result.ir().model.curves[0].geometry,
         CurveGeometry::Line { .. }
     ));
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Plane { .. }
     ));
 }
@@ -8518,9 +8563,9 @@ fn false_later_loop_candidate_does_not_replace_owned_loop() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 3);
-    assert_eq!(result.ir.model.loops[0].id.0, "sldprt:brep:loop#20");
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().model.loops[0].id.0, "sldprt:brep:loop#20");
 }
 
 #[test]
@@ -8542,7 +8587,7 @@ fn faces_decode_nurbs_surface() {
         .unwrap();
 
     let nurbs = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -8575,7 +8620,7 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
         )
         .unwrap();
 
-    let SurfaceGeometry::Nurbs(surface) = &result.ir.model.surfaces[0].geometry else {
+    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
         panic!("compact counted NURBS surface");
     };
     assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
@@ -8584,7 +8629,7 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
     assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.control_points.len(), 4);
     assert_eq!(surface.control_points[3].z, 500.0);
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -8652,7 +8697,7 @@ fn conflicting_compact_counted_surface_array_is_rejected() {
         .unwrap();
 
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Unknown { .. }
     ));
 }
@@ -8690,30 +8735,30 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 2);
-    assert_eq!(result.ir.model.surfaces.len(), 3);
-    assert!(result.ir.model.procedural_surfaces.iter().any(|surface| {
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().model.surfaces.len(), 3);
+    assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
         matches!(
             surface.definition,
             ProceduralSurfaceDefinition::Offset { distance, .. }
                 if (distance - 2.0).abs() < f64::EPSILON
         )
     }));
-    assert!(result.ir.model.surfaces.iter().any(|surface| {
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane { .. })
             && surface.id.0.contains("hidden-support-surf#100")
     }));
 
-    let face_surface = &result.ir.model.faces[0].surface;
+    let face_surface = &result.ir().model.faces[0].surface;
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
-        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &cadmpeg_ir::index::ModelIndex::new(result.ir()),
         face_surface,
         0.0,
         0.0,
     )
     .expect("nested offset evaluation");
     assert!((point.z - 5.0).abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -8728,10 +8773,10 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
-    assert_eq!(result.ir.model.surfaces.len(), 3);
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().model.surfaces.len(), 3);
     let ProceduralSurfaceDefinition::Blend { supports, .. } =
-        &result.ir.model.procedural_surfaces[0].definition
+        &result.ir().model.procedural_surfaces[0].definition
     else {
         panic!("rolling-ball construction");
     };
@@ -8740,7 +8785,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         .flatten()
         .map(|support| {
             result
-                .ir
+                .ir()
                 .model
                 .surfaces
                 .iter()
@@ -8759,11 +8804,11 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
     for surface in support_surfaces {
         assert!(surface.id.0.contains("hidden-support-surf#"));
     }
-    assert!(result.report.losses.iter().any(|loss| {
+    assert!(result.report().losses.iter().any(|loss| {
         loss.message
             .contains("1 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -8789,14 +8834,14 @@ fn merged_sites_retain_procedural_surface_constructions() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
     assert!(result
-        .ir
+        .ir()
         .model
         .procedural_surfaces
         .iter()
         .all(|construction| {
-            result.ir.model.surfaces.iter().any(|surface| {
+            result.ir().model.surfaces.iter().any(|surface| {
                 matches!(
                     &surface.geometry,
                     cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
@@ -8805,11 +8850,11 @@ fn merged_sites_retain_procedural_surface_constructions() {
                 )
             })
         }));
-    assert!(result.report.losses.iter().any(|loss| {
+    assert!(result.report().losses.iter().any(|loss| {
         loss.message
             .contains("2 untyped surface carrier(s) are retained as opaque hidden supports")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -8833,9 +8878,9 @@ fn cyclic_offset_surface_graph_remains_unknown() {
         )
         .unwrap();
 
-    assert!(result.ir.model.procedural_surfaces.is_empty());
+    assert!(result.ir().model.procedural_surfaces.is_empty());
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Unknown { .. }
     ));
 }
@@ -8907,7 +8952,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
         .unwrap();
 
     let nurbs = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -8936,12 +8981,12 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let CurveGeometry::Nurbs(curve) = &mut decoded.ir.model.curves[0].geometry else {
+    let CurveGeometry::Nurbs(curve) = &mut decoded.ir_mut().model.curves[0].geometry else {
         panic!("expected NURBS curve");
     };
     curve.control_points[1].y += 250.0;
     let expected_curve = curve.clone();
-    let SurfaceGeometry::Nurbs(surface) = &mut decoded.ir.model.surfaces[0].geometry else {
+    let SurfaceGeometry::Nurbs(surface) = &mut decoded.ir_mut().model.surfaces[0].geometry else {
         panic!("expected NURBS surface");
     };
     surface.control_points[3].z += 500.0;
@@ -8949,16 +8994,16 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir.model.curves.iter().any(
+    assert!(regenerated.ir().model.curves.iter().any(
         |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
     ));
-    assert!(regenerated.ir.model.surfaces.iter().any(
+    assert!(regenerated.ir().model.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
     ));
 }
@@ -8996,7 +9041,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         )
         .unwrap();
     let curve = decoded
-        .ir
+        .ir_mut()
         .model
         .curves
         .iter_mut()
@@ -9009,7 +9054,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     curve.knots[3..].fill(2.0);
     let expected_curve = curve.clone();
     let surface = decoded
-        .ir
+        .ir_mut()
         .model
         .surfaces
         .iter_mut()
@@ -9025,7 +9070,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     assert!(crate::container::scan_bytes(&encoded)
         .blocks
@@ -9038,14 +9083,14 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir.model.curves.iter().any(
+    assert!(regenerated.ir().model.curves.iter().any(
         |curve| matches!(&curve.geometry, CurveGeometry::Nurbs(value) if value == &expected_curve)
     ));
-    assert!(regenerated.ir.model.surfaces.iter().any(
+    assert!(regenerated.ir().model.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Nurbs(value) if value == &expected_surface)
     ));
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -9065,9 +9110,9 @@ fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.model.pcurves.iter().any(|pcurve| {
+    assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         result
-            .source_fidelity
+            .source_fidelity()
             .annotations
             .provenance
             .get(&pcurve.id.0)
@@ -9100,9 +9145,9 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
         )
         .unwrap();
 
-    assert!(result.ir.model.pcurves.iter().any(|pcurve| {
+    assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         result
-            .source_fidelity
+            .source_fidelity()
             .annotations
             .provenance
             .get(&pcurve.id.0)
@@ -9116,7 +9161,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
     }));
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .edges
             .iter()
@@ -9124,7 +9169,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .and_then(|edge| edge.param_range),
         Some([0.0, 1000.0])
     );
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -9153,7 +9198,7 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
 
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .edges
             .iter()
@@ -9161,7 +9206,7 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
             .and_then(|edge| edge.param_range),
         Some([-500.0, 500.0])
     );
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -9180,9 +9225,9 @@ fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
         )
         .unwrap();
 
-    assert!(result.ir.model.pcurves.iter().any(|pcurve| {
+    assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         result
-            .source_fidelity
+            .source_fidelity()
             .annotations
             .provenance
             .get(&pcurve.id.0)
@@ -9200,14 +9245,14 @@ fn decode_transfers_body_material_color() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    let color = result.ir.model.bodies[0].color.expect("body color");
+    let color = result.ir().model.bodies[0].color.expect("body color");
     assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
     assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
     assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
-    assert_eq!(result.ir.model.appearances.len(), 1);
-    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    assert_eq!(result.ir().model.appearances.len(), 1);
+    assert_eq!(result.ir().model.appearance_bindings.len(), 1);
     assert_eq!(
-        result.ir.model.appearances[0].name.as_deref(),
+        result.ir().model.appearances[0].name.as_deref(),
         Some("Steel")
     );
 }
@@ -9222,27 +9267,27 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
     let mut result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.appearances.len(), 2);
-    assert!(result.ir.model.appearance_bindings.is_empty());
+    assert_eq!(result.ir().model.appearances.len(), 2);
+    assert!(result.ir().model.appearance_bindings.is_empty());
     assert!(result
-        .ir
+        .ir()
         .model
         .bodies
         .iter()
         .all(|body| body.color.is_none() && body.name.is_none()));
 
-    result.ir.model.points[0].position.z += 1.0;
+    result.ir_mut().model.points[0].position.z += 1.0;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&result.ir, &result.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(result.ir(), result.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(regenerated.ir.model.appearances.len(), 2);
+    assert_eq!(regenerated.ir().model.appearances.len(), 2);
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .model
             .appearances
             .iter()
@@ -9250,7 +9295,7 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
             .collect::<Vec<_>>(),
         vec!["Steel", "Aluminum"]
     );
-    assert!(regenerated.ir.model.appearance_bindings.is_empty());
+    assert!(regenerated.ir().model.appearance_bindings.is_empty());
 }
 
 #[test]
@@ -9265,28 +9310,28 @@ fn semantic_writer_preserves_body_material() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
-    let validation = cadmpeg_ir::validate::validate_neutral(&decoded.ir, Vec::new());
+    decoded.ir_mut().model.points[0].position.z += 1.0;
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
     assert_eq!(
-        regenerated.ir.model.bodies[0].name.as_deref(),
+        regenerated.ir().model.bodies[0].name.as_deref(),
         Some("Steel")
     );
-    let color = regenerated.ir.model.bodies[0].color.unwrap();
+    let color = regenerated.ir().model.bodies[0].color.unwrap();
     assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
     assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
     assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .appearances
         .iter()
@@ -9305,12 +9350,12 @@ fn semantic_writer_rejects_overlong_material_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.appearances[0].name = Some("M".repeat(256));
-    decoded.ir.model.bodies[0].name = Some("M".repeat(256));
+    decoded.ir_mut().model.appearances[0].name = Some("M".repeat(256));
+    decoded.ir_mut().model.bodies[0].name = Some("M".repeat(256));
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -9329,20 +9374,25 @@ fn decode_binds_entity53_color_to_face() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.report.losses.len(), 1, "{:#?}", result.report.losses);
     assert_eq!(
-        result.report.losses[0].message,
+        result.report().losses.len(),
+        1,
+        "{:#?}",
+        result.report().losses
+    );
+    assert_eq!(
+        result.report().losses[0].message,
         "1 configuration state(s) are inferred from geometry partitions without native configuration definitions."
     );
     let binding = result
-        .ir
+        .ir()
         .model
         .appearance_bindings
         .iter()
         .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
         .expect("face binding");
     let appearance = result
-        .ir
+        .ir()
         .model
         .appearances
         .iter()
@@ -9377,10 +9427,10 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.appearances.len(), 2);
+    assert_eq!(result.ir().model.appearances.len(), 2);
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .appearance_bindings
             .iter()
@@ -9388,7 +9438,7 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -9421,13 +9471,13 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 3);
-    assert_eq!(result.ir.model.edges.len(), 3);
-    assert_eq!(result.ir.model.vertices.len(), 3);
-    assert_eq!(result.ir.model.points.len(), 3);
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -9449,10 +9499,10 @@ fn partition_point_refs_do_not_select_deltas_framing() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 3);
-    assert_eq!(result.ir.model.points.len(), 3);
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses).is_ok());
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -9472,7 +9522,7 @@ fn deltas_point_index_does_not_replace_partition_coordinates() {
         .unwrap();
 
     let point = result
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -9496,24 +9546,24 @@ fn semantic_writer_preserves_face_appearance() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let binding = regenerated
-        .ir
+        .ir()
         .model
         .appearance_bindings
         .iter()
         .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
         .expect("face binding");
     let color = regenerated
-        .ir
+        .ir()
         .model
         .appearances
         .iter()
@@ -9536,14 +9586,14 @@ fn decode_binds_adjacent_entity53_color_to_disc14_face() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     let binding = result
-        .ir
+        .ir()
         .model
         .appearance_bindings
         .iter()
         .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
         .expect("face binding");
     let color = result
-        .ir
+        .ir()
         .model
         .appearances
         .iter()
@@ -9562,7 +9612,7 @@ fn decode_reports_display_list_geometry() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    let source = result.ir.source.as_ref().expect("source metadata");
+    let source = result.ir().source.as_ref().expect("source metadata");
 
     assert_eq!(
         source
@@ -9578,40 +9628,43 @@ fn decode_reports_display_list_geometry() {
             .map(String::as_str),
         Some("1")
     );
-    assert_eq!(result.ir.model.tessellations.len(), 1);
-    assert_eq!(result.ir.model.tessellations[0].vertices.len(), 3);
-    assert_eq!(result.ir.model.tessellations[0].vertices[1].x, 1000.0);
-    assert_eq!(result.ir.model.tessellations[0].triangles, vec![[0, 1, 2]]);
-    assert_eq!(result.ir.model.tessellations[0].strip_lengths, vec![3]);
-    assert_eq!(result.ir.model.tessellations[0].normals.len(), 3);
-    assert_eq!(result.ir.model.tessellations[0].channels.len(), 6);
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].vertices.len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].vertices[1].x, 1000.0);
     assert_eq!(
-        result.ir.model.tessellations[0].faces,
-        [result.ir.model.faces[0].id.clone()]
+        result.ir().model.tessellations[0].triangles,
+        vec![[0, 1, 2]]
+    );
+    assert_eq!(result.ir().model.tessellations[0].strip_lengths, vec![3]);
+    assert_eq!(result.ir().model.tessellations[0].normals.len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].channels.len(), 6);
+    assert_eq!(
+        result.ir().model.tessellations[0].faces,
+        [result.ir().model.faces[0].id.clone()]
     );
     assert_eq!(
-        result.ir.model.tessellations[0].body.as_ref(),
-        Some(&result.ir.model.bodies[0].id)
+        result.ir().model.tessellations[0].body.as_ref(),
+        Some(&result.ir().model.bodies[0].id)
     );
-    assert!(!result.report.losses.iter().any(|loss| {
+    assert!(!result.report().losses.iter().any(|loss| {
         loss.code.taxonomy() == LossTaxonomy::ReferenceGraphNotClosed
             && loss.message.contains("DisplayLists tessellation")
     }));
     assert!(result
-        .ir
+        .ir()
         .native_unknowns("sldprt")
         .unwrap()
         .iter()
         .any(|record| {
             result
-                .source_fidelity
+                .source_fidelity()
                 .annotations
                 .provenance
                 .get(&record.id.0)
                 .and_then(|note| note.tag.as_deref())
                 == Some("displaylist_tessellation")
                 && result
-                    .source_fidelity
+                    .source_fidelity()
                     .retained_record(&record.id.0)
                     .is_some_and(|source| source.data.is_some())
         }));
@@ -9628,8 +9681,8 @@ fn decode_reports_extended_header_display_list_geometry() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.tessellations.len(), 1);
-    assert_eq!(result.ir.model.tessellations[0].triangles, [[0, 1, 2]]);
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
 }
 
 #[test]
@@ -9648,7 +9701,7 @@ fn decode_rejects_incoherent_display_list_header_counts() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.model.tessellations.is_empty());
+    assert!(result.ir().model.tessellations.is_empty());
 }
 
 #[test]
@@ -9669,9 +9722,9 @@ fn decode_rejects_inconsistent_display_list_table() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.model.tessellations.is_empty());
+    assert!(result.ir().model.tessellations.is_empty());
     assert!(!result
-        .ir
+        .ir()
         .source
         .as_ref()
         .unwrap()
@@ -9699,7 +9752,7 @@ fn decode_rejects_nonfinite_display_list_values() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.model.tessellations.is_empty());
+    assert!(result.ir().model.tessellations.is_empty());
 }
 
 #[test]
@@ -9709,18 +9762,18 @@ fn decode_extracts_parametric_history() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&result.ir);
+    let native = sldprt_native(result.ir());
     let history = &native.feature_histories[0];
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
-    assert_eq!(result.ir.model.configurations.len(), 1);
-    assert_eq!(result.ir.model.configurations[0].name, "Default");
+    assert_eq!(result.ir().model.configurations.len(), 1);
+    assert_eq!(result.ir().model.configurations[0].name, "Default");
     assert_eq!(
-        result.ir.model.configurations[0].material.as_deref(),
+        result.ir().model.configurations[0].material.as_deref(),
         Some("Steel")
     );
     assert_eq!(
-        result.ir.model.configurations[0].native_ref.as_deref(),
+        result.ir().model.configurations[0].native_ref.as_deref(),
         Some(history.configurations[0].id.as_str())
     );
     assert_eq!(history.features[0].kind, "BossExtrude");
@@ -9729,8 +9782,8 @@ fn decode_extracts_parametric_history() {
     assert_eq!(history.features[0].properties["Scope"], "Body1");
     assert_eq!(history.features[1].parent_source_id.as_deref(), Some("7"));
     assert_eq!(history.features[1].xml_tag, "EquationDrivenCurve");
-    assert_eq!(result.ir.model.features.len(), 2);
-    let neutral = &result.ir.model.features[0];
+    assert_eq!(result.ir().model.features.len(), 2);
+    let neutral = &result.ir().model.features[0];
     assert_eq!(neutral.name.as_deref(), Some("Boss"));
     assert_eq!(
         neutral.native_ref.as_deref(),
@@ -9756,7 +9809,7 @@ fn decode_extracts_parametric_history() {
         } if profile == &history.features[0].id
     ));
     assert_eq!(
-        result.ir.model.features[1].parent.as_ref(),
+        result.ir().model.features[1].parent.as_ref(),
         Some(&neutral.id)
     );
 }
@@ -9770,7 +9823,7 @@ fn decode_uses_plain_numeric_config_as_legacy_feature_input_lane() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let lanes = &sldprt_native(&decoded.ir).feature_input_lanes;
+    let lanes = &sldprt_native(decoded.ir()).feature_input_lanes;
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].configuration.as_deref(), Some("7"));
     assert_eq!(lanes[0].native_payload, legacy);
@@ -9791,7 +9844,7 @@ fn decode_prefers_explicit_feature_input_lanes_over_plain_config_streams() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let lanes = &sldprt_native(&decoded.ir).feature_input_lanes;
+    let lanes = &sldprt_native(decoded.ir()).feature_input_lanes;
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].configuration.as_deref(), Some("7"));
     assert_eq!(lanes[0].native_payload, explicit);
@@ -9828,7 +9881,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let definitions = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -9865,17 +9918,17 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         }
     ));
     assert!(!decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. })));
-    decoded.ir.model.features[0].name = Some("Document annotations".into());
+    decoded.ir_mut().model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         })
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
@@ -9883,7 +9936,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::Annotations,
             ..
@@ -9913,7 +9966,7 @@ fn decode_leaves_position_allocated_tree_nodes_untyped() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -9938,7 +9991,7 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -9950,7 +10003,7 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::Native { .. }
     ));
 }
@@ -9981,14 +10034,14 @@ fn decode_binds_duplicate_feature_names_by_native_object_id() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::SolidBodies,
             ..
@@ -10016,7 +10069,7 @@ fn decode_propagates_unique_object_class_by_serialized_type_token() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     assert!(native.feature_histories[0]
         .features
         .iter()
@@ -10054,7 +10107,7 @@ fn decode_binds_repeated_instances_by_class_token() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     assert!(native.feature_histories[0]
         .features
         .iter()
@@ -10085,7 +10138,7 @@ fn decode_does_not_propagate_ambiguous_object_class_by_type_token() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     assert_eq!(native.feature_histories[0].features[2].input_class, None);
 }
 
@@ -10125,7 +10178,7 @@ fn decode_does_not_bind_ambiguous_repeated_class_token() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     assert_eq!(native.feature_histories[0].features[4].input_class, None);
 }
 
@@ -10149,11 +10202,11 @@ fn decode_does_not_bind_object_class_by_display_name() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Native { .. }
     ));
     assert_eq!(
-        sldprt_native(&decoded.ir).feature_histories[0].features[0].input_class,
+        sldprt_native(decoded.ir()).feature_histories[0].features[0].input_class,
         None
     );
 }
@@ -10169,12 +10222,12 @@ fn keywords_root_id_does_not_create_feature_parentage() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let history = &native.feature_histories[0];
     assert_eq!(history.properties["id"], "document");
     assert_eq!(history.features[0].parent_source_id, None);
     assert_eq!(history.features[1].parent_source_id.as_deref(), Some("1"));
-    assert!(crate::validate_native(&decoded.ir).is_empty());
+    assert!(crate::validate_native(decoded.ir()).is_empty());
 }
 
 #[test]
@@ -10185,10 +10238,10 @@ fn native_validation_rejects_duplicate_history_ordinals() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].features[1].ordinal = 0;
     });
-    assert!(crate::validate_native(&decoded.ir)
+    assert!(crate::validate_native(decoded.ir())
         .iter()
         .any(|finding| finding.message.contains("repeats feature ordinal")));
 }
@@ -10201,10 +10254,10 @@ fn native_validation_rejects_broken_feature_graph() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].features[1].tree_parent = Some("missing-record".into());
     });
-    assert!(crate::validate_native(&decoded.ir)
+    assert!(crate::validate_native(decoded.ir())
         .iter()
         .any(|finding| finding.message.contains("missing tree parent")));
 }
@@ -10222,7 +10275,7 @@ fn native_validation_rejects_broken_history_root_graph() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         let history = &mut native.feature_histories[0];
         let nested = history
             .features
@@ -10237,7 +10290,7 @@ fn native_validation_rejects_broken_history_root_graph() {
         ];
     });
 
-    let messages = crate::validate_native(&decoded.ir)
+    let messages = crate::validate_native(decoded.ir())
         .into_iter()
         .map(|finding| finding.message)
         .collect::<Vec<_>>();
@@ -10264,7 +10317,7 @@ fn native_validation_rejects_orphan_history_records() {
         )
         .unwrap();
     let orphan = decoded
-        .ir
+        .ir_mut()
         .native
         .namespace_mut("sldprt")
         .arenas
@@ -10277,13 +10330,13 @@ fn native_validation_rejects_orphan_history_records() {
         serde_json::Value::String("missing-history".into()),
     );
     decoded
-        .ir
+        .ir_mut()
         .native
         .namespace_mut("sldprt")
         .arenas
         .get_mut("features")
         .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
-    assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
+    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
         finding.message.contains("invalid owner") && finding.message.contains("missing-history")
     }));
 }
@@ -10296,14 +10349,14 @@ fn native_store_rejects_mismatched_nested_owners_atomically() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     native.feature_histories[0].features[0].parent = "missing-history".into();
-    let before = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let before = decoded.ir().native.namespace("sldprt").unwrap().clone();
     let error = native
-        .store(decoded.ir.native.namespace_mut("sldprt"))
+        .store(decoded.ir_mut().native.namespace_mut("sldprt"))
         .unwrap_err();
     assert!(error.to_string().contains("invalid owner"));
-    assert_eq!(decoded.ir.native.namespace("sldprt").unwrap(), &before);
+    assert_eq!(decoded.ir().native.namespace("sldprt").unwrap(), &before);
 }
 
 #[test]
@@ -10317,11 +10370,11 @@ fn native_validation_rejects_duplicate_sketch_marker_offsets() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         let offset = native.feature_input_lanes[0].sketch_entities[0].offset;
         native.feature_input_lanes[0].sketch_entities[1].offset = offset;
     });
-    assert!(crate::validate_native(&decoded.ir)
+    assert!(crate::validate_native(decoded.ir())
         .iter()
         .any(|finding| finding.message.contains("repeats entity offset")));
 }
@@ -10337,20 +10390,20 @@ fn native_validation_rejects_edited_relation_binding() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].relation_bindings[0].family =
             crate::records::FeatureInputRelationFamily::LineLineDistance;
     });
 
-    assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
+    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
         finding
             .message
             .contains("relation bindings do not match the native payload")
     }));
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -10368,19 +10421,19 @@ fn native_validation_rejects_edited_relation_instance() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].relation_instances[0].parameter_scalar_ref = None;
     });
 
-    assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
+    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
         finding
             .message
             .contains("relation instances do not match the native payload")
     }));
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -10398,11 +10451,11 @@ fn native_validation_requires_complete_ordered_sketch_markers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
         native.feature_input_lanes[0].sketch_entities[1].ordinal = 4;
     });
-    let messages = crate::validate_native(&decoded.ir)
+    let messages = crate::validate_native(decoded.ir())
         .into_iter()
         .map(|finding| finding.message)
         .collect::<Vec<_>>();
@@ -10425,15 +10478,15 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
     });
-    decoded.source_fidelity.annotations = cadmpeg_ir::Annotations::default();
+    decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -10456,15 +10509,15 @@ fn semantic_writer_derives_resolved_feature_section_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.source_fidelity.annotations = cadmpeg_ir::Annotations::default();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].kind =
             crate::records::SketchInputKind::Native(9);
     });
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
@@ -10472,13 +10525,13 @@ fn semantic_writer_derives_resolved_feature_section_names() {
         .iter()
         .any(|block| { block.section.as_deref() == Some("Contents/Config-0-ResolvedFeatures") }));
 
-    let mut unscoped = decoded.ir;
+    let (mut unscoped, _, fidelity) = decoded.into_parts();
     update_sldprt_native(&mut unscoped, |native| {
         native.feature_input_lanes[0].configuration = None;
     });
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&unscoped, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(&unscoped, &fidelity, &mut written)
         .unwrap();
     let scan = container::scan_bytes(&written);
     assert!(scan
@@ -10498,7 +10551,7 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&decoded.ir).feature_histories[0].features;
+    let native = &sldprt_native(decoded.ir()).feature_histories[0].features;
     assert_eq!(
         native[1].tree_parent.as_deref(),
         Some(native[0].id.as_str())
@@ -10508,23 +10561,23 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
         Some(native[1].id.as_str())
     );
     assert_eq!(
-        decoded.ir.model.features[1].parent.as_ref(),
-        Some(&decoded.ir.model.features[0].id)
+        decoded.ir().model.features[1].parent.as_ref(),
+        Some(&decoded.ir().model.features[0].id)
     );
     assert_eq!(
-        decoded.ir.model.features[2].parent.as_ref(),
-        Some(&decoded.ir.model.features[1].id)
+        decoded.ir().model.features[2].parent.as_ref(),
+        Some(&decoded.ir().model.features[1].id)
     );
-    decoded.ir.model.features[2].name = Some("Edited Profile".into());
+    decoded.ir_mut().model.features[2].name = Some("Edited Profile".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native.len(), 3);
     assert_eq!(native[0].xml_tag, "Feature");
     assert_eq!(native[1].xml_tag, "Folder");
@@ -10548,7 +10601,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let configuration = &mut decoded.ir.model.configurations[0];
+    let configuration = &mut decoded.ir_mut().model.configurations[0];
     configuration.name = "Machined".into();
     configuration.material = Some("Aluminum".into());
     configuration
@@ -10557,17 +10610,17 @@ fn semantic_writer_applies_neutral_configuration_edits() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     let configuration = &native.feature_histories[0].configurations[0];
     assert_eq!(configuration.name, "Machined");
     assert_eq!(configuration.material.as_deref(), Some("Aluminum"));
     assert_eq!(configuration.properties["Finish"], "Anodized");
-    assert_eq!(regenerated.ir.model.configurations[0].name, "Machined");
+    assert_eq!(regenerated.ir().model.configurations[0].name, "Machined");
 }
 
 #[test]
@@ -10578,15 +10631,15 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.configurations[0].name = "Neutral".into();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    decoded.ir_mut().model.configurations[0].name = "Neutral".into();
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].configurations[0].name = "Native".into();
     });
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -10620,7 +10673,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let parameters = &decoded.ir.model.parameters;
+    let parameters = &decoded.ir().model.parameters;
     assert_eq!(parameters.len(), 10);
     assert_eq!(
         parameters
@@ -10693,10 +10746,10 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     assert_eq!(value("Ratio"), Some(&ParameterValue::Real(1.25)));
     assert!(parameters
         .iter()
-        .all(|parameter| parameter.owner.as_ref() == Some(&decoded.ir.model.features[0].id)));
+        .all(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[0].id)));
 
     let radius = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -10705,7 +10758,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     radius.expression = "R2".into();
     radius.value = Some(ParameterValue::Length(Length(2.0)));
     let modified_diameter = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -10714,7 +10767,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     modified_diameter.expression = "<MOD-DIAM>4".into();
     modified_diameter.value = Some(ParameterValue::Length(Length(4.0)));
     let display_angle = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -10725,13 +10778,13 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let native_parameters =
-        &sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters;
+        &sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters;
     assert_eq!(native_parameters["Radius"], "R2");
     assert_eq!(native_parameters["ModifiedDiameter"], "<MOD-DIAM>4");
     assert_eq!(
@@ -10740,7 +10793,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     );
     assert!(matches!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -10750,7 +10803,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     ));
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -10760,7 +10813,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     );
     assert!(matches!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -10771,7 +10824,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     ));
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -10795,7 +10848,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
         )
         .unwrap();
     let parameter = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -10806,18 +10859,18 @@ fn semantic_writer_applies_neutral_parameter_edits() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
         "20mm"
     );
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -10841,7 +10894,7 @@ fn semantic_writer_preserves_dimension_attributes() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let parameter = &mut decoded.ir.model.parameters[0];
+    let parameter = &mut decoded.ir_mut().model.parameters[0];
     assert_eq!(parameter.properties["Driven"], "true");
     assert_eq!(parameter.properties["EquationId"], "D1@Boss");
     parameter.expression = "20mm".into();
@@ -10849,12 +10902,12 @@ fn semantic_writer_preserves_dimension_attributes() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.parameters["Depth"], "20mm");
     assert_eq!(feature.dimension_properties["Depth"]["Driven"], "true");
     assert_eq!(
@@ -10876,7 +10929,7 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let parameter = &mut decoded.ir.model.parameters[0];
+    let parameter = &mut decoded.ir_mut().model.parameters[0];
     assert_eq!(parameter.expression, "Width * 2");
     assert_eq!(parameter.value, Some(ParameterValue::Length(Length(24.0))));
     assert_eq!(parameter.properties["Value"], "24mm");
@@ -10885,12 +10938,12 @@ fn semantic_writer_preserves_evaluated_equation_values() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let parameter = &regenerated.ir.model.parameters[0];
+    let parameter = &regenerated.ir().model.parameters[0];
     assert_eq!(parameter.expression, "Width * 3");
     assert_eq!(parameter.value, Some(ParameterValue::Length(Length(36.0))));
     assert_eq!(parameter.properties["Value"], "36mm");
@@ -10908,45 +10961,45 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.parameters.len(), 4);
+    assert_eq!(decoded.ir().model.parameters.len(), 4);
     assert_eq!(
-        decoded.ir.model.parameters[3].dependencies,
+        decoded.ir().model.parameters[3].dependencies,
         vec![
-            decoded.ir.model.parameters[1].id.clone(),
-            decoded.ir.model.parameters[2].id.clone(),
-            decoded.ir.model.parameters[0].id.clone(),
+            decoded.ir().model.parameters[1].id.clone(),
+            decoded.ir().model.parameters[2].id.clone(),
+            decoded.ir().model.parameters[0].id.clone(),
         ]
     );
 
-    decoded.ir.model.parameters[0]
+    decoded.ir_mut().model.parameters[0]
         .properties
         .insert("EquationId".into(), "D1@Renamed".into());
-    decoded.ir.model.parameters[1].name = "Wall Gauge".into();
+    decoded.ir_mut().model.parameters[1].name = "Wall Gauge".into();
     let mut renamed = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut renamed)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut renamed)
         .unwrap();
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        decoded.ir.model.parameters[3].expression,
+        decoded.ir().model.parameters[3].expression,
         "\"Wall Gauge\" + \"Datum \"\"A\"\"\" + D1@Renamed + \"Wall Gauge\""
     );
     assert_eq!(
-        decoded.ir.model.parameters[3].dependencies,
+        decoded.ir().model.parameters[3].dependencies,
         vec![
-            decoded.ir.model.parameters[1].id.clone(),
-            decoded.ir.model.parameters[2].id.clone(),
-            decoded.ir.model.parameters[0].id.clone(),
+            decoded.ir().model.parameters[1].id.clone(),
+            decoded.ir().model.parameters[2].id.clone(),
+            decoded.ir().model.parameters[0].id.clone(),
         ]
     );
 
-    decoded.ir.model.parameters[3].expression = "6mm".into();
+    decoded.ir_mut().model.parameters[3].expression = "6mm".into();
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -10968,7 +11021,7 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
         .unwrap();
     let parameter_id = |name: &str| {
         decoded
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -10985,7 +11038,7 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
     ];
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -11001,7 +11054,7 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
         ("iif", "Choice input"),
     ] {
         decoded
-            .ir
+            .ir_mut()
             .model
             .parameters
             .iter_mut()
@@ -11011,13 +11064,13 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
     }
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let driven = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11045,7 +11098,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let values = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11103,7 +11156,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
     assert_eq!(values["Invalid nested domain"], None);
     let ordinal = |name: &str| {
         decoded
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -11112,7 +11165,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
             .ordinal
     };
     assert!(ordinal("Later") < ordinal("Forward"));
-    assert!(!cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new())
+    assert!(!cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("parameter dependency")));
@@ -11133,7 +11186,7 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut parameter_order = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11143,7 +11196,7 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
     assert_eq!(parameter_order, vec![(0, "Input"), (1, "Result")]);
 
     let result = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11153,12 +11206,12 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
     result.value = Some(ParameterValue::Integer(4));
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(
         feature
             .content
@@ -11171,7 +11224,7 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
         vec!["Input", "Result"]
     );
     let result = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11199,7 +11252,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -11214,7 +11267,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         }
     ));
     let depth = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11225,23 +11278,23 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         depth.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(Length(8.0)))
     );
-    let native = &sldprt_native(&decoded.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(decoded.ir()).feature_histories[0].features[0];
     assert_eq!(native.parameters["Depth"], "Base * 2");
 
-    decoded.ir.model.features[0].name = Some("Renamed equation boss".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed equation boss".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
         "Base * 2"
     );
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -11273,7 +11326,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let equations = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -11287,7 +11340,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         }
     ));
     let width = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11295,7 +11348,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .expect("width parameter");
     assert_eq!(width.owner.as_ref(), Some(&equations.id));
     let depth = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11305,15 +11358,15 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     assert_eq!(depth.value, Some(ParameterValue::Length(Length(8.0))));
 
     let extrusion = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .position(|feature| feature.name.as_deref() == Some("Equation boss"))
         .expect("extrusion");
-    decoded.ir.model.features[extrusion].name = Some("Renamed equation boss".into());
+    decoded.ir_mut().model.features[extrusion].name = Some("Renamed equation boss".into());
     let FeatureDefinition::Extrude { extent, .. } =
-        &mut decoded.ir.model.features[extrusion].definition
+        &mut decoded.ir_mut().model.features[extrusion].definition
     else {
         panic!("typed extrusion");
     };
@@ -11327,7 +11380,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         },
     };
     let depth = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11338,13 +11391,13 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let equations = regenerated
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -11358,7 +11411,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         }
     ));
     let depth = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11368,7 +11421,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     assert_eq!(depth.value, Some(ParameterValue::Length(Length(12.0))));
     assert_eq!(depth.dependencies.len(), 1);
     let extrusion = regenerated
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -11402,14 +11455,14 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let sketch1 = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .unwrap();
     let sketch1_parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11418,7 +11471,7 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         .id
         .clone();
     let result = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11427,7 +11480,7 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
     assert_eq!(result.dependencies, vec![sketch1_parameter.clone()]);
 
     decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11436,13 +11489,13 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         .name = "Width".into();
     let mut renamed = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut renamed)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut renamed)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
         .unwrap();
     let result = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11464,7 +11517,7 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let width = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11474,13 +11527,13 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let result = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11490,7 +11543,7 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
     assert_eq!(result.dependencies.len(), 1);
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -11501,7 +11554,7 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
     );
 
     regenerated
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11512,8 +11565,8 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &regenerated.ir,
-            &regenerated.source_fidelity,
+            regenerated.ir(),
+            regenerated.source_fidelity(),
             &mut encoded,
         )
         .unwrap();
@@ -11522,7 +11575,7 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
         .unwrap();
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -11545,7 +11598,7 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let sketch = decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -11553,7 +11606,7 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         .unwrap();
     sketch.name = Some("Profile".into());
     decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11563,19 +11616,19 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .any(|feature| feature.name.as_deref() == Some("Profile")));
     let gauge = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11583,7 +11636,7 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         .unwrap();
     assert_eq!(gauge.properties["EquationId"], "D1@Profile");
     let result = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11605,7 +11658,7 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -11615,13 +11668,13 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let result = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11645,7 +11698,7 @@ fn semantic_writer_preserves_empty_dimensions() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let empty = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -11654,7 +11707,7 @@ fn semantic_writer_preserves_empty_dimensions() {
     assert_eq!(empty.expression, "");
     assert_eq!(empty.value, None);
     let depth = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11665,12 +11718,12 @@ fn semantic_writer_preserves_empty_dimensions() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.parameters["External"], "");
     assert_eq!(feature.dimension_properties["External"]["Driven"], "true");
 }
@@ -11688,18 +11741,18 @@ fn semantic_writer_preserves_keywords_attributes() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let parameter = &mut decoded.ir.model.parameters[0];
+    let parameter = &mut decoded.ir_mut().model.parameters[0];
     parameter.expression = "20mm".into();
     parameter.value = Some(ParameterValue::Length(Length(20.0)));
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let history = &sldprt_native(&regenerated.ir).feature_histories[0];
+    let history = &sldprt_native(regenerated.ir()).feature_histories[0];
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.properties["Schema"], "34000");
     assert_eq!(history.properties["Revision"], "12");
@@ -11720,7 +11773,7 @@ fn semantic_writer_preserves_keywords_child_order() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let depth = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11731,12 +11784,12 @@ fn semantic_writer_preserves_keywords_child_order() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let history = &sldprt_native(&regenerated.ir).feature_histories[0];
+    let history = &sldprt_native(regenerated.ir()).feature_histories[0];
     assert!(matches!(
         history.content.as_slice(),
         [
@@ -11761,21 +11814,21 @@ fn semantic_writer_applies_history_root_ordinals() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    for feature in &mut decoded.ir.model.features {
+    for feature in &mut decoded.ir_mut().model.features {
         feature.ordinal = u64::from(feature.name.as_deref() == Some("First"));
     }
-    for configuration in &mut decoded.ir.model.configurations {
+    for configuration in &mut decoded.ir_mut().model.configurations {
         configuration.ordinal = u32::from(configuration.name == "A");
     }
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let history = &sldprt_native(&regenerated.ir).feature_histories[0];
+    let history = &sldprt_native(regenerated.ir()).feature_histories[0];
     let names = history
         .content
         .iter()
@@ -11809,7 +11862,7 @@ fn semantic_writer_applies_neutral_parameter_order() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    for parameter in &mut decoded.ir.model.parameters {
+    for parameter in &mut decoded.ir_mut().model.parameters {
         parameter.ordinal = match parameter.name.as_str() {
             "First" => 1,
             "Second" => 0,
@@ -11819,14 +11872,14 @@ fn semantic_writer_applies_neutral_parameter_order() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -11834,7 +11887,7 @@ fn semantic_writer_applies_neutral_parameter_order() {
             .collect::<Vec<_>>(),
         vec![(0, "Second"), (1, "First")]
     );
-    let content = &sldprt_native(&regenerated.ir).feature_histories[0].features[0].content;
+    let content = &sldprt_native(regenerated.ir()).feature_histories[0].features[0].content;
     assert_eq!(
         content
             .iter()
@@ -11861,7 +11914,7 @@ fn semantic_writer_rejects_conflicting_parameter_edits() {
         )
         .unwrap();
     let parameter = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -11869,7 +11922,7 @@ fn semantic_writer_rejects_conflicting_parameter_edits() {
         .unwrap();
     parameter.expression = "20mm".into();
     parameter.value = Some(ParameterValue::Length(Length(20.0)));
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "30mm".into());
@@ -11877,8 +11930,8 @@ fn semantic_writer_rejects_conflicting_parameter_edits() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -11898,10 +11951,10 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.model.parameters[0]
+    decoded.ir_mut().model.parameters[0]
         .properties
         .insert("Driven".into(), "neutral".into());
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .dimension_properties
             .get_mut("Depth")
@@ -11911,8 +11964,8 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -11934,7 +11987,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
         .unwrap();
 
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -11966,7 +12019,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
@@ -11980,16 +12033,16 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
         }
     ));
 
-    decoded.ir.model.features[0].name = Some("Renamed compact extrusion".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed compact extrusion".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
@@ -12042,7 +12095,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -12062,7 +12115,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     ));
     let feature_id = feature.id.clone();
     assert!(matches!(
-        decoded.ir.model.configurations[0]
+        decoded.ir().model.configurations[0]
             .feature_states
             .get(&feature_id)
             .map(|state| &state.definition),
@@ -12077,7 +12130,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         })
     ));
     assert!(matches!(
-        decoded.ir.model.configurations[1]
+        decoded.ir().model.configurations[1]
             .feature_states
             .get(&feature_id)
             .map(|state| &state.definition),
@@ -12091,33 +12144,32 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             ..
         })
     ));
-    assert!(
-        decoded
-            .ir
-            .model
-            .configurations
-            .iter()
-            .all(|configuration| configuration.feature_states.len()
-                == decoded.ir.model.features.len())
-    );
+    assert!(decoded
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .all(
+            |configuration| configuration.feature_states.len() == decoded.ir().model.features.len()
+        ));
     let round_trip =
-        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(&decoded.ir).unwrap()).unwrap();
+        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.configurations[0]
             .feature_states
             .get(&feature_id),
-        decoded.ir.model.configurations[0]
+        decoded.ir().model.configurations[0]
             .feature_states
             .get(&feature_id)
     );
 
-    let mut edited = decoded.ir.clone();
+    let mut edited = decoded.ir().clone();
     let replacement = edited.model.configurations[0].feature_states[&feature_id].clone();
     edited.model.configurations[1]
         .feature_states
         .insert(feature_id, replacement);
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(
         error
@@ -12155,14 +12207,14 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let profile = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Profile"))
         .unwrap();
     let extrusion = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -12209,7 +12261,7 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let extrusion = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -12224,21 +12276,21 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     ));
     let extrusion_id = extrusion.id.clone();
     let profile_a = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Profile A"))
         .unwrap();
     let profile_b = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Profile B"))
         .unwrap();
-    let state_a = &decoded.ir.model.configurations[0].feature_states[&extrusion_id];
-    let state_b = &decoded.ir.model.configurations[1].feature_states[&extrusion_id];
+    let state_a = &decoded.ir().model.configurations[0].feature_states[&extrusion_id];
+    let state_b = &decoded.ir().model.configurations[1].feature_states[&extrusion_id];
     assert!(matches!(
         &state_a.definition,
         FeatureDefinition::Extrude {
@@ -12285,14 +12337,14 @@ fn decode_binds_following_profile_marked_as_dissected_child() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let profile = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Profile<3>"))
         .unwrap();
     let extrusion = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -12342,14 +12394,14 @@ fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let profile = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Profile"))
         .unwrap();
     let extrusion = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -12385,7 +12437,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let first_definition = &decoded.ir.model.features[0].definition;
+    let first_definition = &decoded.ir().model.features[0].definition;
     assert!(
         matches!(
             first_definition,
@@ -12405,7 +12457,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         "{first_definition:?}"
     );
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -12420,7 +12472,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        decoded.ir().model.features[2].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -12435,15 +12487,15 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         }
     ));
     assert_eq!(
-        decoded.ir.model.parameters[0].value,
+        decoded.ir().model.parameters[0].value,
         Some(ParameterValue::Length(Length(200.0)))
     );
     assert_eq!(
-        decoded.ir.model.parameters[1].value,
+        decoded.ir().model.parameters[1].value,
         Some(ParameterValue::Length(Length(3.0)))
     );
     assert_eq!(
-        decoded.ir.model.parameters[2].value,
+        decoded.ir().model.parameters[2].value,
         Some(ParameterValue::Length(Length(4.0)))
     );
 
@@ -12457,7 +12509,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                     },
             },
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed positional boss extrusion");
     };
@@ -12472,7 +12524,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                     },
             },
         ..
-    } = &mut decoded.ir.model.features[1].definition
+    } = &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed positional cut extrusion");
     };
@@ -12480,12 +12532,12 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].parameters["D1"], "250");
     assert_eq!(native[1].parameters["D1"], "4.5");
     for feature in &native[..2] {
@@ -12495,7 +12547,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         assert!(!feature.properties.contains_key("Profile"));
     }
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -12510,7 +12562,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         }
     ));
     assert!(matches!(
-        regenerated.ir.model.features[1].definition,
+        regenerated.ir().model.features[1].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -12525,7 +12577,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         }
     ));
     assert!(matches!(
-        regenerated.ir.model.features[2].definition,
+        regenerated.ir().model.features[2].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -12540,13 +12592,13 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         }
     ));
 
-    regenerated.ir.model.parameters[0].expression = "225".into();
-    regenerated.ir.model.parameters[0].value = Some(ParameterValue::Length(Length(225.0)));
+    regenerated.ir_mut().model.parameters[0].expression = "225".into();
+    regenerated.ir_mut().model.parameters[0].value = Some(ParameterValue::Length(Length(225.0)));
     let mut parameter_encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &regenerated.ir,
-            &regenerated.source_fidelity,
+            regenerated.ir(),
+            regenerated.source_fidelity(),
             &mut parameter_encoded,
         )
         .unwrap();
@@ -12557,11 +12609,11 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         )
         .unwrap();
     assert_eq!(
-        sldprt_native(&parameter_regenerated.ir).feature_histories[0].features[0].parameters["D1"],
+        sldprt_native(parameter_regenerated.ir()).feature_histories[0].features[0].parameters["D1"],
         "225"
     );
     assert_eq!(
-        parameter_regenerated.ir.model.parameters[0].value,
+        parameter_regenerated.ir().model.parameters[0].value,
         Some(ParameterValue::Length(Length(225.0)))
     );
 }
@@ -12586,11 +12638,11 @@ fn decode_resolves_feature_topology_selections() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(base.ir.model.bodies.len(), 2);
-    let body = &base.ir.model.bodies[0].id.0;
-    let tool_body = &base.ir.model.bodies[1].id.0;
-    let face = &base.ir.model.faces[0].id.0;
-    let edge = &base.ir.model.edges[0].id.0;
+    assert_eq!(base.ir().model.bodies.len(), 2);
+    let body = &base.ir().model.bodies[0].id.0;
+    let tool_body = &base.ir().model.bodies[1].id.0;
+    let face = &base.ir().model.faces[0].id.0;
+    let edge = &base.ir().model.edges[0].id.0;
     let keywords = format!(
         r#"<Keywords>
             <Fillet Name="Round" Type="Fillet" id="1" Edges="{edge}"><Dimension Name="Radius">1mm</Dimension></Fillet>
@@ -12606,36 +12658,36 @@ fn decode_resolves_feature_topology_selections() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let edge_id = decoded.ir.model.edges[0].id.clone();
-    let face_id = decoded.ir.model.faces[0].id.clone();
-    let body_id = decoded.ir.model.bodies[0].id.clone();
-    let tool_body_id = decoded.ir.model.bodies[1].id.clone();
+    let edge_id = decoded.ir().model.edges[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
+    let body_id = decoded.ir().model.bodies[0].id.clone();
+    let tool_body_id = decoded.ir().model.bodies[1].id.clone();
 
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             edges: EdgeSelection::Resolved { edges, native }, ..
-        }] if edges == &[base.ir.model.edges[0].id.clone()] && native == edge)
+        }] if edges == &[base.ir().model.edges[0].id.clone()] && native == edge)
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Resolved { faces, native },
             ..
-        } if faces == &[base.ir.model.faces[0].id.clone()] && native == face
+        } if faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        &decoded.ir.model.features[2].definition,
+        &decoded.ir().model.features[2].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Resolved { bodies, native },
             tools: BodySelection::Resolved { .. },
             ..
-        } if bodies == &[base.ir.model.bodies[0].id.clone()] && native == body
+        } if bodies == &[base.ir().model.bodies[0].id.clone()] && native == body
     ));
     assert!(matches!(
-        &decoded.ir.model.features[3].definition,
+        &decoded.ir().model.features[3].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(profile_faces),
             extent: ExtrudeExtent::OneSided {
@@ -12648,18 +12700,18 @@ fn decode_resolves_feature_topology_selections() {
                 }
             },
             ..
-        } if profile_faces == &[base.ir.model.faces[0].id.clone()]
-            && faces == &[base.ir.model.faces[0].id.clone()] && native == face
+        } if profile_faces == &[base.ir().model.faces[0].id.clone()]
+            && faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        &decoded.ir.model.features[4].definition,
+        &decoded.ir().model.features[4].definition,
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
             ..
-        } if faces == &[base.ir.model.faces[0].id.clone()] && native == face
+        } if faces == &[base.ir().model.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
-        &decoded.ir.model.features[5].definition,
+        &decoded.ir().model.features[5].definition,
         FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Faces(faces)),
             path: Some(PathRef::Edges(edges)),
@@ -12667,16 +12719,17 @@ fn decode_resolves_feature_topology_selections() {
         } if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)
     ));
 
-    if let FeatureDefinition::Fillet { groups } = &mut decoded.ir.model.features[0].definition {
+    if let FeatureDefinition::Fillet { groups } = &mut decoded.ir_mut().model.features[0].definition
+    {
         groups[0].edges = EdgeSelection::Edges(vec![edge_id.clone()]);
     }
     if let FeatureDefinition::DeleteFace { faces, .. } =
-        &mut decoded.ir.model.features[1].definition
+        &mut decoded.ir_mut().model.features[1].definition
     {
         *faces = FaceSelection::Faces(vec![face_id.clone()]);
     }
     if let FeatureDefinition::Combine { target, tools, .. } =
-        &mut decoded.ir.model.features[2].definition
+        &mut decoded.ir_mut().model.features[2].definition
     {
         *target = BodySelection::Bodies(vec![body_id.clone()]);
         *tools = BodySelection::Bodies(vec![tool_body_id.clone()]);
@@ -12691,21 +12744,22 @@ fn decode_resolves_feature_topology_selections() {
                     },
             },
         ..
-    } = &mut decoded.ir.model.features[3].definition
+    } = &mut decoded.ir_mut().model.features[3].definition
     {
         *face = FaceSelection::Faces(vec![face_id.clone()]);
     }
-    if let FeatureDefinition::Hole { face, .. } = &mut decoded.ir.model.features[4].definition {
+    if let FeatureDefinition::Hole { face, .. } = &mut decoded.ir_mut().model.features[4].definition
+    {
         *face = Some(FaceSelection::Faces(vec![face_id.clone()]));
     }
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let records = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let records = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(records[0].properties["Edges"], edge_id.0);
     assert_eq!(records[1].properties["Faces"], face_id.0);
     assert_eq!(records[2].properties["Target"], body_id.0);
@@ -12730,8 +12784,8 @@ fn semantic_writer_round_trips_feature_output_scope() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(base.ir.model.bodies.len(), 2);
-    let scope = base.ir.model.bodies[0].id.0.clone();
+    assert_eq!(base.ir().model.bodies.len(), 2);
+    let scope = base.ir().model.bodies[0].id.0.clone();
     let mut source = sldprt_with_body(&body);
     source.extend(make_block(
         0x42,
@@ -12752,14 +12806,14 @@ fn semantic_writer_round_trips_feature_output_scope() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        decoded.ir.model.features[0].outputs,
-        vec![decoded.ir.model.bodies[0].id.clone()]
+        decoded.ir().model.features[0].outputs,
+        vec![decoded.ir().model.bodies[0].id.clone()]
     );
-    decoded.ir.model.features[0].outputs = vec![decoded.ir.model.bodies[1].id.clone()];
+    decoded.ir_mut().model.features[0].outputs = vec![decoded.ir().model.bodies[1].id.clone()];
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let written_partition = container::scan_bytes(&encoded)
         .blocks
@@ -12773,12 +12827,12 @@ fn semantic_writer_round_trips_feature_output_scope() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].properties["Scope"],
-        regenerated.ir.model.bodies[1].id.0
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].properties["Scope"],
+        regenerated.ir().model.bodies[1].id.0
     );
     assert_eq!(
-        regenerated.ir.model.features[0].outputs,
-        vec![regenerated.ir.model.bodies[1].id.clone()]
+        regenerated.ir().model.features[0].outputs,
+        vec![regenerated.ir().model.bodies[1].id.clone()]
     );
 }
 
@@ -12795,8 +12849,8 @@ fn decode_reports_unresolved_feature_output_scope() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.ir.model.features[0].outputs.is_empty());
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.ir().model.features[0].outputs.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies."
     }));
@@ -12818,7 +12872,7 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -12854,15 +12908,15 @@ fn decode_dispatches_typed_features_by_xml_family() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Sketch { .. }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::DatumPoint { .. }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[2].definition,
+        &decoded.ir().model.features[2].definition,
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -12873,18 +12927,18 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }])
     ));
     assert_eq!(
-        decoded.ir.model.features[2].dependencies,
+        decoded.ir().model.features[2].dependencies,
         vec![
-            decoded.ir.model.features[0].id.clone(),
-            decoded.ir.model.features[1].id.clone(),
+            decoded.ir().model.features[0].id.clone(),
+            decoded.ir().model.features[1].id.clone(),
         ]
     );
     assert_eq!(
-        decoded.ir.model.features[2].source_properties["Algorithm"],
+        decoded.ir().model.features[2].source_properties["Algorithm"],
         "RollingBall"
     );
     assert!(matches!(
-        &decoded.ir.model.features[3].definition,
+        &decoded.ir().model.features[3].definition,
         FeatureDefinition::Chamfer {
             groups,
             ..
@@ -12896,7 +12950,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }])
     ));
     assert!(matches!(
-        decoded.ir.model.features[4].definition,
+        decoded.ir().model.features[4].definition,
         FeatureDefinition::Hole {
             kind: HoleKind::Simple,
             diameter: Some(Length(4.0)),
@@ -12904,43 +12958,44 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }
     ));
 
-    let FeatureDefinition::Fillet { groups } = &mut decoded.ir.model.features[2].definition else {
+    let FeatureDefinition::Fillet { groups } = &mut decoded.ir_mut().model.features[2].definition
+    else {
         panic!("typed custom fillet");
     };
     let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
         panic!("constant fillet");
     };
     *radius = Length(2.5);
-    decoded.ir.model.features[2]
+    decoded.ir_mut().model.features[2]
         .source_properties
         .insert("Algorithm".into(), "FaceBlend".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
     assert_eq!(native[2].properties["Algorithm"], "FaceBlend");
     assert_eq!(
-        regenerated.ir.model.features[2].source_properties["Algorithm"],
+        regenerated.ir().model.features[2].source_properties["Algorithm"],
         "FaceBlend"
     );
     assert_eq!(
-        regenerated.ir.model.features[2].dependencies,
+        regenerated.ir().model.features[2].dependencies,
         vec![
-            regenerated.ir.model.features[0].id.clone(),
-            regenerated.ir.model.features[1].id.clone(),
+            regenerated.ir().model.features[0].id.clone(),
+            regenerated.ir().model.features[1].id.clone(),
         ]
     );
-    regenerated.ir.model.features[2].dependencies.pop();
+    regenerated.ir_mut().model.features[2].dependencies.pop();
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &regenerated.ir,
-            &regenerated.source_fidelity,
+            regenerated.ir(),
+            regenerated.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -12969,9 +13024,9 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let profile_feature = decoded.ir.model.features[0].id.clone();
+    let profile_feature = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Feature(profile),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
@@ -12988,7 +13043,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         } if profile == &profile_feature
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        decoded.ir().model.features[2].definition,
         FeatureDefinition::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
             extent: ExtrudeExtent::Symmetric {
@@ -13003,7 +13058,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         } if (value - 5f64.to_radians()).abs() < 1e-12
     ));
     assert!(matches!(
-        decoded.ir.model.features[3].definition,
+        decoded.ir().model.features[3].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
@@ -13024,7 +13079,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[4].definition,
+        decoded.ir().model.features[4].definition,
         FeatureDefinition::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3 {
                 x: 0.0,
@@ -13046,7 +13101,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         extent,
         op,
         ..
-    } = &mut decoded.ir.model.features[1].definition
+    } = &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed extrusion");
     };
@@ -13070,7 +13125,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     *op = BooleanOp::Intersect;
     let FeatureDefinition::Extrude {
         direction, extent, ..
-    } = &mut decoded.ir.model.features[3].definition
+    } = &mut decoded.ir_mut().model.features[3].definition
     else {
         panic!("typed extrusion");
     };
@@ -13085,12 +13140,12 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[1].properties["EndCondition"], "TwoSided");
     assert_eq!(native[1].properties["Direction"], "1,0,0");
     assert_eq!(native[1].properties["Operation"], "Intersect");
@@ -13118,7 +13173,8 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let FeatureDefinition::Extrude { extent, .. } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::Extrude { extent, .. } =
+        &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed extrusion");
     };
@@ -13148,16 +13204,16 @@ fn semantic_writer_round_trips_extrusion_to_face() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[1];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[1];
     assert_eq!(native.properties["EndCondition"], "ToFace");
     assert_eq!(native.properties["Face"], "face:13");
     assert!(matches!(
-        &regenerated.ir.model.features[1].definition,
+        &regenerated.ir().model.features[1].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -13198,7 +13254,7 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -13209,7 +13265,7 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         }])
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Chamfer {
             groups,
             ..
@@ -13221,29 +13277,29 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         }])
     ));
 
-    let mut detached = decoded.ir.clone();
+    let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved fillet radius law"));
-    detached.model.features[0] = decoded.ir.model.features[0].clone();
+    detached.model.features[0] = decoded.ir().model.features[0].clone();
     detached.model.features[1].native_ref = None;
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved chamfer dimensions"));
 
-    decoded.ir.model.features[0].name = Some("Renamed round".into());
-    decoded.ir.model.features[1].name = Some("Renamed bevel".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed round".into());
+    decoded.ir_mut().model.features[1].name = Some("Renamed bevel".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].parameters["Radius"], "NaNmm");
     assert_eq!(native[1].parameters["Distance"], "NaNmm");
     assert_eq!(native[0].properties["Edges"], "edge:1");
@@ -13262,7 +13318,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -13275,7 +13331,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     ));
 
     let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed fillet feature");
     };
@@ -13286,21 +13342,21 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Radius"],
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Radius"],
         "3.5mm"
     );
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].properties["Edges"],
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].properties["Edges"],
         "edge:3"
     );
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -13340,7 +13396,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -13351,7 +13407,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         }])
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Chamfer {
             groups,
             ..
@@ -13364,18 +13420,20 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         }] if (angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12)
     ));
     assert_eq!(
-        decoded.ir.model.parameters[1].value,
+        decoded.ir().model.parameters[1].value,
         Some(ParameterValue::Length(Length(0.3)))
     );
 
-    let FeatureDefinition::Fillet { groups, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Fillet { groups, .. } =
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed positional fillet");
     };
     groups[0].radius = RadiusSpec::Constant {
         radius: Length(2.5),
     };
-    let FeatureDefinition::Chamfer { groups, .. } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::Chamfer { groups, .. } =
+        &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed positional chamfer");
     };
@@ -13386,12 +13444,12 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].parameters["D1"], "R2.5");
     assert!(!native[0].parameters.contains_key("Radius"));
     assert_eq!(native[1].kind, format!("Chafl{}n", '\u{00e1}'));
@@ -13400,7 +13458,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     assert!(!native[1].parameters.contains_key("Distance"));
     assert!(!native[1].parameters.contains_key("Angle"));
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -13411,7 +13469,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         }])
     ));
     assert!(matches!(
-        &regenerated.ir.model.features[1].definition,
+        &regenerated.ir().model.features[1].definition,
         FeatureDefinition::Chamfer {
             groups,
             ..
@@ -13441,7 +13499,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -13453,7 +13511,8 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             VariableRadius { parameter: 1.0, radius: Length(3.0) },
         ])
     ));
-    let FeatureDefinition::Fillet { groups } = &mut decoded.ir.model.features[0].definition else {
+    let FeatureDefinition::Fillet { groups } = &mut decoded.ir_mut().model.features[0].definition
+    else {
         panic!("variable fillet");
     };
     let RadiusSpec::Variable { points } = &mut groups[0].radius else {
@@ -13464,12 +13523,12 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     assert_eq!(
         native.feature_histories[0].features[0].parameters["Position1"],
         "0.4"
@@ -13479,7 +13538,8 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         "5mm"
     );
 
-    let FeatureDefinition::Fillet { groups, .. } = &mut regenerated.ir.model.features[0].definition
+    let FeatureDefinition::Fillet { groups, .. } =
+        &mut regenerated.ir_mut().model.features[0].definition
     else {
         panic!("variable fillet after regeneration");
     };
@@ -13489,15 +13549,15 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &regenerated.ir,
-            &regenerated.source_fidelity,
+            regenerated.ir(),
+            regenerated.source_fidelity(),
             &mut encoded,
         )
         .unwrap();
     let final_ir = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let parameters = &sldprt_native(&final_ir.ir).feature_histories[0].features[0].parameters;
+    let parameters = &sldprt_native(final_ir.ir()).feature_histories[0].features[0].parameters;
     assert_eq!(parameters["Radius"], "6mm");
     assert!(!parameters.keys().any(|name| name.starts_with("Position")));
     assert!(!parameters.keys().any(|name| name == "Radius0"));
@@ -13521,7 +13581,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Chamfer {
             groups,
             ..
@@ -13534,7 +13594,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         }] if edges == "edge:1")
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Chamfer {
             groups,
             ..
@@ -13547,7 +13607,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         }])
     ));
     assert!(matches!(
-        &decoded.ir.model.features[2].definition,
+        &decoded.ir().model.features[2].definition,
         FeatureDefinition::Chamfer {
             groups,
             ..
@@ -13574,7 +13634,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         },
     ];
     for (index, (feature, replacement)) in decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -13590,12 +13650,12 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(features[0].parameters["Distance"], "2.5mm");
     assert_eq!(features[0].properties["Edges"], "edge:4");
     assert_eq!(features[1].properties["Edges"], "edge:5");
@@ -13623,7 +13683,7 @@ fn semantic_writer_retains_partial_native_wall_operations() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Native(faces),
             thickness: None,
@@ -13632,7 +13692,7 @@ fn semantic_writer_retains_partial_native_wall_operations() {
         } if faces == "face:1"
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Thicken {
             faces: FaceSelection::Native(faces),
             thickness: None,
@@ -13640,31 +13700,31 @@ fn semantic_writer_retains_partial_native_wall_operations() {
         } if faces == "face:2"
     ));
 
-    let mut detached = decoded.ir.clone();
+    let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved shell construction"));
-    detached.model.features[0] = decoded.ir.model.features[0].clone();
+    detached.model.features[0] = decoded.ir().model.features[0].clone();
     detached.model.features[1].native_ref = None;
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(error
         .to_string()
         .contains("unresolved thicken construction"));
 
-    decoded.ir.model.features[0].name = Some("Renamed shell".into());
-    decoded.ir.model.features[1].name = Some("Renamed thicken".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed shell".into());
+    decoded.ir_mut().model.features[1].name = Some("Renamed thicken".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].parameters["Thickness"], "NaNmm");
     assert!(!native[0].properties.contains_key("Outward"));
     assert_eq!(native[1].parameters["Thickness"], "NaNmm");
@@ -13685,7 +13745,7 @@ fn semantic_writer_round_trips_typed_shell() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Native(selection),
             thickness: Some(Length(value)),
@@ -13699,7 +13759,7 @@ fn semantic_writer_round_trips_typed_shell() {
         thickness,
         outward,
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed shell feature");
     };
@@ -13709,17 +13769,17 @@ fn semantic_writer_round_trips_typed_shell() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.parameters["Thickness"], "3mm");
     assert_eq!(feature.properties["RemovedFaces"], "face:5,face:6");
     assert_eq!(feature.properties["Outward"], "true");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Shell {
             thickness: Some(Length(3.0)),
             outward: Some(true),
@@ -13742,7 +13802,7 @@ fn semantic_writer_round_trips_typed_thicken() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Thicken {
             faces: FaceSelection::Native(selection),
             thickness: Some(Length(value)),
@@ -13754,7 +13814,7 @@ fn semantic_writer_round_trips_typed_thicken() {
         faces,
         thickness,
         side,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed thicken feature");
     };
@@ -13764,18 +13824,18 @@ fn semantic_writer_round_trips_typed_thicken() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.parameters["Thickness"], "3mm");
     assert_eq!(feature.properties["Faces"], "face:5,face:6");
     assert_eq!(feature.properties["BothSides"], "true");
     assert_eq!(feature.properties["Reverse"], "false");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Thicken {
             thickness: Some(Length(3.0)),
             side: Some(ThickenSide::Both),
@@ -13805,7 +13865,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
             thickness: Some(Length(6.0)),
@@ -13813,11 +13873,12 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
         }
     ));
     assert_eq!(
-        decoded.ir.model.parameters[0].value,
+        decoded.ir().model.parameters[0].value,
         Some(ParameterValue::Length(Length(6.0)))
     );
 
-    let FeatureDefinition::Thicken { thickness, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Thicken { thickness, .. } =
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed positional thicken");
     };
@@ -13825,18 +13886,18 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.parameters["D1"], "8.5");
     assert!(!native.parameters.contains_key("Thickness"));
     assert!(!native.properties.contains_key("BothSides"));
     assert!(!native.properties.contains_key("Reverse"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Thicken {
             thickness: Some(Length(8.5)),
             side: Some(ThickenSide::Forward),
@@ -13865,7 +13926,7 @@ fn semantic_writer_round_trips_typed_scale() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(selection),
             center: Some(ScaleCenter::Point(Point3 { x: 1.0, y: 2.0, z: 3.0 })),
@@ -13878,21 +13939,21 @@ fn semantic_writer_round_trips_typed_scale() {
         } if selection == "body:1"
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::Scale {
             center: Some(ScaleCenter::Centroid),
             ..
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        decoded.ir().model.features[2].definition,
         FeatureDefinition::Scale {
             center: Some(ScaleCenter::ModelOrigin),
             ..
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[3].definition,
+        &decoded.ir().model.features[3].definition,
         FeatureDefinition::Scale {
             center: Some(ScaleCenter::Native(reference)),
             ..
@@ -13903,7 +13964,7 @@ fn semantic_writer_round_trips_typed_scale() {
         bodies,
         center,
         factors,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed scale feature");
     };
@@ -13918,19 +13979,19 @@ fn semantic_writer_round_trips_typed_scale() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Bodies"], "body:2,body:3");
     assert_eq!(feature.properties["Center"], "4mm,5mm,6mm");
     assert!(!feature.parameters.contains_key("Factor"));
     assert_eq!(feature.parameters["ScaleX"], "1.5");
     assert_eq!(feature.parameters["ScaleY"], "2");
     assert_eq!(feature.parameters["ScaleZ"], "2.5");
-    let native_features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native_features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native_features[1].properties["CenterType"], "Centroid");
     assert!(!native_features[1].properties.contains_key("Center"));
     assert_eq!(native_features[2].properties["CenterType"], "ModelOrigin");
@@ -13938,7 +13999,7 @@ fn semantic_writer_round_trips_typed_scale() {
     assert_eq!(native_features[3].properties["CenterType"], "Reference");
     assert_eq!(native_features[3].properties["CenterRef"], "csys:4");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Scale {
             center: Some(ScaleCenter::Point(Point3 {
                 x: 4.0,
@@ -13955,21 +14016,21 @@ fn semantic_writer_round_trips_typed_scale() {
         }
     ));
     assert!(matches!(
-        regenerated.ir.model.features[1].definition,
+        regenerated.ir().model.features[1].definition,
         FeatureDefinition::Scale {
             center: Some(ScaleCenter::Centroid),
             ..
         }
     ));
     assert!(matches!(
-        regenerated.ir.model.features[2].definition,
+        regenerated.ir().model.features[2].definition,
         FeatureDefinition::Scale {
             center: Some(ScaleCenter::ModelOrigin),
             ..
         }
     ));
     assert!(matches!(
-        &regenerated.ir.model.features[3].definition,
+        &regenerated.ir().model.features[3].definition,
         FeatureDefinition::Scale {
             center: Some(ScaleCenter::Native(reference)),
             ..
@@ -13994,7 +14055,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(bodies),
             center: None,
@@ -14007,7 +14068,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         } if bodies == "body:1"
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::Scale {
             bodies: BodySelection::Unresolved,
             center: Some(ScaleCenter::Centroid),
@@ -14021,12 +14082,12 @@ fn semantic_writer_retains_partial_native_scale_construction() {
     ));
 
     for index in 0..2 {
-        let mut detached = decoded.ir.clone();
+        let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
         let error = SldprtCodec
             .write_preserved_with_source_fidelity(
                 &detached,
-                &decoded.source_fidelity,
+                decoded.source_fidelity(),
                 &mut Vec::new(),
             )
             .unwrap_err();
@@ -14036,17 +14097,17 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         );
     }
 
-    for (index, feature) in decoded.ir.model.features.iter_mut().enumerate() {
+    for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
         feature.name = Some(format!("Renamed scale {}", index + 1));
     }
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].properties["Center"], "invalid");
     assert_eq!(native[0].parameters["Factor"], "2");
     assert_eq!(native[0].parameters["ScaleX"], "3");
@@ -14073,7 +14134,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -14085,7 +14146,8 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         }
     ));
 
-    let FeatureDefinition::Extrude { direction, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Extrude { direction, .. } =
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed extrusion");
     };
@@ -14093,17 +14155,17 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["EndCondition"], "Blind");
     assert_eq!(feature.properties["Direction"], "0,1,0");
     assert_eq!(feature.parameters["Depth"], "0mm");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -14130,7 +14192,7 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -14143,19 +14205,19 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
     ));
 
     assert_eq!(
-        sldprt_native(&decoded.ir).feature_histories[0].features[0].parameters["Draft"],
+        sldprt_native(decoded.ir()).feature_histories[0].features[0].parameters["Draft"],
         "3deg"
     );
-    decoded.ir.model.features[0].name = Some("Renamed extrusion".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed extrusion".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.name, "Renamed extrusion");
     assert_eq!(feature.properties["EndCondition"], "Unrecognized");
     assert_eq!(feature.properties["Direction"], "0,0,1");
@@ -14184,7 +14246,7 @@ fn semantic_writer_round_trips_typed_draft() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             neutral_plane: FaceSelection::Native(neutral_plane),
@@ -14205,7 +14267,7 @@ fn semantic_writer_round_trips_typed_draft() {
         angle,
         outward,
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed draft");
     };
@@ -14217,12 +14279,12 @@ fn semantic_writer_round_trips_typed_draft() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Faces"], "face:4");
     assert_eq!(feature.properties["NeutralPlane"], "face:5");
     assert_eq!(feature.properties["Direction"], "0,1,0");
@@ -14232,7 +14294,7 @@ fn semantic_writer_round_trips_typed_draft() {
         format!("{}rad", 7f64.to_radians())
     );
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Draft {
             pull_direction: Some(Vector3 {
                 x: 0.0,
@@ -14260,7 +14322,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             neutral_plane: FaceSelection::Native(neutral_plane),
@@ -14272,7 +14334,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
         } if faces == "face:1,face:2" && neutral_plane == "face:3"
     ));
 
-    let FeatureDefinition::Draft { faces, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Draft { faces, .. } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed draft");
     };
@@ -14280,19 +14342,19 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Faces"], "face:4");
     assert_eq!(feature.properties["NeutralPlane"], "face:3");
     assert_eq!(feature.properties["Direction"], "0,0,1");
     assert_eq!(feature.properties.get("Outward"), None);
     assert_eq!(feature.parameters.get("Angle"), None);
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             angle: None,
@@ -14322,7 +14384,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Chamfer {
             groups,
             ..
@@ -14331,14 +14393,14 @@ fn semantic_writer_preserves_absent_feature_selections() {
         }])
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Unresolved,
             ..
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[2].definition,
+        &decoded.ir().model.features[2].definition,
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
             neutral_plane: FaceSelection::Unresolved,
@@ -14346,19 +14408,21 @@ fn semantic_writer_preserves_absent_feature_selections() {
         }
     ));
 
-    let FeatureDefinition::Chamfer { groups, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Chamfer { groups, .. } =
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed chamfer");
     };
     groups[0].spec = ChamferSpec::Distance {
         distance: Length(2.5),
     };
-    let FeatureDefinition::Shell { thickness, .. } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::Shell { thickness, .. } =
+        &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed shell");
     };
     *thickness = Some(Length(1.5));
-    let FeatureDefinition::Draft { angle, .. } = &mut decoded.ir.model.features[2].definition
+    let FeatureDefinition::Draft { angle, .. } = &mut decoded.ir_mut().model.features[2].definition
     else {
         panic!("typed draft");
     };
@@ -14366,12 +14430,12 @@ fn semantic_writer_preserves_absent_feature_selections() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(features[0].parameters["Distance"], "2.5mm");
     assert!(!features[0].properties.contains_key("Edges"));
     assert_eq!(features[1].parameters["Thickness"], "1.5mm");
@@ -14398,7 +14462,7 @@ fn semantic_writer_round_trips_typed_combine() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
@@ -14409,7 +14473,7 @@ fn semantic_writer_round_trips_typed_combine() {
 
     let FeatureDefinition::Combine {
         target, tools, op, ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed combine");
     };
@@ -14419,17 +14483,17 @@ fn semantic_writer_round_trips_typed_combine() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Target"], "body:4");
     assert_eq!(feature.properties["Tools"], "body:5,body:6");
     assert_eq!(feature.properties["Operation"], "Intersect");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
@@ -14458,7 +14522,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
@@ -14467,16 +14531,16 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
         }
     ));
 
-    decoded.ir.model.features[0].name = Some("Renamed compact combine".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed compact combine".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
@@ -14549,16 +14613,16 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             ..
         }
     ));
-    let feature_id = decoded.ir.model.features[0].id.clone();
+    let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
+        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
@@ -14567,7 +14631,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
             && tools.starts_with("sldprt:feature-input:body-path:")
     ));
     assert!(matches!(
-        decoded.ir.model.configurations[1].feature_states[&feature_id].definition,
+        decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
@@ -14605,11 +14669,11 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let feature_id = decoded.ir.model.features[0].id.clone();
-    assert!(decoded.ir.model.configurations[0].active.is_active());
-    assert_eq!(decoded.ir.model.configurations[0].source_index, Some(1));
+    let feature_id = decoded.ir().model.features[0].id.clone();
+    assert!(decoded.ir().model.configurations[0].active.is_active());
+    assert_eq!(decoded.ir().model.configurations[0].source_index, Some(1));
     assert!(matches!(
-        &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
+        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
@@ -14617,7 +14681,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.configurations[1].feature_states[&feature_id].definition,
+        &decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
@@ -14644,26 +14708,28 @@ fn semantic_writer_round_trips_delete_and_keep_body() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::DeleteBody {
             bodies: BodySelection::Native(bodies),
             mode: BodyRetentionMode::DeleteSelected,
         } if bodies == "body:2,body:3"
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::DeleteBody {
             bodies: BodySelection::Native(bodies),
             mode: BodyRetentionMode::KeepSelected,
         } if bodies == "body:1"
     ));
 
-    let FeatureDefinition::DeleteBody { bodies, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::DeleteBody { bodies, .. } =
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed delete body");
     };
     *bodies = BodySelection::Native("body:4".into());
-    let FeatureDefinition::DeleteBody { bodies, .. } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::DeleteBody { bodies, .. } =
+        &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed keep body");
     };
@@ -14671,25 +14737,25 @@ fn semantic_writer_round_trips_delete_and_keep_body() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(features[0].properties["Bodies"], "body:4");
     assert_eq!(features[0].properties["Mode"], "Delete");
     assert_eq!(features[1].properties["Bodies"], "body:5,body:6");
     assert_eq!(features[1].properties["Mode"], "Keep");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::DeleteBody {
             mode: BodyRetentionMode::DeleteSelected,
             ..
         }
     ));
     assert!(matches!(
-        regenerated.ir.model.features[1].definition,
+        regenerated.ir().model.features[1].definition,
         FeatureDefinition::DeleteBody {
             mode: BodyRetentionMode::KeepSelected,
             ..
@@ -14711,31 +14777,31 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DeleteBody {
             bodies: BodySelection::Unresolved,
             mode: BodyRetentionMode::Unresolved,
         }
     ));
 
-    decoded.ir.model.features[0].name = Some("Retained sparse operation".into());
+    decoded.ir_mut().model.features[0].name = Some("Retained sparse operation".into());
     let mut sparse_encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut sparse_encoded,
         )
         .unwrap();
     let mut sparse = SldprtCodec
         .decode(&mut Cursor::new(sparse_encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&sparse.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(sparse.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "Body-Delete/Keep ");
     assert!(!native.properties.contains_key("Bodies"));
     assert!(!native.properties.contains_key("Mode"));
     assert!(matches!(
-        sparse.ir.model.features[0].definition,
+        sparse.ir().model.features[0].definition,
         FeatureDefinition::DeleteBody {
             bodies: BodySelection::Unresolved,
             mode: BodyRetentionMode::Unresolved,
@@ -14743,7 +14809,7 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
     ));
 
     let FeatureDefinition::DeleteBody { bodies, mode } =
-        &mut sparse.ir.model.features[0].definition
+        &mut sparse.ir_mut().model.features[0].definition
     else {
         panic!("typed sparse body operation");
     };
@@ -14752,8 +14818,8 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
     let mut resolved_encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &sparse.ir,
-            &sparse.source_fidelity,
+            sparse.ir(),
+            sparse.source_fidelity(),
             &mut resolved_encoded,
         )
         .unwrap();
@@ -14763,12 +14829,12 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let native = &sldprt_native(&resolved.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(resolved.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "Body-Delete/Keep ");
     assert_eq!(native.properties["Bodies"], "body:2,body:3");
     assert_eq!(native.properties["Mode"], "Keep");
     assert!(matches!(
-        &resolved.ir.model.features[0].definition,
+        &resolved.ir().model.features[0].definition,
         FeatureDefinition::DeleteBody {
             bodies: BodySelection::Native(bodies),
             mode: BodyRetentionMode::KeepSelected,
@@ -14790,7 +14856,7 @@ fn semantic_writer_round_trips_typed_delete_face() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Native(faces),
             heal: true,
@@ -14798,7 +14864,7 @@ fn semantic_writer_round_trips_typed_delete_face() {
     ));
 
     let FeatureDefinition::DeleteFace { faces, heal } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed delete face");
     };
@@ -14807,16 +14873,16 @@ fn semantic_writer_round_trips_typed_delete_face() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Faces"], "face:7");
     assert_eq!(feature.properties["Heal"], "false");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Native(faces),
             heal: false,
@@ -14838,7 +14904,7 @@ fn semantic_writer_round_trips_typed_replace_face() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::ReplaceFace {
             targets: FaceSelection::Native(targets),
             replacements: FaceSelection::Native(replacements),
@@ -14848,7 +14914,7 @@ fn semantic_writer_round_trips_typed_replace_face() {
     let FeatureDefinition::ReplaceFace {
         targets,
         replacements,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed replace face");
     };
@@ -14857,16 +14923,16 @@ fn semantic_writer_round_trips_typed_replace_face() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Faces"], "face:6");
     assert_eq!(feature.properties["ReplacementFaces"], "face:9,face:10");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::ReplaceFace {
             targets: FaceSelection::Native(targets),
             replacements: FaceSelection::Native(replacements),
@@ -14889,7 +14955,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::MoveFace {
             motion: FaceMotion::Offset {
                 distance: Length(2.0)
@@ -14898,7 +14964,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::MoveFace {
             motion: FaceMotion::Translate {
                 direction: Vector3 {
@@ -14912,7 +14978,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        decoded.ir().model.features[2].definition,
         FeatureDefinition::MoveFace {
             motion: FaceMotion::Rotate {
                 axis_origin: Point3 { x: 1.0, y: 2.0, z: 3.0 },
@@ -14924,7 +14990,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
     ));
 
     let FeatureDefinition::MoveFace { faces, motion } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed move face");
     };
@@ -14933,7 +14999,8 @@ fn semantic_writer_round_trips_all_move_face_forms() {
         direction: Vector3::new(0.0, 1.0, 0.0),
         distance: Length(4.0),
     };
-    let FeatureDefinition::MoveFace { motion, .. } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::MoveFace { motion, .. } =
+        &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed move face");
     };
@@ -14942,7 +15009,8 @@ fn semantic_writer_round_trips_all_move_face_forms() {
         axis_dir: Vector3::new(1.0, 0.0, 0.0),
         angle: Angle(0.5),
     };
-    let FeatureDefinition::MoveFace { motion, .. } = &mut decoded.ir.model.features[2].definition
+    let FeatureDefinition::MoveFace { motion, .. } =
+        &mut decoded.ir_mut().model.features[2].definition
     else {
         panic!("typed move face");
     };
@@ -14952,12 +15020,12 @@ fn semantic_writer_round_trips_all_move_face_forms() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].properties["Mode"], "Translate");
     assert_eq!(native[0].properties["Faces"], "face:8");
     assert_eq!(native[0].properties["Direction"], "0,1,0");
@@ -14985,7 +15053,7 @@ fn semantic_writer_round_trips_typed_dome() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Dome {
             faces: FaceSelection::Native(faces),
             height: Some(Length(value)),
@@ -14999,7 +15067,7 @@ fn semantic_writer_round_trips_typed_dome() {
         height,
         elliptical,
         reverse,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed dome");
     };
@@ -15010,18 +15078,18 @@ fn semantic_writer_round_trips_typed_dome() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Faces"], "face:10,face:11");
     assert_eq!(feature.properties["Elliptical"], "true");
     assert_eq!(feature.properties["Reverse"], "true");
     assert_eq!(feature.parameters["Height"], "8mm");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Dome {
             faces: FaceSelection::Native(faces),
             height: Some(Length(8.0)),
@@ -15045,7 +15113,7 @@ fn semantic_writer_retains_partial_native_dome_construction() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Dome {
             faces: FaceSelection::Native(faces),
             height: None,
@@ -15054,22 +15122,22 @@ fn semantic_writer_retains_partial_native_dome_construction() {
         } if faces == "face:12"
     ));
 
-    let mut detached = decoded.ir.clone();
+    let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved dome construction"));
 
-    decoded.ir.model.features[0].name = Some("Renamed dome".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed dome".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.parameters["Height"], "NaNmm");
     assert_eq!(native.properties["Reverse"], "invalid");
     assert_eq!(native.properties["Elliptical"], "true");
@@ -15097,7 +15165,7 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    for (feature, plane) in decoded.ir.model.features[..3].iter().zip([
+    for (feature, plane) in decoded.ir().model.features[..3].iter().zip([
         PrincipalPlane::Front,
         PrincipalPlane::Top,
         PrincipalPlane::Right,
@@ -15108,23 +15176,23 @@ fn semantic_writer_round_trips_principal_reference_planes() {
         );
     }
     assert!(matches!(
-        &decoded.ir.model.features[3].definition,
+        &decoded.ir().model.features[3].definition,
         FeatureDefinition::DatumPlaneUnresolved
     ));
     assert!(matches!(
-        &decoded.ir.model.features[4].definition,
+        &decoded.ir().model.features[4].definition,
         FeatureDefinition::Native { kind, .. } if kind == "Ebene"
     ));
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        regenerated.ir.model.features[..3]
+        regenerated.ir().model.features[..3]
             .iter()
             .map(|feature| feature.definition.clone())
             .collect::<Vec<_>>(),
@@ -15141,17 +15209,17 @@ fn semantic_writer_round_trips_principal_reference_planes() {
         ]
     );
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].kind,
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].kind,
         "Ebene"
     );
 
-    decoded.ir.model.features[0].definition = FeatureDefinition::DatumPrincipalPlane {
+    decoded.ir_mut().model.features[0].definition = FeatureDefinition::DatumPrincipalPlane {
         plane: PrincipalPlane::Right,
     };
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -15171,7 +15239,7 @@ fn semantic_writer_round_trips_legacy_principal_plane_triplet() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    for (feature, plane) in decoded.ir.model.features.iter().zip([
+    for (feature, plane) in decoded.ir().model.features.iter().zip([
         PrincipalPlane::Front,
         PrincipalPlane::Top,
         PrincipalPlane::Right,
@@ -15184,12 +15252,12 @@ fn semantic_writer_round_trips_legacy_principal_plane_triplet() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.features, regenerated.ir.model.features);
+    assert_eq!(decoded.ir().model.features, regenerated.ir().model.features);
 }
 
 #[test]
@@ -15207,7 +15275,7 @@ fn semantic_writer_round_trips_typed_reference_plane() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumPlane {
             origin: Point3 {
                 x: 1.0,
@@ -15231,7 +15299,7 @@ fn semantic_writer_round_trips_typed_reference_plane() {
         origin,
         normal,
         u_axis,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed reference plane");
     };
@@ -15241,17 +15309,17 @@ fn semantic_writer_round_trips_typed_reference_plane() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["Origin"], "25.4mm,0mm,-2mm");
     assert_eq!(feature.properties["Normal"], "0,1,0");
     assert_eq!(feature.properties["UAxis"], "0,0,1");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::DatumPlane {
             origin: Point3 {
                 x: 25.4,
@@ -15291,19 +15359,19 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumOffsetPlane {
             reference: None,
             distance: Length(3.0),
         }
     ));
     assert_eq!(
-        decoded.ir.model.parameters[0].value,
+        decoded.ir().model.parameters[0].value,
         Some(ParameterValue::Length(Length(3.0)))
     );
 
     let FeatureDefinition::DatumOffsetPlane { distance, .. } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("localized offset plane");
     };
@@ -15311,18 +15379,18 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "Plano");
     assert_eq!(native.parameters["D1"], "-4.5");
     assert!(!native.properties.contains_key("Reference"));
     assert!(!native.properties.contains_key("Plane"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::DatumOffsetPlane {
             reference: None,
             distance: Length(-4.5),
@@ -15370,7 +15438,7 @@ fn decode_projects_fixed_reference_plane_frame() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumPlane {
             origin: Point3 {
                 x: 2500.0,
@@ -15421,7 +15489,7 @@ fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumPlaneUnresolved
     ));
 }
@@ -15441,7 +15509,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumAxis {
             origin: Point3 {
                 x: 1.0,
@@ -15456,7 +15524,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
         }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::DatumPoint {
             position: Point3 {
                 x: 4.0,
@@ -15468,14 +15536,14 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     ));
 
     let FeatureDefinition::DatumAxis { origin, direction } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed reference axis");
     };
     *origin = Point3::new(-1.0, 0.0, 2.0);
     *direction = Vector3::new(0.0, 1.0, 0.0);
     let FeatureDefinition::DatumPoint { position, .. } =
-        &mut decoded.ir.model.features[1].definition
+        &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed reference point");
     };
@@ -15483,17 +15551,17 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].properties["Origin"], "-1mm,0mm,2mm");
     assert_eq!(native[0].properties["Direction"], "0,1,0");
     assert_eq!(native[1].properties["Position"], "7mm,8mm,9mm");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::DatumAxis {
             origin: Point3 {
                 x: -1.0,
@@ -15508,7 +15576,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
         }
     ));
     assert!(matches!(
-        regenerated.ir.model.features[1].definition,
+        regenerated.ir().model.features[1].definition,
         FeatureDefinition::DatumPoint {
             position: Point3 {
                 x: 7.0,
@@ -15535,7 +15603,7 @@ fn incomplete_coordinate_system_projects_as_typed_unresolved() {
         .unwrap();
 
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumCoordinateSystemUnresolved
     ));
 }
@@ -15555,7 +15623,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::DatumCoordinateSystem {
             origin: Point3 {
                 x: 1.0,
@@ -15585,7 +15653,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         x_axis,
         y_axis,
         z_axis,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed reference coordinate system");
     };
@@ -15596,12 +15664,12 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.xml_tag, "CoordinateSystem");
     assert_eq!(feature.kind, "ReferenceCoordinateSystem");
     assert_eq!(feature.properties["Origin"], "4mm,5mm,6mm");
@@ -15609,7 +15677,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
     assert_eq!(feature.properties["YAxis"], "-1,0,0");
     assert_eq!(feature.properties["ZAxis"], "0,0,1");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::DatumCoordinateSystem {
             origin: Point3 {
                 x: 4.0,
@@ -15649,7 +15717,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::EquationCurve {
             parameter,
             x_expression,
@@ -15672,7 +15740,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
         z_expression,
         start,
         end,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed equation curve");
     };
@@ -15685,12 +15753,12 @@ fn semantic_writer_round_trips_equation_driven_curve() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.xml_tag, "EquationDrivenCurve");
     assert_eq!(feature.kind, "EquationDrivenCurve");
     assert_eq!(feature.properties["Parameter"], "u");
@@ -15701,7 +15769,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
     assert_eq!(feature.properties["End"], "3");
     assert_eq!(feature.properties["Closed"], "false");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::EquationCurve {
             parameter,
             x_expression,
@@ -15731,7 +15799,7 @@ fn semantic_writer_round_trips_helix() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Helix {
             axis_origin: Point3 {
                 x: 1.0,
@@ -15759,7 +15827,7 @@ fn semantic_writer_round_trips_helix() {
         revolutions,
         clockwise,
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed helix");
     };
@@ -15772,12 +15840,12 @@ fn semantic_writer_round_trips_helix() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.xml_tag, "Helix");
     assert_eq!(feature.kind, "HelixSpiral");
     assert_eq!(feature.properties["AxisOrigin"], "4mm,5mm,6mm");
@@ -15788,7 +15856,7 @@ fn semantic_writer_round_trips_helix() {
     assert_eq!(feature.parameters["Pitch"], "8mm");
     assert_eq!(feature.parameters["Revolutions"], "9.25");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Helix {
             axis_origin: Point3 {
                 x: 4.0,
@@ -15829,7 +15897,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Helix {
             radius: Length(4.0),
             pitch: Length(2.0),
@@ -15846,7 +15914,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
         revolutions,
         clockwise,
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed helix");
     };
@@ -15859,12 +15927,12 @@ fn semantic_writer_round_trips_slash_named_helix() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "Helix/Spiral");
     assert_eq!(native.parameters["Radius"], "7mm");
     assert_eq!(native.parameters["Pitch"], "8mm");
@@ -15893,7 +15961,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let feature = &decoded.ir.model.features[0];
+    let feature = &decoded.ir().model.features[0];
     let native_ref = feature.native_ref.as_deref().unwrap();
     assert!(matches!(
         &feature.definition,
@@ -15906,11 +15974,11 @@ fn semantic_writer_round_trips_native_axis_helix() {
             clockwise: false,
         } if axis_native_ref == native_ref
     ));
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
-    let findings = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
     let FeatureDefinition::HelixNativeAxis {
@@ -15920,7 +15988,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
         start_angle,
         clockwise,
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed native-axis helix");
     };
@@ -15932,12 +16000,12 @@ fn semantic_writer_round_trips_native_axis_helix() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "Helix/Spiral");
     assert_eq!(native.parameters["D3"], "4000");
     assert_eq!(native.parameters["D4"], "16000");
@@ -15945,7 +16013,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
     assert_eq!(native.parameters["D7"], "90°");
     assert_eq!(native.properties["Clockwise"], "true");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::HelixNativeAxis {
             axial_rise: Length(4000.0),
             pitch: Length(16000.0),
@@ -15976,7 +16044,7 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         let description = b"boundary_polyline mesh";
         let schema = b"SCH_3201255_32001_13006";
         let mut stream = b"PS\0\0".to_vec();
@@ -16000,13 +16068,14 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         }
         native.feature_input_lanes[0].native_payload.extend(stream);
     });
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     crate::resolved_features::holes::project_helix_axes(
-        &mut decoded.ir.model.features,
+        &mut decoded.ir_mut().model.features,
         &native.feature_histories,
         &native.feature_input_lanes,
     );
-    let FeatureDefinition::Helix { radius, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Helix { radius, .. } =
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("embedded helix geometry");
     };
@@ -16014,8 +16083,8 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -16038,7 +16107,7 @@ fn semantic_writer_round_trips_wrap() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><Wrap Name="Mark" Type="Wrap" id="31" Profile="{face}" Face="{face}" Mode="Emboss" Method="Spline"><Dimension Name="Depth">2mm</Dimension></Wrap></Keywords>"#
     );
@@ -16047,9 +16116,9 @@ fn semantic_writer_round_trips_wrap() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Wrap {
             profile: ProfileRef::Faces(faces),
             face: FaceSelection::Resolved { faces: targets, native },
@@ -16063,7 +16132,7 @@ fn semantic_writer_round_trips_wrap() {
         face,
         mode,
         depth,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed wrap");
     };
@@ -16074,19 +16143,19 @@ fn semantic_writer_round_trips_wrap() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Profile"], face_id.0);
     assert_eq!(native.properties["Face"], face_id.0);
     assert_eq!(native.properties["Mode"], "Deboss");
     assert_eq!(native.properties["Method"], "Spline");
     assert_eq!(native.parameters["Depth"], "3.5mm");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Wrap {
             mode: WrapMode::Deboss,
             depth: Some(Length(3.5)),
@@ -16095,7 +16164,8 @@ fn semantic_writer_round_trips_wrap() {
     ));
 
     let mut scribed = regenerated;
-    let FeatureDefinition::Wrap { mode, depth, .. } = &mut scribed.ir.model.features[0].definition
+    let FeatureDefinition::Wrap { mode, depth, .. } =
+        &mut scribed.ir_mut().model.features[0].definition
     else {
         panic!("typed wrap");
     };
@@ -16103,16 +16173,16 @@ fn semantic_writer_round_trips_wrap() {
     *depth = None;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&scribed.ir, &scribed.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(scribed.ir(), scribed.source_fidelity(), &mut encoded)
         .unwrap();
     let scribed = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&scribed.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(scribed.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Mode"], "Scribe");
     assert!(!native.parameters.contains_key("Depth"));
     assert!(matches!(
-        scribed.ir.model.features[0].definition,
+        scribed.ir().model.features[0].definition,
         FeatureDefinition::Wrap {
             mode: WrapMode::Scribe,
             depth: None,
@@ -16133,7 +16203,7 @@ fn semantic_writer_round_trips_move_copy_body() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let body = base.ir.model.bodies[0].id.0.clone();
+    let body = base.ir().model.bodies[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><MoveBody Name="Copy" Type="MoveCopyBody" id="32" Bodies="{body}" Translation="1mm,2mm,3mm" RotationOrigin="4mm,5mm,6mm" RotationAxis="0,0,1" Copies="2" Frame="model"><Dimension Name="Rotation">90deg</Dimension></MoveBody></Keywords>"#
     );
@@ -16142,9 +16212,9 @@ fn semantic_writer_round_trips_move_copy_body() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let body_id = decoded.ir.model.bodies[0].id.clone();
+    let body_id = decoded.ir().model.bodies[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Resolved { bodies, native },
             translation: Vector3 { x: 1.0, y: 2.0, z: 3.0 },
@@ -16163,7 +16233,7 @@ fn semantic_writer_round_trips_move_copy_body() {
         translation,
         rotation,
         copies,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed body motion");
     };
@@ -16178,12 +16248,12 @@ fn semantic_writer_round_trips_move_copy_body() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Bodies"], body_id.0);
     assert_eq!(native.properties["Translation"], "-7mm,8mm,9mm");
     assert_eq!(native.properties["RotationOrigin"], "10mm,11mm,12mm");
@@ -16195,7 +16265,7 @@ fn semantic_writer_round_trips_move_copy_body() {
     let mut translated = regenerated;
     let FeatureDefinition::MoveBody {
         rotation, copies, ..
-    } = &mut translated.ir.model.features[0].definition
+    } = &mut translated.ir_mut().model.features[0].definition
     else {
         panic!("typed body motion");
     };
@@ -16204,21 +16274,21 @@ fn semantic_writer_round_trips_move_copy_body() {
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &translated.ir,
-            &translated.source_fidelity,
+            translated.ir(),
+            translated.source_fidelity(),
             &mut encoded,
         )
         .unwrap();
     let translated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&translated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(translated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Copies"], "0");
     assert!(!native.properties.contains_key("RotationOrigin"));
     assert!(!native.properties.contains_key("RotationAxis"));
     assert!(!native.parameters.contains_key("Rotation"));
     assert!(matches!(
-        translated.ir.model.features[0].definition,
+        translated.ir().model.features[0].definition,
         FeatureDefinition::MoveBody {
             rotation: None,
             copies: 0,
@@ -16238,7 +16308,7 @@ fn semantic_writer_round_trips_offset_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><OffsetSurface Name="Offset" Type="OffsetSurface" id="33" Faces="{face}" Knit="true"><Dimension Name="Distance">2mm</Dimension></OffsetSurface></Keywords>"#
     );
@@ -16247,9 +16317,9 @@ fn semantic_writer_round_trips_offset_surface() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Resolved { faces, native },
             distance: Some(Length(2.0)),
@@ -16257,7 +16327,7 @@ fn semantic_writer_round_trips_offset_surface() {
     ));
 
     let FeatureDefinition::OffsetSurface { faces, distance } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed offset surface");
     };
@@ -16266,17 +16336,17 @@ fn semantic_writer_round_trips_offset_surface() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Faces"], face_id.0);
     assert_eq!(native.properties["Knit"], "true");
     assert_eq!(native.parameters["Distance"], "-3.5mm");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::OffsetSurface {
             distance: Some(Length(-3.5)),
             ..
@@ -16295,7 +16365,7 @@ fn semantic_writer_round_trips_knit_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><KnitSurface Name="Knit" Type="Knit" id="34" Faces="{face}" MergeEntities="false" CreateSolid="false" CheckGeometry="true"><Dimension Name="GapTolerance">0.01mm</Dimension></KnitSurface></Keywords>"#
     );
@@ -16304,9 +16374,9 @@ fn semantic_writer_round_trips_knit_surface() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Resolved { faces, native },
             merge_entities: Some(false),
@@ -16320,7 +16390,7 @@ fn semantic_writer_round_trips_knit_surface() {
         merge_entities,
         create_solid,
         gap_tolerance,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed knit surface");
     };
@@ -16331,19 +16401,19 @@ fn semantic_writer_round_trips_knit_surface() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Faces"], face_id.0);
     assert_eq!(native.properties["MergeEntities"], "true");
     assert_eq!(native.properties["CreateSolid"], "true");
     assert_eq!(native.properties["CheckGeometry"], "true");
     assert!(!native.parameters.contains_key("GapTolerance"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::KnitSurface {
             merge_entities: Some(true),
             create_solid: Some(true),
@@ -16364,8 +16434,8 @@ fn semantic_writer_round_trips_cut_with_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let body = base.ir.model.bodies[0].id.0.clone();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let body = base.ir().model.bodies[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><CutWithSurface Name="Cut" Type="SurfaceCut" id="35" Targets="{body}" Tools="{face}" Reverse="false" ConsumeTool="false"/></Keywords>"#
     );
@@ -16374,10 +16444,10 @@ fn semantic_writer_round_trips_cut_with_surface() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let body_id = decoded.ir.model.bodies[0].id.clone();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let body_id = decoded.ir().model.bodies[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::CutWithSurface {
             targets: BodySelection::Resolved { bodies, native: body_native },
             tools: FaceSelection::Resolved { faces, native: face_native },
@@ -16390,7 +16460,7 @@ fn semantic_writer_round_trips_cut_with_surface() {
         targets,
         tools,
         reverse,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed surface cut");
     };
@@ -16400,18 +16470,18 @@ fn semantic_writer_round_trips_cut_with_surface() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Targets"], body_id.0);
     assert_eq!(native.properties["Tools"], face_id.0);
     assert_eq!(native.properties["Reverse"], "true");
     assert_eq!(native.properties["ConsumeTool"], "false");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::CutWithSurface {
             reverse: Some(true),
             ..
@@ -16430,8 +16500,8 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let body = base.ir.model.bodies[0].id.0.clone();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let body = base.ir().model.bodies[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><CutWithSurface Name="Cut" Type="SurfaceCut" id="35" Targets="{body}" Tools="{face}" ConsumeTool="false"/></Keywords>"#
     );
@@ -16441,7 +16511,7 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::CutWithSurface {
             targets: BodySelection::Resolved { .. },
             tools: FaceSelection::Resolved { .. },
@@ -16451,15 +16521,15 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert!(!native.properties.contains_key("Reverse"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::CutWithSurface { reverse: None, .. }
     ));
 }
@@ -16477,8 +16547,8 @@ fn semantic_writer_round_trips_filled_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let edge = base.ir.model.edges[0].id.0.clone();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let edge = base.ir().model.edges[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36" Boundary="{edge}" SupportFaces="{face}" Continuity="Tangent" MergeResult="false" Optimize="true"/></Keywords>"#
     );
@@ -16487,10 +16557,10 @@ fn semantic_writer_round_trips_filled_surface() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let edge_id = decoded.ir.model.edges[0].id.clone();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let edge_id = decoded.ir().model.edges[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Resolved { edges, native: edge_native }),
             support_faces: FaceSelection::Resolved { faces, native: face_native },
@@ -16508,7 +16578,7 @@ fn semantic_writer_round_trips_filled_surface() {
         continuity,
         boundary_continuities,
         merge_result,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed filled surface");
     };
@@ -16521,19 +16591,19 @@ fn semantic_writer_round_trips_filled_surface() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Boundary"], edge_id.0);
     assert_eq!(native.properties["SupportFaces"], face_id.0);
     assert_eq!(native.properties["Continuity"], "Curvature");
     assert_eq!(native.properties["MergeResult"], "true");
     assert_eq!(native.properties["Optimize"], "true");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::FilledSurface {
             continuity: Some(SurfaceContinuity::Curvature),
             merge_result: Some(true),
@@ -16553,8 +16623,8 @@ fn semantic_writer_round_trips_trim_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let edge = base.ir.model.edges[0].id.0.clone();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let edge = base.ir().model.edges[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><TrimSurface Name="Trim" Type="SurfaceTrim" id="37" Faces="{face}" Tool="{edge}" Keep="Inside" Split="false"/></Keywords>"#
     );
@@ -16563,10 +16633,10 @@ fn semantic_writer_round_trips_trim_surface() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let edge_id = decoded.ir.model.edges[0].id.clone();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let edge_id = decoded.ir().model.edges[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::TrimSurface {
             faces: FaceSelection::Resolved { faces, native },
             tool: PathRef::Edges(edges),
@@ -16575,7 +16645,7 @@ fn semantic_writer_round_trips_trim_surface() {
     ));
 
     let FeatureDefinition::TrimSurface { faces, tool, keep } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed trim surface");
     };
@@ -16585,18 +16655,18 @@ fn semantic_writer_round_trips_trim_surface() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Faces"], face_id.0);
     assert_eq!(native.properties["Tool"], edge_id.0);
     assert_eq!(native.properties["Keep"], "Outside");
     assert_eq!(native.properties["Split"], "false");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::TrimSurface {
             keep: TrimRegion::Outside,
             ..
@@ -16615,7 +16685,7 @@ fn semantic_writer_round_trips_extend_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><ExtendSurface Name="Extend" Type="SurfaceExtend" id="38" Faces="{face}" Method="Natural" CornerMode="Merge"><Dimension Name="Distance">2mm</Dimension></ExtendSurface></Keywords>"#
     );
@@ -16624,9 +16694,9 @@ fn semantic_writer_round_trips_extend_surface() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Resolved { faces, native },
             distance: Some(Length(2.0)),
@@ -16638,7 +16708,7 @@ fn semantic_writer_round_trips_extend_surface() {
         faces,
         distance,
         method,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed extended surface");
     };
@@ -16648,18 +16718,18 @@ fn semantic_writer_round_trips_extend_surface() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Faces"], face_id.0);
     assert_eq!(native.properties["Method"], "Linear");
     assert_eq!(native.properties["CornerMode"], "Merge");
     assert_eq!(native.parameters["Distance"], "4.5mm");
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::ExtendSurface {
             distance: Some(Length(4.5)),
             method: SurfaceExtension::Linear,
@@ -16682,8 +16752,8 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let edge = base.ir.model.edges[0].id.0.clone();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let edge = base.ir().model.edges[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><RuledSurface Name="Ruled" Type="SurfaceRuled" id="39" Edges="{edge}" SupportFaces="{face}" Mode="Direction" Direction="0,0,1" Trim="true"><Dimension Name="Distance">2mm</Dimension></RuledSurface></Keywords>"#
     );
@@ -16692,10 +16762,10 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let edge_id = decoded.ir.model.edges[0].id.clone();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let edge_id = decoded.ir().model.edges[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::RuledSurface {
             edges: EdgeSelection::Resolved { edges, native: edge_native },
             support_faces: FaceSelection::Resolved { faces, native: face_native },
@@ -16713,7 +16783,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
         support_faces,
         mode,
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed ruled surface");
     };
@@ -16725,19 +16795,19 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Mode"], "Normal");
     assert!(!native.properties.contains_key("Direction"));
     assert_eq!(native.properties["Trim"], "true");
     assert_eq!(native.parameters["Distance"], "3mm");
 
     let FeatureDefinition::RuledSurface { mode, .. } =
-        &mut regenerated.ir.model.features[0].definition
+        &mut regenerated.ir_mut().model.features[0].definition
     else {
         panic!("typed ruled surface");
     };
@@ -16747,8 +16817,8 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &regenerated.ir,
-            &regenerated.source_fidelity,
+            regenerated.ir(),
+            regenerated.source_fidelity(),
             &mut encoded,
         )
         .unwrap();
@@ -16756,7 +16826,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        tangent.ir.model.features[0].definition,
+        tangent.ir().model.features[0].definition,
         FeatureDefinition::RuledSurface {
             mode: RuledSurfaceMode::Tangent {
                 distance: Length(4.0)
@@ -16778,8 +16848,8 @@ fn semantic_writer_round_trips_projected_curve() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let edge = base.ir.model.edges[0].id.0.clone();
-    let face = base.ir.model.faces[0].id.0.clone();
+    let edge = base.ir().model.edges[0].id.0.clone();
+    let face = base.ir().model.faces[0].id.0.clone();
     let xml = format!(
         r#"<Keywords><ProjectedCurve Name="Projection" Type="ProjectionCurve" id="40" Source="{edge}" TargetFaces="{face}" Direction="0,0,1" Bidirectional="false" Simplify="true"/></Keywords>"#
     );
@@ -16788,10 +16858,10 @@ fn semantic_writer_round_trips_projected_curve() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let edge_id = decoded.ir.model.edges[0].id.clone();
-    let face_id = decoded.ir.model.faces[0].id.clone();
+    let edge_id = decoded.ir().model.edges[0].id.clone();
+    let face_id = decoded.ir().model.faces[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::ProjectedCurve {
             source: PathRef::Edges(edges),
             target_faces: FaceSelection::Resolved { faces, native },
@@ -16805,7 +16875,7 @@ fn semantic_writer_round_trips_projected_curve() {
         target_faces,
         direction,
         bidirectional,
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed projected curve");
     };
@@ -16818,19 +16888,19 @@ fn semantic_writer_round_trips_projected_curve() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Source"], edge_id.0);
     assert_eq!(native.properties["TargetFaces"], face_id.0);
     assert_eq!(native.properties["Bidirectional"], "true");
     assert_eq!(native.properties["Simplify"], "true");
     assert!(!native.properties.contains_key("Direction"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::ProjectedCurve {
             direction: cadmpeg_ir::features::CurveProjectionDirection::State(
                 cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal
@@ -16852,8 +16922,8 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let first = base.ir.model.edges[0].id.0.clone();
-    let second = base.ir.model.edges[1].id.0.clone();
+    let first = base.ir().model.edges[0].id.0.clone();
+    let second = base.ir().model.edges[1].id.0.clone();
     let xml = format!(
         r#"<Keywords><CompositeCurve Name="Chain" Type="CompositeCurve" id="41" Segments="{first};{second}" Closed="false" Simplify="true"/></Keywords>"#
     );
@@ -16862,10 +16932,10 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let first_id = decoded.ir.model.edges[0].id.clone();
-    let second_id = decoded.ir.model.edges[1].id.clone();
+    let first_id = decoded.ir().model.edges[0].id.clone();
+    let second_id = decoded.ir().model.edges[1].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::CompositeCurve { segments, closed: false }
             if segments == &vec![
                 PathRef::Edges(vec![first_id.clone()]),
@@ -16874,7 +16944,7 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     ));
 
     let FeatureDefinition::CompositeCurve { segments, closed } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed composite curve");
     };
@@ -16886,12 +16956,12 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(
         native.properties["Segments"],
         format!("{};{}", second_id.0, first_id.0)
@@ -16899,7 +16969,7 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     assert_eq!(native.properties["Closed"], "true");
     assert_eq!(native.properties["Simplify"], "true");
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::CompositeCurve { segments, closed: true }
             if segments == &vec![
                 PathRef::Edges(vec![second_id]),
@@ -16922,7 +16992,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
             face: None,
             ref placements,
@@ -16937,7 +17007,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
     let FeatureDefinition::Hole {
         diameter, extent, ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed hole feature");
     };
@@ -16948,12 +17018,12 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.parameters["Diameter"], "8mm");
     assert_eq!(feature.parameters["Depth"], "16mm");
 }
@@ -16977,7 +17047,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
             kind: HoleKind::Simple,
             diameter: None,
@@ -16986,7 +17056,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Hole {
             kind: HoleKind::Unresolved {
                 form: Some(HoleForm::Counterbore),
@@ -17001,7 +17071,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[2].definition,
+        &decoded.ir().model.features[2].definition,
         FeatureDefinition::Hole {
             ref placements,
             kind: HoleKind::Unresolved {
@@ -17021,39 +17091,39 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         (0, "unresolved hole diameter"),
         (1, "unresolved hole entry construction"),
     ] {
-        let mut detached = decoded.ir.clone();
+        let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
         let error = SldprtCodec
             .write_preserved_with_source_fidelity(
                 &detached,
-                &decoded.source_fidelity,
+                decoded.source_fidelity(),
                 &mut Vec::new(),
             )
             .unwrap_err();
         assert!(error.to_string().contains(message));
     }
-    let mut detached = decoded.ir.clone();
+    let mut detached = decoded.ir().clone();
     detached.model.features[2].native_ref = None;
     let FeatureDefinition::Hole { kind, .. } = &mut detached.model.features[2].definition else {
         panic!("partial hole");
     };
     *kind = HoleKind::Simple;
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved hole termination"));
 
-    for (index, feature) in decoded.ir.model.features.iter_mut().enumerate() {
+    for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
         feature.name = Some(format!("Renamed hole {}", index + 1));
     }
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].parameters["Diameter"], "NaNmm");
     assert_eq!(native[1].parameters["CounterboreDepth"], "NaNmm");
     assert_eq!(native[2].properties["EndCondition"], "Future");
@@ -17082,7 +17152,7 @@ fn semantic_writer_round_trips_hole_placement() {
         placements,
         extent,
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed hole feature");
     };
@@ -17104,19 +17174,19 @@ fn semantic_writer_round_trips_hole_placement() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.properties["Face"], "face:13");
     assert_eq!(native.properties["Position"], "4mm,5mm,6mm");
     assert_eq!(native.properties["Direction"], "0,1,0");
     assert_eq!(native.properties["EndCondition"], "ThroughAll");
     assert!(!native.parameters.contains_key("Depth"));
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native(face)),
             placements,
@@ -17147,7 +17217,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
             kind: HoleKind::Counterbore {
                 diameter: Length(10.0),
@@ -17160,7 +17230,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         }
     ));
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Hole {
             kind: HoleKind::Countersink {
                 diameter: Length(9.0),
@@ -17171,7 +17241,8 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         } if (*value - 82f64.to_radians()).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Hole { kind, extent, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Hole { kind, extent, .. } =
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("counterbore hole");
     };
@@ -17180,7 +17251,8 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         depth: Length(5.0),
     };
     *extent = Some(Termination::ThroughAll);
-    let FeatureDefinition::Hole { kind, extent, .. } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::Hole { kind, extent, .. } =
+        &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("countersink hole");
     };
@@ -17194,12 +17266,12 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(features[0].properties["EndCondition"], "ThroughAll");
     assert!(!features[0].parameters.contains_key("Depth"));
     assert_eq!(features[0].parameters["CounterboreDiameter"], "12mm");
@@ -17227,7 +17299,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 extent: Some(RevolveExtent::OneSided {
@@ -17255,7 +17327,7 @@ fn semantic_writer_round_trips_typed_revolution() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: None,
@@ -17273,7 +17345,7 @@ fn semantic_writer_round_trips_typed_revolution() {
     ));
 
     let FeatureDefinition::Revolve { construction, op } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed revolution feature");
     };
@@ -17291,12 +17363,12 @@ fn semantic_writer_round_trips_typed_revolution() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(feature.properties["AxisOrigin"], "1mm,2mm,3mm");
     assert_eq!(feature.properties["AxisDirection"], "0,0,1");
     assert_eq!(feature.properties["Operation"], "Cut");
@@ -17322,7 +17394,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: None,
@@ -17344,24 +17416,24 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
             op: BooleanOp::Unresolved,
         }
     ));
-    let mut detached = decoded.ir.clone();
+    let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(error
         .to_string()
         .contains("unresolved revolution construction"));
-    decoded.ir.model.features[0].name = Some("Renamed turn".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed turn".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.name, "Renamed turn");
     assert_eq!(native.properties["AxisOrigin"], "1mm,2mm,3mm");
     assert_eq!(native.properties["AxisDirection"], "0,0,1");
@@ -17369,7 +17441,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     assert!(!native.properties.contains_key("Operation"));
     assert!(!native.parameters.contains_key("Angle"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 axis: Some(_),
@@ -17397,9 +17469,9 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let profile_feature = decoded.ir.model.features[0].id.clone();
+    let profile_feature = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: Some(ProfileRef::Feature(profile)),
@@ -17412,7 +17484,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         } if profile == &profile_feature && (*value - 90f64.to_radians()).abs() < 1e-12
     ));
     assert!(matches!(
-        decoded.ir.model.features[2].definition,
+        decoded.ir().model.features[2].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 extent: Some(RevolveExtent::Symmetric {
@@ -17424,7 +17496,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         } if (value - std::f64::consts::PI).abs() < 1e-12
     ));
     assert!(matches!(
-        decoded.ir.model.features[3].definition,
+        decoded.ir().model.features[3].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 extent: Some(RevolveExtent::TwoSided {
@@ -17439,7 +17511,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     ));
 
     let FeatureDefinition::Revolve { construction, op } =
-        &mut decoded.ir.model.features[3].definition
+        &mut decoded.ir_mut().model.features[3].definition
     else {
         panic!("typed revolution");
     };
@@ -17450,12 +17522,12 @@ fn semantic_writer_round_trips_all_revolution_extents() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[3].properties["EndCondition"], "OneSided");
     assert_eq!(native[3].properties["Operation"], "Intersect");
     assert_eq!(native[3].properties["Profile"], "40");
@@ -17482,9 +17554,9 @@ fn semantic_writer_round_trips_all_pattern_forms() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let seed = decoded.ir.model.features[0].id.clone();
+    let seed = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Pattern {
             seeds,
             pattern: PatternKind::Linear {
@@ -17496,7 +17568,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
         } if seeds == &[cadmpeg_ir::features::PatternSeed::Feature(seed.clone())]
     ));
     assert!(matches!(
-        &decoded.ir.model.features[2].definition,
+        &decoded.ir().model.features[2].definition,
         FeatureDefinition::Pattern {
             pattern: PatternKind::Circular {
                 axis_origin: Point3 { x: 0.0, y: 0.0, z: 0.0 },
@@ -17508,7 +17580,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
         } if (*value - std::f64::consts::TAU).abs() < 1e-12
     ));
     assert!(matches!(
-        &decoded.ir.model.features[3].definition,
+        &decoded.ir().model.features[3].definition,
         FeatureDefinition::Pattern {
             pattern: PatternKind::Mirror {
                 plane_origin: Point3 {
@@ -17535,7 +17607,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 second: _,
             },
         ..
-    } = &mut decoded.ir.model.features[1].definition
+    } = &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("linear pattern");
     };
@@ -17551,7 +17623,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 ..
             },
         ..
-    } = &mut decoded.ir.model.features[2].definition
+    } = &mut decoded.ir_mut().model.features[2].definition
     else {
         panic!("circular pattern");
     };
@@ -17564,19 +17636,19 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             plane_normal,
         },
         ..
-    } = &mut decoded.ir.model.features[3].definition
+    } = &mut decoded.ir_mut().model.features[3].definition
     else {
         panic!("mirror pattern");
     };
     *plane_origin = Point3::new(2.0, 0.0, 0.0);
     *plane_normal = Vector3::new(0.0, 1.0, 0.0);
 
-    let mut inconsistent = decoded.ir.clone();
+    let mut inconsistent = decoded.ir().clone();
     inconsistent.model.features[1].dependencies.clear();
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
             &inconsistent,
-            &decoded.source_fidelity,
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -17587,12 +17659,12 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let features = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(features[1].properties["Seeds"], "7");
     assert_eq!(features[1].properties["Direction"], "0,1,0");
     assert_eq!(features[1].parameters["Spacing"], "12mm");
@@ -17617,7 +17689,7 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             seeds,
             pattern: PatternKind::CurveDriven {
@@ -17628,18 +17700,18 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
         } if seeds.is_empty()
     ));
     assert_eq!(
-        decoded.ir.model.parameters[0].value,
+        decoded.ir().model.parameters[0].value,
         Some(ParameterValue::Length(Length(397.6)))
     );
     assert_eq!(
-        decoded.ir.model.parameters[1].value,
+        decoded.ir().model.parameters[1].value,
         Some(ParameterValue::Integer(16))
     );
 
     let FeatureDefinition::Pattern {
         pattern: PatternKind::CurveDriven { spacing, count, .. },
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("curve-driven pattern");
     };
@@ -17648,12 +17720,12 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "CrvPattern");
     assert_eq!(native.parameters["D3"], "250");
     assert_eq!(native.parameters["D1"], "8");
@@ -17662,7 +17734,7 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
     assert!(!native.properties.contains_key("Seeds"));
     assert!(!native.properties.contains_key("Path"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             pattern: PatternKind::CurveDriven {
                 path: None,
@@ -17693,7 +17765,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             seeds,
             pattern: PatternKind::Linear {
@@ -17705,18 +17777,18 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         } if seeds.is_empty()
     ));
     assert_eq!(
-        decoded.ir.model.parameters[0].value,
+        decoded.ir().model.parameters[0].value,
         Some(ParameterValue::Integer(15))
     );
     assert_eq!(
-        decoded.ir.model.parameters[1].value,
+        decoded.ir().model.parameters[1].value,
         Some(ParameterValue::Length(Length(2.54)))
     );
 
     let FeatureDefinition::Pattern {
         pattern: PatternKind::Linear { spacing, count, .. },
         ..
-    } = &mut decoded.ir.model.features[0].definition
+    } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("localized linear pattern");
     };
@@ -17725,12 +17797,12 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "MatrizL");
     assert_eq!(native.input_class.as_deref(), Some("moLPattern_c"));
     assert_eq!(native.parameters["D1"], "12");
@@ -17740,7 +17812,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
     assert!(!native.properties.contains_key("Seeds"));
     assert!(!native.properties.contains_key("Direction"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             pattern: PatternKind::Linear {
                 direction: None,
@@ -17795,20 +17867,20 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameter_index = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
         .position(|parameter| parameter.name == "D1")
         .expect("pattern count parameter");
-    let parameter = &decoded.ir.model.parameters[parameter_index];
+    let parameter = &decoded.ir().model.parameters[parameter_index];
     assert_eq!(parameter.value, Some(ParameterValue::Integer(15)));
     assert_eq!(
         parameter.pmi.as_ref().map(|pmi| &pmi.subtype),
         Some(&PmiDimensionSubtype::Count)
     );
     let secondary = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -17820,26 +17892,26 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         Some(&PmiDimensionSubtype::Count)
     );
     assert_eq!(
-        decoded.ir.model.configurations[0].parameter_values.len(),
-        decoded.ir.model.parameters.len()
+        decoded.ir().model.configurations[0].parameter_values.len(),
+        decoded.ir().model.parameters.len()
     );
-    assert!(!decoded.report.losses.iter().any(|loss| {
+    assert!(!decoded.report().losses.iter().any(|loss| {
         loss.message
             .contains("lack a complete evaluated parameter snapshot")
     }));
-    decoded.ir.model.parameters[parameter_index].expression = "12".into();
-    decoded.ir.model.parameters[parameter_index].value = Some(ParameterValue::Integer(12));
+    decoded.ir_mut().model.parameters[parameter_index].expression = "12".into();
+    decoded.ir_mut().model.parameters[parameter_index].value = Some(ParameterValue::Integer(12));
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
         regenerated
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -17847,7 +17919,10 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
             .and_then(|parameter| parameter.value.as_ref()),
         Some(&ParameterValue::Integer(12))
     );
-    assert_eq!(sldprt_native(&regenerated.ir).pmi_dimensions[0].value, 12.0);
+    assert_eq!(
+        sldprt_native(regenerated.ir()).pmi_dimensions[0].value,
+        12.0
+    );
 }
 
 #[test]
@@ -17870,7 +17945,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             seeds,
             pattern: PatternKind::Unresolved {
@@ -17878,23 +17953,23 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
             },
         } if seeds.is_empty()
     ));
-    decoded.ir.model.features[0].name = Some("Renamed pattern".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.name, "Renamed pattern");
     assert!(!native.properties.contains_key("Seeds"));
     assert!(!native.properties.contains_key("Direction"));
     assert!(!native.parameters.contains_key("Count"));
     assert!(!native.parameters.contains_key("Spacing"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             pattern: PatternKind::Unresolved {
                 form: Some(PatternForm::Linear),
@@ -17920,7 +17995,7 @@ fn semantic_writer_round_trips_generic_pattern_type() {
     let FeatureDefinition::Pattern {
         pattern: PatternKind::Linear { spacing, count, .. },
         ..
-    } = &mut decoded.ir.model.features[1].definition
+    } = &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("generic linear pattern");
     };
@@ -17929,12 +18004,12 @@ fn semantic_writer_round_trips_generic_pattern_type() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[1];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[1];
     assert_eq!(feature.kind, "CustomPattern");
     assert_eq!(feature.properties["PatternType"], "Linear");
     assert_eq!(feature.parameters["Spacing"], "6mm");
@@ -17959,11 +18034,11 @@ fn semantic_writer_round_trips_typed_sweep() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let profile_a = decoded.ir.model.features[0].id.clone();
-    let path = decoded.ir.model.features[1].native_ref.clone().unwrap();
-    let profile_b = decoded.ir.model.features[2].id.clone();
+    let profile_a = decoded.ir().model.features[0].id.clone();
+    let path = decoded.ir().model.features[1].native_ref.clone().unwrap();
+    let profile_b = decoded.ir().model.features[2].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[3].definition,
+        &decoded.ir().model.features[3].definition,
         FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile)),
             path: Some(PathRef::Native(path_ref)),
@@ -17984,7 +18059,7 @@ fn semantic_writer_round_trips_typed_sweep() {
         twist,
         scale,
         ..
-    } = &mut decoded.ir.model.features[3].definition
+    } = &mut decoded.ir_mut().model.features[3].definition
     else {
         panic!("typed sweep");
     };
@@ -17994,19 +18069,19 @@ fn semantic_writer_round_trips_typed_sweep() {
     };
     *twist = Some(Angle(std::f64::consts::PI));
     *scale = Some(2.0);
-    decoded.ir.model.features[3]
+    decoded.ir_mut().model.features[3]
         .dependencies
         .retain(|dependency| dependency != &profile_a);
-    decoded.ir.model.features[3]
+    decoded.ir_mut().model.features[3]
         .dependencies
         .insert(0, profile_b);
 
-    let mut inconsistent = decoded.ir.clone();
+    let mut inconsistent = decoded.ir().clone();
     inconsistent.model.features[3].dependencies.remove(0);
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
             &inconsistent,
-            &decoded.source_fidelity,
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -18019,12 +18094,12 @@ fn semantic_writer_round_trips_typed_sweep() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[3];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[3];
     assert_eq!(feature.properties["Profile"], "23");
     assert_eq!(feature.properties["Path"], "22");
     assert_eq!(feature.properties["Operation"], "Join");
@@ -18054,7 +18129,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
@@ -18065,7 +18140,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         }
     ));
 
-    let FeatureDefinition::Sweep { twist, .. } = &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Sweep { twist, .. } = &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("surface sweep");
     };
@@ -18073,19 +18148,19 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "Surface-Sweep");
     assert_eq!(native.parameters["Twist"], "0.5rad");
     assert!(!native.properties.contains_key("Profile"));
     assert!(!native.properties.contains_key("Path"));
     assert!(!native.properties.contains_key("Operation"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
@@ -18117,7 +18192,7 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
@@ -18129,17 +18204,17 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
             ..
         }
     ));
-    decoded.ir.model.features[0].name = Some("Renamed sweep".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed sweep".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             mode: SweepMode::Solid {
                 op: BooleanOp::Unresolved
@@ -18177,7 +18252,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             mode: SweepMode::Solid {
                 op: BooleanOp::Join
@@ -18213,7 +18288,7 @@ fn decode_projects_compact_solid_sweep_general_curve_path() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             path: Some(PathRef::Native(path)),
             ..
@@ -18257,19 +18332,19 @@ fn decode_does_not_globalize_configuration_local_sweep_path() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep { path: None, .. }
     ));
-    let feature_id = decoded.ir.model.features[0].id.clone();
+    let feature_id = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
+        &decoded.ir().model.configurations[0].feature_states[&feature_id].definition,
         FeatureDefinition::Sweep {
             path: Some(PathRef::Native(path)),
             ..
         } if path.starts_with("sldprt:feature-input:general-curve-ref:")
     ));
     assert!(matches!(
-        decoded.ir.model.configurations[1].feature_states[&feature_id].definition,
+        decoded.ir().model.configurations[1].feature_states[&feature_id].definition,
         FeatureDefinition::Sweep { path: None, .. }
     ));
 }
@@ -18301,7 +18376,7 @@ fn decode_projects_native_surface_sweep_class_without_localized_type() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             mode: SweepMode::Surface,
             path: Some(PathRef::Native(ref path)),
@@ -18355,14 +18430,14 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let helix = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Helix1"))
         .unwrap();
     let sweep = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -18377,7 +18452,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     ));
     assert!(sweep.dependencies.contains(&helix.id));
 
-    let mut changed_profile = decoded.ir.clone();
+    let mut changed_profile = decoded.ir().clone();
     let FeatureDefinition::Sweep { section, .. } = &mut changed_profile
         .model
         .features
@@ -18392,7 +18467,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
             &changed_profile,
-            &decoded.source_fidelity,
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -18401,7 +18476,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         .contains("changes a reference-curve sweep profile"));
 
     decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -18410,14 +18485,14 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         .name = Some("Renamed surface sweep".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
         regenerated
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -18483,14 +18558,14 @@ fn decode_projects_generated_surface_sweep_profile_path() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let first = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
         .unwrap();
     let second = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -18532,16 +18607,16 @@ fn semantic_writer_round_trips_typed_loft() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native_refs = decoded.ir.model.features[..5]
+    let native_refs = decoded.ir().model.features[..5]
         .iter()
         .map(|feature| feature.native_ref.clone().unwrap())
         .collect::<Vec<_>>();
-    let feature_refs = decoded.ir.model.features[..5]
+    let feature_refs = decoded.ir().model.features[..5]
         .iter()
         .map(|feature| feature.id.clone())
         .collect::<Vec<_>>();
     assert!(matches!(
-        &decoded.ir.model.features[5].definition,
+        &decoded.ir().model.features[5].definition,
         FeatureDefinition::Loft {
             sections,
             guides,
@@ -18561,7 +18636,7 @@ fn semantic_writer_round_trips_typed_loft() {
         op,
         closed,
         ..
-    } = &mut decoded.ir.model.features[5].definition
+    } = &mut decoded.ir_mut().model.features[5].definition
     else {
         panic!("typed loft");
     };
@@ -18569,7 +18644,7 @@ fn semantic_writer_round_trips_typed_loft() {
     *guides = vec![PathRef::Native(native_refs[4].clone())];
     *op = BooleanOp::Join;
     *closed = true;
-    decoded.ir.model.features[5].dependencies = vec![
+    decoded.ir_mut().model.features[5].dependencies = vec![
         feature_refs[2].clone(),
         feature_refs[1].clone(),
         feature_refs[0].clone(),
@@ -18578,12 +18653,12 @@ fn semantic_writer_round_trips_typed_loft() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[5];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[5];
     assert_eq!(feature.properties["Profiles"], "33,32,31");
     assert_eq!(feature.properties["Guides"], "36");
     assert_eq!(feature.properties["Operation"], "Join");
@@ -18605,7 +18680,7 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Loft {
             ref sections,
             ref guides,
@@ -18614,21 +18689,21 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
             ..
         } if sections.is_empty() && guides.is_empty()
     ));
-    decoded.ir.model.features[0].name = Some("Renamed loft".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed loft".into());
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert!(!native.properties.contains_key("Profiles"));
     assert!(!native.properties.contains_key("Operation"));
     assert!(!native.properties.contains_key("Closed"));
     assert!(matches!(
-        regenerated.ir.model.features[0].definition,
+        regenerated.ir().model.features[0].definition,
         FeatureDefinition::Loft {
             op: BooleanOp::Unresolved,
             ..
@@ -18654,12 +18729,12 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let refs = decoded.ir.model.features[..2]
+    let refs = decoded.ir().model.features[..2]
         .iter()
         .map(|feature| feature.id.clone())
         .collect::<Vec<_>>();
     assert!(matches!(
-        &decoded.ir.model.features[2].definition,
+        &decoded.ir().model.features[2].definition,
         FeatureDefinition::Loft {
             sections,
             guides,
@@ -18672,7 +18747,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
         ] && guides.is_empty()
     ));
     assert!(matches!(
-        &decoded.ir.model.features[3].definition,
+        &decoded.ir().model.features[3].definition,
         FeatureDefinition::Loft {
             op: BooleanOp::Cut,
             closed: false,
@@ -18682,29 +18757,29 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
 
     let FeatureDefinition::Loft {
         sections, closed, ..
-    } = &mut decoded.ir.model.features[2].definition
+    } = &mut decoded.ir_mut().model.features[2].definition
     else {
         panic!("typed boundary loft");
     };
     sections.reverse();
     *closed = true;
-    decoded.ir.model.features[2].dependencies.reverse();
+    decoded.ir_mut().model.features[2].dependencies.reverse();
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[2];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[2];
     assert_eq!(feature.xml_tag, "Boundary");
     assert_eq!(feature.kind, "BoundaryBoss");
     assert_eq!(feature.properties["Profiles"], "42,41");
     assert_eq!(feature.properties["Operation"], "Join");
     assert_eq!(feature.properties["Closed"], "true");
     assert!(matches!(
-        &regenerated.ir.model.features[3].definition,
+        &regenerated.ir().model.features[3].definition,
         FeatureDefinition::Loft {
             op: BooleanOp::Cut,
             ..
@@ -18728,7 +18803,7 @@ fn semantic_writer_retains_partial_native_rib_construction() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile: None,
@@ -18744,22 +18819,22 @@ fn semantic_writer_retains_partial_native_rib_construction() {
             op: BooleanOp::Unresolved,
         }
     ));
-    let mut detached = decoded.ir.clone();
+    let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
     let error = SldprtCodec
-        .write_preserved_with_source_fidelity(&detached, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&detached, decoded.source_fidelity(), &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("unresolved rib construction"));
 
-    decoded.ir.model.features[0].name = Some("Renamed web".into());
+    decoded.ir_mut().model.features[0].name = Some("Renamed web".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
     assert_eq!(native.name, "Renamed web");
     assert_eq!(native.properties["Direction"], "0,1,0");
     assert!(!native.properties.contains_key("Profile"));
@@ -18785,9 +18860,9 @@ fn semantic_writer_round_trips_typed_rib() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let profile_ref = decoded.ir.model.features[0].id.clone();
+    let profile_ref = decoded.ir().model.features[0].id.clone();
     assert!(matches!(
-        &decoded.ir.model.features[1].definition,
+        &decoded.ir().model.features[1].definition,
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 profile: Some(ProfileRef::Feature(profile)),
@@ -18800,7 +18875,8 @@ fn semantic_writer_round_trips_typed_rib() {
         } if profile == &profile_ref && (*value - 5f64.to_radians()).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Rib { construction, op } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::Rib { construction, op } =
+        &mut decoded.ir_mut().model.features[1].definition
     else {
         panic!("typed rib");
     };
@@ -18812,12 +18888,12 @@ fn semantic_writer_round_trips_typed_rib() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[1];
+    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[1];
     assert_eq!(feature.properties["Profile"], "41");
     assert_eq!(feature.properties["Direction"], "1,0,0");
     assert_eq!(feature.properties["BothSides"], "true");
@@ -18834,8 +18910,8 @@ fn semantic_writer_preserves_parametric_history() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
-    update_sldprt_native(&mut decoded.ir, |native| {
+    decoded.ir_mut().model.points[0].position.z += 1.0;
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "15mm".into());
@@ -18843,13 +18919,13 @@ fn semantic_writer_preserves_parametric_history() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     let history = &native.feature_histories[0];
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.configurations[0].name, "Default");
@@ -18868,9 +18944,9 @@ fn semantic_writer_applies_neutral_feature_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir_mut().model.points[0].position.z += 1.0;
     let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed extrusion feature");
     };
@@ -18886,18 +18962,18 @@ fn semantic_writer_applies_neutral_feature_edits() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
         "18mm"
     );
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -18921,7 +18997,7 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
         )
         .unwrap();
     let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed extrusion feature");
     };
@@ -18934,7 +19010,7 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
             offset: None,
         },
     };
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "20mm".into());
@@ -18942,8 +19018,8 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -18967,7 +19043,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed extrusion feature");
     };
@@ -18980,7 +19056,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
             offset: None,
         },
     };
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].part_name = Some("Edited".into());
         let scalar = &mut native.feature_input_lanes[0].scalars[0];
         scalar.value = 0.05;
@@ -18991,13 +19067,13 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -19029,7 +19105,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     assert_eq!(native.feature_input_lanes.len(), 1);
     let lane = &native.feature_input_lanes[0];
     assert_eq!(lane.configuration.as_deref(), Some("0"));
@@ -19145,7 +19221,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         by_ordinal(4).kind,
         SketchInputKind::Relation(crate::records::SketchRelationKind::Coincident)
     );
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         let entity = native.feature_input_lanes[0]
             .sketch_entities
             .iter_mut()
@@ -19157,7 +19233,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert_eq!(
@@ -19170,14 +19246,14 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let entity = &sldprt_native(&regenerated.ir).feature_input_lanes[0].sketch_entities[1];
+    let entity = &sldprt_native(regenerated.ir()).feature_input_lanes[0].sketch_entities[1];
     assert_eq!(
         entity.kind,
         SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
     );
     assert_eq!(entity.state_value, Some(12.5));
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_input_lanes[0]
+        sldprt_native(regenerated.ir()).feature_input_lanes[0]
             .sketch_entities
             .iter()
             .find(|entity| entity.ordinal == 1)
@@ -19208,7 +19284,7 @@ fn decode_retains_e1_feature_input_operands() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let scalar = &native.feature_input_lanes[0].scalars[0];
     assert!(native.feature_input_lanes[0]
         .references
@@ -19246,14 +19322,14 @@ fn decode_resolves_feature_input_operands_by_compatible_ordinal() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature_ref = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .and_then(|feature| feature.native_ref.as_deref())
         .expect("native sketch feature");
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let lane = &native.feature_input_lanes[0];
     let scalar = &lane.scalars[0];
     assert!(lane
@@ -19270,8 +19346,8 @@ fn decode_resolves_feature_input_operands_by_compatible_ordinal() {
 
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
@@ -19306,7 +19382,7 @@ fn decode_uses_operand_tag_to_disambiguate_marker_kind() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let lane = &sldprt_native(&decoded.ir).feature_input_lanes[0];
+    let lane = &sldprt_native(decoded.ir()).feature_input_lanes[0];
     let operand = &lane.scalars[0].operands[1];
     assert_eq!(operand.entity_index, 2);
     assert_eq!(
@@ -19343,7 +19419,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let lane = &native.feature_input_lanes[0];
     assert_eq!(
         lane.sketch_entities
@@ -19363,8 +19439,8 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
     );
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
@@ -19376,17 +19452,17 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].classes[0].name = "sgOtherHandle".into();
     });
-    assert!(crate::validate_native(&decoded.ir)
+    assert!(crate::validate_native(decoded.ir())
         .iter()
         .any(|finding| finding.message.contains("class index does not match")));
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -19399,20 +19475,20 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].names[1].value = "Depth".into();
     });
-    assert!(crate::validate_native(&decoded.ir).is_empty());
+    assert!(crate::validate_native(decoded.ir()).is_empty());
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_input_lanes[0].names[1].value,
+        sldprt_native(regenerated.ir()).feature_input_lanes[0].names[1].value,
         "Depth"
     );
 }
@@ -19423,17 +19499,17 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].scalars[0].value = 0.050;
     });
-    assert!(crate::validate_native(&decoded.ir)
+    assert!(crate::validate_native(decoded.ir())
         .iter()
         .any(|finding| finding.message.contains("scalar index does not match")));
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -19446,17 +19522,17 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].local_id = Some(7);
     });
-    assert!(crate::validate_native(&decoded.ir)
+    assert!(crate::validate_native(decoded.ir())
         .iter()
         .any(|finding| finding.message.contains("local object id does not match")));
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -19469,17 +19545,17 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].object_index = Some(77);
     });
-    assert!(crate::validate_native(&decoded.ir)
+    assert!(crate::validate_native(decoded.ir())
         .iter()
         .any(|finding| finding.message.contains("object index does not match")));
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -19504,7 +19580,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -19527,7 +19603,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         }
     );
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -19544,7 +19620,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .native_ref
         .as_deref()
         .is_some_and(|id| id.starts_with("sldprt:feature-input:scalar#")));
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let scalar = native.feature_input_lanes[0]
         .scalars
         .iter()
@@ -19583,7 +19659,7 @@ fn decode_projects_hyphenated_extrusion_operations() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
         let feature = decoded
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -19610,14 +19686,14 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let extrusion = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Extrude1"))
         .expect("projected extrusion feature");
     let sketch = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -19747,7 +19823,7 @@ fn decode_projects_feature_input_extrusion_operations() {
                 .decode(&mut Cursor::new(source), &DecodeOptions::default())
                 .unwrap();
             let feature = decoded
-                .ir
+                .ir()
                 .model
                 .features
                 .iter()
@@ -19780,7 +19856,7 @@ fn decode_projects_feature_input_extrusion_operations() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
         let feature = decoded
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -19795,7 +19871,7 @@ fn decode_projects_feature_input_extrusion_operations() {
         ));
         if code == 11 {
             assert!(decoded
-                .report
+                .report()
                 .losses
                 .iter()
                 .any(|loss| loss.message.contains(
@@ -19827,7 +19903,7 @@ fn decode_projects_feature_input_extrusion_operations() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
         let feature = decoded
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -19858,7 +19934,7 @@ fn decode_projects_feature_input_extrusion_operations() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
         let feature = decoded
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -19888,7 +19964,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameter = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -19901,13 +19977,13 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let parameter = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -19915,7 +19991,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .expect("regenerated D1 parameter");
     assert_eq!(parameter.expression, "50mm");
     let native_ref = parameter.native_ref.as_deref().expect("linked scalar");
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     let scalar = native
         .feature_input_lanes
         .iter()
@@ -19942,7 +20018,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
-        &mut decoded.ir.model.features[0].definition
+        &mut decoded.ir_mut().model.features[0].definition
     else {
         panic!("typed extrusion feature");
     };
@@ -19958,13 +20034,13 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &regenerated.ir.model.features[0].definition,
+        &regenerated.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
@@ -19978,7 +20054,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
         }
     ));
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_input_lanes[0].scalars[0].value,
+        sldprt_native(regenerated.ir()).feature_input_lanes[0].scalars[0].value,
         0.05
     );
 }
@@ -20000,7 +20076,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameter = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -20011,13 +20087,13 @@ fn semantic_writer_types_resolved_relation_scalar() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let parameter = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20031,7 +20107,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
         ))
     );
     let native_ref = parameter.native_ref.as_deref().expect("linked scalar");
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     let scalar = native
         .feature_input_lanes
         .iter()
@@ -20071,7 +20147,7 @@ fn decode_does_not_project_ambiguous_resolved_feature_parameter() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(!decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20096,7 +20172,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -20107,7 +20183,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
     ));
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20141,7 +20217,7 @@ fn decode_projects_owned_native_sketch_relation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -20155,13 +20231,13 @@ fn decode_projects_owned_native_sketch_relation() {
     else {
         panic!("bound sketch feature");
     };
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     assert!(native.feature_input_lanes[0]
         .sketch_entities
         .iter()
         .all(|entity| entity.feature_ref.as_deref() == feature.native_ref.as_deref()));
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20175,7 +20251,7 @@ fn decode_projects_owned_native_sketch_relation() {
         ))
     );
     let constraint = decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -20205,12 +20281,12 @@ fn decode_projects_owned_native_sketch_relation() {
             && operands[1].object_index == 2
             && operands[1].native_ref.is_none()
     ));
-    let findings = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
@@ -20227,7 +20303,7 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     native.feature_input_lanes[0]
         .sketch_entities
         .last_mut()
@@ -20257,7 +20333,7 @@ fn native_store_rejects_edited_history_feature_class() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     native.feature_histories[0].features[0].input_class = Some("moRefPlane_c".into());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -20285,7 +20361,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         let feature_ref = native.feature_histories[0].features[0].id.clone();
         let lane = &mut native.feature_input_lanes[0];
         let marker = lane.native_payload.len() + 12;
@@ -20323,7 +20399,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
             });
     });
     let feature = decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -20336,8 +20412,8 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -20367,7 +20443,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(&mut decoded.ir, |native| {
+    update_sldprt_native(decoded.ir_mut(), |native| {
         let feature_ref = native.feature_histories[0]
             .features
             .iter()
@@ -20415,7 +20491,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
             });
     });
     let feature = decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -20435,8 +20511,8 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -20459,7 +20535,7 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     let entity = &mut native.feature_input_lanes[0].sketch_entities[0];
     entity.links = vec![crate::records::SketchInputLink {
         local_id: 7,
@@ -20483,7 +20559,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     let entities = &mut native.feature_input_lanes[0].sketch_entities;
     let owner = entities[0].feature_ref.clone();
     let point_id = entities[1].id.clone();
@@ -20540,7 +20616,7 @@ fn decode_groups_compact_relation_scalar_pair() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
         panic!("one compact relation instance");
     };
@@ -20568,7 +20644,7 @@ fn decode_groups_compact_relation_scalar_pair() {
     assert_eq!(relation.operands[1].entity_index, 2);
 
     let constraint = decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -20581,15 +20657,15 @@ fn decode_groups_compact_relation_scalar_pair() {
             parameter: Some(parameter),
             ..
         } if native_kind == "sgPntPntDist"
-            && decoded.ir.model.parameters.iter().any(|candidate| {
+            && decoded.ir().model.parameters.iter().any(|candidate| {
                 &candidate.id == parameter
                     && candidate.native_ref.as_deref() == Some(driving.id.as_str())
             })
     ));
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
@@ -20611,7 +20687,7 @@ fn decode_starts_another_relation_after_two_repeated_operand_scalars() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     assert_eq!(native.feature_input_lanes[0].relation_instances.len(), 2);
     assert_eq!(
         native.feature_input_lanes[0]
@@ -20641,7 +20717,7 @@ fn decode_groups_native_tagged_point_line_relations() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20654,7 +20730,7 @@ fn decode_groups_native_tagged_point_line_relations() {
             cadmpeg_ir::features::Length(25.0)
         ))
     );
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let lane = &native.feature_input_lanes[0];
     assert_eq!(lane.references.len(), 4);
     assert!(lane
@@ -20677,7 +20753,7 @@ fn decode_groups_native_tagged_point_line_relations() {
         crate::records::FeatureInputRelationFamily::PointLineDistance
     );
     let constraint = decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -20695,8 +20771,8 @@ fn decode_groups_native_tagged_point_line_relations() {
     ));
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
@@ -20720,7 +20796,7 @@ fn decode_uses_relation_units_for_bare_integer_dimensions() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20750,7 +20826,7 @@ fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20776,7 +20852,7 @@ fn decode_uses_relation_units_for_bare_integer_angles() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20804,7 +20880,7 @@ fn decode_groups_unary_circle_diameter_relations() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
         panic!("one circle-diameter relation instance");
     };
@@ -20818,7 +20894,7 @@ fn decode_groups_unary_circle_diameter_relations() {
         crate::records::FeatureInputOperandKind::Native(0x83fe)
     );
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -20829,7 +20905,7 @@ fn decode_groups_unary_circle_diameter_relations() {
         parameter.native_ref.as_deref()
     );
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -20850,8 +20926,8 @@ fn decode_groups_unary_circle_diameter_relations() {
         }));
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
@@ -20877,7 +20953,7 @@ fn decode_groups_each_circle_dimension_operand_tag() {
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
-        let native = sldprt_native(&decoded.ir);
+        let native = sldprt_native(decoded.ir());
         let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
             panic!("one circle-diameter relation for tag {tag:02x?}");
         };
@@ -20946,7 +21022,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
         let parameter = decoded
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -20969,7 +21045,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
                 ))
             );
         }
-        let native = sldprt_native(&decoded.ir);
+        let native = sldprt_native(decoded.ir());
         let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
             panic!("one native-tagged relation instance for {class}");
         };
@@ -20977,7 +21053,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
         assert!(relation.operands.iter().all(|operand| operand.kind
             == crate::records::FeatureInputOperandKind::Native(u16::from_le_bytes(tag))));
         assert!(decoded
-            .ir
+            .ir()
             .model
             .sketch_constraints
             .iter()
@@ -21005,7 +21081,7 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     assert!(native.feature_input_lanes[0].relation_bindings[0]
         .feature_ref
         .is_some());
@@ -21029,7 +21105,7 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     let duplicate = native.feature_input_lanes[0].relation_instances[0].scalar_refs[0].clone();
     native.feature_input_lanes[0].relation_instances[0]
         .scalar_refs
@@ -21055,7 +21131,7 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut namespace = decoded
-        .ir
+        .ir()
         .native
         .namespace("sldprt")
         .expect("SLDPRT namespace")
@@ -21085,7 +21161,7 @@ fn native_store_rejects_relation_instance_operand_disagreement() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     native.feature_input_lanes[0].relation_instances[0].operands[0].entity_index += 1;
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -21112,7 +21188,7 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     let wrong_target = native.feature_input_lanes[0].sketch_entities[0].id.clone();
     native.feature_input_lanes[0].scalars[0].operands[1].entity_ref = Some(wrong_target.clone());
     native.feature_input_lanes[0].relation_instances[0].operands[1].entity_ref = Some(wrong_target);
@@ -21138,7 +21214,7 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     let lane = &mut native.feature_input_lanes[0];
     assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
     assert!(lane.scalars[0].operands[0].entity_ref.is_some());
@@ -21190,11 +21266,11 @@ fn decode_and_validate_compact_delete_body_selection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(!decoded
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("body delete/keep feature(s)")));
-    let mut native = sldprt_native(&decoded.ir);
+    let mut native = sldprt_native(decoded.ir());
     let [selection] = native.feature_input_lanes[0].body_selections.as_slice() else {
         panic!("one compact body selection");
     };
@@ -21205,7 +21281,7 @@ fn decode_and_validate_compact_delete_body_selection() {
         Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected)
     );
 
-    let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    let mut legacy = decoded.ir().native.namespace("sldprt").unwrap().clone();
     legacy.version = 5;
     for record in legacy
         .arenas
@@ -21223,7 +21299,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     );
     assert!(selection.feature_ref.starts_with("sldprt:history:feature#"));
     let delete_feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -21239,14 +21315,14 @@ fn decode_and_validate_compact_delete_body_selection() {
     ));
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
 
     decoded
-        .ir
+        .ir_mut()
         .model
         .features
         .iter_mut()
@@ -21255,12 +21331,12 @@ fn decode_and_validate_compact_delete_body_selection() {
         .name = Some("Renamed Delete Body".into());
     let mut renamed = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut renamed)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut renamed)
         .unwrap();
     let renamed = SldprtCodec
         .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
         .unwrap();
-    let renamed_native = sldprt_native(&renamed.ir);
+    let renamed_native = sldprt_native(renamed.ir());
     assert!(!renamed_native.feature_histories[0].features[0]
         .properties
         .contains_key("Bodies"));
@@ -21271,7 +21347,7 @@ fn decode_and_validate_compact_delete_body_selection() {
 
     {
         let delete_feature = decoded
-            .ir
+            .ir_mut()
             .model
             .features
             .iter_mut()
@@ -21287,8 +21363,8 @@ fn decode_and_validate_compact_delete_body_selection() {
     }
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -21298,7 +21374,7 @@ fn decode_and_validate_compact_delete_body_selection() {
 
     {
         let delete_feature = decoded
-            .ir
+            .ir_mut()
             .model
             .features
             .iter_mut()
@@ -21317,8 +21393,8 @@ fn decode_and_validate_compact_delete_body_selection() {
     }
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -21374,7 +21450,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let [dimension] = native.pmi_dimensions.as_slice() else {
         panic!("one PMI dimension");
     };
@@ -21388,11 +21464,11 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert!(!dimension.inspection);
     assert!(dimension.reference_only);
     assert_eq!(
-        decoded.source_fidelity.annotations.provenance[&dimension.id].offset,
+        decoded.source_fidelity().annotations.provenance[&dimension.id].offset,
         dimension.offset
     );
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -21413,14 +21489,14 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(semantic.native_ref, dimension.id);
     SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap();
 
     let parameter = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -21439,12 +21515,12 @@ fn decode_extracts_pmi_semantic_dimension() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     let [dimension] = native.pmi_dimensions.as_slice() else {
         panic!("one regenerated PMI dimension");
     };
@@ -21489,7 +21565,7 @@ fn decode_extracts_array16_and_reordered_pmi_maps() {
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
-        let native = sldprt_native(&decoded.ir);
+        let native = sldprt_native(decoded.ir());
         let dimension = native
             .pmi_dimensions
             .iter()
@@ -21497,7 +21573,7 @@ fn decode_extracts_array16_and_reordered_pmi_maps() {
             .expect("PMI dimension");
         assert_eq!(dimension.value, value);
         assert_eq!(dimension.item_count, item_count);
-        assert!(decoded.report.losses.iter().all(|loss| {
+        assert!(decoded.report().losses.iter().all(|loss| {
             !loss.message.contains("semantic-record-malformed")
                 && !loss.message.contains("failed to parse MessagePack map")
         }));
@@ -21521,8 +21597,8 @@ fn decode_reports_malformed_pmi_semantic_map() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(sldprt_native(&decoded.ir).pmi_dimensions.is_empty());
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(sldprt_native(decoded.ir()).pmi_dimensions.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             .contains("01234567-89ab-cdef-0123-456789abcdef")
             && loss.message.contains("failed to parse MessagePack map")
@@ -21551,18 +21627,18 @@ fn multi_item_pmi_dimension_is_not_bound() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&decoded.ir);
+    let native = sldprt_native(decoded.ir());
     let [dimension] = native.pmi_dimensions.as_slice() else {
         panic!("one native PMI dimension");
     };
     assert_eq!(dimension.item_count, 2);
     assert!(!decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
         .any(|parameter| parameter.name == "D1" && parameter.pmi.is_some()));
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
     }));
@@ -21581,7 +21657,7 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
     }));
@@ -21609,13 +21685,13 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(sldprt_native(&decoded.ir).pmi_dimensions.len(), 2);
-    assert_eq!(decoded.ir.model.parameters.len(), 1);
-    assert!(decoded.report.losses.iter().all(|loss| !loss
+    assert_eq!(sldprt_native(decoded.ir()).pmi_dimensions.len(), 2);
+    assert_eq!(decoded.ir().model.parameters.len(), 1);
+    assert!(decoded.report().losses.iter().all(|loss| !loss
         .message
         .contains("semantic dimension record(s) are not bound")));
 
-    let parameter = &mut decoded.ir.model.parameters[0];
+    let parameter = &mut decoded.ir_mut().model.parameters[0];
     parameter.expression = "50mm".into();
     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
         cadmpeg_ir::features::Length(50.0),
@@ -21623,12 +21699,12 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     assert_eq!(native.pmi_dimensions.len(), 2);
     assert!(native
         .pmi_dimensions
@@ -21658,7 +21734,7 @@ fn semantically_distinct_pmi_records_remain_unbound() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.report.losses.iter().any(|loss| {
+    assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             == "2 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
     }));
@@ -21687,7 +21763,7 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let ordinate = decoded
-        .ir
+        .ir_mut()
         .model
         .parameters
         .iter_mut()
@@ -21703,12 +21779,12 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = sldprt_native(&regenerated.ir);
+    let native = sldprt_native(regenerated.ir());
     assert_eq!(
         native
             .pmi_dimensions
@@ -21746,7 +21822,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        &decoded.ir.model.features[0].definition,
+        &decoded.ir().model.features[0].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
@@ -21762,11 +21838,11 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
         }
     ));
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner.as_ref() == Some(&decoded.ir.model.features[0].id))
+        .find(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[0].id))
         .expect("PMI extrusion parameter");
     assert_eq!(parameter.name, "D1");
     assert_eq!(parameter.expression, "25mm");
@@ -21791,14 +21867,14 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Round1"))
         .expect("projected fillet feature");
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -21848,18 +21924,18 @@ fn decode_preserves_configuration_local_parameter_values() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.report.losses.iter().any(|loss| loss
+    assert!(!decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("parameter expression(s) cannot regenerate")));
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
         .find(|parameter| parameter.name == "D1")
         .unwrap();
     let dependent = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -21868,31 +21944,31 @@ fn decode_preserves_configuration_local_parameter_values() {
     assert_eq!(parameter.value, Some(ParameterValue::Length(Length(30.0))));
     assert_eq!(parameter.native_ref, None);
     assert_eq!(
-        decoded.ir.model.configurations[0]
+        decoded.ir().model.configurations[0]
             .parameter_values
             .get(&parameter.id),
         Some(&ParameterValue::Length(Length(25.0)))
     );
     assert_eq!(
-        decoded.ir.model.configurations[1]
+        decoded.ir().model.configurations[1]
             .parameter_values
             .get(&parameter.id),
         Some(&ParameterValue::Length(Length(50.0)))
     );
     assert_eq!(
-        decoded.ir.model.configurations[0]
+        decoded.ir().model.configurations[0]
             .parameter_values
             .get(&dependent.id),
         Some(&ParameterValue::Length(Length(50.0)))
     );
     assert_eq!(
-        decoded.ir.model.configurations[1]
+        decoded.ir().model.configurations[1]
             .parameter_values
             .get(&dependent.id),
         Some(&ParameterValue::Length(Length(100.0)))
     );
     let round_trip =
-        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(&decoded.ir).unwrap()).unwrap();
+        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.configurations[1]
             .parameter_values
@@ -21903,14 +21979,14 @@ fn decode_preserves_configuration_local_parameter_values() {
     let parameter_id = parameter.id.clone();
     let dependent_id = dependent.id.clone();
     let feature_id = parameter.owner.clone();
-    let mut incoherent = decoded.ir.clone();
+    let mut incoherent = decoded.ir().clone();
     incoherent.model.configurations[1]
         .parameter_values
         .insert(parameter_id.clone(), ParameterValue::Length(Length(75.0)));
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
             &incoherent,
-            &decoded.source_fidelity,
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -21921,7 +21997,7 @@ fn decode_preserves_configuration_local_parameter_values() {
         "unexpected error: {error}"
     );
 
-    let mut edited = decoded.ir.clone();
+    let mut edited = decoded.ir().clone();
     edited.model.configurations[1]
         .parameter_values
         .insert(parameter_id.clone(), ParameterValue::Length(Length(75.0)));
@@ -21955,7 +22031,7 @@ fn decode_preserves_configuration_local_parameter_values() {
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
             &conflicting,
-            &decoded.source_fidelity,
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -21965,33 +22041,33 @@ fn decode_preserves_configuration_local_parameter_values() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(&edited, decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let regenerated_parameter = regenerated
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
         .find(|parameter| parameter.name == "D1")
         .unwrap();
     let regenerated_feature = regenerated
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Round1"))
         .unwrap();
     assert_eq!(
-        regenerated.ir.model.configurations[1]
+        regenerated.ir().model.configurations[1]
             .parameter_values
             .get(&regenerated_parameter.id),
         Some(&ParameterValue::Length(Length(75.0)))
     );
     assert!(matches!(
-        regenerated.ir.model.configurations[1].feature_states[&regenerated_feature.id].definition,
+        regenerated.ir().model.configurations[1].feature_states[&regenerated_feature.id].definition,
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
@@ -22026,7 +22102,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -22048,7 +22124,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         }
     ));
     let parameter = decoded
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -22068,10 +22144,10 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 3);
-    assert_eq!(decoded.ir.model.sketch_constraints.len(), 3);
-    let sketch = &decoded.ir.model.sketches[0];
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 3);
+    assert_eq!(decoded.ir().model.sketch_constraints.len(), 3);
+    let sketch = &decoded.ir().model.sketches[0];
     assert_eq!(sketch.configuration.as_deref(), Some("0"));
     let (origin, normal, _) = sketch
         .resolved_placement()
@@ -22081,12 +22157,12 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     assert_eq!(sketch.profiles.len(), 1);
     assert_eq!(sketch.profiles[0].len(), 3);
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
         .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. })));
-    assert!(decoded.ir.model.sketch_entities.iter().all(|entity| {
+    assert!(decoded.ir().model.sketch_entities.iter().all(|entity| {
         entity
             .native_ref
             .as_deref()
@@ -22098,7 +22174,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
                 .all(|id| id.contains(":sldprt:brep:point#"))
     }));
     assert!(decoded
-        .ir
+        .ir()
         .model
         .sketch_constraints
         .iter()
@@ -22116,7 +22192,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     assert!(sketch.native_ref.as_deref().is_some_and(|native_ref| {
         native_ref.starts_with("sldprt:feature-input:resolved-features#")
     }));
-    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 
@@ -22133,14 +22209,14 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let sketch = decoded
-        .ir
+        .ir()
         .model
         .sketches
         .iter()
         .find(|sketch| sketch.name.as_deref() == Some("Sketch1"))
         .expect("named feature-input sketch");
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -22170,11 +22246,11 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let [sketch] = decoded.ir.model.sketches.as_slice() else {
+    let [sketch] = decoded.ir().model.sketches.as_slice() else {
         panic!("one enclosed sweep profile stream");
     };
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -22204,7 +22280,7 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -22233,11 +22309,11 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_extrusion() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let [sketch] = decoded.ir.model.sketches.as_slice() else {
+    let [sketch] = decoded.ir().model.sketches.as_slice() else {
         panic!("one enclosed extrusion profile stream");
     };
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -22267,18 +22343,18 @@ fn decode_binds_configuration_sketch_state_after_geometry_projection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
     assert!(matches!(
-        &decoded.ir.model.configurations[0].feature_states[&feature.id].definition,
+        &decoded.ir().model.configurations[0].feature_states[&feature.id].definition,
         FeatureDefinition::Sketch {
             sketch: Some(configuration_sketch),
             ..
-        } if decoded.ir.model.sketches.iter().any(|sketch| &sketch.id == configuration_sketch)
+        } if decoded.ir().model.sketches.iter().any(|sketch| &sketch.id == configuration_sketch)
     ));
 }
 
@@ -22297,7 +22373,7 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_extrusion() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -22320,32 +22396,36 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let sketch = decoded.ir.model.sketches[0].id.clone();
-    let entity = decoded.ir.model.sketch_entities[0].id.clone();
-    decoded.ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
-        sketch,
-        definition: SketchConstraintDefinition::Horizontal { entity },
-        name: None,
-        driving: None,
-        active: None,
-        virtual_space: None,
-        visible: None,
-        orientation: None,
-        label_distance: None,
-        label_position: None,
-        metadata: None,
-        native_ref: None,
-    });
+    let sketch = decoded.ir().model.sketches[0].id.clone();
+    let entity = decoded.ir().model.sketch_entities[0].id.clone();
+    decoded
+        .ir_mut()
+        .model
+        .sketch_constraints
+        .push(SketchConstraint {
+            id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
+            sketch,
+            definition: SketchConstraintDefinition::Horizontal { entity },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        });
     assert_ne!(
-        decoded.ir.source.as_ref().unwrap().attributes["document_local_sha256"],
-        crate::decode::document_local_sha256(&decoded.ir)
+        decoded.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
+        crate::decode::document_local_sha256(decoded.ir())
     );
 
     let error = SldprtCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
@@ -22368,15 +22448,15 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let sketch_id = decoded.ir.model.sketches[0].id.clone();
-    assert!(decoded.ir.model.features.iter().any(|feature| matches!(
+    let sketch_id = decoded.ir().model.sketches[0].id.clone();
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         &feature.definition,
         FeatureDefinition::Sketch {
             space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(value), ..
         } if value == &sketch_id
     )));
-    assert!(decoded.ir.model.features.iter().any(|feature| matches!(
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         &feature.definition,
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
@@ -22386,23 +22466,28 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
             ..
         } if value == &sketch_id
     )));
-    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let round_trip = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert!(round_trip.ir.model.features.iter().any(|feature| matches!(
-        feature.definition,
-        FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(_),
-            ..
-        }
-    )));
+    assert!(round_trip
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(
+            feature.definition,
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: Some(_),
+                ..
+            }
+        )));
 }
 
 #[test]
@@ -22565,7 +22650,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let bound = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -22580,7 +22665,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .collect::<Vec<_>>();
     assert_eq!(bound.len(), 2);
     let sweep = decoded
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -22595,7 +22680,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .expect("bound sweep");
     assert_ne!(sweep.0, sweep.1);
     assert!(bound.contains(sweep.0) && bound.contains(sweep.1));
-    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 
@@ -22625,8 +22710,8 @@ fn decode_does_not_bind_duplicate_sketch_names_by_order() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir.model.sketches.len(), 2);
-    assert!(decoded.ir.model.features.iter().all(|feature| matches!(
+    assert_eq!(decoded.ir().model.sketches.len(), 2);
+    assert!(decoded.ir().model.features.iter().all(|feature| matches!(
         feature.definition,
         FeatureDefinition::Sketch { sketch: None, .. }
     )));
@@ -22649,32 +22734,38 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.features[0].definition,
+        decoded.ir().model.features[0].definition,
         FeatureDefinition::SpatialSketch { sketch: None }
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
+        decoded.ir().model.features[1].definition,
         FeatureDefinition::Sketch { sketch: None, .. }
     ));
 
-    decoded.ir.model.features[0].name = Some("Renamed spatial path".into());
-    decoded.ir.model.features[1].definition = FeatureDefinition::SpatialSketch { sketch: None };
+    decoded.ir_mut().model.features[0].name = Some("Renamed spatial path".into());
+    decoded.ir_mut().model.features[1].definition =
+        FeatureDefinition::SpatialSketch { sketch: None };
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[0].kind, "3DSketch");
     assert_eq!(native[0].name, "Renamed spatial path");
     assert_eq!(native[1].kind, "3DSketch");
-    assert!(regenerated.ir.model.features.iter().all(|feature| matches!(
-        feature.definition,
-        FeatureDefinition::SpatialSketch { sketch: None }
-    )));
+    assert!(regenerated
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| matches!(
+            feature.definition,
+            FeatureDefinition::SpatialSketch { sketch: None }
+        )));
 }
 
 #[test]
@@ -22688,9 +22779,9 @@ fn decode_distinguishes_full_circle_sketch_geometry() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 1);
+    assert_eq!(decoded.ir().model.sketches[0].profiles[0].len(), 1);
     assert!(matches!(
-        decoded.ir.model.sketch_entities[0].geometry,
+        decoded.ir().model.sketch_entities[0].geometry,
         SketchGeometry::Circle {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
             radius: Length(1000.0),
@@ -22710,7 +22801,7 @@ fn decode_projects_full_ellipse_sketch_geometry() {
         )
         .unwrap();
     assert!(matches!(
-        decoded.ir.model.sketch_entities[0].geometry,
+        decoded.ir().model.sketch_entities[0].geometry,
         SketchGeometry::Ellipse {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 0.0 },
             major_angle: Angle(value),
@@ -22733,7 +22824,7 @@ fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
         )
         .unwrap();
     let splines = decoded
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -22773,8 +22864,8 @@ fn semantic_writer_applies_line_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let point_ref = decoded.ir.model.sketch_entities[0].endpoint_refs[0].clone();
-    for entity in &mut decoded.ir.model.sketch_entities {
+    let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
+    for entity in &mut decoded.ir_mut().model.sketch_entities {
         let SketchGeometry::Line { start, end } = &mut entity.geometry else {
             panic!("line sketch entity");
         };
@@ -22788,13 +22879,13 @@ fn semantic_writer_applies_line_sketch_edits() {
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     let edited = regenerated
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -22819,8 +22910,8 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let point_ref = decoded.ir.model.sketch_entities[0].endpoint_refs[0].clone();
-    for entity in &mut decoded.ir.model.sketch_entities {
+    let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
+    for entity in &mut decoded.ir_mut().model.sketch_entities {
         let SketchGeometry::Line { start, end } = &mut entity.geometry else {
             panic!("line sketch entity");
         };
@@ -22834,7 +22925,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let scan = container::scan_bytes(&written);
     let lane = scan
@@ -22855,7 +22946,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     let edited = regenerated
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -22878,7 +22969,8 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let SketchGeometry::Line { start, .. } = &mut decoded.ir.model.sketch_entities[0].geometry
+    let SketchGeometry::Line { start, .. } =
+        &mut decoded.ir_mut().model.sketch_entities[0].geometry
     else {
         panic!("line sketch entity");
     };
@@ -22886,8 +22978,8 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -22910,7 +23002,7 @@ fn semantic_writer_applies_circle_sketch_edits() {
         )
         .unwrap();
     let SketchGeometry::Circle { center, radius } =
-        &mut decoded.ir.model.sketch_entities[0].geometry
+        &mut decoded.ir_mut().model.sketch_entities[0].geometry
     else {
         panic!("circle sketch entity");
     };
@@ -22919,13 +23011,13 @@ fn semantic_writer_applies_circle_sketch_edits() {
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir.model.sketch_entities[0].geometry,
+        regenerated.ir().model.sketch_entities[0].geometry,
         SketchGeometry::Circle {
             center: cadmpeg_ir::math::Point2 { u: 250.0, v: 0.0 },
             radius: Length(750.0),
@@ -22950,7 +23042,7 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
         major_radius,
         minor_radius,
         ..
-    } = &mut decoded.ir.model.sketch_entities[0].geometry
+    } = &mut decoded.ir_mut().model.sketch_entities[0].geometry
     else {
         panic!("ellipse sketch entity");
     };
@@ -22961,13 +23053,13 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir.model.sketch_entities[0].geometry,
+        regenerated.ir().model.sketch_entities[0].geometry,
         SketchGeometry::Ellipse {
             center: cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 },
             major_angle: Angle(angle),
@@ -22991,7 +23083,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
         )
         .unwrap();
     let arc = decoded
-        .ir
+        .ir_mut()
         .model
         .sketch_entities
         .iter_mut()
@@ -23015,7 +23107,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
         cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 0.25f64.cos(), 800.0 * 0.25f64.sin()),
         cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 1.25f64.cos(), 800.0 * 1.25f64.sin()),
     ];
-    for entity in &mut decoded.ir.model.sketch_entities {
+    for entity in &mut decoded.ir_mut().model.sketch_entities {
         let SketchGeometry::Line { start, end } = &mut entity.geometry else {
             continue;
         };
@@ -23031,13 +23123,13 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -23062,7 +23154,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    for entity in &mut decoded.ir.model.sketch_entities {
+    for entity in &mut decoded.ir_mut().model.sketch_entities {
         let SketchGeometry::Nurbs {
             control_points,
             weights,
@@ -23079,13 +23171,13 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     let splines = regenerated
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -23115,7 +23207,7 @@ fn decode_extracts_document_envelope() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     let envelope = result
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23126,7 +23218,7 @@ fn decode_extracts_document_envelope() {
     };
     assert_eq!(values, &[10.0, 20.0, -30.0, 40.0]);
     let plane = result
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23141,7 +23233,7 @@ fn decode_extracts_document_envelope() {
     assert_eq!(origin, &[1.0, 2.0, 3.0]);
     assert_eq!(frame[2], 1.0);
     let transformed = result
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23158,7 +23250,7 @@ fn decode_extracts_document_envelope() {
         ]
     );
     let part = result
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23169,7 +23261,7 @@ fn decode_extracts_document_envelope() {
         vec![AttributeValue::Integer(42), AttributeValue::Integer(2026)]
     );
     let configuration = result
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23177,7 +23269,7 @@ fn decode_extracts_document_envelope() {
         .unwrap();
     assert_eq!(configuration.values[1], AttributeValue::Integer(3));
     let units = result
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23185,7 +23277,7 @@ fn decode_extracts_document_envelope() {
         .unwrap();
     assert_eq!(units.values, vec![AttributeValue::Integer(0)]);
     let unit_name = result
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23209,7 +23301,7 @@ fn transformed_reference_plane_requires_fixed_prefix() {
         .unwrap();
 
     assert!(!decoded
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23227,7 +23319,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
         )
         .unwrap();
     let transformed = decoded
-        .ir
+        .ir_mut()
         .model
         .attributes
         .iter_mut()
@@ -23240,7 +23332,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
 
     let mut written = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut written)
         .unwrap();
 
     let scan = container::scan_bytes(&written);
@@ -23266,7 +23358,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     let transformed = regenerated
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23287,7 +23379,7 @@ fn decode_does_not_scan_past_unit_name_record_start() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(!decoded
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23302,10 +23394,10 @@ fn semantic_writer_preserves_document_metadata() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let expected = decoded
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23313,13 +23405,13 @@ fn semantic_writer_preserves_document_metadata() {
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let actual = regenerated
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -23337,29 +23429,29 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
+    decoded.ir_mut().model.points[0].position.z += 1.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
     assert!(regenerated
-        .source_fidelity
+        .source_fidelity()
         .retained_records
         .iter()
         .any(|record| {
             regenerated
-                .source_fidelity
+                .source_fidelity()
                 .annotations
                 .provenance
                 .get(&record.id)
                 .and_then(|note| {
                     regenerated
-                        .source_fidelity
+                        .source_fidelity()
                         .annotations
                         .streams
                         .get(note.stream as usize)
@@ -23389,9 +23481,9 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.model.points[0].position.z += 2.0;
-    decoded.ir.model.tessellations[0].vertices[0].z = 125.0;
-    update_sldprt_native(&mut decoded.ir, |native| {
+    decoded.ir_mut().model.points[0].position.z += 2.0;
+    decoded.ir_mut().model.tessellations[0].vertices[0].z = 125.0;
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "20mm".into());
@@ -23399,40 +23491,40 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
     assert_eq!(
-        regenerated.ir.model.bodies[0].name.as_deref(),
+        regenerated.ir().model.bodies[0].name.as_deref(),
         Some("Steel")
     );
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .appearance_bindings
         .iter()
         .any(|binding| matches!(binding.target, AppearanceTarget::Face(_))));
-    assert_eq!(regenerated.ir.model.tessellations[0].vertices[0].z, 125.0);
+    assert_eq!(regenerated.ir().model.tessellations[0].vertices[0].z, 125.0);
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
         "20mm"
     );
     assert!(regenerated
-        .source_fidelity
+        .source_fidelity()
         .retained_records
         .iter()
         .any(|record| {
             regenerated
-                .source_fidelity
+                .source_fidelity()
                 .annotations
                 .provenance
                 .get(&record.id)
                 .and_then(|note| {
                     regenerated
-                        .source_fidelity
+                        .source_fidelity()
                         .annotations
                         .streams
                         .get(note.stream as usize)
@@ -23442,7 +23534,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         }));
 
     let written = regenerated
-        .source_fidelity
+        .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
         .and_then(|record| record.data.as_ref())
         .unwrap();
@@ -23469,25 +23561,25 @@ fn face_on_untyped_surface_keeps_topology() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
     let SurfaceGeometry::Unknown {
         record: Some(record),
-    } = &result.ir.model.surfaces[0].geometry
+    } = &result.ir().model.surfaces[0].geometry
     else {
         panic!("opaque surface has no replay record");
     };
-    let unknowns = result.ir.native_unknowns("sldprt").unwrap();
+    let unknowns = result.ir().native_unknowns("sldprt").unwrap();
     let retained = unknowns
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque surface record");
-    assert!(retained.links.contains(&result.ir.model.surfaces[0].id.0));
+    assert!(retained.links.contains(&result.ir().model.surfaces[0].id.0));
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -23515,9 +23607,9 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage keeps the topology decode");
-    assert_eq!(salvaged.ir.model.faces.len(), 1);
+    assert_eq!(salvaged.ir().model.faces.len(), 1);
     let census = salvaged
-        .report
+        .report()
         .losses
         .iter()
         .find(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred)
@@ -23543,12 +23635,12 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         )
         .unwrap();
 
-    let curve_id = decoded.ir.model.edges[0]
+    let curve_id = decoded.ir().model.edges[0]
         .curve
         .as_ref()
         .expect("opaque edge curve");
     let curve = decoded
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -23560,25 +23652,25 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
     else {
         panic!("opaque curve has no replay record");
     };
-    let unknowns = decoded.ir.native_unknowns("sldprt").unwrap();
+    let unknowns = decoded.ir().native_unknowns("sldprt").unwrap();
     let retained = unknowns
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque curve record");
     assert!(retained.links.contains(&curve.id.0));
 
-    decoded.ir.model.points[1].position.x = 1_500.0;
+    decoded.ir_mut().model.points[1].position.x = 1_500.0;
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.model.points[1].position.x, 1_500.0);
+    assert_eq!(regenerated.ir().model.points[1].position.x, 1_500.0);
     assert!(regenerated
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -23615,24 +23707,24 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    decoded.ir.model.points[1].position.x = 1_250.0;
+    decoded.ir_mut().model.points[1].position.x = 1_250.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.model.points[1].position.x, 1_250.0);
+    assert_eq!(regenerated.ir().model.points[1].position.x, 1_250.0);
     assert!(matches!(
-        regenerated.ir.model.surfaces[0].geometry,
+        regenerated.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Unknown { .. }
     ));
-    assert_eq!(regenerated.ir.model.faces.len(), 1);
+    assert_eq!(regenerated.ir().model.faces.len(), 1);
     let written = regenerated
-        .source_fidelity
+        .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
         .and_then(|record| record.data.as_deref())
         .unwrap();
@@ -23666,23 +23758,23 @@ fn native_patch_requires_point_provenance_annotation() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let point_id = decoded.ir.model.points[1].id.0.clone();
+    let point_id = decoded.ir().model.points[1].id.0.clone();
     assert!(decoded
-        .source_fidelity
+        .source_fidelity()
         .annotations
         .provenance
         .contains_key(&point_id));
-    decoded.ir.model.points[1].position.x = 1_250.0;
+    decoded.ir_mut().model.points[1].position.x = 1_250.0;
     decoded
-        .source_fidelity
+        .source_fidelity_mut()
         .annotations
         .provenance
         .remove(&point_id);
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -23722,7 +23814,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         )
         .unwrap();
     let plane = decoded
-        .ir
+        .ir_mut()
         .model
         .surfaces
         .iter_mut()
@@ -23733,7 +23825,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     };
     origin.x = 25.0;
     let line = decoded
-        .ir
+        .ir_mut()
         .model
         .curves
         .iter_mut()
@@ -23746,23 +23838,28 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir.model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Plane { origin, .. } if origin.x == 25.0
-    )));
     assert!(regenerated
-        .ir
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.geometry,
+            SurfaceGeometry::Plane { origin, .. } if origin.x == 25.0
+        )));
+    assert!(regenerated
+        .ir()
         .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. })));
-    assert!(regenerated.ir.model.curves.iter().any(|curve| matches!(
+    assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Line { origin, .. } if origin.y == 12.0
     )));
@@ -23837,27 +23934,29 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let brep_hash = crate::decode::brep_local_sha256(&decoded.ir);
-    let document_hash = crate::decode::document_local_sha256(&decoded.ir);
-    update_sldprt_native(&mut decoded.ir, |native| {
+    let brep_hash = crate::decode::brep_local_sha256(decoded.ir());
+    let document_hash = crate::decode::document_local_sha256(decoded.ir());
+    update_sldprt_native(decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "30000mm".into());
     });
-    decoded.ir.model.configurations[0].parameter_values.insert(
-        cadmpeg_ir::features::ParameterId("configuration-only".into()),
-        cadmpeg_ir::features::ParameterValue::Integer(3),
-    );
-    decoded.source_fidelity.annotations.exactness.clear();
-    assert_eq!(crate::decode::brep_local_sha256(&decoded.ir), brep_hash);
+    decoded.ir_mut().model.configurations[0]
+        .parameter_values
+        .insert(
+            cadmpeg_ir::features::ParameterId("configuration-only".into()),
+            cadmpeg_ir::features::ParameterValue::Integer(3),
+        );
+    decoded.source_fidelity_mut().annotations.exactness.clear();
+    assert_eq!(crate::decode::brep_local_sha256(decoded.ir()), brep_hash);
     assert_ne!(
-        crate::decode::document_local_sha256(&decoded.ir),
+        crate::decode::document_local_sha256(decoded.ir()),
         document_hash
     );
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let written_scan = container::scan_bytes(&encoded);
     let written_partition = written_scan
@@ -23905,11 +24004,11 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir.model.surfaces[0].geometry,
+        regenerated.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Unknown { .. }
     ));
     assert_eq!(
-        sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
         "30000mm"
     );
 }
@@ -23922,19 +24021,19 @@ fn semantic_writer_preserves_display_list_geometry() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.points[0].position.z += 1.0;
-    decoded.ir.model.tessellations[0].vertices[0].z = 250.0;
+    decoded.ir_mut().model.points[0].position.z += 1.0;
+    decoded.ir_mut().model.tessellations[0].vertices[0].z = 250.0;
 
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir.model.tessellations.len(), 1);
-    let mesh = &regenerated.ir.model.tessellations[0];
+    assert_eq!(regenerated.ir().model.tessellations.len(), 1);
+    let mesh = &regenerated.ir().model.tessellations[0];
     assert_eq!(mesh.vertices[0].z, 250.0);
     assert_eq!(mesh.triangles, vec![[0, 1, 2]]);
     assert_eq!(mesh.strip_lengths, vec![3]);
@@ -23949,11 +24048,11 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.tessellations[0].vertices[0].x = f64::MAX;
+    decoded.ir_mut().model.tessellations[0].vertices[0].x = f64::MAX;
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
-            &decoded.ir,
-            &decoded.source_fidelity,
+            decoded.ir(),
+            decoded.source_fidelity(),
             &mut Vec::new(),
         )
         .unwrap_err();
@@ -24160,7 +24259,7 @@ fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec::DecodeResu
 }
 
 fn encode_decode(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
-    encode_decode_result(ir).ir
+    encode_decode_result(ir).into_parts().0
 }
 
 fn sorted_point_positions(ir: &cadmpeg_ir::CadIr) -> Vec<[f64; 3]> {
@@ -24220,26 +24319,27 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
     let first = encode_decode_result(&source_less_cube());
     let mut encoded = Vec::new();
     SldprtCodec
-        .write_preserved_with_source_fidelity(&first.ir, &first.source_fidelity, &mut encoded)
+        .write_preserved_with_source_fidelity(first.ir(), first.source_fidelity(), &mut encoded)
         .unwrap();
     let second = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap()
-        .ir;
+        .into_parts()
+        .0;
 
-    let first_hash = crate::decode::document_local_sha256(&first.ir);
+    let first_hash = crate::decode::document_local_sha256(first.ir());
     let second_hash = crate::decode::document_local_sha256(&second);
     assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
 
     // Value golden: the cube's record families and counts, asserted directly.
-    assert_eq!(first.ir.model.bodies.len(), 1);
-    assert_eq!(first.ir.model.faces.len(), 6);
-    assert_eq!(first.ir.model.edges.len(), 12);
-    assert_eq!(first.ir.model.vertices.len(), 8);
-    assert_eq!(first.ir.model.coedges.len(), 24);
-    assert_eq!(first.ir.model.loops.len(), 6);
+    assert_eq!(first.ir().model.bodies.len(), 1);
+    assert_eq!(first.ir().model.faces.len(), 6);
+    assert_eq!(first.ir().model.edges.len(), 12);
+    assert_eq!(first.ir().model.vertices.len(), 8);
+    assert_eq!(first.ir().model.coedges.len(), 24);
+    assert_eq!(first.ir().model.loops.len(), 6);
     assert_eq!(
-        sorted_point_positions(&first.ir),
+        sorted_point_positions(first.ir()),
         sorted_point_positions(&second)
     );
 }

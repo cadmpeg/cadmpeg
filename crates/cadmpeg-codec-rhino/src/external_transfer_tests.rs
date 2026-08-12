@@ -61,14 +61,14 @@ fn decode_counts(path: &Path) -> Option<(u64, usize, usize)> {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .ok()?;
-    let (supported, total) = note_count(&decoded.report.notes).unwrap_or((0, 0));
+    let (supported, total) = note_count(&decoded.report().notes).unwrap_or((0, 0));
     if supported < total && std::env::var_os("RHINO_WITNESS_DIAGNOSTICS").is_some() {
         eprintln!("{}: {supported}/{total}", path.display());
-        for loss in &decoded.report.losses {
+        for loss in &decoded.report().losses {
             eprintln!("  {}: {}", loss.code, loss.message);
         }
     }
-    let validation = cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(
         validation.findings.iter().all(|finding| !matches!(
             finding.severity,

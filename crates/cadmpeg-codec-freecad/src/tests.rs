@@ -87,13 +87,13 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
         )
         .expect("decode source");
     let source_entries = decoded
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("namespace")
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
-    let mut edited = decoded.ir.clone();
+    let mut edited = decoded.ir().clone();
     FcstdCodec
         .set_property_value_attribute(
             &mut edited,
@@ -117,7 +117,11 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
     let round_trip = FcstdCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode output");
-    let output_namespace = round_trip.ir.native.namespace("fcstd").expect("namespace");
+    let output_namespace = round_trip
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace");
     let output_properties = output_namespace
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");
@@ -147,7 +151,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
             .expect("preserved entry");
         assert_eq!(output.data, source.data, "{}", source.name);
     }
-    assert!(crate::validate_native(&round_trip.ir).is_empty());
+    assert!(crate::validate_native(round_trip.ir()).is_empty());
 }
 
 #[test]
@@ -160,7 +164,7 @@ fn write_target_and_source_requirements_are_explicit() {
         .expect("decode source");
     let unsupported = FcstdCodec
         .encode_with_options(
-            &decoded.ir,
+            decoded.ir(),
             &mut Vec::new(),
             crate::FcstdWriteOptions {
                 schema_version: 3,
@@ -192,14 +196,14 @@ fn seekable_encoder_matches_the_write_only_fallback() {
     let mut staged = Vec::new();
     FcstdCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded.ir,
+            ir: decoded.ir(),
             fidelity: None,
         })
         .and_then(|plan| plan.write_to(&mut staged))
         .expect("write-only fallback");
     let mut streamed = Cursor::new(Vec::new());
     crate::writer::write_seekable(
-        &decoded.ir,
+        decoded.ir(),
         &mut streamed,
         crate::FcstdWriteOptions::default(),
     )
@@ -217,7 +221,7 @@ fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
         )
         .expect("decode source");
 
-    let mut declaration_edit = decoded.ir.clone();
+    let mut declaration_edit = decoded.ir().clone();
     let namespace = declaration_edit.native.namespace_mut("fcstd");
     let mut objects = namespace
         .arena_as::<crate::native::ObjectRecord>("objects")
@@ -235,7 +239,7 @@ fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
         .expect_err("unserialized declaration edit must fail");
     assert!(error.to_string().contains("declaration edits"));
 
-    let mut stale_entry = decoded.ir;
+    let (mut stale_entry, _, _) = decoded.into_parts();
     let namespace = stale_entry.native.namespace_mut("fcstd");
     let mut entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
@@ -331,7 +335,11 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
     let round_trip = FcstdCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode generated file");
-    let namespace = round_trip.ir.native.namespace("fcstd").expect("namespace");
+    let namespace = round_trip
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace");
     let objects = namespace
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
@@ -456,22 +464,22 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         assert_eq!(
-            first.ir.to_canonical_json().expect("canonical fixture"),
-            second.ir.to_canonical_json().expect("canonical fixture"),
+            first.ir().to_canonical_json().expect("canonical fixture"),
+            second.ir().to_canonical_json().expect("canonical fixture"),
             "{name} is nondeterministic"
         );
         assert!(
             first
-                .report
+                .report()
                 .losses
                 .iter()
                 .all(|loss| loss.severity < cadmpeg_ir::Severity::Blocking),
             "{name}: {:#?}",
-            first.report.losses
+            first.report().losses
         );
-        let native_findings = crate::validate_native(&first.ir);
+        let native_findings = crate::validate_native(first.ir());
         assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
-        assert_valid_document(&first.ir);
+        assert_valid_document(first.ir());
     }
 }
 
@@ -484,7 +492,7 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("application-saved conic fixture");
-    let entities = &result.ir.model.sketch_entities;
+    let entities = &result.ir().model.sketch_entities;
     assert_eq!(entities.len(), 7);
     assert!(matches!(
         entities[0].geometry,
@@ -537,13 +545,13 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
             && (end - 2.4).abs() < 1.0e-12
     ));
     assert!(result
-        .ir
+        .ir()
         .model
         .shells
         .iter()
         .any(|shell| shell.wire_edges.len() == 3));
-    assert_valid_document(&result.ir);
-    assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(result.ir());
+    assert!(crate::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -586,7 +594,7 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
             &DecodeOptions::default(),
         )
         .expect("sketch geometry");
-    let entities = &result.ir.model.sketch_entities;
+    let entities = &result.ir().model.sketch_entities;
     assert!(matches!(
         entities[0].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Point { position }
@@ -645,7 +653,7 @@ fn transfers_full_and_bounded_sketch_conics() {
             &DecodeOptions::default(),
         )
         .expect("sketch conics");
-    let entities = &result.ir.model.sketch_entities;
+    let entities = &result.ir().model.sketch_entities;
     assert_eq!(entities.len(), 6);
     assert!(matches!(
         entities[0].geometry,
@@ -700,8 +708,8 @@ fn transfers_full_and_bounded_sketch_conics() {
         entity.geometry,
         cadmpeg_ir::sketches::SketchGeometry::Native { .. }
     )));
-    assert!(result.report.losses.is_empty());
-    assert_valid_document(&result.ir);
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -726,7 +734,7 @@ fn transfers_bounded_rational_sketch_nurbs() {
         )
         .expect("sketch NURBS");
     assert!(matches!(
-        &result.ir.model.sketch_entities[0].geometry,
+        &result.ir().model.sketch_entities[0].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Nurbs {
             degree: 2,
             knots,
@@ -784,7 +792,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         .expect("sketch constraints");
     let constraint = |index: usize| {
         result
-            .ir
+            .ir()
             .model
             .sketch_constraints
             .iter()
@@ -815,7 +823,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     ));
     assert!(matches!(
         result
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -826,7 +834,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     ));
     assert!(matches!(
         result
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -894,7 +902,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
             && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":4"))
     ));
     let repeated_parameters = result
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -924,7 +932,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
             && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":4"))
     ));
-    assert!(result.ir.model.sketch_entities.iter().any(|entity| {
+    assert!(result.ir().model.sketch_entities.iter().any(|entity| {
         entity.id.0.ends_with(":reference-horizontal-axis")
             && matches!(
                 entity.geometry,
@@ -932,13 +940,13 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
             )
     }));
     assert!(result
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
         .any(|entity| entity.id.0.ends_with(":reference-root-point")));
     let external = result
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -954,7 +962,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         .is_some_and(|reference| reference.ends_with(":ExternalGeometry")));
     assert_eq!(external.endpoint_refs, ["Edge1"]);
     let unresolved_external = result
-        .ir
+        .ir()
         .model
         .sketch_entities
         .iter()
@@ -979,7 +987,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
             ..
         }
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1004,10 +1012,10 @@ fn neutralizes_line_midpoint_coincidence() {
         .expect("midpoint constraint");
 
     assert!(matches!(
-        result.ir.model.sketch_constraints[0].definition,
+        result.ir().model.sketch_constraints[0].definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::Midpoint { .. }
     ));
-    assert_valid_document(&result.ir);
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -1067,7 +1075,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         .expect("core operations");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1199,7 +1207,7 @@ fn transfers_non_default_revolution_branches() {
         .expect("revolution branches");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1297,10 +1305,10 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version(), cadmpeg_ir::IR_VERSION);
+    assert_eq!(result.ir().ir_version(), cadmpeg_ir::IR_VERSION);
     let feature = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1336,8 +1344,8 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             op: cadmpeg_ir::features::BooleanOp::Cut,
         }
     ));
-    assert!(result.report.losses.is_empty());
-    let findings = cadmpeg_ir::validate_neutral(&result.ir, Vec::new()).findings;
+    assert!(result.report().losses.is_empty());
+    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
     assert!(
         findings
             .iter()
@@ -1378,7 +1386,7 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
         .expect("parametric curves");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1413,7 +1421,7 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
             ..
         }
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1447,7 +1455,7 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
         .expect("PartDesign post-processing");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1471,7 +1479,7 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(0.01),
         } if matches!(operation.as_ref(), cadmpeg_ir::features::FeatureDefinition::Primitive { .. })
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1505,7 +1513,7 @@ fn transfers_part_construction_geometry_features() {
         .expect("Part construction geometry");
     let feature = |name: &str| {
         result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1557,7 +1565,7 @@ fn transfers_part_construction_geometry_features() {
         matches!(&feature("Face").definition, FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker_class } if source.ends_with(":Sources") && face_maker_class == "Part::FaceMakerUnified")
     );
     assert_eq!(feature("Face").dependencies.len(), 2);
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1595,7 +1603,7 @@ fn transfers_uniform_and_anisotropic_part_scale() {
         .expect("Part scale");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1659,7 +1667,7 @@ fn transfers_part_compound_refine_and_reverse_operations() {
         .expect("derived Part shapes");
     let feature = |name: &str| {
         result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1688,7 +1696,7 @@ fn transfers_part_compound_refine_and_reverse_operations() {
     assert_eq!(feature("Compound2").dependencies.len(), 2);
     assert_eq!(feature("Refine").dependencies.len(), 1);
     assert_eq!(feature("Reverse").dependencies.len(), 1);
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1722,7 +1730,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
         .expect("Part surface constructions");
     let feature = |name: &str| {
         result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1746,7 +1754,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
     ));
     assert_eq!(feature("Ruled").dependencies.len(), 2);
     assert_eq!(feature("Section").dependencies.len(), 2);
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1774,7 +1782,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
         )
         .expect("standalone Part mirror");
     let feature = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -1790,7 +1798,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
         } if source.ends_with(":Source") && reference.ends_with(":MirrorPlane")
     ));
     assert_eq!(feature.dependencies.len(), 2);
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1822,7 +1830,7 @@ fn transfers_part_projection_on_surface_construction() {
         )
         .expect("projection on surface");
     let feature = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -1841,7 +1849,7 @@ fn transfers_part_projection_on_surface_construction() {
             && support.ends_with(":SupportFace")
     ));
     assert_eq!(feature.dependencies.len(), 3);
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1869,7 +1877,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
         .expect("Part booleans");
     let feature = |name: &str| {
         result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1910,7 +1918,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
         tools,
         cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":links:1..2")
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -1935,7 +1943,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
         .expect("PartDesign booleans");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -1962,7 +1970,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             keep_tools: false,
         } if target.ends_with(":BaseFeature") && tools.ends_with(":Group")
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -2024,7 +2032,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         .expect("loft and pipe");
     let feature = |name: &str| {
         result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -2094,7 +2102,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     ));
     assert_eq!(feature("Loft").dependencies.len(), 2);
     assert_eq!(feature("Pipe").dependencies.len(), 3);
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -2159,7 +2167,7 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
         .expect("pipe modes");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -2253,12 +2261,12 @@ TShapes 0
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("cached operations");
     assert!(result
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .all(|feature| matches!(feature.definition, FeatureDefinition::StoredGeometry)));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -2328,7 +2336,7 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
         .expect("linear patterns");
     let feature = |name: &str| {
         result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -2400,10 +2408,10 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
         }
     ));
     assert_eq!(feature("Uniform").dependencies.len(), 1);
-    assert!(result.report.losses.is_empty());
-    assert_valid_document(&result.ir);
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
     let census = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("native namespace")
@@ -2421,14 +2429,14 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
             && record.semantic_kind == "pattern"
             && record.neutral
     }));
-    let baseline_findings = cadmpeg_ir::validate_neutral(&result.ir, Vec::new()).findings;
+    let baseline_findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
     assert!(
         baseline_findings
             .iter()
             .all(|finding| finding.check != cadmpeg_ir::Check::Identity),
         "{baseline_findings:?}"
     );
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     let mut stale_census = census;
     stale_census[0].neutral = !stale_census[0].neutral;
     corrupted
@@ -2467,14 +2475,14 @@ fn distinguishes_stored_base_and_application_owned_features() {
         )
         .expect("stored and derived features");
     let source = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Source"))
         .expect("stored source");
     let base = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -2490,14 +2498,14 @@ fn distinguishes_stored_base_and_application_owned_features() {
             if source.0 == "fcstd:design:feature#Source"
     ));
     assert_eq!(base.dependencies, std::slice::from_ref(&source.id));
-    assert!(result.ir.model.features.iter().all(|feature| {
+    assert!(result.ir().model.features.iter().all(|feature| {
         !matches!(
             feature.name.as_deref(),
             Some("PartExtension" | "DesignExtension")
         )
     }));
     let namespace = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("native namespace");
@@ -2515,9 +2523,9 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .expect("design census");
     assert_eq!(census.len(), 2);
     assert!(census.iter().all(|record| record.neutral));
-    assert!(result.report.losses.is_empty());
-    assert_valid_document(&result.ir);
-    let mut corrupted = result.ir.clone();
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
+    let mut corrupted = result.ir().clone();
     let derived = corrupted
         .model
         .features
@@ -2556,7 +2564,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
         )
         .expect("body state");
     let body = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -2581,7 +2589,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
     for child in children {
         assert_eq!(
             result
-                .ir
+                .ir()
                 .model
                 .features
                 .iter()
@@ -2590,10 +2598,10 @@ fn transfers_ordered_body_membership_and_active_tip() {
             Some(&body.id)
         );
     }
-    assert!(result.report.losses.is_empty());
-    assert_valid_document(&result.ir);
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     let body = corrupted
         .model
         .features
@@ -2648,7 +2656,7 @@ fn transfers_stored_and_external_part_feature_families() {
     for name in ["Extended", "GeometrySet", "Spline", "Planar"] {
         assert!(matches!(
             result
-                .ir
+                .ir()
                 .model
                 .features
                 .iter()
@@ -2666,7 +2674,7 @@ fn transfers_stored_and_external_part_feature_families() {
     ] {
         assert!(matches!(
             &result
-                .ir
+                .ir()
                 .model
                 .features
                 .iter()
@@ -2678,13 +2686,13 @@ fn transfers_stored_and_external_part_feature_families() {
         ));
     }
     assert!(result
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .all(|feature| feature.name.as_deref() != Some("PlanarExtension")));
     let census = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("namespace")
@@ -2692,8 +2700,8 @@ fn transfers_stored_and_external_part_feature_families() {
         .expect("design census");
     assert_eq!(census.len(), 8);
     assert!(census.iter().all(|record| record.neutral));
-    assert!(result.report.losses.is_empty());
-    assert_valid_document(&result.ir);
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -2739,7 +2747,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
         .expect("referenced patterns");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -2781,7 +2789,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
             ..
         } if plane.ends_with(":MirrorPlane")
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -2820,7 +2828,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         .expect("scaled multi-transform");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -2863,7 +2871,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         *stages[1].pattern,
         cadmpeg_ir::features::PatternKind::Scale { count: 3, .. }
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -2914,7 +2922,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         .expect("helical sweeps");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -2941,7 +2949,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         && construction.axis_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         && construction.tolerance.is_none())
     );
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -2971,7 +2979,7 @@ fn transfers_remaining_partdesign_analytic_primitives() {
         .expect("remaining primitives");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -2988,7 +2996,7 @@ fn transfers_remaining_partdesign_analytic_primitives() {
     assert!(
         matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Wedge { xmin, ymax, .. }, op: cadmpeg_ir::features::BooleanOp::Join } if xmin.0 == -2.0 && ymax.0 == 6.0)
     );
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -3020,7 +3028,7 @@ fn transfers_shape_and_subshape_binder_construction() {
         .expect("binders");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -3078,7 +3086,7 @@ fn transfers_shape_and_subshape_binder_construction() {
         context,
         cadmpeg_ir::features::BinderTarget::Feature { .. }
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -3111,7 +3119,7 @@ fn transfers_complete_thickness_construction_controls() {
         )
         .expect("thickness");
     let wall = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -3131,7 +3139,7 @@ fn transfers_complete_thickness_construction_controls() {
         } if selection.ends_with(":Base")
     ));
     assert_eq!(wall.dependencies.len(), 1);
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -3183,7 +3191,7 @@ fn transfers_part_thickness_and_shape_offset_construction() {
         .expect("Part offsets");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -3264,7 +3272,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         )
         .expect("draft");
     let draft = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -3290,7 +3298,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
     ));
     assert_eq!(draft.dependencies.len(), 3);
     let face_draft = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -3303,7 +3311,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             ..
         }
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -3354,7 +3362,7 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
         )
         .expect("hole");
     let hole = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -3426,8 +3434,8 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
         }
     ));
     assert_eq!(hole.dependencies.len(), 1);
-    assert!(result.report.losses.is_empty());
-    let findings = cadmpeg_ir::validate_neutral(&result.ir, Vec::new()).findings;
+    assert!(result.report().losses.is_empty());
+    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
     assert!(
         findings
             .iter()
@@ -3460,7 +3468,7 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
         )
         .expect("legacy hole");
     let hole = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -3476,7 +3484,7 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
             ..
         }
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -3502,7 +3510,7 @@ fn transfers_datum_frames_from_persisted_placements() {
         .expect("datums");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -3536,7 +3544,7 @@ fn transfers_datum_frames_from_persisted_placements() {
                 && *y_axis == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
                 && *z_axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -3551,13 +3559,13 @@ fn reports_attributable_native_design_blockers() {
             &DecodeOptions::default(),
         )
         .expect("native feature");
-    assert_eq!(result.report.losses.len(), 1);
+    assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
-        result.report.losses[0].severity,
+        result.report().losses[0].severity,
         cadmpeg_ir::Severity::Blocking
     );
     assert_eq!(
-        result.report.losses[0]
+        result.report().losses[0]
             .provenance
             .as_ref()
             .and_then(|provenance| provenance.tag.as_deref()),
@@ -3594,7 +3602,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         )
         .expect("spreadsheet");
     let width = result
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -3609,14 +3617,14 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         Some("A1")
     );
     let pad = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Pad"))
         .expect("pad");
     let length = result
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -3624,21 +3632,21 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("pad length");
     assert_eq!(length.dependencies, vec![width.id.clone()]);
     let width_position = result
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
         .position(|parameter| parameter.name == "width")
         .expect("width position");
     let height_position = result
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
         .position(|parameter| parameter.name == "height")
         .expect("height position");
     assert!(width_position < height_position);
-    let sheet = result.ir.model.spreadsheets.first().expect("sheet state");
+    let sheet = result.ir().model.spreadsheets.first().expect("sheet state");
     assert_eq!(sheet.feature.0, "fcstd:design:feature#Sheet");
     assert_eq!(sheet.cells.len(), 2);
     assert_eq!(
@@ -3668,8 +3676,8 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
             end: "B1".into(),
         }]
     );
-    assert_valid_document(&result.ir);
-    let mut corrupted = result.ir.clone();
+    assert_valid_document(result.ir());
+    let mut corrupted = result.ir().clone();
     corrupted.model.spreadsheets[0]
         .merged_ranges
         .push(cadmpeg_ir::SpreadsheetRange {
@@ -3735,7 +3743,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("product structure");
     let nodes = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("native")
@@ -3761,9 +3769,9 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(occurrence.element_transforms.len(), 2);
     assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
     assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
-    assert_eq!(result.ir.model.product_definitions.len(), 5);
+    assert_eq!(result.ir().model.product_definitions.len(), 5);
     let component = result
-        .ir
+        .ir()
         .model
         .product_definitions
         .iter()
@@ -3775,14 +3783,14 @@ fn recovers_product_prototypes_occurrences_and_placements() {
         })
         .expect("neutral assembly component");
     let assembly_occurrence = result
-        .ir
+        .ir()
         .model
         .occurrences
         .iter()
         .find(|occurrence| occurrence.native_ref.as_deref() == component.native_ref.as_deref())
         .expect("assembly occurrence");
     let link_occurrences = result
-        .ir
+        .ir()
         .model
         .occurrences
         .iter()
@@ -3798,8 +3806,8 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(link_occurrences[0].ordinal, 0);
     assert_eq!(link_occurrences[0].transform.rows[0][3], 5.0);
     assert_eq!(link_occurrences[1].transform.rows[0][3], 8.0);
-    let graph =
-        cadmpeg_ir::AssemblyGraph::new(&result.ir.model.occurrences).expect("valid assembly graph");
+    let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
+        .expect("valid assembly graph");
     assert_eq!(
         graph
             .resolved_transform(&link_occurrences[0].id)
@@ -3834,7 +3842,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
             if definition.0.contains("Prototype")
     ));
     let prototype = result
-        .ir
+        .ir()
         .model
         .product_definitions
         .iter()
@@ -3846,9 +3854,9 @@ fn recovers_product_prototypes_occurrences_and_placements() {
         Some("Hardened drive gear")
     );
     assert_eq!(prototype.part_number.as_deref(), Some("GEAR-42"));
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
-    let mut corrupted = result.ir.clone();
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+    let mut corrupted = result.ir().clone();
     corrupted.model.occurrences[0].prototype = cadmpeg_ir::PrototypeReference::Local {
         definition: cadmpeg_ir::ids::ProductDefinitionId("fcstd:model:component#missing".into()),
     };
@@ -3874,7 +3882,7 @@ fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
         )
         .expect("overlapping product membership");
     let nodes = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("native namespace")
@@ -3889,7 +3897,7 @@ fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
         2
     );
     let member = result
-        .ir
+        .ir()
         .model
         .occurrences
         .iter()
@@ -3900,7 +3908,7 @@ fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
         cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
             if occurrence.0.contains("First")
     ));
-    assert_valid_document(&result.ir);
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -3965,7 +3973,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
     )
     .expect("empty zero-count link array");
     assert_eq!(
-        zero.ir
+        zero.ir()
             .model
             .occurrences
             .iter()
@@ -4013,7 +4021,7 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         )
         .expect("joint");
     let joints = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("native")
@@ -4032,8 +4040,8 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         joints[0].parameters.get("Suppressed").map(String::as_str),
         Some("true")
     );
-    assert_eq!(result.ir.model.assembly_joints.len(), 1);
-    let joint = &result.ir.model.assembly_joints[0];
+    assert_eq!(result.ir().model.assembly_joints.len(), 1);
+    let joint = &result.ir().model.assembly_joints[0];
     assert_eq!(joint.kind, cadmpeg_ir::JointKind::Revolute);
     assert_eq!(joint.operands.len(), 2);
     assert!(joint
@@ -4050,9 +4058,9 @@ fn recovers_assembly_joint_operands_frames_and_state() {
     let limits = joint.angular_limits.as_ref().expect("angular limits");
     assert!((limits.minimum.expect("minimum") - (-30_f64).to_radians()).abs() < 1e-12);
     assert!((limits.maximum.expect("maximum") - 45_f64.to_radians()).abs() < 1e-12);
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
-    let mut corrupted = result.ir.clone();
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+    let mut corrupted = result.ir().clone();
     let limits = corrupted.model.assembly_joints[0]
         .angular_limits
         .as_mut()
@@ -4063,7 +4071,7 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid assembly joint")));
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     corrupted.model.assembly_joints[0].operands[0].external_document =
         Some(cadmpeg_ir::ExternalDocumentReference {
             path: Some("external.FCStd".into()),
@@ -4101,7 +4109,7 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
         .expect("nested links");
     let occurrence = |name: &str| {
         result
-            .ir
+            .ir()
             .model
             .occurrences
             .iter()
@@ -4117,8 +4125,8 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
     assert_eq!(occurrence("Inner").prototype_transform.rows[0][3], 5.0);
     assert_eq!(occurrence("Outer").prototype_transform.rows[0][3], 8.0);
     assert_eq!(occurrence("Override").prototype_transform.rows[0][3], 0.0);
-    let graph =
-        cadmpeg_ir::AssemblyGraph::new(&result.ir.model.occurrences).expect("valid assembly graph");
+    let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
+        .expect("valid assembly graph");
     assert_eq!(
         graph
             .resolved_transform(&occurrence("Inner").id)
@@ -4140,8 +4148,8 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
             .rows[0][3],
         14.0
     );
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -4159,9 +4167,9 @@ fn transfers_external_product_paths_and_targets() {
             &DecodeOptions::default(),
         )
         .expect("external products");
-    assert_eq!(result.ir.model.occurrences.len(), 1);
+    assert_eq!(result.ir().model.occurrences.len(), 1);
     let by_path = result
-        .ir
+        .ir()
         .model
         .occurrences
         .iter()
@@ -4183,9 +4191,9 @@ fn transfers_external_product_paths_and_targets() {
         cadmpeg_ir::ExternalResolution::Unresolved
     );
 
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
-    let mut corrupted = result.ir.clone();
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+    let mut corrupted = result.ir().clone();
     let cadmpeg_ir::PrototypeReference::External { document, .. } =
         &mut corrupted.model.occurrences[0].prototype
     else {
@@ -4233,7 +4241,7 @@ fn restores_shadowed_link_subelement_name() {
         )
         .expect("shadowed subelement");
     let properties = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("namespace")
@@ -4286,8 +4294,8 @@ fn transfers_grounded_assembly_state_with_resolved_component() {
             &DecodeOptions::default(),
         )
         .expect("grounded assembly object");
-    assert_eq!(result.ir.model.assembly_joints.len(), 1);
-    let joint = &result.ir.model.assembly_joints[0];
+    assert_eq!(result.ir().model.assembly_joints.len(), 1);
+    let joint = &result.ir().model.assembly_joints[0];
     assert_eq!(joint.kind, cadmpeg_ir::JointKind::Grounded);
     assert_eq!(joint.operands.len(), 1);
     assert!(joint.operands[0].occurrence.is_some());
@@ -4295,8 +4303,8 @@ fn transfers_grounded_assembly_state_with_resolved_component() {
     assert_eq!(joint.frames[0].rows[0][3], 7.0);
     assert_eq!(joint.frames[0].rows[1][3], 8.0);
     assert_eq!(joint.frames[0].rows[2][3], 9.0);
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -4328,7 +4336,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("application census");
-    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
     let records = namespace
         .arena_as::<crate::native::ApplicationRecord>("applications")
         .expect("applications");
@@ -4365,10 +4373,10 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             && record.byte_len == record.data.len() as u64
             && record.sha256 == cadmpeg_ir::hash::sha256_hex(&record.data)
     }));
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     let mut stale_records = records.clone();
     stale_records[0].property_records[0].sha256 = "0".repeat(64);
     corrupted
@@ -4423,8 +4431,8 @@ fn transfers_application_mesh_and_transformed_point_cloud_payloads() {
             &DecodeOptions::default(),
         )
         .expect("application geometry");
-    assert_eq!(result.ir.model.tessellations.len(), 1);
-    let mesh = &result.ir.model.tessellations[0];
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    let mesh = &result.ir().model.tessellations[0];
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(
         mesh.source_object
@@ -4432,17 +4440,17 @@ fn transfers_application_mesh_and_transformed_point_cloud_payloads() {
             .map(|source| source.object_id.as_str()),
         Some("fcstd:native:object#Mesh")
     );
-    assert_eq!(result.ir.model.points.len(), 2);
+    assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
-        result.ir.model.points[0].position,
+        result.ir().model.points[0].position,
         cadmpeg_ir::math::Point3::new(11.0, 22.0, 33.0)
     );
     assert_eq!(
-        result.ir.model.points[1].position,
+        result.ir().model.points[1].position,
         cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
     );
-    assert!(result.report.geometry_transferred);
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().geometry_transferred);
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -4503,7 +4511,7 @@ fn retains_ordered_document_level_gui_state() {
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("GUI state");
-    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
     let documents = namespace
         .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
         .expect("GUI documents");
@@ -4531,8 +4539,8 @@ fn retains_ordered_document_level_gui_state() {
         .find(|entry| entry.name == "section.bin")
         .expect("section asset");
     assert_eq!(section.referenced_by, [documents[0].states[1].id.clone()]);
-    assert_eq!(result.ir.model.presentation_documents.len(), 1);
-    let presentation = &result.ir.model.presentation_documents[0];
+    assert_eq!(result.ir().model.presentation_documents.len(), 1);
+    let presentation = &result.ir().model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
     assert_eq!(presentation.active_view, None);
     let camera = presentation.camera.as_ref().expect("camera state");
@@ -4544,11 +4552,11 @@ fn retains_ordered_document_level_gui_state() {
     );
     assert_eq!(presentation.states[1].assets.len(), 1);
     assert!(presentation.states[1].assets[0].ends_with("section.bin"));
-    assert!(result.ir.model.view_presentations.is_empty());
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(result.ir().model.view_presentations.is_empty());
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     corrupted.model.presentation_documents[0]
         .camera
         .as_mut()
@@ -4608,7 +4616,7 @@ fn gui_property_counts_ignore_nested_extension_properties() {
         )
         .expect("nested extension properties do not alter the provider's direct count");
     let native = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("FCStd namespace");
@@ -4619,7 +4627,7 @@ fn gui_property_counts_ignore_nested_extension_properties() {
             .len(),
         1
     );
-    assert!(crate::validate_native(&result.ir).is_empty());
+    assert!(crate::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -4656,7 +4664,7 @@ fn accepts_and_validates_gui_custom_enumerations() {
         )
         .expect("custom GUI enumeration");
     let properties = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("namespace")
@@ -4732,7 +4740,7 @@ fn retains_unregistered_gui_property_values_without_semantic_dispatch() {
         )
         .expect("unregistered GUI property");
     let properties = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("namespace")
@@ -4775,7 +4783,7 @@ fn recovers_techdraw_page_template_and_view_graph() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("TechDraw");
     let drawings = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("native")
@@ -4805,23 +4813,23 @@ fn recovers_techdraw_page_template_and_view_graph() {
         Some("fcstd:native:object#Model")
     );
     assert!(view.parameters.contains_key("Direction"));
-    assert_eq!(result.ir.model.drawings.len(), 3);
+    assert_eq!(result.ir().model.drawings.len(), 3);
     let neutral_page = result
-        .ir
+        .ir()
         .model
         .drawings
         .iter()
         .find(|drawing| drawing.object.ends_with("#Page"))
         .expect("neutral page");
     let neutral_template = result
-        .ir
+        .ir()
         .model
         .drawings
         .iter()
         .find(|drawing| drawing.object.ends_with("#Template"))
         .expect("neutral template");
     let neutral_view = result
-        .ir
+        .ir()
         .model
         .drawings
         .iter()
@@ -4840,10 +4848,10 @@ fn recovers_techdraw_page_template_and_view_graph() {
     assert_eq!(neutral_view.position, Some([25.0, 40.0]));
     assert_eq!(neutral_view.scale, Some(2.0));
     assert_eq!(neutral_view.direction, Some([0.0, 0.0, 1.0]));
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     corrupted
         .model
         .drawings
@@ -4881,7 +4889,7 @@ fn transfers_app_annotation_text_and_position_carriers() {
         )
         .expect("App annotations");
 
-    let annotations = &result.ir.model.semantic_annotations;
+    let annotations = &result.ir().model.semantic_annotations;
     assert_eq!(annotations.len(), 2);
     let note = annotations
         .iter()
@@ -4949,7 +4957,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
             &DecodeOptions::default(),
         )
         .expect("semantic annotations");
-    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
     let annotations = namespace
         .arena_as::<crate::native::SemanticAnnotationRecord>("annotations")
         .expect("annotations");
@@ -4982,7 +4990,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
         Some("fcstd:native:object#View")
     );
     let neutral_dimension = result
-        .ir
+        .ir()
         .model
         .drawings
         .iter()
@@ -4994,9 +5002,9 @@ fn separates_semantic_annotations_from_drawing_relationships() {
     );
     assert!(neutral_dimension.relationships.contains_key("BaseView"));
     assert!(neutral_dimension.relationships.contains_key("References2D"));
-    assert_eq!(result.ir.model.semantic_annotations.len(), 2);
+    assert_eq!(result.ir().model.semantic_annotations.len(), 2);
     let semantic_dimension = result
-        .ir
+        .ir()
         .model
         .semantic_annotations
         .iter()
@@ -5015,7 +5023,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
         ["Edge1"]
     );
     let semantic_note = result
-        .ir
+        .ir()
         .model
         .semantic_annotations
         .iter()
@@ -5027,7 +5035,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
     );
     assert_eq!(semantic_note.text, ["INSPECT"]);
     let neutral_view = result
-        .ir
+        .ir()
         .model
         .drawings
         .iter()
@@ -5037,10 +5045,10 @@ fn separates_semantic_annotations_from_drawing_relationships() {
         semantic_note.references["View"][0].target.as_deref(),
         Some(neutral_view.id.0.as_str())
     );
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     corrupted.model.semantic_annotations[0].value = Some(f64::INFINITY);
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
@@ -5081,7 +5089,7 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
         )
         .expect("annotation families");
     let kinds = result
-        .ir
+        .ir()
         .model
         .semantic_annotations
         .iter()
@@ -5089,17 +5097,17 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
         .collect::<Vec<_>>();
     assert_eq!(kinds, [Kind::Balloon, Kind::Leader, Kind::Symbol]);
     assert!(result
-        .ir
+        .ir()
         .model
         .semantic_annotations
         .iter()
         .all(|annotation| !annotation.object.ends_with("#Datum")
             && !annotation.object.ends_with("#Tolerance")));
-    let balloon = &result.ir.model.semantic_annotations[0];
+    let balloon = &result.ir().model.semantic_annotations[0];
     assert_eq!(balloon.text, ["7"]);
     assert_eq!(balloon.references["Source"][0].subelements, ["Face1"]);
     let symbol = result
-        .ir
+        .ir()
         .model
         .semantic_annotations
         .iter()
@@ -5107,8 +5115,8 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
         .expect("semantic symbol");
     assert_eq!(symbol.assets.len(), 1);
     assert!(symbol.assets[0].ends_with("symbol.svg"));
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -5187,7 +5195,7 @@ fn transfers_non_default_extrusion_termination_branches() {
         .expect("extrusion termination branches");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -5330,7 +5338,7 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
         )
         .expect("non-sketch profile extrusion");
     let pocket = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -5347,8 +5355,8 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
             && direction.y.abs() < 1.0e-12
             && direction.z.abs() < 1.0e-12
     ));
-    assert!(result.report.losses.is_empty());
-    assert_valid_document(&result.ir);
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -5376,7 +5384,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
         )
         .expect("symmetric Part extrusion");
     let definition = &result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -5398,7 +5406,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             ..
         } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1e-12
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -5417,7 +5425,7 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
             &DecodeOptions::default(),
         )
         .expect("linkless pad");
-    let definition = &result.ir.model.features[0].definition;
+    let definition = &result.ir().model.features[0].definition;
     assert!(matches!(
         definition,
         FeatureDefinition::Extrude {
@@ -5427,8 +5435,8 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
             ..
         } if profile.ends_with(":Sketch")
     ));
-    assert!(result.report.losses.is_empty());
-    assert_valid_document(&result.ir);
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -5482,7 +5490,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         .expect("mixed extrusion controls");
     let definition = |name: &str| {
         &result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -5548,7 +5556,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             ..
         }
     ));
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
 }
 
 #[test]
@@ -5600,46 +5608,56 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             &DecodeOptions::default(),
         )
         .expect("design history");
-    assert_eq!(result.ir.model.sketches.len(), 1);
-    assert_eq!(result.ir.model.sketch_entities.len(), 4);
-    assert_eq!(result.ir.model.sketches[0].profiles.len(), 1);
-    assert_eq!(result.ir.model.sketches[0].profiles[0].len(), 4);
-    let (origin, normal, _) = result.ir.model.sketches[0]
+    assert_eq!(result.ir().model.sketches.len(), 1);
+    assert_eq!(result.ir().model.sketch_entities.len(), 4);
+    assert_eq!(result.ir().model.sketches[0].profiles.len(), 1);
+    assert_eq!(result.ir().model.sketches[0].profiles[0].len(), 4);
+    let (origin, normal, _) = result.ir().model.sketches[0]
         .resolved_placement()
         .expect("resolved sketch placement");
     assert_eq!(origin.x, 1.0);
     assert!((normal.y + 1.0).abs() < 1e-12);
-    assert_eq!(result.ir.model.features.len(), 4);
-    assert_eq!(result.ir.model.sketch_constraints.len(), 2);
-    assert_eq!(result.ir.model.parameters.len(), 3);
-    assert!(result.ir.model.sketch_constraints.iter().any(|constraint| {
-        matches!(
-            constraint.definition,
-            cadmpeg_ir::sketches::SketchConstraintDefinition::Horizontal { .. }
-        )
-    }));
-    assert!(result.ir.model.sketch_constraints.iter().any(|constraint| {
-        matches!(
-            constraint.definition,
-            cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
-        )
-    }));
+    assert_eq!(result.ir().model.features.len(), 4);
+    assert_eq!(result.ir().model.sketch_constraints.len(), 2);
+    assert_eq!(result.ir().model.parameters.len(), 3);
+    assert!(result
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                cadmpeg_ir::sketches::SketchConstraintDefinition::Horizontal { .. }
+            )
+        }));
+    assert!(result
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+            )
+        }));
     let pad = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Pad"))
         .expect("pad");
     let pocket = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Pocket"))
         .expect("pocket");
     let body = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -5660,7 +5678,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         Some("true")
     );
     let pocket_length = result
-        .ir
+        .ir()
         .model
         .parameters
         .iter()
@@ -5701,9 +5719,9 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             ..
         }
     ));
-    let native_findings = crate::validate_native(&result.ir);
+    let native_findings = crate::validate_native(result.ir());
     assert!(native_findings.is_empty(), "{native_findings:#?}");
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     let design_findings = validation
         .findings
         .iter()
@@ -5740,7 +5758,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
             &DecodeOptions::default(),
         )
         .expect("attachment");
-    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
     let attachments = namespace
         .arena_as::<crate::native::AttachmentRecord>("attachments")
         .expect("attachments");
@@ -5754,7 +5772,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
     assert_eq!(attachments[0].placement.expect("placement")[0][3], 10.0);
     assert_eq!(attachments[0].offset.expect("offset")[0][3], 2.0);
     assert_eq!(attachments[0].effective_frame[0][3], 10.0);
-    let sketch = result.ir.model.sketches.first().expect("sketch");
+    let sketch = result.ir().model.sketches.first().expect("sketch");
     assert_eq!(
         sketch
             .resolved_placement()
@@ -5763,8 +5781,8 @@ fn retains_support_attachment_and_distinct_offset_frame() {
             .x,
         10.0
     );
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -5910,30 +5928,30 @@ fn transfers_binary_exact_curve_and_surface_carriers() {
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("binary curve carrier");
-    assert_eq!(result.ir.model.curves.len(), 1);
+    assert_eq!(result.ir().model.curves.len(), 1);
     assert!(matches!(
-        result.ir.model.curves[0].geometry,
+        result.ir().model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Line { .. }
     ));
-    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(result.ir().model.surfaces.len(), 1);
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
     ));
-    assert_eq!(result.ir.model.tessellations.len(), 1);
-    assert_eq!(result.ir.model.tessellations[0].triangles, [[0, 1, 2]]);
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(
-        result.ir.model.tessellations[0].body.as_ref(),
-        Some(&result.ir.model.bodies[0].id)
+        result.ir().model.tessellations[0].body.as_ref(),
+        Some(&result.ir().model.bodies[0].id)
     );
     assert_eq!(
-        result.ir.model.tessellations[0].faces,
-        [result.ir.model.faces[0].id.clone()]
+        result.ir().model.tessellations[0].faces,
+        [result.ir().model.faces[0].id.clone()]
     );
-    assert_eq!(result.ir.model.coedges.len(), 1);
-    assert!(result.report.geometry_transferred);
+    assert_eq!(result.ir().model.coedges.len(), 1);
+    assert!(result.report().geometry_transferred);
 }
 
 fn archive(document: &str) -> Vec<u8> {
@@ -6082,18 +6100,18 @@ Co 1001000 +2 0 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("connected topology");
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 2);
-    assert_eq!(result.ir.model.edges.len(), 2);
-    assert_eq!(result.ir.model.vertices.len(), 2);
-    assert_eq!(result.ir.model.pcurves.len(), 2);
-    assert_eq!(result.ir.model.appearances.len(), 3);
-    assert_eq!(result.ir.model.appearance_bindings.len(), 5);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 2);
+    assert_eq!(result.ir().model.edges.len(), 2);
+    assert_eq!(result.ir().model.vertices.len(), 2);
+    assert_eq!(result.ir().model.pcurves.len(), 2);
+    assert_eq!(result.ir().model.appearances.len(), 3);
+    assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .appearance_bindings
             .iter()
@@ -6106,7 +6124,7 @@ Co 1001000 +2 0 *
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .appearance_bindings
             .iter()
@@ -6119,7 +6137,7 @@ Co 1001000 +2 0 *
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .appearances
             .iter()
@@ -6129,7 +6147,7 @@ Co 1001000 +2 0 *
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .appearances
             .iter()
@@ -6139,10 +6157,10 @@ Co 1001000 +2 0 *
             .and_then(|appearance| appearance.properties.get("point_size")),
         Some(&4.0)
     );
-    assert_eq!(result.ir.model.bodies[0].visible, Some(false));
-    assert_eq!(result.ir.model.presentation_documents.len(), 1);
-    assert_eq!(result.ir.model.view_presentations.len(), 1);
-    let view = &result.ir.model.view_presentations[0];
+    assert_eq!(result.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(result.ir().model.presentation_documents.len(), 1);
+    assert_eq!(result.ir().model.view_presentations.len(), 1);
+    let view = &result.ir().model.view_presentations[0];
     assert!(view
         .object
         .as_deref()
@@ -6152,13 +6170,13 @@ Co 1001000 +2 0 *
     assert_eq!(view.visible, Some(false));
     assert_eq!(view.line_width, Some(2.5));
     assert_eq!(view.point_size, Some(4.0));
-    let color = result.ir.model.bodies[0].color.expect("shape color");
+    let color = result.ir().model.bodies[0].color.expect("shape color");
     assert!((color.r - 0x33 as f32 / 255.0).abs() < 1e-6);
     assert!((color.g - 0x66 as f32 / 255.0).abs() < 1e-6);
     assert!((color.b - 0x99 as f32 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let shape_material = result
-        .ir
+        .ir()
         .model
         .appearances
         .iter()
@@ -6166,7 +6184,7 @@ Co 1001000 +2 0 *
         .expect("shape material");
     assert_eq!(shape_material.properties.get("shininess"), Some(&0.75));
     assert_eq!(shape_material.properties.get("transparency"), Some(&0.25));
-    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
     assert_eq!(namespace.version, 22);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
@@ -6193,22 +6211,22 @@ Co 1001000 +2 0 *
     assert!(gui_properties
         .iter()
         .all(|property| property.raw_xml.starts_with("<Property")));
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     corrupted.model.view_presentations[0].line_width = Some(f64::NAN);
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "invalid view presentation reference, order, or size"));
     assert!(result
-        .ir
+        .ir()
         .model
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(
         report
             .findings
@@ -6254,26 +6272,26 @@ So 1001000 +2 0 *
             &DecodeOptions::default(),
         )
         .expect("triangulation-only topology");
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.tessellations.len(), 1);
-    assert_eq!(result.ir.model.tessellations[0].vertices[0].x, 0.0);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].vertices[0].x, 0.0);
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Polygonal {
             chordal_deflection: 0.02,
             ..
         }
     ));
     assert!(matches!(
-        result.ir.model.curves[0].geometry,
+        result.ir().model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Polyline {
             chordal_deflection: 0.01,
             ..
         }
     ));
-    assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 1.0]));
-    assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, Vec::new());
+    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 1.0]));
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(
         validation.findings.iter().all(|finding| {
             finding.severity < cadmpeg_ir::Severity::Error
@@ -6380,7 +6398,7 @@ Co 1001000 +2 0 *
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("persistent element map");
     let namespace = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("required invariant");
@@ -6410,7 +6428,7 @@ Co 1001000 +2 0 *
         .flatten()
         .flat_map(|name| &name.topology_ids)
         .collect::<std::collections::HashSet<_>>();
-    assert!(result.ir.model.appearance_bindings.iter().any(|binding| {
+    assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
         matches!(
             &binding.target,
             cadmpeg_ir::appearance::AppearanceTarget::Face(face) if shape_face_ids.contains(&face.0)
@@ -6418,7 +6436,7 @@ Co 1001000 +2 0 *
     }));
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .appearance_bindings
             .iter()
@@ -6434,7 +6452,7 @@ Co 1001000 +2 0 *
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .appearance_bindings
             .iter()
@@ -6448,8 +6466,8 @@ Co 1001000 +2 0 *
             .count(),
         2
     );
-    assert!(crate::validate_native(&result.ir).is_empty());
-    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -6484,15 +6502,15 @@ Co 1001000 +2 0 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("cylindrical seam");
-    assert_eq!(result.ir.model.edges.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 2);
-    let first = &result.ir.model.coedges[0];
-    let second = &result.ir.model.coedges[1];
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 2);
+    let first = &result.ir().model.coedges[0];
+    let second = &result.ir().model.coedges[1];
     assert_eq!(first.radial_next, second.id);
     assert_eq!(second.radial_next, first.id);
     assert_ne!(first.pcurves, second.pcurves);
     assert!(!first.pcurves.is_empty() && !second.pcurves.is_empty());
-    let errors = cadmpeg_ir::validate_neutral(&result.ir, Vec::new())
+    let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .findings
         .into_iter()
         .filter(|finding| finding.severity == cadmpeg_ir::Severity::Error)
@@ -6525,14 +6543,14 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("free edge");
-    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
-        result.ir.model.bodies[0].kind,
+        result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(result.ir.model.shells.len(), 1);
-    assert_eq!(result.ir.model.shells[0].wire_edges.len(), 1);
-    assert!(result.ir.model.shells[0].faces.is_empty());
+    assert_eq!(result.ir().model.shells.len(), 1);
+    assert_eq!(result.ir().model.shells[0].wire_edges.len(), 1);
+    assert!(result.ir().model.shells[0].faces.is_empty());
 }
 
 #[test]
@@ -6576,12 +6594,15 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("repeated roots");
 
-    assert_eq!(result.ir.model.bodies.len(), 2);
-    assert_eq!(result.ir.model.edges.len(), 2);
-    assert_eq!(result.ir.model.vertices.len(), 4);
-    assert_ne!(result.ir.model.bodies[0].id, result.ir.model.bodies[1].id);
+    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert_eq!(result.ir().model.edges.len(), 2);
+    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_ne!(
+        result.ir().model.bodies[0].id,
+        result.ir().model.bodies[1].id
+    );
     let maps = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("namespace")
@@ -6591,7 +6612,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     assert_eq!(groups[0].names[1][0].topology_ids.len(), 2);
     assert_eq!(groups[1].names[1][0].topology_ids.len(), 2);
     assert_eq!(groups[1].names[2][0].topology_ids.len(), 2);
-    assert_valid_document(&result.ir);
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -6616,10 +6637,10 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("unbounded datum axis");
-    assert!(result.ir.model.bodies.is_empty());
-    assert_eq!(result.ir.model.curves.len(), 1);
-    assert!(result.ir.model.curves[0].source_object.is_some());
-    assert_valid_document(&result.ir);
+    assert!(result.ir().model.bodies.is_empty());
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.ir().model.curves[0].source_object.is_some());
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -6659,31 +6680,31 @@ Co 1001000 +2 1 +2 3 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("located topology");
-    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
-        result.ir.model.bodies[0].kind,
+        result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::General
     );
-    assert_eq!(result.ir.model.bodies[0].regions.len(), 2);
-    assert!(result.ir.model.bodies[0].transform.is_none());
-    assert_eq!(result.ir.model.edges.len(), 4);
-    assert_eq!(result.ir.model.vertices.len(), 4);
+    assert_eq!(result.ir().model.bodies[0].regions.len(), 2);
+    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().model.edges.len(), 4);
+    assert_eq!(result.ir().model.vertices.len(), 4);
     let mut positions = result
-        .ir
+        .ir()
         .model
         .edges
         .iter()
         .flat_map(|edge| [&edge.start, &edge.end])
         .map(|vertex| {
             let vertex = result
-                .ir
+                .ir()
                 .model
                 .vertices
                 .iter()
                 .find(|candidate| &candidate.id == vertex)
                 .expect("required invariant");
             result
-                .ir
+                .ir()
                 .model
                 .points
                 .iter()
@@ -6699,9 +6720,9 @@ Co 1001000 +2 1 +2 3 *
     assert_eq!([positions[1].x, positions[1].y], [10.0, 5.0]);
     assert_eq!([positions[2].x, positions[2].y], [18.0, 5.0]);
     assert_eq!([positions[3].x, positions[3].y], [20.0, 5.0]);
-    let face = &result.ir.model.faces[0];
+    let face = &result.ir().model.faces[0];
     let surface = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -6720,9 +6741,9 @@ Co 1001000 +2 1 +2 3 *
     let origin =
         cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).expect("required invariant");
     assert_eq!([origin.x, origin.y], [10.0, 5.0]);
-    for edge in &result.ir.model.edges {
+    for edge in &result.ir().model.edges {
         let curve = result
-            .ir
+            .ir()
             .model
             .curves
             .iter()
@@ -6735,7 +6756,7 @@ Co 1001000 +2 1 +2 3 *
             cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
-    let report = cadmpeg_ir::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(
         report
             .findings
@@ -6766,7 +6787,7 @@ fn schema_three_uses_the_object_envelope_and_defaults_file_version() {
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("schema-three decode");
-    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
     let objects = namespace
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
@@ -6780,7 +6801,7 @@ fn schema_three_uses_the_object_envelope_and_defaults_file_version() {
         properties[1].links[0].object.as_deref(),
         Some(objects[0].id.as_str())
     );
-    assert!(crate::validate_native(&result.ir).is_empty());
+    assert!(crate::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -6796,7 +6817,7 @@ fn schema_two_uses_the_feature_envelope_and_common_property_grammar() {
             &DecodeOptions::default(),
         )
         .expect("schema-two decode");
-    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
     let objects = namespace
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
@@ -6816,7 +6837,7 @@ fn schema_two_uses_the_feature_envelope_and_common_property_grammar() {
         Some(objects[0].id.as_str())
     );
     assert!(objects.iter().all(|object| object.persistent_id.is_none()));
-    assert!(crate::validate_native(&result.ir).is_empty());
+    assert!(crate::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -6852,12 +6873,12 @@ fn thumbnail_bytes_are_retained_with_digest() {
         )
         .expect("decode");
     assert_eq!(
-        result.ir.native_unknowns_iter("fcstd").count(),
+        result.ir().native_unknowns_iter("fcstd").count(),
         1,
         "thumbnail has one product reference"
     );
     let retained = result
-        .source_fidelity
+        .source_fidelity()
         .retained_records
         .first()
         .expect("retained thumbnail");
@@ -6881,7 +6902,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
             &DecodeOptions::default(),
         )
         .expect("shared side entry");
-    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
@@ -6901,7 +6922,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
     assert_ne!(shared.referenced_by[0], shared.referenced_by[1]);
     assert_eq!(span.classification, "named_opaque");
     assert_eq!(span.owner.as_deref(), Some(shared.id.as_str()));
-    assert!(crate::validate_native(&result.ir).is_empty());
+    assert!(crate::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -6923,8 +6944,8 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
             &DecodeOptions::default(),
         )
         .expect("opaque vendor payload");
-    assert!(result.ir.model.tessellations.is_empty());
-    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    assert!(result.ir().model.tessellations.is_empty());
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
     let properties = namespace
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");
@@ -6948,7 +6969,7 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
     assert_eq!(span.classification, "named_opaque");
     assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
     assert_eq!(entry.data, payload);
-    assert!(crate::validate_native(&result.ir).is_empty());
+    assert!(crate::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -6982,7 +7003,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode graph");
-    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
     let objects = namespace
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
@@ -7056,16 +7077,16 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .map(|facts| facts.topology_version),
         Some(1)
     );
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.curves.len(), 8);
-    match &result.ir.model.curves[0].geometry {
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.curves.len(), 8);
+    match &result.ir().model.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
             assert_eq!([direction.x, direction.y, direction.z], [1.0, 0.0, 0.0]);
         }
         other => panic!("unexpected curve {other:?}"),
     }
-    match &result.ir.model.curves[1].geometry {
+    match &result.ir().model.curves[1].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) => {
             assert_eq!(nurbs.degree, 2);
             assert_eq!(nurbs.control_points.len(), 3);
@@ -7074,14 +7095,14 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected curve {other:?}"),
     }
-    assert_eq!(result.ir.model.procedural_curves.len(), 2);
-    match &result.ir.model.procedural_curves[0].definition {
+    assert_eq!(result.ir().model.procedural_curves.len(), 2);
+    match &result.ir().model.procedural_curves[0].definition {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
             parameter_range, ..
         } => assert_eq!(*parameter_range, [0.0, 5.0]),
         other => panic!("unexpected trimmed construction {other:?}"),
     }
-    match &result.ir.model.procedural_curves[1].definition {
+    match &result.ir().model.procedural_curves[1].definition {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
             distance,
             direction,
@@ -7093,8 +7114,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected offset construction {other:?}"),
     }
-    assert_eq!(result.ir.model.surfaces.len(), 7);
-    match &result.ir.model.surfaces[0].geometry {
+    assert_eq!(result.ir().model.surfaces.len(), 7);
+    match &result.ir().model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin,
             normal,
@@ -7106,20 +7127,20 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected surface {other:?}"),
     }
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 4);
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
     assert!(matches!(
-        result.ir.model.procedural_surfaces[0].definition,
+        result.ir().model.procedural_surfaces[0].definition,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
     ));
     assert!(matches!(
-        result.ir.model.procedural_surfaces[1].definition,
+        result.ir().model.procedural_surfaces[1].definition,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
             parameter_interval: None,
             ..
         }
     ));
     assert!(matches!(
-        result.ir.model.procedural_surfaces[2].definition,
+        result.ir().model.procedural_surfaces[2].definition,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
             u_sense: None,
             v_sense: None,
@@ -7127,10 +7148,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
     ));
     assert!(matches!(
-        result.ir.model.procedural_surfaces[3].definition,
+        result.ir().model.procedural_surfaces[3].definition,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset { .. }
     ));
-    match &result.ir.model.surfaces[1].geometry {
+    match &result.ir().model.surfaces[1].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) => {
             assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
             assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
@@ -7141,13 +7162,13 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected surface {other:?}"),
     }
-    assert_eq!(result.ir.model.tessellations.len(), 1);
-    assert_eq!(result.ir.model.tessellations[0].vertices.len(), 3);
-    assert_eq!(result.ir.model.tessellations[0].triangles, [[0, 1, 2]]);
-    assert!(result.ir.model.tessellations[0].body.is_none());
-    assert!(result.ir.model.tessellations[0].faces.is_empty());
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(result.ir().model.tessellations[0].vertices.len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+    assert!(result.ir().model.tessellations[0].body.is_none());
+    assert!(result.ir().model.tessellations[0].faces.is_empty());
     assert_eq!(
-        result.ir.model.tessellations[0].chordal_deflection,
+        result.ir().model.tessellations[0].chordal_deflection,
         Some(0.01)
     );
     let entries = namespace
@@ -7203,10 +7224,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(coverage[0]
         .named_opaque_entries
         .contains(&"Payload.bin".to_owned()));
-    let findings = crate::validate_native(&result.ir);
+    let findings = crate::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     let missing_payload = ledger
         .iter()
         .filter(|span| span.entry != "Payload.bin")
@@ -7223,7 +7244,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .message
             .contains("logical ledger omits nonempty entry Payload.bin")));
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     let mut invalid_owner = ledger.clone();
     invalid_owner
         .iter_mut()
@@ -7239,7 +7260,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .iter()
         .any(|finding| finding.message.contains("invalid logical entry or owner")));
 
-    let mut corrupted = result.ir.clone();
+    let mut corrupted = result.ir().clone();
     let mut invalid_objects = objects.clone();
     invalid_objects[0].dependency_allow_partial = Some(0);
     corrupted
@@ -7304,14 +7325,14 @@ fn preserves_forward_declared_feature_dependencies() {
         )
         .expect("forward dependency");
     let first = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("First"))
         .expect("first feature");
     let second = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -7320,7 +7341,7 @@ fn preserves_forward_declared_feature_dependencies() {
 
     assert_eq!(first.dependencies, std::slice::from_ref(&second.id));
     assert!(second.ordinal < first.ordinal);
-    assert_valid_document(&result.ir);
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -7338,7 +7359,7 @@ fn orders_forward_linked_sketches_before_profile_consumers() {
                 &DecodeOptions::default(),
             )
             .expect("forward-linked sketch");
-        let features = &result.ir.model.features;
+        let features = &result.ir().model.features;
         let pad = features
             .iter()
             .find(|feature| feature.name.as_deref() == Some("Pad"))
@@ -7349,7 +7370,7 @@ fn orders_forward_linked_sketches_before_profile_consumers() {
             .expect("sketch feature");
 
         assert!(sketch.ordinal < pad.ordinal, "property {property_name}");
-        assert_valid_document(&result.ir);
+        assert_valid_document(result.ir());
     }
 }
 
@@ -7368,14 +7389,14 @@ fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
             &DecodeOptions::default(),
         )
         .expect("cyclic native dependency graph");
-    let features = &result.ir.model.features;
+    let features = &result.ir().model.features;
     assert_eq!(features.len(), 2);
     assert_eq!(features[0].ordinal, 0);
     assert_eq!(features[1].ordinal, 1);
     assert!(features[0].dependencies.is_empty());
     assert_eq!(features[1].dependencies, [features[0].id.clone()]);
     let objects = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("namespace")
@@ -7383,8 +7404,8 @@ fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
         .expect("objects");
     assert_eq!(objects[0].dependencies, [objects[1].id.clone()]);
     assert_eq!(objects[1].dependencies, [objects[0].id.clone()]);
-    assert_valid_document(&result.ir);
-    assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(result.ir());
+    assert!(crate::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -7425,9 +7446,9 @@ fn inspects_and_closes_physical_ledger() {
             },
         )
         .expect("decode");
-    assert!(result.report.losses.is_empty());
+    assert!(result.report().losses.is_empty());
     let ledger = result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .expect("namespace")
@@ -7436,7 +7457,7 @@ fn inspects_and_closes_physical_ledger() {
     assert_eq!(ledger.first().map(|span| span.start), Some(0));
     assert_eq!(ledger.last().map(|span| span.end), Some(archive_len));
     assert!(ledger.windows(2).all(|pair| pair[0].end == pair[1].start));
-    assert!(crate::validate_native(&result.ir).is_empty());
+    assert!(crate::validate_native(result.ir()).is_empty());
     for role in [
         "local-signature",
         "local-fields",

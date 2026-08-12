@@ -26,8 +26,8 @@
 //! let mut input = File::open("part.prt")?;
 //! let result = NxCodec.decode(&mut input, &DecodeOptions::default())?;
 //!
-//! println!("{} bodies", result.ir.model.bodies.len());
-//! for loss in &result.report.losses {
+//! println!("{} bodies", result.ir().model.bodies.len());
+//! for loss in &result.report().losses {
 //!     println!("{:?}: {}", loss.severity, loss.message);
 //! }
 //! # Ok(())

@@ -72,13 +72,13 @@ pub fn write_semantic(
         validate_assembly_projection(target, None)?;
     }
     let baseline = F3dCodec.decode(&mut Cursor::new(source_image), &DecodeOptions::default())?;
-    let baseline_native = f3d_native(&baseline.ir)?;
+    let baseline_native = f3d_native(baseline.ir())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
         target: target_native.as_ref(),
     };
     let baseline_point_ids = baseline
-        .ir
+        .ir()
         .model
         .points
         .iter()
@@ -102,7 +102,7 @@ pub fn write_semantic(
                 .into(),
         ));
     }
-    let edited_curves = validate_curve_edits(&baseline.ir.model.curves, &target.model.curves)?;
+    let edited_curves = validate_curve_edits(&baseline.ir().model.curves, &target.model.curves)?;
     let nurbs_curve_edits = target
         .model
         .curves
@@ -110,7 +110,7 @@ pub fn write_semantic(
         .filter_map(|curve| match &curve.geometry {
             CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
                 let before = baseline
-                    .ir
+                    .ir()
                     .model
                     .curves
                     .iter()
@@ -129,9 +129,9 @@ pub fn write_semantic(
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
-    let pcurve_edits = validate_pcurve_edits(&baseline.ir.model, &target.model)?;
+    let pcurve_edits = validate_pcurve_edits(&baseline.ir().model, &target.model)?;
     let edited_surfaces =
-        validate_surface_edits(&baseline.ir.model.surfaces, &target.model.surfaces)?;
+        validate_surface_edits(&baseline.ir().model.surfaces, &target.model.surfaces)?;
     let nurbs_surface_edits = target
         .model
         .surfaces
@@ -139,7 +139,7 @@ pub fn write_semantic(
         .filter_map(|surface| match &surface.geometry {
             SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
                 let before = baseline
-                    .ir
+                    .ir()
                     .model
                     .surfaces
                     .iter()
@@ -160,10 +160,11 @@ pub fn write_semantic(
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
-    let extrusion_direction_edits = validate_procedural_surface_edits(&baseline.ir, target)?;
-    let procedural_surface_fit_edits = validate_procedural_surface_fit_edits(&baseline.ir, target)?;
+    let extrusion_direction_edits = validate_procedural_surface_edits(baseline.ir(), target)?;
+    let procedural_surface_fit_edits =
+        validate_procedural_surface_fit_edits(baseline.ir(), target)?;
     let procedural_curve_edits = validate_procedural_curve_edits(
-        &baseline.ir.model.procedural_curves,
+        &baseline.ir().model.procedural_curves,
         &target.model.procedural_curves,
     )?;
     let sketch_point_edits = validate_sketch_point_edits(natives)?;
@@ -177,7 +178,7 @@ pub fn write_semantic(
     let lost_edge_edits = validate_lost_edge_edits(natives)?;
     let material_assignment_edits = validate_material_assignment_edits(natives)?;
     let protein_appearance_edits =
-        validate_material_assignment_appearances(natives, &baseline.ir, target)?;
+        validate_material_assignment_appearances(natives, baseline.ir(), target)?;
     let mut act_guid_edits = validate_act_guid_edits(natives)?;
     for (stream, edits) in validate_act_registry_channel_edits(natives)? {
         act_guid_edits.entry(stream).or_default().extend(edits);
@@ -198,20 +199,20 @@ pub fn write_semantic(
         ));
     }
     let configuration_edits = validate_configuration_edits(natives)?;
-    validate_act_appearance_bindings(natives, &baseline.ir, target)?;
+    validate_act_appearance_bindings(natives, baseline.ir(), target)?;
     let body_transform_edits =
-        validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
-    let body_visibility_edits = validate_body_visibility_edits(natives, &baseline.ir, target)?;
+        validate_body_transform_edits(&baseline.ir().model.bodies, &target.model.bodies)?;
+    let body_visibility_edits = validate_body_visibility_edits(natives, baseline.ir(), target)?;
     let body_native_key_edits = validate_body_native_key_edits(natives)?;
     let transform_hint_edits = validate_transform_hint_edits(natives)?;
     let mut entity_color_edits =
-        validate_body_color_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
+        validate_body_color_edits(&baseline.ir().model.bodies, &target.model.bodies)?;
     entity_color_edits.extend(validate_face_color_edits(
-        &baseline.ir.model.faces,
+        &baseline.ir().model.faces,
         &target.model.faces,
     )?);
     let mut edge_range_edits =
-        validate_edge_range_edits(&baseline.ir.model.edges, &target.model.edges)?;
+        validate_edge_range_edits(&baseline.ir().model.edges, &target.model.edges)?;
     // IR line-edge parameters are millimeter arc lengths; the native stream
     // stores centimeters. Conic parameters are angles in both.
     for (edge_id, range) in &mut edge_range_edits {
@@ -231,20 +232,20 @@ pub fn write_semantic(
             range[1] /= LEN_TO_MM;
         }
     }
-    let face_sense_edits = validate_face_sense_edits(natives, &baseline.ir, target)?;
+    let face_sense_edits = validate_face_sense_edits(natives, baseline.ir(), target)?;
     let coedge_sense_edits =
-        validate_coedge_sense_edits(&baseline.ir.model.coedges, &target.model.coedges)?;
+        validate_coedge_sense_edits(&baseline.ir().model.coedges, &target.model.coedges)?;
     let history_state_edits = validate_history_state_edits(natives)?;
     let creation_timestamp_edits = validate_creation_timestamp_edits(natives)?;
     let edge_continuity_edits = validate_edge_continuity_edits(natives)?;
     let edge_ownership_edits = validate_edge_ownership_edits(natives, target)?;
     let vertex_ownership_edits = validate_vertex_ownership_edits(natives, target)?;
     let face_sidedness_edits = validate_face_sidedness_edits(natives)?;
-    let tolerant_edge_edits = validate_tolerant_edge_edits(natives, &baseline.ir, target)?;
-    let tolerant_vertex_edits = validate_tolerant_vertex_edits(natives, &baseline.ir, target)?;
-    let tolerant_coedge_edits = validate_tolerant_coedge_edits(natives, &baseline.ir, target)?;
+    let tolerant_edge_edits = validate_tolerant_edge_edits(natives, baseline.ir(), target)?;
+    let tolerant_vertex_edits = validate_tolerant_vertex_edits(natives, baseline.ir(), target)?;
+    let tolerant_coedge_edits = validate_tolerant_coedge_edits(natives, baseline.ir(), target)?;
     let wire_topology_edits = validate_wire_topology_edits(natives)?;
-    let mut supported_target = baseline.ir.clone();
+    let mut supported_target = baseline.ir().clone();
     supported_target
         .model
         .points
@@ -395,7 +396,7 @@ pub fn write_semantic(
     }
 
     let active_brep = baseline
-        .ir
+        .ir()
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("active_brep"))

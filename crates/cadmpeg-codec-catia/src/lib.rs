@@ -22,12 +22,12 @@
 //! # fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.CATPart")?;
 //! let decoded = CatiaCodec.decode(&mut input, &DecodeOptions::default())?;
-//! println!("{} surfaces", decoded.ir.model.surfaces.len());
+//! println!("{} surfaces", decoded.ir().model.surfaces.len());
 //! # Ok(())
 //! # }
 //! ```
 //!
-//! Read `decoded.report.losses` before consuming model relationships. A partial
+//! Read `decoded.report().losses` before consuming model relationships. A partial
 //! decode preserves the native payload in an unknown record and reports the
 //! model layers that remain unresolved.
 //!

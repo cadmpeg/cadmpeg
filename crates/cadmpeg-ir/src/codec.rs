@@ -69,16 +69,16 @@ pub struct DecodeOptions {
 ///
 /// Construct only through [`DecodeResult::new`], which finalizes the IR and
 /// source fidelity. `#[non_exhaustive]` blocks external struct literals so
-/// callers cannot skip finalization; fields remain readable for decode consumers.
+/// callers cannot skip finalization. Read through [`Self::ir`], [`Self::report`],
+/// and [`Self::source_fidelity`]. Consume with [`Self::into_parts`]. Mutate a
+/// live result through [`Self::ir_mut`], [`Self::report_mut`], and
+/// [`Self::source_fidelity_mut`].
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct DecodeResult {
-    /// The decoded IR.
-    pub ir: CadIr,
-    /// What was transferred and what was lost.
-    pub report: DecodeReport,
-    /// Decode-time annotations and retained native records.
-    pub source_fidelity: SourceFidelity,
+    ir: CadIr,
+    report: DecodeReport,
+    source_fidelity: SourceFidelity,
 }
 
 impl DecodeResult {
@@ -98,14 +98,29 @@ impl DecodeResult {
         &self.ir
     }
 
+    /// Borrow the finalized IR mutably.
+    pub fn ir_mut(&mut self) -> &mut CadIr {
+        &mut self.ir
+    }
+
     /// Borrow the transfer report.
     pub fn report(&self) -> &DecodeReport {
         &self.report
     }
 
+    /// Borrow the transfer report mutably.
+    pub fn report_mut(&mut self) -> &mut DecodeReport {
+        &mut self.report
+    }
+
     /// Borrow source fidelity.
     pub fn source_fidelity(&self) -> &SourceFidelity {
         &self.source_fidelity
+    }
+
+    /// Borrow source fidelity mutably.
+    pub fn source_fidelity_mut(&mut self) -> &mut SourceFidelity {
+        &mut self.source_fidelity
     }
 
     /// Consume into IR, report, and source fidelity.
@@ -223,9 +238,9 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let result = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
         let result = result?;
-        if options.policy.mode == DecodeMode::Strict && !result.report.container_only {
+        if options.policy.mode == DecodeMode::Strict && !result.report().container_only {
             if let Some(loss) = result
-                .report
+                .report()
                 .losses
                 .iter()
                 .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)

@@ -228,8 +228,8 @@ fn decode_transfers_generated_protein_appearance() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.appearances.len(), 1);
-    let appearance = &result.ir.model.appearances[0];
+    assert_eq!(result.ir().model.appearances.len(), 1);
+    let appearance = &result.ir().model.appearances[0];
     assert_eq!(appearance.name.as_deref(), Some("Prism-001"));
     assert_eq!(
         appearance.visual_guid.as_deref(),
@@ -246,133 +246,133 @@ fn decode_transfers_generated_protein_appearance() {
         appearance.category.as_deref(),
         Some("Plastic/Thermoplastic")
     );
-    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
-    assert_eq!(f3d_native(&result.ir).act_entities.len(), 1);
-    assert_eq!(f3d_native(&result.ir).act_entities[0].record_index, 7);
-    assert_eq!(f3d_native(&result.ir).act_entities[0].entity_id, "0_985");
-    assert_eq!(f3d_native(&result.ir).act_guids.len(), 1);
+    assert_eq!(result.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(f3d_native(result.ir()).act_entities.len(), 1);
+    assert_eq!(f3d_native(result.ir()).act_entities[0].record_index, 7);
+    assert_eq!(f3d_native(result.ir()).act_entities[0].entity_id, "0_985");
+    assert_eq!(f3d_native(result.ir()).act_guids.len(), 1);
     assert_eq!(
-        f3d_native(&result.ir).act_guids[0].guid,
+        f3d_native(result.ir()).act_guids[0].guid,
         "eeeeeeee-1111-2222-3333-ffffffffffff"
     );
-    assert_eq!(f3d_native(&result.ir).act_registry_channels.len(), 2);
-    assert_eq!(f3d_native(&result.ir).act_table_references.len(), 1);
+    assert_eq!(f3d_native(result.ir()).act_registry_channels.len(), 2);
+    assert_eq!(f3d_native(result.ir()).act_table_references.len(), 1);
     assert_eq!(
-        f3d_native(&result.ir).act_table_references[0].target_record,
+        f3d_native(result.ir()).act_table_references[0].target_record,
         9
     );
     assert_eq!(
-        f3d_native(&result.ir).act_registry_channels[0].name,
+        f3d_native(result.ir()).act_registry_channels[0].name,
         "Appearance"
     );
     assert_eq!(
-        f3d_native(&result.ir).act_registry_channels[1].name,
+        f3d_native(result.ir()).act_registry_channels[1].name,
         "PhysicalMaterial"
     );
-    assert!(f3d_native(&result.ir).act_entities[0].in_table);
-    assert_eq!(f3d_native(&result.ir).act_root_components.len(), 1);
+    assert!(f3d_native(result.ir()).act_entities[0].in_table);
+    assert_eq!(f3d_native(result.ir()).act_root_components.len(), 1);
     assert_eq!(
-        f3d_native(&result.ir).act_root_components[0].entity_id,
+        f3d_native(result.ir()).act_root_components[0].entity_id,
         "0_3"
     );
     assert_eq!(
-        f3d_native(&result.ir).act_root_components[0].display_name,
+        f3d_native(result.ir()).act_root_components[0].display_name,
         "(Unsaved)"
     );
     assert_eq!(
-        f3d_native(&result.ir).act_root_components[0].instance_root_record,
+        f3d_native(result.ir()).act_root_components[0].instance_root_record,
         12
     );
     assert_eq!(
-        f3d_native(&result.ir).act_root_components[0].tracked_entity_record,
+        f3d_native(result.ir()).act_root_components[0].tracked_entity_record,
         3
     );
     assert_eq!(
-        f3d_native(&result.ir).act_root_components[0].components_root_record,
+        f3d_native(result.ir()).act_root_components[0].components_root_record,
         7
     );
     assert_eq!(
-        f3d_native(&result.ir).act_root_components[0].registry_flag,
+        f3d_native(result.ir()).act_root_components[0].registry_flag,
         1
     );
     assert_eq!(
-        f3d_native(&result.ir).act_entities[0]
+        f3d_native(result.ir()).act_entities[0]
             .channel_class_tag
             .as_deref(),
         Some("261")
     );
     assert_eq!(
-        result.ir.model.appearance_bindings[0].appearance,
+        result.ir().model.appearance_bindings[0].appearance,
         appearance.id
     );
     assert!(matches!(
-        &result.ir.model.appearance_bindings[0].target,
-        cadmpeg_ir::appearance::AppearanceTarget::Body(body) if body == &result.ir.model.bodies[0].id
+        &result.ir().model.appearance_bindings[0].target,
+        cadmpeg_ir::appearance::AppearanceTarget::Body(body) if body == &result.ir().model.bodies[0].id
     ));
     assert_eq!(
-        result.ir.model.appearance_bindings[0]
+        result.ir().model.appearance_bindings[0]
             .channels
             .get("Appearance")
             .map(String::as_str),
         Some("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
     );
     assert_eq!(
-        result.ir.model.appearance_bindings[0]
+        result.ir().model.appearance_bindings[0]
             .source_entity_id
             .as_deref(),
         Some("0_985")
     );
     assert_eq!(
-        result.ir.model.appearance_bindings[0]
+        result.ir().model.appearance_bindings[0]
             .object_type
             .as_deref(),
         Some("Body")
     );
-    assert_eq!(f3d_native(&result.ir).construction_recipes.len(), 1);
+    assert_eq!(f3d_native(result.ir()).construction_recipes.len(), 1);
     assert_eq!(
-        f3d_native(&result.ir).construction_recipes[0].kind,
+        f3d_native(result.ir()).construction_recipes[0].kind,
         crate::records::ConstructionRecipeKind::Body
     );
     assert_eq!(
-        f3d_native(&result.ir).construction_recipes[0]
+        f3d_native(result.ir()).construction_recipes[0]
             .design_id
             .as_deref(),
         Some("322")
     );
     assert_eq!(
-        f3d_native(&result.ir).construction_recipes[0].record_index,
+        f3d_native(result.ir()).construction_recipes[0].record_index,
         123
     );
-    assert_eq!(f3d_native(&result.ir).persistent_references.len(), 10);
-    assert!(f3d_native(&result.ir)
+    assert_eq!(f3d_native(result.ir()).persistent_references.len(), 10);
+    assert!(f3d_native(result.ir())
         .persistent_references
         .iter()
         .any(|reference| reference.value == 439));
-    assert!(f3d_native(&result.ir)
+    assert!(f3d_native(result.ir())
         .persistent_references
         .iter()
         .any(|reference| {
             reference.value == 440
                 && reference.kind == crate::records::PersistentReferenceKind::CurvePrimary
         }));
-    assert_eq!(f3d_native(&result.ir).lost_edge_references.len(), 1);
+    assert_eq!(f3d_native(result.ir()).lost_edge_references.len(), 1);
     assert_eq!(
-        f3d_native(&result.ir).lost_edge_references[0].class_tag,
+        f3d_native(result.ir()).lost_edge_references[0].class_tag,
         "419"
     );
     assert_eq!(
-        f3d_native(&result.ir).lost_edge_references[0].record_index,
+        f3d_native(result.ir()).lost_edge_references[0].record_index,
         4645
     );
     assert_eq!(
-        f3d_native(&result.ir).lost_edge_references[0].next_record_index,
+        f3d_native(result.ir()).lost_edge_references[0].next_record_index,
         4646
     );
-    assert!(result.report.losses.iter().any(|loss| loss
+    assert!(result.report().losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_types.len(), 12);
-    let sketch = f3d_native(&result.ir)
+    assert_eq!(f3d_native(result.ir()).design_types.len(), 12);
+    let sketch = f3d_native(result.ir())
         .design_types
         .iter()
         .find(|design_type| design_type.entity_ids.contains(&277))
@@ -380,8 +380,8 @@ fn decode_transfers_generated_protein_appearance() {
         .unwrap();
     assert_eq!(sketch.entity_ids, vec![277]);
     assert_eq!(sketch.version, 4);
-    assert_eq!(f3d_native(&result.ir).design_entity_headers.len(), 2);
-    let sketch_header = f3d_native(&result.ir)
+    assert_eq!(f3d_native(result.ir()).design_entity_headers.len(), 2);
+    let sketch_header = f3d_native(result.ir())
         .design_entity_headers
         .iter()
         .find(|header| header.entity_suffix == 277)
@@ -397,44 +397,44 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(sketch_header.record_reference, Some(584));
     assert_eq!(sketch_header.declared_reference_count, Some(2));
     assert_eq!(sketch_header.reference_indices, [33, 44]);
-    assert_eq!(f3d_native(&result.ir).design_record_headers.len(), 6);
-    let record_33 = f3d_native(&result.ir)
+    assert_eq!(f3d_native(result.ir()).design_record_headers.len(), 6);
+    let record_33 = f3d_native(result.ir())
         .design_record_headers
         .iter()
         .find(|record| record.record_index == 33)
         .cloned()
         .expect("record 33");
     assert_eq!(record_33.class_tag, "259");
-    assert_eq!(f3d_native(&result.ir).sketch_relations.len(), 2);
+    assert_eq!(f3d_native(result.ir()).sketch_relations.len(), 2);
     assert_eq!(
-        f3d_native(&result.ir).sketch_relations[0].members,
+        f3d_native(result.ir()).sketch_relations[0].members,
         [100, 200]
     );
     assert_eq!(
-        f3d_native(&result.ir).sketch_relations[0].return_members,
+        f3d_native(result.ir()).sketch_relations[0].return_members,
         [200, 100]
     );
     assert_eq!(
-        f3d_native(&result.ir).sketch_relations[0].owner_reference,
+        f3d_native(result.ir()).sketch_relations[0].owner_reference,
         277
     );
     assert_eq!(
-        f3d_native(&result.ir).sketch_relations[0].constraint_kinds,
+        f3d_native(result.ir()).sketch_relations[0].constraint_kinds,
         [crate::records::SketchConstraintKind::Parallel]
     );
     assert_eq!(
-        f3d_native(&result.ir).sketch_relations[0].unknown_constraint_bits,
+        f3d_native(result.ir()).sketch_relations[0].unknown_constraint_bits,
         0
     );
-    assert!(f3d_native(&result.ir).sketch_relations[1]
+    assert!(f3d_native(result.ir()).sketch_relations[1]
         .auxiliary_references
         .is_empty());
     assert_eq!(
-        f3d_native(&result.ir).sketch_relations[0].raw_bytes.len(),
+        f3d_native(result.ir()).sketch_relations[0].raw_bytes.len(),
         101
     );
-    assert_eq!(f3d_native(&result.ir).sketch_points.len(), 5);
-    let point_500 = f3d_native(&result.ir)
+    assert_eq!(f3d_native(result.ir()).sketch_points.len(), 5);
+    let point_500 = f3d_native(result.ir())
         .sketch_points
         .iter()
         .find(|point| point.persistent_id == Some(500))
@@ -442,7 +442,7 @@ fn decode_transfers_generated_protein_appearance() {
         .expect("point 500");
     assert_eq!(point_500.coordinates.u, 12.5);
     assert_eq!(point_500.coordinates.v, -25.0);
-    let point_600 = f3d_native(&result.ir)
+    let point_600 = f3d_native(result.ir())
         .sketch_points
         .iter()
         .find(|point| point.persistent_id == Some(600))
@@ -450,25 +450,25 @@ fn decode_transfers_generated_protein_appearance() {
         .expect("point 600");
     assert_eq!(point_600.coordinates.u, -40.0);
     assert_eq!(point_600.entity_genesis, Some(9));
-    assert_eq!(f3d_native(&result.ir).sketch_curve_identities.len(), 2);
+    assert_eq!(f3d_native(result.ir()).sketch_curve_identities.len(), 2);
     assert_eq!(
-        f3d_native(&result.ir).sketch_curve_identities[0].primary_id,
+        f3d_native(result.ir()).sketch_curve_identities[0].primary_id,
         440
     );
     assert_eq!(
-        f3d_native(&result.ir).sketch_curve_identities[0].secondary_id,
+        f3d_native(result.ir()).sketch_curve_identities[0].secondary_id,
         0
     );
     assert_eq!(
-        f3d_native(&result.ir).sketch_curve_identities[1].entity_genesis,
+        f3d_native(result.ir()).sketch_curve_identities[1].entity_genesis,
         Some(10)
     );
     assert!(matches!(
-        f3d_native(&result.ir).sketch_curve_identities[0].geometry,
+        f3d_native(result.ir()).sketch_curve_identities[0].geometry,
         Some(crate::records::SketchCurveGeometry::Arc { radius: 30.0, .. })
     ));
     assert!(matches!(
-        &f3d_native(&result.ir).sketch_curve_identities[1].geometry,
+        &f3d_native(result.ir()).sketch_curve_identities[1].geometry,
         Some(crate::records::SketchCurveGeometry::Nurbs {
             carrier_reference: Some(42),
             degree: 2,
@@ -477,20 +477,20 @@ fn decode_transfers_generated_protein_appearance() {
             ..
         }) if weights.is_empty() && control_points.len() == 3
     ));
-    assert_eq!(f3d_native(&result.ir).design_body_members.len(), 2);
+    assert_eq!(f3d_native(result.ir()).design_body_members.len(), 2);
     assert_eq!(
-        f3d_native(&result.ir).design_body_members[0].entity_suffix,
+        f3d_native(result.ir()).design_body_members[0].entity_suffix,
         985
     );
     assert_eq!(
-        f3d_native(&result.ir).design_body_members[1].entity_suffix,
+        f3d_native(result.ir()).design_body_members[1].entity_suffix,
         8422
     );
-    assert!(f3d_native(&result.ir)
+    assert!(f3d_native(result.ir())
         .design_body_members
         .iter()
         .all(|member| member.flags == 0));
-    assert!(crate::validate::validate_native(&result.ir).is_empty());
+    assert!(crate::validate::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -500,7 +500,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated ACT decode");
 
-    let mut wrong_root = decoded.ir.clone();
+    let mut wrong_root = decoded.ir().clone();
     update_f3d_native(&mut wrong_root, |native| {
         native.act_root_components[0].tracked_entity_record = 4;
     });
@@ -508,7 +508,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
         .iter()
         .any(|finding| finding.message.contains("ACT root component")));
 
-    let mut table_only = decoded.ir.clone();
+    let mut table_only = decoded.ir().clone();
     update_f3d_native(&mut table_only, |native| {
         let entity = &mut native.act_entities[0];
         entity.channel_class_tag = None;
@@ -521,7 +521,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
         .iter()
         .any(|finding| finding.message.contains("ACT entity")));
 
-    let mut shifted_table_row = decoded.ir.clone();
+    let mut shifted_table_row = decoded.ir().clone();
     update_f3d_native(&mut shifted_table_row, |native| {
         native.act_entities[0].table_entity_id_offset = native.act_entities[0]
             .table_entity_id_offset
@@ -531,7 +531,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
         .iter()
         .any(|finding| finding.message.contains("ACT entity")));
 
-    let mut colliding_root = decoded.ir.clone();
+    let mut colliding_root = decoded.ir().clone();
     update_f3d_native(&mut colliding_root, |native| {
         native.act_root_components[0].record_index = native.act_entities[0].record_index;
     });
@@ -539,7 +539,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
         .iter()
         .any(|finding| finding.message.contains("ACT root component")));
 
-    let mut wrong_registry = decoded.ir;
+    let (mut wrong_registry, _, _) = decoded.into_parts();
     update_f3d_native(&mut wrong_registry, |native| {
         native.act_registry_channels[1].ordinal = 0;
     });
@@ -564,15 +564,15 @@ fn decode_binds_revision_suffixed_protein_visual_guid() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .expect("revision-suffixed Protein decode");
 
-    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(
-        result.ir.model.appearances[0].visual_guid.as_deref(),
+        result.ir().model.appearances[0].visual_guid.as_deref(),
         Some(visual)
     );
-    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    assert_eq!(result.ir().model.appearance_bindings.len(), 1);
     assert_eq!(
-        result.ir.model.appearance_bindings[0].appearance,
-        result.ir.model.appearances[0].id
+        result.ir().model.appearance_bindings[0].appearance,
+        result.ir().model.appearances[0].id
     );
 }
 
@@ -584,9 +584,9 @@ fn decode_transfers_generated_custom_attribute() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.attributes.len(), 2);
+    assert_eq!(result.ir().model.attributes.len(), 2);
     let attribute = result
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -603,30 +603,30 @@ fn decode_transfers_generated_custom_attribute() {
     assert_eq!(attribute.name, "ATTRIB_CUSTOM-attrib");
     assert!(matches!(
         &attribute.target,
-        cadmpeg_ir::attributes::AttributeTarget::Body(body) if body == &result.ir.model.bodies[0].id
+        cadmpeg_ir::attributes::AttributeTarget::Body(body) if body == &result.ir().model.bodies[0].id
     ));
     assert!(attribute.values.iter().any(|value| matches!(
         value,
         cadmpeg_ir::attributes::AttributeValue::String(text) if text == "322"
     )));
-    assert_eq!(f3d_native(&result.ir).persistent_design_links.len(), 2);
+    assert_eq!(f3d_native(result.ir()).persistent_design_links.len(), 2);
     assert_eq!(
-        f3d_native(&result.ir).persistent_design_links[1].design_id,
+        f3d_native(result.ir()).persistent_design_links[1].design_id,
         "322"
     );
     assert_eq!(
-        f3d_native(&result.ir).persistent_design_links[1].design_reference,
+        f3d_native(result.ir()).persistent_design_links[1].design_reference,
         7
     );
-    assert!(!f3d_native(&result.ir).persistent_design_links[0].is_current);
-    assert!(f3d_native(&result.ir).persistent_design_links[1].is_current);
+    assert!(!f3d_native(result.ir()).persistent_design_links[0].is_current);
+    assert!(f3d_native(result.ir()).persistent_design_links[1].is_current);
     assert!(attribute.values.iter().any(|value| matches!(
         value,
         cadmpeg_ir::attributes::AttributeValue::String(text) if text == "900"
     )));
-    assert_eq!(f3d_native(&result.ir).creation_timestamps.len(), 1);
+    assert_eq!(f3d_native(result.ir()).creation_timestamps.len(), 1);
     assert_eq!(
-        f3d_native(&result.ir).creation_timestamps[0].unix_microseconds,
+        f3d_native(result.ir()).creation_timestamps[0].unix_microseconds,
         1_579_392_000_000_007.0
     );
 }
@@ -660,14 +660,14 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         .expect("source-less tolerant vertex decode");
 
     let tolerant_vertex = round_trip
-        .ir
+        .ir()
         .model
         .vertices
         .iter()
         .find(|vertex| vertex.tolerance == Some(0.025))
         .expect("tolerant vertex");
     let attribute = round_trip
-        .ir
+        .ir()
         .model
         .attributes
         .iter()
@@ -681,7 +681,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         AttributeTarget::Vertex(tolerant_vertex.id.clone())
     );
     assert_eq!(
-        f3d_native(&round_trip.ir).creation_timestamps[0].unix_microseconds,
+        f3d_native(round_trip.ir()).creation_timestamps[0].unix_microseconds,
         1_579_392_000_000_037.0
     );
 }
@@ -692,7 +692,7 @@ fn generated_f3d_rewrites_creation_timestamp() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated timestamp decode");
-    let mut edited = decoded.ir;
+    let (mut edited, _, fidelity) = decoded.into_parts();
     let expected = 1_704_067_200_000_009.0;
     update_f3d_native(&mut edited, |native| {
         assert_eq!(native.creation_timestamps[0].record_index, 20);
@@ -701,13 +701,13 @@ fn generated_f3d_rewrites_creation_timestamp() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &fidelity, &mut regenerated)
         .expect("timestamp regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated timestamp decode");
     assert_eq!(
-        f3d_native(&round_trip.ir).creation_timestamps[0].unix_microseconds,
+        f3d_native(round_trip.ir()).creation_timestamps[0].unix_microseconds,
         expected
     );
 }
@@ -721,7 +721,7 @@ fn decode_transfers_generated_sketch_curve_link() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
 
-    let link = f3d_native(&result.ir)
+    let link = f3d_native(result.ir())
         .sketch_curve_links
         .first()
         .cloned()
@@ -745,7 +745,7 @@ pub(super) fn decoded_sketch_link(
     let result = F3dCodec
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
-    f3d_native(&result.ir).sketch_curve_links.first().cloned()
+    f3d_native(result.ir()).sketch_curve_links.first().cloned()
 }
 
 #[test]
@@ -796,7 +796,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        f3d_native(&decoded.ir).sketch_curve_links[0].sense,
+        f3d_native(decoded.ir()).sketch_curve_links[0].sense,
         None,
         "4294967295 is the disabled sense, not a stored one"
     );
@@ -825,7 +825,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less sketch-link round trip");
-    let link = &f3d_native(&round_trip.ir).sketch_curve_links[0];
+    let link = &f3d_native(round_trip.ir()).sketch_curve_links[0];
     assert_eq!((link.sketch_curve_id, link.sense), (113, None));
     assert_eq!((link.role, link.closure), (2, 3));
 }
@@ -840,23 +840,23 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report.geometry_transferred);
+    assert!(result.report().geometry_transferred);
     // Two faces (one plane, one spline), sharing one edge; five edges total.
-    assert_eq!(result.ir.model.faces.len(), 2);
-    assert_eq!(result.ir.model.edges.len(), 5);
-    assert_eq!(result.ir.model.vertices.len(), 4);
-    assert_eq!(result.ir.model.coedges.len(), 6);
+    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().model.edges.len(), 5);
+    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_eq!(result.ir().model.coedges.len(), 6);
 
     // Exactly one analytic (plane) and one unknown surface.
     let planes = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
         .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane { .. }))
         .count();
     let unknowns = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -867,7 +867,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
     // The shared edge is used by two mutually-referencing coedges of opposite
     // sense (the manifold invariant), which coedge-pairing validation enforces.
     let paired = result
-        .ir
+        .ir()
         .model
         .coedges
         .iter()
@@ -875,9 +875,9 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .count();
     assert_eq!(paired, 2);
 
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
-    assert_eq!(result.ir.model.surfaces.len(), 2);
+    assert_eq!(result.ir().model.surfaces.len(), 2);
 }
 
 #[test]

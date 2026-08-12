@@ -28,9 +28,9 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match InventorCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
         Ok(result) => serde_json::json!({
-            "ir": result.ir,
-            "report": result.report,
-            "source_fidelity": result.source_fidelity,
+            "ir": result.ir(),
+            "report": result.report(),
+            "source_fidelity": result.source_fidelity(),
         }),
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };

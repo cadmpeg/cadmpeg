@@ -12,9 +12,9 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
-    assert!(result.ir.native.namespace("iges").is_some());
+    assert!(result.ir().native.namespace("iges").is_some());
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -35,19 +35,19 @@ enum ExpectedArena {
 
 fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> usize {
     match arena {
-        ExpectedArena::ModelBodies => result.ir.model.bodies.len(),
-        ExpectedArena::ModelCoedges => result.ir.model.coedges.len(),
-        ExpectedArena::ModelCurves => result.ir.model.curves.len(),
-        ExpectedArena::ModelLoops => result.ir.model.loops.len(),
-        ExpectedArena::ModelPoints => result.ir.model.points.len(),
-        ExpectedArena::ModelPcurves => result.ir.model.pcurves.len(),
-        ExpectedArena::ModelProceduralCurves => result.ir.model.procedural_curves.len(),
-        ExpectedArena::ModelProceduralSurfaces => result.ir.model.procedural_surfaces.len(),
-        ExpectedArena::ModelRegions => result.ir.model.regions.len(),
-        ExpectedArena::ModelShells => result.ir.model.shells.len(),
-        ExpectedArena::ModelSurfaces => result.ir.model.surfaces.len(),
+        ExpectedArena::ModelBodies => result.ir().model.bodies.len(),
+        ExpectedArena::ModelCoedges => result.ir().model.coedges.len(),
+        ExpectedArena::ModelCurves => result.ir().model.curves.len(),
+        ExpectedArena::ModelLoops => result.ir().model.loops.len(),
+        ExpectedArena::ModelPoints => result.ir().model.points.len(),
+        ExpectedArena::ModelPcurves => result.ir().model.pcurves.len(),
+        ExpectedArena::ModelProceduralCurves => result.ir().model.procedural_curves.len(),
+        ExpectedArena::ModelProceduralSurfaces => result.ir().model.procedural_surfaces.len(),
+        ExpectedArena::ModelRegions => result.ir().model.regions.len(),
+        ExpectedArena::ModelShells => result.ir().model.shells.len(),
+        ExpectedArena::ModelSurfaces => result.ir().model.surfaces.len(),
         ExpectedArena::Native(name) => result
-            .ir
+            .ir()
             .native
             .namespace("iges")
             .and_then(|namespace| namespace.arenas.get(name))
@@ -58,84 +58,84 @@ fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -
 fn arena_ids(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> Vec<&str> {
     match arena {
         ExpectedArena::ModelBodies => result
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelCoedges => result
-            .ir
+            .ir()
             .model
             .coedges
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelCurves => result
-            .ir
+            .ir()
             .model
             .curves
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelLoops => result
-            .ir
+            .ir()
             .model
             .loops
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelPoints => result
-            .ir
+            .ir()
             .model
             .points
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelPcurves => result
-            .ir
+            .ir()
             .model
             .pcurves
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelProceduralCurves => result
-            .ir
+            .ir()
             .model
             .procedural_curves
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelProceduralSurfaces => result
-            .ir
+            .ir()
             .model
             .procedural_surfaces
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelRegions => result
-            .ir
+            .ir()
             .model
             .regions
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelShells => result
-            .ir
+            .ir()
             .model
             .shells
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelSurfaces => result
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::Native(name) => result
-            .ir
+            .ir()
             .native
             .namespace("iges")
             .and_then(|namespace| namespace.arenas.get(name))

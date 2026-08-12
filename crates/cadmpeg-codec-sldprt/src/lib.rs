@@ -23,8 +23,8 @@
 //!     &mut Cursor::new(bytes),
 //!     &DecodeOptions::default(),
 //! )?;
-//! println!("{} faces", decoded.ir.model.faces.len());
-//! for loss in &decoded.report.losses {
+//! println!("{} faces", decoded.ir().model.faces.len());
+//! for loss in &decoded.report().losses {
 //!     eprintln!("{:?}: {}", loss.severity, loss.message);
 //! }
 //! # Ok(())
@@ -65,8 +65,8 @@
 //! let mut output = File::create("part-edited.sldprt")?;
 //! SldprtCodec
 //!     .plan(cadmpeg_ir::codec::EncodeInput {
-//!         ir: &decoded.ir,
-//!         fidelity: Some(&decoded.source_fidelity),
+//!         ir: decoded.ir(),
+//!         fidelity: Some(decoded.source_fidelity()),
 //!     })?
 //!     .write_to(&mut output)?;
 //! # Ok(())

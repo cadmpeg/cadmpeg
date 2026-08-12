@@ -48,21 +48,21 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             &DecodeOptions::default(),
         )
         .expect("synthetic Inventor container decodes structurally");
-    assert_eq!(decoded.report.format, "inventor");
-    assert!(!decoded.report.container_only);
+    assert_eq!(decoded.report().format, "inventor");
+    assert!(!decoded.report().container_only);
     assert!(decoded
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred)));
-    let native_findings = crate::validate_native(&decoded.ir);
+    let native_findings = crate::validate_native(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     assert!(native_findings[0]
         .message
         .contains("do not select one registry grammar"));
     assert_eq!(
         decoded
-            .ir
+            .ir()
             .native
             .namespace("inventor")
             .expect("Inventor native namespace exists")
@@ -79,7 +79,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .expect("container-only Inventor decode succeeds");
     assert_eq!(
         container_only
-            .report
+            .report()
             .losses
             .iter()
             .map(|loss| loss.code.clone())
@@ -87,7 +87,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         [LossKind::shared(LossTaxonomy::ContainerOnly)]
     );
     let namespace = container_only
-        .ir
+        .ir()
         .native
         .namespace("inventor")
         .expect("Inventor native namespace exists");
@@ -99,7 +99,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             && record.expanded_len.is_none()
             && record.expanded_sha256.is_none()
     }));
-    assert!(container_only.source_fidelity.retained_records.is_empty());
+    assert!(container_only.source_fidelity().retained_records.is_empty());
 }
 
 #[test]
@@ -109,22 +109,22 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("synthetic primary Inventor envelope decodes");
-    assert_eq!(decoded.report.format, "inventor");
-    assert_eq!(decoded.report.coverage["rse_storage_bands"], 1);
-    assert_eq!(decoded.report.coverage["rse_databases"], 1);
-    assert_eq!(decoded.report.coverage["rse_registry_entries"], 1);
-    assert_eq!(decoded.report.coverage["rse_segment_pairs"], 1);
-    assert_eq!(decoded.report.coverage["rse_segment_meta"], 1);
-    assert_eq!(decoded.report.coverage["rse_records"], 1);
-    assert_eq!(decoded.report.coverage["active_kernel_carriers"], 1);
+    assert_eq!(decoded.report().format, "inventor");
+    assert_eq!(decoded.report().coverage["rse_storage_bands"], 1);
+    assert_eq!(decoded.report().coverage["rse_databases"], 1);
+    assert_eq!(decoded.report().coverage["rse_registry_entries"], 1);
+    assert_eq!(decoded.report().coverage["rse_segment_pairs"], 1);
+    assert_eq!(decoded.report().coverage["rse_segment_meta"], 1);
+    assert_eq!(decoded.report().coverage["rse_records"], 1);
+    assert_eq!(decoded.report().coverage["active_kernel_carriers"], 1);
     assert!(decoded
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred)));
 
     let native = decoded
-        .ir
+        .ir()
         .native
         .namespace("inventor")
         .expect("Inventor native namespace exists");
@@ -136,7 +136,7 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         active[0].state,
         crate::native::ActiveCarrierRecordState::Selected
     );
-    assert!(crate::validate_native(&decoded.ir).is_empty());
+    assert!(crate::validate_native(decoded.ir()).is_empty());
 }
 
 pub(crate) fn fixture(inventor: bool) -> Vec<u8> {

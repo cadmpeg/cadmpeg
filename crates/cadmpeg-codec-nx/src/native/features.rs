@@ -8940,7 +8940,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let namespace = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant");
@@ -8977,7 +8977,7 @@ mod tests {
         assert_eq!(records[1].operation_label, labels[1].id);
         assert_eq!(
             result
-                .ir
+                .ir()
                 .model
                 .features
                 .iter()
@@ -9000,7 +9000,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let labels = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -9014,7 +9014,7 @@ mod tests {
         assert!(labels
             .windows(2)
             .all(|pair| pair[0].id.as_str() < pair[1].id.as_str()));
-        let features = &result.ir.model.features;
+        let features = &result.ir().model.features;
         assert_eq!(
             features
                 .iter()
@@ -9034,7 +9034,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let areas = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -9050,7 +9050,7 @@ mod tests {
         assert!(areas[0].byte_len > 12);
         assert_eq!(areas[0].sha256.len(), 64);
         let labels = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -9065,7 +9065,7 @@ mod tests {
         );
         assert_eq!(labels[0].section_link, areas[0].section_link);
         let records = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -9076,7 +9076,7 @@ mod tests {
         assert!(records[0].byte_len > 40);
         assert_eq!(records[0].sha256.len(), 64);
         let booleans = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -9087,7 +9087,7 @@ mod tests {
         assert_eq!(booleans[0].target_object_index, 6466);
         assert_eq!(booleans[0].tool_object_indices, [6476, 127]);
         let body_references = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -9097,7 +9097,7 @@ mod tests {
         assert_eq!(body_references[0].operation_label, labels[0].id);
         assert_eq!(body_references[0].body_object_index, 6466);
         let body_reference_occurrences = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -9107,7 +9107,7 @@ mod tests {
         assert_eq!(body_reference_occurrences[0].operation_label, labels[0].id);
         assert_eq!(body_reference_occurrences[0].ordinal, 0);
         assert_eq!(body_reference_occurrences[0].body_object_index, 6466);
-        let feature = result.ir.model.features.first().expect("neutral feature");
+        let feature = result.ir().model.features.first().expect("neutral feature");
         assert_eq!(feature.name.as_deref(), Some("UNITE"));
         assert_eq!(feature.suppressed, None);
         assert_eq!(feature.native_ref.as_deref(), Some(labels[0].id.as_str()));
@@ -9124,7 +9124,7 @@ mod tests {
                 keep_tools: false,
             } if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127"
         ));
-        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
     }
 
     #[test]
@@ -9137,7 +9137,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let inputs = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -9148,15 +9148,15 @@ mod tests {
         assert_eq!(inputs[0].object_index, 1);
         assert!(inputs[0].data_block.ends_with(":block#1"));
         assert_eq!(
-            result.ir.model.features[0].source_properties["input_block.0"],
+            result.ir().model.features[0].source_properties["input_block.0"],
             inputs[0].data_block
         );
         assert_eq!(
-            result.ir.model.features[0].source_properties["input_block_record.0"],
+            result.ir().model.features[0].source_properties["input_block_record.0"],
             inputs[0].id
         );
         let references = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")

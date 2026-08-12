@@ -4482,7 +4482,7 @@ impl CodecBackend for StepCodec {
             });
         }
         let external_dependencies = decoded
-            .report
+            .report()
             .notes
             .iter()
             .filter(|note| {
@@ -4647,7 +4647,7 @@ fn decode_zip(
         },
         ctx,
     )?;
-    if let Some(source) = &mut result.ir.source {
+    if let Some(source) = &mut result.ir_mut().source {
         source
             .attributes
             .insert("container_kind".into(), "iso-10303-21-zip".into());
@@ -4662,11 +4662,11 @@ fn decode_zip(
             root_data_offset.to_string(),
         );
     }
-    result.report.notes.push(format!(
+    result.report_mut().notes.push(format!(
         "container root {}; archive entries={entry_count}",
         archive::ROOT_NAME
     ));
-    result.report.notes.extend(resource_notes);
+    result.report_mut().notes.extend(resource_notes);
     Ok(result)
 }
 

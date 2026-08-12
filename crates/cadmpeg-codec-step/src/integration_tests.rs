@@ -7,9 +7,9 @@ use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::codec::{EncodeInput, Encoder};
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
-    assert!(result.ir.native.namespace("step").is_some());
+    assert!(result.ir().native.namespace("step").is_some());
 }
 
 #[test]
@@ -104,11 +104,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         let result = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("STEP cube decode");
-        assert_eq!(result.ir.model.bodies.len(), 1);
-        assert_eq!(result.ir.model.faces.len(), 6);
+        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().model.faces.len(), 6);
         assert_valid(&result);
 
-        let mut edited = result.ir.clone();
+        let mut edited = result.ir().clone();
         edited
             .model
             .points
@@ -123,7 +123,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         let plan = codec
             .plan(EncodeInput {
                 ir: &edited,
-                fidelity: Some(&result.source_fidelity),
+                fidelity: Some(result.source_fidelity()),
             })
             .expect("edited STEP document plan");
         assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Synthesized);
@@ -141,11 +141,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .expect("edited STEP document decode");
         assert_valid(&edited_result);
         assert_eq!(
-            edited_result.ir.model.bodies.len(),
+            edited_result.ir().model.bodies.len(),
             expected_model.bodies.len()
         );
         assert_eq!(
-            edited_result.ir.model.faces.len(),
+            edited_result.ir().model.faces.len(),
             expected_model.faces.len()
         );
         let expected_points = expected_model
@@ -154,7 +154,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .map(|point| point.position)
             .collect::<Vec<_>>();
         let actual_points = edited_result
-            .ir
+            .ir()
             .model
             .points
             .iter()

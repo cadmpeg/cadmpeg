@@ -52,9 +52,9 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match CreoCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => serde_json::json!({
-            "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
-            "report": serde_json::to_value(&result.report).expect("serialize report"),
-            "source_fidelity": serde_json::to_value(&result.source_fidelity)
+            "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+            "report": serde_json::to_value(result.report()).expect("serialize report"),
+            "source_fidelity": serde_json::to_value(result.source_fidelity())
                 .expect("serialize source_fidelity"),
         }),
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),

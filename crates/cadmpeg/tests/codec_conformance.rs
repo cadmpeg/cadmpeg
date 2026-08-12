@@ -310,7 +310,8 @@ mod product_roundtrip {
                 &DecodeOptions::default(),
             )
             .expect("decode FCStd assembly")
-            .ir;
+            .into_parts()
+            .0;
 
         let assembly_root = source
             .model
@@ -386,7 +387,8 @@ mod product_roundtrip {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(step), &DecodeOptions::default())
             .expect("decode STEP assembly")
-            .ir;
+            .into_parts()
+            .0;
 
         assert_eq!(
             definition_names(&decoded)

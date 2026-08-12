@@ -16,9 +16,9 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
-    assert!(result.ir.native.namespace("rhino").is_some());
+    assert!(result.ir().native.namespace("rhino").is_some());
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         assert_eq!(summary.format, "rhino");
         assert!(summary.notes.iter().any(|note| note.contains(version)));
         let result = decode(bytes.clone());
-        assert_eq!(result.ir.model.points.len(), 1);
+        assert_eq!(result.ir().model.points.len(), 1);
         assert_valid(&result);
 
         let container = RhinoCodec
@@ -49,8 +49,8 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
                 },
             )
             .expect("container-only 3DM decode");
-        assert!(container.report.container_only);
-        assert!(container.ir.model.points.is_empty());
+        assert!(container.report().container_only);
+        assert!(container.ir().model.points.is_empty());
     }
 }
 
@@ -102,9 +102,9 @@ fn curve_pipeline_composes_points_clouds_lines_arcs_polylines_and_compounds() {
         ),
     ];
     let result = decode(support::archive(&objects));
-    assert!(!result.ir.model.points.is_empty());
-    assert!(result.ir.model.curves.len() >= 3);
-    assert!(!result.ir.model.procedural_curves.is_empty());
+    assert!(!result.ir().model.points.is_empty());
+    assert!(result.ir().model.curves.len() >= 3);
+    assert!(!result.ir().model.procedural_curves.is_empty());
     assert_valid(&result);
 }
 
@@ -129,11 +129,11 @@ fn geometry_pipeline_composes_mesh_subd_extrusion_and_connected_brep_objects() {
         support::object_record(0x10, support::BREP_CLASS, &support::brep_payload(false)),
     ];
     let result = decode(support::archive_writer("80", 202_608_010, &objects));
-    assert!(!result.ir.model.tessellations.is_empty());
-    assert!(!result.ir.model.subds.is_empty());
-    assert!(!result.ir.model.procedural_surfaces.is_empty());
-    assert!(!result.ir.model.faces.is_empty());
-    assert!(!result.ir.model.pcurves.is_empty());
+    assert!(!result.ir().model.tessellations.is_empty());
+    assert!(!result.ir().model.subds.is_empty());
+    assert!(!result.ir().model.procedural_surfaces.is_empty());
+    assert!(!result.ir().model.faces.is_empty());
+    assert!(!result.ir().model.pcurves.is_empty());
     assert_valid(&result);
 }
 
@@ -181,18 +181,18 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
             .unwrap();
         let result = decode(bytes);
         assert_eq!(
-            result.ir.model.points[0].position,
+            result.ir().model.points[0].position,
             point_ir.model.points[0].position
         );
         assert_valid(&result);
     }
 
-    let mut sheet = decode(support::archive(&[support::object_record(
+    let (mut sheet, _, _) = decode(support::archive(&[support::object_record(
         0x10,
         support::BREP_CLASS,
         &support::brep_payload(false),
     )]))
-    .ir;
+    .into_parts();
     sheet.source = None;
     sheet.native.0.remove("rhino");
     for curve in &mut sheet.model.curves {
@@ -213,7 +213,7 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let result = decode(bytes);
-    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
     assert_valid(&result);
 }
 
@@ -233,9 +233,9 @@ fn recovery_pipeline_keeps_malformed_records_atomic_and_later_objects_decodable(
             &support::point_payload([4.0, 5.0, 6.0]),
         );
         let result = decode(support::archive(&[malformed, valid]));
-        assert_eq!(result.ir.model.points.len(), 1);
+        assert_eq!(result.ir().model.points.len(), 1);
         assert!(result
-            .report
+            .report()
             .losses
             .iter()
             .any(|loss| loss.severity >= Severity::Warning));
@@ -268,7 +268,7 @@ fn native_retention_archive() -> Vec<u8> {
 #[test]
 fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     let result = decode(native_retention_archive());
-    let losses = &result.report.losses;
+    let losses = &result.report().losses;
 
     assert!(losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
@@ -297,9 +297,9 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     }));
 
     // The hatch loop curve is a real neutral carrier even though the fill is not.
-    assert!(!result.ir.model.curves.is_empty());
-    assert_eq!(result.ir.model.features.len(), 2);
-    assert!(result.report.geometry_transferred);
+    assert!(!result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.features.len(), 2);
+    assert!(result.report().geometry_transferred);
     assert_valid(&result);
 }
 
@@ -340,17 +340,17 @@ const DIMENSION_PLANE_Y: [f64; 3] = [-1.0, 0.0, 0.0];
 fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities() {
     let text_point = [2.0, 3.0];
     let result = decode(dimension_archive([0; 16], Some(text_point)));
-    assert_eq!(result.ir.model.semantic_annotations.len(), 1);
-    assert!(result.ir.model.parameters.is_empty());
-    assert!(result.ir.model.features.is_empty());
+    assert_eq!(result.ir().model.semantic_annotations.len(), 1);
+    assert!(result.ir().model.parameters.is_empty());
+    assert!(result.ir().model.features.is_empty());
 
-    let annotation = &result.ir.model.semantic_annotations[0];
+    let annotation = &result.ir().model.semantic_annotations[0];
     assert_eq!(annotation.kind, SemanticAnnotationKind::Dimension);
     assert_eq!(annotation.runtime_type, "linear_dimension");
 
     // Constraint 1: `object` and `native_ref` resolve against the document.
     let record = &result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[0];
     assert_eq!(annotation.object, record.id.to_string());
@@ -405,7 +405,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
 fn unresolvable_dimension_style_is_charged_without_a_dangling_reference() {
     let dimstyle = [0x11; 16];
     let result = decode(dimension_archive(dimstyle, None));
-    let annotation = &result.ir.model.semantic_annotations[0];
+    let annotation = &result.ir().model.semantic_annotations[0];
     assert!(!annotation.references.contains_key("dimstyle_id"));
     assert_eq!(
         annotation.parameters["dimstyle_id"],
@@ -414,7 +414,7 @@ fn unresolvable_dimension_style_is_charged_without_a_dangling_reference() {
     assert!(annotation.position.is_none());
 
     let charged = result
-        .report
+        .report()
         .losses
         .iter()
         .filter(|loss| loss.code == crate::loss::RhinoLossCode::DimensionStyleUnresolved.kind())
@@ -455,7 +455,7 @@ fn several_dimensions_take_dense_unique_orders_independent_of_byte_offsets() {
     // content and therefore in length: byte offsets are not a dense sequence.
     let result = decode(support::archive(&[record(1), record(5), record(1)]));
     let orders = result
-        .ir
+        .ir()
         .model
         .semantic_annotations
         .iter()

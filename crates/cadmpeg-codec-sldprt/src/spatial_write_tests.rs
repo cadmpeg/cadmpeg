@@ -76,7 +76,8 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(first_encoding), &DecodeOptions::default())
         .expect("encoded spatial line should decode")
-        .ir;
+        .into_parts()
+        .0;
     let replacement_start = Point3::new(-7.5, 8.25, 9.0);
     let replacement_end = Point3::new(10.0, -11.5, 12.75);
     decoded.model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Line {
@@ -95,7 +96,8 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(second_encoding), &DecodeOptions::default())
         .expect("edited retained spatial line should decode")
-        .ir;
+        .into_parts()
+        .0;
 
     assert!(matches!(
         regenerated.model.spatial_sketch_entities[0].geometry,

@@ -1240,7 +1240,7 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
             && !diagnostic.message.contains("unsupported class")
     }));
     let container_only = super::container::container_only_result(&scan);
-    assert!(container_only.report.losses.iter().any(|loss| {
+    assert!(container_only.report().losses.iter().any(|loss| {
         loss.severity == Severity::Warning
             && loss
                 .provenance
@@ -1268,13 +1268,13 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
     }
     set_test_units(&mut scan, 1.0);
     let result = super::decode::decode_for_test(&scan);
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert!(result.ir.model.bodies[0]
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result.ir().model.bodies[0]
         .id
         .to_string()
         .contains("definition-member-3"));
     let definition_loss = result
-        .report
+        .report()
         .losses
         .iter()
         .find(|loss| loss.message.contains("instance-definition record"))
@@ -1578,9 +1578,9 @@ fn scan_decodes_history_identity_dependencies_and_typed_values() {
     assert!(history.copy_on_replace);
 
     let decoded = super::decode::decode_for_test(&scan);
-    assert_eq!(decoded.ir.model.features.len(), 1);
+    assert_eq!(decoded.ir().model.features.len(), 1);
     assert_eq!(
-        decoded.ir.model.features[0].native_ref.as_deref(),
+        decoded.ir().model.features[0].native_ref.as_deref(),
         Some("rhino:history:record#00000001-0002-0003-0405-060708090a0b")
     );
 }
@@ -1705,11 +1705,11 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
                 },
             )
             .expect("required invariant");
-        assert_eq!(result.ir.ir_version(), IR_VERSION);
-        assert!(result.ir.model.bodies.is_empty());
-        assert!(result.ir.model.subds.is_empty());
-        assert!(result.report.container_only);
-        assert_eq!(result.report.format, "rhino");
+        assert_eq!(result.ir().ir_version(), IR_VERSION);
+        assert!(result.ir().model.bodies.is_empty());
+        assert!(result.ir().model.subds.is_empty());
+        assert!(result.report().container_only);
+        assert_eq!(result.report().format, "rhino");
     }
 }
 
@@ -1736,10 +1736,10 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
                 },
             )
             .expect("required invariant");
-        assert_eq!(result.ir.ir_version(), IR_VERSION);
-        assert!(result.ir.model.bodies.is_empty());
-        assert!(result.ir.model.subds.is_empty());
-        assert!(result.report.container_only);
+        assert_eq!(result.ir().ir_version(), IR_VERSION);
+        assert!(result.ir().model.bodies.is_empty());
+        assert!(result.ir().model.subds.is_empty());
+        assert!(result.report().container_only);
     }
 }
 
@@ -1837,15 +1837,15 @@ fn malformed_bounded_object_is_retained_and_later_point_decodes() {
         let result = super::decode::decode_for_test(&scan);
         assert_eq!(
             result
-                .ir
+                .ir()
                 .native_unknowns("rhino")
                 .expect("required invariant")
                 .len(),
             2
         );
-        assert_eq!(result.ir.model.points.len(), 1);
+        assert_eq!(result.ir().model.points.len(), 1);
         assert!(result
-            .report
+            .report()
             .losses
             .iter()
             .any(|loss| loss.severity == Severity::Error));
@@ -2411,19 +2411,19 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .clear();
         let result = context.commit();
         assert!(result
-            .report
+            .report()
             .losses
             .iter()
             .any(|loss| loss.severity == Severity::Info));
         assert_eq!(
             result
-                .ir
+                .ir()
                 .native_unknowns("rhino")
                 .expect("required invariant")
                 .len(),
             1
         );
-        let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
         assert_eq!(validation.error_count(), 0);
     });
 }
@@ -2731,11 +2731,11 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
     );
 
     let result = super::decode::decode_for_test(&scan);
-    assert_eq!(result.ir.model.bodies.len(), 2);
-    assert_eq!(result.ir.model.points.len(), 2);
+    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
         result
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
@@ -2744,7 +2744,7 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
         vec![10.0, 20.0]
     );
     let body_ids = result
-        .ir
+        .ir()
         .model
         .bodies
         .iter()
@@ -2753,7 +2753,7 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
     assert_ne!(body_ids[0], body_ids[1]);
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
             .links,
@@ -2761,7 +2761,7 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[1]
             .links
@@ -2770,7 +2770,7 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[2]
             .links
@@ -2778,7 +2778,7 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
         1
     );
     let native = result
-        .ir
+        .ir()
         .native
         .namespace("rhino")
         .expect("required invariant");
@@ -2792,10 +2792,10 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
         native.arenas["product_occurrences"][0].fields()["transform_units"],
         "millimeter"
     );
-    assert!(result.report.losses.iter().any(|loss| loss.code
+    assert!(result.report().losses.iter().any(|loss| loss.code
         == super::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 3/3 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -2851,8 +2851,8 @@ fn nested_instance_composes_parent_child_and_records_outer_to_inner_path() {
     );
 
     let result = super::decode::decode_for_test(&scan);
-    assert_eq!(result.ir.model.curves.len(), 1);
-    let curve = &result.ir.model.curves[0];
+    assert_eq!(result.ir().model.curves.len(), 1);
+    let curve = &result.ir().model.curves[0];
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
         panic!("expected transformed NURBS");
     };
@@ -2895,7 +2895,7 @@ fn nested_instance_composes_parent_child_and_records_outer_to_inner_path() {
         Uuid::from_wire(world_reference_id),
         Uuid::from_wire(nested_reference_id)
     )));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -2944,9 +2944,9 @@ fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments() {
     );
 
     let result = super::decode::decode_for_test(&scan);
-    assert_eq!(result.ir.model.curves.len(), 4);
+    assert_eq!(result.ir().model.curves.len(), 4);
     let ids = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -2954,7 +2954,7 @@ fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments() {
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(ids.len(), 4);
     let paths = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -2974,14 +2974,14 @@ fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments() {
         .all(|segment| segment.starts_with("record-")));
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
             .links
             .len(),
         4
     );
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3020,18 +3020,18 @@ fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadata() {
     );
 
     let result = super::decode::decode_for_test(&scan);
-    let mesh = &result.ir.model.tessellations[0];
+    let mesh = &result.ir().model.tessellations[0];
     assert_eq!(mesh.vertices[0].x, 5.0);
     assert_eq!(mesh.vertices[1].x, 7.0);
     assert_eq!(
         mesh.normals[0],
         cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
     );
-    let subd = &result.ir.model.subds[0];
+    let subd = &result.ir().model.subds[0];
     assert_eq!(subd.vertices[2].point.x, 7.0);
     assert_eq!(subd.edges[0].sharpness, [0.25, 0.25]);
     assert_eq!(subd.edges[0].sector_coefficients, [0.125, 0.875]);
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3066,8 +3066,8 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         context.decode_geometry();
         assert!(context.mesh_budget_used() > 0);
         let result = context.commit();
-        assert!(result.ir.model.tessellations.is_empty());
-        assert!(result.ir.model.bodies.is_empty());
+        assert!(result.ir().model.tessellations.is_empty());
+        assert!(result.ir().model.bodies.is_empty());
     });
 }
 
@@ -3093,7 +3093,7 @@ fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     );
 
     let result = super::decode::decode_for_test(&scan);
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir.model.curves[0].geometry
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
     else {
         panic!("nonuniform circle must become NURBS");
     };
@@ -3104,7 +3104,7 @@ fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
         nurbs.weights.as_ref().expect("required invariant")[1],
         std::f64::consts::FRAC_1_SQRT_2
     );
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3134,14 +3134,14 @@ fn transformed_procedural_instance_keeps_solved_carriers_without_dangling_refere
     );
 
     let result = super::decode::decode_for_test(&scan);
-    assert!(!result.ir.model.surfaces.is_empty());
-    assert!(result.ir.model.procedural_surfaces.is_empty());
+    assert!(!result.ir().model.surfaces.is_empty());
+    assert!(result.ir().model.procedural_surfaces.is_empty());
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("exact solved carrier retained")));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3198,16 +3198,16 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         context.set_expansion_limits([16, 1, 128]);
         context.decode_geometry();
         let result = context.commit();
-        assert_eq!(result.ir.model.points.len(), 1);
+        assert_eq!(result.ir().model.points.len(), 1);
         assert_eq!(
-            result.ir.model.bodies[0]
+            result.ir().model.bodies[0]
                 .transform
                 .expect("instance transform")
                 .rows[0][3],
             10.0
         );
         assert!(result
-            .report
+            .report()
             .losses
             .iter()
             .any(|loss| loss.message.contains("instance member budget exceeded")));
@@ -3335,18 +3335,18 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     );
 
     let result = super::decode::decode_for_test(&scan);
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.points.len(), 1);
-    assert!(result.ir.model.surfaces.is_empty());
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result.ir().model.surfaces.is_empty());
     assert_eq!(
-        result.ir.model.bodies[0]
+        result.ir().model.bodies[0]
             .transform
             .expect("required invariant")
             .rows[0][3],
         30.0
     );
     for unknown in &result
-        .ir
+        .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[6..15]
     {
@@ -3354,21 +3354,21 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     }
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[15]
             .links
             .len(),
         1
     );
-    assert!(result.report.losses.iter().any(|loss| {
+    assert!(result.report().losses.iter().any(|loss| {
         loss.code == super::loss::RhinoLossCode::ObjectDecodeDiagnostic.kind()
             && loss
                 .message
                 .contains("f9cfb638-b9d4-4340-87e3-c56e7865d96a:")
             && loss.message.contains("decode warnings")
     }));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3395,13 +3395,13 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     let mut scan = super::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 25.4);
     let result = super::decode::decode_for_test(&scan);
-    assert_eq!(result.ir.model.subds.len(), 1);
-    let subd = &result.ir.model.subds[0];
+    assert_eq!(result.ir().model.subds.len(), 1);
+    let subd = &result.ir().model.subds[0];
     assert!(subd.source_object.is_some());
     assert_eq!(subd.vertices[2].point.x, 25.4);
     assert_eq!(
         result
-            .source_fidelity
+            .source_fidelity()
             .annotations
             .exactness
             .get(&subd.id.to_string())
@@ -3410,17 +3410,17 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
             .links,
         vec![subd.id.to_string()]
     );
-    assert!(result.report.geometry_transferred);
-    assert!(result.report.losses.iter().any(|loss| loss.code
+    assert!(result.report().geometry_transferred);
+    assert!(result.report().losses.iter().any(|loss| loss.code
         == super::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3443,24 +3443,24 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
     let mut scan = super::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
     let result = super::decode::decode_for_test(&scan);
-    assert!(result.ir.model.subds.is_empty());
+    assert!(result.ir().model.subds.is_empty());
     assert_eq!(
         result
-            .ir
+            .ir()
             .native_unknowns("rhino")
             .expect("required invariant")
             .len(),
         2
     );
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.severity == Severity::Error));
-    assert!(result.report.losses.iter().any(|loss| loss.code
+    assert!(result.report().losses.iter().any(|loss| loss.code
         == super::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/2 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3481,7 +3481,7 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
         let mut context = super::decode::DecodeContext::new(&scan, expand);
         assert!(context.mark_decoded(0));
         let result = context.commit();
-        assert!(result.report.losses.iter().any(|loss| {
+        assert!(result.report().losses.iter().any(|loss| {
             loss.code == super::loss::RhinoLossCode::ObjectAttributesDegraded.kind()
         }));
     });
@@ -3494,12 +3494,12 @@ fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
     let mut scan = scan_with_objects(&[object]);
     set_test_units(&mut scan, 1.0);
     let result = super::decode::decode_for_test(&scan);
-    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(result.ir().model.surfaces.len(), 1);
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Unknown { .. }
     ));
-    assert!(!result.report.geometry_transferred);
+    assert!(!result.report().geometry_transferred);
 }
 
 #[test]
@@ -3511,11 +3511,11 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
     set_test_units(&mut scan, 1.0e308);
     let first = super::decode::decode_for_test(&scan);
     let second = super::decode::decode_for_test(&scan);
-    assert!(first.ir.model.points.is_empty());
-    assert_eq!(first.ir, second.ir);
-    assert_eq!(first.report, second.report);
+    assert!(first.ir().model.points.is_empty());
+    assert_eq!(first.ir(), second.ir());
+    assert_eq!(first.report(), second.report());
     assert!(first
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.severity == Severity::Error));
@@ -3540,7 +3540,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
     let result = super::decode::decode_for_test(&scan);
 
     let loss = result
-        .report
+        .report()
         .losses
         .iter()
         .find(|loss| {
@@ -3555,7 +3555,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
     assert_eq!(loss.offset, offset);
     assert_eq!(loss.tag.as_deref(), Some(expected_tag.as_str()));
     assert!(!result
-        .report
+        .report()
         .losses
         .iter()
         .filter(|loss| loss.code != super::loss::RhinoLossCode::IntegrityFailure.kind())
@@ -3633,7 +3633,7 @@ fn polyedge_class_wire() -> [u8; 16] {
 
 fn polyedge_segment_parameter(result: &cadmpeg_ir::codec::DecodeResult) -> Option<String> {
     let feature = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -3655,11 +3655,11 @@ fn polyedge_segment_uuid_resolves_to_the_single_record_that_owns_it() {
         Some("rhino:object:record#000000")
     );
     assert!(!result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.starts_with("reference.")));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3668,7 +3668,7 @@ fn polyedge_segment_uuid_that_names_no_record_is_charged_and_left_unbound() {
     let result = super::decode::decode_for_test(&scan);
     assert!(polyedge_segment_parameter(&result).is_none());
     let charged = result
-        .report
+        .report()
         .losses
         .iter()
         .filter(|loss| loss.code == super::loss::RhinoLossCode::ReferenceMemberUnresolved.kind())
@@ -3678,7 +3678,7 @@ fn polyedge_segment_uuid_that_names_no_record_is_charged_and_left_unbound() {
         charged[0].code,
         super::loss::RhinoLossCode::ReferenceMemberUnresolved.kind()
     );
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
 #[test]
@@ -3699,9 +3699,9 @@ fn polyedge_segment_uuid_owned_by_two_records_is_charged_as_ambiguous() {
     let result = super::decode::decode_for_test(&scan);
     assert!(polyedge_segment_parameter(&result).is_none());
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| { loss.code == super::loss::RhinoLossCode::ReferenceMemberAmbiguous.kind() }));
-    assert!(cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }

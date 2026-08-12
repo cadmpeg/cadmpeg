@@ -3725,9 +3725,9 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
-            assert_eq!(decoded.ir.model.points.len(), 1);
+            assert_eq!(decoded.ir().model.points.len(), 1);
             assert_eq!(
-                decoded.ir.model.points[0].position,
+                decoded.ir().model.points[0].position,
                 Point3::new(1.25, -2.5, 3.75)
             );
         }
@@ -3755,9 +3755,9 @@ mod tests {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("generated settings record remains valid");
 
-        assert_eq!(decoded.ir.tolerances.linear, 2.0);
+        assert_eq!(decoded.ir().tolerances.linear, 2.0);
         assert!(decoded
-            .report
+            .report()
             .losses
             .iter()
             .all(|loss| !loss.message.contains("relative tolerance")));
@@ -3832,9 +3832,9 @@ mod tests {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        assert_eq!(decoded.ir.model.curves.len(), 1);
+        assert_eq!(decoded.ir().model.curves.len(), 1);
         assert_eq!(
-            decoded.ir.model.curves[0].geometry,
+            decoded.ir().model.curves[0].geometry,
             ir.model.curves[0].geometry
         );
         let digest = Sha256::digest(b"curve:circle");
@@ -3842,7 +3842,7 @@ mod tests {
             crate::wire::Uuid::from_wire(digest[..16].try_into().expect("required invariant"))
                 .to_string();
         assert_eq!(
-            decoded.ir.model.curves[0]
+            decoded.ir().model.curves[0]
                 .source_object
                 .as_ref()
                 .expect("generated object identity")
@@ -3883,7 +3883,7 @@ mod tests {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
         assert_eq!(
-            decoded.ir.model.curves[0].geometry,
+            decoded.ir().model.curves[0].geometry,
             ir.model.curves[0].geometry
         );
     }
@@ -3970,7 +3970,7 @@ mod tests {
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
             let actual = decoded
-                .ir
+                .ir()
                 .model
                 .surfaces
                 .iter()
@@ -4024,15 +4024,15 @@ mod tests {
                 .expect("required invariant");
             assert!(
                 decoded
-                    .report
+                    .report()
                     .losses
                     .iter()
                     .all(|loss| !loss.message.contains("CRC mismatch")),
                 "{version:?}: {:?}",
-                decoded.report.losses
+                decoded.report().losses
             );
-            assert_eq!(decoded.ir.model.tessellations.len(), 1);
-            let actual = &decoded.ir.model.tessellations[0];
+            assert_eq!(decoded.ir().model.tessellations.len(), 1);
+            let actual = &decoded.ir().model.tessellations[0];
             assert_eq!(actual.vertices, ir.model.tessellations[0].vertices);
             assert_eq!(actual.triangles, ir.model.tessellations[0].triangles);
             assert_eq!(actual.normals, ir.model.tessellations[0].normals);
@@ -4090,7 +4090,7 @@ mod tests {
         let decoded_v5 = RhinoCodec
             .decode(&mut Cursor::new(v5), &DecodeOptions::default())
             .expect("required invariant");
-        assert_ne!(decoded_v5.ir.model.tessellations[0].vertices[0].x, 0.1);
+        assert_ne!(decoded_v5.ir().model.tessellations[0].vertices[0].x, 0.1);
         let mut v8 = Vec::new();
         let v8_report = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .plan(cadmpeg_ir::codec::EncodeInput {
@@ -4103,7 +4103,7 @@ mod tests {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(v8), &DecodeOptions::default())
             .expect("required invariant");
-        assert_eq!(decoded.ir.model.tessellations[0].vertices[0].x, 0.1);
+        assert_eq!(decoded.ir().model.tessellations[0].vertices[0].x, 0.1);
     }
 
     #[test]
@@ -4162,7 +4162,7 @@ mod tests {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        let actual = &decoded.ir.model.tessellations[0].channels;
+        let actual = &decoded.ir().model.tessellations[0].channels;
         for expected in channels {
             assert_eq!(
                 actual.iter().find(|channel| channel.kind == expected.kind),
@@ -4219,7 +4219,10 @@ mod tests {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("generated mesh remains decodable");
-        assert_eq!(decoded.ir.model.tessellations[0].channels[0].data, uv_data);
+        assert_eq!(
+            decoded.ir().model.tessellations[0].channels[0].data,
+            uv_data
+        );
     }
 
     #[test]
@@ -4285,15 +4288,15 @@ mod tests {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        assert_eq!(decoded.ir.model.bodies.len(), 1);
-        assert_eq!(decoded.ir.model.vertices.len(), 2);
-        assert_eq!(decoded.ir.model.points.len(), 2);
+        assert_eq!(decoded.ir().model.bodies.len(), 1);
+        assert_eq!(decoded.ir().model.vertices.len(), 2);
+        assert_eq!(decoded.ir().model.points.len(), 2);
         assert_eq!(
-            decoded.ir.model.bodies[0].name.as_deref(),
+            decoded.ir().model.bodies[0].name.as_deref(),
             Some("survey points")
         );
-        assert_eq!(decoded.ir.model.bodies[0].color, ir.model.bodies[0].color);
-        assert_eq!(decoded.ir.model.bodies[0].visible, Some(false));
+        assert_eq!(decoded.ir().model.bodies[0].color, ir.model.bodies[0].color);
+        assert_eq!(decoded.ir().model.bodies[0].visible, Some(false));
     }
 
     #[test]
@@ -4315,13 +4318,13 @@ mod tests {
         let mut decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        assert!(decoded.ir.native.namespace("rhino").is_some());
-        decoded.ir.model.points[0].position = Point3::new(4.0, 5.0, 6.0);
+        assert!(decoded.ir().native.namespace("rhino").is_some());
+        decoded.ir_mut().model.points[0].position = Point3::new(4.0, 5.0, 6.0);
 
         let mut output = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
             .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &decoded.ir,
+                ir: decoded.ir(),
                 fidelity: None,
             })
             .and_then(|plan| plan.write_to(&mut output))
@@ -4330,7 +4333,7 @@ mod tests {
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
             .expect("required invariant");
         assert_eq!(
-            rewritten.ir.model.points[0].position,
+            rewritten.ir().model.points[0].position,
             Point3::new(4.0, 5.0, 6.0)
         );
     }
@@ -4355,7 +4358,7 @@ mod tests {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
         decoded
-            .ir
+            .ir_mut()
             .native
             .namespace_mut("rhino")
             .arenas
@@ -4369,7 +4372,7 @@ mod tests {
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &decoded.ir,
+                ir: decoded.ir(),
                 fidelity: None,
             })
             .and_then(|plan| plan.write_to(&mut output))
@@ -4462,7 +4465,7 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
-            let body = &decoded.ir.model.bodies[0];
+            let body = &decoded.ir().model.bodies[0];
             assert_eq!(body.name.as_deref(), Some("named sheet"), "{version:?}");
             assert_eq!(body.color, ir.model.bodies[0].color, "{version:?}");
             assert_eq!(body.visible, Some(false), "{version:?}");
@@ -4509,32 +4512,32 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
-            assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
             assert_eq!(
-                decoded.ir.model.bodies[0].kind,
+                decoded.ir().model.bodies[0].kind,
                 cadmpeg_ir::topology::BodyKind::Sheet,
                 "{version:?}"
             );
-            assert_eq!(decoded.ir.model.shells.len(), 1, "{version:?}");
-            assert_eq!(decoded.ir.model.faces.len(), 2, "{version:?}");
-            assert_eq!(decoded.ir.model.loops.len(), 2, "{version:?}");
-            assert_eq!(decoded.ir.model.coedges.len(), 8, "{version:?}");
-            assert_eq!(decoded.ir.model.edges.len(), 7, "{version:?}");
-            assert_eq!(decoded.ir.model.vertices.len(), 6, "{version:?}");
+            assert_eq!(decoded.ir().model.shells.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir().model.faces.len(), 2, "{version:?}");
+            assert_eq!(decoded.ir().model.loops.len(), 2, "{version:?}");
+            assert_eq!(decoded.ir().model.coedges.len(), 8, "{version:?}");
+            assert_eq!(decoded.ir().model.edges.len(), 7, "{version:?}");
+            assert_eq!(decoded.ir().model.vertices.len(), 6, "{version:?}");
             assert!(decoded
-                .ir
+                .ir()
                 .model
                 .edges
                 .iter()
                 .all(|edge| edge.param_range == Some([2.0, 3.0])));
             let shared = decoded
-                .ir
+                .ir()
                 .model
                 .edges
                 .iter()
                 .find(|edge| {
                     decoded
-                        .ir
+                        .ir()
                         .model
                         .coedges
                         .iter()
@@ -4544,7 +4547,7 @@ mod tests {
                 })
                 .expect("one shared edge");
             let uses = decoded
-                .ir
+                .ir()
                 .model
                 .coedges
                 .iter()
@@ -4553,7 +4556,7 @@ mod tests {
             assert_ne!(uses[0].sense, uses[1].sense);
             assert_eq!(uses[0].radial_next, uses[1].id);
             assert_eq!(uses[1].radial_next, uses[0].id);
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -4593,14 +4596,14 @@ mod tests {
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
             let shared = decoded
-                .ir
+                .ir()
                 .model
                 .edges
                 .iter()
                 .find(|edge| edge.param_range == Some([2.0, 5.0]))
                 .expect("NURBS edge domain");
             let curve = decoded
-                .ir
+                .ir()
                 .model
                 .curves
                 .iter()
@@ -4608,7 +4611,7 @@ mod tests {
                 .expect("NURBS C3");
             assert_eq!(curve.geometry, expected, "{version:?}");
             let uses = decoded
-                .ir
+                .ir()
                 .model
                 .coedges
                 .iter()
@@ -4618,7 +4621,7 @@ mod tests {
             assert_ne!(uses[0].sense, uses[1].sense, "{version:?}");
             for use_ in uses {
                 let pcurve = decoded
-                    .ir
+                    .ir()
                     .model
                     .pcurves
                     .iter()
@@ -4631,7 +4634,7 @@ mod tests {
                     cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
                 ));
             }
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -4700,7 +4703,7 @@ mod tests {
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
             let explicit = decoded
-                .ir
+                .ir()
                 .model
                 .pcurves
                 .iter()
@@ -4715,7 +4718,7 @@ mod tests {
                         cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
                     )
             }));
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -4797,7 +4800,7 @@ mod tests {
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
             let pcurve = decoded
-                .ir
+                .ir()
                 .model
                 .pcurves
                 .iter()
@@ -4838,16 +4841,16 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
-            assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
             assert_eq!(
-                decoded.ir.model.bodies[0].kind,
+                decoded.ir().model.bodies[0].kind,
                 cadmpeg_ir::topology::BodyKind::Sheet,
                 "{version:?}"
             );
-            assert_eq!(decoded.ir.model.surfaces[0].geometry, expected_surface);
+            assert_eq!(decoded.ir().model.surfaces[0].geometry, expected_surface);
             assert_eq!(
                 decoded
-                    .ir
+                    .ir()
                     .model
                     .curves
                     .iter()
@@ -4856,14 +4859,14 @@ mod tests {
                 expected_curves,
                 "{version:?}"
             );
-            assert_eq!(decoded.ir.model.pcurves.len(), 4, "{version:?}");
+            assert_eq!(decoded.ir().model.pcurves.len(), 4, "{version:?}");
             assert!(decoded
-                .ir
+                .ir()
                 .model
                 .pcurves
                 .iter()
                 .all(|pcurve| pcurve.fit_tolerance == Some(0.001)));
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -4888,22 +4891,22 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
-            assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
             assert_eq!(
-                decoded.ir.model.bodies[0].kind,
+                decoded.ir().model.bodies[0].kind,
                 cadmpeg_ir::topology::BodyKind::Sheet,
                 "{version:?}"
             );
-            assert_eq!(decoded.ir.model.faces.len(), 2, "{version:?}");
-            assert_eq!(decoded.ir.model.surfaces[0].geometry, expected_surface);
-            assert_eq!(decoded.ir.model.edges[1].param_range, Some([30.0, 32.0]));
+            assert_eq!(decoded.ir().model.faces.len(), 2, "{version:?}");
+            assert_eq!(decoded.ir().model.surfaces[0].geometry, expected_surface);
+            assert_eq!(decoded.ir().model.edges[1].param_range, Some([30.0, 32.0]));
             let shared_uses = decoded
-                .ir
+                .ir()
                 .model
                 .coedges
                 .iter()
                 .enumerate()
-                .filter(|(_, coedge)| coedge.edge == decoded.ir.model.edges[1].id)
+                .filter(|(_, coedge)| coedge.edge == decoded.ir().model.edges[1].id)
                 .collect::<Vec<_>>();
             assert_eq!(shared_uses.len(), 2, "{version:?}");
             assert_ne!(shared_uses[0].1.sense, shared_uses[1].1.sense);
@@ -4917,7 +4920,7 @@ mod tests {
             );
             assert_eq!(
                 decoded
-                    .ir
+                    .ir()
                     .model
                     .pcurves
                     .iter()
@@ -4927,7 +4930,7 @@ mod tests {
                 "{version:?}"
             );
             let planar_shared_pcurve = decoded
-                .ir
+                .ir()
                 .model
                 .pcurves
                 .iter()
@@ -4940,7 +4943,7 @@ mod tests {
                 planar_shared_pcurve.geometry,
                 cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
             ));
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -5008,17 +5011,17 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
-            assert_eq!(decoded.ir.model.surfaces[0].geometry, expected_surface);
-            assert_eq!(decoded.ir.model.curves[0].geometry, expected_curve);
-            assert_eq!(decoded.ir.model.loops.len(), 2, "{version:?}");
-            assert_eq!(decoded.ir.model.pcurves.len(), 7, "{version:?}");
+            assert_eq!(decoded.ir().model.surfaces[0].geometry, expected_surface);
+            assert_eq!(decoded.ir().model.curves[0].geometry, expected_curve);
+            assert_eq!(decoded.ir().model.loops.len(), 2, "{version:?}");
+            assert_eq!(decoded.ir().model.pcurves.len(), 7, "{version:?}");
             assert!(decoded
-                .ir
+                .ir()
                 .model
                 .pcurves
                 .iter()
                 .all(|pcurve| pcurve.fit_tolerance == Some(0.0001)));
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -5087,23 +5090,23 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
-            assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
             assert_eq!(
-                decoded.ir.model.bodies[0].kind,
+                decoded.ir().model.bodies[0].kind,
                 cadmpeg_ir::topology::BodyKind::Solid,
                 "{version:?}"
             );
-            assert_eq!(decoded.ir.model.shells.len(), 1, "{version:?}");
-            assert_eq!(decoded.ir.model.faces.len(), 4, "{version:?}");
-            assert_eq!(decoded.ir.model.loops.len(), 4, "{version:?}");
-            assert_eq!(decoded.ir.model.coedges.len(), 12, "{version:?}");
-            assert_eq!(decoded.ir.model.edges.len(), 6, "{version:?}");
-            assert_eq!(decoded.ir.model.vertices.len(), 4, "{version:?}");
-            for (actual, expected) in decoded.ir.model.edges.iter().zip(&ir.model.edges) {
+            assert_eq!(decoded.ir().model.shells.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir().model.faces.len(), 4, "{version:?}");
+            assert_eq!(decoded.ir().model.loops.len(), 4, "{version:?}");
+            assert_eq!(decoded.ir().model.coedges.len(), 12, "{version:?}");
+            assert_eq!(decoded.ir().model.edges.len(), 6, "{version:?}");
+            assert_eq!(decoded.ir().model.vertices.len(), 4, "{version:?}");
+            for (actual, expected) in decoded.ir().model.edges.iter().zip(&ir.model.edges) {
                 assert_eq!(actual.param_range, expected.param_range, "{version:?}");
                 assert_eq!(
                     decoded
-                        .ir
+                        .ir()
                         .model
                         .coedges
                         .iter()
@@ -5114,12 +5117,12 @@ mod tests {
                 );
             }
             assert!(decoded
-                .ir
+                .ir()
                 .model
                 .coedges
                 .iter()
                 .all(|coedge| coedge.radial_next != coedge.id));
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -5163,17 +5166,17 @@ mod tests {
                 .expect("required invariant");
             assert!(
                 decoded
-                    .report
+                    .report()
                     .losses
                     .iter()
                     .all(|loss| !loss.message.contains("CRC mismatch")),
                 "{version:?}: {:?}",
-                decoded.report.losses
+                decoded.report().losses
             );
-            assert_eq!(decoded.ir.model.bodies.len(), 2, "{version:?}");
-            assert_eq!(decoded.ir.model.faces.len(), 3, "{version:?}");
-            assert_eq!(decoded.ir.model.edges.len(), 10, "{version:?}");
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert_eq!(decoded.ir().model.bodies.len(), 2, "{version:?}");
+            assert_eq!(decoded.ir().model.faces.len(), 3, "{version:?}");
+            assert_eq!(decoded.ir().model.edges.len(), 10, "{version:?}");
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -5230,24 +5233,24 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("required invariant");
-            assert_eq!(decoded.ir.model.bodies.len(), 2, "{version:?}");
+            assert_eq!(decoded.ir().model.bodies.len(), 2, "{version:?}");
             assert!(decoded
-                .ir
+                .ir()
                 .model
                 .points
                 .iter()
                 .any(|point| point.position == Point3::new(5.0, 6.0, 7.0)));
             assert!(decoded
-                .ir
+                .ir()
                 .model
                 .curves
                 .iter()
                 .any(|curve| matches!(curve.geometry, CurveGeometry::Circle { radius: 2.0, .. })));
-            assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
+            assert!(decoded.ir().model.surfaces.iter().any(|surface| matches!(
                 surface.geometry,
                 SurfaceGeometry::Plane { origin, .. } if origin.z == 3.0
             )));
-            assert!(cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -5284,29 +5287,29 @@ mod tests {
                 .expect("required invariant");
             assert!(
                 decoded
-                    .report
+                    .report()
                     .losses
                     .iter()
                     .all(|loss| !loss.message.contains("Brep mesh cache degraded")),
                 "{version:?}: {:?}",
-                decoded.report.losses
+                decoded.report().losses
             );
-            assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
             assert_eq!(
-                decoded.ir.model.bodies[0].kind,
+                decoded.ir().model.bodies[0].kind,
                 cadmpeg_ir::topology::BodyKind::Sheet,
                 "{version:?}"
             );
-            assert_eq!(decoded.ir.model.faces.len(), 1, "{version:?}");
-            assert_eq!(decoded.ir.model.loops.len(), loop_count, "{version:?}");
-            assert_eq!(decoded.ir.model.coedges.len(), edge_count, "{version:?}");
-            assert_eq!(decoded.ir.model.edges.len(), edge_count, "{version:?}");
-            assert_eq!(decoded.ir.model.vertices.len(), edge_count, "{version:?}");
-            for (actual, expected) in decoded.ir.model.edges.iter().zip(&ir.model.edges) {
+            assert_eq!(decoded.ir().model.faces.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir().model.loops.len(), loop_count, "{version:?}");
+            assert_eq!(decoded.ir().model.coedges.len(), edge_count, "{version:?}");
+            assert_eq!(decoded.ir().model.edges.len(), edge_count, "{version:?}");
+            assert_eq!(decoded.ir().model.vertices.len(), edge_count, "{version:?}");
+            for (actual, expected) in decoded.ir().model.edges.iter().zip(&ir.model.edges) {
                 assert_eq!(actual.param_range, expected.param_range, "{version:?}");
             }
             assert!(
-                cadmpeg_ir::validate_neutral(&decoded.ir, Vec::new()).is_ok(),
+                cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok(),
                 "{version:?}"
             );
         }

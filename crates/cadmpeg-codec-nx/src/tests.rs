@@ -195,11 +195,11 @@ fn decode_reports_unclassified_bounded_offset_store_controls() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let attributes = &result.ir.source.as_ref().unwrap().attributes;
+    let attributes = &result.ir().source.as_ref().unwrap().attributes;
     assert_eq!(attributes["offset_store_control_count"], "1");
     assert_eq!(attributes["classified_offset_store_control_count"], "0");
     assert_eq!(attributes["unclassified_offset_store_control_count"], "1");
-    assert!(result.report.losses.iter().any(|loss| {
+    assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Other
             && loss
                 .message
@@ -531,10 +531,10 @@ fn topology_retains_shell_body_identity_without_body_record() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.bodies[0].id.0, "nx:s0:body#2");
-    assert_eq!(result.ir.model.faces.len(), 1);
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.bodies[0].id.0, "nx:s0:body#2");
+    assert_eq!(result.ir().model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -571,10 +571,10 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.regions.len(), 1);
-    assert_eq!(result.ir.model.regions[0].id.0, "nx:s0:region#12");
-    assert_eq!(result.ir.model.faces.len(), 2);
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.regions[0].id.0, "nx:s0:region#12");
+    assert_eq!(result.ir().model.faces.len(), 2);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -593,9 +593,9 @@ fn topology_rejects_nonreciprocal_fin_ring() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.model.loops.is_empty());
-    assert!(result.ir.model.coedges.is_empty());
-    assert!(result.ir.model.edges.is_empty());
+    assert!(result.ir().model.loops.is_empty());
+    assert!(result.ir().model.coedges.is_empty());
+    assert!(result.ir().model.edges.is_empty());
 
     let mut broken_partner = topology_partition_stream();
     let fin = broken_partner
@@ -669,12 +669,12 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    let edge = result.ir.model.edges.first().expect("closed edge");
+    let edge = result.ir().model.edges.first().expect("closed edge");
     assert_eq!(edge.start, edge.end);
     assert!(edge.start.0.contains("closed-edge"));
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 1);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -704,12 +704,12 @@ fn decode_aliases_partner_closed_null_vertex_fin_to_edge_start() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    let edge = result.ir.model.edges.first().expect("closed edge");
+    let edge = result.ir().model.edges.first().expect("closed edge");
     assert_eq!(edge.start, edge.end);
     assert!(edge.start.0.contains("closed-edge"));
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 1);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -746,9 +746,9 @@ fn decode_does_not_alias_unresolved_edge_end_to_start_vertex() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.ir.model.edges.is_empty());
-    assert!(result.ir.model.coedges.is_empty());
-    assert!(result.ir.model.loops.is_empty());
+    assert!(result.ir().model.edges.is_empty());
+    assert!(result.ir().model.coedges.is_empty());
+    assert!(result.ir().model.loops.is_empty());
 }
 
 #[test]
@@ -784,11 +784,11 @@ fn decode_retains_topology_owned_point_at_origin() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir.model.vertices.len(), 1);
-    assert_eq!(result.ir.model.bodies[0].transform, None);
-    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert_eq!(result.ir().model.bodies[0].transform, None);
+    assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(
-        result.ir.model.points[0].position,
+        result.ir().model.points[0].position,
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
 }
@@ -875,11 +875,11 @@ fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.points.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 1);
-    assert_eq!(result.ir.model.shells[0].free_vertices.len(), 0);
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert_eq!(result.ir().model.shells[0].free_vertices.len(), 0);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -895,16 +895,16 @@ fn decode_retains_connected_topology_with_unknown_surface_carrier() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
     let surface = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == result.ir.model.faces[0].surface)
+        .find(|surface| surface.id == result.ir().model.faces[0].surface)
         .expect("unknown face carrier");
     assert!(matches!(surface.geometry, SurfaceGeometry::Unknown { .. }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -921,13 +921,20 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    let curve = result.ir.model.edges[0]
+    let curve = result.ir().model.edges[0]
         .curve
         .as_ref()
-        .and_then(|id| result.ir.model.curves.iter().find(|curve| &curve.id == id))
+        .and_then(|id| {
+            result
+                .ir()
+                .model
+                .curves
+                .iter()
+                .find(|curve| &curve.id == id)
+        })
         .expect("unknown edge carrier");
     assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -946,12 +953,12 @@ fn decode_drops_unknown_carrier_outside_emitted_topology() {
         .unwrap();
 
     assert!(result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
         .all(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. })));
-    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 1);
 }
 
 #[test]
@@ -972,10 +979,10 @@ fn decode_retains_native_carrierless_edge() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    let edge = &result.ir.model.edges[0];
+    let edge = &result.ir().model.edges[0];
     assert_eq!(edge.curve, None);
     assert_eq!(edge.param_range, None);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -1776,13 +1783,13 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.pcurves.len(), 1);
+    assert_eq!(result.ir().model.pcurves.len(), 1);
     assert_eq!(
-        result.ir.model.coedges[0]
+        result.ir().model.coedges[0]
             .pcurves
             .first()
             .map(|pcurve| &pcurve.pcurve),
-        Some(&result.ir.model.pcurves[0].id)
+        Some(&result.ir().model.pcurves[0].id)
     );
     let PcurveGeometry::Nurbs {
         degree,
@@ -1790,7 +1797,7 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
         control_points,
         weights,
         periodic,
-    } = &result.ir.model.pcurves[0].geometry
+    } = &result.ir().model.pcurves[0].geometry
     else {
         panic!("expected NURBS pcurve");
     };
@@ -1802,12 +1809,12 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     );
     assert!(weights.is_none());
     assert!(!periodic);
-    assert_eq!(result.ir.model.pcurves[0].fit_tolerance, Some(0.01));
+    assert_eq!(result.ir().model.pcurves[0].fit_tolerance, Some(0.01));
     assert_eq!(
-        result.ir.model.points[0].position,
+        result.ir().model.points[0].position,
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(
         validation.findings.is_empty(),
         "findings: {:?}",
@@ -1836,12 +1843,12 @@ fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.pcurves[0].parameter_range, None);
+    assert_eq!(result.ir().model.pcurves[0].parameter_range, None);
     assert_eq!(
-        result.ir.model.coedges[0].pcurves[0].parameter_range,
+        result.ir().model.coedges[0].pcurves[0].parameter_range,
         Some([0.0, 1.0])
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -1861,8 +1868,8 @@ fn decode_omits_surface_curve_missing_tolerance_sentinel() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.pcurves[0].fit_tolerance, None);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.pcurves[0].fit_tolerance, None);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -1878,9 +1885,9 @@ fn decode_rejects_overflowing_pcurve_parameter_conversion() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.model.pcurves.is_empty());
-    assert!(result.ir.model.coedges[0].pcurves.is_empty());
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(result.ir().model.pcurves.is_empty());
+    assert!(result.ir().model.coedges[0].pcurves.is_empty());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -1891,12 +1898,12 @@ fn decode_preserves_multiple_shells_in_one_region() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.regions.len(), 1);
-    assert_eq!(result.ir.model.shells.len(), 2);
-    assert_eq!(result.ir.model.regions[0].shells.len(), 2);
-    assert_eq!(result.ir.model.bodies[0].regions.len(), 1);
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.shells.len(), 2);
+    assert_eq!(result.ir().model.regions[0].shells.len(), 2);
+    assert_eq!(result.ir().model.bodies[0].regions.len(), 1);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -2071,8 +2078,8 @@ fn decode_projects_part_attributes_to_document_attributes() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.attributes.len(), 1);
-    let attribute = &result.ir.model.attributes[0];
+    assert_eq!(result.ir().model.attributes.len(), 1);
+    let attribute = &result.ir().model.attributes[0];
     assert_eq!(attribute.name, "Material");
     assert_eq!(
         attribute.target,
@@ -2084,7 +2091,7 @@ fn decode_projects_part_attributes_to_document_attributes() {
             "Steel".to_string()
         )]
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -2101,7 +2108,7 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let attributes = &result.ir.source.unwrap().attributes;
+    let attributes = &result.ir().source.as_ref().unwrap().attributes;
     assert_eq!(attributes["jpeg_preview_count"], "1");
     assert_eq!(attributes["jpeg_preview_0_width"], "247");
     assert_eq!(attributes["jpeg_preview_0_height"], "185");
@@ -2111,8 +2118,8 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         attributes["jpeg_preview_0_byte_len"],
         preview.len().to_string()
     );
-    assert_eq!(result.ir.model.assets.len(), 1);
-    let asset = &result.ir.model.assets[0];
+    assert_eq!(result.ir().model.assets.len(), 1);
+    let asset = &result.ir().model.assets[0];
     assert_eq!(asset.name.as_deref(), Some("preview.jpg"));
     assert_eq!(asset.media_type.as_deref(), Some("image/jpeg"));
     assert_eq!(
@@ -2133,8 +2140,8 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         )
         .unwrap();
     assert_eq!(
-        container_only_result.ir.model.assets,
-        result.ir.model.assets
+        container_only_result.ir().model.assets,
+        result.ir().model.assets
     );
 
     let mut malformed = preview;
@@ -2147,8 +2154,8 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
     let malformed_result = NxCodec
         .decode(&mut Cursor::new(malformed_file), &DecodeOptions::default())
         .unwrap();
-    assert!(malformed_result.ir.model.assets.is_empty());
-    let malformed_unknowns = malformed_result.ir.native_unknowns("nx").unwrap();
+    assert!(malformed_result.ir().model.assets.is_empty());
+    let malformed_unknowns = malformed_result.ir().native_unknowns("nx").unwrap();
     assert!(malformed_unknowns
         .iter()
         .any(|unknown| unknown.id.0 == "nx:container:jpeg-preview#0"));
@@ -2166,7 +2173,7 @@ fn decode_rejects_repeated_nx_arrangement_terminators_atomically() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir.model.configurations.is_empty());
+    assert!(result.ir().model.configurations.is_empty());
 }
 
 #[test]
@@ -2186,23 +2193,23 @@ fn decode_transfers_point_plane_cylinder_line() {
     let mut cur = Cursor::new(single_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.points.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 1);
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
     // Point coordinate is scaled metres → millimetres, byte-exact.
-    let p = &result.ir.model.points[0].position;
+    let p = &result.ir().model.points[0].position;
     assert!((p.x - 62.5).abs() < 1e-6 && (p.z - 12.7).abs() < 1e-6);
 
     // One plane, one cylinder decoded.
     let planes = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
         .filter(|s| matches!(s.geometry, SurfaceGeometry::Plane { .. }))
         .count();
     let cyls: Vec<_> = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -2214,14 +2221,14 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(planes, 1);
     assert_eq!(cyls.len(), 1);
     assert!((cyls[0] - 4.05).abs() < 1e-6);
-    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane {
             u_axis: axis,
             ..
         } if axis == Vector3::new(1.0, 0.0, 0.0)
     )));
-    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Cylinder {
             ref_direction: direction,
@@ -2231,7 +2238,7 @@ fn decode_transfers_point_plane_cylinder_line() {
 
     // One line decoded, with a unit direction.
     let lines: Vec<_> = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -2239,25 +2246,28 @@ fn decode_transfers_point_plane_cylinder_line() {
         .collect();
     assert_eq!(lines.len(), 1);
 
-    assert!(result.ir.model.faces.is_empty() && result.ir.model.edges.is_empty());
-    assert!(result.report.losses.iter().any(|l| l.code.category()
+    assert!(result.ir().model.faces.is_empty() && result.ir().model.edges.is_empty());
+    assert!(result.report().losses.iter().any(|l| l.code.category()
         == cadmpeg_ir::report::LossCategory::Topology
         && l.severity == cadmpeg_ir::report::Severity::Blocking));
 
     // The Parasolid stream is preserved verbatim.
-    let unknowns = result.ir.native_unknowns("nx").unwrap();
+    let unknowns = result.ir().native_unknowns("nx").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(result.source_fidelity.retained_records[0].sha256.len(), 64);
+    assert_eq!(
+        result.source_fidelity().retained_records[0].sha256.len(),
+        64
+    );
     assert_eq!(
         unknowns[0].links,
         ["nx:s0:surf#0", "nx:s0:surf#1", "nx:s0:crv#0",]
     );
     assert_eq!(
-        result.source_fidelity.annotations.exactness[&unknowns[0].id.to_string()].fields["links"],
+        result.source_fidelity().annotations.exactness[&unknowns[0].id.to_string()].fields["links"],
         Exactness::Derived
     );
 
-    let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -2266,53 +2276,53 @@ fn decode_emits_connected_primitive_brep() {
     let mut cur = Cursor::new(topology_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.regions.len(), 1);
-    assert_eq!(result.ir.model.shells.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 1);
-    assert_eq!(result.ir.model.edges.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 1);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.shells.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
     assert_eq!(
-        result.ir.model.bodies[0].kind,
+        result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
     assert_eq!(
-        result.ir.model.faces[0].loops,
-        vec![result.ir.model.loops[0].id.clone()]
+        result.ir().model.faces[0].loops,
+        vec![result.ir().model.loops[0].id.clone()]
     );
     assert_eq!(
-        result.ir.model.edges[0].curve.as_ref(),
-        Some(&result.ir.model.curves[0].id)
+        result.ir().model.edges[0].curve.as_ref(),
+        Some(&result.ir().model.curves[0].id)
     );
-    assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.1));
-    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.3));
-    assert_eq!(result.ir.model.faces[0].tolerance, Some(0.2));
+    assert_eq!(result.ir().model.vertices[0].tolerance, Some(0.1));
+    assert_eq!(result.ir().model.edges[0].tolerance, Some(0.3));
+    assert_eq!(result.ir().model.faces[0].tolerance, Some(0.2));
     assert_eq!(
-        result.ir.model.coedges[0].radial_next,
-        result.ir.model.coedges[0].id
+        result.ir().model.coedges[0].radial_next,
+        result.ir().model.coedges[0].id
     );
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| loss.code != LossKind::shared(LossTaxonomy::MaterialNotTransferred)));
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| loss.code != LossKind::shared(LossTaxonomy::AttributesNotTransferred)));
-    assert!(!result.report.losses.iter().any(|loss| {
+    assert!(!result.report().losses.iter().any(|loss| {
         loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)
             && loss.message.contains("Assembly occurrence placements")
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -2333,7 +2343,7 @@ fn decode_does_not_report_assembly_placements_for_inline_external_metadata() {
         .unwrap();
 
     assert!(!result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)));
@@ -2349,12 +2359,12 @@ fn decode_reports_external_assembly_boundary_without_inline_geometry() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report.losses.iter().any(|loss| {
+    assert!(result.report().losses.iter().any(|loss| {
         loss.code == LossKind::shared(LossTaxonomy::AssemblyComponentsExternal)
             && loss.message.contains("No inline Parasolid geometry")
     }));
     assert!(!result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)));
@@ -2376,8 +2386,8 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.assets.len(), 1);
-    let asset = &result.ir.model.assets[0];
+    assert_eq!(result.ir().model.assets.len(), 1);
+    let asset = &result.ir().model.assets[0];
     assert_eq!(asset.name.as_deref(), Some("Steel"));
     assert_eq!(asset.media_type.as_deref(), Some("image/tiff"));
     assert!(matches!(
@@ -2390,7 +2400,7 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
         Some("nx:container:material-texture#0")
     );
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| loss.code != LossKind::shared(LossTaxonomy::MaterialNotTransferred)));
@@ -2401,10 +2411,10 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     let stream = offset_surface_topology_partition_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let surface = result.ir.model.procedural_surfaces[0].surface.clone();
+    let surface = result.ir().model.procedural_surfaces[0].surface.clone();
     let expected = Point2::new(12.0, 7.0);
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
-        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &cadmpeg_ir::index::ModelIndex::new(result.ir()),
         &surface,
         expected.u,
         expected.v,
@@ -2412,12 +2422,12 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     .unwrap();
 
     let actual =
-        crate::decode::offset_surface_parameters(&result.ir, &surface, point, None).unwrap();
+        crate::decode::offset_surface_parameters(result.ir(), &surface, point, None).unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
 
-    let mut translated = result.ir.clone();
+    let mut translated = result.ir().clone();
     for carrier in &mut translated.model.surfaces {
         if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
             origin.x += 1.0e12;
@@ -2497,10 +2507,10 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     let stream = offset_surface_topology_partition_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let surface = result.ir.model.procedural_surfaces[0].surface.clone();
+    let surface = result.ir().model.procedural_surfaces[0].surface.clone();
     let seed = Point2::new(12.0, 7.0);
     let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
-        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &cadmpeg_ir::index::ModelIndex::new(result.ir()),
         &surface,
         seed.u,
         seed.v,
@@ -2509,7 +2519,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     point.x += 0.01;
 
     let actual = crate::decode::offset_surface_parameters_with_tolerance(
-        &result.ir,
+        result.ir(),
         &surface,
         point,
         Some(seed),
@@ -2528,7 +2538,7 @@ fn decode_tracks_fully_extended_offset_common_header() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let procedural = result
-        .ir
+        .ir()
         .model
         .procedural_surfaces
         .first()
@@ -2541,7 +2551,7 @@ fn decode_tracks_fully_extended_offset_common_header() {
     };
     assert_eq!(*distance, 2.5);
     assert_ne!(procedural.surface, *support);
-    assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+    assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
 }
 
 #[test]
@@ -2573,13 +2583,13 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
     let mut cur = Cursor::new(prt_with_partition(&bspline));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert!(result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_))));
     assert!(result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -2823,26 +2833,33 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let carrier = result.ir.model.edges[0]
+    let carrier = result.ir().model.edges[0]
         .curve
         .as_ref()
-        .and_then(|id| result.ir.model.curves.iter().find(|curve| &curve.id == id))
+        .and_then(|id| {
+            result
+                .ir()
+                .model
+                .curves
+                .iter()
+                .find(|curve| &curve.id == id)
+        })
         .expect("lifted carrier");
     assert!(matches!(carrier.geometry, CurveGeometry::Procedural { .. }));
     let ProceduralCurveDefinition::SurfaceCurve {
         family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
         context,
         ..
-    } = &result.ir.model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition
     else {
         panic!("parametric surface curve");
     };
     assert_eq!(
         context.sides[0].surface,
-        Some(result.ir.model.faces[0].surface.clone())
+        Some(result.ir().model.faces[0].surface.clone())
     );
     assert!(context.sides[0].pcurve.is_some());
-    let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -2852,10 +2869,10 @@ fn decode_emits_blend_with_extended_support_reference() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(
-        result.ir.model.faces[0].surface,
-        result.ir.model.procedural_surfaces[0].surface
+        result.ir().model.faces[0].surface,
+        result.ir().model.procedural_surfaces[0].surface
     );
 }
 
@@ -2866,15 +2883,15 @@ fn decode_binds_blend_ball_centre_spine() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let ProceduralSurfaceDefinition::Blend { spine, .. } =
-        &result.ir.model.procedural_surfaces[0].definition
+        &result.ir().model.procedural_surfaces[0].definition
     else {
         panic!("blend definition");
     };
     assert_eq!(
         spine.as_ref(),
-        Some(&result.ir.model.procedural_curves[0].curve)
+        Some(&result.ir().model.procedural_curves[0].curve)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -2883,17 +2900,17 @@ fn decode_resolves_forward_blend_support_reference() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
     let ProceduralSurfaceDefinition::Blend { supports, .. } =
-        &result.ir.model.procedural_surfaces[0].definition
+        &result.ir().model.procedural_surfaces[0].definition
     else {
         panic!("blend definition");
     };
     assert_eq!(
         supports[0].as_ref().map(|support| &support.surface),
-        Some(&result.ir.model.procedural_surfaces[1].surface)
+        Some(&result.ir().model.procedural_surfaces[1].surface)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -2905,7 +2922,12 @@ fn decode_reports_status_framed_deltas_records_and_tombstones() {
     );
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let attributes = &result.ir.source.expect("source metadata").attributes;
+    let attributes = &result
+        .ir()
+        .source
+        .as_ref()
+        .expect("source metadata")
+        .attributes;
 
     assert_eq!(
         attributes.get("deltas.0.full.FACE").map(String::as_str),
@@ -2928,7 +2950,12 @@ fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
     let stream = variable_status_framed_deltas_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let attributes = &result.ir.source.expect("source metadata").attributes;
+    let attributes = &result
+        .ir()
+        .source
+        .as_ref()
+        .expect("source metadata")
+        .attributes;
 
     assert!(!attributes.contains_key("deltas.0.full.FIN"));
     assert_eq!(
@@ -4801,10 +4828,10 @@ fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
 fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.model.points.len(), 1);
-    assert_eq!(result.ir.model.points[0].position.x, 12.5);
-    assert_eq!(result.ir.model.points[0].position.y, -2.0);
-    assert_eq!(result.ir.model.points[0].position.z, 4.0);
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.points[0].position.x, 12.5);
+    assert_eq!(result.ir().model.points[0].position.y, -2.0);
+    assert_eq!(result.ir().model.points[0].position.z, 4.0);
 }
 
 #[test]
@@ -4818,10 +4845,10 @@ fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
     deltas[record + 2..record + 4].copy_from_slice(&11u16.to_be_bytes());
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.model.points.len(), 1);
-    assert_eq!(result.ir.model.points[0].position.x, 12.5);
-    assert_eq!(result.ir.model.points[0].position.y, -2.0);
-    assert_eq!(result.ir.model.points[0].position.z, 4.0);
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.points[0].position.x, 12.5);
+    assert_eq!(result.ir().model.points[0].position.y, -2.0);
+    assert_eq!(result.ir().model.points[0].position.z, 4.0);
 }
 
 #[test]
@@ -4830,13 +4857,13 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
     let deltas = deltas_edge_partition_stream();
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.model.edges.len(), 1);
-    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.3));
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.edges[0].tolerance, Some(0.3));
     assert_eq!(
-        result.ir.model.edges[0].curve.as_ref(),
-        Some(&result.ir.model.curves[0].id)
+        result.ir().model.edges[0].curve.as_ref(),
+        Some(&result.ir().model.curves[0].id)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -4845,11 +4872,11 @@ fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     let deltas = deltas_face_vertex_partition_stream();
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.faces[0].tolerance, Some(0.2));
-    assert_eq!(result.ir.model.vertices.len(), 1);
-    assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.1));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces[0].tolerance, Some(0.2));
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert_eq!(result.ir().model.vertices[0].tolerance, Some(0.1));
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -4865,9 +4892,9 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     );
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 1);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -4883,9 +4910,9 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     );
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.model.shells.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.shells.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -4896,12 +4923,12 @@ fn decode_preserves_partition_fin_topology_over_deltas_history() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.coedges.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 1);
     assert_eq!(
-        result.ir.model.coedges[0].sense,
+        result.ir().model.coedges[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -4912,12 +4939,12 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let CurveGeometry::Line { origin, direction } = result.ir.model.curves[0].geometry else {
+    let CurveGeometry::Line { origin, direction } = result.ir().model.curves[0].geometry else {
         panic!("line");
     };
     assert_eq!(origin, cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0));
     assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -4929,17 +4956,17 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Plane { origin, normal, u_axis }
             if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                 && normal == Vector3::new(0.0, 1.0, 0.0)
                 && u_axis == Vector3::new(1.0, 0.0, 0.0)
     ));
     assert_eq!(
-        result.ir.model.faces[0].surface,
-        result.ir.model.surfaces[0].id
+        result.ir().model.faces[0].surface,
+        result.ir().model.surfaces[0].id
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -4960,15 +4987,15 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let [procedural] = result.ir.model.procedural_surfaces.as_slice() else {
+    let [procedural] = result.ir().model.procedural_surfaces.as_slice() else {
         panic!("one offset surface");
     };
     let ProceduralSurfaceDefinition::Offset { distance, .. } = procedural.definition else {
         panic!("offset surface");
     };
     assert_eq!(distance, 4.5);
-    assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -4983,7 +5010,7 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
         .unwrap();
 
     let ProceduralSurfaceDefinition::Blend { radius, .. } =
-        &result.ir.model.procedural_surfaces[0].definition
+        &result.ir().model.procedural_surfaces[0].definition
     else {
         panic!("blend surface");
     };
@@ -4994,10 +5021,10 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
         }
     );
     assert_eq!(
-        result.ir.model.faces[0].surface,
-        result.ir.model.procedural_surfaces[0].surface
+        result.ir().model.faces[0].surface,
+        result.ir().model.procedural_surfaces[0].surface
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5016,8 +5043,8 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
         )
         .unwrap();
 
-    assert_eq!(result.ir.model.edges[0].param_range, Some([0.3, 0.7]));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.edges[0].param_range, Some([0.3, 0.7]));
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5037,10 +5064,10 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
         .unwrap();
 
     assert_eq!(
-        result.ir.model.edges[0].curve.as_ref(),
-        Some(&result.ir.model.curves[0].id)
+        result.ir().model.edges[0].curve.as_ref(),
+        Some(&result.ir().model.curves[0].id)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5051,7 +5078,7 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Circle { center, axis, ref_direction, radius }
             if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
@@ -5059,7 +5086,7 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
                 && ref_direction == Vector3::new(1.0, 0.0, 0.0)
                 && radius == 25.0
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5070,7 +5097,7 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Ellipse {
             center,
@@ -5084,7 +5111,7 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
             && major_radius == 30.0
             && minor_radius == 12.0
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5095,7 +5122,7 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Cylinder { origin, axis, ref_direction, radius }
             if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
@@ -5103,7 +5130,7 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
                 && ref_direction == Vector3::new(1.0, 0.0, 0.0)
                 && radius == 25.0
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5114,7 +5141,7 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Cone { origin, axis, ref_direction, radius, ratio, half_angle }
             if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
@@ -5124,7 +5151,7 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
                 && ratio == 1.0
                 && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1e-12
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5135,7 +5162,7 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Sphere { center, axis, ref_direction, radius }
             if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
@@ -5143,7 +5170,7 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
                 && ref_direction == Vector3::new(1.0, 0.0, 0.0)
                 && radius == 25.0
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5154,7 +5181,7 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Torus {
             center,
@@ -5168,7 +5195,7 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
             && major_radius == 40.0
             && minor_radius == 15.0
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5224,20 +5251,20 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let carrier = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == result.ir.model.procedural_curves[0].curve)
+        .find(|curve| curve.id == result.ir().model.procedural_curves[0].curve)
         .expect("intersection carrier");
     assert!(matches!(carrier.geometry, CurveGeometry::Nurbs(_)));
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("intersection definition");
     };
     assert!(context.sides[0].pcurve.is_some());
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5247,14 +5274,14 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let carrier = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == result.ir.model.procedural_curves[0].curve)
+        .find(|curve| curve.id == result.ir().model.procedural_curves[0].curve)
         .expect("intersection carrier");
     assert!(matches!(carrier.geometry, CurveGeometry::Nurbs(_)));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5264,9 +5291,9 @@ fn decode_emits_ext11_deltas_intersection_chart() {
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let curve_id = &result.ir.model.procedural_curves[0].curve;
+    let curve_id = &result.ir().model.procedural_curves[0].curve;
     let curve = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -5288,7 +5315,7 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -5304,7 +5331,7 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
     };
     assert_eq!(first, [Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]);
     assert_eq!(second, [Point2::new(0.0, 0.0), Point2::new(0.0, 10.0)]);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5315,17 +5342,17 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surfaces = [
-        result.ir.model.surfaces[0].id.clone(),
-        result.ir.model.surfaces[1].id.clone(),
+        result.ir().model.surfaces[0].id.clone(),
+        result.ir().model.surfaces[1].id.clone(),
     ];
-    result.ir.model.surfaces[1].geometry = SurfaceGeometry::Unknown { record: None };
+    result.ir_mut().model.surfaces[1].geometry = SurfaceGeometry::Unknown { record: None };
     let lanes = [
         Some(vec![[0.0, 0.0], [0.01, 0.0]]),
         Some(vec![[0.0, 0.0], [0.0, 0.01]]),
     ];
 
     let assigned = crate::decode::assign_ext11_support_uv_to_surfaces(
-        &result.ir,
+        result.ir(),
         [&surfaces[0], &surfaces[1]],
         &[
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -5875,12 +5902,12 @@ fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
     assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -5892,13 +5919,13 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
     assert!(context.sides[0].pcurve.is_some());
     assert!(context.sides[1].pcurve.is_some());
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -6003,9 +6030,9 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let procedural_id = result.ir.model.procedural_curves[0].id.clone();
+    let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir.model.procedural_curves[0].definition
+        &mut result.ir_mut().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -6026,15 +6053,15 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         ],
     )];
 
-    crate::decode::complete_ext11_support_uv(&mut result.ir, &pending);
+    crate::decode::complete_ext11_support_uv(result.ir_mut(), &pending);
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
     assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -6044,9 +6071,9 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let procedural_id = result.ir.model.procedural_curves[0].id.clone();
+    let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir.model.procedural_curves[0].definition
+        &mut result.ir_mut().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -6064,15 +6091,15 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         [None, None],
     )];
 
-    crate::decode::complete_support_uv(&mut result.ir, &pending);
+    crate::decode::complete_support_uv(result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
     assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -6085,10 +6112,10 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let spine_id = result.ir.model.procedural_curves[0].id.clone();
-    let spine_curve = result.ir.model.procedural_curves[0].curve.clone();
+    let spine_id = result.ir().model.procedural_curves[0].id.clone();
+    let spine_curve = result.ir().model.procedural_curves[0].curve.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -6099,7 +6126,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     let radius = 2.0;
     let offset_surfaces = [0usize, 1usize].map(|side| {
         let support = result
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
@@ -6114,7 +6141,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             panic!("plane support");
         };
         let id = SurfaceId(format!("synthetic:offset-support-{side}"));
-        result.ir.model.surfaces.push(Surface {
+        result.ir_mut().model.surfaces.push(Surface {
             id: id.clone(),
             geometry: SurfaceGeometry::Plane {
                 origin: cadmpeg_ir::math::Point3::new(
@@ -6131,36 +6158,40 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     });
     let blend = SurfaceId("synthetic:dependent-blend".into());
     let blend_construction = ProceduralSurfaceId("synthetic:dependent-blend-definition".into());
-    result.ir.model.surfaces.push(Surface {
+    result.ir_mut().model.surfaces.push(Surface {
         id: blend.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: blend_construction.clone(),
         },
         source_object: None,
     });
-    result.ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: blend_construction,
-        surface: blend.clone(),
-        definition: ProceduralSurfaceDefinition::Blend {
-            supports: offset_surfaces.map(|surface| {
-                Some(BlendSupport {
-                    surface,
-                    reversed: false,
-                })
-            }),
-            spine: Some(spine_curve.clone()),
-            radius: BlendRadiusLaw::Constant {
-                signed_radius: radius,
+    result
+        .ir_mut()
+        .model
+        .procedural_surfaces
+        .push(ProceduralSurface {
+            id: blend_construction,
+            surface: blend.clone(),
+            definition: ProceduralSurfaceDefinition::Blend {
+                supports: offset_surfaces.map(|surface| {
+                    Some(BlendSupport {
+                        surface,
+                        reversed: false,
+                    })
+                }),
+                spine: Some(spine_curve.clone()),
+                radius: BlendRadiusLaw::Constant {
+                    signed_radius: radius,
+                },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
             },
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
     let parameters = vec![0.0, 0.01];
     let spine_carrier = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -6174,12 +6205,12 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     let points = parameters
         .iter()
         .map(|parameter| {
-            crate::decode::blend_surface_point(&result.ir, &blend, *parameter, 0.5).unwrap()
+            crate::decode::blend_surface_point(result.ir(), &blend, *parameter, 0.5).unwrap()
         })
         .collect::<Vec<_>>();
 
     let dependent_id = ProceduralCurveId("synthetic:dependent-intersection".into());
-    let mut dependent = result.ir.model.procedural_curves[0].clone();
+    let mut dependent = result.ir().model.procedural_curves[0].clone();
     dependent.id = dependent_id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } = &mut dependent.definition else {
         unreachable!()
@@ -6188,9 +6219,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     context.sides[0].pcurve = None;
     context.sides[1].surface = None;
     context.sides[1].pcurve = None;
-    result.ir.model.procedural_curves.insert(0, dependent);
+    result.ir_mut().model.procedural_curves.insert(0, dependent);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir.model.procedural_curves[1].definition
+        &mut result.ir_mut().model.procedural_curves[1].definition
     else {
         unreachable!()
     };
@@ -6211,10 +6242,10 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         ),
     ];
 
-    crate::decode::complete_support_uv(&mut result.ir, &pending);
+    crate::decode::complete_support_uv(result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         unreachable!()
     };
@@ -6228,9 +6259,9 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let procedural_id = result.ir.model.procedural_curves[0].id.clone();
+    let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir.model.procedural_curves[0].definition
+        &mut result.ir_mut().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -6253,10 +6284,10 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         [None, None],
     )];
 
-    crate::decode::complete_support_uv(&mut result.ir, &pending);
+    crate::decode::complete_support_uv(result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -6268,7 +6299,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         point.u.to_bits() != crate::decode::MISSING_TOLERANCE.to_bits()
             && point.v.to_bits() != crate::decode::MISSING_TOLERANCE.to_bits()
     }));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -6278,9 +6309,9 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let procedural_id = result.ir.model.procedural_curves[0].id.clone();
+    let procedural_id = result.ir().model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir.model.procedural_curves[0].definition
+        &mut result.ir_mut().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -6302,10 +6333,10 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
         [None, None],
     )];
 
-    crate::decode::invalidate_inconsistent_support_uv(&mut result.ir, &pending);
-    crate::decode::complete_support_uv(&mut result.ir, &pending);
+    crate::decode::invalidate_inconsistent_support_uv(result.ir_mut(), &pending);
+    crate::decode::complete_support_uv(result.ir_mut(), &pending);
 
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7703,7 +7734,7 @@ fn decode_emits_both_intersection_support_pcurves() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -7711,7 +7742,7 @@ fn decode_emits_both_intersection_support_pcurves() {
     assert!(context.sides[0].pcurve.is_some());
     assert!(context.sides[1].surface.is_some());
     assert!(context.sides[1].pcurve.is_some());
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7722,7 +7753,7 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir.model.procedural_curves[0].definition
+        &result.ir().model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
     };
@@ -7734,7 +7765,7 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(control_points.last(), Some(&Point2::new(0.0, 10.0)));
     assert!(control_points.iter().all(|point| point.u == 0.0));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7766,7 +7797,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let procedural = &result.ir.model.procedural_curves[0];
+    let procedural = &result.ir().model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         supports,
         parameterization,
@@ -7778,7 +7809,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
     assert_ne!(supports[0], supports[1]);
     assert!(parameterization.is_none());
     let curve = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -7786,13 +7817,13 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .expect("intersection carrier");
     assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
     assert!(result
-        .ir
+        .ir()
         .model
         .edges
         .iter()
         .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
         .all(|edge| edge.param_range.is_none()));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7815,7 +7846,7 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let procedural = &result.ir.model.procedural_curves[0];
+    let procedural = &result.ir().model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
@@ -7824,14 +7855,14 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
         panic!("unresolved tolerant intersection");
     };
     let edge = result
-        .ir
+        .ir()
         .model
         .edges
         .iter()
         .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
         .expect("carrying edge");
     assert_eq!(edge.param_range, None);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7856,7 +7887,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let procedural = &result.ir.model.procedural_curves[0];
+    let procedural = &result.ir().model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
@@ -7864,7 +7895,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     else {
         panic!("unresolved tolerant intersection");
     };
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 
     let second_point = stream
         .windows(4)
@@ -7874,7 +7905,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let cross_branch = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert!(matches!(
-        cross_branch.ir.model.procedural_curves[0].definition,
+        cross_branch.ir().model.procedural_curves[0].definition,
         cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
@@ -7908,7 +7939,7 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let procedural = &result.ir.model.procedural_curves[0];
+    let procedural = &result.ir().model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
@@ -7916,7 +7947,7 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     else {
         panic!("unresolved tolerant intersection");
     };
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -7960,7 +7991,7 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let procedural = &result.ir.model.procedural_curves[0];
+        let procedural = &result.ir().model.procedural_curves[0];
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
@@ -7969,14 +8000,14 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             panic!("unresolved {family} meridian");
         };
         let edge = result
-            .ir
+            .ir()
             .model
             .edges
             .iter()
             .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
             .expect("carrying edge");
         assert_eq!(edge.param_range, None);
-        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
     }
 }
 
@@ -7987,16 +8018,16 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(matches!(
-        result.ir.model.procedural_curves[0].definition,
+        result.ir().model.procedural_curves[0].definition,
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
     ));
     assert!(matches!(
         result
-            .ir
+            .ir()
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == result.ir.model.procedural_curves[0].curve)
+            .find(|curve| curve.id == result.ir().model.procedural_curves[0].curve)
             .expect("intersection curve")
             .geometry,
         CurveGeometry::Nurbs(_)
@@ -8009,10 +8040,10 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.edges.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8021,17 +8052,17 @@ fn decode_maps_parasolid_tolerance_sentinel_to_none() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.vertices[0].tolerance, None);
-    assert_eq!(result.ir.model.edges[0].tolerance, None);
-    assert_eq!(result.ir.model.faces[0].tolerance, None);
+    assert_eq!(result.ir().model.vertices[0].tolerance, None);
+    assert_eq!(result.ir().model.edges[0].tolerance, None);
+    assert_eq!(result.ir().model.faces[0].tolerance, None);
 }
 
 #[test]
 fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     let mut cur = Cursor::new(topology_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let ir = &result.ir;
-    let annotations = &result.source_fidelity.annotations;
+    let ir = result.ir();
+    let annotations = &result.source_fidelity().annotations;
 
     macro_rules! assert_arena_annotations {
         ($arena:expr) => {
@@ -8085,7 +8116,7 @@ fn decode_transfers_bspline_surface_and_curve() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -8098,7 +8129,7 @@ fn decode_transfers_bspline_surface_and_curve() {
     assert_eq!(surface.control_points.len(), 4);
     assert!((surface.control_points[1].y - 20.0).abs() < 1e-9);
     let curve = result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
@@ -8279,12 +8310,12 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         SurfaceGeometry::Nurbs(nurbs)
             if nurbs.control_points.iter().any(|point| point.y == 30.0)
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8295,12 +8326,12 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Nurbs(nurbs)
             if nurbs.control_points.iter().any(|point| point.y == 10.0)
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8309,21 +8340,21 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
         &partnered_trimmed_topology_partition_stream(),
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let edge = result.ir.model.edges.first().expect("edge");
+    let edge = result.ir().model.edges.first().expect("edge");
     assert_ne!(edge.start, edge.end);
     assert_eq!(edge.param_range, Some([0.25, 0.75]));
-    assert_eq!(result.ir.model.coedges.len(), 2);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.coedges.len(), 2);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
 fn decode_resolves_forward_trimmed_curve_chain() {
     let mut cur = Cursor::new(prt_with_partition(&forward_trimmed_curve_chain_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let edge = result.ir.model.edges.first().expect("edge");
-    assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
+    let edge = result.ir().model.edges.first().expect("edge");
+    assert_eq!(edge.curve.as_ref(), Some(&result.ir().model.curves[0].id));
     assert_eq!(edge.param_range, Some([0.25, 0.75]));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8332,15 +8363,22 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
         &mismatched_trimmed_topology_partition_stream(),
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let edge = result.ir.model.edges.first().expect("edge");
+    let edge = result.ir().model.edges.first().expect("edge");
     let carrier = edge
         .curve
         .as_ref()
-        .and_then(|id| result.ir.model.curves.iter().find(|curve| curve.id == *id))
+        .and_then(|id| {
+            result
+                .ir()
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *id)
+        })
         .expect("edge carrier");
     assert!(matches!(carrier.geometry, CurveGeometry::Line { .. }));
     assert_eq!(edge.param_range, None);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8354,8 +8392,8 @@ fn decode_omits_overflowing_line_trim_range() {
 
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.model.edges[0].param_range, None);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.edges[0].param_range, None);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8364,10 +8402,10 @@ fn decode_resolves_extended_xmt_reference_inside_edge_record() {
         &topology_with_extended_edge_curve_reference(),
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(
-        result.ir.model.edges[0].curve.as_ref(),
-        Some(&result.ir.model.curves[0].id)
+        result.ir().model.edges[0].curve.as_ref(),
+        Some(&result.ir().model.curves[0].id)
     );
 }
 
@@ -8378,13 +8416,13 @@ fn decode_tracks_extended_face_reference_shift() {
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.faces[0].tolerance, Some(0.2));
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.faces[0].tolerance, Some(0.2));
     assert_eq!(
-        result.ir.model.faces[0].surface,
-        result.ir.model.surfaces[0].id
+        result.ir().model.faces[0].surface,
+        result.ir().model.surfaces[0].id
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8394,11 +8432,11 @@ fn decode_tracks_extended_edge_reference_shift() {
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.edges.len(), 1);
-    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.3));
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.edges[0].tolerance, Some(0.3));
     assert_eq!(
-        result.ir.model.edges[0].curve.as_ref(),
-        Some(&result.ir.model.curves[0].id)
+        result.ir().model.edges[0].curve.as_ref(),
+        Some(&result.ir().model.curves[0].id)
     );
 }
 
@@ -8409,16 +8447,16 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
     ));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.shells.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.coedges.len(), 1);
-    assert_eq!(result.ir.model.edges.len(), 1);
-    assert_eq!(result.ir.model.vertices.len(), 1);
-    assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.1));
-    assert_eq!(result.ir.model.points[0].position.x, 10.0);
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.shells.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert_eq!(result.ir().model.vertices[0].tolerance, Some(0.1));
+    assert_eq!(result.ir().model.points[0].position.x, 10.0);
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8441,14 +8479,14 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 1);
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Plane { .. }
     ));
     assert!(matches!(
-        result.ir.model.curves[0].geometry,
+        result.ir().model.curves[0].geometry,
         CurveGeometry::Line { .. }
     ));
 }
@@ -8461,14 +8499,14 @@ fn decode_tracks_geometry_envelope_escape_shift() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
+        result.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Plane { .. }
     ));
     assert!(matches!(
-        result.ir.model.curves[0].geometry,
+        result.ir().model.curves[0].geometry,
         CurveGeometry::Line { .. }
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8685,9 +8723,9 @@ fn analytic_record_ownership_is_shared_across_carrier_families() {
 fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert!(!result.report.geometry_transferred);
+    assert!(!result.report().geometry_transferred);
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|l| l.message.contains("assembly")));
@@ -8867,11 +8905,11 @@ fn decode_retains_every_rmfastload_active_body() {
     let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 2);
-    assert_eq!(result.ir.model.faces.len(), 100);
+    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert_eq!(result.ir().model.faces.len(), 100);
     assert_eq!(
         result
-            .ir
+            .ir()
             .source
             .as_ref()
             .and_then(|source| source.attributes.get("rmfastload_active_body_count"))
@@ -8879,11 +8917,11 @@ fn decode_retains_every_rmfastload_active_body() {
         Some("2")
     );
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8893,10 +8931,10 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
     let mut cur = Cursor::new(file);
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir().model.bodies.len(), 2);
     assert_eq!(
         result
-            .ir
+            .ir()
             .source
             .as_ref()
             .and_then(|source| source.attributes.get("active_body_selector"))
@@ -8905,7 +8943,7 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
     );
     assert_eq!(
         result
-            .ir
+            .ir()
             .source
             .as_ref()
             .and_then(|source| source.attributes.get("feature_terminal_body_count"))
@@ -8913,11 +8951,11 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
         Some("2")
     );
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8925,15 +8963,15 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
     let mut cur = Cursor::new(prt_with_missing_active_body_record());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert!(result.ir.model.bodies[0].id.0.starts_with("nx:s0:"));
-    assert_eq!(result.ir.model.faces.len(), 50);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result.ir().model.bodies[0].id.0.starts_with("nx:s0:"));
+    assert_eq!(result.ir().model.faces.len(), 50);
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -8941,14 +8979,14 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
     let mut cur = Cursor::new(prt_with_weak_rmfastload_overlap());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir().model.bodies.len(), 2);
     assert!(result
-        .ir
+        .ir()
         .source
         .as_ref()
         .is_none_or(|source| !source.attributes.contains_key("active_body_selector")));
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("sub-body partition")));
@@ -8959,10 +8997,10 @@ fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
     let opts = options_in(DecodeMode::Salvage, true);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
-    assert!(!result.report.geometry_transferred);
-    assert!(result.report.container_only);
-    assert_eq!(result.ir.native_unknowns("nx").unwrap().len(), 1);
-    assert!(result.ir.model.points.is_empty());
+    assert!(!result.report().geometry_transferred);
+    assert!(result.report().container_only);
+    assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
+    assert!(result.ir().model.points.is_empty());
 }
 
 #[test]
@@ -9036,11 +9074,11 @@ fn decode_retains_unsupported_named_stream_payloads() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let unknowns = result.ir.native_unknowns("nx").unwrap();
+    let unknowns = result.ir().native_unknowns("nx").unwrap();
     assert_eq!(unknowns.len(), 4);
     assert_eq!(
         result
-            .source_fidelity
+            .source_fidelity()
             .retained_records
             .iter()
             .map(|record| record.byte_len)
@@ -9062,12 +9100,12 @@ fn decode_retains_unsupported_named_stream_payloads() {
         "/Root/vendor/private",
     ] {
         assert!(result
-            .report
+            .report()
             .losses
             .iter()
             .any(|loss| loss.message.contains(name)));
     }
-    assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]
@@ -10476,9 +10514,9 @@ mod golden {
         let decode =
             match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
                 Ok(result) => serde_json::json!({
-                    "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
-                    "report": serde_json::to_value(&result.report).expect("serialize report"),
-                    "source_fidelity": serde_json::to_value(&result.source_fidelity)
+                    "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                    "report": serde_json::to_value(result.report()).expect("serialize report"),
+                    "source_fidelity": serde_json::to_value(result.source_fidelity())
                         .expect("serialize source_fidelity"),
                 }),
                 Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
@@ -10591,7 +10629,7 @@ mod golden {
             else {
                 continue;
             };
-            if let Some(namespace) = result.ir.native.namespace("nx") {
+            if let Some(namespace) = result.ir().native.namespace("nx") {
                 for (arena, records) in &namespace.arenas {
                     if !records.is_empty() {
                         covered.insert(arena.clone());

@@ -226,7 +226,7 @@ impl FcstdDocumentBuilder {
         let bytes = self.archive_bytes()?;
         FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .map(|result| result.ir)
+            .map(|result| result.into_parts().0)
     }
 
     fn archive_bytes(self) -> Result<Vec<u8>, CodecError> {

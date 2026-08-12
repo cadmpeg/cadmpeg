@@ -69,8 +69,8 @@ where
     let plan = Encoder::plan(
         codec,
         EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         },
     )
     .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
@@ -140,7 +140,7 @@ pub fn semantic_roundtrip<C>(
     )
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
     let removed = decoded
-        .ir
+        .ir_mut()
         .source
         .as_mut()
         .and_then(|source| source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
@@ -153,8 +153,8 @@ pub fn semantic_roundtrip<C>(
     let written = match Encoder::plan(
         codec,
         EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         },
     ) {
         Ok(plan) => {
@@ -176,7 +176,7 @@ pub fn semantic_roundtrip<C>(
                  describe this document, yet it replayed them"
             );
             SemanticOutcome::Written {
-                ir: Box::new(decoded.ir),
+                ir: Box::new(decoded.into_parts().0),
                 report: Box::new(report),
                 bytes,
             }
@@ -244,18 +244,18 @@ where
         &DecodeOptions::default(),
     )
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
-    let baseline = decoded.ir.clone();
-    if !mutate(&mut decoded.ir) {
+    let baseline = decoded.ir().clone();
+    if !mutate(decoded.ir_mut()) {
         return false;
     }
     assert!(
-        decoded.ir != baseline,
+        decoded.ir() != &baseline,
         "{label}: the mutation reported an edit but left the document equal to the decode, so the encoder \
          would still be free to replay its retained bytes and this test would describe nothing"
     );
     assert!(
         decoded
-            .ir
+            .ir()
             .source
             .as_ref()
             .is_some_and(|source| source.attributes.contains_key(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)),
@@ -266,8 +266,8 @@ where
     let written = match Encoder::plan(
         codec,
         EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         },
     ) {
         Ok(plan) => {
@@ -289,7 +289,7 @@ where
             );
             MutationOutcome::Written {
                 baseline: Box::new(baseline),
-                edited: Box::new(decoded.ir),
+                edited: Box::new(decoded.into_parts().0),
                 report: Box::new(report),
                 bytes,
             }

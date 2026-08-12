@@ -12,8 +12,8 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    assert_valid_document(&result.ir);
-    let findings = crate::validate_native(&result.ir);
+    assert_valid_document(result.ir());
+    let findings = crate::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -103,7 +103,7 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let round_trip = decode(bytes);
-    let namespace = round_trip.ir.native.namespace("fcstd").unwrap();
+    let namespace = round_trip.ir().native.namespace("fcstd").unwrap();
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .unwrap();
@@ -175,10 +175,10 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
             },
         )
         .expect("container-only FCStd decode");
-    assert!(result.report.container_only);
-    assert!(result.ir.model.features.is_empty());
+    assert!(result.report().container_only);
+    assert!(result.ir().model.features.is_empty());
     assert!(result
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .unwrap()

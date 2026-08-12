@@ -13,10 +13,10 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
-    assert_every_entity_has_v1_annotation(&result.ir, &result.source_fidelity.annotations);
-    assert!(result.ir.native.namespace("catia").is_some());
+    assert_every_entity_has_v1_annotation(result.ir(), &result.source_fidelity().annotations);
+    assert!(result.ir().native.namespace("catia").is_some());
 }
 
 #[test]
@@ -42,11 +42,11 @@ fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
         .any(|note| note.contains("standard nested")));
 
     let result = decode(bytes);
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.points.len(), 3);
-    assert_eq!(result.ir.model.surfaces.len(), 2);
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().model.surfaces.len(), 2);
     assert!(result
-        .source_fidelity
+        .source_fidelity()
         .retained_records
         .iter()
         .any(|record| record.data.is_some()));
@@ -56,24 +56,24 @@ fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
 #[test]
 fn standard_nested_pipeline_builds_a_valid_radial_topology_graph() {
     let result = decode(tetrahedron_topology_catpart());
-    assert_eq!(result.ir.model.bodies.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 4);
-    assert_eq!(result.ir.model.loops.len(), 4);
-    assert_eq!(result.ir.model.edges.len(), 6);
-    assert_eq!(result.ir.model.coedges.len(), 12);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 4);
+    assert_eq!(result.ir().model.loops.len(), 4);
+    assert_eq!(result.ir().model.edges.len(), 6);
+    assert_eq!(result.ir().model.coedges.len(), 12);
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         1
     );
-    assert!(!result.report.losses.iter().any(|loss| {
+    assert!(!result.report().losses.iter().any(|loss| {
         loss.severity == Severity::Blocking
             && matches!(
                 loss.code.category(),
@@ -92,10 +92,10 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
     assert_eq!(scan.census.edge_delimiters, 0);
 
     let result = decode(bytes);
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.surfaces.len(), 2);
-    assert!(result.ir.model.faces.is_empty());
-    assert!(result.report.losses.iter().any(|loss| {
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.surfaces.len(), 2);
+    assert!(result.ir().model.faces.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Topology && loss.severity == Severity::Blocking
     }));
     assert_valid(&result);
@@ -109,20 +109,20 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     assert_eq!(scan.census.edge_delimiters, 0);
 
     let result = decode(bytes);
-    assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.points.len(), 4);
-    assert_eq!(result.ir.model.surfaces.len(), 1);
-    assert_eq!(result.ir.model.faces.len(), 1);
-    assert_eq!(result.ir.model.loops.len(), 1);
-    assert_eq!(result.ir.model.edges.len(), 4);
-    assert_eq!(result.ir.model.coedges.len(), 4);
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.points.len(), 4);
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 4);
+    assert_eq!(result.ir().model.coedges.len(), 4);
     assert_eq!(
         result
-            .report
+            .report()
             .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         1
     );
-    assert!(!result.report.losses.iter().any(|loss| {
+    assert!(!result.report().losses.iter().any(|loss| {
         loss.severity == Severity::Blocking
             && matches!(
                 loss.code.category(),
@@ -141,21 +141,21 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     );
 
     let result = decode(bytes);
-    assert!(result.report.geometry_transferred);
+    assert!(result.report().geometry_transferred);
     assert!(result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
         .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }) }));
     assert!(result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
         .any(|curve| { matches!(curve.geometry, CurveGeometry::Procedural { .. }) }));
     assert_eq!(
-        result.report.coverage_count(
+        result.report().coverage_count(
             crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
         ),
         1
@@ -171,14 +171,14 @@ fn e5_pipeline_uses_the_coherent_record_stream_over_the_nested_spine() {
     assert!(crate::container::e5_record_stream(&scan.data).is_some());
 
     let result = decode(bytes);
-    assert!(result.report.geometry_transferred);
+    assert!(result.report().geometry_transferred);
     assert!(result
-        .ir
+        .ir()
         .model
         .curves
         .iter()
         .any(|curve| { matches!(curve.geometry, CurveGeometry::Circle { .. }) }));
-    assert!(result.report.notes.iter().any(|note| note.contains("E5")));
+    assert!(result.report().notes.iter().any(|note| note.contains("E5")));
     assert_valid(&result);
 }
 
@@ -189,15 +189,15 @@ fn float_packed_pipeline_recovers_the_external_a8_control_grid() {
     assert_eq!(scan.variant, Variant::FloatPackedInnerNoFbb);
 
     let result = decode(bytes);
-    assert!(result.report.geometry_transferred);
+    assert!(result.report().geometry_transferred);
     assert!(result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
         .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Nurbs { .. }) }));
     assert_eq!(
-        result.ir.model.surfaces[0]
+        result.ir().model.surfaces[0]
             .source_object
             .as_ref()
             .map(|source| source.object_id.as_str()),
@@ -225,13 +225,13 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
                 },
             )
             .expect("container-only CATPart decode");
-        assert!(result.report.container_only);
-        assert!(!result.report.geometry_transferred);
-        assert!(result.ir.model.points.is_empty());
-        assert!(result.ir.model.surfaces.is_empty());
-        assert!(result.ir.model.faces.is_empty());
-        assert!(result.ir.source.is_some());
-        assert!(result.ir.native.namespace("catia").is_some());
+        assert!(result.report().container_only);
+        assert!(!result.report().geometry_transferred);
+        assert!(result.ir().model.points.is_empty());
+        assert!(result.ir().model.surfaces.is_empty());
+        assert!(result.ir().model.faces.is_empty());
+        assert!(result.ir().source.is_some());
+        assert!(result.ir().native.namespace("catia").is_some());
         assert_valid(&result);
     }
 }

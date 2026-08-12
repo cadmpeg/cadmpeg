@@ -157,7 +157,7 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
 }
 
 fn sphere_radius(result: &DecodeResult) -> f64 {
-    let surface = &result.ir.model.surfaces[0];
+    let surface = &result.ir().model.surfaces[0];
     let SurfaceGeometry::Sphere { radius, .. } = &surface.geometry else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
@@ -188,11 +188,11 @@ fn both_encodings_decode_the_same_solid() {
     let asm_binary = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Asm));
     let acis_binary = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Acis));
     for result in [&text, &asm_binary, &acis_binary] {
-        assert_eq!(result.ir.model.bodies.len(), 1);
-        assert_eq!(result.ir.model.shells.len(), 1);
-        assert_eq!(result.ir.model.faces.len(), 1);
-        assert_eq!(result.ir.model.surfaces.len(), 1);
-        assert!(result.report.geometry_transferred);
+        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().model.shells.len(), 1);
+        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.ir().model.surfaces.len(), 1);
+        assert!(result.report().geometry_transferred);
     }
     // 25 stream units at scale 1 (mm) and 2.5 binary centimetres are both
     // 25 mm in the model.
@@ -210,7 +210,7 @@ fn text_scale_selects_the_length_unit() {
 #[test]
 fn ids_use_the_sat_format_scheme() {
     let result = decode_bytes(&text_sphere_stream(1.0));
-    let body_id = &result.ir.model.bodies[0].id;
+    let body_id = &result.ir().model.bodies[0].id;
     assert!(
         body_id.0.starts_with("sat:brep:entity#"),
         "unexpected id scheme: {body_id:?}"
@@ -220,7 +220,7 @@ fn ids_use_the_sat_format_scheme() {
 #[test]
 fn native_arenas_live_under_the_sat_namespace() {
     let result = decode_bytes(&text_sphere_stream(1.0));
-    let namespace = result.ir.native.namespace(FORMAT).expect("sat namespace");
+    let namespace = result.ir().native.namespace(FORMAT).expect("sat namespace");
     assert!(namespace.arenas.contains_key("face_sidedness"));
     assert_eq!(namespace.arenas["face_sidedness"].len(), 1);
 }
@@ -231,16 +231,16 @@ fn an_unadmitted_acis_binary_band_is_identified_and_reported() {
     bytes.extend_from_slice(&100u32.to_le_bytes());
     bytes.extend_from_slice(&[0u8; 28]);
     let result = decode_bytes(&bytes);
-    assert!(!result.report.geometry_transferred);
+    assert!(!result.report().geometry_transferred);
     assert!(result
-        .report
+        .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("Spatial ACIS binary stream")));
-    let source = result.ir.source.as_ref().expect("source metadata");
+    let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["kernel_family"], "acis");
     assert_eq!(source.attributes["acis_save_format_version"], "100");
-    assert!(result.ir.model.bodies.is_empty());
+    assert!(result.ir().model.bodies.is_empty());
 }
 
 #[test]
@@ -252,9 +252,9 @@ fn a_geometry_less_text_stream_reports_uncovered_coverage() {
     text.push_str("mystery_record $-1 -1 42 #\n");
     text.push_str("End-of-ACIS-data \n");
     let result = decode_bytes(text.as_bytes());
-    assert!(!result.report.geometry_transferred);
+    assert!(!result.report().geometry_transferred);
     let loss = result
-        .report
+        .report()
         .losses
         .iter()
         .find(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred))

@@ -1170,7 +1170,7 @@ mod tests {
         )
         .expect("synthesized unknown record conversion")
         .0;
-        assert!(result.report.losses.iter().any(|loss| {
+        assert!(result.report().losses.iter().any(|loss| {
             loss.code == LossKind::shared(LossTaxonomy::DecodeDiagnostic)
                 && loss.severity == Severity::Error
                 && loss.message.contains("1 byte(s) unclassified")

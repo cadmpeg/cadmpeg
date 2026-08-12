@@ -24,10 +24,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.FCStd")?;
     let result = FcstdCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    for loss in &result.report.losses {
+    for loss in &result.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
     }
-    println!("{} bodies", result.ir.model.bodies.len());
+    println!("{} bodies", result.ir().model.bodies.len());
     Ok(())
 }
 ```
@@ -51,12 +51,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.FCStd")?;
     let result = FcstdCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    // Edit supported fields on the FCStd native document graph in result.ir.
+    // Edit supported fields on the FCStd native document graph in result.ir().
 
     let mut output = File::create("part-edited.FCStd")?;
     FcstdCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &result.ir,
+            ir: &result.ir(),
             fidelity: None,
         })?
         .write_to(&mut output)?;

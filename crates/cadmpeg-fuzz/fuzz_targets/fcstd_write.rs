@@ -15,7 +15,7 @@ fuzz_target!(|data: &[u8]| {
     else {
         return;
     };
-    let mut ir = decoded.ir;
+    let (mut ir, _, _) = decoded.into_parts();
     if let Some(discriminator) = data.first() {
         let _ = FcstdCodec.set_property_value_attribute(
             &mut ir,

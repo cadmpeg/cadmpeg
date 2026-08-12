@@ -66,7 +66,7 @@ pub fn decode(
         .iter()
         .filter(|entry| is_f3d_member(&entry.name))
         .count();
-    root.report.notes.push(format!(
+    root.report_mut().notes.push(format!(
         "f3z archive: {member_count} document member(s); root {}",
         manifest.root
     ));
@@ -74,35 +74,32 @@ pub fn decode(
         return Ok(root);
     }
 
-    let table = xref_table_from_ir(&root.ir)?;
+    let table = xref_table_from_ir(root.ir())?;
     let mut stack = vec![manifest.root.clone()];
     let merged = merge_references(ctx, &mut root, scan, &table, &mut stack)?;
     if merged > 0 {
-        root.source_fidelity
+        root.source_fidelity_mut()
             .retained_records
             .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
-        root.report.notes.push(format!(
+        root.report_mut().notes.push(format!(
             "{merged} merged component(s) retain occurrence-scoped model entities and native \
              records; member source streams remain archive-local"
         ));
     }
-    root.report.notes.push(format!(
+    root.report_mut().notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
-    make_sibling_ordinals_unique(&mut root.ir.model.occurrences);
-    root.ir.finalize();
-    let hash = crate::decode::document_local_sha256(&root.ir);
-    if let Some(source) = &mut root.ir.source {
+    make_sibling_ordinals_unique(&mut root.ir_mut().model.occurrences);
+    root.ir_mut().finalize();
+    let hash = crate::decode::document_local_sha256(root.ir());
+    if let Some(source) = &mut root.ir_mut().source {
         source.attributes.insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
     }
-    Ok(DecodeResult::new(
-        root.ir,
-        root.report,
-        root.source_fidelity,
-    ))
+    let (ir, report, fidelity) = root.into_parts();
+    Ok(DecodeResult::new(ir, report, fidelity))
 }
 
 fn make_sibling_ordinals_unique(occurrences: &mut [cadmpeg_ir::products::Occurrence]) {
@@ -168,7 +165,7 @@ fn merge_references(
             |design| design.display_name.clone(),
         );
         if stack.contains(&reference.relative_path) {
-            parent.report.losses.push(LossNote {
+            parent.report_mut().losses.push(LossNote {
                 code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
                 severity: Severity::Error,
                 message: format!(
@@ -180,7 +177,7 @@ fn merge_references(
             continue;
         }
         let Some(member_view) = scan.entry_view(&reference.relative_path) else {
-            parent.report.losses.push(LossNote {
+            parent.report_mut().losses.push(LossNote {
                 code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
                 severity: Severity::Error,
                 message: format!(
@@ -195,7 +192,7 @@ fn merge_references(
         let mut component = match crate::decode::decode(ctx, member_view) {
             Ok(component) => component,
             Err(error) => {
-                parent.report.losses.push(LossNote {
+                parent.report_mut().losses.push(LossNote {
                     code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
                     severity: Severity::Error,
                     message: format!(
@@ -208,8 +205,8 @@ fn merge_references(
                 continue;
             }
         };
-        if component.ir.units != parent.ir.units {
-            parent.report.losses.push(LossNote {
+        if component.ir().units != parent.ir().units {
+            parent.report_mut().losses.push(LossNote {
                 code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
                 severity: Severity::Error,
                 message: format!(
@@ -220,7 +217,7 @@ fn merge_references(
             });
             continue;
         }
-        let child_table = xref_table_from_ir(&component.ir)?;
+        let child_table = xref_table_from_ir(component.ir())?;
         stack.push(reference.relative_path.clone());
         let descendants = merge_references(ctx, &mut component, scan, &child_table, stack)?;
         stack.pop();
@@ -228,24 +225,28 @@ fn merge_references(
         if let Some(transform) = reference.transform {
             apply_occurrence_transform(&mut component_ir.model, transform);
         }
-        append_feature_history(&parent.ir.model, &mut component_ir.model)?;
+        append_feature_history(&parent.ir().model, &mut component_ir.model)?;
         let mut scope = OccurrenceScope {
             occurrence: &occurrence,
         };
         parent
-            .ir
+            .ir_mut()
             .model
             .extend_rewritten(component_ir.model, &mut scope)?;
-        extend_native(&mut parent.ir.native, component_ir.native, &occurrence);
+        extend_native(
+            &mut parent.ir_mut().native,
+            component_ir.native,
+            &occurrence,
+        );
         merge_annotations(
-            &mut parent.source_fidelity.annotations,
+            &mut parent.source_fidelity_mut().annotations,
             component_fidelity.annotations,
             &occurrence,
         )?;
         merged += descendants + 1;
-        parent.report.geometry_transferred |= component_report.geometry_transferred;
+        parent.report_mut().geometry_transferred |= component_report.geometry_transferred;
         for loss in component_report.losses {
-            parent.report.losses.push(LossNote {
+            parent.report_mut().losses.push(LossNote {
                 message: format!("xref {label}: {}", loss.message),
                 ..loss
             });
@@ -255,7 +256,7 @@ fn merge_references(
         } else {
             "identity placement"
         };
-        parent.report.notes.push(format!(
+        parent.report_mut().notes.push(format!(
             "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested \
              occurrence(s))",
             reference.relative_path
