@@ -133,7 +133,7 @@ item = "cadmpeg_core::compare"
 reason = "module emptied by move to cadmpeg_ir::compare"
 
 [[change]]
-commit = "PENDING"
+commit = "0aab379c9def7fe4a947c1684ca86ba88360170f"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "DecodeReport::record_coverage(key) -> record_coverage(key, count)"
