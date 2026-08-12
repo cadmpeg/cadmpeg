@@ -944,6 +944,15 @@ geometry. A `CadRef` whose `CadIdentifier` string is empty contributes no
 topology identity or nominal geometry. A rendered literal cannot bind without
 applied nominal geometry.
 
+The non-empty `CadIdentifier` form is `<lane>:<suffix>`. The lane prefix is
+local to the SWIFT schema lane. The decimal suffix is a native topology
+identity. A suffix binds to a neutral body, face, edge, or vertex only when
+exactly one emitted primary topology object has that numeric identity in the
+active B-rep. Face and surface carrier identities share the face binding.
+Supporting geometry and boundary identities do not bind directly. A missing,
+non-decimal, duplicate, or non-primary identity retains the source
+`ShapeAspect` target.
+
 A `GdtDiameter` on a multi-diameter counterbore pattern pairs with a
 `GdtCounterBore` annotation whose non-cylinder feature-reference set equals the
 diameter annotation's feature-reference set. The counterbore annotation's

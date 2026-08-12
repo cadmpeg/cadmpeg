@@ -11,6 +11,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
     PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 
 use crate::container::ContainerScan;
 
@@ -50,6 +51,86 @@ struct Entity {
     related: Vec<RelatedObject>,
 }
 
+/// Exact primary topology identities addressable by a SWIFT `CadIdentifier`.
+///
+/// The numeric suffix is a lane-local native identity. Supporting geometry and
+/// boundary records are intentionally not indexed: a `CadRef` to one of those
+/// records remains a source `ShapeAspect` until a primary identity is available.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct TopologyIdentityIndex {
+    entries: BTreeMap<u64, Vec<PmiTarget>>,
+}
+
+impl TopologyIdentityIndex {
+    /// Build an index from the emitted primary topology arenas.
+    pub(crate) fn from_model(
+        bodies: &[Body],
+        faces: &[Face],
+        edges: &[Edge],
+        vertices: &[Vertex],
+    ) -> Self {
+        let mut index = Self::default();
+        for body in bodies {
+            index.insert_id(
+                body.id.as_str(),
+                PmiTarget::Body {
+                    body: body.id.clone(),
+                },
+            );
+        }
+        for face in faces {
+            index.insert_id(
+                face.id.as_str(),
+                PmiTarget::Face {
+                    face: face.id.clone(),
+                },
+            );
+        }
+        for edge in edges {
+            index.insert_id(
+                edge.id.as_str(),
+                PmiTarget::Edge {
+                    edge: edge.id.clone(),
+                },
+            );
+        }
+        for vertex in vertices {
+            index.insert_id(
+                vertex.id.as_str(),
+                PmiTarget::Vertex {
+                    vertex: vertex.id.clone(),
+                },
+            );
+        }
+        index
+    }
+
+    fn insert_id(&mut self, id: &str, target: PmiTarget) {
+        let Some(suffix) = id.rsplit_once('#').map(|(_, suffix)| suffix) else {
+            return;
+        };
+        let Ok(suffix) = suffix.parse::<u64>() else {
+            return;
+        };
+        let entries = self.entries.entry(suffix).or_default();
+        if !entries.contains(&target) {
+            entries.push(target);
+        }
+    }
+
+    fn resolve(&self, identifier: &str) -> Option<PmiTarget> {
+        let (lane, suffix) = identifier.rsplit_once(':')?;
+        if lane.is_empty() || suffix.is_empty() {
+            return None;
+        }
+        let suffix = suffix.parse::<u64>().ok()?;
+        let targets = self.entries.get(&suffix)?;
+        (targets.len() == 1)
+            .then(|| targets.first().cloned())
+            .flatten()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct RenderedDimension {
     kind: RenderedDimensionKind,
@@ -81,11 +162,12 @@ enum ImplicitNominal {
 pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
+    topology: Option<&TopologyIdentityIndex>,
 ) -> Vec<PmiAnnotation> {
     let Some((stream, root, rendered_dimensions)) = scan_root(scan) else {
         return Vec::new();
     };
-    let mut projected = project(&root);
+    let mut projected = project_with_topology(&root, topology);
     enrich_implicit_nominals(&root, &rendered_dimensions, &mut projected);
     for (reference, entity) in root
         .annotations
@@ -366,7 +448,15 @@ fn peek_pstr<'a>(cursor: &Cursor<'a>) -> Option<&'a str> {
     pstr(&mut probe)
 }
 
+#[cfg(test)]
 fn project(root: &Entity) -> Vec<PmiAnnotation> {
+    project_with_topology(root, None)
+}
+
+fn project_with_topology(
+    root: &Entity,
+    topology: Option<&TopologyIdentityIndex>,
+) -> Vec<PmiAnnotation> {
     if root.annotations.references.len() != root.annotations.entities.len() {
         return Vec::new();
     }
@@ -395,7 +485,7 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
         if suppressed(entity) {
             continue;
         }
-        if let Some(annotation) = project_datum(reference, entity, &feature_index) {
+        if let Some(annotation) = project_datum(reference, entity, &feature_index, topology) {
             projected.push(annotation);
         }
     }
@@ -404,7 +494,7 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
             continue;
         }
         if let Some((system, mut annotation)) =
-            project_tolerance(reference, entity, &datum_ids, &feature_index)
+            project_tolerance(reference, entity, &datum_ids, &feature_index, topology)
         {
             if let Some(system) = system {
                 let PmiDefinition::DatumSystem { references } = &system.definition else {
@@ -428,12 +518,14 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
             projected.push(annotation);
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
                 if let Some(lower_tier) =
-                    project_lower_profile_tier(reference, entity, &feature_index)
+                    project_lower_profile_tier(reference, entity, &feature_index, topology)
                 {
                     projected.push(lower_tier);
                 }
             }
-        } else if let Some(annotation) = project_dimension(reference, entity, &feature_index) {
+        } else if let Some(annotation) =
+            project_dimension(reference, entity, &feature_index, topology)
+        {
             projected.push(annotation);
         }
     }
@@ -444,6 +536,7 @@ fn project_datum(
     reference: &Reference,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
+    topology: Option<&TopologyIdentityIndex>,
 ) -> Option<PmiAnnotation> {
     let identification = entity
         .strings
@@ -453,7 +546,7 @@ fn project_datum(
     (short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
-        targets: targets(entity, feature_index),
+        targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::Datum { identification },
     })
 }
@@ -463,6 +556,7 @@ fn project_tolerance(
     entity: &Entity,
     datum_ids: &BTreeMap<&str, PmiId>,
     feature_index: &BTreeMap<&str, &Entity>,
+    topology: Option<&TopologyIdentityIndex>,
 ) -> Option<(Option<PmiAnnotation>, PmiAnnotation)> {
     let kind = tolerance_kind(short_class(&entity.class))?;
     let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
@@ -483,7 +577,7 @@ fn project_tolerance(
         PmiAnnotation {
             id: pmi_id(&reference.id),
             name: object_name(entity),
-            targets: targets(entity, feature_index),
+            targets: targets(entity, feature_index, topology),
             definition: PmiDefinition::GeometricTolerance {
                 tolerance: kind,
                 magnitude: length(magnitude),
@@ -501,12 +595,13 @@ fn project_lower_profile_tier(
     reference: &Reference,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
+    topology: Option<&TopologyIdentityIndex>,
 ) -> Option<PmiAnnotation> {
     let magnitude = finite_nonnegative(entity.doubles.get("ToleranceLowerTier").copied()?)?;
     Some(PmiAnnotation {
         id: PmiId(format!("{}:lower-tier", pmi_id(&reference.id).0)),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
-        targets: targets(entity, feature_index),
+        targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
             magnitude: length(magnitude),
@@ -523,6 +618,7 @@ fn project_dimension(
     reference: &Reference,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
+    topology: Option<&TopologyIdentityIndex>,
 ) -> Option<PmiAnnotation> {
     let dimension = dimension_kind(short_class(&entity.class))?;
     let quantity = dimension_quantity(&dimension);
@@ -538,7 +634,7 @@ fn project_dimension(
     Some(PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
-        targets: targets(entity, feature_index),
+        targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::Dimension {
             dimension,
             nominal: nominal.map(|value| pmi_value(value, quantity)),
@@ -1714,16 +1810,69 @@ fn feature_index(root: &Entity) -> BTreeMap<&str, &Entity> {
         .collect()
 }
 
-fn targets(entity: &Entity, feature_index: &BTreeMap<&str, &Entity>) -> Vec<PmiTarget> {
+fn targets(
+    entity: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+    topology: Option<&TopologyIdentityIndex>,
+) -> Vec<PmiTarget> {
     let mut ids = Vec::new();
     for reference in &entity.features.references {
         ids.extend(expanded_feature_ids(&reference.id, feature_index, 0));
     }
     let mut seen = BTreeSet::new();
-    ids.into_iter()
-        .filter(|id| seen.insert(id.clone()))
-        .map(|source_id| PmiTarget::ShapeAspect { source_id })
-        .collect()
+    let mut targets = Vec::new();
+    for source_id in ids.into_iter().filter(|id| seen.insert(id.clone())) {
+        let Some(feature) = feature_index.get(source_id.as_str()) else {
+            targets.push(PmiTarget::ShapeAspect { source_id });
+            continue;
+        };
+        let mut had_identifier = false;
+        let mut unresolved_identifier = false;
+        let mut resolved = Vec::new();
+        for identifier in cad_identifiers(feature) {
+            had_identifier = true;
+            let Some(topology) = topology else {
+                unresolved_identifier = true;
+                continue;
+            };
+            if let Some(target) = topology.resolve(identifier) {
+                if !resolved.contains(&target) {
+                    resolved.push(target);
+                }
+            } else {
+                unresolved_identifier = true;
+            }
+        }
+        let has_resolved = !resolved.is_empty();
+        targets.extend(resolved);
+        if !had_identifier || unresolved_identifier || !has_resolved {
+            targets.push(PmiTarget::ShapeAspect { source_id });
+        }
+    }
+    targets
+}
+
+fn cad_identifiers(feature: &Entity) -> Vec<&str> {
+    fn visit<'a>(entity: &'a Entity, identifiers: &mut Vec<&'a str>) {
+        if short_class(&entity.class) == "CadRef" {
+            if let Some(identifier) = entity.strings.get("CadIdentifier") {
+                identifiers.push(identifier.as_str());
+            }
+        }
+        for child in &entity.features.entities {
+            visit(child, identifiers);
+        }
+        for child in &entity.annotations.entities {
+            visit(child, identifiers);
+        }
+        for related in &entity.related {
+            visit(&related.entity, identifiers);
+        }
+    }
+
+    let mut identifiers = Vec::new();
+    visit(feature, &mut identifiers);
+    identifiers
 }
 
 fn expanded_feature_ids(
@@ -2057,6 +2206,84 @@ mod tests {
         ];
         root.annotations.entities = vec![datum, position, diameter, angle];
         root
+    }
+
+    fn cad_feature(class: &str, identifier: &str) -> Entity {
+        let mut cad_ref = entity("CadRef");
+        cad_ref
+            .strings
+            .insert("CadIdentifier".into(), identifier.into());
+        let mut references = entity("CadRefCollection");
+        references.related.push(RelatedObject {
+            name: "CadRef0".into(),
+            class: "PrizMetrik.GdtAnalysis.CadRef".into(),
+            entity: cad_ref,
+        });
+        let mut feature = entity(class);
+        feature.related.push(RelatedObject {
+            name: "CadReferences".into(),
+            class: "PrizMetrik.GdtAnalysis.CadRefCollection".into(),
+            entity: references,
+        });
+        feature
+    }
+
+    #[test]
+    fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
+        let mut datum = entity("GdtDatum");
+        datum.strings.insert("DatumIdentifier".into(), "A".into());
+        datum.features.references.push(reference("F10", "GdtPlane"));
+        let mut root = Entity {
+            class: ROOT_CLASS.into(),
+            ..Entity::default()
+        };
+        root.features.references.push(reference("F10", "GdtPlane"));
+        root.features
+            .entities
+            .push(cad_feature("GdtPlane", "125:42"));
+        root.annotations
+            .references
+            .push(reference("A10", "GdtDatum"));
+        root.annotations.entities.push(datum);
+
+        let mut index = TopologyIdentityIndex::default();
+        index.insert_id(
+            "sldprt:brep:face#42",
+            PmiTarget::Face {
+                face: "sldprt:brep:face#42".into(),
+            },
+        );
+        let projected = project_with_topology(&root, Some(&index));
+        let first = projected.first().expect("projected datum");
+        assert_eq!(
+            first.targets,
+            [PmiTarget::Face {
+                face: "sldprt:brep:face#42".into()
+            }]
+        );
+
+        root.features
+            .entities
+            .first_mut()
+            .expect("GdtPlane")
+            .related
+            .first_mut()
+            .expect("CadReferences")
+            .entity
+            .related
+            .first_mut()
+            .expect("CadRef0")
+            .entity
+            .strings
+            .insert("CadIdentifier".into(), "125:99".into());
+        let projected = project_with_topology(&root, Some(&index));
+        let first = projected.first().expect("projected datum");
+        assert_eq!(
+            first.targets,
+            [PmiTarget::ShapeAspect {
+                source_id: "F10".into()
+            }]
+        );
     }
 
     fn put_pstr(bytes: &mut Vec<u8>, value: &str) {
