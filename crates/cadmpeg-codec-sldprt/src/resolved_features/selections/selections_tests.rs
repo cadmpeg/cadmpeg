@@ -986,6 +986,14 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
             .and_then(|component| component.local_id),
         Some(2)
     );
+    payload[4] = 0x7f;
+    assert_eq!(
+        compact_surface_selection_at(&payload, 12)
+            .expect("lane-local selector subtype")
+            .first()
+            .and_then(|component| component.local_id),
+        Some(2)
+    );
 }
 
 #[test]
@@ -1747,7 +1755,12 @@ fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
         Some(12)
     );
 
-    payload[4] = 3;
+    payload[4] = 0x7f;
+    assert_eq!(
+        planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
+        2
+    );
+    payload[5] = 3;
     assert_eq!(
         planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
         1

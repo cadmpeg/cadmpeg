@@ -799,9 +799,15 @@ impl SldprtNative {
                     || usize::try_from(record.offset)
                         .ok()
                         .and_then(|offset| {
-                            crate::resolved_features::selections::compact_component_reference_list_at(
+                            let feature_kind = edge_features
+                                .iter()
+                                .find(|feature| feature.id == record.feature_ref)
+                                .map(|feature| feature.kind.as_str())
+                                .unwrap_or_default();
+                            crate::resolved_features::selections::compact_edge_reference_list_for_feature(
                                 &lane.native_payload,
                                 offset,
+                                feature_kind,
                             )
                         })
                         .unwrap_or_default()

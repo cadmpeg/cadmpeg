@@ -226,6 +226,27 @@ pub(super) fn compact_body_state_ids(
     result
 }
 
+/// Decode an edge-selection reference list, including the count-framed
+/// unpadded roster form used by variable-radius fillets.
+pub(crate) fn compact_edge_reference_list_for_feature(
+    payload: &[u8],
+    offset: usize,
+    feature_kind: &str,
+) -> Option<Vec<Vec<FeatureInputComponentPathEntry>>> {
+    compact_component_reference_list_at(payload, offset).or_else(|| {
+        if !feature_kind.eq_ignore_ascii_case("VarFillet") {
+            return None;
+        }
+        let count_start = offset.checked_sub(12)?;
+        let count = usize::try_from(u32::from_le_bytes(
+            payload.get(count_start..count_start + 4)?.try_into().ok()?,
+        ))
+        .ok()?;
+        compact_component_reference_list(payload, offset, false)
+            .filter(|references| references.len() == count)
+    })
+}
+
 pub(super) fn compact_edge_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
@@ -310,30 +331,11 @@ pub(super) fn compact_edge_selections(
         let feature_selections = selections
             .into_iter()
             .map(|(offset, local_edge_ids)| {
-                let reference_list =
-                    compact_component_reference_list_at(&lane.native_payload, offset).or_else(
-                        || {
-                            // Variable-fillet edge rosters use the counted
-                            // reference-list grammar but older lanes omit every
-                            // per-reference sentinel.  The feature family and
-                            // the complete declared count provide the framing in
-                            // that form; do not relax the generic edge parser,
-                            // where an unframed flat path is ambiguous.
-                            if !feature.kind.eq_ignore_ascii_case("VarFillet") {
-                                return None;
-                            }
-                            let count_start = offset.checked_sub(12)?;
-                            let count = usize::try_from(u32::from_le_bytes(
-                                lane.native_payload
-                                    .get(count_start..count_start + 4)?
-                                    .try_into()
-                                    .ok()?,
-                            ))
-                            .ok()?;
-                            compact_component_reference_list(&lane.native_payload, offset, false)
-                                .filter(|references| references.len() == count)
-                        },
-                    );
+                let reference_list = compact_edge_reference_list_for_feature(
+                    &lane.native_payload,
+                    offset,
+                    &feature.kind,
+                );
                 let references = reference_list.clone().unwrap_or_default();
                 // Keep the established component projection separate from the
                 // reference-list projection.  A vertex-bearing multi-hop
@@ -648,7 +650,7 @@ fn planar_surface_selection_candidates(
     (start..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
         .filter_map(|marker| {
             let selector = payload.get(marker.checked_sub(8)?..marker - 4)?;
-            (selector[1..] == [2, 0, 0] && matches!(selector[0], 4 | 6))
+            (is_component_vector_selector_for_role(selector, 2))
                 .then(|| component_vector_path_at(payload, marker))
                 .flatten()
                 .map(|components| (marker, components))
@@ -716,7 +718,7 @@ fn operation_surface_selection_candidates(
                         .into_iter()
                         .flatten()
                         .collect()
-                } else if selector[1..] == [2, 0, 0] && matches!(selector[0], 4 | 6) {
+                } else if is_component_vector_selector_for_role(selector, 2) {
                     compact_surface_selection_at(&lane.native_payload, marker)?
                 } else {
                     return None;
@@ -1144,7 +1146,7 @@ pub(super) fn compact_surface_selection_at(
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
         || payload.get(count_start..count_start + 4)? != 6u32.to_le_bytes()
         || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0, 0]
-        || !matches!(payload.get(kind_start)?.to_owned(), 4 | 6)
+        || !is_component_vector_selector_for_role(payload.get(kind_start..kind_start + 4)?, 2)
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
