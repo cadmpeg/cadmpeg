@@ -8,6 +8,7 @@
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
 use crate::container::parasolid_offset;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use std::io::Read as _;
 
@@ -149,7 +150,9 @@ pub struct StreamHeader {
 pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let sig = parasolid_offset(payload)?;
     let desc_len_at = sig + 4;
-    let desc_len = usize::from(cadmpeg_core::be::u16_at(payload, desc_len_at)?);
+    let mut view = View::over_retained(payload);
+    view.seek(desc_len_at)?;
+    let desc_len = usize::from(view.u16_be()?);
     let desc_start = desc_len_at + 2;
     let desc_end = desc_start + desc_len;
     let description = String::from_utf8_lossy(payload.get(desc_start..desc_end)?).into_owned();

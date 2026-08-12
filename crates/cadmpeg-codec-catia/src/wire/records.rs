@@ -12,6 +12,7 @@
 
 use std::ops::Range;
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::math::Point3;
 
@@ -356,7 +357,10 @@ pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
-    cadmpeg_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
+    let mut view = View::over_retained(bytes);
+    view.seek(at)
+        .and_then(|()| view.f32_le())
+        .unwrap_or(f32::NAN)
 }
 
 #[cfg(test)]
