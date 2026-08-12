@@ -18,22 +18,8 @@ pub(super) fn check_version(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-fn valid_id(id: &str) -> bool {
-    let Some((namespace, key)) = id.split_once('#') else {
-        return false;
-    };
-    if key.is_empty() || key.contains('#') || id.chars().any(char::is_whitespace) {
-        return false;
-    }
-    let mut components = namespace.split(':');
-    components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_some_and(|value| !value.is_empty())
-        && components.next().is_none()
-}
-
 fn push_identity(seen: &mut HashSet<String>, findings: &mut Vec<Finding>, id: &str) {
-    if !valid_id(id) {
+    if !crate::ids::is_valid_identity(id) {
         findings.push(Finding {
             check: Check::Identity,
             severity: Severity::Error,

@@ -466,7 +466,7 @@ fn decode_exchange_mode(
             };
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord {
-                id: UnknownId(format!("step:file:signature#{index}")),
+                id: crate::ids::StepIdentity::signature(index),
                 offset: signature.start as u64,
                 byte_len: signature.len() as u64,
                 sha256: sha256_hex(&bytes),
@@ -926,7 +926,7 @@ fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId(format!("step:data:{kind}#{}", record.id))
+    UnknownId(crate::ids::StepIdentity::data(&kind, record.id))
 }
 
 fn record_targets(

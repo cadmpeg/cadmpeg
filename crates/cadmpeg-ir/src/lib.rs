@@ -90,6 +90,7 @@ pub use features::{
     ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
     SketchSpace,
 };
+pub use ids::{format_identity, is_valid_identity, IdentityError};
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
