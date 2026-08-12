@@ -436,7 +436,12 @@ pub(crate) fn enrich_history_combine_selections(
             let paths = (start.saturating_add(12)
                 ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
                 .filter_map(|marker| {
-                    compact_body_path_at(&lane.native_payload, marker).map(|_| marker)
+                    // Combine operands use the same type-3 vector framing as
+                    // body selections, but a path may contain identifier-less
+                    // lineage hops.  The component-path parser retains those
+                    // hops; the local-id-only helper would reject the whole
+                    // operand before projection.
+                    compact_body_component_path_at(&lane.native_payload, marker).map(|_| marker)
                 })
                 .collect::<Vec<_>>();
             // A Combine object can carry auxiliary type-3 vectors between its two
@@ -810,6 +815,7 @@ pub(crate) fn project_surface_sweep_profiles(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
     if marker < 12
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
@@ -864,20 +870,31 @@ fn compact_body_component_entries_at(
     if count == 0 {
         return None;
     }
+    let mut candidates = Vec::new();
     let mixed = |count| {
         let (components, end) = compact_mixed_component_path(payload, cursor, count, true)?;
         components
             .iter()
-            .any(|component| component.instance.is_none())
+            .any(|component| component.instance.is_none() || component.local_id.is_none())
             .then_some((components, end))
     };
     let parse = |count| {
         compact_heterogeneous_component_path(payload, cursor, count).or_else(|| mixed(count))
     };
-    parse(count).map(|(components, _)| components).or_else(|| {
-        let (components, end) = (count > 1).then(|| parse(count - 1)).flatten()?;
-        compact_body_null_slot_at(payload, end).then_some(components)
-    })
+    if let Some((components, _)) = parse(count) {
+        candidates.push(components);
+    } else if count > 1 {
+        if let Some((components, end)) = parse(count - 1) {
+            if compact_body_null_slot_at(payload, end) {
+                candidates.push(components);
+            }
+        }
+    }
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {

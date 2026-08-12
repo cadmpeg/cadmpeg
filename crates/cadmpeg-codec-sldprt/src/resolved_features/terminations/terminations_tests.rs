@@ -1061,6 +1061,59 @@ fn compact_body_path_accepts_anonymous_mixed_entries() {
 }
 
 #[test]
+fn compact_body_component_path_accepts_counted_sentinel_separators() {
+    let marker = 12;
+    let mut payload = vec![0; marker + 18];
+    payload[..4].copy_from_slice(&10u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[0, 3, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+
+    let signature = |source: u32, timestamp: u32| {
+        let mut signature = vec![0x38, 0x80, 0x3b, 0];
+        signature.extend_from_slice(&source.to_le_bytes());
+        signature.extend_from_slice(&timestamp.to_le_bytes());
+        signature
+    };
+    let entry = |payload: &mut Vec<u8>, instance: u16, source: u32, timestamp: u32| {
+        payload.extend_from_slice(&instance.to_le_bytes());
+        payload.extend_from_slice(&[0, 0]);
+        payload.extend_from_slice(&signature(source, timestamp));
+    };
+    let local = |payload: &mut Vec<u8>, value: u32| {
+        payload.extend_from_slice(&value.to_le_bytes());
+        payload.extend_from_slice(&[0xff; 4]);
+        payload.extend_from_slice(&[0; 4]);
+    };
+
+    entry(&mut payload, 0x8521, 213, 1);
+    local(&mut payload, 2);
+    entry(&mut payload, 0x8521, 213, 1);
+    local(&mut payload, 9);
+    entry(&mut payload, 0x8083, 252, 2);
+    local(&mut payload, 1);
+    entry(&mut payload, 0x8041, 265, 3);
+    local(&mut payload, 1);
+    entry(&mut payload, 0x8083, 213, 1);
+    local(&mut payload, 1);
+    entry(&mut payload, 0x8036, 298, 4);
+    entry(&mut payload, 0x8041, 265, 5);
+    entry(&mut payload, 0x8036, 298, 6);
+    entry(&mut payload, 0x8083, 252, 7);
+    local(&mut payload, 1);
+    entry(&mut payload, 0x8521, 213, 1);
+    local(&mut payload, 8);
+
+    let components = compact_body_component_path_at(&payload, marker)
+        .expect("counted lineage path with sentinel separators");
+    assert_eq!(components.len(), 10);
+    assert_eq!(components[5].local_id, None);
+    assert_eq!(components[6].local_id, None);
+    assert_eq!(components[7].local_id, None);
+    assert_eq!(components[8].local_id, Some(1));
+    assert_eq!(components[9].local_id, Some(8));
+}
+
+#[test]
 fn enrich_combine_uses_outermost_body_paths() {
     let mut payload = vec![0; 420];
     for (marker, local_id) in [(100usize, 1u32), (200, 2), (300, 3)] {
