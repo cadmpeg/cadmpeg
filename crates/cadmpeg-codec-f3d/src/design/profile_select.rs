@@ -19,6 +19,7 @@ use crate::records::{
     DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand,
     DesignSketchProfileRegionMember, SketchCurveIdentity, SketchRelationOperand,
 };
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -34,6 +35,7 @@ pub(crate) struct ExtrudeProfileResolution<'a> {
     pub histories: &'a [crate::history_records::AsmHistory],
     pub linear_tolerance: f64,
     pub angular_tolerance: f64,
+    pub arrangement_budget: &'a WorkBudget<'a>,
 }
 
 /// Native and neutral arenas required to resolve curve selections in sketches.
@@ -793,18 +795,16 @@ pub(crate) fn resolved_extrude_profile_selection(
                     resolution.entities,
                     resolution.histories,
                     resolution.linear_tolerance,
+                    resolution.arrangement_budget,
                 )
             })?
         })
         .or_else(|| {
             transition_profile_selection(
                 sketch,
-                resolution.entities,
-                resolution.histories,
+                resolution,
                 history_state_id?,
                 previous_history_state_id?,
-                resolution.linear_tolerance,
-                resolution.angular_tolerance,
             )
         })
         .or_else(|| {
@@ -828,13 +828,13 @@ pub(crate) fn resolved_extrude_profile_selection(
 
 fn transition_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
-    histories: &[crate::history_records::AsmHistory],
+    resolution: ExtrudeProfileResolution<'_>,
     state_id: i64,
     previous_state_id: i64,
-    linear_tolerance: f64,
-    angular_tolerance: f64,
 ) -> Option<ResolvedProfileSelection> {
+    let entities = resolution.entities;
+    let histories = resolution.histories;
+    let arrangement_budget = resolution.arrangement_budget;
     let mut states = histories
         .iter()
         .flat_map(|history| &history.states)
@@ -851,14 +851,14 @@ fn transition_profile_selection(
     }
     let topology = state.topology.as_ref()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
-    let tolerance = linear_tolerance.max(1.0e-7);
+    let tolerance = resolution.linear_tolerance.max(1.0e-7);
     let inserted = transition_inserted_profile_selection(
         sketch,
         entities,
         tolerance,
         inserted_faces.iter().map(|face| {
             let points = historical_face_points(*face, topology)?;
-            selection_containing_points(sketch, entities, &points, tolerance)
+            selection_containing_points(sketch, entities, &points, tolerance, arrangement_budget)
         }),
     );
     if inserted.is_some() {
@@ -871,7 +871,7 @@ fn transition_profile_selection(
             topology,
             *face,
             tolerance,
-            angular_tolerance,
+            resolution.angular_tolerance,
         )
     })) {
         return Some(selection);
@@ -889,7 +889,7 @@ fn transition_profile_selection(
     let faces = unique_multi_face_deleted_carrier_family(deleted, previous_topology)?;
     ordered_unique_profile_selections(faces.into_iter().map(|face| {
         let points = historical_face_points(face, previous_topology)?;
-        selection_containing_points(sketch, entities, &points, tolerance)
+        selection_containing_points(sketch, entities, &points, tolerance, arrangement_budget)
     }))
 }
 
@@ -1361,6 +1361,7 @@ fn historical_selection_regions(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     histories: &[crate::history_records::AsmHistory],
     linear_tolerance: f64,
+    arrangement_budget: &WorkBudget<'_>,
 ) -> Option<ResolvedProfileSelection> {
     let tolerance = linear_tolerance.max(1.0e-7);
     let mut states = HashMap::new();
@@ -1406,8 +1407,14 @@ fn historical_selection_regions(
             if previous_member_points.as_ref() == Some(&key) {
                 return previous_selection.clone();
             }
-            let selection =
-                selection_for_member_points(members, sketch, entities, &member_points, tolerance);
+            let selection = selection_for_member_points(
+                members,
+                sketch,
+                entities,
+                &member_points,
+                tolerance,
+                arrangement_budget,
+            );
             previous_member_points = Some(key);
             previous_selection.clone_from(&selection);
             selection
@@ -1422,7 +1429,14 @@ fn historical_selection_regions(
             .map(|member| resolved_selection_member_points(member, sketch, entities))
             .collect::<Option<Vec<_>>>()
             .and_then(|member_points| {
-                selection_for_member_points(members, sketch, entities, &member_points, tolerance)
+                selection_for_member_points(
+                    members,
+                    sketch,
+                    entities,
+                    &member_points,
+                    tolerance,
+                    arrangement_budget,
+                )
             })
         {
             return Some(selection);
@@ -1431,7 +1445,13 @@ fn historical_selection_regions(
             .iter()
             .map(|member| {
                 if let Some(points) = resolved_selection_member_points(member, sketch, entities) {
-                    selection_containing_points(sketch, entities, &points, tolerance)
+                    selection_containing_points(
+                        sketch,
+                        entities,
+                        &points,
+                        tolerance,
+                        arrangement_budget,
+                    )
                 } else {
                     resolved_selection_member_profiles(member, sketch)
                         .map(ResolvedProfileSelection::Loops)
@@ -1449,14 +1469,19 @@ fn selection_for_member_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     member_points: &[Vec<Point3>],
     tolerance: f64,
+    arrangement_budget: &WorkBudget<'_>,
 ) -> Option<ResolvedProfileSelection> {
     let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
-    if let Some(selection) = selection_containing_points(sketch, entities, &all_points, tolerance) {
+    if let Some(selection) =
+        selection_containing_points(sketch, entities, &all_points, tolerance, arrangement_budget)
+    {
         return Some(selection);
     }
     let selections = member_points
         .iter()
-        .map(|points| selection_containing_points(sketch, entities, points, tolerance))
+        .map(|points| {
+            selection_containing_points(sketch, entities, points, tolerance, arrangement_budget)
+        })
         .collect::<Vec<_>>();
     ordered_unique_profile_selections(selections.iter().cloned())
         .or_else(|| region_with_boundary_selection_members(members, sketch, &selections))
@@ -1615,6 +1640,7 @@ pub(crate) fn selection_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
     tolerance: f64,
+    arrangement_budget: &WorkBudget<'_>,
 ) -> Option<ResolvedProfileSelection> {
     let projected = points
         .iter()
@@ -1639,9 +1665,13 @@ pub(crate) fn selection_containing_points(
     if let [profile] = boundaries.as_slice() {
         return Some(ResolvedProfileSelection::Loops(vec![*profile]));
     }
-    if let Some(region) =
-        arrangement_region_containing_points(sketch, entities, &projected, tolerance)
-    {
+    if let Some(region) = arrangement_region_containing_points(
+        sketch,
+        entities,
+        &projected,
+        tolerance,
+        arrangement_budget,
+    ) {
         return Some(ResolvedProfileSelection::Regions(vec![region]));
     }
     if !boundaries.is_empty() {
@@ -2224,6 +2254,7 @@ mod tests {
         spatial_profile_containing_entity, transition_spatial_profile_selection,
         EntitySelectionPathResolution, ExtrudeProfileResolution, LoftSketchResolution,
     };
+    use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
         AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
@@ -2240,6 +2271,7 @@ mod tests {
         DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection, SketchCurveIdentity,
         SketchRelationOperand,
     };
+    use cadmpeg_core::decode::WorkBudget;
     use cadmpeg_ir::features::{Angle, Length, PathRef, ProfileRef};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -2482,6 +2514,7 @@ mod tests {
             next_record_index: 11,
             next_byte_offset: 0,
         };
+        let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
         let resolution = ExtrudeProfileResolution {
             entities: &[],
             spatial_sketches: &[],
@@ -2489,6 +2522,7 @@ mod tests {
             histories: &[],
             linear_tolerance: 1.0e-6,
             angular_tolerance: 1.0e-9,
+            arrangement_budget: &arrangement_budget,
         };
 
         assert_eq!(

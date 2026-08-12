@@ -29,10 +29,11 @@ pub(crate) fn arrangement_region_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point2],
     tolerance: f64,
+    budget: &WorkBudget<'_>,
 ) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let faces = sketch_arrangement_faces(sketch, entities, tolerance)?;
+    let faces = sketch_arrangement_faces(sketch, entities, tolerance, budget)?;
     let mut boundary_matches = faces.iter().filter(|face| {
         points.iter().all(|point| {
             face.boundary
@@ -70,6 +71,7 @@ pub(crate) fn sketch_arrangement_faces(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
+    budget: &WorkBudget<'_>,
 ) -> Option<Vec<SketchArrangementFace>> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry};
@@ -223,9 +225,8 @@ pub(crate) fn sketch_arrangement_faces(
         }
         edges.push(edge);
     }
-    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
-    arrangement_retain_cycle_edges(&mut edges, nodes.len(), &arrangement_budget);
-    if arrangement_budget.exhausted() {
+    arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget);
+    if budget.exhausted() {
         return None;
     }
     if edges.len() < 3 {
@@ -3278,11 +3279,16 @@ fn union_endpoint_nodes(parents: &mut [usize], first: usize, second: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::features::{Angle, Length, SketchProfileRegion};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::{Angle, Length, SketchProfileBoundaryUse, SketchProfileRegion};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
     };
+
+    fn local_arrangement_budget() -> WorkBudget<'static> {
+        WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK)
+    }
 
     #[test]
     fn empty_profile_table_arranges_face_around_open_sketch_branch() {
@@ -3336,6 +3342,7 @@ mod tests {
             profiles: Vec::new(),
             native_ref: None,
         };
+        let arrangement_budget = local_arrangement_budget();
 
         let Some(SketchProfileRegion::Trimmed {
             outer_boundary,
@@ -3350,6 +3357,7 @@ mod tests {
                 Point2::new(0.0, 19.0),
             ],
             1.0e-6,
+            &arrangement_budget,
         )
         else {
             panic!("selected face must resolve from raw sketch geometry")
@@ -3664,10 +3672,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
-        use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
-
+    fn coincident_circle_arc_arrangement(
+    ) -> (Sketch, Vec<SketchEntity>, SketchEntityId, SketchEntityId) {
         let sketch_id = SketchId("sketch".into());
         let line_id = SketchEntityId("diameter".into());
         let arc_id = SketchEntityId("left-arc".into());
@@ -3734,8 +3740,14 @@ mod tests {
             ],
             native_ref: None,
         };
+        (sketch, entities, line_id, arc_id)
+    }
 
-        let faces = sketch_arrangement_faces(&sketch, &entities, 1.0e-7)
+    #[test]
+    fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
+        let (sketch, entities, line_id, arc_id) = coincident_circle_arc_arrangement();
+        let arrangement_budget = local_arrangement_budget();
+        let faces = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget)
             .expect("endpoint arrangement faces");
         assert_eq!(faces.len(), 2);
         let selected = arrangement_region_containing_points(
@@ -3747,6 +3759,7 @@ mod tests {
                 Point2::new(-1.0, 0.0),
             ],
             1.0e-7,
+            &arrangement_budget,
         )
         .expect("left half-disk arrangement face");
         let SketchProfileRegion::Trimmed {
@@ -3767,6 +3780,20 @@ mod tests {
                 ..
             } if start != end
         )));
+    }
+
+    #[test]
+    fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
+        let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("root context for session work budget");
+        let budget = ctx.work_budget(MAX_ARRANGEMENT_WALK_WORK as u64);
+
+        assert!(sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget).is_none());
+        assert!(budget.exhausted());
     }
 
     #[test]

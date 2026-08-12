@@ -100,7 +100,7 @@ use crate::design::feature_project::{
 };
 use crate::design::geometry::{
     closed_sketch_profiles, point_on_sketch_entity, region_containing_points,
-    sketch_entity_endpoints,
+    sketch_entity_endpoints, MAX_ARRANGEMENT_WALK_WORK,
 };
 
 use crate::design::profile_select::{
@@ -144,6 +144,7 @@ use crate::records::{
     SketchRelationOperand, SketchSurface, DESIGN_MODULE_SKETCH,
 };
 
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::{
     Angle, FaceSelection, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
@@ -1839,6 +1840,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         },
     };
     let point = Point3::new(11.0, 20.0, 9.0);
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
     assert_eq!(
         region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
         None
@@ -1849,6 +1851,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             std::slice::from_ref(&entity),
             &[point],
             1.0e-6,
+            &arrangement_budget,
         ),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
@@ -1891,6 +1894,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             &branched_entities,
             &endpoints,
             1.0e-6,
+            &arrangement_budget,
         ),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
@@ -1906,6 +1910,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             std::slice::from_ref(&entity),
             &[point],
             1.0e-6,
+            &arrangement_budget,
         ),
         None
     );
@@ -13192,6 +13197,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         }]],
         native_ref: None,
     };
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
     assert!(matches!(
         resolved_extrude_profile_selection(
             &sketch_id,
@@ -13205,6 +13211,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 histories: &[],
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
+                arrangement_budget: &arrangement_budget,
             },
             None,
             None,
@@ -13279,6 +13286,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 histories: &[],
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
+                arrangement_budget: &arrangement_budget,
             },
             None,
             None,
@@ -13302,6 +13310,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 histories: &[],
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
+                arrangement_budget: &arrangement_budget,
             },
             None,
             None,
@@ -13326,6 +13335,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 histories: &[],
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
+                arrangement_budget: &arrangement_budget,
             },
             None,
             None,
@@ -21097,6 +21107,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         definition: blind,
         native_ref: Some(scope.id.clone()),
     };
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
     bind_extrude_profile_selections(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
@@ -21121,6 +21132,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             histories: &[],
             linear_tolerance: 1.0e-6,
             angular_tolerance: 1.0e-9,
+            arrangement_budget: &arrangement_budget,
         },
     );
     assert!(matches!(
