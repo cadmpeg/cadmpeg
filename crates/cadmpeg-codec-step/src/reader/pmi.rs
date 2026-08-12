@@ -12,6 +12,7 @@ use cadmpeg_ir::pmi::{
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::transform::Transform;
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
@@ -936,7 +937,7 @@ fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
 }
 
 fn pmi_id(id: u64) -> PmiId {
-    PmiId(format!("step:presentation:pmi#{id}"))
+    PmiId(StepIdentity::presentation("pmi", id))
 }
 
 fn is_pmi_entity_name(name: &str) -> bool {

@@ -8,6 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
@@ -188,7 +189,7 @@ fn drawing_kind(name: &str) -> DrawingKind {
 }
 
 fn drawing_identity(id: u64, name: &str) -> String {
-    format!("step:drawing:{}#{id}", name.to_ascii_lowercase())
+    StepIdentity::drawing(&name.to_ascii_lowercase(), id)
 }
 
 fn required_parameter_count(name: &str) -> Option<usize> {

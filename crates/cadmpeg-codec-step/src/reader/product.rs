@@ -12,6 +12,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::transform::Transform;
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
@@ -273,7 +274,10 @@ pub(super) fn decode(
             ));
             continue;
         };
-        let id = OccurrenceId(format!("step:product:occurrence#definition-{definition}"));
+        let id = OccurrenceId(StepIdentity::product(
+            "occurrence",
+            format!("definition-{definition}"),
+        ));
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
             prototype: PrototypeReference::Local {
@@ -346,7 +350,10 @@ pub(super) fn decode(
             } else {
                 format!("-instance-{instance}")
             };
-            let id = OccurrenceId(format!("step:product:occurrence#{usage_id}{suffix}"));
+            let id = OccurrenceId(StepIdentity::product(
+                "occurrence",
+                format!("{usage_id}{suffix}"),
+            ));
             if ir.model.occurrences.len() >= MAX_OCCURRENCES {
                 warnings.push(format!(
                     "assembly occurrence expansion exceeds the {MAX_OCCURRENCES}-occurrence limit"
@@ -1115,7 +1122,7 @@ fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {
     [[x.x, y.x, z.x], [x.y, y.y, z.y], [x.z, y.z, z.z]]
 }
 fn product_ir_id(id: u64) -> ProductDefinitionId {
-    ProductDefinitionId(format!("step:product:product#{id}"))
+    ProductDefinitionId(StepIdentity::product("product", id))
 }
 
 fn product_definition_ir_id(
@@ -1126,8 +1133,9 @@ fn product_definition_ir_id(
     if definition_count == 1 {
         product_ir_id(product)
     } else {
-        ProductDefinitionId(format!(
-            "step:product:product#{product}-definition-{definition}"
+        ProductDefinitionId(StepIdentity::product(
+            "product",
+            format!("{product}-definition-{definition}"),
         ))
     }
 }

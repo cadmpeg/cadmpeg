@@ -4,6 +4,8 @@
 //! Every mint path validates `<format>:<scope>:<kind>#<key>` at construction so
 //! a two-component id such as `step:signature#0` cannot be produced.
 
+use std::fmt::Display;
+
 use cadmpeg_ir::ids::{format_identity, UnknownId};
 
 /// Builders for `step:` entity identities.
@@ -19,14 +21,56 @@ impl StepIdentity {
         )
     }
 
-    /// DATA-section opaque or geometry kind: `step:data:{kind}#{key}`.
+    /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
     ///
-    /// Empty `kind` (malformed zero-partial records) uses `opaque`.
+    /// Empty `kind` (malformed zero-partial records) uses [`Self::opaque`].
     #[must_use]
-    pub fn data(kind: &str, key: impl std::fmt::Display) -> String {
-        let kind = if kind.is_empty() { "opaque" } else { kind };
-        format_identity("step", "data", kind, key)
-            .unwrap_or_else(|error| panic!("step data identity: {error}"))
+    pub fn data(kind: &str, key: impl Display) -> String {
+        if kind.is_empty() {
+            return Self::opaque(key);
+        }
+        Self::mint("data", kind, key)
+    }
+
+    /// Named opaque DATA record: `step:data:opaque#{key}`.
+    #[must_use]
+    pub fn opaque(key: impl Display) -> String {
+        Self::mint("data", "opaque", key)
+    }
+
+    /// Product structure identity: `step:product:{kind}#{key}`.
+    #[must_use]
+    pub fn product(kind: &str, key: impl Display) -> String {
+        Self::mint("product", kind, key)
+    }
+
+    /// Presentation / PMI identity: `step:presentation:{kind}#{key}`.
+    #[must_use]
+    pub fn presentation(kind: &str, key: impl Display) -> String {
+        Self::mint("presentation", kind, key)
+    }
+
+    /// Construction / procedural identity: `step:construction:{kind}#{key}`.
+    #[must_use]
+    pub fn construction(kind: &str, key: impl Display) -> String {
+        Self::mint("construction", kind, key)
+    }
+
+    /// Tessellation identity: `step:tessellation:{kind}#{key}`.
+    #[must_use]
+    pub fn tessellation(kind: &str, key: impl Display) -> String {
+        Self::mint("tessellation", kind, key)
+    }
+
+    /// Drawing graph identity: `step:drawing:{kind}#{key}`.
+    #[must_use]
+    pub fn drawing(kind: &str, key: impl Display) -> String {
+        Self::mint("drawing", kind, key)
+    }
+
+    fn mint(scope: &str, kind: &str, key: impl Display) -> String {
+        format_identity("step", scope, kind, key)
+            .unwrap_or_else(|error| panic!("step {scope} identity: {error}"))
     }
 }
 
@@ -40,6 +84,38 @@ mod tests {
         let id = StepIdentity::signature(0);
         assert_eq!(id.0, "step:file:signature#0");
         assert!(is_valid_identity(&id.0));
+    }
+
+    #[test]
+    fn data_and_opaque_preserve_existing_forms() {
+        assert_eq!(StepIdentity::data("surface", 12u64), "step:data:surface#12");
+        assert_eq!(StepIdentity::opaque(2u64), "step:data:opaque#2");
+        assert_eq!(StepIdentity::data("", 1u64), "step:data:opaque#1");
+        assert!(is_valid_identity(&StepIdentity::data("edge", "3-shell-4")));
+    }
+
+    #[test]
+    fn scoped_builders_preserve_existing_forms() {
+        assert_eq!(
+            StepIdentity::product("occurrence", "definition-9"),
+            "step:product:occurrence#definition-9"
+        );
+        assert_eq!(
+            StepIdentity::presentation("pmi", 4u64),
+            "step:presentation:pmi#4"
+        );
+        assert_eq!(
+            StepIdentity::construction("trimmed_curve", 9u64),
+            "step:construction:trimmed_curve#9"
+        );
+        assert_eq!(
+            StepIdentity::tessellation("mesh", 1u64),
+            "step:tessellation:mesh#1"
+        );
+        assert_eq!(
+            StepIdentity::drawing("drawing_definition", 2u64),
+            "step:drawing:drawing_definition#2"
+        );
     }
 
     #[test]

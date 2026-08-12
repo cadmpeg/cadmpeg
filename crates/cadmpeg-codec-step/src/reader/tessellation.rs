@@ -10,6 +10,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::SourceObjectAssociation;
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryData;
@@ -212,7 +213,7 @@ pub(super) fn decode(
             }
         };
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
-            let surface_id = format!("step:data:surface#{surface_step}");
+            let surface_id = StepIdentity::data("surface", surface_step);
             if let Some(surface) = ir
                 .model
                 .surfaces
@@ -245,7 +246,7 @@ pub(super) fn decode(
         ir.model.tessellations.push(Tessellation {
             faces: Vec::new(),
             chordal_deflection: None,
-            id: format!("step:tessellation:mesh#{id}"),
+            id: StepIdentity::tessellation("mesh", id),
             body: (!unresolved_items.contains(&id))
                 .then(|| item_bodies.get(&id))
                 .flatten()

@@ -11,6 +11,7 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::index::ModelIndex;
 
+use crate::ids::StepIdentity;
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
@@ -10273,7 +10274,8 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     );
 
     for (curve_id, expected) in [("#9", [2.0, 4.0]), ("#12", [2.0, 4.0])] {
-        let construction_id = format!("step:construction:trimmed_curve{curve_id}");
+        let construction_id =
+            StepIdentity::construction("trimmed_curve", curve_id.trim_start_matches('#'));
         assert!(result.ir.model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id
                 && matches!(
@@ -10705,11 +10707,11 @@ fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.as_str() == format!("step:data:face#{face_step}"))
+        .find(|face| face.id.as_str() == StepIdentity::data("face", face_step))
         .expect("decoded face");
     assert_eq!(
         face.loops[0].as_str(),
-        format!("step:data:loop#{outer_loop}-face-{face_step}")
+        StepIdentity::data("loop", format!("{outer_loop}-face-{face_step}"))
     );
 }
 

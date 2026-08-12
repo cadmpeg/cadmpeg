@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform2;
 use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
+use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::surface_parameter_periods;
@@ -777,14 +778,23 @@ fn build_wire_set(
             (edge.end, edge.start)
         };
         let edge_suffix = format!("-wire-{id}-set-{set_id}");
-        let ir_id = EdgeId(format!("step:data:edge#{edge_id}{edge_suffix}"));
+        let ir_id = EdgeId(StepIdentity::data(
+            "edge",
+            format!("{edge_id}{edge_suffix}"),
+        ));
         let vertex_suffix = format!("-wire-{id}-set-{set_id}");
         wire_edges.push(ir_id.clone());
         built_edges.push(Edge {
             id: ir_id,
             curve: edge_curve_id_reported(edge_id, edge, exchange, warnings),
-            start: VertexId(format!("step:data:vertex#{start}{vertex_suffix}")),
-            end: VertexId(format!("step:data:vertex#{end}{vertex_suffix}")),
+            start: VertexId(StepIdentity::data(
+                "vertex",
+                format!("{start}{vertex_suffix}"),
+            )),
+            end: VertexId(StepIdentity::data(
+                "vertex",
+                format!("{end}{vertex_suffix}"),
+            )),
             param_range: None,
             tolerance: None,
         });
@@ -800,15 +810,18 @@ fn build_wire_set(
         let vertex = vdefs.get(&vertex_id)?;
         point_positions.get(vertex.point)?;
         built_vertices.push(Vertex {
-            id: VertexId(format!("step:data:vertex#{vertex_id}{vertex_suffix}")),
-            point: PointId(format!("step:data:point#{}", vertex.point)),
+            id: VertexId(StepIdentity::data(
+                "vertex",
+                format!("{vertex_id}{vertex_suffix}"),
+            )),
+            point: PointId(StepIdentity::data("point", vertex.point)),
             tolerance: None,
         });
         typed.insert(vertex_id);
     }
-    let body = BodyId(format!("step:data:body#{id}{suffix}"));
-    let region = RegionId(format!("step:data:region#{id}{suffix}"));
-    let shell = ShellId(format!("step:data:shell#{id}{suffix}"));
+    let body = BodyId(StepIdentity::data("body", format!("{id}{suffix}")));
+    let region = RegionId(StepIdentity::data("region", format!("{id}{suffix}")));
+    let shell = ShellId(StepIdentity::data("shell", format!("{id}{suffix}")));
     let mut built = staged_topology(
         typed,
         built_vertices,
@@ -970,15 +983,22 @@ fn build_shell_wire_set(
         } else {
             (curve_end, curve_start)
         };
-        let ir_id = EdgeId(format!(
-            "step:data:edge#{edge_id}-wire-{id}-{shell_id}-{oriented_id}-{index}"
+        let ir_id = EdgeId(StepIdentity::data(
+            "edge",
+            format!("{edge_id}-wire-{id}-{shell_id}-{oriented_id}-{index}"),
         ));
         wire_edges.push(ir_id.clone());
         edges.push(Edge {
             id: ir_id,
             curve: edge_curve_id_reported(edge_id, edge, exchange, warnings),
-            start: VertexId(format!("step:data:vertex#{start}{vertex_suffix}")),
-            end: VertexId(format!("step:data:vertex#{end}{vertex_suffix}")),
+            start: VertexId(StepIdentity::data(
+                "vertex",
+                format!("{start}{vertex_suffix}"),
+            )),
+            end: VertexId(StepIdentity::data(
+                "vertex",
+                format!("{end}{vertex_suffix}"),
+            )),
             param_range: None,
             tolerance: None,
         });
@@ -989,18 +1009,26 @@ fn build_shell_wire_set(
             let vertex = vdefs.get(&vertex_id)?;
             point_positions.get(vertex.point)?;
             Some(Vertex {
-                id: VertexId(format!("step:data:vertex#{vertex_id}{vertex_suffix}")),
-                point: PointId(format!("step:data:point#{}", vertex.point)),
+                id: VertexId(StepIdentity::data(
+                    "vertex",
+                    format!("{vertex_id}{vertex_suffix}"),
+                )),
+                point: PointId(StepIdentity::data("point", vertex.point)),
                 tolerance: None,
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let body = BodyId(format!("step:data:body#{id}{suffix}"));
-    let region = RegionId(format!("step:data:region#{id}{suffix}"));
+    let body = BodyId(StepIdentity::data("body", format!("{id}{suffix}")));
+    let region = RegionId(StepIdentity::data("region", format!("{id}{suffix}")));
     let shell = shell_identity(id, shell_id, scope_root);
     let free_vertices = free_vertices
         .into_iter()
-        .map(|vertex| VertexId(format!("step:data:vertex#{vertex}{vertex_suffix}")))
+        .map(|vertex| {
+            VertexId(StepIdentity::data(
+                "vertex",
+                format!("{vertex}{vertex_suffix}"),
+            ))
+        })
         .collect();
     let mut built = staged_topology(
         typed,
@@ -1104,7 +1132,7 @@ fn build_geometric_set(
         };
         typed.insert(set_id);
         for surface_step in items {
-            let surface = SurfaceId(format!("step:data:surface#{surface_step}"));
+            let surface = SurfaceId(StepIdentity::data("surface", surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
                 surfaces.push((surface_step, surface));
             }
@@ -1113,13 +1141,16 @@ fn build_geometric_set(
     if surfaces.is_empty() {
         return None;
     }
-    let body = BodyId(format!("step:data:body#{id}"));
-    let region = RegionId(format!("step:data:region#{id}"));
-    let shell = ShellId(format!("step:data:shell#geometric-set-{id}"));
+    let body = BodyId(StepIdentity::data("body", id));
+    let region = RegionId(StepIdentity::data("region", id));
+    let shell = ShellId(StepIdentity::data("shell", format!("geometric-set-{id}")));
     let faces = surfaces
         .into_iter()
         .map(|(surface_step, surface)| Face {
-            id: FaceId(format!("step:data:face#{surface_step}-geometric-set-{id}")),
+            id: FaceId(StepIdentity::data(
+                "face",
+                format!("{surface_step}-geometric-set-{id}"),
+            )),
             shell: shell.clone(),
             surface,
             sense: Sense::Forward,
@@ -1339,7 +1370,7 @@ fn edge_curve_id_reported(
             "STEP edge curve #{edge_id}: surface-curve #{curve_step} has no resolvable basis; edge committed without a curve"
         ));
     }
-    carrier.map(|curve| CurveId(format!("step:data:curve#{curve}")))
+    carrier.map(|curve| CurveId(StepIdentity::data("curve", curve)))
 }
 fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
     exchange
@@ -1972,8 +2003,8 @@ fn build(
         || has_type(root, "BREP_WITH_VOIDS")
         || has_type(root, "FACETED_BREP");
     if solid {
-        let body = BodyId(format!("step:data:body#{id}"));
-        let region = RegionId(format!("step:data:region#{id}"));
+        let body = BodyId(StepIdentity::data("body", id));
+        let region = RegionId(StepIdentity::data("region", id));
         let mut failure = None;
         let scope_shell_carriers = shell_steps.len() > 1 || scope_root;
         let built = build_one(
@@ -2030,13 +2061,13 @@ fn build(
         } else {
             None
         };
-        let body = BodyId(format!(
-            "step:data:body#{id}{}",
-            suffix.as_deref().unwrap_or_default()
+        let body = BodyId(StepIdentity::data(
+            "body",
+            format!("{id}{}", suffix.as_deref().unwrap_or_default()),
         ));
-        let region = RegionId(format!(
-            "step:data:region#{id}{}",
-            suffix.as_deref().unwrap_or_default()
+        let region = RegionId(StepIdentity::data(
+            "region",
+            format!("{id}{}", suffix.as_deref().unwrap_or_default()),
         ));
         if let Some(value) = build_one(
             id,
@@ -2223,10 +2254,11 @@ fn build_one(
                 String::new()
             };
             let surface_id = if let Some(surface_step) = face_info.surface {
-                SurfaceId(format!("step:data:surface#{surface_step}"))
+                SurfaceId(StepIdentity::data("surface", surface_step))
             } else {
-                let surface_id = SurfaceId(format!(
-                    "step:data:surface#implicit-face-{face_step}{face_suffix}"
+                let surface_id = SurfaceId(StepIdentity::data(
+                    "surface",
+                    format!("implicit-face-{face_step}{face_suffix}"),
                 ));
                 if implicit_surface_ids.insert(surface_id.clone()) {
                     surfaces.push(Surface {
@@ -2251,7 +2283,10 @@ fn build_one(
             };
             let surface_step = face_info.surface;
             let face_same_sense = face_info.same_sense;
-            let fid = FaceId(format!("step:data:face#{face_step}{face_suffix}"));
+            let fid = FaceId(StepIdentity::data(
+                "face",
+                format!("{face_step}{face_suffix}"),
+            ));
             let name = face_info.name.as_ref().and_then(|value| {
                 super::decode_text(
                     exchange,
@@ -2295,8 +2330,9 @@ fn build_one(
                     loop_step,
                     "loop record",
                 )?;
-                let lid = LoopId(format!(
-                    "step:data:loop#{loop_step}-face-{face_step}{face_suffix}"
+                let lid = LoopId(StepIdentity::data(
+                    "loop",
+                    format!("{loop_step}-face-{face_step}{face_suffix}"),
                 ));
                 if has_type(lr, "VERTEX_LOOP") {
                     let vertex_step = require_carrier(
@@ -2391,8 +2427,9 @@ fn build_one(
                             .entry((shell_step, edge_id.clone()))
                             .or_insert((canonical_start, canonical_end));
                         poly_points.extend([(shell_step, start_point), (shell_step, end_point)]);
-                        let cid = CoedgeId(format!(
-                            "step:data:coedge#poly-{loop_step}-{index}-face-{face_step}{face_suffix}"
+                        let cid = CoedgeId(StepIdentity::data(
+                            "coedge",
+                            format!("poly-{loop_step}-{index}-face-{face_step}{face_suffix}"),
                         ));
                         coedge_ids.push(cid.clone());
                         coedges.push(Coedge {
@@ -2475,14 +2512,15 @@ fn build_one(
                     )?;
                     let edge =
                         require_carrier(edefs.get(&o.edge), failure, o.edge, "edge definition")?;
-                    let cid = CoedgeId(format!(
-                        "step:data:coedge#{use_step}-face-{face_step}{face_suffix}"
+                    let cid = CoedgeId(StepIdentity::data(
+                        "coedge",
+                        format!("{use_step}-face-{face_step}{face_suffix}"),
                     ));
                     let pcurves: Vec<(PcurveId, Option<[f64; 2]>)> = if o.seam_edge {
                         let explicit_pcurve = surface_step.and_then(|surface_step| {
                             let pcurve_step = o.pcurve?;
                             let pcurve = exchange.records.get(&pcurve_step)?;
-                            let pcurve_id = PcurveId(format!("step:data:pcurve#{pcurve_step}"));
+                            let pcurve_id = PcurveId(StepIdentity::data("pcurve", pcurve_step));
                             let edge_curve = edge.curve?;
                             let associated = associated_pcurves(
                                 edge_curve,
@@ -2809,7 +2847,7 @@ fn build_one(
         )?;
         vertices.push(Vertex {
             id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
-            point: PointId(format!("step:data:point#{}", v.point)),
+            point: PointId(StepIdentity::data("point", v.point)),
             tolerance: None,
         });
         typed.insert(vertex_id);
@@ -2823,7 +2861,7 @@ fn build_one(
         )?;
         vertices.push(Vertex {
             id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
-            point: PointId(format!("step:data:point#{point_id}")),
+            point: PointId(StepIdentity::data("point", point_id)),
             tolerance: None,
         });
         typed.insert(point_id);
@@ -2993,9 +3031,12 @@ fn connected_face_components(
 
 fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {
     if scope_root {
-        ShellId(format!("step:data:shell#{shell_step}-root-{root_id}"))
+        ShellId(StepIdentity::data(
+            "shell",
+            format!("{shell_step}-root-{root_id}"),
+        ))
     } else {
-        ShellId(format!("step:data:shell#{shell_step}"))
+        ShellId(StepIdentity::data("shell", shell_step))
     }
 }
 
@@ -3008,14 +3049,18 @@ fn scoped_edge_id(
 ) -> EdgeId {
     if scoped {
         if scope_root {
-            EdgeId(format!(
-                "step:data:edge#{edge_step}-root-{root_id}-shell-{shell_step}"
+            EdgeId(StepIdentity::data(
+                "edge",
+                format!("{edge_step}-root-{root_id}-shell-{shell_step}"),
             ))
         } else {
-            EdgeId(format!("step:data:edge#{edge_step}-shell-{shell_step}"))
+            EdgeId(StepIdentity::data(
+                "edge",
+                format!("{edge_step}-shell-{shell_step}"),
+            ))
         }
     } else {
-        EdgeId(format!("step:data:edge#{edge_step}"))
+        EdgeId(StepIdentity::data("edge", edge_step))
     }
 }
 
@@ -3028,14 +3073,18 @@ fn scoped_vertex_id(
 ) -> VertexId {
     if scoped {
         if scope_root {
-            VertexId(format!(
-                "step:data:vertex#{vertex_step}-root-{root_id}-shell-{shell_step}"
+            VertexId(StepIdentity::data(
+                "vertex",
+                format!("{vertex_step}-root-{root_id}-shell-{shell_step}"),
             ))
         } else {
-            VertexId(format!("step:data:vertex#{vertex_step}-shell-{shell_step}"))
+            VertexId(StepIdentity::data(
+                "vertex",
+                format!("{vertex_step}-shell-{shell_step}"),
+            ))
         }
     } else {
-        VertexId(format!("step:data:vertex#{vertex_step}"))
+        VertexId(StepIdentity::data("vertex", vertex_step))
     }
 }
 
@@ -3048,16 +3097,21 @@ fn scoped_poly_vertex_id(
 ) -> VertexId {
     if scoped {
         if scope_root {
-            VertexId(format!(
-                "step:data:vertex#poly-point-{point_step}-root-{root_id}-shell-{shell_step}"
+            VertexId(StepIdentity::data(
+                "vertex",
+                format!("poly-point-{point_step}-root-{root_id}-shell-{shell_step}"),
             ))
         } else {
-            VertexId(format!(
-                "step:data:vertex#poly-point-{point_step}-shell-{shell_step}"
+            VertexId(StepIdentity::data(
+                "vertex",
+                format!("poly-point-{point_step}-shell-{shell_step}"),
             ))
         }
     } else {
-        VertexId(format!("step:data:vertex#poly-point-{point_step}"))
+        VertexId(StepIdentity::data(
+            "vertex",
+            format!("poly-point-{point_step}"),
+        ))
     }
 }
 
@@ -3071,16 +3125,18 @@ fn poly_edge_id(
 ) -> EdgeId {
     if scoped {
         if scope_root {
-            EdgeId(format!(
-                "step:data:edge#poly-{start}-{end}-root-{root_id}-shell-{shell_step}"
+            EdgeId(StepIdentity::data(
+                "edge",
+                format!("poly-{start}-{end}-root-{root_id}-shell-{shell_step}"),
             ))
         } else {
-            EdgeId(format!(
-                "step:data:edge#poly-{start}-{end}-shell-{shell_step}"
+            EdgeId(StepIdentity::data(
+                "edge",
+                format!("poly-{start}-{end}-shell-{shell_step}"),
             ))
         }
     } else {
-        EdgeId(format!("step:data:edge#poly-{start}-{end}"))
+        EdgeId(StepIdentity::data("edge", format!("poly-{start}-{end}")))
     }
 }
 
@@ -3263,7 +3319,7 @@ fn associated_pcurves(
         .into_iter()
         .filter_map(|pcurve_step| {
             let pcurve = exchange.records.get(&pcurve_step)?;
-            let pcurve_id = PcurveId(format!("step:data:pcurve#{pcurve_step}"));
+            let pcurve_id = PcurveId(StepIdentity::data("pcurve", pcurve_step));
             (has_type(pcurve, "PCURVE")
                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()? == surface_step
                 && decoded_pcurves.contains(&pcurve_id))
@@ -3594,7 +3650,7 @@ fn select_associated_pcurve(
     point_positions: &CarrierIndex,
     candidates: &[PcurveId],
 ) -> Option<SelectedPcurve> {
-    let surface_identity = format!("step:data:surface#{surface_step}");
+    let surface_identity = StepIdentity::data("surface", surface_step);
     let surface = ir
         .model
         .surfaces

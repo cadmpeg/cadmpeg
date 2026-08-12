@@ -14,6 +14,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
+use crate::ids::StepIdentity;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
 mod dependencies;
@@ -660,7 +661,7 @@ fn retain_unowned_carriers(
                 .any(|partial| partial.name == "PCURVE")
         })
         .map(|(&id, _)| id)
-        .filter(|id| !owned.contains(&format!("step:data:pcurve#{id}")))
+        .filter(|id| !owned.contains(&StepIdentity::data("pcurve", id)))
         .collect::<BTreeSet<_>>();
     let referenced = referenced_record_ids(exchange);
     let unowned_direct_carriers = ir
