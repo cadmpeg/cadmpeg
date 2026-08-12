@@ -84,25 +84,31 @@ class PatternFilters(unittest.TestCase):
         self.assertTrue(ratchet.is_production_rs(Path("crates/c/src/decode.rs")))
 
 
+def _zero_counts() -> dict[str, int]:
+    return {key: 0 for key in ratchet.METRIC_KEYS}
+
+
+def _complete_ceilings(**overrides: int) -> dict[str, int]:
+    ceilings = _zero_counts()
+    ceilings.update(overrides)
+    return ceilings
+
+
 class LedgerRoundTrip(unittest.TestCase):
     def test_check_fails_above_ceiling(self) -> None:
-        failures = ratchet.check(
-            {
-                "from_endian_bytes": 2,
-                "le_be_at_outside_core": 0,
-                "codec_error_malformed_format": 0,
-                "loss_note_struct_literals": 0,
-                "bare_tolerance_literals": 0,
-            },
-            {
-                "from_endian_bytes": 1,
-                "le_be_at_outside_core": 0,
-                "codec_error_malformed_format": 0,
-                "loss_note_struct_literals": 0,
-                "bare_tolerance_literals": 0,
-            },
-        )
+        counts = _zero_counts()
+        counts["from_endian_bytes"] = 2
+        failures = ratchet.check(counts, _complete_ceilings(from_endian_bytes=1))
         self.assertEqual(failures, ["from_endian_bytes: 2 > ledger 1"])
+
+    def test_check_fails_missing_ceiling(self) -> None:
+        counts = _zero_counts()
+        ceilings = _complete_ceilings()
+        del ceilings["nonliteral_vec_repeat"]
+        failures = ratchet.check(counts, ceilings)
+        self.assertEqual(
+            failures, ["ledger missing ceiling for nonliteral_vec_repeat"]
+        )
 
 
 if __name__ == "__main__":
