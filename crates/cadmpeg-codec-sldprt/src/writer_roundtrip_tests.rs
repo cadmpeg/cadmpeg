@@ -6,8 +6,8 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::compare::floats_agree;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::transform::Transform;
 
 use crate::tests::{sldprt_with_body, triangle_body};

@@ -2,7 +2,6 @@
 //! Bounded byte decoding primitives shared by cadmpeg codecs.
 
 pub mod be;
-pub mod compare;
 pub mod container;
 pub mod decode;
 pub mod error;

@@ -98,23 +98,36 @@ item = "FormatDescriptor::{display_name,capabilities,detection_priority} and Cap
 reason = "debug-assert-only or all-zero noop; extensions retained"
 
 [[change]]
-commit = "PENDING"
+commit = "7ed3f4f6e3ebc9f19100714c97873eb26356c8e9"
 crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::golden"
 reason = "re-homed to publish=false cadmpeg-test-support"
 
 [[change]]
-commit = "PENDING"
+commit = "7ed3f4f6e3ebc9f19100714c97873eb26356c8e9"
 crate = "cadmpeg-ir"
 kind = "move"
 item = "cadmpeg_ir::roundtrip -> cadmpeg_test_support::roundtrip"
 reason = "test-only round-trip helpers leave the production IR crate"
 
 [[change]]
-commit = "PENDING"
+commit = "7ed3f4f6e3ebc9f19100714c97873eb26356c8e9"
 crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::examples"
 reason = "gated behind examples feature; manifests already claimed this"
 
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "move"
+item = "cadmpeg_core::compare::{FLOAT_TOLERANCE,LOCAL_DIGEST_SUFFIX,floats_agree,is_local_digest_attribute,values_agree,texts_agree} -> cadmpeg_ir::compare"
+reason = "IR JSON tolerance and local-digest invariants live with the IR"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::compare"
+reason = "module emptied by move to cadmpeg_ir::compare"

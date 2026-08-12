@@ -401,12 +401,12 @@ impl CadIr {
 
 /// Source-container metadata preserved for reporting.
 ///
-/// Attribute keys ending in [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`] hold
+/// Attribute keys ending in [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`] hold
 /// machine-local digests over decoded content for the write-path edit oracle.
 /// Not portable across platforms; not tolerance-aware. Digests over retained
 /// source bytes must not use that suffix. See
 /// [`crate::hash::document_local_sha256`] and
-/// [`cadmpeg_core::compare::is_local_digest_attribute`].
+/// [`cadmpeg_ir::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceMeta {

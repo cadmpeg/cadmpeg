@@ -55,7 +55,7 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// Bitwise SHA-256 for the write path's edit oracle. Not portable across
 /// platforms (libm last-place drift) and not tolerance-aware (tolerant equality
 /// is not transitive). Attributes with these properties use
-/// [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`]; see
+/// [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`]; see
 /// [`crate::document::SourceMeta`].
 pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
     let unknowns = reduced_unknowns(ir, format, source_image_id);

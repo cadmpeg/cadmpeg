@@ -37,6 +37,7 @@ pub mod assets;
 pub mod attributes;
 pub mod bytes;
 pub mod codec;
+pub mod compare;
 
 pub mod diff;
 pub mod document;
