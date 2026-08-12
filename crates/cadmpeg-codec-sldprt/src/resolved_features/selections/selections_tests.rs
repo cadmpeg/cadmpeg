@@ -810,6 +810,35 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         marker,
         &references.into_iter().flatten().collect::<Vec<_>>()
     ));
+
+    // SurfaceCut target vectors retain the same role byte with any lane-local
+    // low subtype.  The operation scanner must not require subtype zero.
+    payload[4] = 0x7f;
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.clone(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let selections = operation_surface_selection_candidates(
+        FeatureClass::CutWithSurface,
+        &lane,
+        0,
+        payload.len(),
+        None,
+    );
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].0, marker);
 }
 
 #[test]

@@ -884,13 +884,7 @@ pub(crate) fn project_compact_surface_selections(
             continue;
         }
         if let FeatureDefinition::CutWithSurface { targets, tools, .. } = &mut feature.definition {
-            let target = feature_selections
-                .iter()
-                .find(|selection| selection.selector == 0);
-            let tool = feature_selections
-                .iter()
-                .find(|selection| matches!(selection.selector, 4 | 6));
-            let Some((target, tool)) = target.zip(tool) else {
+            let Some((target, tool)) = cut_with_surface_selection_pair(feature_selections) else {
                 continue;
             };
             let target_native = compact_surface_selection_value(&target.components);
@@ -1412,6 +1406,45 @@ fn same_surface_selection_semantics(
             .iter()
             .zip(&right.components)
             .all(|(left, right)| left.type_signature[4..8] == right.type_signature[4..8])
+}
+
+/// Return the ordered target/tool pair retained by each `SurfaceCut` lane.
+///
+/// The role-02 vectors are ordered in the native object: the target-body
+/// reference list precedes the `moCompSurfaceBody_c` cutting-surface vector.
+/// Their low selector byte is a lane-local subtype and cannot identify the
+/// semantic role.  Configuration lanes must agree on both ordered paths.
+fn cut_with_surface_selection_pair<'a>(
+    selections: &[&'a FeatureInputSurfaceSelection],
+) -> Option<(
+    &'a FeatureInputSurfaceSelection,
+    &'a FeatureInputSurfaceSelection,
+)> {
+    let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
+    for selection in selections {
+        by_lane
+            .entry(selection.parent.as_str())
+            .or_default()
+            .push(*selection);
+    }
+    let mut consensus = None;
+    for mut lane_selections in by_lane.into_values() {
+        if lane_selections.len() != 2 {
+            return None;
+        }
+        lane_selections.sort_unstable_by_key(|selection| selection.offset);
+        let pair = (lane_selections[0], lane_selections[1]);
+        if let Some((target, tool)) = consensus {
+            if !same_surface_selection_semantics(target, pair.0)
+                || !same_surface_selection_semantics(tool, pair.1)
+            {
+                return None;
+            }
+        } else {
+            consensus = Some(pair);
+        }
+    }
+    consensus
 }
 
 /// Resolve an attached thread face when its persistent cylinder reference

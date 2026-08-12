@@ -362,7 +362,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
 }
 
 #[test]
-fn compact_surface_cut_binds_target_body_and_tool_face_by_selector() {
+fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
         id: FeatureId(id.into()),
         ordinal: 0,
@@ -441,8 +441,10 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_selector() {
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: vec![
-            selection(0, 0, "target-native", &[0, 3, 2]),
-            selection(1, 6, "tool-native", &[0, 7]),
+            // These low selector bytes are lane-local subtypes.  They do not
+            // identify the target/tool roles; native vector order does.
+            selection(0, 7, "target-native", &[0, 3, 2]),
+            selection(1, 1, "tool-native", &[0, 7]),
         ],
         generated_surface_identities: Vec::new(),
         references: Vec::new(),

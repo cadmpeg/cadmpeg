@@ -713,16 +713,17 @@ fn operation_surface_selection_candidates(
                 let selector = lane
                     .native_payload
                     .get(marker.checked_sub(8)?..marker - 4)?;
-                let components = if selector[1..] == [2, 0, 0] && selector[0] == 0 {
-                    compact_component_reference_list(&lane.native_payload, marker, false)?
-                        .into_iter()
-                        .flatten()
-                        .collect()
-                } else if is_component_vector_selector_for_role(selector, 2) {
-                    compact_surface_selection_at(&lane.native_payload, marker)?
-                } else {
+                if !is_component_vector_selector_for_role(selector, 2) {
                     return None;
-                };
+                }
+                // The first role-02 vector is the target-body reference list;
+                // the later vector belongs to the moCompSurfaceBody_c cutting
+                // surface child.  The selector's low byte is lane-local and
+                // is not a semantic target/tool discriminator.
+                let components =
+                    compact_component_reference_list(&lane.native_payload, marker, false)
+                        .map(|references| references.into_iter().flatten().collect())
+                        .or_else(|| compact_surface_selection_at(&lane.native_payload, marker))?;
                 Some((marker, components))
             })
             .collect();
