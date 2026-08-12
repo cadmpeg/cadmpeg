@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed conversion refusals.
 //!
-//! Refusal codes are stable test data in this phase. They are not serialized
-//! into command reports: the report envelope remains `schema_version` 5.
+//! Report envelope `schema_version` 6 serializes [`RefusalCode`] under
+//! `refusal.code` with `status: "refused"`. Presentation messages stay on the
+//! variant for stderr and `refusal.message`.
 
 use std::fmt;
 
 use cadmpeg_ir::report::{DecodeReport, ValidationReport};
+use serde_json::{json, Value};
 
-/// Stable refusal code for tests. Not written into v5 command reports.
+/// Stable refusal code written into v6 command reports and used by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // exercised by unit tests; not referenced from the binary path
 pub enum RefusalCode {
     /// Neutral or native validation failed.
     ValidationFailed,
@@ -26,9 +27,63 @@ pub enum RefusalCode {
     BinaryStdoutRejected,
 }
 
+impl RefusalCode {
+    /// `snake_case` wire form for `refusal.code`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ValidationFailed => "validation_failed",
+            Self::DecodeLossRejected => "decode_loss_rejected",
+            Self::ExportLossRejected => "export_loss_rejected",
+            Self::EmptyGeometry => "empty_geometry",
+            Self::UnsupportedTarget => "unsupported_target",
+            Self::BinaryStdoutRejected => "binary_stdout_rejected",
+        }
+    }
+}
+
+impl fmt::Display for RefusalCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Workflow stage that produced the refusal (`refusal.stage` on the wire).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefusalStage {
+    /// Input resolved but conversion planning rejected the request.
+    Plan,
+    /// Decode completed with losses that the policy rejects.
+    Decode,
+    /// Neutral or native validation failed.
+    Validate,
+    /// Export planning refused (loss policy or empty geometry).
+    Export,
+}
+
+impl RefusalStage {
+    /// `snake_case` wire form for `refusal.stage`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Plan => "plan",
+            Self::Decode => "decode",
+            Self::Validate => "validate",
+            Self::Export => "export",
+        }
+    }
+}
+
+impl fmt::Display for RefusalStage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Typed refusal from the conversion workflow.
 ///
-/// Presentation messages stay on the variant; codes are for tests only.
+/// Presentation messages stay on the variant; codes and stages reach the v6
+/// report envelope through [`ConversionRefusal::report_fields`].
 #[derive(Debug)]
 pub enum ConversionRefusal {
     /// Validation found errors and `--allow-invalid` was not set.
@@ -78,8 +133,8 @@ pub enum ConversionRefusal {
 }
 
 impl ConversionRefusal {
-    /// Stable code for tests. Not part of the v5 report schema.
-    #[allow(dead_code)] // exercised by unit tests; not referenced from the binary path
+    /// Stable code for tests and the v6 report envelope.
+    #[must_use]
     pub const fn code(&self) -> RefusalCode {
         match self {
             Self::ValidationFailed { .. } => RefusalCode::ValidationFailed,
@@ -91,7 +146,21 @@ impl ConversionRefusal {
         }
     }
 
-    /// Presentation message shown to the user.
+    /// Workflow stage for the v6 report envelope.
+    #[must_use]
+    pub const fn stage(&self) -> RefusalStage {
+        match self {
+            Self::UnsupportedTarget { .. } | Self::BinaryStdoutRejected { .. } => {
+                RefusalStage::Plan
+            }
+            Self::DecodeLossRejected { .. } => RefusalStage::Decode,
+            Self::ValidationFailed { .. } => RefusalStage::Validate,
+            Self::ExportLossRejected { .. } | Self::EmptyGeometry { .. } => RefusalStage::Export,
+        }
+    }
+
+    /// Presentation message shown to the user and written to `refusal.message`.
+    #[must_use]
     pub fn message(&self) -> &str {
         match self {
             Self::ValidationFailed { message, .. }
@@ -103,11 +172,25 @@ impl ConversionRefusal {
         }
     }
 
+    /// `status` / `refusal` object fields for a v6 command report.
+    #[must_use]
+    pub fn report_fields(&self) -> Value {
+        json!({
+            "status": "refused",
+            "refusal": {
+                "stage": self.stage().as_str(),
+                "code": self.code().as_str(),
+                "message": self.message(),
+            },
+        })
+    }
+
     /// Whether an explicitly requested `--report` may still be written.
     ///
     /// Loss, validation, and empty-geometry refusals may write the report.
     /// Binary-stdout and unsupported-target refusals happen before the input
     /// is read and do not write a report.
+    #[must_use]
     pub const fn may_write_report(&self) -> bool {
         match self {
             Self::ValidationFailed { .. }
@@ -119,6 +202,7 @@ impl ConversionRefusal {
     }
 
     /// Decode report to include in an optional command report.
+    #[must_use]
     pub fn decode_report(&self) -> Option<&DecodeReport> {
         match self {
             Self::ValidationFailed { decode_report, .. } => decode_report.as_ref(),
@@ -130,6 +214,7 @@ impl ConversionRefusal {
     }
 
     /// Validation report to include in an optional command report.
+    #[must_use]
     pub fn validation_report(&self) -> Option<&ValidationReport> {
         match self {
             Self::ValidationFailed { validation, .. } => Some(validation),
@@ -145,6 +230,7 @@ impl ConversionRefusal {
     ///
     /// Semantic model refusals exit 1. Binary-stdout remains exit 2 so the
     /// operational mix-up guard stays distinct from model refusals.
+    #[must_use]
     pub const fn exit_code(&self) -> u8 {
         match self {
             Self::BinaryStdoutRejected { .. } => 2,
@@ -163,6 +249,8 @@ impl std::error::Error for ConversionRefusal {}
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     #[test]
@@ -171,9 +259,14 @@ mod tests {
             message: "--iges-target requires IGES output".into(),
         };
         assert_eq!(refusal.code(), RefusalCode::UnsupportedTarget);
+        assert_eq!(refusal.stage(), RefusalStage::Plan);
         assert_eq!(refusal.exit_code(), 1);
         assert!(!refusal.may_write_report());
         assert_eq!(refusal.to_string(), "--iges-target requires IGES output");
+        let fields = refusal.report_fields();
+        assert_eq!(fields["status"], "refused");
+        assert_eq!(fields["refusal"]["code"], "unsupported_target");
+        assert_eq!(fields["refusal"]["stage"], "plan");
     }
 
     #[test]
@@ -182,7 +275,23 @@ mod tests {
             message: "refusing to write binary sldprt to standard output".into(),
         };
         assert_eq!(refusal.code(), RefusalCode::BinaryStdoutRejected);
+        assert_eq!(refusal.stage(), RefusalStage::Plan);
         assert_eq!(refusal.exit_code(), 2);
         assert!(!refusal.may_write_report());
+    }
+
+    #[test]
+    fn validation_refusal_maps_to_validate_stage() {
+        let refusal = ConversionRefusal::ValidationFailed {
+            message: "validation found 1 error(s)".into(),
+            decode_report: None,
+            validation: ValidationReport {
+                entity_counts: BTreeMap::new(),
+                findings: Vec::new(),
+                losses: Vec::new(),
+            },
+        };
+        assert_eq!(refusal.stage(), RefusalStage::Validate);
+        assert_eq!(refusal.code().as_str(), "validation_failed");
     }
 }

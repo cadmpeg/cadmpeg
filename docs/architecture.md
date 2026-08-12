@@ -29,7 +29,7 @@ The `Codec` trait splits decoding into a provided `decode` wrapper and a require
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 5`, including semantic refusal paths. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
+`decode`, `export`, and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
 
 Status 0 is success. Status 1 is semantic failure or a non-empty diff. Status 2 is operational failure.
 

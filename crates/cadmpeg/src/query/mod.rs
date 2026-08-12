@@ -149,10 +149,26 @@ struct ReportProbe {
     /// Binary that wrote the report; absent in reports from older builds.
     #[serde(default)]
     generator: Option<String>,
+    /// Present from `schema_version` 6 (`ok` | `refused`).
+    #[serde(default)]
+    status: Option<String>,
+    /// Present from `schema_version` 6; null on success.
+    #[serde(default)]
+    refusal: Option<RefusalProbe>,
     #[serde(default)]
     decode_report: Option<DecodeReportProbe>,
     #[serde(default)]
     validation_report: Option<ValidationReportProbe>,
+}
+
+#[derive(Deserialize)]
+struct RefusalProbe {
+    #[serde(default)]
+    stage: Option<String>,
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
 }
 
 /// Lenient decode report: enum-valued fields read as strings so future
@@ -196,11 +212,28 @@ struct FindingProbe {
 #[derive(Deserialize)]
 struct LossProbe {
     #[serde(default)]
-    code: Option<String>,
+    code: Option<LossCodeProbe>,
     #[serde(default)]
     severity: Option<String>,
     #[serde(default)]
     message: Option<String>,
+}
+
+/// Accepts v1 bare strings and v2 `{ namespace, code, kind }` objects.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum LossCodeProbe {
+    Legacy(String),
+    Namespaced { namespace: String, code: String },
+}
+
+impl LossCodeProbe {
+    fn display(&self) -> String {
+        match self {
+            Self::Legacy(code) => code.clone(),
+            Self::Namespaced { namespace, code } => format!("{namespace}/{code}"),
+        }
+    }
 }
 
 /// Lenient CADIR document probe: arena contents are counted, never
@@ -399,6 +432,20 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 report.schema_version.to_string(),
             ));
             rows.push(("command".to_owned(), cell(&report.command)));
+            if let Some(status) = &report.status {
+                rows.push(("status".to_owned(), cell(status)));
+            }
+            if let Some(refusal) = &report.refusal {
+                if let Some(stage) = &refusal.stage {
+                    rows.push(("refusal_stage".to_owned(), cell(stage)));
+                }
+                if let Some(code) = &refusal.code {
+                    rows.push(("refusal_code".to_owned(), cell(code)));
+                }
+                if let Some(message) = &refusal.message {
+                    rows.push(("refusal_message".to_owned(), cell(message)));
+                }
+            }
             if let Some(generator) = &report.generator {
                 rows.push(("generator".to_owned(), cell(generator)));
             }
@@ -623,7 +670,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             .iter()
             .map(|loss| {
                 serde_json::json!({
-                    "code": loss.code,
+                    "code": loss.code.as_ref().map(LossCodeProbe::display),
                     "severity": loss.severity,
                     "message": loss.message,
                 })
@@ -636,7 +683,10 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             println!(
                 "{}\t{}\t{}",
                 opt(loss.severity.as_ref()),
-                opt(loss.code.as_ref()),
+                loss.code
+                    .as_ref()
+                    .map(|code| cell(&code.display()))
+                    .unwrap_or_default(),
                 opt(loss.message.as_ref()),
             );
         }

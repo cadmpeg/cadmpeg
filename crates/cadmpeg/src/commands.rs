@@ -22,7 +22,12 @@ use crate::application::{
 use crate::loader::{self, read_prefix, LoadNotice, DETECTION_PREFIX_LEN};
 use crate::{DecodeArgs, Format};
 
-pub(crate) const CLI_SCHEMA_VERSION: u32 = 5;
+/// CLI command-report envelope version.
+///
+/// Independent of `CadIr.ir_version` and `DECODE_SIDECAR_VERSION`. Version 6
+/// adds top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code,
+/// message }` or null).
+pub(crate) const CLI_SCHEMA_VERSION: u32 = 6;
 
 /// Catalogs required by CLI command handlers.
 pub struct AppCatalogs {
@@ -143,6 +148,7 @@ pub fn inspect(
             "confidence": confidence,
             "summary": summary,
         }),
+        None,
     )?;
     if json {
         println!(
@@ -150,6 +156,8 @@ pub fn inspect(
             serde_json::to_string_pretty(&serde_json::json!({
                 "schema_version": CLI_SCHEMA_VERSION,
                 "command": "inspect",
+                "status": "ok",
+                "refusal": null,
                 "confidence": confidence,
                 "summary": summary,
             }))?
@@ -219,9 +227,12 @@ pub fn decode(
         report_path,
         force,
         "decode",
-        loaded.decode_report(),
-        None,
-        None,
+        CommandReportBody {
+            decode_report: loaded.decode_report(),
+            validation_report: None,
+            export: None,
+            refusal: None,
+        },
     )?;
     Ok(())
 }
@@ -249,6 +260,11 @@ pub fn validate_cmd(
         loaded.fidelity(),
         losses(loaded.decode_report()),
     );
+    let validate_refusal = (!report.is_ok()).then(|| ConversionRefusal::ValidationFailed {
+        message: format!("validation found {} error(s)", report.error_count()),
+        decode_report: loaded.decode_report().cloned(),
+        validation: report.clone(),
+    });
     write_json_report(
         path,
         report_path,
@@ -258,28 +274,32 @@ pub fn validate_cmd(
             "decode_report": loaded.decode_report(),
             "validation_report": report,
         }),
+        validate_refusal.as_ref(),
     )?;
     if json {
-        writeln!(
-            stdout,
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": CLI_SCHEMA_VERSION,
-                "command": "validate",
-                "decode_report": loaded.decode_report(),
-                "validation_report": report,
-            }))?
-        )?;
+        let mut payload = serde_json::json!({
+            "schema_version": CLI_SCHEMA_VERSION,
+            "command": "validate",
+            "decode_report": loaded.decode_report(),
+            "validation_report": report,
+        });
+        match &validate_refusal {
+            Some(refusal) => {
+                let fields = refusal.report_fields();
+                payload["status"] = fields["status"].clone();
+                payload["refusal"] = fields["refusal"].clone();
+            }
+            None => {
+                payload["status"] = serde_json::json!("ok");
+                payload["refusal"] = serde_json::Value::Null;
+            }
+        }
+        writeln!(stdout, "{}", serde_json::to_string_pretty(&payload)?)?;
     } else {
         print_validation_report(&mut stdout, &report)?;
     }
-    if !report.is_ok() {
-        return Err(ConversionRefusal::ValidationFailed {
-            message: format!("validation found {} error(s)", report.error_count()),
-            decode_report: loaded.decode_report().cloned(),
-            validation: report,
-        }
-        .into());
+    if let Some(refusal) = validate_refusal {
+        return Err(refusal.into());
     }
     Ok(())
 }
@@ -370,9 +390,12 @@ fn execute_conversion(
                         plan.report.as_deref(),
                         plan.force,
                         command,
-                        refusal.decode_report(),
-                        refusal.validation_report(),
-                        None,
+                        CommandReportBody {
+                            decode_report: refusal.decode_report(),
+                            validation_report: refusal.validation_report(),
+                            export: None,
+                            refusal: Some(refusal),
+                        },
                     )?;
                 }
             }
@@ -401,9 +424,12 @@ fn execute_conversion(
         plan.report.as_deref(),
         plan.force,
         command,
-        decode_report.as_ref(),
-        validation.as_ref(),
-        Some(&report),
+        CommandReportBody {
+            decode_report: decode_report.as_ref(),
+            validation_report: validation.as_ref(),
+            export: Some(&report),
+            refusal: None,
+        },
     )
 }
 
@@ -436,6 +462,7 @@ pub fn diff(
             "diff": result,
             "source_fidelity": fidelity_json(&fidelity),
         }),
+        None,
     )?;
     if json {
         println!(
@@ -443,6 +470,8 @@ pub fn diff(
             serde_json::to_string_pretty(&serde_json::json!({
                 "schema_version": CLI_SCHEMA_VERSION,
                 "command": "diff",
+                "status": "ok",
+                "refusal": null,
                 "different": different,
                 "diff": result,
                 "source_fidelity": fidelity_json(&fidelity),
@@ -726,14 +755,20 @@ fn export_ir(
     Ok(report)
 }
 
+#[derive(Clone, Copy)]
+struct CommandReportBody<'a> {
+    decode_report: Option<&'a DecodeReport>,
+    validation_report: Option<&'a ValidationReport>,
+    export: Option<&'a ExportReport>,
+    refusal: Option<&'a ConversionRefusal>,
+}
+
 fn write_command_report(
     input: &Path,
     output: Option<&Path>,
     force: bool,
     command: &'static str,
-    decode_report: Option<&DecodeReport>,
-    validation_report: Option<&ValidationReport>,
-    export: Option<&ExportReport>,
+    body: CommandReportBody<'_>,
 ) -> Result<()> {
     write_json_report(
         input,
@@ -741,10 +776,11 @@ fn write_command_report(
         force,
         command,
         &serde_json::json!({
-            "decode_report": decode_report,
-            "validation_report": validation_report,
-            "export": export,
+            "decode_report": body.decode_report,
+            "validation_report": body.validation_report,
+            "export": body.export,
         }),
+        body.refusal,
     )
 }
 
@@ -763,6 +799,7 @@ fn write_json_report(
     force: bool,
     command: &'static str,
     payload: &serde_json::Value,
+    refusal: Option<&ConversionRefusal>,
 ) -> Result<()> {
     let Some(output) = output else {
         return Ok(());
@@ -779,6 +816,17 @@ fn write_json_report(
     // Names the writing binary so a stale report announces itself; see
     // `query summary`'s generator row.
     object.insert("generator".to_string(), serde_json::json!(generator()));
+    match refusal {
+        Some(refusal) => {
+            let fields = refusal.report_fields();
+            object.insert("status".to_string(), fields["status"].clone());
+            object.insert("refusal".to_string(), fields["refusal"].clone());
+        }
+        None => {
+            object.insert("status".to_string(), serde_json::json!("ok"));
+            object.insert("refusal".to_string(), serde_json::Value::Null);
+        }
+    }
     let mut bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(object))?;
     bytes.push(b'\n');
     write_output(input, output, &bytes, force)?;
