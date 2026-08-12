@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read};
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +15,9 @@ const TERMINAL_MARKER: &[u8] = b"\xff\xff\xff\xff";
 const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 
 fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> Option<String> {
-    let count = usize::try_from(cadmpeg_core::le::u32_at(bytes, *at)?).ok()?;
+    let mut view = View::over_retained(bytes);
+    view.seek(*at)?;
+    let count = usize::try_from(view.u32_le()?).ok()?;
     *at = at.checked_add(4)?;
     if count > max {
         return None;

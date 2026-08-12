@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::le::u32_at;
+use crate::view_at::u32_le_at;
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2015,7 +2015,11 @@ impl<'a> Section<'a> {
     pub fn record_area_header(&self) -> Option<RecordAreaHeader<'a>> {
         let bytes = self.record_area?;
         let offset = self.record_area_offset?;
-        let control_words = [u32_at(bytes, 0)?, u32_at(bytes, 4)?, u32_at(bytes, 8)?];
+        let control_words = [
+            u32_le_at(bytes, 0)?,
+            u32_le_at(bytes, 4)?,
+            u32_le_at(bytes, 8)?,
+        ];
         let suffix = bytes.get(12..)?;
         is_product_record(suffix).then_some(())?;
         let length = usize::from(suffix[2]) - 2;
@@ -5642,7 +5646,7 @@ fn section_record_area_pointer(
     section_end: usize,
 ) -> Option<(usize, usize)> {
     let mut matches = (schema_start..section_end.saturating_sub(3)).filter_map(|at| {
-        let relative = usize::try_from(u32_at(bytes, at)?).ok()?;
+        let relative = usize::try_from(u32_le_at(bytes, at)?).ok()?;
         let target = section_offset.checked_add(relative)?;
         (target >= at.checked_add(4)? && target.checked_add(15)? <= section_end).then_some(())?;
         is_product_record(bytes.get(target.checked_add(12)?..section_end)?).then_some((target, at))
@@ -5685,7 +5689,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
     let mut out = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
     for table in 0..bytes.len().saturating_sub(4) {
-        let Some(count) = u32_at(bytes, table).map(|value| value as usize) else {
+        let Some(count) = u32_le_at(bytes, table).map(|value| value as usize) else {
             continue;
         };
         if !(2..=100_000).contains(&count) {
@@ -5704,12 +5708,12 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             continue;
         };
         if !is_product_record(bytes.get(table_end..).unwrap_or_default())
-            || u32_at(bytes, index_start) != Some(0)
+            || u32_le_at(bytes, index_start) != Some(0)
             || !seen_record_starts.insert(table_end)
         {
             continue;
         }
-        let Some(first) = u32_at(bytes, index_start + 4).map(|value| value as usize) else {
+        let Some(first) = u32_le_at(bytes, index_start + 4).map(|value| value as usize) else {
             continue;
         };
         let Some(base) = table_end.checked_sub(first) else {
@@ -5717,7 +5721,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         };
         let mut offsets = Vec::with_capacity(count + 1);
         for index in 0..=count {
-            let Some(value) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {
+            let Some(value) = u32_le_at(bytes, index_start + index * 4).map(|v| v as usize) else {
                 offsets.clear();
                 break;
             };
@@ -5740,7 +5744,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 records.clear();
                 break;
             };
-            let Some(object_id) = u32_at(bytes, table + 4 + index * 4) else {
+            let Some(object_id) = u32_le_at(bytes, table + 4 + index * 4) else {
                 records.clear();
                 break;
             };
@@ -5767,7 +5771,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         }
     }
     for count_offset in 8..bytes.len().saturating_sub(4) {
-        let Some(record_count) = u32_at(bytes, count_offset).map(|value| value as usize) else {
+        let Some(record_count) = u32_le_at(bytes, count_offset).map(|value| value as usize) else {
             continue;
         };
         if !(2..=100_000).contains(&record_count) {
@@ -5780,13 +5784,13 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(index_start) = count_offset.checked_sub(index_len) else {
             continue;
         };
-        let Some(first) = u32_at(bytes, index_start).map(|value| value as usize) else {
+        let Some(first) = u32_le_at(bytes, index_start).map(|value| value as usize) else {
             continue;
         };
-        let Some(second) = u32_at(bytes, index_start + 4).map(|value| value as usize) else {
+        let Some(second) = u32_le_at(bytes, index_start + 4).map(|value| value as usize) else {
             continue;
         };
-        let Some(last) = u32_at(bytes, count_offset - 4).map(|value| value as usize) else {
+        let Some(last) = u32_le_at(bytes, count_offset - 4).map(|value| value as usize) else {
             continue;
         };
         if first < count_offset + 4 || first >= second || second > last || last > bytes.len() {
@@ -5794,7 +5798,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         }
         let mut offsets = Vec::with_capacity(offset_count);
         for index in 0..offset_count {
-            let Some(offset) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {
+            let Some(offset) = u32_le_at(bytes, index_start + index * 4).map(|v| v as usize) else {
                 offsets.clear();
                 break;
             };

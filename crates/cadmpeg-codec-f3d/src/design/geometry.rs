@@ -3,7 +3,7 @@
 
 use crate::design::profile_select::historical_face_points;
 use crate::records::{DesignExtrudeSelectionMember, SketchRelationOperand};
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -282,7 +282,12 @@ pub(crate) fn sketch_arrangement_faces(
             }
         }
     }
-    let mut outgoing = vec![Vec::<(usize, bool, f64)>::new(); nodes.len()];
+    let mut outgoing = alloc_filled(
+        nodes.len(),
+        Vec::<(usize, bool, f64)>::new(),
+        "f3d_arrangement_outgoing",
+    )
+    .ok()?;
     for (edge_index, edge) in edges.iter().enumerate() {
         let forward = edge.polyline.get(1)?;
         let reverse = edge.polyline.get(edge.polyline.len().checked_sub(2)?)?;
@@ -1846,7 +1851,7 @@ fn nurbs_speed_bound(
         Some(weights) if weights.len() == count => weights,
         Some(_) => return None,
         None => {
-            owned_weights = vec![1.0; count];
+            owned_weights = alloc_filled(count, 1.0, "f3d_nurbs_weights").ok()?;
             &owned_weights
         }
     };
