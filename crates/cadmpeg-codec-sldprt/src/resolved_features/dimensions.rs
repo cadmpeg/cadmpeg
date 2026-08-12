@@ -41,6 +41,82 @@ struct DimensionedRelationCarrier<'a> {
     marker: &'a SketchInputEntity,
     curve: Option<DimensionedCurveNative>,
     center: [f64; 2],
+    construction: Option<bool>,
+}
+
+/// Resolve the construction state carried by a native radial-circle record
+/// for one dimension center.  The radial record's role is authoritative; a
+/// center/radius match alone is not enough because an ordinary circle and a
+/// construction circle can share the same solved center and radius.
+fn native_dimensioned_circle_construction_state(
+    lanes: &[FeatureInputLane],
+    feature: &str,
+    center: &SketchInputEntity,
+    radius: f64,
+) -> Option<bool> {
+    if center.feature_ref.as_deref() != Some(feature)
+        || center.coordinates_m.is_none()
+        || !radius.is_finite()
+        || radius <= 0.0
+    {
+        return None;
+    }
+    let [cu, cv] = center.coordinates_m?;
+    let mut states = Vec::new();
+    for lane in lanes {
+        if !lane
+            .sketch_entities
+            .iter()
+            .any(|marker| marker.id == center.id && marker.feature_ref.as_deref() == Some(feature))
+        {
+            continue;
+        }
+        let mut roster = lane
+            .sketch_entities
+            .iter()
+            .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+            .filter(|marker| marker.coordinates_m.is_some())
+            .collect::<Vec<_>>();
+        roster.sort_unstable_by_key(|marker| marker.offset);
+        for (_, radial_index, construction) in radial_circle_records(&lane.native_payload) {
+            let Some(radial) = roster.get(radial_index) else {
+                continue;
+            };
+            let Some([ru, rv]) = radial.coordinates_m else {
+                continue;
+            };
+            if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, radius) {
+                states.push(construction);
+            }
+        }
+    }
+    states.sort_unstable();
+    states.dedup();
+    match states.as_slice() {
+        [state] => Some(*state),
+        _ => None,
+    }
+}
+
+fn native_radial_record_for_marker(
+    lanes: &[FeatureInputLane],
+    feature: &str,
+    marker_id: &str,
+) -> Option<(usize, bool)> {
+    lanes.iter().find_map(|lane| {
+        let marker = lane.sketch_entities.iter().find(|marker| {
+            marker.id == marker_id && marker.feature_ref.as_deref() == Some(feature)
+        })?;
+        radial_circle_records(&lane.native_payload)
+            .into_iter()
+            .find(|(offset, ..)| usize::try_from(marker.offset).ok() == Some(*offset))
+            .map(|(_, radial_index, construction)| (radial_index, construction))
+            .or_else(|| {
+                let offset = usize::try_from(marker.offset).ok()?;
+                extended_radial_circle_index(&lane.native_payload, offset)
+                    .map(|radial_index| (radial_index, false))
+            })
+    })
 }
 
 impl DimensionedCurveNative {
@@ -226,12 +302,21 @@ fn dimensioned_relation_carrier<'a>(
     if encoded_radius.is_some_and(|encoded| !same_dimension_length(encoded, radius)) {
         return None;
     }
+    let construction = native_dimensioned_circle_construction_state(lanes, feature, marker, radius)
+        .or_else(|| {
+            matches!(
+                marker.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+            )
+            .then_some(false)
+        });
     Some(DimensionedRelationCarrier {
         marker,
         center: curve
             .as_ref()
             .map_or(marker.coordinates_m, |curve| Some(curve.center()))?,
         curve,
+        construction,
     })
 }
 
@@ -435,6 +520,9 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             let Some(carrier) = carrier else {
                 continue;
             };
+            let Some(construction) = carrier.construction else {
+                continue;
+            };
             let native = quantize(
                 Point2::new(
                     carrier.center[0] * NATIVE_TO_IR,
@@ -505,7 +593,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     relation.offset
                 )),
                 sketch: sketch.clone(),
-                construction: false,
+                construction,
                 native_ref: Some(carrier.marker.id.clone()),
                 geometry_ref: Some(relation.id.clone()),
                 endpoint_refs,
@@ -615,6 +703,16 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             let SketchGeometry::Point { position: center } = center_entity.geometry else {
                 continue;
             };
+            let construction = native_dimensioned_circle_construction_state(
+                lanes,
+                relation.feature_ref.as_str(),
+                marker,
+                radius,
+            )
+            .or_else(|| lane.native_payload.is_empty().then_some(false));
+            let Some(construction) = construction else {
+                continue;
+            };
             if entities.iter().any(|entity| {
                 entity.sketch == **sketch
                     && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
@@ -629,7 +727,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                     relation.offset
                 )),
                 sketch: (*sketch).clone(),
-                construction: false,
+                construction,
                 native_ref: Some(marker.id.clone()),
                 geometry_ref: Some(relation.id.clone()),
                 endpoint_refs: Vec::new(),
@@ -891,23 +989,23 @@ pub(crate) fn project_marker_dimensioned_circles(
         let circle_only_carrier = match native_carriers.as_slice() {
             [carrier] if !has_resolved_curves => {
                 carrier.native_ref.as_ref().and_then(|reference| {
-                    owned_lanes
-                        .iter()
-                        .find_map(|lane| {
-                            lane.sketch_entities
-                                .iter()
-                                .find(|marker| marker.id == *reference)
-                                .and_then(|marker| {
-                                    let offset = usize::try_from(marker.offset).ok()?;
-                                    extended_radial_circle_index(&lane.native_payload, offset)
-                                })
-                        })
-                        .map(|radial_index| (carrier.id.clone(), reference.clone(), radial_index))
+                    native_radial_record_for_marker(lanes, native_ref, reference).map(
+                        |(radial_index, construction)| {
+                            (
+                                carrier.id.clone(),
+                                reference.clone(),
+                                radial_index,
+                                construction,
+                            )
+                        },
+                    )
                 })
             }
             _ => None,
         };
-        if let Some((carrier_id, carrier_ref, radial_index)) = circle_only_carrier {
+        if let Some((carrier_id, carrier_ref, radial_index, carrier_construction)) =
+            circle_only_carrier
+        {
             let mut roster = markers
                 .iter()
                 .copied()
@@ -995,7 +1093,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                         entities.push(SketchEntity {
                             id: entity_id.clone(),
                             sketch: sketch_id.clone(),
-                            construction: false,
+                            construction: carrier_construction
+                                && carrier_radius
+                                    .is_some_and(|carrier| same_dimension_length(carrier, radius)),
                             native_ref: carrier_radius
                                 .is_some_and(|carrier| same_dimension_length(carrier, radius))
                                 .then(|| carrier_ref.clone()),
@@ -1340,6 +1440,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         let [center] = centers.as_slice() else {
             continue;
         };
+        let center_marker = *center;
         if radial.len() != radial_dimensions.len() {
             continue;
         }
@@ -1388,6 +1489,14 @@ pub(crate) fn project_marker_dimensioned_circles(
             continue;
         };
         for (parameter, radius) in radial_dimensions {
+            let Some(construction) = native_dimensioned_circle_construction_state(
+                lanes,
+                native_ref,
+                center_marker,
+                radius,
+            ) else {
+                continue;
+            };
             if entities.iter().any(|entity| {
                 entity.sketch == *sketch_id
                     && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
@@ -1408,7 +1517,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             entities.push(SketchEntity {
                 id: entity_id.clone(),
                 sketch: sketch_id.clone(),
-                construction: false,
+                construction,
                 native_ref: None,
                 geometry_ref: parameter.native_ref.clone(),
                 endpoint_refs: Vec::new(),

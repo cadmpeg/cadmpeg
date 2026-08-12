@@ -1153,7 +1153,7 @@ The counted compact component path starts immediately after this prefix. Its byt
 | 0 | 73 | `common_prefix_and_source` | `bytes[73]` | little | spec | has the same 69-byte prefix and nonzero source ID as the fixed component-point records |
 | 73 | 7 | `sentinel` | `bytes[7]` | little | spec | Record +73 stores seven `ff` bytes |
 | 80 | 4 | `path_entry_count` | `u32` | little | spec | Record +80 stores a positive u32 LE path-entry count |
-| 84 | 4 | `path_kind` | `bytes[4]` | little | spec | +84 stores `00 02 00 00` |
+| 84 | 4 | `path_kind` | `bytes[4]` | little | spec | +84 stores a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero |
 | 88 | 4 | `zero_before_marker` | `u32` | little | spec | +88 stores four zero bytes |
 | 92 | 16 | `component_marker` | `bytes[16]` | little | spec | +92 stores the duplicated compact component marker |
 | 108 | 2 | `zero_before_path` | `u16` | little | spec | +108 stores two zero bytes |
@@ -1246,7 +1246,7 @@ The counted compact component path starts immediately after this fixed prefix.
 | 69 | 4 | `selector` | `u32` | little | spec | Record +69 stores a nonzero non-sentinel u32 LE selector |
 | 73 | 7 | `zero_before_count` | `bytes[7]` | little | spec | +73 stores seven zero bytes |
 | 80 | 4 | `path_entry_count` | `u32` | little | spec | +80 stores a positive u32 LE path-entry count |
-| 84 | 4 | `path_kind` | `bytes[4]` | little | spec | +84 stores `00 02 00 00` |
+| 84 | 4 | `path_kind` | `bytes[4]` | little | spec | +84 stores a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero |
 | 88 | 4 | `token` | `u32` | little | spec | +88 stores a nonzero non-sentinel u32 LE token |
 | 92 | 16 | `component_marker` | `bytes[16]` | little | spec | +92 stores the duplicated compact component marker |
 | 108 | 2 | `zero_before_path` | `u16` | little | spec | +108 stores two zero bytes |
@@ -1428,7 +1428,7 @@ The variable component-path entries follow this prefix. Offsets begin at the lan
 | 74 | 4 | `role` | `u32` | little | spec | +74 \| u32 LE \| role word |
 | 78 | 4 | `zero_at_78` | `u32` | little | spec | +78 \| u32 LE \| zero |
 | 82 | 4 | `cell_count` | `u32` | little | spec | +82 \| u32 LE \| component-vector cell count in `2..65` |
-| 86 | 4 | `path_kind` | `bytes[4]` | little | spec | +86 \| bytes[4] \| `00 02 00 00` or `00 03 00 00` |
+| 86 | 4 | `path_kind` | `bytes[4]` | little | spec | +86 \| bytes[4] \| component-vector selector: byte 1 is `02` or `03`, byte 0 is a lane-specific subtype, and bytes 2–3 are zero |
 | 90 | 4 | `selector` | `u32` | little | spec | +90 \| u32 LE \| component selector |
 | 94 | 16 | `component_marker` | `bytes[16]` | little | spec | +94 \| bytes[16] \| duplicated component-vector marker |
 | 110 | 2 | `marker_tail` | `u16` | little | spec | +110 \| u16 LE \| zero marker tail |
@@ -1451,7 +1451,7 @@ Variable mixed component paths follow this prefix. Offsets begin at the bounded 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `cell_field` | `u32` | little | spec | a bounded u32 LE cell field in `1..65` |
-| 4 | 4 | `selection_role` | `bytes[4]` | little | spec | `00 02 00 00` for the parting-tool selection or `00 03 00 00` for a drafted-face selection |
+| 4 | 4 | `selection_role` | `bytes[4]` | little | spec | a component-vector selector whose byte 1 is `02` for the parting-tool selection or `03` for a drafted-face selection, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero |
 | 8 | 4 | `selector` | `u32` | little | spec | a u32 LE selector |
 | 12 | 16 | `component_marker` | `bytes[16]` | little | spec | the 16-byte duplicated component marker |
 | 28 | 2 | `marker_tail` | `u16` | little | spec | a u16 LE zero tail |

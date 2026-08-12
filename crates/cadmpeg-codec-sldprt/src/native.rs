@@ -798,6 +798,22 @@ impl SldprtNative {
                         != record.components
                     || usize::try_from(record.offset)
                         .ok()
+                        .and_then(|offset| {
+                            let feature_kind = edge_features
+                                .iter()
+                                .find(|feature| feature.id == record.feature_ref)
+                                .map(|feature| feature.kind.as_str())
+                                .unwrap_or_default();
+                            crate::resolved_features::selections::compact_edge_reference_list_for_feature(
+                                &lane.native_payload,
+                                offset,
+                                feature_kind,
+                            )
+                        })
+                        .unwrap_or_default()
+                        != record.references
+                    || usize::try_from(record.offset)
+                        .ok()
                         .map(|offset| {
                             crate::resolved_features::selections::compact_edge_producer_features_at(
                                 &lane.native_payload,

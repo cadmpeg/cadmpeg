@@ -1471,21 +1471,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 faces,
                 neutral_plane,
                 parting_tool,
-                pull_plane,
+                pull_plane: _,
                 pull_direction,
                 angle,
                 outward,
             } => {
-                parting_tool.is_some()
-                    || pull_plane.is_some()
-                    || incomplete_face_selection(faces)
+                incomplete_face_selection(faces)
                     || parting_tool.as_ref().map_or_else(
                         || incomplete_face_selection(neutral_plane),
                         incomplete_face_selection,
                     )
                     || pull_direction.is_none()
                     || angle.is_none()
-                    || outward.is_none()
+                    || (parting_tool.is_none() && outward.is_none())
             }
             FeatureDefinition::Combine {
                 target, tools, op, ..
@@ -2123,7 +2121,6 @@ fn build_geometry_ir(
     );
     let mut pmi_losses = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
-    ir.model.pmi = crate::swift::annotations(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut ir.model.features,
@@ -2181,6 +2178,7 @@ fn build_geometry_ir(
     );
     crate::resolved_features::projections::project_compact_edge_selections(
         &mut ir.model.features,
+        &[],
         &supplemental_config_lanes,
     );
     crate::history::project_configuration_supplemental_edge_selections(
@@ -2321,6 +2319,12 @@ fn build_geometry_ir(
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
+    let topology_index = crate::swift::TopologyIdentityIndex::from_model(
+        &ir.model.bodies,
+        &ir.model.faces,
+        &ir.model.edges,
+        &ir.model.vertices,
+    );
     let face_identities = brep
         .face_atoms
         .iter()
@@ -2477,6 +2481,13 @@ fn build_geometry_ir(
     );
     sync_active_configuration_resolutions(&mut ir);
     crate::history::order_model_features_for_regeneration(&mut ir);
+    let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
+    ir.model.pmi = crate::swift::annotations(
+        scan,
+        &mut annotations,
+        Some(&topology_index),
+        Some(&pattern_hole_nominals),
+    );
     stamp_feature_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
@@ -3020,7 +3031,7 @@ fn build_metadata_ir(
     );
     let mut pmi_losses = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
-    ir.model.pmi = crate::swift::annotations(scan, &mut annotations);
+    ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None, None);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
@@ -3109,6 +3120,7 @@ fn build_metadata_ir(
     );
     crate::resolved_features::projections::project_compact_edge_selections(
         &mut ir.model.features,
+        &[],
         &supplemental_config_lanes,
     );
     crate::history::project_configuration_supplemental_edge_selections(
@@ -4361,6 +4373,90 @@ mod design_loss_tests {
             loss.message
                 == "1 typed feature(s) retain native or unresolved required operation operands."
         }));
+    }
+
+    #[test]
+    fn complete_parting_line_draft_does_not_require_an_outward_flag() {
+        let faces = FaceSelection::Generated {
+            faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                feature: FeatureId("producer".into()),
+                local_id: "1".into(),
+            }],
+            native: "native".into(),
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("draft".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Draft {
+                faces: faces.clone(),
+                neutral_plane: FaceSelection::Unresolved,
+                parting_tool: Some(faces),
+                pull_direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+                pull_plane: None,
+                angle: Some(Angle(0.1)),
+                outward: None,
+            },
+            native_ref: None,
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("typed feature(s) retain native")));
+
+        let FeatureDefinition::Draft {
+            neutral_plane,
+            parting_tool,
+            ..
+        } = &mut ir.model.features[0].definition
+        else {
+            unreachable!();
+        };
+        *neutral_plane = FaceSelection::Generated {
+            faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                feature: FeatureId("producer".into()),
+                local_id: "2".into(),
+            }],
+            native: "native".into(),
+        };
+        *parting_tool = None;
+        let mut neutral_plane_report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut neutral_plane_report);
+
+        assert!(neutral_plane_report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("typed feature(s) retain native")));
     }
 
     #[test]

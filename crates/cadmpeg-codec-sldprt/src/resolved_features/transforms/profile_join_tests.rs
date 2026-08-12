@@ -182,6 +182,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         feature_ref: "target-native".into(),
         local_edge_ids,
         components: Vec::new(),
+        references: Vec::new(),
         producer_feature_refs: vec!["producer-native".into()],
         terminal_feature_ref: Some("producer-native".into()),
     };
@@ -207,7 +208,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     };
     let mut features = vec![producer, target];
 
-    project_compact_edge_selections(&mut features, &[lane]);
+    project_compact_edge_selections(&mut features, &[], &[lane]);
 
     let FeatureDefinition::Fillet { groups } = &features[1].definition else {
         panic!("generated edge selection");
@@ -244,6 +245,7 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
         feature_ref: "consumer".into(),
         local_edge_ids: vec![ordinal],
         components: Vec::new(),
+        references: Vec::new(),
         producer_feature_refs: producer.into_iter().map(str::to_string).collect(),
         terminal_feature_ref: producer.map(str::to_string),
     };

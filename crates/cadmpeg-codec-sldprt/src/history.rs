@@ -2880,6 +2880,28 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn variable_fillet_d_dimensions_require_native_vertex_associations() {
+        let mut feature = feature("variable-fillet", Some("61"), 0);
+        feature.kind = "VarFillet".into();
+        feature.input_class = Some("VarFillet_c".into());
+        feature.parameters = BTreeMap::from([
+            ("D0".into(), "R2mm".into()),
+            ("D01".into(), "R3mm".into()),
+            ("D02".into(), "R2mm".into()),
+            ("D03".into(), "R3mm".into()),
+        ]);
+
+        assert!(matches!(
+            project_fillet(&feature),
+            FeatureDefinition::Fillet { groups }
+                if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+                    radius: RadiusSpec::Unresolved { .. },
+                    ..
+                }])
+        ));
+    }
+
+    #[test]
     fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
         let mut reference = feature("sldprt:history:feature#0:0", None, 0);
         reference.input_class = Some("moRefPlane_c".into());
@@ -3458,6 +3480,24 @@ mod history_reference_tests {
                 std::slice::from_ref(&spatial),
             ),
             FeatureDefinition::SpatialSketch { sketch: None }
+        );
+    }
+
+    #[test]
+    fn base_body_class_projects_stored_geometry_independently_of_display_name() {
+        let mut base_body = feature("base-body", Some("18"), 0);
+        base_body.kind = "Localized imported body".into();
+        base_body.input_class = Some("moBaseBody_c".into());
+
+        assert_eq!(
+            project_definition(
+                &base_body,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+                std::slice::from_ref(&base_body),
+            ),
+            FeatureDefinition::StoredGeometry
         );
     }
 
@@ -4817,6 +4857,7 @@ mod history_reference_tests {
                 parent: lane.id.clone(),
                 ordinal: 0,
                 offset: 0,
+                selector: 0,
                 object_name_ref: "thread-name".into(),
                 feature_ref: thread_id,
                 producer_feature_refs: vec![hole_id.clone()],
@@ -6016,6 +6057,7 @@ mod history_reference_tests {
                 feature_ref: "consumer-native".into(),
                 local_edge_ids: vec![7],
                 components: Vec::new(),
+                references: Vec::new(),
                 producer_feature_refs: vec!["producer-native".into()],
                 terminal_feature_ref: Some("producer-native".into()),
             });
@@ -7258,6 +7300,12 @@ fn project_definition(
     features_by_source: &HashMap<&str, &Feature>,
     history_features: &[Feature],
 ) -> FeatureDefinition {
+    if feature.input_class.as_deref() == Some("moBaseBody_c") {
+        return FeatureDefinition::StoredGeometry;
+    }
+    if feature.input_class.as_deref() == Some("moPlanarSurface_c") {
+        return FeatureDefinition::DatumPlaneUnresolved;
+    }
     if let Some(role) = feature_tree_node_role(feature, history_features) {
         return FeatureDefinition::TreeNode {
             role,
@@ -7369,7 +7417,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Combine) {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::CutWithSurface) {
-        project_cut_with_surface(feature).unwrap_or_else(|| native_definition(feature))
+        project_cut_with_surface(feature)
     } else if class == Some(FeatureClass::DeleteBody) {
         project_delete_body(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::DeleteFace) {
@@ -8518,9 +8566,15 @@ pub(crate) fn fillet_radius_parameter_has_native_display(
     name: &str,
     expression: &str,
 ) -> bool {
-    name == "D1"
-        && is_fillet(feature)
-        && !variable_fillet(feature)
+    is_fillet(feature)
+        && if variable_fillet(feature) {
+            crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
+                feature, name,
+            )
+            .is_some()
+        } else {
+            name == "D1"
+        }
         && dimension_display(expression).is_some()
 }
 
@@ -9705,16 +9759,23 @@ fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
     }
 }
 
-fn project_cut_with_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::CutWithSurface {
-        targets: BodySelection::Native(feature.properties.get("Targets")?.clone()),
-        tools: FaceSelection::Native(feature.properties.get("Tools")?.clone()),
+fn project_cut_with_surface(feature: &Feature) -> FeatureDefinition {
+    FeatureDefinition::CutWithSurface {
+        targets: feature
+            .properties
+            .get("Targets")
+            .cloned()
+            .map_or(BodySelection::Unresolved, BodySelection::Native),
+        tools: feature
+            .properties
+            .get("Tools")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         reverse: feature
             .properties
             .get("Reverse")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
-    })
+            .and_then(|value| parse_bool(value)),
+    }
 }
 
 fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
@@ -10901,7 +10962,9 @@ pub(crate) fn project_compact_and_generated(
     crate::resolved_features::terminations::project_compact_combine_paths(
         features, projection, lanes,
     );
-    crate::resolved_features::projections::project_compact_edge_selections(features, lanes);
+    crate::resolved_features::projections::project_compact_edge_selections(
+        features, projection, lanes,
+    );
     crate::resolved_features::projections::project_compact_surface_selections(
         features, projection, lanes,
     );
@@ -11051,6 +11114,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         }
         crate::resolved_features::projections::project_compact_edge_selections(
             &mut features,
+            &[],
             std::slice::from_ref(lane),
         );
         let states = &mut ir.model.configurations[configuration_index].feature_states;
@@ -15610,7 +15674,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert("Targets".into(), targets);
             properties.insert("Tools".into(), tools);
-            properties.insert("Reverse".into(), reverse.to_string());
+            if let Some(reverse) = reverse {
+                properties.insert("Reverse".into(), reverse.to_string());
+            }
             (
                 existing.map_or_else(|| "CutWithSurface".into(), |record| record.kind.clone()),
                 existing

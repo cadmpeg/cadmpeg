@@ -10,7 +10,8 @@ use super::selections::{
     compact_general_curve_ref_at, compact_heterogeneous_component_path,
     compact_mixed_component_path, compact_profile_general_curve_ref_at,
     component_profile_source_at, component_reference_curve_path_at,
-    declared_general_curve_profile_prefix, COMPACT_EDGE_VECTOR_MARKER,
+    declared_general_curve_profile_prefix, is_component_vector_selector,
+    is_component_vector_selector_for_role, COMPACT_EDGE_VECTOR_MARKER,
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
@@ -436,7 +437,12 @@ pub(crate) fn enrich_history_combine_selections(
             let paths = (start.saturating_add(12)
                 ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
                 .filter_map(|marker| {
-                    compact_body_path_at(&lane.native_payload, marker).map(|_| marker)
+                    // Combine operands use the same type-3 vector framing as
+                    // body selections, but a path may contain identifier-less
+                    // lineage hops.  The component-path parser retains those
+                    // hops; the local-id-only helper would reject the whole
+                    // operand before projection.
+                    compact_body_component_path_at(&lane.native_payload, marker).map(|_| marker)
                 })
                 .collect::<Vec<_>>();
             // A Combine object can carry auxiliary type-3 vectors between its two
@@ -809,10 +815,13 @@ pub(crate) fn project_surface_sweep_profiles(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
     if marker < 12
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || payload.get(marker - 8..marker - 4) != Some(&[0, 3, 0, 0])
+        || !payload
+            .get(marker - 8..marker - 4)
+            .is_some_and(|selector| is_component_vector_selector_for_role(selector, 3))
         || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
     {
         return None;
@@ -838,7 +847,9 @@ pub(super) fn compact_body_component_path_at(
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     if marker < 12
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || payload.get(marker - 8..marker - 4) != Some(&[0, 3, 0, 0])
+        || !payload
+            .get(marker - 8..marker - 4)
+            .is_some_and(|selector| is_component_vector_selector_for_role(selector, 3))
         || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
     {
         return None;
@@ -859,20 +870,31 @@ fn compact_body_component_entries_at(
     if count == 0 {
         return None;
     }
+    let mut candidates = Vec::new();
     let mixed = |count| {
         let (components, end) = compact_mixed_component_path(payload, cursor, count, true)?;
         components
             .iter()
-            .any(|component| component.instance.is_none())
+            .any(|component| component.instance.is_none() || component.local_id.is_none())
             .then_some((components, end))
     };
     let parse = |count| {
         compact_heterogeneous_component_path(payload, cursor, count).or_else(|| mixed(count))
     };
-    parse(count).map(|(components, _)| components).or_else(|| {
-        let (components, end) = (count > 1).then(|| parse(count - 1)).flatten()?;
-        compact_body_null_slot_at(payload, end).then_some(components)
-    })
+    if let Some((components, _)) = parse(count) {
+        candidates.push(components);
+    } else if count > 1 {
+        if let Some((components, end)) = parse(count - 1) {
+            if compact_body_null_slot_at(payload, end) {
+                candidates.push(components);
+            }
+        }
+    }
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {
@@ -1310,18 +1332,23 @@ pub(super) fn compact_extrusion_to_face_at(
     if !declared && !compact_single_face_child_body_at(payload, body_offset) {
         return None;
     }
-    let mut candidates = Vec::new();
-    if legacy_single_face_reference_path_at(payload, body_offset).is_some() {
-        candidates.push(body_offset);
-    }
-    candidates.extend(compact_termination_reference_candidates(
+    // A declared child begins with a fixed body header. Starting the marker
+    // search at that header lets the legacy path decoder reinterpret the
+    // header as a second, spurious compact reference. The modern marker is
+    // always after the header; an undeclared legacy child still needs the
+    // body offset as its fallback anchor.
+    let search_start = if declared {
+        body_offset.saturating_add(11)
+    } else {
+        body_offset
+    };
+    let compact_candidates = distinct_offsets(compact_termination_reference_candidates(
         payload,
-        body_offset,
+        search_start,
         end,
         declared,
     ));
-    let candidates = distinct_offsets(candidates);
-    match candidates.as_slice() {
+    match compact_candidates.as_slice() {
         [candidate] => Some(*candidate),
         [] if declared && compact_tokenized_single_face_child_at(payload, body_offset) => {
             // A declared single-face child is still a complete native
@@ -1329,6 +1356,18 @@ pub(super) fn compact_extrusion_to_face_at(
             // component path uses an unknown layout. Preserve that child as
             // the reference instead of discarding the independently decoded
             // to-face termination.
+            Some(body_offset)
+        }
+        [] if declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
+            // Some declared children retain the older counted path directly
+            // in the body and do not carry a modern marker. Preserve that
+            // complete legacy selection when no modern marker is present.
+            Some(body_offset)
+        }
+        [] if !declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
+            // Legacy streams place the path directly in the child body and
+            // have no compact marker to identify. Keep that form as a
+            // fallback only after the modern marker search is empty.
             Some(body_offset)
         }
         _ => None,
@@ -1584,7 +1623,7 @@ pub(super) fn legacy_single_face_reference_path_at(
             || prefix[2..6] != 1u32.to_le_bytes()
             || prefix[6..10] != [0; 4]
             || !(1..=64).contains(&count)
-            || !matches!(&prefix[14..18], [0, 2 | 3, 0, 0])
+            || !is_component_vector_selector(&prefix[14..18])
             || prefix[22..30] != prefix[30..38]
             || prefix[38..40] != [0, 0]
         {
@@ -1635,7 +1674,9 @@ pub(super) fn compact_single_face_reference_record_at(
         .ok()
         .filter(|count| (1..=64).contains(count))?;
     if payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || !matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
+        || !payload
+            .get(marker - 8..marker - 4)
+            .is_some_and(is_component_vector_selector)
         || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
     {
         return None;
@@ -1778,7 +1819,9 @@ fn compact_termination_reference_frame_at(payload: &[u8], marker: usize) -> Opti
     })?;
     if !(1..=64).contains(&count)
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || !matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
+        || !payload
+            .get(marker - 8..marker - 4)
+            .is_some_and(is_component_vector_selector)
         || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
     {
         return None;

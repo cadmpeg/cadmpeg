@@ -23,12 +23,7 @@ categories = ["encoding", "parser-implementations", "graphics"]
 # `schema` builds the `JsonSchema` derives. It is off by default: the
 # derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
 # generating them costs 22% of this crate tree's compile time.
-schema = [
-  "dep:schemars",
-  "cadmpeg-asm/schema",
-  "cadmpeg-core/schema",
-  "cadmpeg-ir/schema",
-]
+schema = ["dep:schemars", "cadmpeg-asm/schema", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
 
 [dependencies]
 cadmpeg-asm.workspace = true

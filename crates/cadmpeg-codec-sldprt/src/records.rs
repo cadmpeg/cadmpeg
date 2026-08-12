@@ -291,6 +291,9 @@ pub struct FeatureInputEdgeSelection {
     /// Complete typed path entries when this is an entry-form vector.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<FeatureInputComponentPathEntry>,
+    /// Ordered persistent references carried by a reference-list vector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<Vec<FeatureInputComponentPathEntry>>,
     /// Ordered history features traversed by the persistent edge path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub producer_feature_refs: Vec<String>,
@@ -311,6 +314,9 @@ pub struct FeatureInputSurfaceSelection {
     pub ordinal: u32,
     /// Byte offset of the vector marker.
     pub offset: u64,
+    /// Low selector subtype stored in the vector header.
+    #[serde(default)]
+    pub selector: u8,
     /// Feature-input name record owning this selection.
     pub object_name_ref: String,
     /// Native history feature owning this selection.
