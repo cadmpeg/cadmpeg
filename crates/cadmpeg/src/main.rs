@@ -8,6 +8,7 @@
 //! `.sldprt` output. See the package README for workflows, format limits, loss
 //! reporting, and exit-status semantics.
 
+mod application;
 mod commands;
 mod inspect;
 mod loader;

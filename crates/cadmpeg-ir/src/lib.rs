@@ -32,7 +32,6 @@
 
 pub mod annotations;
 pub mod appearance;
-pub mod artifact;
 pub mod assets;
 pub mod attributes;
 pub mod bytes;
@@ -74,7 +73,6 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
-pub use artifact::{DocumentArtifact, DocumentOrigin};
 pub use codec::{
     CadirEncoder, Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult, Encoder,
 };

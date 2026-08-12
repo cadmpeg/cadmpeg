@@ -8,8 +8,9 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use cadmpeg_ir::codec::{CodecEntry, Confidence, DecodeOptions};
 
-use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar, DocumentArtifact, DocumentOrigin};
+use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar};
 
+use crate::application::{LoadOrigin, LoadedDocument};
 use crate::registry::{DetectionOutcome, Registry};
 use crate::ForcedInput;
 
@@ -43,7 +44,7 @@ pub fn load_artifact(
     path: &Path,
     options: DecodeOptions,
     forced: Option<ForcedInput>,
-) -> Result<DocumentArtifact> {
+) -> Result<LoadedDocument> {
     let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
     let detected = match forced {
         Some(ForcedInput::Codec(id)) => Some((
@@ -91,7 +92,7 @@ pub fn load_artifact(
         let result = codec
             .decode(&mut f, &options)
             .with_context(|| format!("decoding {} as {}", path.display(), codec.id()))?;
-        return Ok(DocumentArtifact::decoded(result));
+        return Ok(LoadedDocument::decoded(result));
     }
 
     if forced.is_none() && prefix.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
@@ -112,7 +113,7 @@ pub fn load_artifact(
     })?;
     let sidecar_path = decode_sidecar_path(path);
     if !sidecar_path.exists() {
-        return Ok(DocumentArtifact::neutral(ir));
+        return Ok(LoadedDocument::neutral(ir));
     }
     let sidecar_text = read_bounded_text(&sidecar_path, max_bytes)
         .with_context(|| format!("reading decode sidecar {}", sidecar_path.display()))?;
@@ -125,9 +126,9 @@ pub fn load_artifact(
             path.display()
         ));
     }
-    Ok(DocumentArtifact {
+    Ok(LoadedDocument {
         ir,
-        origin: DocumentOrigin::Decoded {
+        origin: LoadOrigin::Decoded {
             report: sidecar.report,
             fidelity: sidecar.fidelity,
         },
@@ -187,7 +188,7 @@ mod tests {
             Some(ForcedInput::Cadir),
         )
         .unwrap();
-        assert!(matches!(artifact.origin, DocumentOrigin::Decoded { .. }));
+        assert!(matches!(artifact.origin, LoadOrigin::Decoded { .. }));
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
         let error = load_artifact(
