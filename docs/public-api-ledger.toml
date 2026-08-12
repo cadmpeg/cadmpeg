@@ -243,3 +243,31 @@ crate = "cadmpeg-codec-step"
 kind = "visibility"
 item = "cadmpeg_codec_step::parse"
 reason = "Phase 6: product facade hides parse; module stays #[doc(hidden)] pub for benches/fuzz"
+
+[[change]]
+commit = "e71ad77a01ff315175f4643debab05175abe71ae"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::DecodeResult"
+reason = "Phase 6: non_exhaustive seals construction to DecodeResult::new after finalize"
+
+[[change]]
+commit = "e71ad77a01ff315175f4643debab05175abe71ae"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::CadIr::ir_version"
+reason = "Phase 6: constructor-controlled; public getter only"
+
+[[change]]
+commit = "e71ad77a01ff315175f4643debab05175abe71ae"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::DocumentDraft"
+reason = "Phase 6: type alias for ModelDraft in DocumentDraft → CadIr → ValidationReport machine"
+
+[[change]]
+commit = "e71ad77a01ff315175f4643debab05175abe71ae"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::{Feature,SketchEntity,SpatialSketchEntity}::new"
+reason = "Phase 6: invariant-bearing constructors; no public Default"
