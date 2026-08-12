@@ -13,11 +13,8 @@ use super::edits::{
     ActGuidEdit, BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
     HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
 };
-use super::geometry::{patch_integer_field, required_payload_field};
-use crate::writer::primitives::native_bool;
-use cadmpeg_asm::asm_header::stream_ref_width;
+use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
-use cadmpeg_asm::{asm_header, sab};
 
 pub(crate) fn patch_material_assignments(
     bytes: &mut [u8],
@@ -315,27 +312,20 @@ pub(crate) fn patch_body_native_keys(
     if edits.is_empty() {
         return Ok(());
     }
-    let start = asm_header::record_stream_start(bytes)
-        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = stream_ref_width(bytes);
-    let records = sab::frame(bytes, start, limit, ref_width)
-        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
-    for (record_index, key) in edits {
-        let record = records
-            .iter()
-            .find(|record| record.index == *record_index)
-            .ok_or_else(|| {
+    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+        for (record_index, key) in edits {
+            let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::Malformed(format!("F3D body-key record {record_index} is missing"))
             })?;
-        if record.head != "body" {
-            return Err(CodecError::Malformed(format!(
-                "F3D body-key record {record_index} is not a body"
-            )));
+            if record.head != "body" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D body-key record {record_index} is not a body"
+                )));
+            }
+            asm_edits.patch_integer_field(bytes, record, 1, 0x04, *key)?;
         }
-        patch_integer_field(bytes, record, ref_width, 1, 0x04, *key)?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 pub(crate) fn patch_transform_hints(
@@ -345,43 +335,25 @@ pub(crate) fn patch_transform_hints(
     if edits.is_empty() {
         return Ok(());
     }
-    let start = asm_header::record_stream_start(bytes)
-        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = stream_ref_width(bytes);
-    let records = sab::frame(bytes, start, limit, ref_width)
-        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
-    for (record_index, flags) in edits {
-        let record = records
-            .iter()
-            .find(|record| record.index == *record_index)
-            .ok_or_else(|| {
+    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+        for (record_index, flags) in edits {
+            let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "F3D transform-hint record {record_index} is missing"
                 ))
             })?;
-        if !record.name.ends_with("transform") {
-            return Err(CodecError::Malformed(format!(
-                "F3D transform-hint record {record_index} is {}, not a transform",
-                record.head
-            )));
-        }
-        for (index, flag) in (5usize..=7).zip(flags) {
-            let offset =
-                sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "F3D transform record {record_index} lacks hint field {index}"
-                    ))
-                })?;
-            if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+            if !record.name.ends_with("transform") {
                 return Err(CodecError::Malformed(format!(
-                    "F3D transform record {record_index} field {index} is not a hint flag"
+                    "F3D transform-hint record {record_index} is {}, not a transform",
+                    record.head
                 )));
             }
-            bytes[offset] = native_bool(*flag);
+            for (index, flag) in (5usize..=7).zip(flags) {
+                asm_edits.patch_boolean_field(bytes, record, index, *flag)?;
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 pub(crate) fn patch_tolerant_coedge_parameters(
@@ -391,33 +363,26 @@ pub(crate) fn patch_tolerant_coedge_parameters(
     if edits.is_empty() {
         return Ok(());
     }
-    let start = asm_header::record_stream_start(bytes)
-        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = stream_ref_width(bytes);
-    let records = sab::frame(bytes, start, limit, ref_width)
-        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
-    for (record_index, range) in edits {
-        let record = records
-            .iter()
-            .find(|record| record.index == *record_index)
-            .ok_or_else(|| {
+    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+        for (record_index, range) in edits {
+            let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "F3D tolerant-coedge record {record_index} is missing"
                 ))
             })?;
-        if record.head != "tcoedge" {
-            return Err(CodecError::Malformed(format!(
-                "F3D tolerant-coedge record {record_index} is {}",
-                record.head
-            )));
+            if record.head != "tcoedge" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D tolerant-coedge record {record_index} is {}",
+                    record.head
+                )));
+            }
+            for (index, value) in [(11usize, range[0]), (12, range[1])] {
+                let offset = asm_edits.required_payload_field(bytes, record, index, 0x06)?;
+                AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
+            }
         }
-        for (index, value) in [(11usize, range[0]), (12, range[1])] {
-            let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
-            bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
-        }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 pub(crate) fn patch_wire_topologies(
@@ -427,39 +392,22 @@ pub(crate) fn patch_wire_topologies(
     if edits.is_empty() {
         return Ok(());
     }
-    let start = asm_header::record_stream_start(bytes)
-        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = stream_ref_width(bytes);
-    let records = sab::frame(bytes, start, limit, ref_width)
-        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
-    for (record_index, side) in edits {
-        let record = records
-            .iter()
-            .find(|record| record.index == *record_index)
-            .ok_or_else(|| {
+    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+        for (record_index, side) in edits {
+            let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::Malformed(format!("F3D wire record {record_index} is missing"))
             })?;
-        if record.head != "wire" {
-            return Err(CodecError::Malformed(format!(
-                "F3D wire record {record_index} is {}",
-                record.head
-            )));
+            if record.head != "wire" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D wire record {record_index} is {}",
+                    record.head
+                )));
+            }
+            let is_in = matches!(side, cadmpeg_asm::brep::records::WireSide::In);
+            asm_edits.patch_boolean_field(bytes, record, 7, is_in)?;
         }
-        let offset = sab::payload_token_offset(bytes, record, ref_width, 7).ok_or_else(|| {
-            CodecError::Malformed(format!("F3D wire record {record_index} lacks side field 7"))
-        })?;
-        if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
-            return Err(CodecError::Malformed(format!(
-                "F3D wire record {record_index} field 7 is not a side token"
-            )));
-        }
-        bytes[offset] = match side {
-            cadmpeg_asm::brep::records::WireSide::In => 0x0a,
-            cadmpeg_asm::brep::records::WireSide::Out => 0x0b,
-        };
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 pub(crate) fn patch_edge_ownerships(
@@ -469,30 +417,23 @@ pub(crate) fn patch_edge_ownerships(
     if edits.is_empty() {
         return Ok(());
     }
-    let start = asm_header::record_stream_start(bytes)
-        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = stream_ref_width(bytes);
-    let records = sab::frame(bytes, start, limit, ref_width)
-        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
-    for (record_index, owner) in edits {
-        let record = records
-            .iter()
-            .find(|record| record.index == *record_index)
-            .ok_or_else(|| {
+    AsmEditSet::apply(bytes, |bytes, asm_edits| {
+        for (record_index, owner) in edits {
+            let record = asm_edits.record(*record_index).ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "F3D edge-ownership record {record_index} is missing"
                 ))
             })?;
-        if !matches!(record.head.as_str(), "edge" | "tedge") {
-            return Err(CodecError::Malformed(format!(
-                "F3D edge-ownership record {record_index} is {}",
-                record.head
-            )));
+            if !matches!(record.head.as_str(), "edge" | "tedge") {
+                return Err(CodecError::Malformed(format!(
+                    "F3D edge-ownership record {record_index} is {}",
+                    record.head
+                )));
+            }
+            asm_edits.patch_integer_field(bytes, record, 7, 0x0c, *owner)?;
         }
-        patch_integer_field(bytes, record, ref_width, 7, 0x0c, *owner)?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 pub(crate) fn patch_construction_recipes(
@@ -554,31 +495,22 @@ pub(crate) fn patch_history_states(
     const DELTA_HEADER_LEN: usize = b"\x11\x0d\x0bdelta_state".len();
     const PREAMBLE_LEN: usize = b"\x0d\x0ehistory_stream".len();
     if let Some(history) = &edits.preamble {
-        let start = usize::try_from(history.byte_offset)
-            .ok()
-            .and_then(|offset| offset.checked_add(PREAMBLE_LEN))
+        let start = history
+            .byte_offset
+            .checked_add(PREAMBLE_LEN as u64)
             .ok_or_else(|| {
                 CodecError::Malformed("ASM preamble offset exceeds address space".into())
             })?;
         let size = history.stream_size;
         let entry_count = history.history_entry_count;
         for (ordinal, value) in [(0, size), (1, size), (3, entry_count)] {
-            let tag = start + ordinal * 9;
-            if bytes.get(tag) != Some(&0x04) {
-                return Err(CodecError::Malformed(format!(
-                    "ASM history-preamble field {ordinal} at byte {tag} is not a long token"
-                )));
-            }
-            bytes
-                .get_mut(tag + 1..tag + 9)
-                .ok_or_else(|| CodecError::Malformed("ASM history preamble is truncated".into()))?
-                .copy_from_slice(&value.to_le_bytes());
+            AsmEditSet::patch_tagged_i64(bytes, start, ordinal, 0x04, value)?;
         }
     }
     for state in &edits.states {
-        let first_tag = usize::try_from(state.byte_offset)
-            .ok()
-            .and_then(|offset| offset.checked_add(DELTA_HEADER_LEN))
+        let first_tag = state
+            .byte_offset
+            .checked_add(DELTA_HEADER_LEN as u64)
             .ok_or_else(|| {
                 CodecError::Malformed("ASM history offset exceeds address space".into())
             })?;
@@ -593,31 +525,22 @@ pub(crate) fn patch_history_states(
             (7, 0x0c, state.owner_ref),
         ];
         for (ordinal, expected_tag, value) in values {
-            let tag = first_tag + ordinal * 9;
-            if bytes.get(tag) != Some(&expected_tag) {
-                return Err(CodecError::Malformed(format!(
-                    "ASM delta-state field {ordinal} at byte {tag} has the wrong token tag"
-                )));
-            }
-            bytes
-                .get_mut(tag + 1..tag + 9)
-                .ok_or_else(|| CodecError::Malformed("ASM delta-state field is truncated".into()))?
-                .copy_from_slice(&value.to_le_bytes());
+            AsmEditSet::patch_tagged_i64(bytes, first_tag, ordinal, expected_tag, value)?;
         }
     }
     for board in &edits.boards {
-        patch_tagged_i64(bytes, board.byte_offset, 1, 0x0c, board.owner_ref)?;
-        patch_tagged_i64(bytes, board.byte_offset, 2, 0x04, board.number)?;
+        AsmEditSet::patch_tagged_i64(bytes, board.byte_offset, 1, 0x0c, board.owner_ref)?;
+        AsmEditSet::patch_tagged_i64(bytes, board.byte_offset, 2, 0x04, board.number)?;
     }
     for change in &edits.changes {
-        patch_tagged_i64(
+        AsmEditSet::patch_tagged_i64(
             bytes,
             change.byte_offset,
             1,
             0x0c,
             change.old_ref.unwrap_or(-1),
         )?;
-        patch_tagged_i64(
+        AsmEditSet::patch_tagged_i64(
             bytes,
             change.byte_offset,
             2,
@@ -625,29 +548,6 @@ pub(crate) fn patch_history_states(
             change.new_ref.unwrap_or(-1),
         )?;
     }
-    Ok(())
-}
-
-fn patch_tagged_i64(
-    bytes: &mut [u8],
-    record_offset: u64,
-    ordinal: usize,
-    expected_tag: u8,
-    value: i64,
-) -> Result<(), CodecError> {
-    let tag = usize::try_from(record_offset)
-        .ok()
-        .and_then(|offset| offset.checked_add(ordinal * 9))
-        .ok_or_else(|| CodecError::Malformed("ASM record offset exceeds address space".into()))?;
-    if bytes.get(tag) != Some(&expected_tag) {
-        return Err(CodecError::Malformed(format!(
-            "ASM field {ordinal} at byte {tag} has the wrong token tag"
-        )));
-    }
-    bytes
-        .get_mut(tag + 1..tag + 9)
-        .ok_or_else(|| CodecError::Malformed("ASM tagged integer is truncated".into()))?
-        .copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
 

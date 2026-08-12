@@ -7,7 +7,7 @@ filter = "production .rs under crates/**/src; exclude tests/ and benches/ path s
 [ceilings]
 from_endian_bytes = 850
 le_be_at_outside_core = 91
-codec_error_malformed_format = 1289
+codec_error_malformed_format = 1282
 loss_note_struct_literals = 204
 bare_tolerance_literals = 804
 nonliteral_vec_repeat = 261
