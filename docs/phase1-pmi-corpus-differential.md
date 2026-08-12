@@ -14,8 +14,8 @@ Measured at `e03375f0b` against Phase 0 HEAD `dc2ea5fee`.
 ## Result
 
 | total | same | PMI content moved | failed |
-| ----: | --: | ----------------: | -----: |
-| 21 | 21 | 0 | 0 |
+| ----: | ---: | ----------------: | -----: |
+|    21 |   21 |                 0 |      0 |
 
 Only `pmi_semantic_dimension.sldprt` carries PMI dimensions in this set (count 1 before and after). The silent-loss population (array16+, reordered maps, key-like strings inside values) is not present in the checked-in fixtures; blast radius for release notes is therefore **zero documents changed** in available inputs, with the fix covered by new unit/integration fixtures and the `sldprt_pmi` fuzz target.
 

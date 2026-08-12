@@ -36,12 +36,12 @@ Plus relocating `CadIr::census` off `validate::entity_census` before the move (r
 
 ## BEFORE (validate inside cadmpeg-ir)
 
-| Graph | Clean (s) | Incremental (s) | Linked artifacts | Disk Δ (MB) |
-|---|---:|---:|---:|---:|
-| sat lib | 27.997 | 4.849 | 2 | 1045 |
-| sat tests | 25.648 | 5.107 | 250 | 908 |
-| CLI all-codecs | 49.602 | 21.939 | 2 | 2287 |
-| test-fast workspace | 77.262 | 36.446 | 671 | 3719 |
+| Graph               | Clean (s) | Incremental (s) | Linked artifacts | Disk Δ (MB) |
+| ------------------- | --------: | --------------: | ---------------: | ----------: |
+| sat lib             |    27.997 |           4.849 |                2 |        1045 |
+| sat tests           |    25.648 |           5.107 |              250 |         908 |
+| CLI all-codecs      |    49.602 |          21.939 |                2 |        2287 |
+| test-fast workspace |    77.262 |          36.446 |              671 |        3719 |
 
 `cadmpeg-ir` alone WITH validate: 28.958 s clean; `libcadmpeg_ir-*.rlib` 327.6 MB.
 
@@ -52,10 +52,10 @@ same public symbols (empty admit sets, no-op reports). This upper-bounds the pro
 gain for a codec that does not call validation (sat). It is not a full `cadmpeg-validate`
 crate trial; CLI / test-fast would still compile the moved 16k lines in a sibling crate.
 
-| Graph | Clean (s) | Notes |
-|---|---:|---|
-| cadmpeg-ir alone | 24.616 | −4.3 s (−15%); rlib 291.2 MB (−36 MB) |
-| sat lib | 25.231 | −2.8 s (−10% vs BEFORE 28.0 s) |
+| Graph            | Clean (s) | Notes                                 |
+| ---------------- | --------: | ------------------------------------- |
+| cadmpeg-ir alone |    24.616 | −4.3 s (−15%); rlib 291.2 MB (−36 MB) |
+| sat lib          |    25.231 | −2.8 s (−10% vs BEFORE 28.0 s)        |
 
 CLI, sldprt (writer gates), rhino/catia/iges (admit/reject), and `cargo test-fast` still
 need the full validator. Their AFTER graph is `smaller ir` + `new validate crate`, so
@@ -63,11 +63,11 @@ wall time and linked work do not shrink materially and can grow at the crate bou
 
 ## Decision: do not create `cadmpeg-validate`
 
-| Criterion | Result |
-|---|---|
-| Visitor/eval surface narrow? | No — four visitor contracts + eval promotion |
+| Criterion                                 | Result                                                               |
+| ----------------------------------------- | -------------------------------------------------------------------- |
+| Visitor/eval surface narrow?              | No — four visitor contracts + eval promotion                         |
 | Production rebuild win justifies surface? | No — ~10% on a non-validating codec lib; CLI/gated codecs immaterial |
-| Test-graph win alone sufficient? | No (plan gate) |
+| Test-graph win alone sufficient?          | No (plan gate)                                                       |
 
 `cadmpeg-validate` is not created. Validate remains in `cadmpeg-ir`.
 Do not extract `eval` or `schema`. `roundtrip` stays in `cadmpeg-test-support`.

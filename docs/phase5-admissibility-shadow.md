@@ -6,12 +6,12 @@ Machine-readable rows: `docs/phase5-admissibility-shadow.json`.
 
 ## Scope
 
-| route | fixtures | predicate |
-| --- | ---: | --- |
-| rhino | 28 under `crates/cadmpeg-codec-rhino/tests/golden/fixtures/` | `RHINO_DRAFT_CHECKS` (core + Annotations; `ArenaOrder` excluded) |
-| catia | 19 under `crates/cadmpeg-codec-catia/tests/golden/fixtures/` | `CATIA_ADMISSION_CHECKS` (draft core) |
-| iges | 78 under `crates/cadmpeg-codec-iges/tests/golden/fixtures/` | full `validate_neutral` (and draft-core equivalence check) |
-| sldprt | 20 under `crates/cadmpeg-codec-sldprt/tests/golden/fixtures/` | `SLDPRT_EXPORT_PRECONDITION_CHECKS` (draft core) |
+| route  |                                                      fixtures | predicate                                                        |
+| ------ | ------------------------------------------------------------: | ---------------------------------------------------------------- |
+| rhino  |  28 under `crates/cadmpeg-codec-rhino/tests/golden/fixtures/` | `RHINO_DRAFT_CHECKS` (core + Annotations; `ArenaOrder` excluded) |
+| catia  |  19 under `crates/cadmpeg-codec-catia/tests/golden/fixtures/` | `CATIA_ADMISSION_CHECKS` (draft core)                            |
+| iges   |   78 under `crates/cadmpeg-codec-iges/tests/golden/fixtures/` | full `validate_neutral` (and draft-core equivalence check)       |
+| sldprt | 20 under `crates/cadmpeg-codec-sldprt/tests/golden/fixtures/` | `SLDPRT_EXPORT_PRECONDITION_CHECKS` (draft core)                 |
 
 Per-file decode/validate timeout: 60s. Comparison: admit/reject from full
 `cadmpeg validate` error/blocking findings versus the same findings filtered to
@@ -21,7 +21,7 @@ the route's `Check` set.
 
 | total | agree_accept | agree_reject | diverge | decode_fail |
 | ----: | -----------: | -----------: | ------: | ----------: |
-| 145 | 143 | 0 | 0 | 2 |
+|   145 |          143 |            0 |       0 |           2 |
 
 Decode failures are intentional Rhino reject fixtures (`reject_v1.3dm`,
 `reject_v2.3dm`) that do not produce IR. Zero admit/reject divergence on every
