@@ -62,9 +62,11 @@ pub const RHINO_INSTANCE_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 /// because finalize runs first.
 pub const CATIA_ADMISSION_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 
-/// SLDPRT export precondition on the normalized, sorted input IR.
+/// Documented draft/topology floor for the SLDPRT export precondition.
 ///
-/// Writer postcondition after bake/prepare stays on full `validate_neutral`.
+/// The production writer input gate keeps full `validate_neutral` because
+/// refusal depends on non-core Checks (for example `Counts`). Narrowing onto
+/// this set requires additional reject-fixture coverage.
 pub const SLDPRT_EXPORT_PRECONDITION_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 
 /// Drop findings whose [`Check`] is outside `allowed`.

@@ -33,7 +33,7 @@ constants below.
 | Rhino instance | `RHINO_INSTANCE_CHECKS` = core | `ArenaOrder` excluded; no mid-expansion finalize |
 | CATIA admission | `CATIA_ADMISSION_CHECKS` = core | finalize first; pending native identities via admit helper |
 | IGES rejection | full `validate_neutral` | classified keep-full: `DRAFT_CORE_CHECKS` ≡ full errors on all 78 IGES golden fixtures (`docs/phase5-admissibility-shadow.md`) |
-| SLDPRT export precondition (`writer` input) | `SLDPRT_EXPORT_PRECONDITION_CHECKS` = core | refuses write on error-severity findings in the set |
+| SLDPRT export precondition (`writer` input) | full `validate_neutral` | keep-full: refusal depends on non-core Checks (`Counts`, …); `SLDPRT_EXPORT_PRECONDITION_CHECKS` is the documented draft/topology floor |
 | SLDPRT writer postcondition (after bake/prepare) | full `validate_neutral` | postcondition on the writer's own transform; not replaced |
 
 ## Application composition
