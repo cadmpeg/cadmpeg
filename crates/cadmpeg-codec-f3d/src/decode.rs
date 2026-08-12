@@ -2154,7 +2154,8 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_relations,
             self.ir.tolerances.linear,
         );
-        charge_sketch_arrangement_work(ctx, self.ir.model.sketch_entities.len())?;
+        let arrangement_budget =
+            ctx.work_budget(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
         crate::design::profile_select::bind_sweep_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -2241,6 +2242,7 @@ impl<'a> F3dDecodeSession<'a> {
                 histories: &self.native.asm_histories,
                 linear_tolerance: self.ir.tolerances.linear,
                 angular_tolerance: self.ir.tolerances.angular,
+                arrangement_budget: &arrangement_budget,
             },
         );
         if self.geometry.is_some() {
@@ -3167,18 +3169,6 @@ fn apply_assembly_classification(
         };
         report.notes.push(note);
     }
-}
-
-/// Charge session work for sketch-arrangement walks, capped by the format-side
-/// arrangement ceiling so policy and format limits both bind.
-fn charge_sketch_arrangement_work(
-    ctx: &DecodeContext<'_>,
-    sketch_entities: usize,
-) -> Result<(), CodecError> {
-    let units = u64::try_from(sketch_entities.saturating_mul(sketch_entities.max(1)))
-        .unwrap_or(u64::MAX)
-        .min(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
-    ctx.charge_work(units, "f3d_sketch_arrangement")
 }
 
 fn decode_result(
