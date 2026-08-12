@@ -1,0 +1,322 @@
+# Public API change ledger for the refactor.
+# Phase 2+ adds one row per intentional public deletion, module move, visibility
+# reduction, signature change, removed trait implementation, or field encapsulation.
+# At phase 9, compare rustdoc public items to the baseline snapshots under
+# docs/api-baseline/ and reconcile every difference with a row here.
+#
+# Lineage baseline is the Phase 0 starting commit on feat/refactor-lego /
+# sldprt-l6. The proposal's audit baseline 14a0a4dfc remains an ancestor and is
+# recorded for cross-reference; do not reset to main.
+baseline_commit = "087baee8ba7e4374fa45a0355eb3268824fd81d8"
+audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
+api_baseline_dir = "docs/api-baseline"
+measured_at = "41039916814ce8104db0ec521b71fd03ee21cc3f"
+
+# Row shape:
+# [[change]]
+# commit = "<sha>"
+# crate = "cadmpeg-core"
+# kind = "deletion" # deletion | move | visibility | signature | trait_impl | field
+# item = "cadmpeg_core::cursor::Cursor"
+# reason = "..."
+
+[[change]]
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::cursor::Cursor"
+reason = "replaced by View::read_counted; FreeCAD and sldprt ports complete"
+
+[[change]]
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::cursor"
+reason = "module deleted; bounded_len re-homed to cadmpeg_core::decode"
+
+[[change]]
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
+crate = "cadmpeg-core"
+kind = "move"
+item = "cadmpeg_core::cursor::bounded_len -> cadmpeg_core::decode::bounded_len"
+reason = "keep adopted bounded_len after Cursor deletion"
+
+[[change]]
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::View::read_counted"
+reason = "absorb Cursor::read_counted for FreeCAD/sldprt counted reads"
+
+[[change]]
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::{SpaceDescriptor,SpaceDerivation,ResolvedAddress,resolve_address,DecodeContext::resolve_location,DecodeContext::register_slice_as,DecodeContext::begin_expand_as}"
+reason = "stable space descriptors and sealed-boundary address resolution for inspect replay"
+
+[[change]]
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::math::Aabb"
+reason = "zero production callers"
+
+[[change]]
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::draft::BrepAssembly"
+reason = "zero production callers; assembly tests removed with the type"
+
+[[change]]
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
+crate = "cadmpeg-container"
+kind = "deletion"
+item = "cadmpeg_container::compression::{inflate_zlib_prefix,inflate_raw_prefix}"
+reason = "unused outside own tests"
+
+[[change]]
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::{le,be}::take_vec3"
+reason = "unused outside own tests"
+
+[[change]]
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
+crate = "cadmpeg-codec-iges"
+kind = "trait_impl"
+item = "Encoder for IgesCodec"
+reason = "duplicate encoder surface; keep IgesEncoder"
+
+[[change]]
+commit = "de5162c2c110f1b8142a4763e34e90d664e2ec2c"
+crate = "cadmpeg"
+kind = "field"
+item = "FormatDescriptor::{display_name,capabilities,detection_priority} and Capabilities"
+reason = "debug-assert-only or all-zero noop; extensions retained"
+
+[[change]]
+commit = "7ed3f4f6e3ebc9f19100714c97873eb26356c8e9"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::golden"
+reason = "re-homed to publish=false cadmpeg-test-support"
+
+[[change]]
+commit = "7ed3f4f6e3ebc9f19100714c97873eb26356c8e9"
+crate = "cadmpeg-ir"
+kind = "move"
+item = "cadmpeg_ir::roundtrip -> cadmpeg_test_support::roundtrip"
+reason = "test-only round-trip helpers leave the production IR crate"
+
+[[change]]
+commit = "7ed3f4f6e3ebc9f19100714c97873eb26356c8e9"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::examples"
+reason = "gated behind examples feature; manifests already claimed this"
+
+[[change]]
+commit = "15e948b253cf4698c20974625ac671e756726ea7"
+crate = "cadmpeg-core"
+kind = "move"
+item = "cadmpeg_core::compare::{FLOAT_TOLERANCE,LOCAL_DIGEST_SUFFIX,floats_agree,is_local_digest_attribute,values_agree,texts_agree} -> cadmpeg_ir::compare"
+reason = "IR JSON tolerance and local-digest invariants live with the IR"
+
+[[change]]
+commit = "15e948b253cf4698c20974625ac671e756726ea7"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::compare"
+reason = "module emptied by move to cadmpeg_ir::compare"
+
+[[change]]
+commit = "0aab379c9def7fe4a947c1684ca86ba88360170f"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "DecodeReport::record_coverage(key) -> record_coverage(key, count)"
+reason = "value-parameter form so catia/creo absolute coverage counts can adopt it"
+
+[[change]]
+commit = "95c017c0dec407eec654996cc726db86b98dff8a"
+crate = "cadmpeg-ir"
+kind = "move"
+item = "cadmpeg_ir::{DocumentArtifact,DocumentOrigin,artifact} -> cadmpeg::application::{LoadedDocument,LoadOrigin,document}"
+reason = "loaded-document state belongs to the CLI application workflow; no compatibility re-export"
+
+[[change]]
+commit = "5fcd7360af2f6da200289532917e5594c471f26b"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::DecodeContext::admit_entities"
+reason = "delta entity admission so max_entities refuses mid-decode rather than only after IR build"
+
+[[change]]
+commit = "14029f8c9195ffea033dbca4b1d2bdca7da4d359"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::{alloc_filled,DecodeContext::alloc_filled}"
+reason = "checked fill allocation for parsed counts; prefer over vec![value; n]"
+
+[[change]]
+commit = "791920362eed9235a48264f083307e8b08ac78c3"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::validate::entity_census"
+reason = "Phase 5: encoders count arena rows without running full validation"
+
+[[change]]
+commit = "791920362eed9235a48264f083307e8b08ac78c3"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::CadIr::census"
+reason = "Phase 5: cheap IR arena census for export reports"
+
+[[change]]
+commit = "c6af75150ad90f90b4ed9f9a70f7ff077dec35c4"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::{validate,validate_with_source_fidelity,validate_with_annotations,validate_with_additional_native_identities} -> validate_neutral*"
+reason = "Phase 5: dependency-free neutral validation renamed; app check composes validate_neutral + fidelity + native"
+
+[[change]]
+commit = "f56196ee349bbee99adabfe0879ace7c46f2fe7d"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::{admit,admit_with_annotations,admit_with_additional_native_identities,filter_checks,DRAFT_CORE_CHECKS,RHINO_DRAFT_CHECKS,RHINO_INSTANCE_CHECKS,CATIA_ADMISSION_CHECKS,SLDPRT_EXPORT_PRECONDITION_CHECKS}"
+reason = "Phase 5: narrow admissibility predicates as documented Check subsets"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-inventor"
+kind = "visibility"
+item = "cadmpeg_codec_inventor::fuzzing -> fuzz"
+reason = "Phase 6: expose only the hidden feature-gated fuzz facade"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-rhino"
+kind = "visibility"
+item = "cadmpeg_codec_rhino::{loss,fuzzing}"
+reason = "Phase 6: make implementation modules private and standardize hidden fuzz access"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-step"
+kind = "visibility"
+item = "cadmpeg_codec_step::{lex,parse,strings}"
+reason = "Phase 6: keep parser implementation behind the codec and fuzz facades"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-f3d"
+kind = "visibility"
+item = "cadmpeg_codec_f3d::{brep,container,decode,design,f3z,history,materials,records,validate,xref}"
+reason = "Phase 6: narrow the root to codec, encoder surface, and validate_native"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-sldprt"
+kind = "visibility"
+item = "cadmpeg_codec_sldprt::{brep,container,decode,loss,parasolid,records,fuzzing}"
+reason = "Phase 6: keep implementation modules private and standardize hidden fuzz access"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-creo"
+kind = "visibility"
+item = "cadmpeg_codec_creo::{datum,decode,placement}"
+reason = "Phase 6: retain only advertised low-level research parsers"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-nx"
+kind = "visibility"
+item = "cadmpeg_codec_nx::{decode,deltas,evaluation,om,om_tokens}"
+reason = "Phase 6: retain only advertised low-level research parsers and hidden fuzz access"
+
+[[change]]
+commit = "1248aca859713aa69bb38ba266517abe033f54d2"
+crate = "cadmpeg-codec-step"
+kind = "visibility"
+item = "cadmpeg_codec_step::parse"
+reason = "Phase 6: product facade hides parse; module stays #[doc(hidden)] pub for benches/fuzz"
+
+[[change]]
+commit = "e71ad77a01ff315175f4643debab05175abe71ae"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::DecodeResult"
+reason = "Phase 6: non_exhaustive seals construction to DecodeResult::new after finalize"
+
+[[change]]
+commit = "e71ad77a01ff315175f4643debab05175abe71ae"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::CadIr::ir_version"
+reason = "Phase 6: constructor-controlled; public getter only"
+
+[[change]]
+commit = "e71ad77a01ff315175f4643debab05175abe71ae"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::DocumentDraft"
+reason = "Phase 6: type alias for ModelDraft in DocumentDraft → CadIr → ValidationReport machine"
+
+[[change]]
+commit = "e71ad77a01ff315175f4643debab05175abe71ae"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::{Feature,SketchEntity,SpatialSketchEntity}::new"
+reason = "Phase 6: invariant-bearing constructors; no public Default"
+
+[[change]]
+commit = "65e841269e8746fa3e1bacd6c477607cc2a945ec"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::report::LossKind (enum -> namespaced struct) and LossTaxonomy"
+reason = "Phase 9: wire LossKind as {namespace,code,kind}; codecs keep typed local enums"
+
+[[change]]
+commit = "65e841269e8746fa3e1bacd6c477607cc2a945ec"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "DECODE_SIDECAR_VERSION 1 -> 2; DECODE_SIDECAR_VERSION_V1; DecodeSidecar::from_json migrate-on-read"
+reason = "Phase 9: namespaced loss codes need a sidecar schema bump with v1→v2 load path"
+
+[[change]]
+commit = "b80885a85bcfe7a45148c9ff9fecdf7f2e6e893a"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::{is_valid_identity,format_identity,IdentityError}"
+reason = "Phase 9: shared identity grammar for codec-owned builders"
+
+[[change]]
+commit = "3ba4e05c966ea869bbfc10a12b33b8dd394de78e"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::codec::{Codec,CodecEntry} -> {CodecBackend,Codec}"
+reason = "Phase 9: safe consumer API is Codec; raw hook is CodecBackend; no compatibility re-export"
+
+[[change]]
+commit = "3ba4e05c966ea869bbfc10a12b33b8dd394de78e"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::annotations::Provenance -> StreamProvenance; LossProvenance -> SourceProvenance"
+reason = "Phase 9: rename the two structurally different Provenance types by role"
+
+[[change]]
+commit = "98e06dc8ba1c1944c2347ba71740db875cb22c73"
+crate = "cadmpeg"
+kind = "signature"
+item = "CLI command report schema_version 5 -> 6 (status, refusal)"
+reason = "Phase 9: operational envelope carries ConversionRefusal stage/code/message"
+
+[[change]]
+commit = "41039916814ce8104db0ec521b71fd03ee21cc3f"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::FeatureDefinition::CutWithSurface::reverse: bool -> Option<bool>"
+reason = "optional native side flag; omit when the source does not declare reverse"
