@@ -35988,6 +35988,29 @@ fn emit_geometry_arenas(
     Ok(())
 }
 
+fn record_coverage<const N: usize>(
+    coverage: &mut BTreeMap<String, usize>,
+    entries: [(&str, usize); N],
+) {
+    coverage.extend(
+        entries
+            .into_iter()
+            .map(|(key, count)| (key.to_string(), count)),
+    );
+}
+
+macro_rules! record_transferred_feature_coverage {
+    ($coverage:expr, $($counter:ident),+ $(,)?) => {
+        record_coverage(
+            $coverage,
+            [$((
+                concat!("transferred_", stringify!($counter)),
+                $counter,
+            ),)+],
+        );
+    };
+}
+
 /// Count transferred features by kind and record the counts in `coverage`.
 ///
 /// Walks the transferred feature list once, classifying each feature by its
@@ -36453,348 +36476,125 @@ fn collect_feature_coverage(
     let incomplete_other_construction_feature_count = incomplete_section_shape_feature_count
         + incomplete_pattern_feature_count
         + native_axis_helix_feature_count;
-    coverage.insert(
-        "transferred_feature_count".to_string(),
-        ir.model.features.len(),
+    record_coverage(
+        coverage,
+        [
+            ("transferred_feature_count", ir.model.features.len()),
+            (
+                "transferred_feature_result_edge_count",
+                feature_result_edge_count,
+            ),
+            (
+                "transferred_feature_result_topology_count",
+                feature_result_topology_count,
+            ),
+            (
+                "transferred_typed_feature_count",
+                ir.model.features.len() - native_feature_count,
+            ),
+            ("transferred_native_feature_count", native_feature_count),
+            (
+                "transferred_geometry_generator_feature_count",
+                geometry_generator_feature_count,
+            ),
+            (
+                "transferred_explicitly_unresolved_feature_count",
+                explicitly_unresolved_feature_count,
+            ),
+            (
+                "transferred_incomplete_sweep_feature_count",
+                incomplete_sweep_feature_count,
+            ),
+            (
+                "transferred_incomplete_recognized_feature_count",
+                incomplete_recognized_feature_count,
+            ),
+            (
+                "transferred_incomplete_surface_operation_feature_count",
+                incomplete_surface_operation_feature_count,
+            ),
+            (
+                "transferred_incomplete_other_construction_feature_count",
+                incomplete_other_construction_feature_count,
+            ),
+        ],
     );
-    coverage.insert(
-        "transferred_feature_result_edge_count".to_string(),
-        feature_result_edge_count,
-    );
-    coverage.insert(
-        "transferred_feature_result_topology_count".to_string(),
-        feature_result_topology_count,
-    );
-    coverage.insert(
-        "transferred_typed_feature_count".to_string(),
-        ir.model.features.len() - native_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_feature_count".to_string(),
-        native_feature_count,
-    );
-    coverage.insert(
-        "transferred_geometry_generator_feature_count".to_string(),
-        geometry_generator_feature_count,
-    );
-    coverage.insert(
-        "transferred_explicitly_unresolved_feature_count".to_string(),
-        explicitly_unresolved_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_datum_plane_feature_count".to_string(),
+    record_transferred_feature_coverage!(
+        coverage,
         unresolved_datum_plane_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_datum_coordinate_system_feature_count".to_string(),
         unresolved_datum_coordinate_system_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_boundary_surface_feature_count".to_string(),
         unresolved_boundary_surface_feature_count,
-    );
-    coverage.insert(
-        "transferred_extrude_feature_count".to_string(),
         extrude_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_extrude_feature_count".to_string(),
         incomplete_extrude_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_extrude_profile_feature_count".to_string(),
         unresolved_extrude_profile_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_extrude_profile_feature_count".to_string(),
         native_extrude_profile_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_extrude_start_feature_count".to_string(),
         incomplete_extrude_start_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_extrude_termination_feature_count".to_string(),
         incomplete_extrude_termination_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_extrude_boolean_operation_feature_count".to_string(),
         unresolved_extrude_boolean_operation_feature_count,
-    );
-    coverage.insert(
-        "transferred_revolve_feature_count".to_string(),
         revolve_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_revolve_feature_count".to_string(),
         incomplete_revolve_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_revolve_profile_feature_count".to_string(),
         unresolved_revolve_profile_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_revolve_profile_feature_count".to_string(),
         native_revolve_profile_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_revolve_axis_feature_count".to_string(),
         unresolved_revolve_axis_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_revolve_extent_feature_count".to_string(),
         incomplete_revolve_extent_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_revolve_boolean_operation_feature_count".to_string(),
         unresolved_revolve_boolean_operation_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_sweep_feature_count".to_string(),
-        incomplete_sweep_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_recognized_feature_count".to_string(),
-        incomplete_recognized_feature_count,
-    );
-    coverage.insert(
-        "transferred_hole_feature_count".to_string(),
         hole_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_hole_feature_count".to_string(),
         incomplete_hole_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_hole_location_feature_count".to_string(),
         unresolved_hole_location_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_hole_profile_feature_count".to_string(),
         unresolved_hole_profile_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_hole_profile_feature_count".to_string(),
         native_hole_profile_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_hole_face_selection_feature_count".to_string(),
         unresolved_hole_face_selection_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_hole_face_selection_feature_count".to_string(),
         native_hole_face_selection_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_hole_direction_feature_count".to_string(),
         unresolved_hole_direction_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_hole_kind_feature_count".to_string(),
         unresolved_hole_kind_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_hole_diameter_feature_count".to_string(),
         unresolved_hole_diameter_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_hole_termination_feature_count".to_string(),
         incomplete_hole_termination_feature_count,
-    );
-    coverage.insert(
-        "transferred_fillet_feature_count".to_string(),
         fillet_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_fillet_feature_count".to_string(),
         incomplete_fillet_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_fillet_edge_selection_feature_count".to_string(),
         unresolved_fillet_edge_selection_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_fillet_edge_selection_feature_count".to_string(),
         native_fillet_edge_selection_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_fillet_radius_feature_count".to_string(),
         unresolved_fillet_radius_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_fillet_radius_without_generated_surface_feature_count".to_string(),
         unresolved_fillet_radius_without_generated_surface_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_fillet_radius_with_generated_surface_feature_count".to_string(),
         unresolved_fillet_radius_with_generated_surface_feature_count,
-    );
-    coverage.insert(
-        "transferred_variable_radius_fillet_feature_count".to_string(),
         variable_radius_fillet_feature_count,
-    );
-    coverage.insert(
-        "transferred_chamfer_feature_count".to_string(),
         chamfer_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_chamfer_feature_count".to_string(),
         incomplete_chamfer_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_chamfer_edge_selection_feature_count".to_string(),
         unresolved_chamfer_edge_selection_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_chamfer_edge_selection_feature_count".to_string(),
         native_chamfer_edge_selection_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_chamfer_spec_feature_count".to_string(),
         unresolved_chamfer_spec_feature_count,
-    );
-    coverage.insert(
-        "transferred_draft_feature_count".to_string(),
         draft_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_draft_feature_count".to_string(),
         incomplete_draft_feature_count,
-    );
-    coverage.insert(
-        "transferred_explicitly_unresolved_draft_feature_count".to_string(),
         explicitly_unresolved_draft_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_draft_face_selection_feature_count".to_string(),
         unresolved_draft_face_selection_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_draft_face_selection_feature_count".to_string(),
         native_draft_face_selection_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_draft_neutral_plane_feature_count".to_string(),
         unresolved_draft_neutral_plane_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_draft_neutral_plane_feature_count".to_string(),
         native_draft_neutral_plane_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_draft_direction_feature_count".to_string(),
         unresolved_draft_direction_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_draft_angle_feature_count".to_string(),
         unresolved_draft_angle_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_draft_outward_feature_count".to_string(),
         unresolved_draft_outward_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_surface_operation_feature_count".to_string(),
-        incomplete_surface_operation_feature_count,
-    );
-    coverage.insert(
-        "transferred_filled_surface_feature_count".to_string(),
         filled_surface_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_filled_surface_feature_count".to_string(),
         incomplete_filled_surface_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_filled_surface_boundary_feature_count".to_string(),
         unresolved_filled_surface_boundary_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_filled_surface_support_feature_count".to_string(),
         unresolved_filled_surface_support_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_filled_surface_continuity_feature_count".to_string(),
         unresolved_filled_surface_continuity_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_filled_surface_merge_feature_count".to_string(),
         unresolved_filled_surface_merge_feature_count,
-    );
-    coverage.insert(
-        "transferred_knit_surface_feature_count".to_string(),
         knit_surface_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_knit_surface_feature_count".to_string(),
         incomplete_knit_surface_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_knit_surface_faces_feature_count".to_string(),
         unresolved_knit_surface_faces_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_knit_surface_faces_feature_count".to_string(),
         native_knit_surface_faces_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_knit_surface_merge_feature_count".to_string(),
         unresolved_knit_surface_merge_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_knit_surface_solid_feature_count".to_string(),
         unresolved_knit_surface_solid_feature_count,
-    );
-    coverage.insert(
-        "transferred_thicken_feature_count".to_string(),
         thicken_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_thicken_feature_count".to_string(),
         incomplete_thicken_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_thicken_faces_feature_count".to_string(),
         unresolved_thicken_faces_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_thicken_thickness_feature_count".to_string(),
         unresolved_thicken_thickness_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_thicken_side_feature_count".to_string(),
         unresolved_thicken_side_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_other_construction_feature_count".to_string(),
-        incomplete_other_construction_feature_count,
-    );
-    coverage.insert(
-        "transferred_section_shape_feature_count".to_string(),
         section_shape_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_section_shape_feature_count".to_string(),
         incomplete_section_shape_feature_count,
-    );
-    coverage.insert(
-        "transferred_pattern_feature_count".to_string(),
         pattern_feature_count,
-    );
-    coverage.insert(
-        "transferred_incomplete_pattern_feature_count".to_string(),
         incomplete_pattern_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_pattern_seed_feature_count".to_string(),
         unresolved_pattern_seed_feature_count,
-    );
-    coverage.insert(
-        "transferred_unresolved_pattern_transform_feature_count".to_string(),
         unresolved_pattern_transform_feature_count,
-    );
-    coverage.insert(
-        "transferred_native_axis_helix_feature_count".to_string(),
         native_axis_helix_feature_count,
     );
 }
