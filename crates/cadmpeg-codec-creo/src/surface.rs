@@ -5117,6 +5117,7 @@ fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     raw[0] = first;
     raw[1] = second;
     raw[2..].copy_from_slice(tail);
+    // Computed IEEE bytes 0..1 plus six file bytes; not a contiguous window.
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 
@@ -5125,6 +5126,7 @@ fn named_ieee8(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1..].copy_from_slice(tail);
+    // Injected IEEE byte 0 plus seven file bytes; not a contiguous window.
     Some((f64::from_be_bytes(raw), offset + 8))
 }
 
@@ -5133,6 +5135,7 @@ fn named_ieee7(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1..7].copy_from_slice(tail);
+    // Injected IEEE byte 0 plus six file bytes and a zero low byte; not a contiguous window.
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 
