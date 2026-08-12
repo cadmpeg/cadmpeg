@@ -600,14 +600,12 @@ impl<'a> DecodeContext<'a> {
         let appended = before
             .appended_ids(&self.ir)
             .expect("Rhino candidate builders only append IR entities");
-        let mut validation = cadmpeg_ir::validate::validate_neutral_with_annotations(
+        let validation = cadmpeg_ir::admit_with_annotations(
             &self.ir,
             &self.annotations,
+            cadmpeg_ir::RHINO_DRAFT_CHECKS,
             Vec::new(),
         );
-        validation
-            .findings
-            .retain(|finding| finding.check != cadmpeg_ir::report::Check::ArenaOrder);
         if validation.is_ok() {
             let unknowns = match self.ir.native_unknowns("rhino") {
                 Ok(unknowns) => unknowns,
@@ -1779,7 +1777,8 @@ impl<'a> DecodeContext<'a> {
         let mut rejection_warning = None;
         let accepted = match outcome {
             Ok(links) => {
-                let validation = cadmpeg_ir::validate::validate_neutral(&self.ir, Vec::new());
+                let validation =
+                    cadmpeg_ir::admit(&self.ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new());
                 if validation.is_ok() {
                     self.append_links(source_order, &links);
                     self.mark_decoded(source_order);
@@ -1787,7 +1786,7 @@ impl<'a> DecodeContext<'a> {
                     true
                 } else {
                     rejection_warning = Some(format!(
-                        "instance expansion rejected atomically by IR validation: {}",
+                        "instance expansion rejected atomically by IR admission: {}",
                         validation_findings(&validation)
                     ));
                     false
@@ -6152,7 +6151,7 @@ mod tests {
         assert!(links.is_empty());
     }
 
-    /// Phase 5 freeze: current draft/instance gates vs shared accept/reject builders.
+    /// Phase 5 freeze: draft/instance admit predicates vs shared accept/reject builders.
     #[test]
     fn phase5_freeze_shared_admissibility_fixtures() {
         let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
@@ -6160,26 +6159,26 @@ mod tests {
             cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("rhino:test");
         let annotations = cadmpeg_ir::Annotations::default();
 
-        let mut draft_ok = cadmpeg_ir::validate::validate_neutral_with_annotations(
+        assert!(cadmpeg_ir::admit_with_annotations(
             &accepted,
             &annotations,
+            cadmpeg_ir::RHINO_DRAFT_CHECKS,
             Vec::new(),
+        )
+        .is_ok());
+        assert!(
+            cadmpeg_ir::admit(&accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new()).is_ok()
         );
-        draft_ok
-            .findings
-            .retain(|f| f.check != cadmpeg_ir::report::Check::ArenaOrder);
-        assert!(draft_ok.is_ok());
-        assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new()).is_ok());
 
-        let mut draft_bad = cadmpeg_ir::validate::validate_neutral_with_annotations(
+        assert!(!cadmpeg_ir::admit_with_annotations(
             &rejected,
             &annotations,
+            cadmpeg_ir::RHINO_DRAFT_CHECKS,
             Vec::new(),
+        )
+        .is_ok());
+        assert!(
+            !cadmpeg_ir::admit(&rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new()).is_ok()
         );
-        draft_bad
-            .findings
-            .retain(|f| f.check != cadmpeg_ir::report::Check::ArenaOrder);
-        assert!(!draft_bad.is_ok());
-        assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new()).is_ok());
     }
 }
