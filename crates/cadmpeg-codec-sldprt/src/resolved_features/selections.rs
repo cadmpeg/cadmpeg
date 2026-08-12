@@ -1909,11 +1909,11 @@ fn compact_component_reference_list(
     (!require_distinct_framing || has_reference_framing).then_some(references)
 }
 
-pub(crate) fn variable_fillet_control_vertices(
+pub(crate) fn variable_fillet_control_references(
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_end: usize,
-) -> Option<Vec<(String, [u8; 12])>> {
+) -> Option<Vec<(String, Vec<Vec<FeatureInputComponentPathEntry>>)>> {
     if !feature.kind.eq_ignore_ascii_case("VarFillet") {
         return None;
     }
@@ -1928,21 +1928,12 @@ pub(crate) fn variable_fillet_control_vertices(
         })
         .filter_map(|marker| {
             let references = compact_component_reference_list(&lane.native_payload, marker, false)?;
-            (references.len() == 3).then_some(())?;
-            let vertices = references
-                .iter()
-                .flat_map(|reference| reference.iter())
-                .filter(|component| component.instance == Some(0x8083))
-                .collect::<Vec<_>>();
-            let [vertex] = vertices.as_slice() else {
-                return None;
-            };
-            Some((marker, vertex.type_signature))
+            (references.len() == 3).then_some((marker, references))
         })
         .collect::<Vec<_>>();
     controls.sort_unstable_by_key(|(marker, _)| *marker);
     let mut result = Vec::with_capacity(controls.len());
-    for (index, &(marker, signature)) in controls.iter().enumerate() {
+    for (index, &(marker, _)) in controls.iter().enumerate() {
         let start = index
             .checked_sub(1)
             .and_then(|previous| controls.get(previous))
@@ -1953,12 +1944,14 @@ pub(crate) fn variable_fillet_control_vertices(
             .filter(|name| {
                 usize::try_from(name.offset).is_ok_and(|offset| start < offset && offset < marker)
             })
-            .filter(|name| variable_fillet_dimension_index(&name.value).is_some())
+            .filter(|name| {
+                variable_fillet_dimension_index_for_feature(feature, &name.value).is_some()
+            })
             .collect::<Vec<_>>();
         let [name] = names.as_slice() else {
             return None;
         };
-        result.push((name.value.clone(), signature));
+        result.push((name.value.clone(), controls[index].1.clone()));
     }
     (!result.is_empty()).then_some(result)
 }
@@ -1976,6 +1969,17 @@ pub(crate) fn variable_fillet_dimension_index(name: &str) -> Option<usize> {
         format!("D0{index}")
     };
     (name == canonical).then_some(index)
+}
+
+pub(crate) fn variable_fillet_dimension_index_for_feature(
+    feature: &crate::records::Feature,
+    name: &str,
+) -> Option<usize> {
+    if name == "D1" && !feature.parameters.contains_key("D01") {
+        // SW2013-era lanes use D1 for the second variable-radius control.
+        return Some(1);
+    }
+    variable_fillet_dimension_index(name)
 }
 
 pub(super) fn compact_component_path_end_at(payload: &[u8], marker: usize) -> Option<usize> {

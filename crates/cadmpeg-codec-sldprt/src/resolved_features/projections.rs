@@ -11,7 +11,8 @@ use super::relation_geometry::owned_relation_parameters;
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::selections::{
-    cosmetic_thread_cylinder_marker_reference, variable_fillet_control_vertices,
+    cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
+    variable_fillet_dimension_index_for_feature,
 };
 use super::terminations::compact_surface_selection_value;
 use crate::records::{
@@ -544,7 +545,7 @@ fn variable_fillet_radius_groups<'a>(
     let parameter_names = feature
         .parameters
         .keys()
-        .filter(|name| super::selections::variable_fillet_dimension_index(name).is_some())
+        .filter(|name| variable_fillet_dimension_index_for_feature(feature, name).is_some())
         .collect::<HashSet<_>>();
     if parameter_names.len() != feature.parameters.len() || parameter_names.len() < 2 {
         return None;
@@ -552,6 +553,8 @@ fn variable_fillet_radius_groups<'a>(
 
     let mut vertex_radii = HashMap::<[u8; 12], f64>::new();
     let mut control_names = HashSet::<String>::new();
+    let mut non_vertex_control_names = HashSet::<String>::new();
+    let mut non_vertex_control_references = Vec::new();
     for lane in lanes {
         let mut objects = history
             .features
@@ -569,29 +572,102 @@ fn variable_fillet_radius_groups<'a>(
             .get(index + 1)
             .and_then(|(offset, _)| usize::try_from(*offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let Some(controls) = variable_fillet_control_vertices(feature, lane, object_end) else {
+        let Some(controls) = variable_fillet_control_references(feature, lane, object_end) else {
             continue;
         };
-        for (name, signature) in controls {
-            if !control_names.insert(name.clone()) {
-                return None;
-            }
-            let radius = feature
-                .parameters
-                .get(&name)
-                .and_then(|value| crate::history::parse_positive_dimension_length_mm(value))?;
-            match vertex_radii.entry(signature) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(radius);
+        for (name, references) in controls {
+            let vertices = references
+                .iter()
+                .flat_map(|reference| reference.iter())
+                .filter(|component| component.instance == Some(0x8083))
+                .collect::<Vec<_>>();
+            match vertices.as_slice() {
+                [vertex] => {
+                    if !control_names.insert(name.clone()) {
+                        return None;
+                    }
+                    let radius = feature.parameters.get(&name).and_then(|value| {
+                        crate::history::parse_positive_dimension_length_mm(value)
+                    })?;
+                    match vertex_radii.entry(vertex.type_signature) {
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            entry.insert(radius);
+                        }
+                        std::collections::hash_map::Entry::Occupied(entry)
+                            if !same_dimension_length(*entry.get(), radius) =>
+                        {
+                            return None;
+                        }
+                        std::collections::hash_map::Entry::Occupied(_) => {}
+                    }
                 }
-                std::collections::hash_map::Entry::Occupied(entry)
-                    if !same_dimension_length(*entry.get(), radius) =>
-                {
-                    return None;
+                [] => {
+                    if !non_vertex_control_names.insert(name) {
+                        return None;
+                    }
+                    non_vertex_control_references.extend(references);
                 }
-                std::collections::hash_map::Entry::Occupied(_) => {}
+                _ => return None,
             }
         }
+    }
+    if vertex_radii.is_empty() {
+        if parameter_names.len() != 2
+            || !control_names.is_empty()
+            || non_vertex_control_names.len() != parameter_names.len()
+            || !parameter_names
+                .iter()
+                .all(|name| non_vertex_control_names.contains(*name))
+            || non_vertex_control_references.is_empty()
+        {
+            return None;
+        }
+        let mut ordered_parameters = parameter_names
+            .iter()
+            .map(|name| {
+                variable_fillet_dimension_index_for_feature(feature, name).zip(
+                    feature.parameters.get(*name).and_then(|value| {
+                        crate::history::parse_positive_dimension_length_mm(value)
+                    }),
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        ordered_parameters.sort_unstable_by_key(|(index, _)| *index);
+        if ordered_parameters
+            .iter()
+            .enumerate()
+            .any(|(expected, (actual, _))| expected != *actual)
+            || selections.iter().any(|selection| {
+                selection
+                    .references
+                    .iter()
+                    .flat_map(|reference| reference.iter())
+                    .any(|component| component.instance == Some(0x8083))
+            })
+        {
+            return None;
+        }
+        let selected_references = selections
+            .iter()
+            .flat_map(|selection| selection.references.iter())
+            .collect::<Vec<_>>();
+        if non_vertex_control_references
+            .iter()
+            .any(|reference| !selected_references.contains(&reference))
+        {
+            return None;
+        }
+        let mut selections = selections.to_vec();
+        selections.sort_unstable_by_key(|selection| selection.ordinal);
+        let points = ordered_parameters
+            .into_iter()
+            .enumerate()
+            .map(|(parameter, (_, radius))| VariableRadius {
+                parameter: parameter as f64,
+                radius: Length(radius),
+            })
+            .collect();
+        return Some(vec![(RadiusSpec::Variable { points }, selections)]);
     }
     if control_names.len() != parameter_names.len()
         || !parameter_names

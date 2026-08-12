@@ -8556,7 +8556,10 @@ pub(crate) fn fillet_radius_parameter_has_native_display(
 ) -> bool {
     is_fillet(feature)
         && if variable_fillet(feature) {
-            crate::resolved_features::selections::variable_fillet_dimension_index(name).is_some()
+            crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
+                feature, name,
+            )
+            .is_some()
         } else {
             name == "D1"
         }
