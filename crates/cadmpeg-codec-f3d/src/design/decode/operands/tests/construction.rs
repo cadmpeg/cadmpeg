@@ -1,0 +1,1064 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    unused_imports,
+    clippy::cloned_ref_to_slice_refs,
+    clippy::default_trait_access,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::uninlined_format_args,
+    clippy::wildcard_imports
+)]
+use super::prelude::*;
+
+#[test]
+fn localized_edge_treatment_group_retention_is_language_independent() {
+    for token in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
+        assert!(!construction_operand_group_is_retained(Some(token), false));
+        assert!(construction_operand_group_is_retained(Some(token), true));
+    }
+    for token in ["Fillet", "Chamfer", "Extrusion", "unknown"] {
+        assert!(construction_operand_group_is_retained(Some(token), false));
+    }
+    assert!(construction_operand_group_is_retained(None, false));
+}
+
+#[test]
+fn construction_operand_groups_have_exact_counted_and_direct_frames() {
+    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    let scope = DesignParameterScope {
+        id: "f3d:Design/BulkStream.dat:scope#12".into(),
+        byte_offset: 1000,
+        class_tag: "301".into(),
+        record_index: 12,
+        frame_length: 200,
+        kind: "Extrude".into(),
+        kind_offset: 1100,
+        extrude_prologue: None,
+        coil_operation: None,
+        coil_operation_offset: None,
+        coil_extent: None,
+        coil_extent_offset: None,
+        coil_section: None,
+        coil_section_offset: None,
+        coil_section_placement: None,
+        coil_section_placement_offset: None,
+        coil_clockwise: None,
+        coil_clockwise_offset: None,
+        coil_placement: None,
+        coil_transform: None,
+        feature_ordinal: 1,
+        feature_ordinal_offset: 0,
+        history_state_id: None,
+        history_state_id_offset: 0,
+        previous_history_state_id: None,
+        previous_history_state_id_offset: 0,
+        reference_count_offset: 1080,
+        reference_members: vec![100, 200, 201],
+        reference_member_offsets: vec![1085, 1096, 1107],
+        solid_primitive: None,
+        direct_face_operation: None,
+        move_operation: None,
+        scale_operation: None,
+        surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        ruled_surface_operation: None,
+        surface_patch_boundaries: Vec::new(),
+        base_flange_operation: None,
+        edge_flange_operation: None,
+        hem_operation: None,
+        fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
+        fixed_chamfer_parameters: None,
+        path_feature_construction: None,
+        combine_operation: None,
+        thread_construction: None,
+        draft_operation: None,
+        copy_paste_bodies_operation: None,
+        base_feature_construction: None,
+        work_plane_transform: None,
+        work_plane_transform_offset: None,
+        work_plane_reference: None,
+        work_plane_reference_offset: None,
+        work_plane_construction: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
+        work_point_construction: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        hole_construction: None,
+        extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
+        base_flange_profile: None,
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
+        paired_class_tag: "261".into(),
+        paired_byte_offset: 1200,
+    };
+    let record = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#100".into(),
+        byte_offset: 0,
+        class_tag: "332".into(),
+        record_index: 100,
+    };
+    let mut bytes = Vec::new();
+    header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for member in [200u32, 201] {
+        bytes.push(1);
+        bytes.extend_from_slice(&member.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&300u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&0x0000_0008_0000_0000u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&180u32.to_le_bytes());
+    bytes.extend_from_slice(&0.125f64.to_le_bytes());
+    bytes.extend_from_slice(&180u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&102u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&[1, 1, 0, 1]);
+    bytes.extend_from_slice(&101u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.push(1);
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    let paired_at = bytes.len();
+    header(&mut bytes, *b"259", 100);
+
+    let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
+        .complete()
+        .expect("counted Extrude operand group");
+    assert_eq!(group.members, [200, 201]);
+    assert_eq!(group.member_offsets, [26, 37]);
+    assert_eq!(group.role, 0x0000_0008_0000_0000);
+    assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
+    assert_eq!(group.frame.member_count_offset, 21);
+    assert!(group.frame.auxiliary_record_indices.is_empty());
+    assert_eq!(group.frame.trailing_record_indices, [300]);
+    assert_eq!(group.frame.opaque_index, 180);
+    assert_eq!(group.frame.opaque_scalar, 0.125);
+    assert!(group.frame.variant);
+    assert_eq!(group.paired_byte_offset, paired_at as u64);
+
+    let mut whole_body_bytes = bytes.clone();
+    whole_body_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+        .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
+    let whole_body = parse_construction_operand_group(&whole_body_bytes, &scope, 0, &record)
+        .complete()
+        .expect("counted Extrude whole-body group");
+    assert_eq!(whole_body.role, 0x0000_0004_0000_0000);
+    assert_eq!(
+        whole_body.extrude_role,
+        Some(DesignExtrudeOperandRole::Bodies)
+    );
+
+    let mut flagged = bytes[..11].to_vec();
+    flagged.extend_from_slice(&[0; 9]);
+    flagged.push(1);
+    flagged.extend_from_slice(&1u32.to_le_bytes());
+    for value in [
+        b"DcFeatureOperationIdFlag".as_slice(),
+        b"IntrinsicMetaTypeuint64".as_slice(),
+    ] {
+        flagged.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
+        flagged.extend_from_slice(value);
+    }
+    flagged.extend_from_slice(&445u64.to_le_bytes());
+    let flagged_count_at = flagged.len();
+    flagged.extend_from_slice(&bytes[21..]);
+    let flagged = parse_construction_operand_group(&flagged, &scope, 0, &record)
+        .complete()
+        .expect("operation-flagged counted operand group");
+    assert_eq!(flagged.frame.member_count_offset, flagged_count_at as u64);
+    assert_eq!(flagged.members, [200, 201]);
+    assert_eq!(flagged.role, 0x0000_0008_0000_0000);
+
+    let mut start_face_bytes = bytes.clone();
+    start_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+        .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
+    let retained_role_five =
+        parse_construction_operand_group(&start_face_bytes, &scope, 0, &record)
+            .complete()
+            .expect("counted Extrude retained role-five group");
+    assert_eq!(retained_role_five.extrude_role, None);
+
+    let mut from_face_scope = scope.clone();
+    from_face_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+        reference: None,
+        operation: DesignExtrudeOperation::Cut,
+        operation_offset: 1028,
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [1, 0],
+        side_extent_discriminator_offsets: [1077, 1090],
+        first_side_target_ordinal: None,
+        extent: DesignExtrudeExtent::OneSidedDistance,
+        direction_face_extend_offsets: [1032, 1036],
+        direction_reversed: false,
+        direction_reversed_offset: 1040,
+        solid_operation: true,
+        solid_operation_offset: 1041,
+        start: DesignExtrudeStart::FromFace,
+        start_offset: 1042,
+    });
+    let start_face =
+        parse_construction_operand_group(&start_face_bytes, &from_face_scope, 0, &record)
+            .complete()
+            .expect("counted Extrude start-face group");
+    assert_eq!(start_face.role, 0x0000_0005_0000_0000);
+    assert_eq!(
+        start_face.extrude_role,
+        Some(DesignExtrudeOperandRole::Faces)
+    );
+
+    let tail_at = 11 + 10 + 4 + 2 * 11;
+    let mut flagless = bytes[..tail_at + 62].to_vec();
+    flagless.extend_from_slice(&[0; 2]);
+    flagless.push(1);
+    flagless.extend_from_slice(&101u32.to_le_bytes());
+    flagless.extend_from_slice(&[0; 7]);
+    flagless.push(1);
+    flagless.extend_from_slice(&12u32.to_le_bytes());
+    flagless.extend_from_slice(&[0; 6]);
+    let flagless_paired_at = flagless.len();
+    header(&mut flagless, *b"259", 100);
+    let flagless = parse_construction_operand_group(&flagless, &scope, 0, &record)
+        .complete()
+        .expect("flagless counted operand group");
+    assert_eq!(flagless.members, [200, 201]);
+    assert_eq!(flagless.role, 0x0000_0008_0000_0000);
+    assert!(!flagless.frame.variant);
+    assert_eq!(
+        flagless.paired_byte_offset,
+        u64::try_from(flagless_paired_at).unwrap()
+    );
+
+    let mut bombed = bytes.clone();
+    bombed[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(matches!(
+        parse_construction_operand_group(&bombed, &scope, 0, &record),
+        ConstructionOperandGroupParse::NotAGroup
+    ));
+
+    // A record that opens the grammar but whose tail names another record is a
+    // group this reader cannot read, not a reference member that is not a group.
+    let mut truncated = bytes.clone();
+    let tail_at = truncated.len() - 40;
+    truncated[tail_at..].fill(0x5a);
+    assert!(matches!(
+        parse_construction_operand_group(&truncated, &scope, 0, &record),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+
+    // Both optional references after the member run are present and the counted
+    // identity run is empty: the shape a fixed-offset reader cannot reach.
+    let mut auxiliary = Vec::new();
+    header(&mut auxiliary, *b"283", 100);
+    auxiliary.extend_from_slice(&[0; 10]);
+    auxiliary.extend_from_slice(&1u32.to_le_bytes());
+    for record_index in [109u32, 103, 106] {
+        auxiliary.push(1);
+        auxiliary.extend_from_slice(&record_index.to_le_bytes());
+        auxiliary.extend_from_slice(&[0; 6]);
+    }
+    auxiliary.extend_from_slice(&0u32.to_le_bytes());
+    auxiliary.extend_from_slice(&0x0000_0011_0000_0000u64.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 10]);
+    auxiliary.extend_from_slice(&31_003u32.to_le_bytes());
+    auxiliary.extend_from_slice(&0.25f64.to_le_bytes());
+    auxiliary.extend_from_slice(&31_003u32.to_le_bytes());
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&102u32.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 6]);
+    auxiliary.extend_from_slice(&[0; 2]);
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&101u32.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 7]);
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&scope.record_index.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 6]);
+    let auxiliary_paired_at = auxiliary.len();
+    header(&mut auxiliary, *b"259", 100);
+    let auxiliary_record = DesignRecordHeader {
+        class_tag: "283".into(),
+        ..record.clone()
+    };
+    let auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
+        .complete()
+        .expect("Extrude face group carrying both optional references");
+    assert_eq!(auxiliary.members, [109]);
+    assert_eq!(auxiliary.member_offsets, [26]);
+    assert_eq!(auxiliary.frame.auxiliary_record_indices, [103, 106]);
+    assert_eq!(auxiliary.frame.auxiliary_record_offsets, [37, 48]);
+    assert!(auxiliary.frame.trailing_record_indices.is_empty());
+    assert_eq!(auxiliary.role, 0x0000_0011_0000_0000);
+    assert_eq!(
+        auxiliary.extrude_role,
+        Some(DesignExtrudeOperandRole::Faces)
+    );
+    assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
+
+    let mut split_scope = scope.clone();
+    split_scope.kind = "SplitFace".into();
+    split_scope.frame_length = 334;
+    split_scope.reference_members = vec![100, 200, 201, 400, 500];
+    split_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118, 1129];
+    let mut tool_group = group.clone();
+    tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    tool_group.role = 0x0000_0021_0000_0000;
+    let mut target_group = group.clone();
+    target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
+    target_group.record_index = 400;
+    target_group.scope_reference_ordinal = 3;
+    target_group.members = vec![500];
+    target_group.member_offsets = vec![1129];
+    target_group.role = 0x0000_0010_0000_0000;
+    let split_groups = [tool_group, target_group];
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&split_scope),
+        &split_groups,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::SplitFace {
+            targets: cadmpeg_ir::features::FaceSelection::Native(targets),
+            tool: cadmpeg_ir::features::SplitFaceTool::Path(
+                cadmpeg_ir::features::PathRef::Native(tool),
+            ),
+        } if targets.ends_with("#400") && tool.ends_with("#100")
+    ));
+
+    let mut compact_split_scope = split_scope.clone();
+    compact_split_scope.class_tag = "418".into();
+    compact_split_scope.paired_class_tag = "266".into();
+    compact_split_scope.frame_length = 330;
+    let (compact_features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&compact_split_scope),
+        &split_groups,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &compact_features[0].definition,
+        FeatureDefinition::SplitFace { .. }
+    ));
+
+    let mut first_plane =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#601", "WorkPlane", 601);
+    first_plane.feature_ordinal = 0;
+    first_plane.work_plane_transform = Some([
+        [1.0, 0.0, 0.0, -0.8],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]);
+    let mut second_plane =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#701", "WorkPlane", 701);
+    second_plane.feature_ordinal = 1;
+    second_plane.work_plane_transform = Some([
+        [1.0, 0.0, 0.0, -1.4],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]);
+    compact_split_scope.feature_ordinal = 2;
+    let plane_selection = |record_index, group_member_ordinal, primary_identity| {
+        crate::records::DesignEntitySelectionOperand {
+            id: format!("f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"),
+            scope_record_index: compact_split_scope.record_index,
+            group_record_index: split_groups[0].record_index,
+            group_member_ordinal,
+            record_index,
+            byte_offset: 0,
+            class_tag: "372".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            identity_record_index: record_index + 3,
+            identity_record_offset: 0,
+            primary_identity,
+            primary_identity_offset: 0,
+            secondary_identity: None,
+            secondary_identity_offset: None,
+            curve_secondary_identity: None,
+            curve_secondary_identity_offset: None,
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: record_index + 4,
+            next_byte_offset: 0,
+        }
+    };
+    let plane_selections = [plane_selection(200, 0, 600), plane_selection(201, 1, 700)];
+    let expected_planes = [
+        crate::ids::neutral_feature_id(&first_plane),
+        crate::ids::neutral_feature_id(&second_plane),
+    ];
+    let plane_scopes = vec![first_plane, second_plane, compact_split_scope.clone()];
+    let plane_timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 1,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: plane_scopes
+            .iter()
+            .map(|scope| u64::from(scope.record_index))
+            .collect(),
+        item_record_index_offsets: vec![0; plane_scopes.len()],
+    };
+    let (plane_features, _) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &plane_scopes,
+            timelines: std::slice::from_ref(&plane_timeline),
+            construction_groups: &split_groups,
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &plane_selections,
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect("exact synthetic feature timeline");
+    let plane_split = plane_features
+        .iter()
+        .find(|feature| feature.source_tag.as_deref() == Some("SplitFace"))
+        .expect("projected SplitFace");
+    assert!(matches!(
+        &plane_split.definition,
+        FeatureDefinition::SplitFace {
+            tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
+            ..
+        } if planes == &expected_planes
+    ));
+    assert_eq!(plane_split.dependencies, expected_planes);
+
+    compact_split_scope.class_tag = "375".into();
+    let (mismatched_features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&compact_split_scope),
+        &split_groups,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &mismatched_features[0].definition,
+        FeatureDefinition::Native { .. }
+    ));
+
+    let mut split_body_scope = scope.clone();
+    split_body_scope.kind = "Split".into();
+    split_body_scope.frame_length = 325;
+    split_body_scope.reference_members = vec![100, 200, 400, 500];
+    split_body_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118];
+    let mut split_tool_group = group.clone();
+    split_tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    split_tool_group.record_index = 100;
+    split_tool_group.scope_reference_ordinal = 0;
+    split_tool_group.members = vec![200];
+    split_tool_group.member_offsets = vec![1096];
+    split_tool_group.role = 0x0000_0009_0000_0000;
+    let mut split_target_group = group.clone();
+    split_target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
+    split_target_group.record_index = 400;
+    split_target_group.scope_reference_ordinal = 2;
+    split_target_group.members = vec![500];
+    split_target_group.member_offsets = vec![1118];
+    split_target_group.role = 0x0000_0004_0000_0000;
+    let split_tool = DesignFaceOperand {
+        id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
+        scope_record_index: split_body_scope.record_index,
+        scope_reference_ordinal: 1,
+        group_record_index: Some(100),
+        group_member_ordinal: Some(0),
+        record_index: 200,
+        byte_offset: 1200,
+        class_tag: "297".into(),
+        paired_byte_offset: 1400,
+        paired_class_tag: "259".into(),
+        recipe_record_index: 203,
+        recipe_record_byte_offset: 1300,
+        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#1300".into(),
+        recipe_prefix_offset: 1311,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_kind: ConstructionRecipeKind::Face,
+        recipe_program_offset: 1350,
+        recipe_program: vec![0, -1],
+        recipe_node_offsets: Vec::new(),
+        recipe_nodes: Vec::new(),
+        candidate_faces: Vec::new(),
+        unreferenced_candidate_faces: Vec::new(),
+        alternate_selector_candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
+        historical_support_contexts: Vec::new(),
+        resolved_face_slots: Vec::new(),
+        next_record_index: 204,
+        next_byte_offset: 1411,
+    };
+    let split_groups = [split_target_group.clone(), split_tool_group.clone()];
+    assert!(matches!(
+        project_split(
+            &split_body_scope,
+            &split_groups,
+            std::slice::from_ref(&split_tool)
+        ),
+        Some(FeatureDefinition::SplitBody {
+            targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
+            tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
+        }) if targets.ends_with("#400") && tool.ends_with("#200")
+    ));
+
+    let mut multiple_targets_scope = split_body_scope.clone();
+    multiple_targets_scope.frame_length = 358;
+    multiple_targets_scope.reference_members = vec![100, 200, 400, 500, 501];
+    let mut multiple_targets = split_target_group.clone();
+    multiple_targets.members = vec![500, 501];
+    assert!(matches!(
+        project_split(
+            &multiple_targets_scope,
+            &[split_tool_group.clone(), multiple_targets],
+            std::slice::from_ref(&split_tool)
+        ),
+        Some(FeatureDefinition::SplitBody { .. })
+    ));
+
+    let mut construction_tool_scope = split_body_scope.clone();
+    construction_tool_scope.frame_length = 347;
+    construction_tool_scope.reference_members = vec![100, 200, 201, 400, 500];
+    let mut construction_tool = split_tool_group.clone();
+    construction_tool.role = 0x0000_0021_0000_0000;
+    construction_tool.members = vec![200, 201];
+    split_target_group.scope_reference_ordinal = 3;
+    assert!(matches!(
+        project_split(
+            &construction_tool_scope,
+            &[split_target_group.clone(), construction_tool],
+            &[]
+        ),
+        Some(FeatureDefinition::SplitBody {
+            tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
+            ..
+        }) if tool.ends_with("#100")
+    ));
+    split_target_group.scope_reference_ordinal = 2;
+
+    let mut invalid_groups = Vec::new();
+    invalid_groups.push(vec![split_target_group.clone()]);
+    let mut oversized_tool = split_tool_group.clone();
+    oversized_tool.members = vec![200, 201, 202, 203];
+    invalid_groups.push(vec![oversized_tool, split_target_group.clone()]);
+    for mutate in 0..4 {
+        let mut tool = split_tool_group.clone();
+        match mutate {
+            0 => tool.scope_reference_ordinal = 1,
+            1 => tool.record_index = 101,
+            2 => tool.role = 0x0000_0008_0000_0000,
+            3 => tool.members = vec![201],
+            _ => unreachable!(),
+        }
+        invalid_groups.push(vec![tool, split_target_group.clone()]);
+    }
+    for mutate in 0..4 {
+        let mut target = split_target_group.clone();
+        match mutate {
+            0 => target.scope_reference_ordinal = 3,
+            1 => target.record_index = 401,
+            2 => target.role = 0x0000_0005_0000_0000,
+            3 => target.members = vec![501],
+            _ => unreachable!(),
+        }
+        invalid_groups.push(vec![split_tool_group.clone(), target]);
+    }
+    assert!(invalid_groups.iter().all(|groups| project_split(
+        &split_body_scope,
+        groups,
+        std::slice::from_ref(&split_tool)
+    )
+    .is_none()));
+    let mut nonterminal_tool = split_tool.clone();
+    nonterminal_tool.recipe_program = vec![0, -1, 2];
+    assert!(project_split(
+        &split_body_scope,
+        &split_groups,
+        std::slice::from_ref(&nonterminal_tool)
+    )
+    .is_none());
+
+    let mut delete_scope = scope.clone();
+    delete_scope.kind = "DeleteFace".into();
+    delete_scope.frame_length = 258;
+    delete_scope.kind_offset = 1161;
+    delete_scope.reference_members = vec![100, 200];
+    delete_scope.reference_member_offsets = vec![1085, 1096];
+    let mut delete_group = group.clone();
+    delete_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    delete_group.members = vec![200];
+    delete_group.member_offsets = vec![1096];
+    delete_group.role = 0x0000_0010_0000_0000;
+    let mut delete_face_operand = split_tool.clone();
+    delete_face_operand.id = "f3d:Design/BulkStream.dat:face-operand#200".into();
+    delete_face_operand.scope_record_index = delete_scope.record_index;
+    delete_face_operand.scope_reference_ordinal = 1;
+    delete_face_operand.group_record_index = Some(delete_group.record_index);
+    delete_face_operand.group_member_ordinal = Some(0);
+    delete_face_operand.record_index = 200;
+    delete_face_operand.resolved_face_slots = vec![7];
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            heal: true,
+        }
+    );
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        std::slice::from_ref(&delete_face_operand),
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: FaceSelection::Resolved {
+                faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+                native: delete_group.id.clone(),
+            },
+            heal: true,
+        }
+    );
+    delete_scope.frame_length = 263;
+    delete_scope.kind_offset = 1165;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace { heal: true, .. }
+    ));
+    delete_scope.frame_length += 1;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "DeleteFace"
+    ));
+
+    let mut surface_scope = delete_scope.clone();
+    let reference_bytes = 11 * surface_scope.reference_members.len() as u64;
+    surface_scope.kind = "SurfaceDeleteFace".into();
+    surface_scope.frame_length = 250 + reference_bytes;
+    surface_scope.kind_offset = surface_scope.byte_offset + 140 + reference_bytes;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            heal: false,
+        }
+    );
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        std::slice::from_ref(&delete_face_operand),
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: FaceSelection::Resolved {
+                faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+                native: delete_group.id.clone(),
+            },
+            heal: false,
+        }
+    );
+    surface_scope.frame_length = 251 + reference_bytes;
+    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace { heal: false, .. }
+    ));
+    surface_scope.frame_length = 236 + reference_bytes;
+    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
+    ));
+
+    let mut remove_scope = scope.clone();
+    remove_scope.kind = "RemoveBody".into();
+    let mut remove_group = group;
+    remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    remove_group.role = 0x0000_0004_0000_0000;
+    assert_eq!(
+        crate::design::feature_project::project_remove_body(
+            &remove_scope,
+            std::slice::from_ref(&remove_group)
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::DeleteBody {
+            bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id.clone()),
+            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+        })
+    );
+
+    let mut stitch_scope = scope;
+    stitch_scope.kind = "SurfaceStitch".into();
+    stitch_scope.reference_members = vec![100, 200, 300, 301];
+    stitch_scope.surface_stitch_operation = Some(DesignSurfaceStitchOperation {
+        gap_tolerance: 0.01,
+        gap_tolerance_offset: 40,
+        tolerance_record_index: 300,
+        settings_record_index: 301,
+    });
+    let mut stitch_group = remove_group;
+    stitch_group.members = vec![200];
+    stitch_group.role = 0x0000_0005_0000_0000;
+    assert_eq!(
+        crate::design::feature_project::project_surface_stitch(
+            &stitch_scope,
+            std::slice::from_ref(&stitch_group)
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::KnitSurface {
+            faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
+            merge_entities: Some(true),
+            create_solid: Some(true),
+            gap_tolerance: Some(cadmpeg_ir::features::Length(0.1)),
+        })
+    );
+}
+
+#[test]
+fn construction_operand_trailing_transform_has_exact_affine_frame() {
+    let record_index = 300u32;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"339");
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+    let transform = [
+        [0.0_f64, -1.0, 0.0, 12.5],
+        [1.0, 0.0, 0.0, -4.0],
+        [0.0, 0.0, 1.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[1, 0]);
+    let following_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"432");
+    bytes.extend_from_slice(&(record_index + 1).to_le_bytes());
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#300".into(),
+        byte_offset: 0,
+        class_tag: "339".into(),
+        record_index,
+    };
+
+    let parsed = parse_construction_operand_transform(&bytes, &header)
+        .expect("exact construction-operand transform");
+    assert_eq!(parsed.transform, transform);
+    assert_eq!(parsed.transform_offset, 22);
+    assert_eq!(parsed.following_record_index, 301);
+    assert_eq!(parsed.following_byte_offset, following_at as u64);
+    assert_eq!(parsed.following_class_tag, "432");
+
+    bytes[150] = 0;
+    assert!(parse_construction_operand_transform(&bytes, &header).is_none());
+
+    let secondary = [
+        [1.0_f64, 0.0, 0.0, 2.0],
+        [0.0, 1.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut dual = bytes[..21].to_vec();
+    for value in transform.into_iter().flatten() {
+        dual.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in secondary.into_iter().flatten() {
+        dual.extend_from_slice(&value.to_le_bytes());
+    }
+    dual.push(0);
+    let dual_following_at = dual.len();
+    dual.extend_from_slice(&3u32.to_le_bytes());
+    dual.extend_from_slice(b"432");
+    dual.extend_from_slice(&(record_index + 1).to_le_bytes());
+    let parsed = parse_construction_operand_dual_transform(&dual, &header)
+        .expect("exact dual construction-operand transform");
+    assert_eq!(parsed.first_transform, transform);
+    assert_eq!(parsed.first_transform_offset, 21);
+    assert_eq!(parsed.second_transform, secondary);
+    assert_eq!(parsed.second_transform_offset, 149);
+    assert_eq!(dual_following_at, 278);
+}
+
+#[test]
+fn construction_operand_trailing_flag_has_exact_compact_frame() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"374");
+    bytes.extend_from_slice(&33602u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&[1, 1, 0]);
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#33602".into(),
+        byte_offset: 0,
+        class_tag: "374".into(),
+        record_index: 33602,
+    };
+
+    let flag = parse_construction_operand_flag(&bytes, &header).expect("compact trailing flag");
+    assert!(flag.value);
+    assert_eq!(flag.value_offset, 22);
+
+    bytes[22] = 2;
+    assert!(parse_construction_operand_flag(&bytes, &header).is_none());
+}
+
+#[test]
+fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
+    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn reference(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.push(1);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+
+    let scope_record_index = 40u32;
+    let record_index = 100u32;
+    let transform = [
+        [0.0_f64, -1.0, 0.0, 12.5],
+        [1.0, 0.0, 0.0, -4.0],
+        [0.0, 0.0, 1.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut expanded = Vec::new();
+    header(&mut expanded, b"304", record_index);
+    expanded.extend_from_slice(&[0; 10]);
+    expanded.push(1);
+    expanded.extend_from_slice(&174u64.to_le_bytes());
+    expanded.extend_from_slice(&[0; 3]);
+    for value in transform.into_iter().flatten() {
+        expanded.extend_from_slice(&value.to_le_bytes());
+    }
+    expanded.push(0);
+    reference(&mut expanded, scope_record_index);
+    reference(&mut expanded, record_index + 2);
+    expanded.extend_from_slice(&[0; 6]);
+    let expanded_following_at = expanded.len();
+    header(&mut expanded, b"390", record_index + 1);
+    let expanded_header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#100".into(),
+        byte_offset: 0,
+        class_tag: "304".into(),
+        record_index,
+    };
+    let expanded = parse_construction_operand_path(&expanded, scope_record_index, &expanded_header)
+        .expect("expanded selection path");
+    assert_eq!(expanded.entity_ref, 174);
+    assert_eq!(expanded.transform, Some(transform));
+    assert_eq!(expanded.transform_offset, Some(33));
+    assert_eq!(expanded.compact_variant, None);
+    assert_eq!(expanded.scope_record_index_offset, 163);
+    assert_eq!(expanded.nested_record_index, 102);
+    assert_eq!(expanded.nested_record_index_offset, 174);
+    assert_eq!(expanded.following_record_index, 101);
+    assert_eq!(expanded.following_byte_offset, expanded_following_at as u64);
+
+    let mut compact = Vec::new();
+    header(&mut compact, b"304", record_index);
+    compact.extend_from_slice(&[0; 10]);
+    compact.push(1);
+    compact.extend_from_slice(&18_064u64.to_le_bytes());
+    compact.extend_from_slice(&[0, 0, 1, 0]);
+    reference(&mut compact, scope_record_index);
+    reference(&mut compact, record_index + 2);
+    compact.extend_from_slice(&[0; 6]);
+    let compact_following_at = compact.len();
+    header(&mut compact, b"390", record_index + 1);
+    let compact = parse_construction_operand_path(&compact, scope_record_index, &expanded_header)
+        .expect("compact selection path");
+    assert_eq!(compact.entity_ref, 18_064);
+    assert_eq!(compact.transform, None);
+    assert_eq!(compact.compact_variant, Some(true));
+    assert_eq!(compact.scope_record_index_offset, 35);
+    assert_eq!(compact.nested_record_index_offset, 46);
+    assert_eq!(compact.following_byte_offset, compact_following_at as u64);
+}
+
+#[test]
+fn construction_tracking_path_decodes_absent_and_present_related_identities() {
+    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn tracking_path(first: Option<u64>, second: Option<u64>) -> Vec<u8> {
+        let wrapper_record_index = 300u32;
+        let mut bytes = Vec::new();
+        header(&mut bytes, b"361", wrapper_record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(wrapper_record_index + 1).to_le_bytes());
+        bytes.extend_from_slice(&[0; 3]);
+        header(&mut bytes, b"363", wrapper_record_index + 1);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&268u64.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&(-1i32).to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        for identity in [first, second] {
+            bytes.extend_from_slice(&u32::from(identity.is_some()).to_le_bytes());
+            if let Some(identity) = identity {
+                bytes.extend_from_slice(&identity.to_le_bytes());
+            }
+        }
+        header(&mut bytes, b"301", wrapper_record_index + 2);
+        bytes
+    }
+
+    let absent = tracking_path(None, None);
+    let absent = parse_construction_tracking_path(&absent, 0, 300, "361")
+        .expect("tracking path without related identities");
+    assert_eq!(absent.carrier_record_index, 301);
+    assert_eq!(absent.carrier_byte_offset, 33);
+    assert_eq!(absent.primary_identity, 268);
+    assert_eq!(absent.primary_identity_offset, 70);
+    assert_eq!(absent.selector, -1);
+    assert_eq!(absent.kind, 3);
+    assert_eq!(absent.first_related_identity, None);
+    assert_eq!(absent.second_related_identity, None);
+    assert_eq!(absent.following_record_index, 302);
+    assert_eq!(absent.following_byte_offset, 114);
+
+    let present = tracking_path(Some(113), Some(119));
+    let present = parse_construction_tracking_path(&present, 0, 300, "361")
+        .expect("tracking path with related identities");
+    assert_eq!(present.first_related_identity, Some(113));
+    assert_eq!(present.first_related_identity_offset, Some(110));
+    assert_eq!(present.second_related_identity, Some(119));
+    assert_eq!(present.second_related_identity_offset, Some(122));
+    assert_eq!(present.following_byte_offset, 130);
+}

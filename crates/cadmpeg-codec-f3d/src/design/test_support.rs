@@ -76,3 +76,20 @@ pub(crate) fn parameter_owner_frame() -> Vec<u8> {
     frame[94..98].copy_from_slice(&12u32.to_le_bytes());
     frame
 }
+
+pub(crate) fn push_reference(out: &mut Vec<u8>, reference: u32) {
+    out.push(1);
+    out.extend_from_slice(&reference.to_le_bytes());
+}
+
+pub(crate) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
+    out.push(1);
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&13u32.to_le_bytes());
+    out.extend_from_slice(b"EntityGenesis");
+    out.extend_from_slice(&23u32.to_le_bytes());
+    out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+    out.extend_from_slice(&genesis.to_le_bytes());
+}
+
+pub(crate) mod dump;

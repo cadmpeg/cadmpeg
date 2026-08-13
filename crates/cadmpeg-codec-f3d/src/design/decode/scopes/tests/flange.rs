@@ -1,0 +1,338 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    unused_imports,
+    clippy::cloned_ref_to_slice_refs,
+    clippy::default_trait_access,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::uninlined_format_args,
+    clippy::wildcard_imports
+)]
+use super::prelude::*;
+
+/// Field values written into a synthetic single-edge `EdgeFlange` frame.
+struct EdgeFlangeFixture {
+    header_shift: usize,
+    /// Width-distance parameter owners the edge-width mode adds to the table.
+    width_count: usize,
+    result_count: usize,
+    bend_position: u32,
+    height_datum: u32,
+    reference_side: u32,
+    bend_radius: f64,
+    wrapper: u32,
+    settings: u32,
+    angle_owner: u32,
+    height_owner: u32,
+    aggregate_group: u32,
+    edge_group: u32,
+}
+
+/// A synthetic frame plus the offsets the reader is expected to derive.
+struct EdgeFlangeFrame {
+    bytes: Vec<u8>,
+    paired_at: usize,
+    bend_radius_offset: u64,
+}
+
+#[test]
+fn base_flange_scope_has_exact_profile_and_thickness_fields() {
+    let mut bytes = vec![0; 416];
+    bytes[73..77].copy_from_slice(&1u32.to_le_bytes());
+    bytes[81] = 1;
+    bytes[82..86].copy_from_slice(&266u32.to_le_bytes());
+    bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
+    bytes[112] = 1;
+    bytes[113..117].copy_from_slice(&263u32.to_le_bytes());
+    bytes[123..131].copy_from_slice(&0.25f64.to_le_bytes());
+    bytes[141..145].copy_from_slice(&1u32.to_le_bytes());
+    bytes[145] = 1;
+    bytes[146..150].copy_from_slice(&256u32.to_le_bytes());
+
+    let operation = crate::design::decode::scopes::exact_base_flange_operation(
+        &bytes,
+        0,
+        416,
+        &[256, 259, 263, 266],
+    )
+    .expect("fixed BaseFlange operation");
+    assert_eq!(operation.thickness, 0.25);
+    assert_eq!(operation.thickness_offset, 123);
+    assert_eq!(operation.profile_group_record_index, 256);
+    assert_eq!(operation.profile_record_index, 259);
+    assert_eq!(operation.thickness_record_index, 263);
+    assert_eq!(operation.settings_record_index, 266);
+
+    bytes[123..131].copy_from_slice(&0.0f64.to_le_bytes());
+    assert!(crate::design::decode::scopes::exact_base_flange_operation(
+        &bytes,
+        0,
+        416,
+        &[256, 259, 263, 266]
+    )
+    .is_none());
+}
+
+#[test]
+fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
+    // Settings before edge/aggregate groups; roles come from marked slots, not table position.
+    let references = [201, 204, 207, 218, 221, 240, 243, 251, 254];
+    let frame = edge_flange_frame(&EdgeFlangeFixture {
+        header_shift: 0,
+        width_count: 1,
+        result_count: 2,
+        bend_position: 2,
+        height_datum: 1,
+        reference_side: 4,
+        bend_radius: 0.25,
+        wrapper: 201,
+        settings: 207,
+        angle_owner: 218,
+        height_owner: 204,
+        aggregate_group: 240,
+        edge_group: 251,
+    });
+
+    let operation = crate::design::decode::scopes::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        &references,
+    )
+    .expect("fixed EdgeFlange operation");
+    assert_eq!(operation.edge_wrapper_record_indices, [201]);
+    assert_eq!(operation.edge_group_record_indices, [251]);
+    assert_eq!(operation.edge_operand_record_indices, [254]);
+    assert_eq!(operation.aggregate_group_record_index, 240);
+    assert_eq!(operation.aggregate_operand_record_indices, [243]);
+    assert_eq!(operation.height_owner_record_index, 204);
+    assert_eq!(operation.angle_owner_record_index, 218);
+    assert_eq!(operation.settings_record_index, 207);
+    assert_eq!(operation.bend_radius, 0.25);
+    assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
+    assert_eq!(
+        operation.bend_position,
+        crate::records::DesignBendPosition::Inside
+    );
+    assert_eq!(
+        operation.height_datum,
+        crate::records::DesignSheetMetalHeightDatum::InnerFaces
+    );
+    // The one table entry no slot claims is the width-distance owner, which
+    // makes this the symmetric edge-width mode.
+    assert_eq!(operation.width_distance_owner_record_indices, [221]);
+    assert_eq!(
+        operation.edge_width_mode(),
+        crate::records::DesignEdgeWidthMode::Symmetric
+    );
+}
+
+#[test]
+fn edge_flange_scope_reads_the_shifted_header_form() {
+    let references = [201, 204, 207, 218, 240, 243, 251, 254];
+    for header_shift in [0usize, 4] {
+        let frame = edge_flange_frame(&EdgeFlangeFixture {
+            header_shift,
+            width_count: 0,
+            result_count: 1,
+            bend_position: 3,
+            height_datum: 2,
+            reference_side: 4,
+            bend_radius: 0.5,
+            wrapper: 201,
+            settings: 207,
+            angle_owner: 218,
+            height_owner: 204,
+            aggregate_group: 240,
+            edge_group: 251,
+        });
+
+        let operation = crate::design::decode::scopes::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            &references,
+        )
+        .expect("fixed EdgeFlange operation");
+        assert_eq!(
+            operation.bend_position,
+            crate::records::DesignBendPosition::Adjacent
+        );
+        assert_eq!(
+            operation.height_datum,
+            crate::records::DesignSheetMetalHeightDatum::OuterFaces
+        );
+        assert_eq!(
+            operation.edge_width_mode(),
+            crate::records::DesignEdgeWidthMode::FullEdge
+        );
+        assert!(operation.width_distance_owner_record_indices.is_empty());
+    }
+}
+
+#[test]
+fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
+    let references = [201, 204, 207, 218, 240, 243, 251, 255];
+    let frame = edge_flange_frame(&EdgeFlangeFixture {
+        header_shift: 0,
+        width_count: 0,
+        result_count: 1,
+        bend_position: 1,
+        height_datum: 2,
+        reference_side: 4,
+        bend_radius: 0.25,
+        wrapper: 201,
+        settings: 207,
+        angle_owner: 218,
+        height_owner: 204,
+        aggregate_group: 240,
+        edge_group: 251,
+    });
+
+    assert!(crate::design::decode::scopes::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        &references,
+    )
+    .is_none());
+}
+
+#[test]
+fn edge_flange_scope_reads_the_single_edge_to_object_form() {
+    use crate::records::DesignEdgeFlangeHeightExtent;
+
+    let references = [201, 204, 207, 218, 221, 224, 240, 243, 251, 254, 270];
+    for header_shift in [0usize, 4] {
+        let frame = edge_flange_to_object_frame(header_shift);
+        let operation = crate::design::decode::scopes::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            &references,
+        )
+        .expect("fixed to-object EdgeFlange operation");
+        assert_eq!(
+            operation.width_distance_owner_record_indices,
+            Vec::<u32>::new()
+        );
+        assert_eq!(operation.edge_group_record_indices, [251]);
+        assert_eq!(operation.edge_operand_record_indices, [254]);
+        assert_eq!(
+            operation.height_extent,
+            DesignEdgeFlangeHeightExtent::ToObject {
+                target_group_record_index: 221,
+                target_operand_record_index: 224,
+                offset_owner_record_index: 270,
+                reference_record_indices: [469, 470],
+            }
+        );
+    }
+}
+
+#[test]
+fn edge_flange_scope_refuses_a_to_object_frame_with_a_table_reference_pair() {
+    let mut frame = edge_flange_to_object_frame(0);
+    frame.bytes[85 + 109 + 1..85 + 109 + 5].copy_from_slice(&270u32.to_le_bytes());
+    assert!(crate::design::decode::scopes::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        &[201, 204, 207, 218, 221, 224, 240, 243, 251, 254, 270]
+    )
+    .is_none());
+}
+
+/// Build a single-edge `EdgeFlange` frame from the settled fixed-section layout.
+///
+/// Every offset is computed from the layout rather than counted by hand, so the
+/// fixture stays correct when a field width changes.
+fn edge_flange_frame(fixture: &EdgeFlangeFixture) -> EdgeFlangeFrame {
+    fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    let common = 85 + fixture.header_shift;
+    let wrapper_at = common + 8;
+    let settings_at = wrapper_at + 11;
+    let datum_at = settings_at + 11;
+    let angle_at = datum_at + 4;
+    let height_at = angle_at + 11;
+    let side_at = height_at + 11;
+    let radius_at = side_at + 15;
+    let result_count_at = radius_at + 14;
+    let aggregate_at = radius_at + 22 + fixture.result_count * 15;
+    let edge_group_at = aggregate_at + 27;
+    let paired_at =
+        493 + fixture.result_count * 15 + fixture.width_count * 11 + fixture.header_shift;
+
+    let mut bytes = vec![0; paired_at.max(edge_group_at + 11)];
+    bytes[common..common + 4].copy_from_slice(&fixture.bend_position.to_le_bytes());
+    bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, wrapper_at, fixture.wrapper);
+    reference(&mut bytes, settings_at, fixture.settings);
+    bytes[datum_at..datum_at + 4].copy_from_slice(&fixture.height_datum.to_le_bytes());
+    reference(&mut bytes, angle_at, fixture.angle_owner);
+    reference(&mut bytes, height_at, fixture.height_owner);
+    bytes[side_at..side_at + 4].copy_from_slice(&fixture.reference_side.to_le_bytes());
+    bytes[radius_at..radius_at + 8].copy_from_slice(&fixture.bend_radius.to_le_bytes());
+    let result_count = u32::try_from(fixture.result_count).expect("result count fits u32");
+    bytes[result_count_at..result_count_at + 4].copy_from_slice(&result_count.to_le_bytes());
+    reference(&mut bytes, aggregate_at, fixture.aggregate_group);
+    reference(&mut bytes, edge_group_at, fixture.edge_group);
+
+    EdgeFlangeFrame {
+        bytes,
+        paired_at,
+        bend_radius_offset: u64::try_from(radius_at).expect("radius offset fits u64"),
+    }
+}
+
+fn edge_flange_to_object_frame(header_shift: usize) -> EdgeFlangeFrame {
+    fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    let common = 85 + header_shift;
+    let wrapper_at = common + 8;
+    let settings_at = wrapper_at + 11;
+    let datum_at = settings_at + 11;
+    let angle_at = datum_at + 4;
+    let height_at = angle_at + 11;
+    let side_at = height_at + 11;
+    let radius_at = side_at + 15;
+    let target_group_at = common + 94;
+    let target_reference_one_at = common + 109;
+    let target_reference_two_at = common + 124;
+    let aggregate_at = common + 143;
+    let edge_group_at = common + 170;
+    let paired_at = 576 + header_shift;
+    let mut bytes = vec![0; paired_at];
+
+    bytes[common..common + 4].copy_from_slice(&2u32.to_le_bytes());
+    bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, wrapper_at, 201);
+    reference(&mut bytes, settings_at, 207);
+    bytes[datum_at..datum_at + 4].copy_from_slice(&2u32.to_le_bytes());
+    reference(&mut bytes, angle_at, 218);
+    reference(&mut bytes, height_at, 204);
+    bytes[side_at..side_at + 4].copy_from_slice(&4u32.to_le_bytes());
+    bytes[radius_at..radius_at + 8].copy_from_slice(&0.25f64.to_le_bytes());
+    bytes[radius_at + 14..radius_at + 18].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, target_group_at, 221);
+    bytes[common + 105..common + 109].copy_from_slice(&2u32.to_le_bytes());
+    reference(&mut bytes, target_reference_one_at, 469);
+    bytes[common + 120..common + 124].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, target_reference_two_at, 470);
+    bytes[common + 139..common + 143].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, aggregate_at, 240);
+    bytes[common + 166..common + 170].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, edge_group_at, 251);
+
+    EdgeFlangeFrame {
+        bytes,
+        paired_at,
+        bend_radius_offset: u64::try_from(radius_at).expect("radius offset fits u64"),
+    }
+}

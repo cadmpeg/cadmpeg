@@ -1,0 +1,715 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(
+    unused_imports,
+    clippy::cloned_ref_to_slice_refs,
+    clippy::default_trait_access,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::uninlined_format_args,
+    clippy::wildcard_imports
+)]
+use super::prelude::*;
+
+#[test]
+fn user_parameters_project_in_source_order_with_units_and_dependencies() {
+    let mut width = parse_design_parameter(&parameter_record(
+        None,
+        "60 mm",
+        "User Parameter",
+        Some("mm"),
+        "Width",
+        6.0,
+    ))
+    .unwrap();
+    width.id = "f3d:native:parameter#width".into();
+    width.record_index = 20;
+    width.source_ordinal = 4;
+    let mut half = parse_design_parameter(&parameter_record(
+        None,
+        "Width / 2",
+        "User Parameter",
+        Some("mm"),
+        "HalfWidth",
+        3.0,
+    ))
+    .unwrap();
+    half.id = "f3d:native:parameter#half".into();
+    half.record_index = 21;
+    half.source_ordinal = 5;
+
+    let (features, projected) =
+        project_parameter_design(&[half, width], &[], &[], &[], &[], &[], &[], &[]);
+    assert!(features.is_empty());
+    assert_eq!(projected[0].name, "Width");
+    assert_eq!(projected[0].owner, None);
+    assert_eq!(
+        projected[0].value,
+        Some(ParameterValue::Length(Length(60.0)))
+    );
+    assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    assert_eq!(
+        projected[1].native_ref.as_deref(),
+        Some("f3d:native:parameter#half")
+    );
+}
+
+#[test]
+fn parameters_project_all_design_database_unit_tokens() {
+    let mut native = ["mm", "cm", "m", "in", "ft", "deg", "rad"]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, unit)| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                None,
+                "value",
+                "User Parameter",
+                Some(unit),
+                &format!("Value{ordinal}"),
+                1.25,
+            ))
+            .expect("generated database-unit parameter");
+            parameter.id = format!("f3d:native:parameter#{ordinal}");
+            parameter.record_index = u32::try_from(ordinal).unwrap();
+            parameter.source_ordinal = u32::try_from(ordinal).unwrap();
+            parameter
+        })
+        .collect::<Vec<_>>();
+    native.reverse();
+    let mut unclassified = parse_design_parameter(&parameter_record(
+        None,
+        "value",
+        "User Parameter",
+        Some("native-unit"),
+        "Unclassified",
+        2.75,
+    ))
+    .expect("generated unclassified-unit parameter");
+    unclassified.id = "f3d:native:parameter#7".into();
+    unclassified.record_index = 7;
+    unclassified.source_ordinal = 7;
+    native.push(unclassified);
+
+    let (_, projected) = project_parameter_design(&native, &[], &[], &[], &[], &[], &[], &[]);
+    for ordinal in 0..5 {
+        assert_eq!(
+            projected
+                .iter()
+                .find(|parameter| parameter.name == format!("Value{ordinal}"))
+                .and_then(|parameter| parameter.value.clone()),
+            Some(ParameterValue::Length(Length(12.5)))
+        );
+    }
+    for ordinal in 5..7 {
+        assert_eq!(
+            projected
+                .iter()
+                .find(|parameter| parameter.name == format!("Value{ordinal}"))
+                .and_then(|parameter| parameter.value.clone()),
+            Some(ParameterValue::Angle(Angle(1.25)))
+        );
+    }
+    let unclassified = projected
+        .iter()
+        .find(|parameter| parameter.name == "Unclassified")
+        .expect("unclassified-unit parameter");
+    assert_eq!(unclassified.value, None);
+    assert_eq!(
+        unclassified.properties.get("unit").map(String::as_str),
+        Some("native-unit")
+    );
+    assert_eq!(
+        unclassified
+            .properties
+            .get("evaluated_scalar")
+            .map(String::as_str),
+        Some("2.75")
+    );
+    assert_eq!(untyped_parameter_unit_count(&native), 1);
+}
+
+#[test]
+fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
+    let name = "Width$µ°\"A";
+    assert_eq!(
+        expression_identifiers(&format!("{name} / 2 + sin(30 deg)")).collect::<Vec<_>>(),
+        [name]
+    );
+    let parameter = |record_index, source_ordinal, expression: &str, name: &str| {
+        let mut parameter = parse_design_parameter(&parameter_record(
+            None,
+            expression,
+            "User Parameter",
+            Some("mm"),
+            name,
+            1.0,
+        ))
+        .expect("generated symbolic-name parameter");
+        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.record_index = record_index;
+        parameter.source_ordinal = source_ordinal;
+        parameter
+    };
+    let (_, projected) = project_parameter_design(
+        &[
+            parameter(20, 0, "10 mm", name),
+            parameter(21, 1, "1", "sin"),
+            parameter(22, 2, "1", "deg"),
+            parameter(23, 3, "1", "mm"),
+            parameter(24, 4, &format!("{name} / 2 + sin(30 deg) + 10 mm"), "Half"),
+            parameter(25, 5, "mm + 1", "BareUnitName"),
+        ],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let source = projected
+        .iter()
+        .find(|parameter| parameter.name == name)
+        .expect("symbolic-name source parameter");
+    let half = projected
+        .iter()
+        .find(|parameter| parameter.name == "Half")
+        .expect("dependent parameter");
+    assert_eq!(half.dependencies, [source.id.clone()]);
+    let millimetres = projected
+        .iter()
+        .find(|parameter| parameter.name == "mm")
+        .expect("bare unit-named parameter");
+    let bare_unit_name = projected
+        .iter()
+        .find(|parameter| parameter.name == "BareUnitName")
+        .expect("consumer of bare unit-named parameter");
+    assert_eq!(bare_unit_name.dependencies, [millimetres.id.clone()]);
+}
+
+#[test]
+fn owned_parameter_projects_under_its_real_scope_feature() {
+    let mut parameter = parse_design_parameter(&parameter_record(
+        Some(44),
+        "60 mm",
+        "AlongDistance",
+        Some("mm"),
+        "d12",
+        6.0,
+    ))
+    .unwrap();
+    parameter.id = "f3d:native:parameter#45".into();
+    parameter.record_index = 45;
+    let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    owner.id = "f3d:native:parameter-owner#44".into();
+    let scope = DesignParameterScope {
+        id: "f3d:native:parameter-scope#12".into(),
+        byte_offset: 100,
+        class_tag: "301".into(),
+        record_index: 12,
+        frame_length: 200,
+        kind: "Extrude".into(),
+        kind_offset: 210,
+        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+            reference: None,
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 128,
+            direction_face_extend_values: [1, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: [177, 190],
+            first_side_target_ordinal: None,
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            direction_face_extend_offsets: [132, 136],
+            direction_reversed: false,
+            direction_reversed_offset: 140,
+            solid_operation: true,
+            solid_operation_offset: 141,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 142,
+        }),
+        coil_operation: None,
+        coil_operation_offset: None,
+        coil_extent: None,
+        coil_extent_offset: None,
+        coil_section: None,
+        coil_section_offset: None,
+        coil_section_placement: None,
+        coil_section_placement_offset: None,
+        coil_clockwise: None,
+        coil_clockwise_offset: None,
+        coil_placement: None,
+        coil_transform: None,
+        feature_ordinal: 1,
+        feature_ordinal_offset: 0,
+        history_state_id: None,
+        history_state_id_offset: 0,
+        previous_history_state_id: None,
+        previous_history_state_id_offset: 0,
+        reference_count_offset: 180,
+        reference_members: vec![44, 44],
+        reference_member_offsets: vec![185, 196],
+        solid_primitive: None,
+        direct_face_operation: None,
+        move_operation: None,
+        scale_operation: None,
+        surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        ruled_surface_operation: None,
+        surface_patch_boundaries: Vec::new(),
+        base_flange_operation: None,
+        edge_flange_operation: None,
+        hem_operation: None,
+        fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
+        fixed_chamfer_parameters: None,
+        path_feature_construction: None,
+        combine_operation: None,
+        thread_construction: None,
+        draft_operation: None,
+        copy_paste_bodies_operation: None,
+        base_feature_construction: None,
+        work_plane_transform: None,
+        work_plane_transform_offset: None,
+        work_plane_reference: None,
+        work_plane_reference_offset: None,
+        work_plane_construction: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
+        work_point_construction: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        hole_construction: None,
+        extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
+        base_flange_profile: None,
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
+        paired_class_tag: "261".into(),
+        paired_byte_offset: 300,
+    };
+
+    let (features, parameters) =
+        project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[], &[], &[]);
+    assert_eq!(features.len(), 1);
+    assert_eq!(features[0].name.as_deref(), Some("Extrude 1"));
+    assert_eq!(features[0].suppressed, Some(true));
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Native { kind, parameters, properties }
+            if kind == "Extrude"
+                && parameters.get("d12").map(String::as_str) == Some("60 mm")
+                && properties.get("reference:0").map(String::as_str) == Some("44")
+                && properties.get("reference:1").map(String::as_str) == Some("44")
+    ));
+    assert_eq!(parameters[0].owner.as_ref(), Some(&features[0].id));
+    assert_eq!(parameters[0].ordinal, 2);
+    assert_eq!(
+        parameters[0]
+            .properties
+            .get("source_kind")
+            .map(String::as_str),
+        Some("AlongDistance")
+    );
+}
+
+#[test]
+fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
+    let mut parameter = parse_design_parameter(&parameter_record(
+        Some(44),
+        "60 mm",
+        "AlongDistance",
+        Some("mm"),
+        "d12",
+        6.0,
+    ))
+    .unwrap();
+    parameter.id = "f3d:native:parameter#45".into();
+    parameter.record_index = 45;
+    parameter.source_ordinal = 17;
+    let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    owner.id = "f3d:native:parameter-owner#44".into();
+
+    let (features, parameters) =
+        project_parameter_design(&[parameter], &[owner], &[], &[], &[], &[], &[], &[]);
+    assert!(features.is_empty());
+    let [parameter] = parameters.as_slice() else {
+        panic!("expected the parameter to remain in the neutral model");
+    };
+    assert_eq!(parameter.owner, None);
+    assert_eq!(parameter.ordinal, 17);
+    assert_eq!(
+        parameter
+            .properties
+            .get("owner_record_index")
+            .map(String::as_str),
+        Some("44")
+    );
+}
+
+#[allow(clippy::large_stack_arrays)]
+#[test]
+fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
+    let parameter = |owner, record_index, expression: &str, name: &str| {
+        let mut parameter = parse_design_parameter(&parameter_record(
+            owner,
+            expression,
+            if owner.is_some() {
+                "FeatureInput"
+            } else {
+                "User Parameter"
+            },
+            Some("mm"),
+            name,
+            1.0,
+        ))
+        .unwrap();
+        parameter.id = format!("f3d:Design/BulkStream.dat:parameter#{record_index}");
+        parameter.record_index = record_index;
+        parameter.source_ordinal = record_index;
+        parameter
+    };
+    let owner = |record_index, parameter_record_index, scope_record_index| DesignParameterOwner {
+        id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
+        byte_offset: 0,
+        frame_length: 104,
+        class_tag: "292".into(),
+        record_index,
+        scope_record_index,
+        local_ordinal: parameter_record_index,
+        evaluated_value: 1.0,
+        evaluated_value_offset: 0,
+        parameter_record_index,
+        owned_ordinal: parameter_record_index,
+        variant: Some(0),
+        companion_record_index: record_index + 1,
+    };
+    let scope = |record_index| DesignParameterScope {
+        id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
+        byte_offset: u64::from(record_index),
+        class_tag: "301".into(),
+        record_index,
+        frame_length: 100,
+        kind: "CustomFeature".into(),
+        kind_offset: 0,
+        extrude_prologue: None,
+        coil_operation: None,
+        coil_operation_offset: None,
+        coil_extent: None,
+        coil_extent_offset: None,
+        coil_section: None,
+        coil_section_offset: None,
+        coil_section_placement: None,
+        coil_section_placement_offset: None,
+        coil_clockwise: None,
+        coil_clockwise_offset: None,
+        coil_placement: None,
+        coil_transform: None,
+        feature_ordinal: record_index,
+        feature_ordinal_offset: 0,
+        history_state_id: None,
+        history_state_id_offset: 0,
+        previous_history_state_id: None,
+        previous_history_state_id_offset: 0,
+        reference_count_offset: 0,
+        reference_members: Vec::new(),
+        reference_member_offsets: Vec::new(),
+        solid_primitive: None,
+        direct_face_operation: None,
+        move_operation: None,
+        scale_operation: None,
+        surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        ruled_surface_operation: None,
+        surface_patch_boundaries: Vec::new(),
+        base_flange_operation: None,
+        edge_flange_operation: None,
+        hem_operation: None,
+        fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
+        fixed_chamfer_parameters: None,
+        path_feature_construction: None,
+        combine_operation: None,
+        thread_construction: None,
+        draft_operation: None,
+        copy_paste_bodies_operation: None,
+        base_feature_construction: None,
+        work_plane_transform: None,
+        work_plane_transform_offset: None,
+        work_plane_reference: None,
+        work_plane_reference_offset: None,
+        work_plane_construction: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
+        work_point_construction: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        hole_construction: None,
+        extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
+        base_flange_profile: None,
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
+        paired_class_tag: "302".into(),
+        paired_byte_offset: u64::from(record_index) + 100,
+    };
+
+    let document_width = parameter(None, 20, "60 mm", "Width");
+    let local_width = parameter(Some(101), 21, "20 mm", "Width");
+    let local_half = parameter(Some(102), 22, "Width / 2", "Half");
+    let remote_half = parameter(Some(103), 23, "Width / 2", "Half");
+    let owned_depth = parameter(Some(104), 24, "10 mm", "OwnedDepth");
+    let document_half = parameter(None, 25, "OwnedDepth / 2", "DocumentHalf");
+    let document_forward = parameter(None, 26, "Later / 2", "DocumentForward");
+    let document_later = parameter(None, 27, "10 mm", "Later");
+    let cycle_a = parameter(None, 28, "CycleB / 2", "CycleA");
+    let cycle_b = parameter(None, 29, "CycleA / 2", "CycleB");
+    let preceding_shared = parameter(Some(105), 30, "10 mm", "Shared");
+    let shared_consumer = parameter(Some(106), 31, "Shared / 2", "SharedHalf");
+    let later_shared = parameter(Some(107), 32, "20 mm", "Shared");
+    let (_, parameters) = project_parameter_design(
+        &[
+            document_width,
+            local_width,
+            local_half,
+            remote_half,
+            owned_depth,
+            document_half,
+            document_forward,
+            document_later,
+            cycle_a,
+            cycle_b,
+            preceding_shared,
+            shared_consumer,
+            later_shared,
+        ],
+        &[
+            owner(101, 21, 201),
+            owner(102, 22, 201),
+            owner(103, 23, 202),
+            owner(104, 24, 201),
+            owner(105, 30, 201),
+            owner(106, 31, 202),
+            owner(107, 32, 203),
+        ],
+        &[scope(201), scope(202), scope(203)],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let by_name_and_owner = |name: &str, owner_record_index: u32| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter.name == name
+                    && parameter.native_ref.as_deref()
+                        == Some(
+                            format!("f3d:Design/BulkStream.dat:parameter#{}", owner_record_index)
+                                .as_str(),
+                        )
+            })
+            .unwrap()
+    };
+    let document = by_name_and_owner("Width", 20);
+    let local = by_name_and_owner("Width", 21);
+    assert_eq!(
+        by_name_and_owner("Half", 22).dependencies,
+        [local.id.clone()]
+    );
+    assert_eq!(
+        by_name_and_owner("Half", 23).dependencies,
+        [document.id.clone()]
+    );
+    assert!(by_name_and_owner("DocumentHalf", 25)
+        .dependencies
+        .is_empty());
+    let document_forward = by_name_and_owner("DocumentForward", 26);
+    let document_later = by_name_and_owner("Later", 27);
+    assert_eq!(document_forward.dependencies, [document_later.id.clone()]);
+    assert!(document_later.ordinal < document_forward.ordinal);
+    let cycle_a = by_name_and_owner("CycleA", 28);
+    let cycle_b = by_name_and_owner("CycleB", 29);
+    assert!(cycle_a.dependencies.is_empty());
+    assert_eq!(cycle_b.dependencies, [cycle_a.id.clone()]);
+    assert!(cycle_a.ordinal < cycle_b.ordinal);
+    let preceding_shared = by_name_and_owner("Shared", 30);
+    assert_eq!(
+        by_name_and_owner("SharedHalf", 31).dependencies,
+        [preceding_shared.id.clone()]
+    );
+}
+
+#[allow(clippy::large_stack_arrays)]
+#[test]
+fn parameter_expressions_project_feature_dependencies() {
+    let parameter = |owner_record_index, record_index, name: &str, expression: &str| {
+        let mut parameter = parse_design_parameter(&parameter_record(
+            Some(owner_record_index),
+            expression,
+            "AlongDistance",
+            Some("mm"),
+            name,
+            1.0,
+        ))
+        .expect("generated owned parameter is canonical");
+        parameter.id = format!("f3d:native:parameter#{record_index}");
+        parameter.record_index = record_index;
+        parameter.source_ordinal = record_index;
+        parameter
+    };
+    let owner = |record_index, scope_record_index, parameter_record_index| {
+        let mut owner = parse_parameter_owner(&parameter_owner_frame())
+            .expect("generated parameter owner is canonical");
+        owner.id = format!("f3d:native:owner#{record_index}");
+        owner.record_index = record_index;
+        owner.scope_record_index = scope_record_index;
+        owner.parameter_record_index = parameter_record_index;
+        owner.companion_record_index = parameter_record_index + 1;
+        owner
+    };
+    let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
+        id: format!("f3d:native:scope#{record_index}"),
+        byte_offset,
+        class_tag: "301".into(),
+        record_index,
+        frame_length: 200,
+        kind: kind.into(),
+        kind_offset: byte_offset + 100,
+        extrude_prologue: None,
+        coil_operation: None,
+        coil_operation_offset: None,
+        coil_extent: None,
+        coil_extent_offset: None,
+        coil_section: None,
+        coil_section_offset: None,
+        coil_section_placement: None,
+        coil_section_placement_offset: None,
+        coil_clockwise: None,
+        coil_clockwise_offset: None,
+        coil_placement: None,
+        coil_transform: None,
+        feature_ordinal: 1,
+        feature_ordinal_offset: 0,
+        history_state_id: None,
+        history_state_id_offset: 0,
+        previous_history_state_id: None,
+        previous_history_state_id_offset: 0,
+        reference_count_offset: byte_offset + 80,
+        reference_members: vec![record_index + 1],
+        reference_member_offsets: vec![byte_offset + 85],
+        solid_primitive: None,
+        direct_face_operation: None,
+        move_operation: None,
+        scale_operation: None,
+        surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        ruled_surface_operation: None,
+        surface_patch_boundaries: Vec::new(),
+        base_flange_operation: None,
+        edge_flange_operation: None,
+        hem_operation: None,
+        fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
+        fixed_chamfer_parameters: None,
+        path_feature_construction: None,
+        combine_operation: None,
+        thread_construction: None,
+        draft_operation: None,
+        copy_paste_bodies_operation: None,
+        base_feature_construction: None,
+        work_plane_transform: None,
+        work_plane_transform_offset: None,
+        work_plane_reference: None,
+        work_plane_reference_offset: None,
+        work_plane_construction: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
+        work_point_construction: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        hole_construction: None,
+        extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
+        base_flange_profile: None,
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
+        paired_class_tag: "261".into(),
+        paired_byte_offset: byte_offset + 200,
+    };
+    let (features, parameters) = project_parameter_design(
+        &[
+            parameter(44, 45, "Width", "10 mm"),
+            parameter(54, 55, "Depth", "Width / 2"),
+            parameter(74, 75, "Premature", "Future / 2"),
+            parameter(84, 85, "Future", "20 mm"),
+        ],
+        &[
+            owner(44, 12, 45),
+            owner(54, 22, 55),
+            owner(74, 22, 75),
+            owner(84, 32, 85),
+        ],
+        &[
+            scope(12, 100, "Sketch"),
+            scope(22, 200, "Extrude"),
+            scope(32, 300, "Fillet"),
+        ],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let width = parameters
+        .iter()
+        .find(|parameter| parameter.name == "Width")
+        .expect("Width parameter");
+    let depth = parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .expect("Depth parameter");
+    assert_eq!(depth.dependencies, std::slice::from_ref(&width.id));
+    let premature = parameters
+        .iter()
+        .find(|parameter| parameter.name == "Premature")
+        .expect("Premature parameter");
+    assert!(premature.dependencies.is_empty());
+    let source = features
+        .iter()
+        .find(|feature| feature.id == width.owner.clone().expect("Width owner"))
+        .expect("source feature");
+    let target = features
+        .iter()
+        .find(|feature| feature.id == depth.owner.clone().expect("Depth owner"))
+        .expect("target feature");
+    assert_eq!(target.dependencies, std::slice::from_ref(&source.id));
+}

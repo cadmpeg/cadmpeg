@@ -1083,4 +1083,60 @@ mod tests {
             "two unjoined typed nodes are ambiguous"
         );
     }
+
+    #[test]
+    fn body_bound_candidate_has_one_marker_and_six_ordered_f64_values() {
+        let values: [f64; 6] = [4.0, 6.0, 1.5, -1.0, 0.0, -0.25];
+        let mut bytes = vec![1];
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let candidates = body_bound_candidates(&bytes, 0, bytes.len()).collect::<Vec<_>>();
+        assert_eq!(candidates, [(0, values)]);
+
+        bytes[0] = 0;
+        assert!(body_bound_candidates(&bytes, 0, bytes.len())
+            .next()
+            .is_none());
+    }
+
+    #[test]
+    fn bounded_face_record_identity_is_not_a_second_design_id() {
+        let mut bytes = Vec::new();
+        for _ in 0..2 {
+            let mut prefix = [0u8; 27];
+            prefix[11..15].copy_from_slice(&309i32.to_le_bytes());
+            prefix[23..27].copy_from_slice(&24u32.to_le_bytes());
+            bytes.extend_from_slice(&prefix);
+            bytes.extend_from_slice(b"bounded_face_recipe_data");
+            bytes.extend_from_slice(&(-1i64).to_le_bytes());
+        }
+        let mut recipes = Vec::new();
+        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
+        assert_eq!(recipes.len(), 2);
+        assert!(recipes.iter().all(|recipe| recipe.record_index == 309));
+        assert!(recipes.iter().all(|recipe| recipe.design_id.is_none()));
+        assert_eq!(recipes[0].recipe_index, 0);
+        assert_eq!(recipes[1].recipe_index, 1);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&4u32.to_le_bytes());
+        body.extend_from_slice(b"2265");
+        body.extend_from_slice(&3u32.to_le_bytes());
+        body.extend_from_slice(&[0; 12]);
+        body.extend_from_slice(&16u32.to_le_bytes());
+        body.extend_from_slice(b"body_recipe_data");
+        let mut recipes = Vec::new();
+        crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes);
+        assert_eq!(recipes.len(), 1);
+        assert_eq!(recipes[0].design_id.as_deref(), Some("2265"));
+        assert_eq!(recipes[0].design_id_offset, Some(4));
+        assert_eq!(
+            recipes[0].design_selector,
+            Some(crate::records::ConstructionRecipeSelector {
+                value: 3,
+                byte_offset: 8,
+            })
+        );
+    }
 }
