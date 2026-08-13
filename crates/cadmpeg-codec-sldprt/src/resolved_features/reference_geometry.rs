@@ -14,6 +14,7 @@ use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::records::{FeatureInputLane, FeatureInputName};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -576,21 +577,13 @@ fn resolved_reference_point(
             let end = start.checked_add(34)?;
             if end > record_end
                 || payload.get(start.checked_sub(16)?..start) != Some(&[0; 16])
-                || !matches!(
-                    u16::from_le_bytes(payload.get(start + 24..start + 26)?.try_into().ok()?),
-                    4 | 5
-                )
+                || !matches!(View::u16_le_at(payload, start + 24)?, 4 | 5)
                 || payload.get(start + 26..end) != Some(&[0; 8])
             {
                 return None;
             }
             let scalar = |offset: usize| {
-                let native = f64::from_le_bytes(
-                    payload
-                        .get(start + offset..start + offset + 8)?
-                        .try_into()
-                        .ok()?,
-                );
+                let native = View::f64_le_at(payload, start + offset)?;
                 let value = native * NATIVE_TO_IR;
                 value.is_finite().then_some(value)
             };
@@ -748,8 +741,8 @@ fn coordinate_system_ordinal_axes(
         return None;
     }
     let ordinals = [
-        usize::from(u16::from_le_bytes(tail.get(0..2)?.try_into().ok()?)),
-        usize::from(u16::from_le_bytes(tail.get(2..4)?.try_into().ok()?)),
+        usize::from(View::u16_le_at(tail, 0)?),
+        usize::from(View::u16_le_at(tail, 2)?),
     ];
     if ordinals[0] == ordinals[1] || ordinals.iter().any(|ordinal| !(1..=3).contains(ordinal)) {
         return None;
@@ -848,9 +841,8 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrig
             {
                 return None;
             }
-            let selector =
-                u32::from_le_bytes(record.get(prefix + 69..prefix + 73)?.try_into().ok()?);
-            let token = u32::from_le_bytes(record.get(prefix + 88..prefix + 92)?.try_into().ok()?);
+            let selector = View::u32_le_at(record, prefix + 69)?;
+            let token = View::u32_le_at(record, prefix + 88)?;
             if matches!(selector, 0 | u32::MAX) || matches!(token, 0 | u32::MAX) {
                 return None;
             }
@@ -866,8 +858,7 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrig
             {
                 return None;
             }
-            let object =
-                u32::from_le_bytes(record.get(trailer + 78..trailer + 82)?.try_into().ok()?);
+            let object = View::u32_le_at(record, trailer + 78)?;
             let handles = trailer.checked_add(94)?;
             if matches!(object, 0 | u32::MAX)
                 || record.get(handles..handles + 8)? != HANDLES
@@ -876,8 +867,7 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrig
             {
                 return None;
             }
-            let generation =
-                u32::from_le_bytes(record.get(handles + 12..handles + 16)?.try_into().ok()?);
+            let generation = View::u32_le_at(record, handles + 12)?;
             if matches!(generation, 0 | u32::MAX) {
                 return None;
             }
@@ -910,7 +900,7 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
             {
                 return None;
             }
-            let source = u32::from_le_bytes(record.get(prefix + 69..prefix + 73)?.try_into().ok()?);
+            let source = View::u32_le_at(record, prefix + 69)?;
             if source == 0 {
                 return None;
             }
@@ -923,53 +913,50 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
                     kind: CoordinateSystemOriginKind::ComponentPath,
                 });
             }
-            let stamp = u32::from_le_bytes(record.get(prefix + 73..prefix + 77)?.try_into().ok()?);
+            let stamp = View::u32_le_at(record, prefix + 73)?;
             if stamp == 0 || stamp == u32::MAX {
                 return None;
             }
-            let (object, generation, origin_offset, record_len, kind) = if record
-                .get(prefix + 77..prefix + 79)
-                == Some(&[0; 2])
-                && record.get(prefix + 79..prefix + 81) == Some(&1u16.to_le_bytes())
-                && record.get(prefix + 81..prefix + 87) == Some(&[0; 6])
-                && record.get(prefix + 91..prefix + 103) == Some(&[0; 12])
-                && record.get(prefix + 103..prefix + 111) == Some(HANDLES)
-                && record.get(prefix + 111..prefix + 115) == Some(&[0; 4])
-                && record.get(prefix + 119..prefix + 127) == Some(&[0; 8])
-            {
-                (
-                    u32::from_le_bytes(record.get(prefix + 87..prefix + 91)?.try_into().ok()?),
-                    u32::from_le_bytes(record.get(prefix + 115..prefix + 119)?.try_into().ok()?),
-                    127,
-                    151,
-                    CoordinateSystemOriginKind::Standard,
-                )
-            } else if record.get(prefix + 81..prefix + 85) == Some(&[0xff; 4])
-                && record.get(prefix + 85..prefix + 89) == Some(&[0; 4])
-                && record.get(prefix + 93..prefix + 97) == Some(&1u32.to_le_bytes())
-                && record.get(prefix + 97..prefix + 101) == Some(&[0; 4])
-                && record.get(prefix + 105..prefix + 117) == Some(&[0; 12])
-                && record.get(prefix + 117..prefix + 125) == Some(HANDLES)
-                && record.get(prefix + 125..prefix + 129) == Some(&[0; 4])
-                && record.get(prefix + 133..prefix + 141) == Some(&[0; 8])
-            {
-                let reference =
-                    u32::from_le_bytes(record.get(prefix + 77..prefix + 81)?.try_into().ok()?);
-                let count =
-                    u32::from_le_bytes(record.get(prefix + 89..prefix + 93)?.try_into().ok()?);
-                if matches!(reference, 0 | u32::MAX) || matches!(count, 0 | u32::MAX) {
+            let (object, generation, origin_offset, record_len, kind) =
+                if record.get(prefix + 77..prefix + 79) == Some(&[0; 2])
+                    && record.get(prefix + 79..prefix + 81) == Some(&1u16.to_le_bytes())
+                    && record.get(prefix + 81..prefix + 87) == Some(&[0; 6])
+                    && record.get(prefix + 91..prefix + 103) == Some(&[0; 12])
+                    && record.get(prefix + 103..prefix + 111) == Some(HANDLES)
+                    && record.get(prefix + 111..prefix + 115) == Some(&[0; 4])
+                    && record.get(prefix + 119..prefix + 127) == Some(&[0; 8])
+                {
+                    (
+                        View::u32_le_at(record, prefix + 87)?,
+                        View::u32_le_at(record, prefix + 115)?,
+                        127,
+                        151,
+                        CoordinateSystemOriginKind::Standard,
+                    )
+                } else if record.get(prefix + 81..prefix + 85) == Some(&[0xff; 4])
+                    && record.get(prefix + 85..prefix + 89) == Some(&[0; 4])
+                    && record.get(prefix + 93..prefix + 97) == Some(&1u32.to_le_bytes())
+                    && record.get(prefix + 97..prefix + 101) == Some(&[0; 4])
+                    && record.get(prefix + 105..prefix + 117) == Some(&[0; 12])
+                    && record.get(prefix + 117..prefix + 125) == Some(HANDLES)
+                    && record.get(prefix + 125..prefix + 129) == Some(&[0; 4])
+                    && record.get(prefix + 133..prefix + 141) == Some(&[0; 8])
+                {
+                    let reference = View::u32_le_at(record, prefix + 77)?;
+                    let count = View::u32_le_at(record, prefix + 89)?;
+                    if matches!(reference, 0 | u32::MAX) || matches!(count, 0 | u32::MAX) {
+                        return None;
+                    }
+                    (
+                        View::u32_le_at(record, prefix + 101)?,
+                        View::u32_le_at(record, prefix + 129)?,
+                        141,
+                        165,
+                        CoordinateSystemOriginKind::Extended,
+                    )
+                } else {
                     return None;
-                }
-                (
-                    u32::from_le_bytes(record.get(prefix + 101..prefix + 105)?.try_into().ok()?),
-                    u32::from_le_bytes(record.get(prefix + 129..prefix + 133)?.try_into().ok()?),
-                    141,
-                    165,
-                    CoordinateSystemOriginKind::Extended,
-                )
-            } else {
-                return None;
-            };
+                };
             if object == 0 || generation == 0 || generation == u32::MAX {
                 return None;
             }
@@ -1079,7 +1066,7 @@ fn coordinate_system_component_path_origin(
     {
         return None;
     }
-    let object = u32::from_le_bytes(record.get(trailer + 22..trailer + 26)?.try_into().ok()?);
+    let object = View::u32_le_at(record, trailer + 22)?;
     let handles = trailer.checked_add(38)?;
     if matches!(object, 0 | u32::MAX)
         || record.get(handles..handles + 8)? != HANDLES
@@ -1088,7 +1075,7 @@ fn coordinate_system_component_path_origin(
     {
         return None;
     }
-    let generation = u32::from_le_bytes(record.get(handles + 12..handles + 16)?.try_into().ok()?);
+    let generation = View::u32_le_at(record, handles + 12)?;
     if matches!(generation, 0 | u32::MAX) {
         return None;
     }
@@ -1147,7 +1134,7 @@ fn coordinate_system_line_axes(
 }
 
 fn finite_f64(bytes: &[u8], offset: usize) -> Option<f64> {
-    let value = f64::from_le_bytes(bytes.get(offset..offset.checked_add(8)?)?.try_into().ok()?);
+    let value = View::f64_le_at(bytes, offset)?;
     value.is_finite().then_some(value)
 }
 
@@ -1368,7 +1355,7 @@ fn sketch_block_record_identity(payload: &[u8], start: usize, end: usize) -> Opt
         .enumerate()
         .rev()
         .find_map(|(relative, window)| {
-            let local_id = u16::from_le_bytes([window[18], window[19]]);
+            let local_id = View::u16_le_at(window, 18)?;
             (window.get(..4) == Some(&[0xff; 4])
                 && window.get(12..18) == Some(&[0x02, 0, 0, 0, 0, 0])
                 && local_id != 0
@@ -1399,17 +1386,12 @@ pub(super) fn sketch_block_record_origin(
     {
         return Some(Point3::new(0.0, 0.0, 0.0));
     }
-    let point_token = u16::from_le_bytes(payload.get(body..body + 2)?.try_into().ok()?);
+    let point_token = View::u16_le_at(payload, body)?;
     if !is_class_token(point_token) {
         return None;
     }
     let scalar = |relative: usize| {
-        let value = f64::from_le_bytes(
-            payload
-                .get(body + 2 + relative..body + 10 + relative)?
-                .try_into()
-                .ok()?,
-        ) * NATIVE_TO_IR;
+        let value = View::f64_le_at(payload, body + 2 + relative)? * NATIVE_TO_IR;
         (value.is_finite() && value.abs() <= 1.0e9).then_some(value)
     };
     Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
@@ -1440,12 +1422,7 @@ pub(super) fn sketch_block_identity_normalization_origin(
         return None;
     }
     let scalar = |relative: usize| {
-        let value = f64::from_le_bytes(
-            payload
-                .get(body + relative..body + relative + 8)?
-                .try_into()
-                .ok()?,
-        );
+        let value = View::f64_le_at(payload, body + relative)?;
         value.is_finite().then_some(value)
     };
     let basis = [
@@ -1485,8 +1462,7 @@ fn sketch_block_compact_local_id(
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
     let header_start = name_end.checked_add(28)?;
-    let header_end = header_start.checked_add(2)?;
-    let header = u16::from_le_bytes(payload.get(header_start..header_end)?.try_into().ok()?);
+    let header = View::u16_le_at(payload, header_start)?;
     (sketch_block_record_local_id(payload, name_start, record_end)? == header).then_some(header)
 }
 
@@ -1761,7 +1737,7 @@ pub(super) fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, V
     const DIRECTION_ZERO_TOLERANCE: f64 = 1.0e-12;
 
     let scalar = |bytes: &[u8], offset: usize| {
-        let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(bytes, offset)?;
         value.is_finite().then_some(value)
     };
     let mut candidates = payload
@@ -1962,7 +1938,7 @@ pub(super) fn plane_intersection_axis_sources(
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let mut sources = Vec::new();
     for source in payload.windows(RECORD_LEN).filter_map(|bytes| {
-        let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+        let source = View::u32_le_at(bytes, 0)?;
         (known_sources.contains(&source)
             && bytes.get(8..14)?.iter().all(|byte| *byte == 0)
             && bytes.get(14..16) == Some(&[1, 0])
@@ -1990,7 +1966,7 @@ pub(super) fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
         0x2d, 0x80, 0x2b, 0x80,
     ];
     let matches = payload.windows(4 + TRAILER.len()).filter_map(|bytes| {
-        let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+        let source = View::u32_le_at(bytes, 0)?;
         (source != 0 && bytes.get(4..) == Some(TRAILER)).then_some(source)
     });
     let matches = matches.collect::<HashSet<_>>();
@@ -2008,7 +1984,7 @@ pub(super) fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
             let header = bytes.get(4..8)?;
             let identity = bytes.get(8..20)?;
             let link = bytes.get(28..32)?;
-            let source = u32::from_le_bytes(bytes.get(44..48)?.try_into().ok()?);
+            let source = View::u32_le_at(bytes, 44)?;
             let address = bytes.get(116..120)?;
             (bytes.get(..4) == Some(&4u32.to_le_bytes())
                 && header != [0; 4]
@@ -2039,7 +2015,7 @@ pub(super) fn classed_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
     payload
         .windows(4 + TRAILER.len())
         .filter_map(|bytes| {
-            let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+            let source = View::u32_le_at(bytes, 0)?;
             (bytes.get(4..) == Some(TRAILER)).then_some(source)
         })
         .collect()
@@ -2056,9 +2032,9 @@ pub(super) fn offset_plane_reference_source(
     let typed_sources = payload
         .windows(RECORD_LEN)
         .filter_map(|bytes| {
-            let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+            let source = View::u32_le_at(bytes, 0)?;
             let signature = bytes.get(4..8)?;
-            let selector = u32::from_le_bytes(bytes.get(10..14)?.try_into().ok()?);
+            let selector = View::u32_le_at(bytes, 10)?;
             (known_reference_plane_sources.contains(&source)
                 && Some(source) != self_source
                 && signature != [0; 4]
@@ -2100,7 +2076,7 @@ pub(super) fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u
         .windows(115)
         .enumerate()
         .filter_map(|(offset, body)| {
-            let token = u16::from_le_bytes(body[..2].try_into().ok()?);
+            let token = View::u16_le_at(body, 0)?;
             if !is_class_token(token)
                 || body[2..6] != 2u32.to_le_bytes()
                 || body[6..42] != [0; 36]
@@ -2118,7 +2094,7 @@ pub(super) fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u
             {
                 return None;
             }
-            let owner = u32::from_le_bytes(body[91..95].try_into().ok()?);
+            let owner = View::u32_le_at(body, 91)?;
             (owner != 0 && owner != u32::MAX).then_some((offset, owner))
         })
         .collect::<Vec<_>>();
@@ -2212,7 +2188,7 @@ pub(super) fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vecto
         return None;
     }
     let scalar = |offset| {
-        let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(bytes, offset)?;
         value.is_finite().then_some(value)
     };
     let native_origin = [scalar(0)?, scalar(8)?, scalar(16)?];
@@ -2348,12 +2324,7 @@ pub(super) fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vecto
                 return None;
             }
             let scalar = |relative| {
-                let value = f64::from_le_bytes(
-                    payload
-                        .get(body + relative..body + relative + 8)?
-                        .try_into()
-                        .ok()?,
-                );
+                let value = View::f64_le_at(payload, body + relative)?;
                 value.is_finite().then_some(value)
             };
             let tolerance = scalar(8)?;
@@ -2421,7 +2392,7 @@ pub(super) fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vecto
 pub(super) fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const RECORD_LEN: usize = 121;
     let scalar = |bytes: &[u8], relative| {
-        let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
     let norm =
@@ -2511,7 +2482,7 @@ fn matrix_reference_plane_frames(payload: &[u8]) -> Vec<ReferencePlaneFrame> {
 fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, ReferencePlaneFrame)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
-        let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
     let norm =
@@ -2565,7 +2536,7 @@ fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, Refere
 pub(super) fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
-        let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
     let mut frames = payload
@@ -2606,7 +2577,7 @@ pub(super) fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
 pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
-        let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
     let dot =
