@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+mod encode;
+mod roundtrip;
+
 #[test]
 fn generation_timestamp_uses_utc_calendar_fields() {
     assert_eq!(

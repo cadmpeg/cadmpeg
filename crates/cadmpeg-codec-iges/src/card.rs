@@ -428,3 +428,6 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
         notes: vec![format!("source_bytes={}", scan.source.len())],
     }
 }
+
+#[cfg(test)]
+mod tests;

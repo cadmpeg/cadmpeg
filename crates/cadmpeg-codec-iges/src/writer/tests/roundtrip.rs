@@ -11,7 +11,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;
 
-use super::{IgesCodec, IgesEncoder};
+use crate::{IgesCodec, IgesEncoder};
 
 /// Extension of the committed fixture inputs (matches `golden_tests`).
 const FIXTURE_EXTENSION: &str = "igs";

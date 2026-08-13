@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized IGES 5.3 card streams.
+#![allow(clippy::unwrap_used)]
 
 use super::*;
-use cadmpeg_ir::codec::CodecBackend;
+use cadmpeg_ir::codec::{Codec, CodecBackend};
+
+use crate::test_support::*;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
