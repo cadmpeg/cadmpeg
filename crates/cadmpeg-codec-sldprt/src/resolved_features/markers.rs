@@ -2425,4 +2425,4 @@ pub(super) fn legacy_extended_profile_curve_kind(
 }
 
 #[cfg(test)]
-mod marker_tests;
+mod tests;
