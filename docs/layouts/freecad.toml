@@ -142,7 +142,7 @@ anchor = "Each side entry begins with a little-endian element count"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-freecad/src/product.rs"
-contains = "f32::from_le_bytes"
+contains = "cursor.f32_le()"
 note = "The parser selects f64 or f32 components by matching the entry length, reading both little-endian."
 
 # --- Not tabulated -----------------------------------------------------------
