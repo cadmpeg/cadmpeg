@@ -2351,4 +2351,51 @@ mod tests {
         assert_eq!(range.start, expected_start);
         assert_eq!(&bytes[range.start..range.start + 8], b"FINJPL  ");
     }
+
+    #[test]
+    fn consolidated_record_sources_follow_physical_stream_extents() {
+        let scan = crate::container::scan_bytes(standard_catpart());
+        let inner = scan.inner.as_ref().expect("inner stream directory");
+        let expected = inner
+            .descriptors
+            .iter()
+            .flat_map(|descriptor| {
+                descriptor.extents.iter().map(|extent| {
+                    let start = inner.inner + extent.phys_off as usize;
+                    start..start + extent.phys_len as usize
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            crate::container::consolidated_record_ranges(&scan),
+            expected
+        );
+        assert!(crate::container::consolidated_record_ranges(&scan)
+            .iter()
+            .all(|range| !range.contains(&inner.inner)));
+    }
+
+    #[test]
+    fn flagged_fbb_marker_is_structural() {
+        assert!(crate::container::is_fbb_row(&[
+            0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1,
+        ]));
+        assert!(!crate::container::is_fbb_row(&[
+            0x20, 0x04, 0x04, 0xff, 0xff, 0xc4, 0xb2, 0xaa,
+        ]));
+    }
+
+    #[test]
+    fn fbb_census_separates_groups_from_face_rows() {
+        let row = [0x30, 0x04, 0x04, 0xff, 0, 1, 2, 3];
+        let mut body = row.to_vec();
+        body.extend_from_slice(&row);
+        body.extend_from_slice(&[0xaa; 8]);
+        body.extend_from_slice(&row);
+
+        assert_eq!(crate::container::fbb_run_ranges(&body), vec![0..16, 24..32]);
+        let scan = crate::container::scan_bytes(standard_catpart());
+        assert_eq!(scan.census.fbb_runs, 1);
+        assert_eq!(scan.census.fbb_face_rows, 2);
+    }
 }
