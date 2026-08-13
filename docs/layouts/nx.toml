@@ -501,8 +501,8 @@ note = "Offset derived by laying the stated ordered field list out from the bloc
 
 [[record.code]]
 path = "crates/cadmpeg-codec-nx/src/native/display_jt.rs"
-contains = "family.len() < 100"
-note = "The parser gates on the stated 100-byte minimum and reads `vertex_version` at 86..88 and `vertex_bindings` at 88..96, matching the derived offsets."
+contains = "let vertex_version = View::u16_le_at(family, 86)?;"
+note = "The parser reads `vertex_version` at 86 and `vertex_bindings` at 88, matching the derived offsets."
 
 [[record]]
 name = "toggle_information_stream"

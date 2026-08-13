@@ -210,7 +210,7 @@ Offsets are derived by laying the spec's ordered field list out from the block s
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/native/display_jt.rs` — The parser gates on the stated 100-byte minimum and reads `vertex_version` at 86..88 and `vertex_bindings` at 88..96, matching the derived offsets.
+- `crates/cadmpeg-codec-nx/src/native/display_jt.rs` — The parser reads `vertex_version` at 86 and `vertex_bindings` at 88, matching the derived offsets.
 
 ## `toggle_information_stream`
 
