@@ -53,7 +53,10 @@ mod geometry;
 mod ids;
 #[allow(dead_code)] // Parser entry points are consumed by the hidden fuzz facade.
 mod lex;
-/// Hidden parser entry for benches and the fuzz facade; not part of the product API.
+#[cfg(not(feature = "fuzzing"))]
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+mod parse;
+#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod parse;
 mod reader;

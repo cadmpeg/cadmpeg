@@ -39,3 +39,4 @@ workspace = true
 [[bench]]
 name = "step_pipeline"
 harness = false
+required-features = ["fuzzing"]

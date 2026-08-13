@@ -54,3 +54,9 @@ Build and test operations:
 - Checked allocation for parsed counts: prefer `DecodeContext::alloc_filled` (charges collection items) or `cadmpeg_core::decode::alloc_filled` (reserve-only) over `vec![value; parsed_count]`. The ratchet key `nonliteral_vec_repeat` tracks remaining sites.
 - Single-codec CLI rebuild: `cargo build -p cadmpeg --no-default-features --features <id>` where `<id>` is a registry feature (`fcstd`, `f3d`, `inventor`, `sldprt`, `catia`, `creo`, `nx`, `rhino`, `step`, `iges`, `sat`). Release and default binaries keep all eleven codecs.
 - Bounded reads go through `cadmpeg_core::decode::View` (typed LE/BE reads, `read_counted`, `req_*`, offset helpers `u16_le_at` / `u32_be_at` / …). `cadmpeg_core::cursor::Cursor` is deleted. Keep `cadmpeg_core::decode::bounded_len`. Do not flatten `View` to `&[u8]` at archive entry maps when SpaceId must survive. Prefer `?` on `req_*` via a codec-local `From<ParseError>`; do not `map_err` locations away. Sequential scanners keep a live `View`. Offset scanners over a retained payload use `View::u16_le_at(bytes, off)` (and the matching width/endian helper), not `T::from_le_bytes` / `from_be_bytes` on a window slice. Do not add new `from_le_bytes` / `from_be_bytes` on contiguous file windows. Exceptions: magic fourccs (`u32::from_le_bytes(*b"…")`), deliberately reordered or non-contiguous bytes, and packing of already-copied in-memory arrays that are not a decode window.
+- Codec crate roots are facades: export the codec, supported encoder/options, and
+  `validate_native`; keep implementation modules `pub(crate)` or private.
+- `cadmpeg-validate` was not extracted: the visitor/eval surface is too wide for
+  the rebuild win. Validate remains in `cadmpeg-ir`. Focused parser access uses
+  one feature-gated `#[doc(hidden)] pub mod fuzz` entry point. Read-only codecs
+  do not invent encoders.

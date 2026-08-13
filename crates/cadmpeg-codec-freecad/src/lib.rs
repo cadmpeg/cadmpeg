@@ -30,10 +30,6 @@ mod product;
 mod topology_transfer;
 mod writer;
 
-#[cfg(feature = "fuzzing")]
-#[doc(hidden)]
-pub mod fuzz;
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 

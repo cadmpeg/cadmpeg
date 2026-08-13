@@ -334,3 +334,52 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::DecodeResult::{ir_mut,report_mut,source_fidelity_mut}"
 reason = "in-place merge and test edits mutate a live DecodeResult; accessors replace public fields"
+
+[[change]]
+commit = "e75bee717e2a58d861c43c126c45987a13047c39"
+crate = "cadmpeg-codec-step"
+kind = "visibility"
+item = "cadmpeg_codec_step::parse"
+reason = "parse is crate-private except under fuzzing."
+
+[[change]]
+commit = "28021d02e371619400d08257e50c375ad22c3afc"
+crate = "cadmpeg-codec-f3d"
+kind = "visibility"
+item = "cadmpeg_codec_f3d::fuzz"
+reason = "remove unused fuzz module; reserved no-op feature remains"
+
+[[change]]
+commit = "28021d02e371619400d08257e50c375ad22c3afc"
+crate = "cadmpeg-codec-freecad"
+kind = "visibility"
+item = "cadmpeg_codec_freecad::fuzz"
+reason = "remove unused fuzz module; reserved no-op feature remains"
+
+[[change]]
+commit = "28021d02e371619400d08257e50c375ad22c3afc"
+crate = "cadmpeg-codec-iges"
+kind = "visibility"
+item = "cadmpeg_codec_iges::fuzz"
+reason = "remove unused fuzz module; reserved no-op feature remains"
+
+[[change]]
+commit = "28021d02e371619400d08257e50c375ad22c3afc"
+crate = "cadmpeg-codec-sat"
+kind = "visibility"
+item = "cadmpeg_codec_sat::fuzz"
+reason = "remove unused fuzz module and fuzzing feature"
+
+[[change]]
+commit = "a7e203c68cc8044d1c9d966d568c7a69f62d969e"
+crate = "cadmpeg-codec-creo"
+kind = "visibility"
+item = "cadmpeg_codec_creo::{container,curve,feature,legacy,primdata,psb,reference,scalar,surface,topology}"
+reason = "hide parser modules behind fuzz facade"
+
+[[change]]
+commit = "0ffed44b0d54c31981e3bf406474d7f7f1985a4c"
+crate = "cadmpeg-codec-nx"
+kind = "visibility"
+item = "cadmpeg_codec_nx::{container,geometry,intersection,nurbs,parasolid,topology}"
+reason = "hide parser modules behind fuzz/profile facades"

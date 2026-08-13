@@ -49,7 +49,7 @@ Run the capability profiler against a directory of `.prt` files for a
 deterministic JSON census:
 
 ```sh
-cargo run -p cadmpeg-codec-nx --bin nx_profile -- FIXTURES OUTPUT.json
+cargo run -p cadmpeg-codec-nx --features profile --bin nx_profile -- FIXTURES OUTPUT.json
 ```
 
 ## Data model
@@ -77,10 +77,6 @@ operations, sketch record lanes, named arrangements and configurations, part
 attributes, external dependency inspection, and numeric expressions transfer.
 Coverage detail lives in the [format-support profile][support]. Byte semantics
 live in the [format notes][spec].
-
-The crate also exposes lower-level container, stream, geometry, NURBS, and
-topology modules for inspection and partial decoding. Most applications should
-use `NxCodec`.
 
 ## Documentation
 

@@ -2,7 +2,7 @@
 //! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
 //! [`CatiaCodec`] is the normal public decode API. The optional `fuzzing`
-//! feature may expose additional modules. It implements the shared [`Codec`]
+//! feature exposes `fuzz` wrappers. It implements the shared [`Codec`]
 //! interface: it detects the `V5_CFV2` file signature, inspects the catalogued
 //! logical streams, identifies the storage variant, and decodes the record
 //! families supported for that variant.

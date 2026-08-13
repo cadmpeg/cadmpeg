@@ -19,7 +19,7 @@ keywords = ["cad", "iges", "geometry", "brep"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
 [features]
-# Exposes the `fuzz` facade of `()`-returning parser wrappers for `cadmpeg-fuzz`.
+# reserved no-op; re-add `pub mod fuzz` when a focused harness needs an internal parser.
 fuzzing = []
 
 [dependencies]

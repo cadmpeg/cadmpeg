@@ -2,10 +2,12 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read Siemens NX `.prt` files into [`cadmpeg_ir::document::CadIr`].
 //!
-//! The codec recognizes the `SPLMSSTR` container signature, extracts compressed
-//! Parasolid neutral-binary streams from the canonical part payload, and decodes
-//! supported geometry and topology. Detection uses file content because NX and
-//! Creo share the `.prt` extension.
+//! [`NxCodec`] is the normal public decode API. The optional `fuzzing`
+//! feature exposes `fuzz` wrappers. The codec recognizes the `SPLMSSTR`
+//! container signature, extracts compressed Parasolid neutral-binary streams
+//! from the canonical part payload, and decodes supported geometry and
+//! topology. Detection uses file content because NX and Creo share the `.prt`
+//! extension.
 //!
 //! Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! for selected or terminal-lineage-resolved body images; L2 for unresolved
@@ -64,14 +66,11 @@
 //! JT coordinates and triangle connectivity transfer as canonical tessellations.
 //! Complete design history, assembly occurrence placement, material and appearance
 //! assignment and `.prt` writing are not supported.
-//! Part attributes transfer as document attributes. The public submodules
-//! expose the lower-level container, stream, geometry, NURBS, intersection, and
-//! topology decoders. The object-model extraction and attachment tier (record
-//! families, feature semantics, and IR writing) is crate-internal and reached
-//! only through the decode entry point. Applications that need a complete IR
-//! entry point should use [`NxCodec`].
+//! Part attributes transfer as document attributes. The object-model extraction
+//! and attachment tier (record families, feature semantics, and IR writing) is
+//! crate-internal and reached only through the decode entry point.
 
-pub mod container;
+pub(crate) mod container;
 #[allow(dead_code)] // Internal orchestration remains behind the codec facade.
 pub(crate) mod decode;
 #[allow(dead_code)] // Internal parser surface is retained for fuzz access.
@@ -79,23 +78,30 @@ pub(crate) mod deltas;
 #[allow(dead_code)] // Internal evaluation is reached by selected decode paths.
 pub(crate) mod evaluation;
 mod framing;
-pub mod geometry;
-pub mod intersection;
+pub(crate) mod geometry;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+pub(crate) mod intersection;
 mod jt;
 mod jt_topology;
 pub(crate) mod native;
-pub mod nurbs;
+pub(crate) mod nurbs;
 #[allow(dead_code)] // Object-model parsing is reached through decode and fuzz.
 pub(crate) mod om;
 #[allow(dead_code)] // Object-model token parsing is an internal dependency.
 pub(crate) mod om_tokens;
-pub mod parasolid;
-pub mod topology;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+pub(crate) mod parasolid;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+pub(crate) mod topology;
 mod vec3_at;
 
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzz;
+
+#[cfg(feature = "profile")]
+#[doc(hidden)]
+pub mod profile;
 
 use std::collections::BTreeMap;
 
