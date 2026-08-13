@@ -938,14 +938,4 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{looks_like_compound_file, looks_like_sldprt};
-
-    #[test]
-    fn generic_compound_prefix_is_a_weak_container_signal() {
-        let prefix = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0];
-
-        assert!(looks_like_compound_file(&prefix));
-        assert!(!looks_like_sldprt(&prefix));
-    }
-}
+mod tests;

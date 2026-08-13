@@ -2,7 +2,13 @@
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
 use super::*;
-use cadmpeg_ir::codec::CodecBackend;
+use std::io::Cursor;
+
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+
+use crate::container::role;
+use crate::SldprtCodec;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     SldprtCodec
