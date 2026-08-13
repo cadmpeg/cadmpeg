@@ -393,3 +393,6 @@ fn valid_identifier(value: &str, role: &str) -> Result<(), CodecError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

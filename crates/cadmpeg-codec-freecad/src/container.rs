@@ -244,3 +244,6 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
         domains,
     })
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

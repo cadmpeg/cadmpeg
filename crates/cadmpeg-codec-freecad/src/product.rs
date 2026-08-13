@@ -733,3 +733,6 @@ fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
         [0.0, 0.0, 0.0, 1.0],
     ])
 }
+
+#[cfg(test)]
+pub(crate) mod tests;
