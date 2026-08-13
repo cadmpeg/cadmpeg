@@ -5,6 +5,8 @@
 //! result. The contract is that no input may panic.
 #![doc(hidden)]
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
 /// Exercise the NX deltas walker.
 pub fn deltas(data: &[u8]) {
     let _ = crate::deltas::walk(data);
@@ -58,6 +60,19 @@ pub fn topology(data: &[u8]) {
     let _ = crate::topology::trimmed_curves(data);
 }
 
+/// Exercise NX Parasolid stream extraction.
+pub fn parasolid(data: &[u8]) {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
+        return;
+    };
+    let Ok(container) = crate::container::scan_bytes(data.to_vec()) else {
+        return;
+    };
+    let _ = crate::parasolid::extract_streams(&ctx, root, &container);
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -71,6 +86,7 @@ mod tests {
         super::nurbs_curves(&[]);
         super::nurbs_surfaces(&[]);
         super::topology(&[]);
+        super::parasolid(&[]);
     }
 
     #[test]
@@ -98,5 +114,11 @@ mod tests {
     fn topology_wrapper_accepts_fixture() {
         let stream = crate::test_support::topology_partition_stream();
         super::topology(&stream);
+    }
+
+    #[test]
+    fn parasolid_wrapper_accepts_fixture() {
+        let bytes = crate::test_support::single_part_prt();
+        super::parasolid(&bytes);
     }
 }
