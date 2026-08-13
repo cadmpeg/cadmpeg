@@ -835,3 +835,6 @@ fn valid_basis(degree: u16, control_count: usize, knots: &[f64]) -> Option<()> {
     let required_knots = control_count.checked_add(degree)?.checked_add(1)?;
     (control_count > degree && knots.len() == required_knots).then_some(())
 }
+
+#[cfg(test)]
+mod tests;

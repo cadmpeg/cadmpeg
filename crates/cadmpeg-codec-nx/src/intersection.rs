@@ -1071,3 +1071,6 @@ fn distance(first: Point3, second: Point3) -> f64 {
     ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
         .sqrt()
 }
+
+#[cfg(test)]
+mod tests;

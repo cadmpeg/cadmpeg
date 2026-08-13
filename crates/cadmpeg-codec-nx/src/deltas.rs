@@ -4561,3 +4561,6 @@ mod transmit_header_tests {
             .is_none());
     }
 }
+
+#[cfg(test)]
+mod tests;

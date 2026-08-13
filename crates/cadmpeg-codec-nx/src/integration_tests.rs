@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use std::io::Cursor;
+
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
 use super::*;
-use cadmpeg_ir::codec::CodecBackend;
+use crate::test_support::*;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     NxCodec
@@ -365,4 +371,13 @@ fn document_pipeline_retains_configurations_attributes_external_links_and_opaque
         loss.message.contains("ExternalReferences") || loss.message.contains("vendor/private")
     }));
     assert_valid(&opaque);
+}
+
+#[test]
+fn detect_high_on_magic() {
+    assert_eq!(NxCodec.detect(MAGIC), Confidence::High);
+    assert_eq!(NxCodec.detect(&single_part_prt()), Confidence::High);
+    assert_eq!(NxCodec.detect(b"PK\x03\x04 not nx"), Confidence::No);
+    // A Creo/Granite .prt shares the extension but not the magic.
+    assert_eq!(NxCodec.detect(b"\xe0\x02\xff\xfeGRANITE"), Confidence::No);
 }

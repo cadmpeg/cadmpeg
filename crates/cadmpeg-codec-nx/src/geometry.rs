@@ -407,3 +407,6 @@ fn mm_point(v: [f64; 3]) -> Point3 {
 fn vec3(v: [f64; 3]) -> Vector3 {
     Vector3::new(v[0], v[1], v[2])
 }
+
+#[cfg(test)]
+mod tests;
