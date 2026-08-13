@@ -226,9 +226,9 @@ source = "spec"
 anchor = "`39..47` | little-endian u64 flags; bit 0 is set iff the stream carries a history partition"
 
 [[record.code]]
-path = "docs/formats/asm.md"
-contains = "The string region begins at byte 47."
-note = "The declared 47-byte size is the spec's own stated start of the string region."
+path = "crates/cadmpeg-asm/src/asm_header.rs"
+contains = "const BF8_STRING_REGION_START: usize = 47;"
+note = "The BinaryFile8 parser starts the string region at the declared 47-byte prefix."
 
 [[record]]
 name = "asmheader_binaryfile4"
@@ -274,9 +274,9 @@ source = "spec"
 anchor = "`27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition"
 
 [[record.code]]
-path = "docs/formats/asm.md"
-contains = "The string region begins at byte 31."
-note = "The declared 31-byte size is the spec's own stated start of the string region."
+path = "crates/cadmpeg-asm/src/asm_header.rs"
+contains = "const BF4_STRING_REGION_START: usize = 31;"
+note = "The BinaryFile4 parser starts the string region at the declared 31-byte prefix."
 
 [[record]]
 name = "acisheader_binaryfile4"

@@ -59,7 +59,7 @@ Fixed prefix only. The string region and the six trailing tagged metadata fields
 
 Cross-checked against code:
 
-- `docs/formats/asm.md` — The declared 47-byte size is the spec's own stated start of the string region.
+- `crates/cadmpeg-asm/src/asm_header.rs` — The BinaryFile8 parser starts the string region at the declared 47-byte prefix.
 
 ## `asmheader_binaryfile4`
 
@@ -77,7 +77,7 @@ Fixed prefix only; the string region begins at byte 31.
 
 Cross-checked against code:
 
-- `docs/formats/asm.md` — The declared 31-byte size is the spec's own stated start of the string region.
+- `crates/cadmpeg-asm/src/asm_header.rs` — The BinaryFile4 parser starts the string region at the declared 31-byte prefix.
 
 ## `acisheader_binaryfile4`
 
