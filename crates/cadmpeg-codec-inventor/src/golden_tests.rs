@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Golden inspect and decode snapshots over a field-built CFB declaration.
 //!
-//! The input is constructed from explicit CFB fields by [`crate::tests::fixture`].
+//! The input is constructed from explicit CFB fields by [`crate::test_support::fixture`].
 //! Snapshot regeneration never writes input bytes.
 
 use std::io::Cursor;
@@ -39,7 +39,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_snapshots_hold() {
-    let bytes = crate::tests::fixture(true);
+    let bytes = crate::test_support::fixture(true);
     let inspect = inspect_snapshot(&bytes);
     let decode = decode_snapshot(&bytes);
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
@@ -55,14 +55,14 @@ fn golden_snapshots_hold() {
 
 #[test]
 fn golden_output_is_deterministic() {
-    let bytes = crate::tests::fixture(true);
+    let bytes = crate::test_support::fixture(true);
     assert_eq!(inspect_snapshot(&bytes), inspect_snapshot(&bytes));
     assert_eq!(decode_snapshot(&bytes), decode_snapshot(&bytes));
 }
 
 #[test]
 fn primary_golden_snapshots_hold() {
-    let bytes = crate::tests::primary_envelope_fixture();
+    let bytes = crate::test_support::primary_envelope_fixture();
     let inspect = inspect_snapshot(&bytes);
     let decode = decode_snapshot(&bytes);
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
@@ -79,7 +79,7 @@ fn primary_golden_snapshots_hold() {
 
 #[test]
 fn primary_golden_output_is_deterministic() {
-    let bytes = crate::tests::primary_envelope_fixture();
+    let bytes = crate::test_support::primary_envelope_fixture();
     assert_eq!(inspect_snapshot(&bytes), inspect_snapshot(&bytes));
     assert_eq!(decode_snapshot(&bytes), decode_snapshot(&bytes));
 }
