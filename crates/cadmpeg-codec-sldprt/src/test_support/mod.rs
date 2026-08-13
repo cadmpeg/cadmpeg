@@ -8,9 +8,11 @@ mod history;
 mod native;
 mod parasolid;
 mod pmi;
+mod tessellation;
 
 pub(crate) use container::*;
 pub(crate) use history::*;
 pub(crate) use native::*;
 pub(crate) use parasolid::*;
 pub(crate) use pmi::*;
+pub(crate) use tessellation::*;
