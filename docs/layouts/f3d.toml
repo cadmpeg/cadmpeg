@@ -53,9 +53,9 @@ source = "spec"
 anchor = "then `u32 record_index`"
 
 [[record.code]]
-path = "docs/formats/f3d.md"
-contains = "Its eleven-byte indexed header"
-note = "The 11-byte total is stated independently in the companion-record paragraph of the same section."
+path = "crates/cadmpeg-codec-f3d/src/design/decode/units.rs"
+contains = "const HEADER_LEN: usize = 11;"
+note = "The Design decoder names the eleven-byte indexed-record header length."
 
 [[record]]
 name = "sketch_container_visibility_member_prefix"
@@ -130,8 +130,8 @@ anchor = "byte 36 is `01`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
-contains = "const SKETCH_CONTAINER_MEMBER_TYPE_GUID"
-note = "The decoder selects the member by its stable type registration before reading this prefix."
+contains = "const SKETCH_CONTAINER_MEMBER_TYPE_GUID: &str = \"37AD519C-AFB3-4CE2-9E6D-E3269FC6CDB9\";"
+note = "The decoder selects the member by this type GUID before reading this prefix."
 
 [[record]]
 name = "design_decal_scope_prefix"
@@ -373,11 +373,6 @@ path = "crates/cadmpeg-codec-f3d/src/design/body.rs"
 contains = "pub(crate) const BODY_MAP_ZERO_PREFIX_LENGTHS: [usize; 2] = [10, 11];"
 note = "The body-map decoder accepts both reserved-zero variants."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/writer/generate/records.rs"
-contains = "crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN"
-note = "The source-less writer emits the ten-reserved-byte variant."
-
 [[record]]
 name = "design_body_map_prefix_11"
 kind = "byte"
@@ -406,11 +401,6 @@ offset = 22
 type = "u32"
 source = "spec"
 anchor = "and a `u32 count`"
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/body.rs"
-contains = "for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS"
-note = "The exact primary-record parser tests each supported reserved-zero width."
 
 [[record]]
 name = "paramesh_entry_name_prefix"
@@ -1158,8 +1148,8 @@ note = "The decoder and validator share the fixed locator length."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "let path_at = locator_at.checked_add(crate::design::assembly::OPERAND_PATH_LOCATOR_LENGTH)?;"
-note = "The parser starts the path at the end of the locator."
+contains = "bytes.get(locator_at.checked_add(188)?..locator_at.checked_add(190)?)? != [0; 2]"
+note = "The parser requires the two-byte zero tail at the end of the 190-byte locator."
 
 [[record]]
 name = "assembly_operand_path_wrapper"
@@ -1211,8 +1201,8 @@ note = "The decoder and validator share the fixed wrapper length."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)? != wrapper_end"
-note = "The parser requires the wrapper to end at the next indexed record."
+contains = "bytes.get(wrapper_at.checked_add(11)?..wrapper_at.checked_add(21)?)? != [0; 10]"
+note = "The parser checks the ten-byte zero run after the wrapper header."
 
 [[record]]
 name = "assembly_axial_construction_carrier"
@@ -3233,8 +3223,8 @@ anchor = "the first-side value `2` follows that byte"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "scope_reference_ordinal_offset: extent_cursor as u64"
-note = "The current Extrude parser retains the exact ordinal offset and advances five bytes to the first-side extent."
+contains = "View::u32_le_at(bytes, extent_cursor.checked_add(5)?) != Some(2)"
+note = "The current Extrude parser requires first-side extent value 2 five bytes after the target ordinal."
 
 [[record]]
 name = "early_distance_extrude_absent_prefix"
@@ -3286,8 +3276,8 @@ anchor = "A u32 geometry-kind discriminator follows the Boolean"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "let extent_kind_offset = operation_offset.checked_add(4)?;"
-note = "The early Extrude parser reads the extent kind from the operation-relative field and requires value 2."
+contains = "0 => (None, None, marker_offset.checked_add(1)?, 208),"
+note = "The absent-prefix arm places the operation immediately after the marker and the scope reference count at offset 208."
 
 [[record]]
 name = "early_distance_extrude_present_prefix"
@@ -3346,8 +3336,8 @@ anchor = "A u32 geometry-kind discriminator follows the Boolean"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "let extent_kind_offset = operation_offset.checked_add(4)?;"
-note = "The present-prefix form uses the same operation-relative extent-kind field as the absent-prefix form."
+contains = "prefix_value_offset.checked_add(4)?,"
+note = "The present-prefix arm places the operation four bytes after the prefix u32."
 
 [[record]]
 name = "shifted_extrude_prologue"

@@ -35,7 +35,7 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 
 Cross-checked against code:
 
-- `docs/formats/f3d.md` — The 11-byte total is stated independently in the companion-record paragraph of the same section.
+- `crates/cadmpeg-codec-f3d/src/design/decode/units.rs` — The Design decoder names the eleven-byte indexed-record header length.
 
 ## `sketch_container_visibility_member_prefix`
 
@@ -57,7 +57,7 @@ Offsets are relative to the typed Geometry member's indexed header.
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs` — The decoder selects the member by its stable type registration before reading this prefix.
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs` — The decoder selects the member by this type GUID before reading this prefix.
 
 ## `design_decal_scope_prefix`
 
@@ -148,7 +148,6 @@ Ten-reserved-byte variant. Offsets are relative to the typed body-map indexed he
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/body.rs` — The body-map decoder accepts both reserved-zero variants.
-- `crates/cadmpeg-codec-f3d/src/writer/generate/records.rs` — The source-less writer emits the ten-reserved-byte variant.
 
 ## `design_body_map_prefix_11`
 
@@ -161,10 +160,6 @@ Eleven-reserved-byte variant. Offsets are relative to the typed body-map indexed
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | eleven-byte indexed header |
 | 11 | 11 | `reserved_zero_run` | `bytes[11]` | little | spec | either ten or eleven reserved zero bytes |
 | 22 | 4 | `pair_count` | `u32` | little | spec | and a `u32 count` |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/body.rs` — The exact primary-record parser tests each supported reserved-zero width.
 
 ## `paramesh_entry_name_prefix`
 
@@ -441,7 +436,7 @@ Offsets are relative to the locator's indexed header. The variable-length occurr
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The decoder and validator share the fixed locator length.
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser starts the path at the end of the locator.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser requires the two-byte zero tail at the end of the 190-byte locator.
 
 ## `assembly_operand_path_wrapper`
 
@@ -460,7 +455,7 @@ Offsets are relative to the wrapper's indexed header. The next indexed record st
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The decoder and validator share the fixed wrapper length.
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser requires the wrapper to end at the next indexed record.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser checks the ten-byte zero run after the wrapper header.
 
 ## `assembly_axial_construction_carrier`
 
@@ -1133,7 +1128,7 @@ Offsets are relative to the repeated target-group ordinal. The target payload fo
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The current Extrude parser retains the exact ordinal offset and advances five bytes to the first-side extent.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The current Extrude parser requires first-side extent value 2 five bytes after the target ordinal.
 
 ## `early_distance_extrude_absent_prefix`
 
@@ -1155,7 +1150,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The early Extrude parser reads the extent kind from the operation-relative field and requires value 2.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The absent-prefix arm places the operation immediately after the marker and the scope reference count at offset 208.
 
 ## `early_distance_extrude_present_prefix`
 
@@ -1178,7 +1173,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The present-prefix form uses the same operation-relative extent-kind field as the absent-prefix form.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The present-prefix arm places the operation four bytes after the prefix u32.
 
 ## `shifted_extrude_prologue`
 
