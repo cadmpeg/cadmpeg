@@ -6,6 +6,7 @@
 //! assertions.
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+mod test_a5_bound;
 mod test_a5a8;
 mod test_annotations;
 mod test_b2;
@@ -16,6 +17,7 @@ mod test_topology;
 mod test_zero_entity;
 
 pub(crate) use crate::container::OUTER_MAGIC;
+pub(crate) use test_a5_bound::*;
 pub(crate) use test_a5a8::*;
 pub(crate) use test_annotations::*;
 pub(crate) use test_b2::*;
