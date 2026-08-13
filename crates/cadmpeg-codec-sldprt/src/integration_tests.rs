@@ -4,6 +4,10 @@
 use super::*;
 use std::io::Cursor;
 
+use crate::writer::tests::{
+    semantic_writer_rejects_nonfinite_analytic_carriers, semantic_writer_rejects_subds,
+};
+
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 

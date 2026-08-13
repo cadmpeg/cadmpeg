@@ -3608,4 +3608,4 @@ mod nurbs_write_tests {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
