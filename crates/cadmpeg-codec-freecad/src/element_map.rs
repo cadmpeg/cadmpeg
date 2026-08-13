@@ -643,6 +643,10 @@ fn next_u64<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::*;
+    use crate::FcstdCodec;
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use std::io::Cursor;
 
     #[test]
     fn restores_absolute_and_relative_string_table_headers() {
@@ -726,5 +730,191 @@ mod tests {
             group.names[1][0].topology_ids,
             ["edge-first-placement", "edge-second-placement"]
         );
+    }
+
+    #[test]
+    fn connects_persistent_element_names_to_neutral_topology() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1" StringHasher="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="2">
+<Property name="AuxShape" type="Part::PropertyPartShape">
+<Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="AuxShape.brp"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="5">
+41 PostfixCount 0 MapCount 1
+ElementMap 1 41 3
+Face ChildCount 0 NameCount 2
+0
+;FaceStable.0.a 0
+Edge ChildCount 0 NameCount 3
+0
+;EdgeStable1.0.a 0
+;EdgeStable2.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property>
+<Property name="Shape" type="Part::PropertyPartShape">
+<Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="Shape.brp"/>
+<StringHasher saveall="0" threshold="16" count="0" new="1"/>
+<StringHasher2 count="1">
+a.c PersistentSource
+</StringHasher2>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="5">
+41 PostfixCount 0 MapCount 1
+ElementMap 1 41 3
+Face ChildCount 0 NameCount 2
+0
+;FaceStable.0.a 0
+Edge ChildCount 0 NameCount 3
+0
+;EdgeStable1.0.a 0
+;EdgeStable2.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property></Properties></Object></ObjectData>
+</Document>"#;
+        let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Shape"><Properties Count="4">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3435973632"/></Property>
+<Property name="DiffuseColor" type="App::PropertyColorList"><ColorList file="DiffuseColor"/></Property>
+<Property name="LineColorArray" type="App::PropertyColorList"><ColorList file="LineColorArray"/></Property>
+<Property name="PointColorArray" type="App::PropertyColorList"><ColorList file="PointColorArray"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+        let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 9
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
+Wi 1001000 +7 0 +6 0 *
+Fa 0 0.001 1 0 1001000 +5 0 *
+Sh 1001000 +4 0 *
+So 1001000 +3 0 *
+Co 1001000 +2 0 *
++1 0 *";
+        let face_colors = [1_u8, 0, 0, 0, 0, 0, 0, 255];
+        let edge_colors = [2_u8, 0, 0, 0, 255, 0, 0, 255, 0, 255, 0, 255];
+        let point_colors = [2_u8, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 255];
+        let bytes = archive_entries(&[
+            ("Document.xml", document.as_bytes()),
+            ("GuiDocument.xml", gui),
+            ("DiffuseColor", &face_colors),
+            ("LineColorArray", &edge_colors),
+            ("PointColorArray", &point_colors),
+            ("AuxShape.brp", brep),
+            ("Shape.brp", brep),
+        ]);
+        let result = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("persistent element map");
+        let namespace = result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("required invariant");
+        let tables = namespace
+            .arena_as::<crate::native::StringTableRecord>("string_tables")
+            .expect("required invariant");
+        assert_eq!(tables.len(), 1);
+        assert_eq!(tables[0].entries[0].string_id, 10);
+        let maps = namespace
+            .arena_as::<crate::native::ElementMapRecord>("element_maps")
+            .expect("required invariant");
+        assert_eq!(maps.len(), 2);
+        let shape_map = maps
+            .iter()
+            .find(|map| map.property.ends_with("#Shape:Shape"))
+            .expect("displayed Shape element map");
+        assert_eq!(shape_map.hasher_index, Some(0));
+        let groups = &shape_map.maps[0].groups;
+        assert_eq!(groups[0].names[1][0].topology_ids.len(), 1);
+        assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
+        assert_eq!(groups[1].names[2][0].topology_ids.len(), 1);
+        assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
+        assert_eq!(groups[2].names[2][0].topology_ids.len(), 1);
+        let shape_face_ids = groups[0]
+            .names
+            .iter()
+            .flatten()
+            .flat_map(|name| &name.topology_ids)
+            .collect::<std::collections::HashSet<_>>();
+        assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
+        matches!(
+            &binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Face(face) if shape_face_ids.contains(&face.0)
+        ) && binding.channels.get("precedence").map(String::as_str) == Some("face_over_object")
+    }));
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| {
+                    matches!(
+                        binding.target,
+                        cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
+                    ) && binding.channels.get("precedence").map(String::as_str)
+                        == Some("edge_array_over_line")
+                })
+                .count(),
+            2
+        );
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| {
+                    matches!(
+                        binding.target,
+                        cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
+                    ) && binding.channels.get("precedence").map(String::as_str)
+                        == Some("vertex_array_over_point")
+                })
+                .count(),
+            2
+        );
+        assert!(crate::validate_native(result.ir()).is_empty());
+        assert_valid_document(result.ir());
+    }
+
+    #[test]
+    fn rejects_interleaved_new_string_hasher_payload() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1">
+<Property name="Shape" type="Part::PropertyPartShape"><Part file=""/>
+<StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/>
+</Property></Properties></Object></ObjectData></Document>"#;
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("interleaved string table must fail");
+
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
 }

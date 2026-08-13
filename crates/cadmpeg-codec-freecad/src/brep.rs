@@ -3755,8 +3755,12 @@ impl<'a> TokenCursor<'a> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::test_support::*;
+    use crate::FcstdCodec;
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use std::io::Cursor;
 
     #[test]
     fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
@@ -4181,5 +4185,136 @@ mod tests {
             .expect_err("out-of-order table")
             .to_string()
             .contains("out of order"));
+    }
+
+    #[test]
+    pub(crate) fn transfers_recursive_exact_parameter_curve_geometry() {
+        let source = crate::brep::TextCurve2d::Offset {
+            distance: 0.25,
+            basis: Box::new(crate::brep::TextCurve2d::Trimmed {
+                parameter_range: [0.0, std::f64::consts::PI],
+                basis: Box::new(crate::brep::TextCurve2d::Circle {
+                    center: cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                    x_axis: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    y_axis: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                    radius: 3.0,
+                }),
+            }),
+        };
+        let cadmpeg_ir::geometry::PcurveGeometry::Offset { distance, basis } =
+            crate::topology_transfer::pcurve_geometry(&source)
+        else {
+            panic!("expected offset pcurve");
+        };
+        assert_eq!(distance, 0.25);
+        assert!(matches!(
+            basis.as_ref(),
+            cadmpeg_ir::geometry::PcurveGeometry::Trimmed { basis, .. }
+                if matches!(basis.as_ref(), cadmpeg_ir::geometry::PcurveGeometry::Circle { radius: 3.0, .. })
+        ));
+    }
+
+    #[test]
+    pub(crate) fn transfers_binary_exact_curve_and_surface_carriers() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.bin"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+        let mut brep =
+            b"\nOpen CASCADE Topology V3 (c)\nLocations 0\nCurve2ds 0\nCurves 1\n".to_vec();
+        brep.push(1);
+        for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0] {
+            brep.extend_from_slice(&value.to_le_bytes());
+        }
+        brep.extend_from_slice(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n");
+        brep.push(1);
+        for value in [
+            0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+        ] {
+            brep.extend_from_slice(&value.to_le_bytes());
+        }
+        brep.extend_from_slice(b"Triangulations 1\n");
+        brep.extend_from_slice(&3_i32.to_le_bytes());
+        brep.extend_from_slice(&1_i32.to_le_bytes());
+        brep.push(0);
+        for value in [0.01_f64, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            brep.extend_from_slice(&value.to_le_bytes());
+        }
+        for node in [1_i32, 2, 3] {
+            brep.extend_from_slice(&node.to_le_bytes());
+        }
+        brep.extend_from_slice(b"TShapes 7\n");
+        let flags = |brep: &mut Vec<u8>| brep.extend_from_slice(&[1, 0, 0, 1, 0, 0, 0]);
+        let child = |brep: &mut Vec<u8>, orientation: u8, reverse_index: i32| {
+            brep.push(orientation);
+            brep.extend_from_slice(&reverse_index.to_le_bytes());
+            brep.extend_from_slice(&0_i32.to_le_bytes());
+        };
+        brep.push(7);
+        brep.extend_from_slice(&0.001_f64.to_le_bytes());
+        for value in [0.0_f64, 0.0, 0.0] {
+            brep.extend_from_slice(&value.to_le_bytes());
+        }
+        brep.push(0);
+        flags(&mut brep);
+        brep.push(b'*');
+        brep.push(6);
+        brep.extend_from_slice(&0.001_f64.to_le_bytes());
+        brep.extend_from_slice(&[1, 1, 1, 0]);
+        flags(&mut brep);
+        child(&mut brep, 0, 7);
+        child(&mut brep, 1, 7);
+        brep.push(b'*');
+        brep.push(5);
+        flags(&mut brep);
+        child(&mut brep, 0, 6);
+        brep.push(b'*');
+        brep.push(4);
+        brep.push(0);
+        brep.extend_from_slice(&0.001_f64.to_le_bytes());
+        brep.extend_from_slice(&1_i32.to_le_bytes());
+        brep.extend_from_slice(&0_i32.to_le_bytes());
+        brep.push(2);
+        brep.extend_from_slice(&1_i32.to_le_bytes());
+        flags(&mut brep);
+        child(&mut brep, 0, 5);
+        brep.push(b'*');
+        for (kind, reverse_index) in [(3_u8, 4_i32), (2, 3), (0, 2)] {
+            brep.push(kind);
+            flags(&mut brep);
+            child(&mut brep, 0, reverse_index);
+            brep.push(b'*');
+        }
+        brep.extend_from_slice(&7_i32.to_le_bytes());
+        brep.extend_from_slice(&0_i32.to_le_bytes());
+        brep.extend_from_slice(&0_i32.to_le_bytes());
+        let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.bin", &brep)]);
+        let result = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("binary curve carrier");
+        assert_eq!(result.ir().model.curves.len(), 1);
+        assert!(matches!(
+            result.ir().model.curves[0].geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Line { .. }
+        ));
+        assert_eq!(result.ir().model.surfaces.len(), 1);
+        assert!(matches!(
+            result.ir().model.surfaces[0].geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
+        ));
+        assert_eq!(result.ir().model.tessellations.len(), 1);
+        assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(
+            result.ir().model.tessellations[0].body.as_ref(),
+            Some(&result.ir().model.bodies[0].id)
+        );
+        assert_eq!(
+            result.ir().model.tessellations[0].faces,
+            [result.ir().model.faces[0].id.clone()]
+        );
+        assert_eq!(result.ir().model.coedges.len(), 1);
+        assert!(result.report().geometry_transferred);
     }
 }

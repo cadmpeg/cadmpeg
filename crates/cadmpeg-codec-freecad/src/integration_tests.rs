@@ -5,7 +5,12 @@
 use super::*;
 use cadmpeg_ir::codec::CodecBackend;
 
+use crate::annotation::tests::transfers_remaining_semantic_annotation_families_and_assets;
 use crate::application_geometry::tests::transfers_application_mesh_and_transformed_point_cloud_payloads;
+use crate::brep::tests::{
+    transfers_binary_exact_curve_and_surface_carriers,
+    transfers_recursive_exact_parameter_curve_geometry,
+};
 use crate::container::tests::rejects_unsafe_names;
 use crate::design::tests::booleans_patterns::{
     transfers_partdesign_boolean_base_and_group_rules,
@@ -22,6 +27,8 @@ use crate::design::tests::sketches::{
     transfers_bounded_rational_sketch_nurbs, transfers_full_and_bounded_sketch_conics,
     transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults,
 };
+use crate::drawing::tests::recovers_techdraw_page_template_and_view_graph;
+use crate::gui::tests::retains_ordered_document_level_gui_state;
 use crate::joint::tests::recovers_assembly_joint_operands_frames_and_state;
 use crate::persistence::tests::{
     legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts,
@@ -29,6 +36,12 @@ use crate::persistence::tests::{
     schema_two_uses_the_feature_envelope_and_common_property_grammar,
 };
 use crate::product::tests::recovers_product_prototypes_occurrences_and_placements;
+use crate::topology_transfer::tests::{
+    binds_both_seam_pcurves_and_closes_the_radial_pair,
+    preserves_compound_ownership_and_composes_nested_mirrored_locations_once,
+    transfers_connected_text_brep_topology,
+    transfers_triangulation_only_face_and_indexed_edge_polygon,
+};
 use crate::writer::tests::{
     write_target_and_source_requirements_are_explicit,
     writer_rejects_unserialized_declaration_and_stale_payload_edits,
