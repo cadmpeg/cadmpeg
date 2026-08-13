@@ -325,3 +325,6 @@ fn charge_work(
 ) -> Result<(), CodecError> {
     ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
 }
+
+#[cfg(test)]
+mod tests;
