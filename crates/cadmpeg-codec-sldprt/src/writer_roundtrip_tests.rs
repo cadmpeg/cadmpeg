@@ -10,7 +10,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::transform::Transform;
 
-use crate::tests::{sldprt_with_body, triangle_body};
+use crate::test_support::triangle_body;
+use crate::tests::sldprt_with_body;
 use crate::SldprtCodec;
 
 #[test]

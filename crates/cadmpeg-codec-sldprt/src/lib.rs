@@ -386,6 +386,8 @@ mod golden_tests;
 #[cfg(test)]
 mod spatial_write_tests;
 #[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod writer_roundtrip_tests;
