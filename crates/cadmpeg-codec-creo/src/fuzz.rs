@@ -51,6 +51,11 @@ pub fn short_form_float(data: &[u8]) {
     let _ = crate::psb::short_form_float(data, 0);
 }
 
+/// Exercise Creo container scanning.
+pub fn container_scan(data: &[u8]) {
+    let _ = crate::container::scan_bytes(data.to_vec());
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -62,6 +67,7 @@ mod tests {
         super::compact_int(&[]);
         super::psb_tokens(&[]);
         super::short_form_float(&[]);
+        super::container_scan(&[]);
     }
 
     #[test]
@@ -74,5 +80,6 @@ mod tests {
         super::compact_int(&data);
         super::psb_tokens(&data);
         super::short_form_float(&data);
+        super::container_scan(&data);
     }
 }

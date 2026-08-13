@@ -58,7 +58,7 @@
 //! these losses.
 
 mod compress;
-pub mod container;
+pub(crate) mod container;
 pub(crate) mod coverage;
 #[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod curve;
