@@ -9,7 +9,7 @@
 //! `#` terminator and printable name distinguish section boundaries from
 //! similar bytes in feature data.
 //!
-//! [`scan`] reads the stream and returns a [`ContainerScan`] containing section
+//! [`scan_bytes`] reads the stream and returns a [`ContainerScan`] containing section
 //! metadata, the persistence layout, namespace counts, typed structural rows,
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.

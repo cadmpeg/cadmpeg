@@ -2,13 +2,19 @@
 //! Inspect and structurally decode PTC Creo Parametric and Pro/ENGINEER `.prt`
 //! files stored in the PSB container.
 //!
+//! [`CreoCodec`] is the normal public decode API. The optional `fuzzing`
+//! feature exposes `fuzz` wrappers. It implements [`cadmpeg_ir::codec::Codec`]:
+//! it detects the `#UGC:2` PSB signature, inspects named sections, and decodes
+//! the geometry, topology, sketches, and design records supported for that
+//! layout.
+//!
 //! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! on the cadmpeg support ladder.
 //!
 //! # Quick start
 //!
-//! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
-//! [`cadmpeg_ir::Codec::inspect`] to enumerate sections and read container diagnostics:
+//! Use [`cadmpeg_ir::Codec::inspect`] to enumerate sections and read container
+//! diagnostics:
 //!
 //! ```no_run
 //! use std::fs::File;
@@ -34,14 +40,6 @@
 //! Legacy persistence uses a `P_OBJECT` body with optional named sections;
 //! later persistence uses a table of contents and named binary sections.
 //! Detection uses the signature because Siemens NX also uses `.prt`.
-//!
-//! [`container`] identifies legacy, ND, and DEPDB layouts, classifies sections,
-//! reads surface and curve namespace counts, and discovers typed namespace
-//! rows. [`legacy`] resolves scoped ASCII declarations, values, and array
-//! continuations.
-//! [`psb`] and [`scalar`] expose the context-independent primitive decoders.
-//! [`surface`], [`curve`], [`reference`], [`primdata`], [`feature`], and
-//! [`topology`] expose the typed structural model.
 //!
 //! # Decode scope
 //!
