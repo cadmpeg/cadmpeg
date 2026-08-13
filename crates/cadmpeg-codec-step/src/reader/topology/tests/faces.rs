@@ -1,0 +1,680 @@
+// SPDX-License-Identifier: Apache-2.0
+//! STEP B-rep, shell, face, and wire tests.
+
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
+#![allow(unused_imports)]
+
+use std::fmt::Write as _;
+use std::io::Cursor;
+
+use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::eval::{
+    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
+};
+use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{LengthUnit, Units};
+use cadmpeg_ir::CadIr;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
+
+use crate::ids::StepIdentity;
+use crate::test_support::{decode_inline, export};
+use crate::{
+    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
+};
+
+#[test]
+fn base_face_with_polygon_loop_gets_an_inferred_plane() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#25=EDGE_LOOP('',(#22,#23,#24));",
+                "#25=POLY_LOOP('',(#3,#4,#5));",
+            )
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=FACE('',(#26));",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode base face");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("implicit face plane");
+    let SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = &surface.geometry
+    else {
+        panic!("implicit face did not produce a plane");
+    };
+    assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(*origin, Point3::new(10.0 / 3.0, 10.0 / 3.0, 0.0));
+    assert_eq!(*u_axis, Vector3::new(1.0, 0.0, 0.0));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn implicit_face_plane_is_invariant_under_edge_ring_rotation() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=FACE('',(#26));",
+            );
+    let rotated = source.replace(
+        "#25=EDGE_LOOP('',(#22,#23,#24));",
+        "#25=EDGE_LOOP('',(#23,#24,#22));",
+    );
+    let first = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode base face");
+    let second = StepCodec::default()
+        .decode(&mut Cursor::new(rotated), &DecodeOptions::default())
+        .expect("decode rotated base face");
+    let first_surface = first
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("first implicit face plane");
+    let second_surface = second
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("rotated implicit face plane");
+    assert_eq!(first_surface.geometry, second_surface.geometry);
+}
+
+#[test]
+fn non_planar_base_face_is_rejected_without_an_inferred_surface() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#25=EDGE_LOOP('',(#22,#23,#24));",
+                "#25=POLY_LOOP('',(#3,#4,#5));",
+            )
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=FACE('',(#26));",
+            )
+            .replace(
+                "#25=POLY_LOOP('',(#3,#4,#5));",
+                "#70=CARTESIAN_POINT('',(5.,5.,1.));\n#25=POLY_LOOP('',(#3,#4,#5,#70));",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode non-planar base face");
+
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(!decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29"));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+            && loss.severity == cadmpeg_ir::Severity::Error
+    }));
+}
+
+#[test]
+fn complex_outer_face_bound_uses_inherited_attributes() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#26=FACE_OUTER_BOUND('',#25,.T.);",
+                "#26=(FACE_BOUND('',#25,.T.) FACE_OUTER_BOUND());",
+            )
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=FACE('',(#26));",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex face bound");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("implicit face plane");
+    assert!(matches!(surface.geometry, SurfaceGeometry::Plane { .. }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn implicit_face_plane_uses_the_outer_loop_only() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#25=EDGE_LOOP('',(#22,#23,#24));",
+            "#25=POLY_LOOP('',(#3,#4,#5));",
+        )
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#70=CARTESIAN_POINT('',(2.,2.,0.));\n#71=CARTESIAN_POINT('',(2.,3.,0.));\n#72=CARTESIAN_POINT('',(3.,2.,0.));\n#73=POLY_LOOP('',(#70,#71,#72));\n#74=FACE_BOUND('',#73,.F.);\n#29=FACE('',(#74,#26));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode base face with a hole");
+
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("implicit face plane");
+    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+        panic!("implicit face did not produce a plane");
+    };
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn nearly_collinear_implicit_face_is_rejected_without_a_fabricated_plane() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#5=CARTESIAN_POINT('',(0.,10.,0.));",
+                "#5=CARTESIAN_POINT('',(20.,0.0000000000002,0.));",
+            )
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=FACE('',(#26));",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nearly collinear base face");
+
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+            && loss.message.contains("implicit face plane")
+    }));
+}
+
+#[test]
+fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#25=EDGE_LOOP('',(#22,#23,#24));",
+                "#25=POLY_LOOP('',(#3,#4,#5));",
+            )
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=FACE('',(#26));",
+            )
+            .replace("#30=OPEN_SHELL('',(#29));", "#30=OPEN_SHELL('',(#34));")
+            .replace(
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));\n#34=ORIENTED_FACE('',#29,.F.);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode oriented base face");
+
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-34")
+        .expect("implicit face plane");
+    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+        panic!("implicit face did not produce a plane");
+    };
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(
+        decoded.ir().model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Forward
+    );
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn oriented_face_subtype_composes_face_orientation() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#30=OPEN_SHELL('',(#29));", "#30=OPEN_SHELL('',(#34));")
+            .replace(
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));\n#34=ORIENTED_FACE('',#29,.F.);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode oriented face");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Reversed));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn nested_oriented_faces_compose_back_to_the_base_orientation() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=OPEN_SHELL('',(#35));")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));\n#34=ORIENTED_FACE('',#29,.F.);\n#35=ORIENTED_FACE('',#34,.F.);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nested oriented faces");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(
+        decoded.ir().model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Forward));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn subface_subtype_reuses_parent_surface_and_own_bounds() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#30=OPEN_SHELL('',(#29));", "#30=OPEN_SHELL('',(#34));")
+            .replace(
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));\n#34=SUBFACE('',(#26),#29);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode subface");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn complex_advanced_face_uses_its_explicit_surface_carrier() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,5.);")
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=(FACE('',(#26)) FACE_SURFACE('',#28,.T.) ADVANCED_FACE());",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex advanced face");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#28"
+            && matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
+    }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn connected_face_sub_set_validates_and_uses_its_own_members() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+                "#31=FACE_BASED_SURFACE_MODEL('',(#34));",
+            )
+            .replace(
+                "#30=OPEN_SHELL('',(#29));",
+                "#30=CONNECTED_FACE_SET('',(#29));",
+            )
+            .replace(
+                "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+                "#34=CONNECTED_FACE_SUB_SET('',(#29),#30);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode connected face subset");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("CONNECTED_FACE_SUB_SET #34")));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
+    use cadmpeg_ir::ids::LoopId;
+    use cadmpeg_ir::topology::Loop;
+
+    let mut ir = unit_cube();
+    let face = ir.model.faces[0].id.clone();
+    let vertex = ir.model.vertices[0].id.clone();
+    let inner = LoopId("zzzz:test:loop#inner".into());
+    ir.model.loops.push(Loop {
+        id: inner.clone(),
+        face: face.clone(),
+        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Inner,
+        coedges: Vec::new(),
+        vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
+            vertex,
+            after: None,
+            pcurves: Vec::new(),
+        }],
+    });
+    ir.model.faces[0].loops.push(inner);
+    let output = export(&ir);
+    let (exchange, diagnostics) = crate::parse::parse(output.as_bytes()).unwrap();
+    assert!(diagnostics.is_empty());
+    let (face_step, outer_bound, inner_bound, outer_loop) = exchange
+        .records
+        .iter()
+        .find_map(|(&face_step, record)| {
+            let partial = record.partials.first()?;
+            if partial.name != "ADVANCED_FACE" {
+                return None;
+            }
+            let crate::parse::Value::List(bounds) = partial.parameters.get(1)? else {
+                return None;
+            };
+            if bounds.len() != 2 {
+                return None;
+            }
+            let crate::parse::Value::Reference(first) = bounds[0] else {
+                return None;
+            };
+            let crate::parse::Value::Reference(second) = bounds[1] else {
+                return None;
+            };
+            let first_record = exchange.records.get(&first)?.partials.first()?;
+            let second_record = exchange.records.get(&second)?.partials.first()?;
+            let (outer, inner) = if first_record.name == "FACE_OUTER_BOUND" {
+                (first, second)
+            } else if second_record.name == "FACE_OUTER_BOUND" {
+                (second, first)
+            } else {
+                return None;
+            };
+            let crate::parse::Value::Reference(outer_loop) = exchange.records.get(&outer)?.partials
+                [0]
+            .parameters
+            .get(1)?
+            else {
+                return None;
+            };
+            Some((face_step, outer, inner, outer_loop))
+        })
+        .expect("face with outer and inner bounds");
+    let ordered = format!("(#{outer_bound},#{inner_bound})");
+    let reversed = format!("(#{inner_bound},#{outer_bound})");
+    let reordered = output.replacen(&ordered, &reversed, 1);
+    assert_ne!(reordered, output);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(reordered), &DecodeOptions::default())
+        .expect("decode reversed face bounds");
+    let face = decoded
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == StepIdentity::data("face", face_step))
+        .expect("decoded face");
+    assert_eq!(
+        face.loops[0].as_str(),
+        StepIdentity::data("loop", format!("{outer_loop}-face-{face_step}"))
+    );
+}
+
+#[test]
+fn duplicate_face_outer_bounds_are_reported_without_inventing_inner_roles() {
+    use cadmpeg_ir::ids::LoopId;
+    use cadmpeg_ir::topology::Loop;
+
+    let mut ir = unit_cube();
+    let face = ir.model.faces[0].id.clone();
+    let duplicate = LoopId("synthetic:test:loop#duplicate-outer".into());
+    ir.model.loops.push(Loop {
+        id: duplicate.clone(),
+        face: face.clone(),
+        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+        coedges: Vec::new(),
+        vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
+            vertex: ir.model.vertices[0].id.clone(),
+            after: None,
+            pcurves: Vec::new(),
+        }],
+    });
+    ir.model.faces[0].loops.push(duplicate);
+
+    let output = export(&ir);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode duplicate outer bounds");
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::SourceTopologyInvalid)
+            && loss.message.contains("violates the STEP face-bound rule")
+            && loss
+                .message
+                .contains("marking the remaining 1 roles unspecified")
+    }));
+    let face = &decoded.ir().model.faces[0];
+    let roles = face
+        .loops
+        .iter()
+        .map(|id| {
+            decoded
+                .ir()
+                .model
+                .loops
+                .iter()
+                .find(|loop_| loop_.id == *id)
+                .expect("decoded face loop")
+                .boundary_role
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        roles
+            .iter()
+            .filter(|role| **role == cadmpeg_ir::topology::LoopBoundaryRole::Outer)
+            .count(),
+        1
+    );
+    assert_eq!(
+        roles
+            .iter()
+            .filter(|role| **role == cadmpeg_ir::topology::LoopBoundaryRole::Unspecified)
+            .count(),
+        1
+    );
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
+    let mut ir = unit_cube();
+    ir.model.faces[0].surface = ir.model.faces[1].surface.clone();
+    ir.model.faces[0].loops.clear();
+    let output = export(&ir);
+    // Five face-owned surfaces remain after sharing, and the displaced carrier
+    // is retained once as standalone construction geometry.
+    assert_eq!(output.matches("= PLANE(").count(), 6);
+}
+
+#[test]
+fn advanced_face_name_transfers_through_inherited_representation_item() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=ADVANCED_FACE('named face',(#26),#28,.T.);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode named face");
+    assert_eq!(
+        decoded.ir().model.faces[0].name.as_deref(),
+        Some("named face")
+    );
+
+    let mut output = Vec::new();
+    write_step(decoded.ir(), &mut output, &StepWriteOptions::default()).expect("write named face");
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written named face");
+    assert_eq!(
+        roundtrip.ir().model.faces[0].name.as_deref(),
+        Some("named face")
+    );
+}
+
+#[test]
+fn complex_advanced_face_name_uses_representation_item_partial() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=(FACE('',(#26)) FACE_SURFACE('',#28,.T.) ADVANCED_FACE() REPRESENTATION_ITEM('complex named face'));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex named face");
+    assert_eq!(
+        decoded.ir().model.faces[0].name.as_deref(),
+        Some("complex named face")
+    );
+}
+
+#[test]
+fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#16=LINE('',#3,#13);", "#16=UNSUPPORTED_CURVE('',#3);")
+            .replace("#28=PLANE('',#27);", "#28=UNSUPPORTED_SURFACE('',#27);");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode sheet with unknown mandatory carriers");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert!(matches!(
+        decoded
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == "step:data:curve#16")
+            .map(|curve| &curve.geometry),
+        Some(CurveGeometry::Unknown { record: Some(record) })
+            if record.as_str() == "step:data:unsupported_curve#16"
+    ));
+    assert!(matches!(
+        decoded
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "step:data:surface#28")
+            .map(|surface| &surface.geometry),
+        Some(SurfaceGeometry::Unknown { record: Some(record) })
+            if record.as_str() == "step:data:unsupported_surface#28"
+    ));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("conflicts with decoded topology")));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn unsupported_surface_carrier_on_face_surface_preserves_topology_as_unknown() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#28=PLANE('',#27);", "#28=UNSUPPORTED_SURFACE('',#27);")
+            .replace(
+                "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+                "#29=FACE_SURFACE('',(#26),#28,.T.);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode FACE_SURFACE with unknown carrier");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert!(matches!(
+        decoded
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "step:data:surface#28")
+            .map(|surface| &surface.geometry),
+        Some(SurfaceGeometry::Unknown { record: Some(record) })
+            if record.as_str() == "step:data:unsupported_surface#28"
+    ));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}

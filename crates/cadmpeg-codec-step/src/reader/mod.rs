@@ -25,7 +25,7 @@ pub(crate) mod pmi;
 mod presentation;
 pub(crate) mod product;
 pub(crate) mod tessellation;
-mod topology;
+pub(crate) mod topology;
 mod validation;
 
 pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;

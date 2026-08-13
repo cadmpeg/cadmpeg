@@ -1585,7 +1585,7 @@ fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession, ir: 
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[allow(clippy::too_many_arguments)]
 fn staged_topology(

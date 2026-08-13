@@ -27,21 +27,23 @@ use crate::reader::product::tests::{
     repeated_subassembly_instances_each_receive_the_subtree,
 };
 use crate::reader::tessellation::tests::decode_transfers_ap242_one_based_tessellation_indices;
+use crate::reader::topology::tests::{
+    decode_and_write_singular_vertex_loops, decode_builds_a_valid_ap203_sheet_brep,
+    decode_builds_a_valid_connected_sheet_brep, every_region_of_a_body_is_retained_as_a_shape_item,
+    face_outer_bound_is_canonicalized_ahead_of_inner_bounds,
+    reader_recovers_a_valid_solid_from_writer_output,
+};
 use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
 use crate::tests::{
     body_color_becomes_per_face_styled_item_presentation,
     codec_detects_and_inspects_ap242_exchange_structure,
     codec_inspects_edition3_sections_and_external_references,
-    decode_accounts_for_every_part21_byte, decode_and_write_singular_vertex_loops,
-    decode_builds_a_valid_ap203_sheet_brep, decode_builds_a_valid_connected_sheet_brep,
+    decode_accounts_for_every_part21_byte,
     decode_preserves_named_opaque_records_with_exact_byte_spans,
-    every_region_of_a_body_is_retained_as_a_shape_item,
     face_appearance_binding_styles_the_advanced_face,
-    face_outer_bound_is_canonicalized_ahead_of_inner_bounds,
     face_override_wins_over_body_color_and_body_fills_the_rest,
     hidden_body_geometry_and_visibility_round_trip,
     presentation_reader_normalizes_invalid_layer_and_common_datum_inputs,
-    reader_recovers_a_valid_solid_from_writer_output,
     step_color_assets_round_trip_names_and_tessellation_targets_strictly,
 };
 use crate::writer::tests::{
