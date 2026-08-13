@@ -20,14 +20,14 @@ fn with_source(data: &[u8], run: impl FnOnce(&DecodeContext<'_>, cadmpeg_core::d
 /// Exercise the ASM binary SAB decode path.
 pub fn decode_asm_binary(data: &[u8]) {
     with_source(data, |ctx, source| {
-        let _ = crate::decode_asm_binary(ctx, source.window());
+        let _ = crate::decode::decode_asm_binary(ctx, source.window());
     });
 }
 
 /// Exercise the Spatial ACIS binary SAB decode path.
 pub fn decode_acis_binary(data: &[u8]) {
     with_source(data, |ctx, source| {
-        let _ = crate::decode_acis_binary(ctx, source.window());
+        let _ = crate::decode::decode_acis_binary(ctx, source.window());
     });
 }
 
