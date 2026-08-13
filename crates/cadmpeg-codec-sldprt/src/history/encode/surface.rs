@@ -1,39 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Trim, extend, ruled, offset, knit, filled, draft, thicken, and shell write encoders.
 
-use super::super::{
-    edge_selection_value, face_selection_value, feature_family, feature_input_class,
-    format_angle_rad, format_length_like, format_length_mm, format_vector3, path_source,
-    require_direction, require_same_family, write_native_selection,
+use super::super::{feature_family, feature_input_class, format_angle_rad, format_length_mm};
+use super::format::{format_length_like, format_vector3};
+use super::support::{
+    edge_selection_value, face_selection_value, path_source, require_direction,
+    require_same_family, write_native_selection,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, RuledSurfaceMode};
+use cadmpeg_ir::features::{
+    Angle, BodySelection, EdgeSelection, FaceSelection, FeatureId, Length, PathRef,
+    RuledSurfaceCorner, RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceContinuity,
+    SurfaceExtension, ThickenSide, TrimRegion,
+};
+use cadmpeg_ir::math::Vector3;
 
 #[allow(
-    clippy::unnecessary_wraps,
-    reason = "Per-feature encoders use one fallible dispatch interface."
+    clippy::too_many_arguments,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::ref_option,
+    clippy::ptr_arg,
+    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
 )]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_boundary_surface_unresolved(
         &self,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::BoundarySurfaceUnresolved = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} has unresolved boundary-surface construction",
             feature.id
         )))
     }
 
-    pub(super) fn encode_trim_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_trim_surface(
+        &self,
+        faces: &FaceSelection,
+        tool: &PathRef,
+        keep: &TrimRegion,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::TrimSurface { faces, tool, keep } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
@@ -68,16 +76,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_extend_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_extend_surface(
+        &self,
+        faces: &FaceSelection,
+        distance: &Option<Length>,
+        method: &SurfaceExtension,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::ExtendSurface {
-            faces,
-            distance,
-            method,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let faces = face_selection_value(faces).ok_or_else(|| {
@@ -117,19 +122,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_ruled_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_ruled_surface(
+        &self,
+        edges: &EdgeSelection,
+        support_faces: &FaceSelection,
+        mode: &RuledSurfaceMode,
+        angle: &Option<Angle>,
+        alternate_face: &Option<bool>,
+        corner: &Option<RuledSurfaceCorner>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::RuledSurface {
-            edges,
-            support_faces,
-            mode,
-            angle,
-            alternate_face,
-            corner,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if angle.is_some() || alternate_face.is_some() || corner.is_some() {
@@ -192,21 +194,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_shell(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_shell(
+        &self,
+        bodies: &Option<BodySelection>,
+        removed_faces: &FaceSelection,
+        thickness: &Option<Length>,
+        outward: &Option<bool>,
+        mode: &Option<ShellMode>,
+        join: &Option<ShellJoin>,
+        resolve_intersections: &Option<bool>,
+        allow_self_intersections: &Option<bool>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Shell {
-            bodies,
-            removed_faces,
-            thickness,
-            outward,
-            mode,
-            join,
-            resolve_intersections,
-            allow_self_intersections,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if bodies.is_some()
@@ -281,16 +280,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_thicken(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_thicken(
+        &self,
+        faces: &FaceSelection,
+        thickness: &Option<Length>,
+        side: &Option<ThickenSide>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Thicken {
-            faces,
-            thickness,
-            side,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             use cadmpeg_ir::features::ThickenSide;
@@ -362,11 +358,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_offset_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_offset_surface(
+        &self,
+        faces: &FaceSelection,
+        distance: &Option<Length>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let selection = face_selection_value(faces).ok_or_else(|| {
@@ -402,17 +399,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_knit_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_knit_surface(
+        &self,
+        faces: &FaceSelection,
+        merge_entities: &Option<bool>,
+        create_solid: &Option<bool>,
+        gap_tolerance: &Option<Length>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::KnitSurface {
-            faces,
-            merge_entities,
-            create_solid,
-            gap_tolerance,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let selection = face_selection_value(faces).ok_or_else(|| {
@@ -463,18 +457,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_filled_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_filled_surface(
+        &self,
+        boundary: &SurfaceBoundary,
+        support_faces: &FaceSelection,
+        continuity: &Option<SurfaceContinuity>,
+        boundary_continuities: &Vec<SurfaceContinuity>,
+        merge_result: &Option<bool>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::FilledSurface {
-            boundary,
-            support_faces,
-            continuity,
-            boundary_continuities,
-            merge_result,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
@@ -532,20 +523,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_draft(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_draft(
+        &self,
+        face_selection: &FaceSelection,
+        plane_selection: &FaceSelection,
+        parting_tool: &Option<FaceSelection>,
+        pull_plane: &Option<FeatureId>,
+        pull_direction: &Option<Vector3>,
+        angle: &Option<Angle>,
+        outward: &Option<bool>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Draft {
-            faces: face_selection,
-            neutral_plane: plane_selection,
-            parting_tool,
-            pull_plane,
-            pull_direction,
-            angle,
-            outward,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let faces = face_selection_value(face_selection);

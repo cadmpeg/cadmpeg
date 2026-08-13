@@ -1,34 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tree-node, cosmetic-thread, native, curve, helix, and unsupported write encoders.
 
-use super::super::{
-    face_selection_value, feature_tree_node_kind, format_angle_like, format_angle_rad,
-    format_f64_literal, format_length_like, format_length_mm, format_point3_mm, format_vector3,
-    is_helix, path_source, require_direction, require_same_family, valid_direction,
+use super::super::{format_angle_rad, format_f64_literal, format_length_mm, valid_direction};
+use super::format::{format_angle_like, format_length_like, format_point3_mm, format_vector3};
+use super::support::{
+    face_selection_value, feature_tree_node_kind, is_helix, path_source, require_direction,
+    require_same_family,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    CosmeticThreadExtent, CurveProjectionDirection, CurveProjectionDirectionState, FaceSelection,
-    FeatureDefinition,
+    Angle, CosmeticThreadExtent, CurveProjectionDirection, CurveProjectionDirectionState,
+    FaceSelection, FeatureId, FeatureTreeNodeRole, HelixConstructionStyle, Length, PathRef,
 };
+use cadmpeg_ir::math::{Point3, Vector3};
+use std::collections::BTreeMap;
 
 #[allow(
-    clippy::unnecessary_wraps,
-    reason = "Per-feature encoders use one fallible dispatch interface."
+    clippy::too_many_arguments,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::ref_option,
+    clippy::ptr_arg,
+    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
 )]
 impl NeutralFeatureEncoder<'_, '_, '_> {
-    pub(super) fn encode_tree_node(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_tree_node(
+        &self,
+        role: &FeatureTreeNodeRole,
+        children: &Vec<FeatureId>,
+        active_child: &Option<FeatureId>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::TreeNode {
-            role,
-            children,
-            active_child,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         let retained_tree_node_roles = self.retained_tree_node_roles;
         Ok({
@@ -58,16 +61,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_cosmetic_thread(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_cosmetic_thread(
+        &self,
+        face: &FaceSelection,
+        diameter: &Option<Length>,
+        extent: &Option<CosmeticThreadExtent>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::CosmeticThread {
-            face,
-            diameter,
-            extent,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let Some(record) =
@@ -118,43 +118,32 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_native(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_native(
+        &self,
+        kind: &String,
+        parameters: &BTreeMap<String, String>,
+        properties: &BTreeMap<String, String>,
+    ) -> NeutralFeatureEncoding {
         let feature = self.feature;
-        let FeatureDefinition::Native {
-            kind,
-            parameters,
-            properties,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
-        Ok({
-            let mut merged = feature.source_properties.clone();
-            merged.extend(properties.clone());
-            (kind.clone(), parameters.clone(), merged)
-        })
+        let mut merged = feature.source_properties.clone();
+        merged.extend(properties.clone());
+        (kind.clone(), parameters.clone(), merged)
     }
 
-    pub(super) fn encode_stored_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_stored_geometry(&self) -> NeutralFeatureEncoding {
         let feature = self.feature;
-        let FeatureDefinition::StoredGeometry = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
-        Ok((
+        (
             existing.map_or_else(|| "Feature".into(), |record| record.kind.clone()),
             existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default(),
             feature.source_properties.clone(),
-        ))
+        )
     }
 
     pub(super) fn encode_derived_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DerivedGeometry { .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses unsupported copied-geometry semantics",
             feature.id
@@ -163,9 +152,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_imported_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::ImportedGeometry { .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses unsupported external-import semantics",
             feature.id
@@ -174,28 +160,22 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_primitive(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Primitive { .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses unsupported analytic-primitive semantics",
             feature.id
         )))
     }
 
-    pub(super) fn encode_equation_curve(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_equation_curve(
+        &self,
+        parameter: &String,
+        x_expression: &String,
+        y_expression: &String,
+        z_expression: &String,
+        start: &f64,
+        end: &f64,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::EquationCurve {
-            parameter,
-            x_expression,
-            y_expression,
-            z_expression,
-            start,
-            end,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if parameter.trim().is_empty()
@@ -236,17 +216,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_projected_curve(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_projected_curve(
+        &self,
+        source: &PathRef,
+        target_faces: &FaceSelection,
+        direction: &CurveProjectionDirection,
+        bidirectional: &Option<bool>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::ProjectedCurve {
-            source,
-            target_faces,
-            direction,
-            bidirectional,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
@@ -299,11 +276,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_composite_curve(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_composite_curve(
+        &self,
+        segments: &Vec<PathRef>,
+        closed: &bool,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::CompositeCurve { segments, closed } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
@@ -339,24 +317,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_helix(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_helix(
+        &self,
+        axis_origin: &Point3,
+        axis_direction: &Vector3,
+        radius: &Length,
+        pitch: &Length,
+        revolutions: &f64,
+        start_angle: &Angle,
+        clockwise: &bool,
+        radial_growth: &Option<Length>,
+        cone_angle: &Option<Angle>,
+        segment_turns: &Option<f64>,
+        construction_style: &Option<HelixConstructionStyle>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Helix {
-            axis_origin,
-            axis_direction,
-            radius,
-            pitch,
-            revolutions,
-            start_angle,
-            clockwise,
-            radial_growth,
-            cone_angle,
-            segment_turns,
-            construction_style,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if radial_growth.is_some()
@@ -409,19 +384,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_helix_native_axis(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_helix_native_axis(
+        &self,
+        axis_native_ref: &String,
+        axial_rise: &Length,
+        pitch: &Length,
+        revolutions: &f64,
+        start_angle: &Angle,
+        clockwise: &bool,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::HelixNativeAxis {
-            axis_native_ref,
-            axial_rise,
-            pitch,
-            revolutions,
-            start_angle,
-            clockwise,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if axis_native_ref.is_empty()
@@ -478,9 +450,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_offset_shape(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::OffsetShape { .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses unsupported whole-shape offset semantics",
             feature.id
@@ -489,9 +458,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_post_process(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::PostProcess { .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses unsupported topology post-processing semantics",
             feature.id
@@ -500,17 +466,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_curve_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let (FeatureDefinition::PointGeometry { .. }
-        | FeatureDefinition::LineSegment { .. }
-        | FeatureDefinition::CircularArc { .. }
-        | FeatureDefinition::EllipticArc { .. }
-        | FeatureDefinition::Polyline { .. }
-        | FeatureDefinition::RegularPolygonCurve { .. }
-        | FeatureDefinition::PlanarPatch { .. }
-        | FeatureDefinition::FaceFromShapes { .. }) = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses unsupported construction-geometry semantics",
             feature.id
@@ -519,16 +474,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_shape_operation(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let (FeatureDefinition::Compound { .. }
-        | FeatureDefinition::RefineShape { .. }
-        | FeatureDefinition::ReverseShape { .. }
-        | FeatureDefinition::RuledBetweenCurves { .. }
-        | FeatureDefinition::SectionShape { .. }
-        | FeatureDefinition::MirrorShape { .. }
-        | FeatureDefinition::ProjectOnSurface { .. }) = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses unsupported derived-shape semantics",
             feature.id
@@ -537,9 +482,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_binder(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Binder { .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses design-binder semantics that cannot be written",
             feature.id
@@ -550,19 +492,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let (FeatureDefinition::DatumPointUnresolved
-        | FeatureDefinition::DatumCoordinateSystemUnresolved
-        | FeatureDefinition::Block { .. }
-        | FeatureDefinition::ExtractBody { .. }
-        | FeatureDefinition::LoftUnresolved
-        | FeatureDefinition::FreeformSurfaceUnresolved
-        | FeatureDefinition::DraftUnresolved
-        | FeatureDefinition::FaceBlend { .. }
-        | FeatureDefinition::SewBodies { .. }
-        | FeatureDefinition::TrimBodies { .. }) = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} uses semantics that cannot be written",
             feature.id

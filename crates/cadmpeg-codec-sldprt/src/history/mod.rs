@@ -7782,60 +7782,12 @@ fn empty_feature_tree_node(feature: &Feature) -> bool {
         && feature.content.is_empty()
 }
 
-fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
-    match role {
-        FeatureTreeNodeRole::Annotations => "Annotations",
-        FeatureTreeNodeRole::AmbientLight => "Ambient",
-        FeatureTreeNodeRole::Comments => "Comments",
-        FeatureTreeNodeRole::CrossSections => "Cross Sections",
-        FeatureTreeNodeRole::DesignBinder => "Design Binder",
-        FeatureTreeNodeRole::Details => "Details",
-        FeatureTreeNodeRole::DissectedProfile => "Profile Selection",
-        FeatureTreeNodeRole::DirectionalLight => "Directional",
-        FeatureTreeNodeRole::Equations => "Equations",
-        FeatureTreeNodeRole::ExplodedViews => "Exploded Views",
-        FeatureTreeNodeRole::Favorites => "Favorites",
-        FeatureTreeNodeRole::FeatureFolder => "Folder",
-        FeatureTreeNodeRole::History => "History",
-        FeatureTreeNodeRole::LightsAndCameras => "Lights and Cameras",
-        FeatureTreeNodeRole::Markups => "Markups",
-        FeatureTreeNodeRole::ModelOrigin => "Origin",
-        FeatureTreeNodeRole::PointLight => "Point Light",
-        FeatureTreeNodeRole::Materials => "SOLIDWORKS Materials",
-        FeatureTreeNodeRole::Notes => "Notes",
-        FeatureTreeNodeRole::SelectionSets => "Selection Sets",
-        FeatureTreeNodeRole::Sensors => "Sensors",
-        FeatureTreeNodeRole::SheetMetal => "Sheet Metal",
-        FeatureTreeNodeRole::SolidBodies => "Solid Bodies",
-        FeatureTreeNodeRole::SpotLight => "Spot Light",
-        FeatureTreeNodeRole::SurfaceBodies => "Surface Bodies",
-        FeatureTreeNodeRole::Tables => "Tables",
-    }
-}
-
 fn feature_family(feature: &Feature, family: &str) -> bool {
     feature.xml_tag.eq_ignore_ascii_case(family)
         || feature.kind.eq_ignore_ascii_case(family)
         || classify_type_token(family)
             .or_else(|| classify_xml_element(family))
             .is_some_and(|expected| classify(feature) == Some(expected))
-}
-
-/// Reject a neutral edit that retargets an existing native record to an
-/// operation family it did not originate in. A missing record (a freshly
-/// synthesized feature) always passes.
-fn require_same_family(
-    existing: Option<&Feature>,
-    feature_id: &FeatureId,
-    families: &[&str],
-) -> Result<(), CodecError> {
-    if existing.is_some_and(|record| !families.iter().any(|family| feature_family(record, family)))
-    {
-        return Err(CodecError::NotImplemented(format!(
-            "SLDPRT feature {feature_id} changes operation family"
-        )));
-    }
-    Ok(())
 }
 
 fn feature_input_class(feature: &Feature, class: NativeClassKind) -> bool {
@@ -7866,22 +7818,6 @@ fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
     (feature.input_class.as_deref() == Some("moCut_c"))
         .then_some(BooleanOp::Cut)
         .or_else(|| extrude_op(&feature.kind))
-}
-
-fn is_revolve(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::Revolve)
-}
-
-fn is_loft(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::Loft)
-}
-
-fn is_sweep(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::Sweep)
-}
-
-fn is_helix(feature: &Feature) -> bool {
-    classify(feature) == Some(FeatureClass::Helix)
 }
 
 fn is_offset_plane(feature: &Feature) -> bool {
@@ -10160,37 +10096,6 @@ pub(crate) fn parse_dimension_length_mm(value: &str) -> Option<f64> {
     })
 }
 
-fn format_length_like(value: f64, previous: Option<&str>) -> String {
-    let previous = previous.map(str::trim).unwrap_or_default();
-    if previous.starts_with(['R', 'r']) {
-        format!("R{value}")
-    } else if previous.starts_with(['\u{2300}', '\u{00d8}']) {
-        format!("\u{2300}{value}")
-    } else if previous.parse::<f64>().is_ok() {
-        format_f64_literal(value)
-    } else {
-        format_length_mm(value)
-    }
-}
-
-fn format_angle_like(value: f64, previous: Option<&str>) -> String {
-    if previous
-        .map(str::trim)
-        .is_some_and(|value| value.ends_with('\u{00b0}'))
-    {
-        let degrees = value.to_degrees();
-        let rounded = degrees.round();
-        let degrees = if (degrees - rounded).abs() <= 1.0e-12 {
-            rounded
-        } else {
-            degrees
-        };
-        format!("{degrees}\u{00b0}")
-    } else {
-        format_angle_rad(value)
-    }
-}
-
 pub(crate) fn format_length_mm(value: f64) -> String {
     format!("{}mm", format_f64_literal(value))
 }
@@ -10547,101 +10452,6 @@ fn parse_valid_direction(value: &str) -> Option<Vector3> {
     parse_vector3(value).filter(|value| valid_direction(*value))
 }
 
-fn format_point3_mm(value: Point3) -> String {
-    format!("{}mm,{}mm,{}mm", value.x, value.y, value.z)
-}
-
-fn format_vector3(value: Vector3) -> String {
-    format!("{},{},{}", value.x, value.y, value.z)
-}
-
-fn write_native_selection(
-    properties: &mut BTreeMap<String, String>,
-    key: &str,
-    selection: &str,
-    fallback: &str,
-) {
-    if selection != fallback || properties.contains_key(key) {
-        properties.insert(key.into(), selection.into());
-    } else {
-        properties.remove(key);
-    }
-}
-
-fn face_selection_value(selection: &FaceSelection) -> Option<String> {
-    match selection {
-        FaceSelection::Native(native)
-        | FaceSelection::Resolved { native, .. }
-        | FaceSelection::Generated { native, .. }
-            if !native.trim().is_empty() =>
-        {
-            Some(native.clone())
-        }
-        FaceSelection::Faces(faces) if !faces.is_empty() => Some(
-            faces
-                .iter()
-                .map(|face| face.0.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        _ => None,
-    }
-}
-
-fn vertex_selection_value(selection: &VertexSelection) -> Option<String> {
-    match selection {
-        VertexSelection::Native(native)
-        | VertexSelection::Generated { native, .. }
-        | VertexSelection::Historical { native, .. }
-            if !native.trim().is_empty() =>
-        {
-            Some(native.clone())
-        }
-        _ => None,
-    }
-}
-
-fn edge_selection_value(selection: &EdgeSelection) -> Option<String> {
-    match selection {
-        EdgeSelection::Native(native)
-        | EdgeSelection::Resolved { native, .. }
-        | EdgeSelection::Generated { native, .. }
-            if !native.trim().is_empty() =>
-        {
-            Some(native.clone())
-        }
-        EdgeSelection::Edges(edges) if !edges.is_empty() => Some(
-            edges
-                .iter()
-                .map(|edge| edge.0.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        _ => None,
-    }
-}
-
-fn body_selection_value(selection: &BodySelection) -> Option<String> {
-    match selection {
-        BodySelection::Native(native)
-        | BodySelection::Resolved { native, .. }
-        | BodySelection::Generated { native, .. }
-        | BodySelection::Local { native, .. }
-            if !native.trim().is_empty() =>
-        {
-            Some(native.clone())
-        }
-        BodySelection::Bodies(bodies) if !bodies.is_empty() => Some(
-            bodies
-                .iter()
-                .map(|body| body.0.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        _ => None,
-    }
-}
-
 fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
     match value.to_ascii_lowercase().as_str() {
         "join" => Some(BooleanOp::Join),
@@ -10650,24 +10460,6 @@ fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
         "newbody" | "new_body" => Some(BooleanOp::NewBody),
         _ => None,
     }
-}
-
-fn format_boolean_op(value: BooleanOp) -> Option<&'static str> {
-    Some(match value {
-        BooleanOp::Unresolved => return None,
-        BooleanOp::Join => "Join",
-        BooleanOp::Cut => "Cut",
-        BooleanOp::Intersect => "Intersect",
-        BooleanOp::NewBody => "NewBody",
-    })
-}
-
-fn resolved_boolean_op(value: BooleanOp, feature: &FeatureId) -> Result<&'static str, CodecError> {
-    format_boolean_op(value).ok_or_else(|| {
-        CodecError::NotImplemented(format!(
-            "SLDPRT feature {feature} has an unresolved boolean operation"
-        ))
-    })
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -13868,67 +13660,6 @@ fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {
     }
 }
 
-fn profile_source(
-    profile: &ProfileRef,
-    native: &HashMap<String, String>,
-    features: &HashMap<&FeatureId, &str>,
-    sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
-) -> Option<String> {
-    match profile {
-        ProfileRef::Unresolved(_) => None,
-        ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
-        ProfileRef::Sketch(id) => sketches.get(id).cloned(),
-        ProfileRef::SketchProfiles { sketch, .. }
-        | ProfileRef::SketchRegions { sketch, .. }
-        | ProfileRef::SketchEntities { sketch, .. }
-        | ProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
-        ProfileRef::SpatialSketchProfiles { .. }
-        | ProfileRef::SpatialSketchSelection { .. }
-        | ProfileRef::HistoricalFaces { .. } => None,
-        ProfileRef::Feature(id) => features.get(id).map(|source| (*source).to_string()),
-        ProfileRef::Generated { .. } => None,
-        ProfileRef::Faces(faces) if !faces.is_empty() => Some(
-            faces
-                .iter()
-                .map(|face| face.0.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        ProfileRef::Faces(_) => None,
-    }
-}
-
-fn path_source(
-    path: &PathRef,
-    native: &HashMap<String, String>,
-    sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
-) -> Option<String> {
-    match path {
-        PathRef::Unresolved(_) => None,
-        PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
-        PathRef::Sketch(id) => sketches.get(id).cloned(),
-        PathRef::SketchCurves { .. }
-        | PathRef::SpatialSketchCurves { .. }
-        | PathRef::SpatialSketchSelection { .. }
-        | PathRef::HistoricalEdges { .. } => None,
-        PathRef::Edges(edges) if !edges.is_empty() => Some(
-            edges
-                .iter()
-                .map(|edge| edge.0.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        PathRef::Curves(curves) if !curves.is_empty() => Some(
-            curves
-                .iter()
-                .map(|curve| curve.0.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        PathRef::Edges(_) | PathRef::Curves(_) => None,
-    }
-}
-
 fn extrude_op(kind: &str) -> Option<BooleanOp> {
     let kind = kind
         .bytes()
@@ -13947,30 +13678,6 @@ fn loft_op(kind: &str) -> Option<BooleanOp> {
         "bossloft" | "boundaryboss" => Some(BooleanOp::Join),
         "cutloft" | "boundarycut" => Some(BooleanOp::Cut),
         _ => None,
-    }
-}
-
-fn require_direction(
-    direction: Vector3,
-    feature: &FeatureId,
-    role: &str,
-) -> Result<(), CodecError> {
-    if direction.norm().is_finite() && direction.norm() > 0.0 {
-        Ok(())
-    } else {
-        Err(CodecError::Malformed(format!(
-            "SLDPRT feature {feature} has a degenerate {role}"
-        )))
-    }
-}
-
-fn require_count(count: u32, feature: &FeatureId) -> Result<(), CodecError> {
-    if count > 0 {
-        Ok(())
-    } else {
-        Err(CodecError::Malformed(format!(
-            "SLDPRT feature {feature} has a zero pattern count"
-        )))
     }
 }
 

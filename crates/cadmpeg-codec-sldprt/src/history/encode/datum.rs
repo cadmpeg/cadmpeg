@@ -1,26 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-plane, axis, point, and coordinate-system write encoders.
 
-use super::super::{
-    format_length_like, format_point3_mm, format_vector3, is_offset_plane, require_same_family,
-    valid_coordinate_frame, valid_direction, valid_plane_frame,
-};
+use super::super::{is_offset_plane, valid_coordinate_frame, valid_direction, valid_plane_frame};
+use super::format::{format_length_like, format_point3_mm, format_vector3};
+use super::support::require_same_family;
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DatumPlaneReference, FeatureDefinition};
+use cadmpeg_ir::features::{DatumPlaneReference, Length, PrincipalPlane};
+use cadmpeg_ir::math::{Point3, Vector3};
 
 #[allow(
-    clippy::unnecessary_wraps,
-    reason = "Per-feature encoders use one fallible dispatch interface."
+    clippy::too_many_arguments,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::ref_option,
+    clippy::ptr_arg,
+    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
 )]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_datum_principal_plane(
         &self,
+        plane: &PrincipalPlane,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DatumPrincipalPlane { plane } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         let principal_planes_by_record = self.principal_planes_by_record;
         Ok({
@@ -48,25 +49,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DatumPlaneUnresolved = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         Err(CodecError::NotImplemented(format!(
             "SLDPRT feature {} has unresolved datum-plane construction",
             feature.id
         )))
     }
 
-    pub(super) fn encode_datum_plane(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_datum_plane(
+        &self,
+        origin: &Point3,
+        normal: &Vector3,
+        u_axis: &Vector3,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if !valid_plane_frame(*normal, *u_axis) {
@@ -99,15 +94,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_datum_offset_plane(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_datum_offset_plane(
+        &self,
+        reference: &Option<DatumPlaneReference>,
+        distance: &Length,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DatumOffsetPlane {
-            reference,
-            distance,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         let parent_sources = self.parent_sources;
         Ok({
@@ -178,11 +170,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_datum_axis(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_datum_axis(
+        &self,
+        origin: &Point3,
+        direction: &Vector3,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DatumAxis { origin, direction } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if !valid_direction(*direction) {
@@ -214,11 +207,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_datum_point(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_datum_point(
+        &self,
+        position: &Point3,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DatumPoint { position, .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if ![position.x, position.y, position.z]
@@ -245,17 +238,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_datum_coordinate_system(
         &self,
+        origin: &Point3,
+        x_axis: &Vector3,
+        y_axis: &Vector3,
+        z_axis: &Vector3,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DatumCoordinateSystem {
-            origin,
-            x_axis,
-            y_axis,
-            z_axis,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if !valid_coordinate_frame(*origin, *x_axis, *y_axis, *z_axis) {
