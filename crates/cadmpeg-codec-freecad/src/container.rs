@@ -17,9 +17,15 @@ pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
     if prefix.len() < 30 || &prefix[..4] != b"PK\x03\x04" {
         return false;
     }
-    let method = u16::from_le_bytes([prefix[8], prefix[9]]);
-    let name_len = u16::from_le_bytes([prefix[26], prefix[27]]) as usize;
-    let extra_len = u16::from_le_bytes([prefix[28], prefix[29]]) as usize;
+    let Some(method) = View::u16_le_at(prefix, 8) else {
+        return false;
+    };
+    let Some(name_len) = View::u16_le_at(prefix, 26).map(usize::from) else {
+        return false;
+    };
+    let Some(extra_len) = View::u16_le_at(prefix, 28).map(usize::from) else {
+        return false;
+    };
     let name_end = 30_usize.saturating_add(name_len);
     let data_start = name_end.saturating_add(extra_len);
     if name_end > prefix.len()
