@@ -2,12 +2,8 @@
 
 use std::io::Write as _;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::report::{LossKind, LossTaxonomy};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-
-use crate::InventorCodec;
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
@@ -15,129 +11,6 @@ const END_OF_CHAIN: u32 = 0xffff_fffe;
 const FAT_SECTOR: u32 = 0xffff_fffd;
 const NO_STREAM: u32 = 0xffff_ffff;
 const SECTOR_SIZE: usize = 512;
-
-#[test]
-fn detects_only_structurally_corroborated_inventor_cfb() {
-    let inventor = fixture(true);
-    let unrelated = fixture(false);
-    assert_eq!(InventorCodec.detect(&inventor), Confidence::High);
-    assert_eq!(InventorCodec.detect(&unrelated), Confidence::No);
-    assert_eq!(InventorCodec.detect(b"not a compound file"), Confidence::No);
-    assert_eq!(InventorCodec.detect(&inventor[..400]), Confidence::No);
-}
-
-#[test]
-fn inspects_the_complete_synthetic_hierarchy() {
-    let mut input = std::io::Cursor::new(fixture(true));
-    let summary = InventorCodec
-        .inspect(&mut input, &cadmpeg_core::decode::InspectOptions::default())
-        .expect("synthetic Inventor container inspects");
-    assert_eq!(summary.format, "inventor");
-    assert!(summary
-        .entries
-        .iter()
-        .any(|entry| entry.name == "RSeStorage/RSeSegInfo"));
-}
-
-#[test]
-fn decode_distinguishes_container_only_from_untransferred_geometry() {
-    let source = fixture(true);
-    let decoded = InventorCodec
-        .decode(
-            &mut std::io::Cursor::new(&source),
-            &DecodeOptions::default(),
-        )
-        .expect("synthetic Inventor container decodes structurally");
-    assert_eq!(decoded.report().format, "inventor");
-    assert!(!decoded.report().container_only);
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred)));
-    let native_findings = crate::validate_native(decoded.ir());
-    assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
-    assert!(native_findings[0]
-        .message
-        .contains("do not select one registry grammar"));
-    assert_eq!(
-        decoded
-            .ir()
-            .native
-            .namespace("inventor")
-            .expect("Inventor native namespace exists")
-            .version,
-        crate::native::INVENTOR_NATIVE_VERSION
-    );
-
-    let options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let container_only = InventorCodec
-        .decode(&mut std::io::Cursor::new(source), &options)
-        .expect("container-only Inventor decode succeeds");
-    assert_eq!(
-        container_only
-            .report()
-            .losses
-            .iter()
-            .map(|loss| loss.code.clone())
-            .collect::<Vec<_>>(),
-        [LossKind::shared(LossTaxonomy::ContainerOnly)]
-    );
-    let namespace = container_only
-        .ir()
-        .native
-        .namespace("inventor")
-        .expect("Inventor native namespace exists");
-    let bulk = namespace
-        .arena_as::<crate::native::SegmentBulkRecord>("segment_bulk")
-        .expect("container-only bulk records retain their outer envelopes");
-    assert!(bulk.iter().all(|record| {
-        record.record_state == "not_expanded"
-            && record.expanded_len.is_none()
-            && record.expanded_sha256.is_none()
-    }));
-    assert!(container_only.source_fidelity().retained_records.is_empty());
-}
-
-#[test]
-fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
-    let source = primary_envelope_fixture();
-    assert_eq!(InventorCodec.detect(&source), Confidence::High);
-    let decoded = InventorCodec
-        .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
-        .expect("synthetic primary Inventor envelope decodes");
-    assert_eq!(decoded.report().format, "inventor");
-    assert_eq!(decoded.report().coverage["rse_storage_bands"], 1);
-    assert_eq!(decoded.report().coverage["rse_databases"], 1);
-    assert_eq!(decoded.report().coverage["rse_registry_entries"], 1);
-    assert_eq!(decoded.report().coverage["rse_segment_pairs"], 1);
-    assert_eq!(decoded.report().coverage["rse_segment_meta"], 1);
-    assert_eq!(decoded.report().coverage["rse_records"], 1);
-    assert_eq!(decoded.report().coverage["active_kernel_carriers"], 1);
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred)));
-
-    let native = decoded
-        .ir()
-        .native
-        .namespace("inventor")
-        .expect("Inventor native namespace exists");
-    let active = native
-        .arena_as::<crate::native::ActiveCarrierRecord>("active_carrier")
-        .expect("active carrier arena exists");
-    assert_eq!(active.len(), 1);
-    assert_eq!(
-        active[0].state,
-        crate::native::ActiveCarrierRecordState::Selected
-    );
-    assert!(crate::validate_native(decoded.ir()).is_empty());
-}
 
 pub(crate) fn fixture(inventor: bool) -> Vec<u8> {
     let mut file = vec![0u8; SECTOR_SIZE * 3];

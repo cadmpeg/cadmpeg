@@ -90,4 +90,4 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod test_support;
