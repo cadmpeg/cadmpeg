@@ -9,7 +9,6 @@
 use std::borrow::Cow;
 
 use cadmpeg_core::decode::{bounded_len, View};
-use cadmpeg_core::le::{u32_at as u32_le, u64_at as u64_le};
 use cadmpeg_core::CodecError;
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
@@ -193,9 +192,9 @@ impl Container<'_> {
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let payload = self.data.get(offset..offset.checked_add(size)?)?;
         let row_one = payload.get(12..24)?;
-        let type_code = u32_le(row_one, 0)?;
-        let subtype_code = u32_le(row_one, 4)?;
-        let byte_len = usize::try_from(u32_le(row_one, 8)?).ok()?;
+        let type_code = View::u32_le_at(row_one, 0)?;
+        let subtype_code = View::u32_le_at(row_one, 4)?;
+        let byte_len = usize::try_from(View::u32_le_at(row_one, 8)?).ok()?;
         if type_code != 1 || subtype_code != 1 || !(24..=payload.len()).contains(&byte_len) {
             return None;
         }
@@ -203,9 +202,9 @@ impl Container<'_> {
         let rows = payload[..complete_len]
             .chunks_exact(12)
             .map(|row| SegmentIndexRow {
-                type_code: u32_le(row, 0).expect("complete segment-index row"),
-                subtype_code: u32_le(row, 4).expect("complete segment-index row"),
-                value: u32_le(row, 8).expect("complete segment-index row"),
+                type_code: View::u32_le_at(row, 0).expect("complete segment-index row"),
+                subtype_code: View::u32_le_at(row, 4).expect("complete segment-index row"),
+                value: View::u32_le_at(row, 8).expect("complete segment-index row"),
             })
             .collect();
         Some((
@@ -248,7 +247,7 @@ impl Container<'_> {
                 let Some(wrapper) = payload.get(relative..) else {
                     continue;
                 };
-                let Some(wrapper_word) = u32_le(wrapper, 0) else {
+                let Some(wrapper_word) = View::u32_le_at(wrapper, 0) else {
                     continue;
                 };
                 let extension = (wrapper_word & 0x3fff_ffff) as usize;
@@ -415,7 +414,7 @@ impl Container<'_> {
         // product record. The first complete span is the table boundary.
         let (count_offset, count, ids_start, ids_end) =
             (search_start..bytes.len().saturating_sub(3)).find_map(|count_offset| {
-                let count = usize::try_from(u32_le(bytes, count_offset)?).ok()?;
+                let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
                 let id_bytes = count.checked_mul(4)?;
                 let ids_start = count_offset.checked_add(4)?;
                 let ids_end = ids_start.checked_add(id_bytes)?;
@@ -487,7 +486,7 @@ pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(u
         .rev()
         .find_map(|marker| {
             (payload[marker] == 1).then_some(())?;
-            let count = u32_le(payload, marker + 1)? as usize;
+            let count = View::u32_le_at(payload, marker + 1)? as usize;
             let mut pos = marker + 5;
             // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
             let count = bounded_len(count as u64, 3, payload.len().saturating_sub(pos))?;
@@ -571,13 +570,13 @@ pub(crate) fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefInde
     let mut record_ids = std::collections::BTreeSet::new();
     let mut at = 25usize;
     loop {
-        let record_id = u32_le(payload, at)?;
+        let record_id = View::u32_le_at(payload, at)?;
         at += 4;
         if record_id == 0 {
             break;
         }
         record_ids.insert(record_id).then_some(())?;
-        let offset = u32_le(payload, at)?;
+        let offset = View::u32_le_at(payload, at)?;
         at += 4;
         let offset = offset as usize;
         if offset >= string_table {
@@ -764,7 +763,7 @@ fn directory_region(
             String::from_utf8_lossy(&marker)
         )));
     }
-    let count = u32_le(data, count_offset)
+    let count = View::u32_le_at(data, count_offset)
         .ok_or_else(|| CodecError::Malformed("truncated directory entry count".to_string()))?;
     let capacity = usize::try_from(count)
         .map_err(|_| CodecError::Malformed("directory entry count exceeds address space".into()))?;
@@ -799,7 +798,7 @@ fn directory_region(
 /// of printable ASCII beginning `/Root`, then a 16-byte payload. Returns the entry
 /// and the offset just past its payload.
 fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)> {
-    let name_len = u32_le(data, o)? as usize;
+    let name_len = View::u32_le_at(data, o)? as usize;
     if !(6..=128).contains(&name_len) {
         return None;
     }
@@ -812,7 +811,10 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
     let name = String::from_utf8_lossy(raw).into_owned();
     let payload = name_end;
     // Interpret the 16-byte payload as a file span when it lands within the file.
-    let file_span = match (u64_le(data, payload), u64_le(data, payload + 8)) {
+    let file_span = match (
+        View::u64_le_at(data, payload),
+        View::u64_le_at(data, payload + 8),
+    ) {
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);
             match end {
