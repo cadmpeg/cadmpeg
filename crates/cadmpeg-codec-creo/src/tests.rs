@@ -3,4 +3,3 @@
 #![allow(unused_imports)]
 
 mod resolved;
-mod schema;

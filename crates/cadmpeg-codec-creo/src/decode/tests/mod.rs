@@ -13,6 +13,7 @@ mod generated_source;
 mod interpolation_spline;
 mod numbered_intersect;
 mod saved_line;
+mod schema;
 mod section_solver_constraints_require_complete_unique_semantics;
 mod sketch_curve;
 mod zero_orientation;
