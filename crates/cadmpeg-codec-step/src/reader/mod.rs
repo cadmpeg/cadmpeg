@@ -24,7 +24,7 @@ mod index;
 mod pmi;
 mod presentation;
 mod product;
-mod tessellation;
+pub(crate) mod tessellation;
 mod topology;
 mod validation;
 
