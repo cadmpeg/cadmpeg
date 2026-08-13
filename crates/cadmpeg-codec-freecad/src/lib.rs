@@ -2176,6 +2176,200 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[cfg(test)]
+mod text_geometry_tests {
+    #[test]
+    fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
+        let center = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
+        let curve = crate::brep::TextCurve::Circle {
+            center,
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius: 0.0,
+        };
+        let association = cadmpeg_ir::SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id: "object".into(),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        let mut transfer = crate::CurveTransfer::default();
+
+        let geometry = crate::append_text_curve(
+            &curve,
+            cadmpeg_ir::ids::CurveId("curve".into()),
+            &association,
+            &mut transfer,
+        );
+
+        assert_eq!(
+            geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Degenerate { point: center }
+        );
+    }
+
+    #[test]
+    fn transfers_occt_revolution_surface_parameter_order() {
+        let surface = crate::brep::TextSurface::Revolution {
+            axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            directrix: Box::new(crate::brep::TextCurve::Circle {
+                center: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            }),
+        };
+        let association = cadmpeg_ir::SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id: "fcstd:native:object#Surface".into(),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        let mut curves = crate::CurveTransfer::default();
+        let mut surfaces = crate::SurfaceTransfer::default();
+        crate::append_text_surface(
+            &surface,
+            cadmpeg_ir::ids::SurfaceId("fcstd:model:surface#revolution".into()),
+            &association,
+            &mut curves,
+            &mut surfaces,
+        );
+        assert!(matches!(
+            surfaces.procedural[0].definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+                transposed: true,
+                ..
+            }
+        ));
+    }
+}
+
+#[cfg(test)]
+mod decode_tests {
+    use crate::test_support::*;
+    use crate::FcstdCodec;
+    use cadmpeg_ir::{Codec, CodecBackend, Confidence, DecodeOptions};
+    use std::io::Cursor;
+
+    #[test]
+    fn decode_refuses_when_max_entities_is_below_object_cardinality() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="A" id="1"/>
+ <Object type="Part::Feature" name="B" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="A"><Properties Count="0"></Properties></Object>
+ <Object name="B"><Properties Count="0"></Properties></Object>
+</ObjectData></Document>"#;
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_entities = 1;
+        let error = FcstdCodec
+            .decode(&mut Cursor::new(archive(document)), &options)
+            .expect_err("max_entities below document object count must refuse at admission");
+        assert!(
+            matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::Entities
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn thumbnail_bytes_are_retained_with_digest() {
+        let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
+        let bytes = archive_entries(&[("Document.xml", xml), ("thumbnails/Thumbnail.png", b"png")]);
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("decode");
+        assert_eq!(
+            result.ir().native_unknowns_iter("fcstd").count(),
+            1,
+            "thumbnail has one product reference"
+        );
+        let retained = result
+            .source_fidelity()
+            .retained_records
+            .first()
+            .expect("retained thumbnail");
+        assert_eq!(retained.data.as_deref(), Some(b"png".as_slice()));
+    }
+
+    #[test]
+    fn retains_every_reference_to_a_shared_side_entry() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Feature" name="Owner"/></Objects>
+<ObjectData Count="1"><Object name="Owner"><Properties Count="2">
+<Property name="First" type="App::PropertyFileIncluded"><File file="Shared.bin"/></Property>
+<Property name="Second" type="App::PropertyFileIncluded"><File file="Shared.bin"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("Shared.bin", b"shared"),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect("shared side entry");
+        let namespace = result.ir().native.namespace("fcstd").expect("namespace");
+        let entries = namespace
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .expect("entries");
+        let shared = entries
+            .iter()
+            .find(|entry| entry.name == "Shared.bin")
+            .expect("shared entry");
+        let spans = namespace
+            .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+            .expect("logical ledger");
+        let span = spans
+            .iter()
+            .find(|span| span.entry == "Shared.bin")
+            .expect("shared entry span");
+
+        assert_eq!(shared.referenced_by.len(), 2);
+        assert_ne!(shared.referenced_by[0], shared.referenced_by[1]);
+        assert_eq!(span.classification, "named_opaque");
+        assert_eq!(span.owner.as_deref(), Some(shared.id.as_str()));
+        assert!(crate::validate_native(result.ir()).is_empty());
+    }
+
+    #[test]
+    fn detects_marker_but_not_arbitrary_zip() {
+        assert_eq!(
+            FcstdCodec.detect(&archive(
+                "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>"
+            )),
+            Confidence::High
+        );
+        let public = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
+        ));
+        assert_eq!(FcstdCodec.detect(&public[..512]), Confidence::High);
+        assert_eq!(FcstdCodec.detect(b"PK\x03\x04 unrelated"), Confidence::Low);
+        assert_eq!(FcstdCodec.detect(b"not zip"), Confidence::No);
+    }
+}
+
+#[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
 pub(crate) mod test_support;

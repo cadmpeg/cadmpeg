@@ -763,3 +763,6 @@ fn required_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Result<String, Co
 fn bool_attr(value: Option<&str>) -> Option<bool> {
     value.map(|value| matches!(value, "1" | "true" | "True" | "TRUE"))
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

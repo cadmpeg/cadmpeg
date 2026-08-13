@@ -5,6 +5,13 @@
 use super::*;
 use cadmpeg_ir::codec::CodecBackend;
 
+use crate::container::tests::rejects_unsafe_names;
+use crate::persistence::tests::{
+    legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts,
+    schema_three_uses_the_object_envelope_and_defaults_file_version,
+    schema_two_uses_the_feature_envelope_and_common_property_grammar,
+};
+
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -185,4 +192,119 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
         .arenas
         .contains_key("physical_ledger"));
     assert_valid(&result);
+}
+
+#[test]
+fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
+    let fixtures: [(&str, &[u8]); 12] = [
+        (
+            "external_component.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/external_component.FCStd"
+            )),
+        ),
+        (
+            "product_assembly.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/product_assembly.FCStd"
+            )),
+        ),
+        (
+            "core_operations.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
+            )),
+        ),
+        (
+            "sketch_constraints.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/sketch_constraints.FCStd"
+            )),
+        ),
+        (
+            "sketch_conics.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/sketch_conics.FCStd"
+            )),
+        ),
+        (
+            "gui_appearance.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/gui_appearance.FCStd"
+            )),
+        ),
+        (
+            "design_history.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/design_history.FCStd"
+            )),
+        ),
+        (
+            "binary_exact_shape.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd"
+            )),
+        ),
+        (
+            "application_payloads.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/application_payloads.FCStd"
+            )),
+        ),
+        (
+            "geometry_topology.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd"
+            )),
+        ),
+        (
+            "core_design_product.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
+            )),
+        ),
+        (
+            "techdraw_annotations.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/techdraw_annotations.FCStd"
+            )),
+        ),
+    ];
+    for (name, bytes) in fixtures {
+        let first = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let second = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(
+            first.ir().to_canonical_json().expect("canonical fixture"),
+            second.ir().to_canonical_json().expect("canonical fixture"),
+            "{name} is nondeterministic"
+        );
+        assert!(
+            first
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.severity < cadmpeg_ir::Severity::Blocking),
+            "{name}: {:#?}",
+            first.report().losses
+        );
+        let native_findings = crate::validate_native(first.ir());
+        assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
+        assert_valid_document(first.ir());
+    }
 }
