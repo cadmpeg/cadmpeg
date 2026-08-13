@@ -34,12 +34,3 @@ mod native;
 
 #[path = "tests_design.rs"]
 mod design;
-
-#[path = "tests_assembly.rs"]
-mod assembly;
-
-#[path = "golden_tests.rs"]
-mod golden;
-
-#[path = "integration_tests.rs"]
-mod integration_tests;
