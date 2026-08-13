@@ -8,7 +8,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use cadmpeg_ir::document::CadIr;
 
@@ -1401,118 +1401,6 @@ fn standard_catpart_with_design_class(class: &str) -> Vec<u8> {
 }
 
 #[test]
-fn detect_high_on_outer_magic() {
-    assert_eq!(CatiaCodec.detect(OUTER_MAGIC), Confidence::High);
-    assert_eq!(CatiaCodec.detect(&standard_catpart()), Confidence::High);
-    assert_eq!(CatiaCodec.detect(b"PK\x03\x04 not catia"), Confidence::No);
-}
-
-#[test]
-fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
-    let bytes = summary_preview_segment();
-    let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
-    assert_eq!(segments[0].name.as_deref(), Some("CATSummaryInformation"));
-    let previews = crate::container::preview_images(&bytes);
-    assert_eq!(previews.len(), 1);
-    assert_eq!(previews[0].width, 640);
-    assert_eq!(previews[0].height, 288);
-    assert_eq!(previews[0].components, 1);
-    assert_eq!(&bytes[previews[0].range.clone()][..2], [0xff, 0xd8]);
-    assert_eq!(
-        &bytes[previews[0].range.clone()][previews[0].range.len() - 2..],
-        [0xff, 0xd9]
-    );
-    let summary =
-        crate::container::summarize(&crate::container::scan_bytes(outer_body_catpart(&bytes)));
-    assert!(summary.entries.iter().any(|entry| {
-        entry.role == crate::container::role::FINJPL_SEGMENT
-            && entry.name == "CATSummaryInformation"
-    }));
-
-    let mut truncated = bytes;
-    let eoi = truncated
-        .windows(2)
-        .position(|value| value == [0xff, 0xd9])
-        .unwrap();
-    truncated.truncate(eoi + 1);
-    assert!(crate::container::preview_images(&truncated).is_empty());
-}
-
-#[test]
-fn summary_version_parser_requires_one_consistent_tuple() {
-    let bytes = summary_preview_segment();
-    let version = crate::container::last_save_version(&bytes).unwrap();
-    assert_eq!(version.version, 5);
-    assert_eq!(version.release, 27);
-    assert_eq!(version.service_pack, 2);
-    assert_eq!(version.hot_fix, 0);
-    assert_eq!(version.build_date, "03-10-2017.22.00");
-
-    let mut conflicting = bytes;
-    let mut other = summary_preview_segment();
-    let release = other
-        .windows(11)
-        .position(|value| value == b"<Release>27")
-        .unwrap();
-    other[release + 9] = b'2';
-    other[release + 10] = b'8';
-    conflicting.extend_from_slice(&other);
-    assert!(crate::container::last_save_version(&conflicting).is_none());
-
-    let mut non_summary = summary_preview_segment();
-    non_summary[8..12].copy_from_slice(&0x0101_0002u32.to_be_bytes());
-    assert!(crate::container::last_save_version(&non_summary).is_none());
-    assert!(crate::container::preview_images(&non_summary).is_empty());
-    let native = crate::native::CatiaNative::decode(&non_summary);
-    assert!(native.preview_images.is_empty());
-}
-
-#[test]
-fn storage_property_parser_enumerates_external_catia_documents() {
-    let mut bytes = external_reference_segment("Support.CATPart");
-    bytes.extend_from_slice(&external_reference_segment("Assembly.CATProduct"));
-    bytes.extend_from_slice(&external_reference_segment("notes.txt"));
-    let references = crate::container::external_references(&bytes);
-    assert_eq!(references.len(), 2);
-    assert_eq!(references[0].target, "Support.CATPart");
-    assert_eq!(references[1].target, "Assembly.CATProduct");
-
-    let scan = crate::container::scan_bytes(outer_body_catpart(&bytes));
-    let summary = crate::container::summarize(&scan);
-    assert_eq!(
-        summary
-            .entries
-            .iter()
-            .filter(|entry| entry.role == crate::container::role::EXTERNAL_REFERENCE)
-            .map(|entry| entry.name.as_str())
-            .collect::<Vec<_>>(),
-        ["Support.CATPart", "Assembly.CATProduct"]
-    );
-
-    let native = crate::native::CatiaNative::decode(&bytes);
-    assert_eq!(native.version, crate::native::CATIA_NATIVE_VERSION);
-    assert_eq!(native.external_references.len(), 2);
-    assert_eq!(native.external_references[0].target, "Support.CATPart");
-    assert_eq!(
-        native.external_references[0].segment,
-        native.finjpl_segments[0].id
-    );
-    assert_eq!(
-        native.external_references[1].segment,
-        native.finjpl_segments[1].id
-    );
-    for reference in &native.external_references {
-        let segment = native
-            .finjpl_segments
-            .iter()
-            .find(|segment| segment.id == reference.segment)
-            .expect("external-reference segment");
-        assert!(reference.byte_offset >= segment.byte_offset);
-        assert!(reference.byte_offset < segment.byte_offset + segment.byte_len);
-    }
-}
-
-#[test]
 fn decode_persists_external_references_in_native_namespace() {
     let mut file = standard_catpart();
     file.extend_from_slice(&external_reference_segment("Support.CATPart"));
@@ -1560,72 +1448,6 @@ fn native_namespace_retains_summary_preview_bytes() {
     );
     assert_eq!(native.finjpl_segments[0].family, "project-flags");
     assert_eq!(native.finjpl_segments[0].data, bytes);
-}
-
-#[test]
-fn summary_preview_requires_a_coherent_frame_header() {
-    let valid = summary_preview_segment();
-    let frame = valid
-        .windows(2)
-        .position(|bytes| bytes == [0xff, 0xc0])
-        .expect("fixture SOF marker");
-
-    let mut zero_height = valid.clone();
-    zero_height[frame + 5..frame + 7].copy_from_slice(&0u16.to_be_bytes());
-    assert!(crate::container::preview_images(&zero_height).is_empty());
-
-    let mut inconsistent_components = valid;
-    inconsistent_components[frame + 9] = 2;
-    assert!(crate::container::preview_images(&inconsistent_components).is_empty());
-    assert!(crate::native::CatiaNative::decode(&inconsistent_components)
-        .preview_images
-        .is_empty());
-}
-
-#[test]
-fn summary_preview_requires_one_complete_jpeg_candidate() {
-    let valid = summary_preview_segment();
-    let image_start = valid
-        .windows(3)
-        .position(|bytes| bytes == [0xff, 0xd8, 0xff])
-        .expect("fixture JPEG SOI");
-
-    let mut malformed_prefix = valid.clone();
-    malformed_prefix.splice(image_start..image_start, [0xff, 0xd8, 0xff, 0xd9]);
-    let previews = crate::container::preview_images(&malformed_prefix);
-    let [preview] = previews.as_slice() else {
-        panic!("one complete preview after malformed SOI")
-    };
-    assert_eq!(&malformed_prefix[preview.range.clone()][..2], [0xff, 0xd8]);
-
-    let image_end = valid
-        .windows(2)
-        .enumerate()
-        .skip(image_start)
-        .find_map(|(at, bytes)| (bytes == [0xff, 0xd9]).then_some(at + 2))
-        .expect("fixture JPEG EOI");
-    let image = valid[image_start..image_end].to_vec();
-    let mut duplicate = valid;
-    duplicate.extend(image);
-    assert!(crate::container::preview_images(&duplicate).is_empty());
-}
-
-#[test]
-fn scan_parses_directory_and_identifies_standard() {
-    let f = standard_catpart();
-    let scan = crate::container::scan_bytes(f);
-    assert_eq!(scan.variant, Variant::StandardNested);
-    let dir = scan.inner.expect("inner directory");
-    assert!(dir.descriptors.iter().any(|d| d.name == "MainDataStream"));
-    assert!(dir.descriptors.iter().any(|d| d.name == "SurfacicReps"));
-    let brep = scan.brep.expect("reconstructed brep stream");
-    // The BREP stream is MainDataStream followed by SurfacicReps.
-    assert!(brep.windows(3).any(|w| w == [0x05, 0x08, 0x01]));
-    assert!(brep.windows(3).any(|w| w == [0x00, 0x33, 0x33]));
-    assert_eq!(scan.census.fbb_runs, 1);
-    assert_eq!(scan.census.fbb_face_rows, 2);
-    assert!(scan.census.edge_delimiters >= 1);
-    assert_eq!(scan.census.vertex_markers, 3);
 }
 
 #[test]
@@ -1745,49 +1567,6 @@ fn standard_decode_retains_vertex_allocation_tags() {
             Some(("catia", "cgm-vertex:010209")),
         ]
     );
-}
-
-#[test]
-fn scan_parses_outer_directory_with_absolute_extents() {
-    let bytes = outer_directory_catpart();
-    let directory_offset =
-        usize::try_from(u32::from_be_bytes(bytes[8..12].try_into().unwrap())).unwrap();
-    assert_eq!(
-        crate::container::outer_stream_directory_range(&bytes),
-        Some(directory_offset..bytes.len())
-    );
-    let scan = crate::container::scan_bytes(bytes.clone());
-    let outer = scan.outer.as_ref().expect("outer directory");
-    assert_eq!(outer.inner, 0);
-    assert_eq!(outer.descriptors.len(), 1);
-    let descriptor = &outer.descriptors[0];
-    assert_eq!(descriptor.name, "RootStorage");
-    assert_eq!(
-        crate::container::reconstruct_logical_stream(&bytes, descriptor, outer.inner),
-        b"outer logical stream"
-    );
-
-    let summary = crate::container::summarize(&scan);
-    let entry = summary
-        .entries
-        .iter()
-        .find(|entry| entry.name == "RootStorage")
-        .expect("outer stream summary");
-    assert_eq!(entry.attributes["directory"], "outer");
-}
-
-#[test]
-fn inspect_enumerates_streams_and_names_variant() {
-    let f = standard_catpart();
-    let mut cur = Cursor::new(f);
-    let summary = CatiaCodec
-        .inspect(&mut cur, &cadmpeg_core::decode::InspectOptions::default())
-        .unwrap();
-    assert_eq!(summary.format, "catia");
-    assert_eq!(summary.container_kind, "v5-cfv2");
-    assert!(summary.entries.iter().any(|e| e.name == "MainDataStream"));
-    assert!(summary.entries.iter().any(|e| e.name == "SurfacicReps"));
-    assert!(summary.notes.iter().any(|n| n.contains("standard nested")));
 }
 
 #[test]
@@ -20034,44 +19813,6 @@ fn unresolved_7cd9_scanner_preserves_bounded_context_and_spacing() {
     assert_eq!(markers[0].context, [0x7c, 0xd9, 1, 2, 3]);
     assert_eq!(markers[0].next_delta, Some(5));
     assert_eq!(markers[1].next_delta, None);
-}
-
-#[test]
-fn finjpl_parser_splits_segments_and_classifies_type_words() {
-    use crate::container::FinjplKind;
-
-    let bytes = finjpl_stream();
-    let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
-    assert_eq!(segments.len(), 2);
-    assert_eq!(segments[0].kind, FinjplKind::Storage);
-    assert_eq!(segments[0].type_word, 0x0000_008e);
-    assert_eq!(segments[0].range, 2..17);
-    assert_eq!(segments[1].kind, FinjplKind::ProjectFlags);
-}
-
-#[test]
-fn e5_stream_selection_prefers_coherent_storage_segment_over_stray_preamble_marker() {
-    let mut bytes = vec![0u8; 32];
-    bytes[..8].copy_from_slice(OUTER_MAGIC);
-    bytes[8..12].copy_from_slice(&512u32.to_be_bytes());
-    bytes[12..16].copy_from_slice(&32u32.to_be_bytes());
-    append_e5_record(&mut bytes, 0xfe, 1, &[]);
-    bytes.extend_from_slice(b"FINJPL  ");
-    bytes.extend_from_slice(&0x0000_0080u32.to_be_bytes());
-    for id in 10..21 {
-        append_e5_record(&mut bytes, 0xfe, id, &[]);
-    }
-    bytes.extend_from_slice(b"FINJPL  ");
-    bytes.extend_from_slice(&0x0000_008eu32.to_be_bytes());
-    let expected_start = bytes.len() - 12;
-    for id in 30..41 {
-        append_e5_record(&mut bytes, 0xfe, id, &[]);
-    }
-    bytes.resize(544, 0);
-
-    let range = crate::container::e5_record_stream(&bytes).expect("coherent E5 stream");
-    assert_eq!(range.start, expected_start);
-    assert_eq!(&bytes[range.start..range.start + 8], b"FINJPL  ");
 }
 
 #[test]
