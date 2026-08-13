@@ -271,33 +271,18 @@ fn parse_carrier<'a>(
 }
 
 fn read_u16(bytes: &[u8], offset: usize, name: &str) -> Result<u16, CodecError> {
-    Ok(u16::from_le_bytes(
-        bytes
-            .get(offset..offset.saturating_add(2))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))?
-            .try_into()
-            .expect("two-byte slice"),
-    ))
+    View::u16_le_at(bytes, offset)
+        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
 }
 
 fn read_u32(bytes: &[u8], offset: usize, name: &str) -> Result<u32, CodecError> {
-    Ok(u32::from_le_bytes(
-        bytes
-            .get(offset..offset.saturating_add(4))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))?
-            .try_into()
-            .expect("four-byte slice"),
-    ))
+    View::u32_le_at(bytes, offset)
+        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
 }
 
 fn read_i32(bytes: &[u8], offset: usize, name: &str) -> Result<i32, CodecError> {
-    Ok(i32::from_le_bytes(
-        bytes
-            .get(offset..offset.saturating_add(4))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))?
-            .try_into()
-            .expect("four-byte slice"),
-    ))
+    View::i32_le_at(bytes, offset)
+        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
 }
 
 #[cfg(test)]

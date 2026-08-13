@@ -137,12 +137,12 @@ pub(crate) fn parse_meta_tables<'a>(
             id,
             fields: [
                 (
-                    u16::from_le_bytes(entry[16..18].try_into().expect("two-byte field")),
-                    u32::from_le_bytes(entry[18..22].try_into().expect("four-byte field")),
+                    View::u16_le_at(entry, 16).expect("two-byte field"),
+                    View::u32_le_at(entry, 18).expect("four-byte field"),
                 ),
                 (
-                    u16::from_le_bytes(entry[22..24].try_into().expect("two-byte field")),
-                    u32::from_le_bytes(entry[24..28].try_into().expect("four-byte field")),
+                    View::u16_le_at(entry, 22).expect("two-byte field"),
+                    View::u32_le_at(entry, 24).expect("four-byte field"),
                 ),
             ],
         });
@@ -419,23 +419,13 @@ fn child<'a>(
 }
 
 fn read_u16(bytes: &[u8], offset: usize, name: &str) -> Result<u16, CodecError> {
-    Ok(u16::from_le_bytes(
-        bytes
-            .get(offset..offset.saturating_add(2))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated RSe {name}")))?
-            .try_into()
-            .expect("two-byte slice"),
-    ))
+    View::u16_le_at(bytes, offset)
+        .ok_or_else(|| CodecError::Malformed(format!("truncated RSe {name}")))
 }
 
 fn read_u32(bytes: &[u8], offset: usize, name: &str) -> Result<u32, CodecError> {
-    Ok(u32::from_le_bytes(
-        bytes
-            .get(offset..offset.saturating_add(4))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated RSe {name}")))?
-            .try_into()
-            .expect("four-byte slice"),
-    ))
+    View::u32_le_at(bytes, offset)
+        .ok_or_else(|| CodecError::Malformed(format!("truncated RSe {name}")))
 }
 
 struct Cursor<'a> {
