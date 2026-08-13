@@ -70,7 +70,7 @@
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
 
-pub mod container;
+pub(crate) mod container;
 #[allow(dead_code)] // Internal orchestration remains behind the codec facade.
 pub(crate) mod decode;
 #[allow(dead_code)] // Internal parser surface is retained for fuzz access.
