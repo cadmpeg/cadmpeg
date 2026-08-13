@@ -78,7 +78,7 @@ pub(crate) mod deltas;
 #[allow(dead_code)] // Internal evaluation is reached by selected decode paths.
 pub(crate) mod evaluation;
 mod framing;
-pub mod geometry;
+pub(crate) mod geometry;
 pub mod intersection;
 mod jt;
 mod jt_topology;
