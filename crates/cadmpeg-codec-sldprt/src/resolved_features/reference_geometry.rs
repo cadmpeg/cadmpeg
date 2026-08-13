@@ -2661,3 +2661,6 @@ pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
 
 #[cfg(test)]
 mod reference_geometry_tests;
+
+#[cfg(test)]
+mod tests;
