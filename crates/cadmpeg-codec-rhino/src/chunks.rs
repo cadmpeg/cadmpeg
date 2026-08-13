@@ -715,3 +715,6 @@ mod direct_range_tests {
         assert!(direct_checksum_ranges(&(10..50), &[15..30, 20..40]).is_err());
     }
 }
+
+#[cfg(test)]
+mod tests;

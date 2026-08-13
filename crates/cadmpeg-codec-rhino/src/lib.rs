@@ -190,8 +190,6 @@ impl Encoder for RhinoEncoder {
 }
 
 #[cfg(test)]
-mod archive_tests;
-#[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
