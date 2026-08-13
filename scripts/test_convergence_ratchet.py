@@ -38,21 +38,76 @@ class StripCfgTest(unittest.TestCase):
 
 
 class PatternFilters(unittest.TestCase):
-    def test_skips_use_import_for_le_at(self) -> None:
+    def _count_in_crate(self, source: str) -> int:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             src = root / "crates" / "cadmpeg-codec-demo" / "src"
             src.mkdir(parents=True)
-            (src / "lib.rs").write_text(
-                "use cadmpeg_core::le::u32_at;\nfn f(b: &[u8]) { let _ = le::u32_at(b, 0); }\n",
-                encoding="utf-8",
-            )
+            (src / "lib.rs").write_text(source, encoding="utf-8")
             old_root = ratchet.ROOT
             try:
                 ratchet.ROOT = root
-                self.assertEqual(ratchet.count_le_be_at_outside_core(), 1)
+                return ratchet.count_le_be_at_outside_core()
             finally:
                 ratchet.ROOT = old_root
+
+    def test_skips_use_import_for_le_at(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::u32_at;\n"
+                "fn f(b: &[u8]) { let _ = le::u32_at(b, 0); }\n"
+            ),
+            1,
+        )
+
+    def test_counts_aliased_imported_le_at(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::u32_at as u32_le;\n"
+                "fn f(b: &[u8]) { let _ = u32_le(b, 0); }\n"
+            ),
+            1,
+        )
+
+    def test_counts_unaliased_imported_le_at(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::u32_at;\n"
+                "fn f(b: &[u8]) { let _ = u32_at(b, 0); }\n"
+            ),
+            1,
+        )
+
+    def test_counts_brace_aliased_imports(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::{u32_at as u32_le, f64_at};\n"
+                "fn f(b: &[u8]) { u32_le(b, 0); f64_at(b, 8); }\n"
+            ),
+            2,
+        )
+
+    def test_ignores_view_methods_for_aliased_name(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::u32_at as u32_le;\n"
+                "fn f(v: View, b: &[u8]) {\n"
+                "    v.u32_le();\n"
+                "    View::u32_le_at(b, 0);\n"
+                "    u32_le(b, 0);\n"
+                "}\n"
+            ),
+            1,
+        )
+
+    def test_imported_le_be_at_names_parses_alias_and_brace(self) -> None:
+        self.assertEqual(
+            ratchet.imported_le_be_at_names(
+                "use cadmpeg_core::le::u32_at as u32_le;\n"
+                "use cadmpeg_core::be::{f64_at, u16_at as u16_be};\n"
+            ),
+            frozenset({"u32_le", "f64_at", "u16_be"}),
+        )
 
     def test_excludes_loss_note_return_and_struct(self) -> None:
         text = (

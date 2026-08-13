@@ -5,7 +5,10 @@
 Patterns (production filter — see ``docs/convergence-ledger.toml``):
 
 * ``from_le_bytes`` / ``from_be_bytes`` in ``crates/cadmpeg-codec-*/src``
-* ``le::*_at`` / ``be::*_at`` call sites outside ``cadmpeg-core`` (not ``use`` lines)
+* ``le::*_at`` / ``be::*_at`` call sites outside ``cadmpeg-core`` (not ``use``
+  lines), including calls through names imported from those modules
+  (``use cadmpeg_core::le::u32_at as u32_le`` then ``u32_le(...)``). Method
+  calls (``view.u32_le()``, ``View::u32_le_at``) are not this pattern.
 * ``CodecError::Malformed(format!`` (multiline-aware)
 * ``LossNote {`` struct literals (not ``-> LossNote {`` or the struct definition)
 * bare ``1e-6`` / ``1e-9`` / ``1e-10`` / ``1e-12`` in ``crates/**/src``
@@ -44,6 +47,24 @@ METRIC_KEYS = (
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 LE_BE_AT = re.compile(r"\b(?:le|be)::[A-Za-z_][A-Za-z0-9_]*_at\b")
+USE_LE_BE = re.compile(r"(?:pub(?:\([^)]*\))?\s+)?use\s+cadmpeg_core::(?:le|be)::([^;]+);")
+# Names in cadmpeg_core::{le,be} that end in `_at`. Used when a glob import
+# would otherwise hide every helper behind `*`.
+LE_BE_AT_HELPERS = (
+    "u16_at",
+    "i16_at",
+    "u32_at",
+    "i32_at",
+    "u64_at",
+    "i64_at",
+    "f32_at",
+    "f64_at",
+    "f64s_at",
+    "vec3_at",
+    "int_at",
+    "lp_u32_bytes_at",
+    "utf16le_at",
+)
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
 LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
 LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
@@ -131,17 +152,65 @@ def count_from_endian_bytes() -> int:
     return total
 
 
+def _use_spec_at_names(spec: str) -> set[str]:
+    """Local names bound to a ``*_at`` helper in one ``use cadmpeg_core::{le,be}`` spec."""
+    spec = re.sub(r"\s+", " ", spec).strip()
+    if spec == "*":
+        return set(LE_BE_AT_HELPERS)
+    items = (
+        [part.strip() for part in spec[1:-1].split(",") if part.strip()]
+        if spec.startswith("{") and spec.endswith("}")
+        else [spec]
+    )
+    names: set[str] = set()
+    for item in items:
+        if item == "*":
+            names.update(LE_BE_AT_HELPERS)
+            continue
+        if " as " in item:
+            orig, local = (part.strip() for part in item.split(" as ", 1))
+        else:
+            orig = local = item
+        if orig.endswith("_at"):
+            names.add(local)
+    return names
+
+
+def imported_le_be_at_names(code: str) -> frozenset[str]:
+    """Local identifiers that bind ``cadmpeg_core::{le,be}::* _at`` helpers."""
+    names: set[str] = set()
+    for match in USE_LE_BE.finditer(code):
+        names.update(_use_spec_at_names(match.group(1)))
+    return frozenset(names)
+
+
+def _imported_at_call_re(names: frozenset[str]) -> re.Pattern[str] | None:
+    if not names:
+        return None
+    pattern = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+    # Reject `view.u32_le(` and `View::u32_le_at(` / `le::u32_at(` (the last is
+    # counted by LE_BE_AT). Bare `u32_le(` / `u32_at(` from an import counts.
+    return re.compile(rf"(?<![:.\w])(?:{pattern})\s*\(")
+
+
 def count_le_be_at_outside_core() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
         if "cadmpeg-core" in path.parts:
             continue
         text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
-        for line in text.splitlines():
-            code = line.split("//", 1)[0]
-            if code.lstrip().startswith("use "):
+        stripped_lines = [line.split("//", 1)[0] for line in text.splitlines()]
+        code = "\n".join(stripped_lines)
+        imported_calls = _imported_at_call_re(imported_le_be_at_names(code))
+        for line in stripped_lines:
+            stripped = line.lstrip()
+            if stripped.startswith("use ") or re.match(
+                r"pub(?:\([^)]*\))?\s+use\s+", stripped
+            ):
                 continue
-            total += len(LE_BE_AT.findall(code))
+            total += len(LE_BE_AT.findall(line))
+            if imported_calls is not None:
+                total += len(imported_calls.findall(line))
     return total
 
 

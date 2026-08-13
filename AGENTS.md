@@ -35,7 +35,7 @@ Build and test operations:
 - sccache: evaluated, no disk or speed win in this workspace — do not re-add.
 - Bare tolerance literals: when touching a line with bare `1e-6` / `1e-9` / `1e-10` / `1e-12`, hoist to a module-local named constant with intent in the name (`EPS_SAME_POINT`, `EPS_ORTHO`, etc.). Never collapse distinct tolerance values. Orthonormality thresholds are acceptance gates; values differ per codec.
 - Layout-table reader generation is cut. Tables remain the oracle and docs; `cargo test -p cadmpeg --test layout_tables` keeps checking arithmetic and citations. Revisit only as table-driven tests if per-record parse functions appear (Phase 8 decision).
-- Convergence ratchet: `scripts/convergence-ratchet.py` against `docs/convergence-ledger.toml`. Counts may only fall; update the ledger in the same commit as a decrease. A deliberate increase raises the ceiling and records a reason under `[reasons]`.
+- Convergence ratchet: `scripts/convergence-ratchet.py` against `docs/convergence-ledger.toml`. Counts may only fall; update the ledger in the same commit as a decrease. A deliberate increase raises the ceiling and records a reason under `[reasons]`. `le_be_at_outside_core` counts qualified `le::*_at` / `be::*_at` and calls through names imported from those modules (`u32_at as u32_le` then `u32_le(...)`); it does not count `View` methods.
 - Golden fixture floors live in `docs/golden-coverage-floors.toml` and may only rise when fixtures are added; they must never silently fall.
 - A public API break updates `docs/public-api-ledger.toml` in the same commit.
 - `scripts/perf-baseline.sh` is the decode/build timing harness for hot-path changes.
