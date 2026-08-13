@@ -57,3 +57,6 @@ pub(crate) use streams_test::*;
 
 mod zip_test;
 pub(crate) use zip_test::*;
+
+mod assembly_test;
+pub(crate) use assembly_test::*;

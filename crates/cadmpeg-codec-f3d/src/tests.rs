@@ -55,7 +55,6 @@ mod materials;
 
 #[path = "tests_assembly.rs"]
 mod assembly;
-use assembly::*;
 
 #[path = "golden_tests.rs"]
 mod golden;
