@@ -3283,7 +3283,14 @@ fn union_endpoint_nodes(parents: &mut [usize], first: usize, second: usize) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_imports)]
     use super::*;
+    use crate::design::dimensions::point_lies_on_sketch_geometry;
+    use crate::history_records::{
+        AsmHistoricalCarrierBinding, AsmHistoricalEdge, AsmHistoricalPoint, AsmHistoricalRelation,
+        AsmHistoricalTopology,
+    };
+    use crate::records::AsmHistoricalEntityKind;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::features::{Angle, Length, SketchProfileBoundaryUse, SketchProfileRegion};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -3994,5 +4001,349 @@ mod tests {
         assert!(!inner.strictly_contains(&outer));
         assert!(!outer.strictly_contains(&crossing));
         assert!(!outer.strictly_contains(&touching));
+    }
+
+    #[test]
+    fn historical_edge_positions_require_a_complete_state_chain() {
+        let mut topology = crate::history_records::AsmHistoricalTopology {
+            edges: vec![7],
+            vertices: vec![8, 9],
+            points: vec![18, 19],
+            edge_vertices: vec![crate::history_records::AsmHistoricalEdge {
+                edge: 7,
+                start_vertex: 8,
+                end_vertex: 9,
+            }],
+            vertex_points: vec![
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 8,
+                    carrier: 18,
+                },
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 9,
+                    carrier: 19,
+                },
+            ],
+            point_positions: vec![
+                crate::history_records::AsmHistoricalPoint {
+                    point: 18,
+                    position: Point3::new(1.0, 2.0, 3.0),
+                },
+                crate::history_records::AsmHistoricalPoint {
+                    point: 19,
+                    position: Point3::new(4.0, 5.0, 6.0),
+                },
+            ],
+            ..crate::history_records::AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            crate::design::geometry::historical_entity_positions(
+                crate::records::AsmHistoricalEntityKind::Edge,
+                7,
+                &topology,
+            ),
+            Some(vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0),])
+        );
+        topology.point_positions.pop();
+        assert_eq!(
+            crate::design::geometry::historical_entity_positions(
+                crate::records::AsmHistoricalEntityKind::Edge,
+                7,
+                &topology,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn historical_region_faces_follow_complete_ownership_hierarchy() {
+        use crate::history_records::{AsmHistoricalRelation, AsmHistoricalTopology};
+        use crate::records::AsmHistoricalEntityKind;
+
+        let topology = AsmHistoricalTopology {
+            body_regions: vec![AsmHistoricalRelation {
+                owner_ref: 1,
+                member_refs: vec![2],
+            }],
+            region_shells: vec![AsmHistoricalRelation {
+                owner_ref: 2,
+                member_refs: vec![3, 4],
+            }],
+            shell_faces: vec![
+                AsmHistoricalRelation {
+                    owner_ref: 3,
+                    member_refs: vec![7, 5],
+                },
+                AsmHistoricalRelation {
+                    owner_ref: 4,
+                    member_refs: vec![6, 7],
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+
+        assert_eq!(
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Body,
+                1,
+                &topology
+            ),
+            Some(vec![5, 6, 7])
+        );
+        assert_eq!(
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Region,
+                2,
+                &topology
+            ),
+            Some(vec![5, 6, 7])
+        );
+        assert_eq!(
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Shell,
+                3,
+                &topology
+            ),
+            Some(vec![5, 7])
+        );
+    }
+
+    #[test]
+    fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
+        let sketch = SketchId("sketch".into());
+        let entity = |geometry| SketchEntity {
+            id: SketchEntityId("curve".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let arc = entity(SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+            start_angle: cadmpeg_ir::features::Angle(0.0),
+            end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+        });
+        assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6));
+        assert!(!point_on_sketch_entity(
+            Point2::new(-2.0, 0.0),
+            &arc,
+            1.0e-6
+        ));
+        let clockwise_arc = entity(SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+            start_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            end_angle: cadmpeg_ir::features::Angle(0.0),
+        });
+        assert!(point_lies_on_sketch_geometry(
+            Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
+            &clockwise_arc.geometry
+        ));
+        assert!(!point_lies_on_sketch_geometry(
+            Point2::new(-2.0, 0.0),
+            &clockwise_arc.geometry
+        ));
+
+        let ellipse = entity(SketchGeometry::Ellipse {
+            center: Point2::new(1.0, -1.0),
+            major_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            major_radius: Length(4.0),
+            minor_radius: Length(2.0),
+            start_angle: Some(cadmpeg_ir::features::Angle(0.0)),
+            end_angle: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2)),
+        });
+        assert!(point_on_sketch_entity(
+            Point2::new(-1.0, -1.0),
+            &ellipse,
+            1.0e-6
+        ));
+        assert!(!point_on_sketch_entity(
+            Point2::new(3.0, -1.0),
+            &ellipse,
+            1.0e-6
+        ));
+        assert!(!point_on_sketch_entity(
+            Point2::new(-1.0, -0.9),
+            &ellipse,
+            1.0e-6
+        ));
+
+        let nurbs = entity(SketchGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(1.0, 2.0),
+                Point2::new(2.0, 4.0),
+                Point2::new(3.0, 2.0),
+            ],
+            weights: Some(vec![1.0, 0.5, 1.0]),
+            periodic: false,
+        });
+        assert!(point_on_sketch_entity(
+            Point2::new(3.0, 2.0),
+            &nurbs,
+            1.0e-6
+        ));
+        assert!(!point_on_sketch_entity(
+            Point2::new(2.0, 4.0),
+            &nurbs,
+            1.0e-6
+        ));
+        let SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            ..
+        } = &nurbs.geometry
+        else {
+            unreachable!()
+        };
+        let interior = cadmpeg_ir::eval::nurbs_pcurve_uv(
+            *degree,
+            knots,
+            control_points,
+            weights.as_deref(),
+            0.375,
+        )
+        .unwrap();
+        assert!(point_on_sketch_entity(interior, &nurbs, 1.0e-9));
+    }
+
+    #[test]
+    fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
+        let sketch = SketchId("f3d:model:sketch#profile".into());
+        let line = |id: &str, start: Point2, end: Point2| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let entities = vec![
+            line("line-a", Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)),
+            line("line-b", Point2::new(2.0, 2.0), Point2::new(2.0, 0.0)),
+            line("line-c", Point2::new(2.0, 2.0), Point2::new(0.0, 2.0)),
+            line(
+                "line-d",
+                Point2::new(0.0, 2.0 + 5.0e-7),
+                Point2::new(0.0, 0.0),
+            ),
+            line("open-line", Point2::new(10.0, 0.0), Point2::new(11.0, 0.0)),
+            SketchEntity {
+                id: SketchEntityId("circle".into()),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Circle {
+                    center: Point2::new(20.0, 20.0),
+                    radius: Length(3.0),
+                },
+            },
+        ];
+
+        let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+        assert_eq!(profiles.len(), 2);
+        assert_eq!(profiles[0].len(), 1);
+        assert_eq!(profiles[0][0].entity, SketchEntityId("circle".into()));
+        assert_eq!(
+            profiles[1]
+                .iter()
+                .map(|entity_use| (entity_use.entity.0.as_str(), entity_use.reversed))
+                .collect::<Vec<_>>(),
+            [
+                ("line-a", false),
+                ("line-b", true),
+                ("line-c", false),
+                ("line-d", false),
+            ]
+        );
+    }
+
+    #[test]
+    fn branched_line_graph_projects_each_bounded_face() {
+        let sketch = SketchId("f3d:model:sketch#branched-profile".into());
+        let line = |id: &str, start: (f64, f64), end: (f64, f64)| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            },
+        };
+        let entities = vec![
+            line("bottom-left", (0.0, 0.0), (1.0, 0.0)),
+            line("bottom-right", (1.0, 0.0), (2.0, 0.0)),
+            line("right", (2.0, 0.0), (2.0, 1.0)),
+            line("top-right", (2.0, 1.0), (1.0, 1.0)),
+            line("top-left", (1.0, 1.0), (0.0, 1.0)),
+            line("left", (0.0, 1.0), (0.0, 0.0)),
+            line("divider", (1.0, 0.0), (1.0, 1.0)),
+        ];
+
+        let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+        assert_eq!(profiles.len(), 2);
+        assert!(profiles.iter().all(|profile| profile.len() == 4));
+        assert!(profiles.iter().all(|profile| profile
+            .iter()
+            .any(|entity_use| entity_use.entity.0 == "divider")));
+    }
+
+    #[test]
+    fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
+        let sketch = SketchId("f3d:model:sketch#shared-corner-profile".into());
+        let line = |id: &str, start: (f64, f64), end: (f64, f64)| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            },
+        };
+        let entities = vec![
+            line("outer-bottom", (0.0, 0.0), (31.0, 0.0)),
+            line("outer-right", (31.0, 0.0), (31.0, 47.0)),
+            line("outer-top", (31.0, 47.0), (0.0, 47.0)),
+            line("outer-left", (0.0, 47.0), (0.0, 0.0)),
+            line("inner-top", (0.0, 47.0), (9.0, 47.0)),
+            line("inner-right", (9.0, 47.0), (9.0, 41.0)),
+            line("inner-bottom", (9.0, 41.0), (0.0, 41.0)),
+            line("inner-left", (0.0, 41.0), (0.0, 47.0)),
+        ];
+
+        let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+        assert_eq!(
+            profiles
+                .iter()
+                .flat_map(|profile| profile
+                    .iter()
+                    .map(|entity_use| (entity_use.entity.0.as_str(), entity_use.reversed)))
+                .collect::<Vec<_>>(),
+            [
+                ("outer-left", false),
+                ("outer-bottom", false),
+                ("outer-right", false),
+                ("outer-top", false),
+                ("inner-top", false),
+                ("inner-right", false),
+                ("inner-bottom", false),
+                ("inner-left", false),
+            ]
+        );
     }
 }

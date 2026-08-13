@@ -1653,3 +1653,6 @@ pub(crate) fn parse_dimension_locus_group(
         next_byte_offset: next_byte_offset as u64,
     })
 }
+
+#[cfg(test)]
+mod tests;

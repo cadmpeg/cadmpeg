@@ -2247,14 +2247,9 @@ pub(crate) fn bind_loft_sketch_selections(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        resolve_entity_selection_path, resolve_entity_selection_profile,
-        resolved_loft_entity_selection_path, resolved_spatial_extrude_profile_selection,
-        resolved_spatial_sketch_profile_regions, spatial_polyline_profile_containing_points,
-        spatial_profile_containing_entity, transition_spatial_profile_selection,
-        EntitySelectionPathResolution, ExtrudeProfileResolution, LoftSketchResolution,
-    };
-    use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
+    #![allow(unused_imports)]
+    use super::*;
+    use crate::design::geometry::{region_containing_points, MAX_ARRANGEMENT_WALK_WORK};
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
         AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
@@ -2272,11 +2267,12 @@ mod tests {
         SketchRelationOperand,
     };
     use cadmpeg_core::decode::WorkBudget;
-    use cadmpeg_ir::features::{Angle, Length, PathRef, ProfileRef};
+    use cadmpeg_ir::features::{Angle, Length, PathRef, ProfileRef, SketchProfileRegion};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchEntity, SketchEntityUse, SketchGeometry, SketchPlacement, SpatialSketch,
-        SpatialSketchEntity, SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchProfile,
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        SketchPlacement, SpatialSketch, SpatialSketchEntity, SpatialSketchEntityUse,
+        SpatialSketchGeometry, SpatialSketchProfile,
     };
 
     fn group() -> DesignConstructionOperandGroup {
@@ -3209,5 +3205,799 @@ mod tests {
             spatial_sketch_entities: &[],
         };
         assert!(resolve_entity_selection_profile(&group, &ambiguous_resolution).is_none());
+    }
+
+    #[test]
+    fn historical_points_on_profile_boundaries_are_ambiguous() {
+        let sketch_id = SketchId("sketch".into());
+        let entity_id = SketchEntityId("line".into());
+        let mut sketch = Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(10.0, 20.0, 5.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: vec![vec![SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            }]],
+            native_ref: None,
+        };
+        let entity = SketchEntity {
+            id: entity_id,
+            sketch: sketch_id,
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(2.0, 0.0),
+            },
+        };
+        let point = Point3::new(11.0, 20.0, 9.0);
+        let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+        assert_eq!(
+            region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
+            None
+        );
+        assert_eq!(
+            crate::design::profile_select::selection_containing_points(
+                &sketch,
+                std::slice::from_ref(&entity),
+                &[point],
+                1.0e-6,
+                &arrangement_budget,
+            ),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
+        );
+
+        let mut branched_sketch = sketch.clone();
+        let start_branch_id = SketchEntityId("start-branch".into());
+        let end_branch_id = SketchEntityId("end-branch".into());
+        branched_sketch.profiles.extend([
+            vec![SketchEntityUse {
+                entity: start_branch_id.clone(),
+                reversed: false,
+            }],
+            vec![SketchEntityUse {
+                entity: end_branch_id.clone(),
+                reversed: false,
+            }],
+        ]);
+        let branch_entity = |id, start, end| SketchEntity {
+            id,
+            sketch: branched_sketch.id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let branched_entities = [
+            entity.clone(),
+            branch_entity(
+                start_branch_id,
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, 1.0),
+            ),
+            branch_entity(end_branch_id, Point2::new(2.0, 0.0), Point2::new(2.0, 1.0)),
+        ];
+        let endpoints = [Point3::new(10.0, 20.0, 5.0), Point3::new(12.0, 20.0, 5.0)];
+        assert_eq!(
+            crate::design::profile_select::selection_containing_points(
+                &branched_sketch,
+                &branched_entities,
+                &endpoints,
+                1.0e-6,
+                &arrangement_budget,
+            ),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
+        );
+
+        sketch.profiles.push(sketch.profiles[0].clone());
+        assert_eq!(
+            region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
+            None
+        );
+        assert_eq!(
+            crate::design::profile_select::selection_containing_points(
+                &sketch,
+                std::slice::from_ref(&entity),
+                &[point],
+                1.0e-6,
+                &arrangement_budget,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn historical_selection_preserves_first_member_region_order() {
+        let region = |outer| SketchProfileRegion::Loops {
+            outer,
+            holes: Vec::new(),
+        };
+        assert_eq!(
+            crate::design::profile_select::ordered_unique_profile_selections([
+                Some(
+                    crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(
+                        3
+                    )])
+                ),
+                Some(
+                    crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(
+                        1
+                    )])
+                ),
+                Some(
+                    crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(
+                        3
+                    )])
+                ),
+                Some(
+                    crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(
+                        2
+                    )])
+                ),
+            ]),
+            Some(
+                crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
+                    region(3),
+                    region(1),
+                    region(2),
+                ])
+            )
+        );
+        assert_eq!(
+            crate::design::profile_select::ordered_unique_profile_selections([
+                Some(
+                    crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(
+                        3
+                    )])
+                ),
+                None,
+            ]),
+            None
+        );
+    }
+
+    #[test]
+    fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
+        let sketch = SketchId("f3d:model:sketch#multi-profile".into());
+        let loops = [
+            ProfileRef::SketchProfiles {
+                sketch: sketch.clone(),
+                profiles: vec![3, 1],
+            },
+            ProfileRef::SketchProfiles {
+                sketch: sketch.clone(),
+                profiles: vec![1, 2],
+            },
+        ];
+        assert_eq!(
+            crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops),
+            Some(ProfileRef::SketchProfiles {
+                sketch: sketch.clone(),
+                profiles: vec![3, 1, 2],
+            })
+        );
+
+        let regions = [
+            ProfileRef::SketchRegions {
+                sketch: sketch.clone(),
+                regions: vec![SketchProfileRegion::Loops {
+                    outer: 4,
+                    holes: vec![5],
+                }],
+            },
+            ProfileRef::SketchRegions {
+                sketch: sketch.clone(),
+                regions: vec![SketchProfileRegion::Loops {
+                    outer: 2,
+                    holes: Vec::new(),
+                }],
+            },
+        ];
+        assert_eq!(
+            crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions),
+            Some(ProfileRef::SketchRegions {
+                sketch: sketch.clone(),
+                regions: vec![
+                    SketchProfileRegion::Loops {
+                        outer: 4,
+                        holes: vec![5],
+                    },
+                    SketchProfileRegion::Loops {
+                        outer: 2,
+                        holes: Vec::new(),
+                    },
+                ],
+            })
+        );
+
+        assert_eq!(
+            crate::design::profile_select::merge_resolved_profile_selections(
+                &sketch,
+                &[loops[0].clone(), regions[0].clone()]
+            ),
+            None
+        );
+        assert_eq!(
+            crate::design::profile_select::merge_resolved_profile_selections(
+                &sketch,
+                &[
+                    loops[0].clone(),
+                    ProfileRef::SketchSelection {
+                        sketch: sketch.clone(),
+                        selections: vec!["native-group".into()],
+                    },
+                ]
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn historical_profile_members_resolve_through_topology_ownership() {
+        use crate::history_records::{
+            AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalOptionalCarrierBinding,
+            AsmHistoricalRelation, AsmHistoricalTopology,
+        };
+        use crate::records::AsmHistoricalEntityKind;
+
+        let topology = AsmHistoricalTopology {
+            faces: vec![10, 20],
+            loops: vec![11, 21],
+            coedges: vec![12, 22],
+            edges: vec![30],
+            surfaces: vec![40],
+            pcurves: vec![50],
+            face_loops: vec![
+                AsmHistoricalRelation {
+                    owner_ref: 10,
+                    member_refs: vec![11],
+                },
+                AsmHistoricalRelation {
+                    owner_ref: 20,
+                    member_refs: vec![21],
+                },
+            ],
+            coedge_topology: vec![
+                AsmHistoricalCoedge {
+                    coedge: 12,
+                    owner_loop: 11,
+                    edge: 30,
+                    previous: 12,
+                    next: 12,
+                    radial_next: 22,
+                },
+                AsmHistoricalCoedge {
+                    coedge: 22,
+                    owner_loop: 21,
+                    edge: 30,
+                    previous: 22,
+                    next: 22,
+                    radial_next: 12,
+                },
+            ],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 10,
+                carrier: 40,
+            }],
+            coedge_pcurves: vec![AsmHistoricalOptionalCarrierBinding {
+                entity: 12,
+                carrier: Some(50),
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+
+        assert_eq!(
+            historical_profile_face_candidates(
+                Some(AsmHistoricalEntityKind::Pcurve),
+                50,
+                &topology,
+            ),
+            HashSet::from([10])
+        );
+        assert_eq!(
+            historical_profile_face_candidates(
+                Some(AsmHistoricalEntityKind::Surface),
+                40,
+                &topology,
+            ),
+            HashSet::from([10])
+        );
+        assert_eq!(
+            historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Edge), 30, &topology,),
+            HashSet::from([10, 20])
+        );
+    }
+
+    #[test]
+    fn historical_face_points_require_complete_boundary_topology() {
+        let mut topology = crate::history_records::AsmHistoricalTopology {
+            faces: vec![10],
+            loops: vec![11],
+            coedges: vec![12, 13, 14],
+            edges: vec![20, 21, 22],
+            vertices: vec![30, 31, 32],
+            points: vec![40, 41, 42],
+            face_loops: vec![crate::history_records::AsmHistoricalRelation {
+                owner_ref: 10,
+                member_refs: vec![11],
+            }],
+            loop_coedges: vec![crate::history_records::AsmHistoricalRelation {
+                owner_ref: 11,
+                member_refs: vec![12, 13, 14],
+            }],
+            coedge_topology: vec![
+                crate::history_records::AsmHistoricalCoedge {
+                    coedge: 12,
+                    owner_loop: 11,
+                    edge: 20,
+                    next: 13,
+                    previous: 14,
+                    radial_next: 12,
+                },
+                crate::history_records::AsmHistoricalCoedge {
+                    coedge: 13,
+                    owner_loop: 11,
+                    edge: 21,
+                    next: 14,
+                    previous: 12,
+                    radial_next: 13,
+                },
+                crate::history_records::AsmHistoricalCoedge {
+                    coedge: 14,
+                    owner_loop: 11,
+                    edge: 22,
+                    next: 12,
+                    previous: 13,
+                    radial_next: 14,
+                },
+            ],
+            edge_vertices: vec![
+                crate::history_records::AsmHistoricalEdge {
+                    edge: 20,
+                    start_vertex: 30,
+                    end_vertex: 31,
+                },
+                crate::history_records::AsmHistoricalEdge {
+                    edge: 21,
+                    start_vertex: 31,
+                    end_vertex: 32,
+                },
+                crate::history_records::AsmHistoricalEdge {
+                    edge: 22,
+                    start_vertex: 32,
+                    end_vertex: 30,
+                },
+            ],
+            vertex_points: vec![
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 30,
+                    carrier: 40,
+                },
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 31,
+                    carrier: 41,
+                },
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 32,
+                    carrier: 42,
+                },
+            ],
+            point_positions: vec![
+                crate::history_records::AsmHistoricalPoint {
+                    point: 40,
+                    position: Point3::new(0.0, 0.0, 0.0),
+                },
+                crate::history_records::AsmHistoricalPoint {
+                    point: 41,
+                    position: Point3::new(2.0, 0.0, 0.0),
+                },
+                crate::history_records::AsmHistoricalPoint {
+                    point: 42,
+                    position: Point3::new(0.0, 1.0, 0.0),
+                },
+            ],
+            ..crate::history_records::AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            crate::design::profile_select::historical_face_points(10, &topology),
+            Some(vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ])
+        );
+
+        topology.point_positions.pop();
+        assert_eq!(
+            crate::design::profile_select::historical_face_points(10, &topology),
+            None
+        );
+    }
+
+    #[test]
+    fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
+        use crate::history_records::{
+            AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder,
+            AsmHistoricalEdge, AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
+        };
+
+        let sketch_id = SketchId("sketch".into());
+        let circle_id = SketchEntityId("circle".into());
+        let circle = SketchEntity {
+            id: circle_id.clone(),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+            },
+        };
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: vec![vec![SketchEntityUse {
+                entity: circle_id,
+                reversed: false,
+            }]],
+            native_ref: None,
+        };
+        let topology = AsmHistoricalTopology {
+            faces: vec![10],
+            loops: vec![11],
+            coedges: vec![12, 13, 14],
+            edges: vec![20, 21, 22],
+            vertices: vec![30, 31, 32],
+            points: vec![40, 41, 42],
+            surfaces: vec![50],
+            face_loops: vec![AsmHistoricalRelation {
+                owner_ref: 10,
+                member_refs: vec![11],
+            }],
+            loop_coedges: vec![AsmHistoricalRelation {
+                owner_ref: 11,
+                member_refs: vec![12, 13, 14],
+            }],
+            coedge_topology: vec![
+                AsmHistoricalCoedge {
+                    coedge: 12,
+                    owner_loop: 11,
+                    edge: 20,
+                    next: 13,
+                    previous: 14,
+                    radial_next: 12,
+                },
+                AsmHistoricalCoedge {
+                    coedge: 13,
+                    owner_loop: 11,
+                    edge: 21,
+                    next: 14,
+                    previous: 12,
+                    radial_next: 13,
+                },
+                AsmHistoricalCoedge {
+                    coedge: 14,
+                    owner_loop: 11,
+                    edge: 22,
+                    next: 12,
+                    previous: 13,
+                    radial_next: 14,
+                },
+            ],
+            edge_vertices: vec![
+                AsmHistoricalEdge {
+                    edge: 20,
+                    start_vertex: 30,
+                    end_vertex: 31,
+                },
+                AsmHistoricalEdge {
+                    edge: 21,
+                    start_vertex: 31,
+                    end_vertex: 32,
+                },
+                AsmHistoricalEdge {
+                    edge: 22,
+                    start_vertex: 32,
+                    end_vertex: 30,
+                },
+            ],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 10,
+                carrier: 50,
+            }],
+            vertex_points: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 30,
+                    carrier: 40,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 31,
+                    carrier: 41,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 32,
+                    carrier: 42,
+                },
+            ],
+            point_positions: vec![
+                AsmHistoricalPoint {
+                    point: 40,
+                    position: Point3::new(2.0, 0.0, 0.0),
+                },
+                AsmHistoricalPoint {
+                    point: 41,
+                    position: Point3::new(0.0, 2.0, 1.0),
+                },
+                AsmHistoricalPoint {
+                    point: 42,
+                    position: Point3::new(-2.0, 0.0, 0.0),
+                },
+            ],
+            surface_cylinders: vec![AsmHistoricalCylinder {
+                surface: 50,
+                origin: Point3::new(0.0, 0.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 2.0,
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+
+        assert_eq!(
+            crate::design::profile_select::inserted_cylindrical_profile_selection(
+                &sketch,
+                std::slice::from_ref(&circle),
+                &topology,
+                10,
+                1.0e-6,
+                1.0e-9,
+            ),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
+        );
+        let mut tilted = topology;
+        tilted.surface_cylinders[0].axis = Vector3::new(0.0, 1.0, 0.0);
+        assert_eq!(
+            crate::design::profile_select::inserted_cylindrical_profile_selection(
+                &sketch,
+                std::slice::from_ref(&circle),
+                &tilted,
+                10,
+                1.0e-6,
+                1.0e-9,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
+        use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalTopology};
+
+        let topology = AsmHistoricalTopology {
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 10,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 11,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 20,
+                    carrier: 200,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+                &[20, 11, 10],
+                &topology
+            ),
+            Some(vec![10, 11])
+        );
+        assert_eq!(
+            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+                &[10, 10],
+                &topology
+            ),
+            None
+        );
+
+        let mut ambiguous = topology.clone();
+        ambiguous.face_surfaces.extend([
+            AsmHistoricalCarrierBinding {
+                entity: 30,
+                carrier: 300,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 31,
+                carrier: 300,
+            },
+        ]);
+        assert_eq!(
+            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+                &[10, 11, 30, 31],
+                &ambiguous
+            ),
+            None
+        );
+
+        let mut incomplete = topology;
+        incomplete
+            .face_surfaces
+            .retain(|binding| binding.entity != 20);
+        assert_eq!(
+            crate::design::profile_select::unique_multi_face_deleted_carrier_family(
+                &[10, 11, 20],
+                &incomplete
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries() {
+        use cadmpeg_ir::features::SketchProfileRegion;
+
+        let sketch_id = SketchId("sketch".into());
+        let mut profiles = Vec::new();
+        let mut entities = Vec::new();
+        for (profile_index, corners) in [
+            [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]],
+            [[6.0, 0.0], [8.0, 0.0], [8.0, 2.0], [6.0, 2.0]],
+            [[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0]],
+            [[3.0, 1.0], [5.0, 1.0], [5.0, 3.0], [3.0, 3.0]],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut profile = Vec::new();
+            for edge_index in 0..corners.len() {
+                let id = SketchEntityId(format!("profile-{profile_index}-edge-{edge_index}"));
+                profile.push(SketchEntityUse {
+                    entity: id.clone(),
+                    reversed: false,
+                });
+                let [start_u, start_v] = corners[edge_index];
+                let [end_u, end_v] = corners[(edge_index + 1) % corners.len()];
+                entities.push(SketchEntity {
+                    id,
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Line {
+                        start: Point2::new(start_u, start_v),
+                        end: Point2::new(end_u, end_v),
+                    },
+                });
+            }
+            profiles.push(profile);
+        }
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles,
+            native_ref: None,
+        };
+        let transition_selection = |selections| {
+            crate::design::profile_select::transition_inserted_profile_selection(
+                &sketch, &entities, 1.0e-6, selections,
+            )
+        };
+
+        assert_eq!(
+            crate::design::profile_select::unique_resolved_selection([Some(3), Some(3), Some(3)]),
+            Some(3)
+        );
+        assert_eq!(
+            crate::design::profile_select::unique_resolved_selection([Some(3), None, Some(3)]),
+            Some(3)
+        );
+        assert_eq!(
+            crate::design::profile_select::unique_resolved_selection([Some(3), Some(4)]),
+            None
+        );
+        assert_eq!(
+            crate::design::profile_select::unique_resolved_selection(
+                std::iter::empty::<Option<u32>>()
+            ),
+            None
+        );
+        assert_eq!(
+            crate::design::profile_select::unique_resolved_selection([None::<u32>, None]),
+            None
+        );
+        let region = crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
+            SketchProfileRegion::Loops {
+                outer: 0,
+                holes: vec![1],
+            },
+        ]);
+        assert_eq!(
+            transition_selection(vec![
+                Some(region.clone()),
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0, 1])),
+            ]),
+            Some(region.clone())
+        );
+        assert_eq!(
+            transition_selection(vec![
+                Some(region.clone()),
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![2])),
+            ]),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![2]))
+        );
+        assert_eq!(
+            transition_selection(vec![
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
+                Some(crate::design::profile_select::ResolvedProfileSelection::Regions(Vec::new())),
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
+            ]),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1]))
+        );
+        assert_eq!(
+            transition_selection(vec![Some(region)]),
+            Some(
+                crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
+                    SketchProfileRegion::Loops {
+                        outer: 0,
+                        holes: vec![1],
+                    },
+                ])
+            )
+        );
+        assert_eq!(
+            transition_selection(vec![
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0])),
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
+                None,
+            ]),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0, 1]))
+        );
+        assert_eq!(
+            transition_selection(vec![
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0])),
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![2])),
+            ]),
+            None
+        );
+        assert_eq!(
+            transition_selection(vec![
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0])),
+                Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![3])),
+            ]),
+            None
+        );
+        assert_eq!(transition_selection(vec![None]), None);
     }
 }
