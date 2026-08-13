@@ -6,6 +6,13 @@
 //! assertions.
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-mod bytes;
+mod test_annotations;
+mod test_bytes;
+mod test_container;
+mod test_topology;
 
-pub(crate) use bytes::*;
+pub(crate) use crate::container::{DIR_MAGIC, OUTER_MAGIC};
+pub(crate) use test_annotations::*;
+pub(crate) use test_bytes::*;
+pub(crate) use test_container::*;
+pub(crate) use test_topology::*;
