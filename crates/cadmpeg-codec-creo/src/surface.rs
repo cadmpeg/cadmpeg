@@ -5,7 +5,7 @@
 //! boundary, and namespace links. A [`SurfacePrototype`] contains named template
 //! parameters. A named prototype locates its adjacent first positional instance.
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{alloc_filled, bounded_len};
 
 use crate::psb::{self, compact_int};
 use crate::scalar;
@@ -4930,7 +4930,12 @@ fn counted_parameter_scalar_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<ScalarTokenSlot>> {
-    let mut states = vec![BTreeMap::new(); body.len() + 1];
+    let mut states = alloc_filled(
+        body.len() + 1,
+        BTreeMap::new(),
+        "creo_counted_parameter_slots",
+    )
+    .ok()?;
     states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
     for cursor in 0..body.len() {
         let current = std::mem::take(&mut states[cursor]);
@@ -5117,6 +5122,7 @@ fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     raw[0] = first;
     raw[1] = second;
     raw[2..].copy_from_slice(tail);
+    // Computed IEEE bytes 0..1 plus six file bytes; not a contiguous window.
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 
@@ -5125,6 +5131,7 @@ fn named_ieee8(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1..].copy_from_slice(tail);
+    // Injected IEEE byte 0 plus seven file bytes; not a contiguous window.
     Some((f64::from_be_bytes(raw), offset + 8))
 }
 
@@ -5133,6 +5140,7 @@ fn named_ieee7(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1..7].copy_from_slice(tail);
+    // Injected IEEE byte 0 plus six file bytes and a zero low byte; not a contiguous window.
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 

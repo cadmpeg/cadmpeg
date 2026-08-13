@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{alloc_filled, bounded_len};
 
 use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
@@ -4601,7 +4601,15 @@ fn infer_solve_variable_dimensions(
         }
     }
 
-    let mut components: [Vec<i8>; 5] = std::array::from_fn(|_| vec![0i8; variable_keys.len()]);
+    let axis_len = variable_keys.len();
+    let alloc_axis = || alloc_filled(axis_len, 0i8, "creo_solve_dimension_components").ok();
+    let mut components: [Vec<i8>; 5] = [
+        alloc_axis()?,
+        alloc_axis()?,
+        alloc_axis()?,
+        alloc_axis()?,
+        alloc_axis()?,
+    ];
     for (index, dimension) in known_dimensions.iter().enumerate() {
         if let Some(dimension) = dimension {
             components[0][index] = dimension.length;
@@ -4700,7 +4708,7 @@ fn solve_dimension_axis(
         .iter()
         .all(|required| pivot_rows.iter().any(|(column, _)| column == required))
         .then_some(())?;
-    let mut solution = vec![0.0; variable_count];
+    let mut solution = alloc_filled(variable_count, 0.0, "creo_solve_dimension_axis").ok()?;
     for (column, row) in pivot_rows {
         solution[column] = rows[row].rhs;
     }
@@ -4905,17 +4913,17 @@ fn nonlinear_initial_guesses(
         })
         .collect::<Option<Vec<_>>>()?;
     add_seed(initial);
-    add_seed(vec![0.0; variable_count]);
+    add_seed(alloc_filled(variable_count, 0.0, "creo_solve_seed_zero").ok()?);
     for magnitude in [0.01, 0.1, 1.0, 10.0, 100.0] {
-        add_seed(vec![magnitude; variable_count]);
-        add_seed(vec![-magnitude; variable_count]);
+        add_seed(alloc_filled(variable_count, magnitude, "creo_solve_seed_magnitude").ok()?);
+        add_seed(alloc_filled(variable_count, -magnitude, "creo_solve_seed_magnitude").ok()?);
     }
     for index in 0..variable_count {
         for magnitude in [0.1, 1.0, 10.0] {
-            let mut positive = vec![0.0; variable_count];
+            let mut positive = alloc_filled(variable_count, 0.0, "creo_solve_seed_axis").ok()?;
             positive[index] = magnitude;
             add_seed(positive);
-            let mut negative = vec![0.0; variable_count];
+            let mut negative = alloc_filled(variable_count, 0.0, "creo_solve_seed_axis").ok()?;
             negative[index] = -magnitude;
             add_seed(negative);
         }
@@ -5748,6 +5756,7 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     raw[0] = if byte_1 >= 0x80 { 0x3f } else { 0x40 };
     raw[1] = byte_1;
     raw[2..].copy_from_slice(&body[offset + 1..offset + 7]);
+    // Computed IEEE bytes 0..1 plus six file bytes; not a contiguous window.
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 

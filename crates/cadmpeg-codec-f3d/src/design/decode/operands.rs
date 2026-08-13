@@ -28,6 +28,7 @@ use crate::records::{
     DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection, LostEdgeReference,
     PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
@@ -1526,8 +1527,6 @@ pub(crate) fn parse_construction_operand_path(
     expected_scope_record_index: u32,
     header: &DesignRecordHeader,
 ) -> Option<crate::records::DesignConstructionOperandPath> {
-    use crate::design::decode::sketch::valid_sketch_transform;
-
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
         return None;
@@ -1536,12 +1535,8 @@ pub(crate) fn parse_construction_operand_path(
     let entity_ref_offset = u64::try_from(start + 22).ok()?;
     let (transform, transform_offset, compact_variant, mut cursor) =
         if bytes.get(start + 30..start + 33)? == [0; 3] {
-            let values = cadmpeg_core::le::f64s_at(bytes, start + 33, 16)?;
-            let mut transform = [[0.0; 4]; 4];
-            for (ordinal, value) in values.iter().copied().enumerate() {
-                transform[ordinal / 4][ordinal % 4] = value;
-            }
-            if !valid_sketch_transform(&transform) || bytes.get(start + 161) != Some(&0) {
+            let transform = rigid_transform_at(bytes, start + 33)?;
+            if bytes.get(start + 161) != Some(&0) {
                 return None;
             }
             (
@@ -1648,10 +1643,13 @@ pub(crate) fn parse_construction_operand_dual_transform(
 }
 
 fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
-    let values = cadmpeg_core::le::f64s_at(bytes, at, 16)?;
+    let mut view = View::over_retained(bytes);
+    view.seek(at)?;
     let mut transform = [[0.0; 4]; 4];
-    for (ordinal, value) in values.iter().copied().enumerate() {
-        transform[ordinal / 4][ordinal % 4] = value;
+    for row in &mut transform {
+        for cell in row {
+            *cell = view.f64_le()?;
+        }
     }
     crate::design::decode::sketch::valid_sketch_transform(&transform).then_some(transform)
 }

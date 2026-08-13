@@ -325,7 +325,10 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
             compound_streams,
         };
     }
-    let version = cadmpeg_core::be::u32_at(bytes, 4).unwrap_or(0);
+    let version = {
+        let mut view = View::over_retained(bytes);
+        view.seek(4).and_then(|()| view.u32_be()).unwrap_or(0)
+    };
 
     let mut blocks = Vec::new();
     let mut directory = Vec::new();

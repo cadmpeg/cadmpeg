@@ -9,13 +9,13 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::be;
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
+use crate::view_at::u32_be_at;
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -326,7 +326,7 @@ pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<Field
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let count = usize::try_from(be::u32_at(bytes, at)?).ok()?;
+    let count = usize::try_from(u32_be_at(bytes, at)?).ok()?;
     (count > 0).then_some(())?;
     at += 4;
     let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
@@ -629,7 +629,7 @@ fn attribute_identifiers(bytes: &[u8]) -> Vec<AttributeIdentifier<'_>> {
             if bytes.get(at) == Some(&0xff) {
                 at += 1;
             }
-            let name_len = usize::try_from(be::u32_at(bytes, at)?).ok()?;
+            let name_len = usize::try_from(u32_be_at(bytes, at)?).ok()?;
             at += 4;
             let xmt = read_xmt(bytes, &mut at)?;
             let name_end = at.checked_add(name_len)?;
@@ -658,12 +658,12 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             if bytes.get(at) == Some(&0xff) {
                 at += 1;
             }
-            let field_count = be::u32_at(bytes, at)?;
+            let field_count = u32_be_at(bytes, at)?;
             at += 4;
             let xmt = read_xmt(bytes, &mut at)?;
             let next_definition_xmt = read_xmt(bytes, &mut at)?;
             let identifier_xmt = read_xmt(bytes, &mut at)?;
-            let type_id = be::u32_at(bytes, at)?;
+            let type_id = u32_be_at(bytes, at)?;
             at += 4;
             let action_codes: [u8; 8] = bytes.get(at..at + 8)?.try_into().ok()?;
             (xmt > 1

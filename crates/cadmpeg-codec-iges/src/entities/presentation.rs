@@ -4,6 +4,7 @@
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::report::{LossNote, LossTaxonomy, Severity};
@@ -146,6 +147,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    _ctx: Option<&DecodeContext<'_>>,
 ) -> PresentationProjection {
     let records = parameters
         .iter()

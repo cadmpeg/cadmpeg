@@ -213,7 +213,7 @@ impl<'a> View<'a> {
 }
 
 macro_rules! view_readers {
-    ($(($probe:ident, $req:ident, $ty:ty, $conv:ident, $size:literal)),* $(,)?) => {
+    ($(($probe:ident, $req:ident, $at:ident, $ty:ty, $conv:ident, $size:literal)),* $(,)?) => {
         impl View<'_> {
             $(
                 #[doc = concat!("Probe read of a `", stringify!($ty), "` via `", stringify!($conv), "`.")]
@@ -228,24 +228,41 @@ macro_rules! view_readers {
                         None => Err(self.eof($size)),
                     }
                 }
+
+                #[doc = concat!(
+                    "Offset probe of a `",
+                    stringify!($ty),
+                    "` over retained bytes. Sequential readers should keep a live `View` and call [`View::",
+                    stringify!($probe),
+                    "`] instead."
+                )]
+                pub fn $at(bytes: &[u8], offset: usize) -> Option<$ty> {
+                    let mut view = View::over_retained(bytes);
+                    view.seek(offset)?;
+                    view.$probe()
+                }
             )*
         }
     };
 }
 
 view_readers!(
-    (u16_le, req_u16_le, u16, from_le_bytes, 2),
-    (i16_le, req_i16_le, i16, from_le_bytes, 2),
-    (u32_le, req_u32_le, u32, from_le_bytes, 4),
-    (i32_le, req_i32_le, i32, from_le_bytes, 4),
-    (u64_le, req_u64_le, u64, from_le_bytes, 8),
-    (i64_le, req_i64_le, i64, from_le_bytes, 8),
-    (f32_le, req_f32_le, f32, from_le_bytes, 4),
-    (f64_le, req_f64_le, f64, from_le_bytes, 8),
-    (u16_be, req_u16_be, u16, from_be_bytes, 2),
-    (u32_be, req_u32_be, u32, from_be_bytes, 4),
-    (u64_be, req_u64_be, u64, from_be_bytes, 8),
-    (f64_be, req_f64_be, f64, from_be_bytes, 8),
+    (u16_le, req_u16_le, u16_le_at, u16, from_le_bytes, 2),
+    (i16_le, req_i16_le, i16_le_at, i16, from_le_bytes, 2),
+    (u32_le, req_u32_le, u32_le_at, u32, from_le_bytes, 4),
+    (i32_le, req_i32_le, i32_le_at, i32, from_le_bytes, 4),
+    (u64_le, req_u64_le, u64_le_at, u64, from_le_bytes, 8),
+    (i64_le, req_i64_le, i64_le_at, i64, from_le_bytes, 8),
+    (f32_le, req_f32_le, f32_le_at, f32, from_le_bytes, 4),
+    (f64_le, req_f64_le, f64_le_at, f64, from_le_bytes, 8),
+    (u16_be, req_u16_be, u16_be_at, u16, from_be_bytes, 2),
+    (i16_be, req_i16_be, i16_be_at, i16, from_be_bytes, 2),
+    (u32_be, req_u32_be, u32_be_at, u32, from_be_bytes, 4),
+    (i32_be, req_i32_be, i32_be_at, i32, from_be_bytes, 4),
+    (u64_be, req_u64_be, u64_be_at, u64, from_be_bytes, 8),
+    (i64_be, req_i64_be, i64_be_at, i64, from_be_bytes, 8),
+    (f32_be, req_f32_be, f32_be_at, f32, from_be_bytes, 4),
+    (f64_be, req_f64_be, f64_be_at, f64, from_be_bytes, 8),
 );
 
 #[cfg(test)]
@@ -287,5 +304,24 @@ mod tests {
         assert_eq!(view.seek(2), Some(()));
         assert_eq!(view.seek(6), Some(()));
         assert_eq!(view.seek(7), None);
+    }
+
+    #[test]
+    fn offset_helpers_match_live_reads() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0x0102_u16.to_le_bytes());
+        bytes.extend_from_slice(&0x0304_u16.to_be_bytes());
+        bytes.extend_from_slice(&(-5_i16).to_be_bytes());
+        bytes.extend_from_slice(&1.5_f32.to_le_bytes());
+        assert_eq!(View::u16_le_at(&bytes, 0), Some(0x0102));
+        assert_eq!(View::u16_be_at(&bytes, 2), Some(0x0304));
+        assert_eq!(View::i16_be_at(&bytes, 4), Some(-5));
+        assert_eq!(View::f32_le_at(&bytes, 6), Some(1.5));
+        assert_eq!(View::u16_le_at(&bytes, bytes.len()), None);
+        let mut view = View::over_space(&bytes, SpaceId::ROOT);
+        assert_eq!(view.u16_le(), Some(0x0102));
+        assert_eq!(view.u16_be(), Some(0x0304));
+        assert_eq!(view.i16_be(), Some(-5));
+        assert_eq!(view.f32_le(), Some(1.5));
     }
 }

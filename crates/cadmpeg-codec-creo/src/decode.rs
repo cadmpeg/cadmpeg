@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -19871,7 +19871,8 @@ fn mixed_torus_radius_samples(
     {
         return None;
     }
-    prototype_round_radius(scan, rows).map(|radius| vec![radius; rows.len()])
+    prototype_round_radius(scan, rows)
+        .and_then(|radius| alloc_filled(rows.len(), radius, "creo_torus_radius_samples").ok())
 }
 
 fn round_cylinder_radius(
@@ -32448,10 +32449,10 @@ fn cubic_extrusion_plane_generator_curve(
             .zip([0.0, 0.0, 1.0, 1.0])
             .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12)))
     .then_some(())?;
-    let weights = nurbs
-        .weights
-        .clone()
-        .unwrap_or_else(|| vec![1.0; nurbs.control_points.len()]);
+    let weights = match &nurbs.weights {
+        Some(weights) => weights.clone(),
+        None => alloc_filled(nurbs.control_points.len(), 1.0, "creo_nurbs_weights").ok()?,
+    };
     (0..4)
         .all(|u| scalar_near(weights[2 * u], weights[2 * u + 1], 1e-12 * weights[2 * u]))
         .then_some(())?;

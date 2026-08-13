@@ -427,7 +427,7 @@ fn first_class_object_in_interval(
                     .ok()?,
             ))
         })
-        .filter(|token| token & 0x8000 != 0 && *token != u16::MAX)
+        .filter(|token| is_class_token(*token))
         .collect::<Vec<_>>();
     tokens.sort_unstable();
     tokens.dedup();
@@ -440,7 +440,7 @@ fn first_class_object_in_interval(
                     .get(*offset + 4..*offset + 6)
                     .and_then(|bytes| bytes.try_into().ok())
                     .map(u16::from_le_bytes)
-                    .is_some_and(|instance| instance & 0x8000 != 0 && instance != u16::MAX)
+                    .is_some_and(is_class_token)
                 && lane.native_payload.get(*offset + 6..*offset + 8)
                     == Some(token.to_le_bytes().as_slice())
         }),
@@ -1358,7 +1358,7 @@ pub(super) fn compact_mixed_component_path(
                 .get(offset..offset + 4)
                 .is_some_and(|bytes| {
                     let instance = u16::from_le_bytes([bytes[0], bytes[1]]);
-                    instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..4] == [0, 0]
+                    is_class_token(instance) && bytes[2..4] == [0, 0]
                 })
                 .then(|| {
                     let instance =
@@ -1367,8 +1367,7 @@ pub(super) fn compact_mixed_component_path(
                     let next_is_tagged = remaining > 1
                         && payload.get(offset + 16..offset + 20).is_some_and(|bytes| {
                             let next_instance = u16::from_le_bytes([bytes[0], bytes[1]]);
-                            next_instance & 0x8000 != 0
-                                && next_instance != u16::MAX
+                            is_class_token(next_instance)
                                 && bytes[2..4] == [0, 0]
                                 && signature_at(offset + 20).is_some()
                         });
@@ -1824,15 +1823,12 @@ fn compact_component_reference_list(
     let signature_prefix: [u8; 4] = payload.get(marker + 22..marker + 26)?.try_into().ok()?;
     let prefix_token = u16::from_le_bytes(signature_prefix[..2].try_into().ok()?);
     let prefix_variant = u16::from_le_bytes(signature_prefix[2..].try_into().ok()?);
-    if prefix_token & 0x8000 == 0 || prefix_token == u16::MAX || prefix_variant == 0 {
+    if !is_class_token(prefix_token) || prefix_variant == 0 {
         return None;
     }
     let hop_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
         let instance = u16::from_le_bytes(payload.get(offset..offset + 2)?.try_into().ok()?);
-        if instance & 0x8000 == 0
-            || instance == u16::MAX
-            || payload.get(offset + 2..offset + 4)? != [0, 0]
-        {
+        if !is_class_token(instance) || payload.get(offset + 2..offset + 4)? != [0, 0] {
             return None;
         }
         let type_signature: [u8; 12] = payload.get(offset + 4..offset + 16)?.try_into().ok()?;

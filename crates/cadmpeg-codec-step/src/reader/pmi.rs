@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
@@ -22,6 +23,7 @@ use super::StageOutcome;
 struct MeasureContext<'a> {
     length_scale: f64,
     angle_scale: f64,
+    graph_limit: usize,
     losses: &'a mut Vec<LossNote>,
 }
 
@@ -29,6 +31,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
     ir: &mut CadIr,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> StageOutcome<()> {
     if !exchange.has_entity_matching(is_pmi_entity_name) {
         return StageOutcome {
@@ -50,7 +53,8 @@ pub(super) fn decode(
     let mut annotations = BTreeMap::<u64, usize>::new();
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
-    let characteristic_values = characteristic_values(exchange, geometry, &mut losses);
+    let graph_limit = super::record_graph_limit(ctx);
+    let characteristic_values = characteristic_values(exchange, geometry, &mut losses, graph_limit);
     for (id, record) in exchange.entities("DATUM") {
         let identification = named_parameter(record, "DATUM", 0)
             .and_then(|value| {
@@ -92,7 +96,7 @@ pub(super) fn decode(
             .find_map(ValueExt::list)
             .unwrap_or_default();
         let mut datum_records = HashSet::new();
-        let mut measurements = measure_context(geometry, id, &mut losses);
+        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
         let datum_references = constituents
             .iter()
             .enumerate()
@@ -288,7 +292,7 @@ pub(super) fn decode(
             })
         });
         if let (Some(index), Some(limits)) = (dimension, limits) {
-            let mut measurements = measure_context(geometry, id, &mut losses);
+            let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
             let lower = limits
                 .parameters()
                 .first()
@@ -364,7 +368,7 @@ pub(super) fn decode(
                         .collect::<Vec<_>>()
                 },
             );
-        let mut measurements = measure_context(geometry, id, &mut losses);
+        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
         let magnitude = record
             .partials
             .iter()
@@ -1072,10 +1076,11 @@ fn characteristic_values(
     exchange: &Exchange,
     geometry: &GeometryData,
     losses: &mut Vec<LossNote>,
+    graph_limit: usize,
 ) -> BTreeMap<u64, PmiValue> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let mut measurements = measure_context(geometry, id, losses);
+        let mut measurements = measure_context(geometry, id, losses, graph_limit);
         let parameters = record
             .partials
             .iter()
@@ -1177,6 +1182,7 @@ fn characteristic_measure_values<'a>(
             exchange,
             &mut BTreeSet::new(),
             0,
+            measurements.graph_limit,
             &mut measure_ids,
         );
     }
@@ -1206,9 +1212,10 @@ fn collect_measure_ids(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
+    graph_limit: usize,
     measure_ids: &mut BTreeSet<u64>,
 ) {
-    if depth >= super::MAX_RECORD_GRAPH_DEPTH {
+    if depth >= graph_limit {
         return;
     }
     match value {
@@ -1227,6 +1234,7 @@ fn collect_measure_ids(
                                 exchange,
                                 active,
                                 depth + 1,
+                                graph_limit,
                                 measure_ids,
                             );
                         }
@@ -1237,11 +1245,11 @@ fn collect_measure_ids(
         }
         Value::List(values) => {
             for value in values {
-                collect_measure_ids(value, exchange, active, depth + 1, measure_ids);
+                collect_measure_ids(value, exchange, active, depth + 1, graph_limit, measure_ids);
             }
         }
         Value::Typed(_, value) => {
-            collect_measure_ids(value, exchange, active, depth + 1, measure_ids);
+            collect_measure_ids(value, exchange, active, depth + 1, graph_limit, measure_ids);
         }
         _ => {}
     }
@@ -1281,6 +1289,7 @@ fn measure_context<'a>(
     geometry: &GeometryData,
     id: u64,
     losses: &'a mut Vec<LossNote>,
+    graph_limit: usize,
 ) -> MeasureContext<'a> {
     MeasureContext {
         length_scale: geometry
@@ -1293,6 +1302,7 @@ fn measure_context<'a>(
             .get(&id)
             .copied()
             .unwrap_or(geometry.plane_angle_scale),
+        graph_limit,
         losses,
     }
 }
@@ -1312,7 +1322,7 @@ fn measure_inner(
     depth: usize,
     measurements: &mut MeasureContext<'_>,
 ) -> Option<PmiValue> {
-    if depth >= super::MAX_RECORD_GRAPH_DEPTH {
+    if depth >= measurements.graph_limit {
         return None;
     }
     match value {

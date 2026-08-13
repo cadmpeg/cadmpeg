@@ -14,8 +14,10 @@ pub(crate) fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
     }
     let block_mode = flags & BLOCK_MODE != 0;
     let dictionary_limit = 1usize << max_bits;
-    let mut prefix = vec![0u16; dictionary_limit];
-    let mut suffix = vec![0u8; dictionary_limit];
+    let mut prefix =
+        cadmpeg_core::decode::alloc_filled(dictionary_limit, 0u16, "creo_lzw_prefix").ok()?;
+    let mut suffix =
+        cadmpeg_core::decode::alloc_filled(dictionary_limit, 0u8, "creo_lzw_suffix").ok()?;
     for (value, slot) in suffix.iter_mut().take(256).enumerate() {
         *slot = u8::try_from(value).ok()?;
     }

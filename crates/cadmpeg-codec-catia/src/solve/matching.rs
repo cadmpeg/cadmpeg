@@ -2,7 +2,7 @@
 //!
 //! Pure combinatorics over caller-supplied domains; no byte knowledge.
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use std::collections::{HashSet, VecDeque};
 
 pub(crate) fn domains_have_distinct_matching<'a>(
@@ -28,8 +28,8 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
     if domains.len() > point_count {
         return None;
     }
-    let mut owner = vec![None; point_count];
-    let mut matched = vec![false; domains.len()];
+    let mut owner = alloc_filled(point_count, None, "catia_match_owners").ok()?;
+    let mut matched = alloc_filled(domains.len(), false, "catia_match_flags").ok()?;
     let mut matched_count = 0usize;
     let mut required_domain = None;
     if let Some(MatchingEdgeConstraint::Require(domain, point)) = edge_constraint {
@@ -42,7 +42,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
         required_domain = Some(domain);
     }
     while matched_count < domains.len() {
-        let mut distance = vec![usize::MAX; domains.len()];
+        let mut distance = alloc_filled(domains.len(), usize::MAX, "catia_match_distance").ok()?;
         let mut queue = VecDeque::new();
         for root in 0..domains.len() {
             if !matched[root] {
@@ -78,8 +78,8 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
         if shortest == usize::MAX {
             return None;
         }
-        let mut cursor = vec![0usize; domains.len()];
-        let mut incoming = vec![None; domains.len()];
+        let mut cursor = alloc_filled(domains.len(), 0usize, "catia_match_cursor").ok()?;
+        let mut incoming = alloc_filled(domains.len(), None, "catia_match_incoming").ok()?;
         let mut augmented = 0usize;
         for start in 0..domains.len() {
             if matched[start] || distance[start] != 0 {
@@ -145,7 +145,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
             return None;
         }
     }
-    let mut assignment = vec![None; domains.len()];
+    let mut assignment = alloc_filled(domains.len(), None, "catia_match_assignment").ok()?;
     for (point, domain) in owner.into_iter().enumerate() {
         if let Some(domain) = domain {
             assignment[domain] = Some(point);
@@ -165,7 +165,7 @@ pub(crate) fn repair_distinct_domain_matching_with_budget<'a>(
         return None;
     }
     let mut matching = matching.to_vec();
-    let mut owner = vec![None; point_count];
+    let mut owner = alloc_filled(point_count, None, "catia_match_repair_owners").ok()?;
     let mut unmatched = Vec::new();
     for domain in 0..matching.len() {
         let point = matching[domain];
@@ -177,10 +177,13 @@ pub(crate) fn repair_distinct_domain_matching_with_budget<'a>(
         }
     }
     for start in unmatched {
-        let mut seen_domains = vec![false; domains.len()];
-        let mut seen_points = vec![false; point_count];
-        let mut incoming_point = vec![None; domains.len()];
-        let mut via_domain = vec![None; point_count];
+        let mut seen_domains =
+            alloc_filled(domains.len(), false, "catia_match_repair_seen_domains").ok()?;
+        let mut seen_points =
+            alloc_filled(point_count, false, "catia_match_repair_seen_points").ok()?;
+        let mut incoming_point =
+            alloc_filled(domains.len(), None, "catia_match_repair_incoming").ok()?;
+        let mut via_domain = alloc_filled(point_count, None, "catia_match_repair_via").ok()?;
         let mut queue = VecDeque::from([start]);
         seen_domains[start] = true;
         let mut free_point = None;
@@ -235,9 +238,9 @@ pub(crate) fn retain_distinct_matching_supports(
         return None;
     }
     let node_count = domains.len().checked_add(point_count)?;
-    let mut graph = vec![Vec::new(); node_count];
-    let mut reverse = vec![Vec::new(); node_count];
-    let mut matched_points = vec![false; point_count];
+    let mut graph = alloc_filled(node_count, Vec::new(), "catia_match_support_graph").ok()?;
+    let mut reverse = alloc_filled(node_count, Vec::new(), "catia_match_support_reverse").ok()?;
+    let mut matched_points = alloc_filled(point_count, false, "catia_match_support_points").ok()?;
     for (domain, values) in domains.iter().enumerate() {
         if !values.contains(&matching[domain]) || matched_points[matching[domain]] {
             return None;
@@ -258,7 +261,7 @@ pub(crate) fn retain_distinct_matching_supports(
         }
     }
 
-    let mut visited = vec![false; node_count];
+    let mut visited = alloc_filled(node_count, false, "catia_match_support_visit").ok()?;
     let mut finish_order = Vec::with_capacity(node_count);
     for start in 0..node_count {
         if visited[start] {
@@ -282,7 +285,8 @@ pub(crate) fn retain_distinct_matching_supports(
         }
     }
 
-    let mut component = vec![usize::MAX; node_count];
+    let mut component =
+        alloc_filled(node_count, usize::MAX, "catia_match_support_components").ok()?;
     let mut component_count = 0usize;
     for &start in finish_order.iter().rev() {
         if component[start] != usize::MAX {
@@ -304,7 +308,7 @@ pub(crate) fn retain_distinct_matching_supports(
         component_count += 1;
     }
 
-    let mut reaches_free = vec![false; node_count];
+    let mut reaches_free = alloc_filled(node_count, false, "catia_match_support_free").ok()?;
     let mut queue = VecDeque::new();
     for (point, matched) in matched_points.into_iter().enumerate() {
         if !matched {
@@ -349,7 +353,7 @@ pub(crate) fn unique_coordinate_bijection(
         slot_classes: &[usize],
         forced: Option<(usize, usize)>,
     ) -> Option<Vec<usize>> {
-        let mut owner = vec![None; slot_classes.len()];
+        let mut owner = alloc_filled(slot_classes.len(), None, "catia_bijection_owners").ok()?;
         let mut order = (0..domains.len()).collect::<Vec<_>>();
         order.sort_unstable_by_key(|vertex| {
             let count = forced
@@ -365,10 +369,13 @@ pub(crate) fn unique_coordinate_bijection(
                 );
             (count, *vertex)
         });
-        let mut seen_vertices = vec![0usize; domains.len()];
-        let mut seen_slots = vec![0usize; slot_classes.len()];
-        let mut incoming_slot = vec![None; domains.len()];
-        let mut via_vertex = vec![None; slot_classes.len()];
+        let mut seen_vertices =
+            alloc_filled(domains.len(), 0usize, "catia_bijection_seen_vertices").ok()?;
+        let mut seen_slots =
+            alloc_filled(slot_classes.len(), 0usize, "catia_bijection_seen_slots").ok()?;
+        let mut incoming_slot =
+            alloc_filled(domains.len(), None, "catia_bijection_incoming").ok()?;
+        let mut via_vertex = alloc_filled(slot_classes.len(), None, "catia_bijection_via").ok()?;
         for (generation, start) in order.into_iter().enumerate() {
             let generation = generation + 1;
             let mut queue = VecDeque::from([start]);
@@ -413,7 +420,8 @@ pub(crate) fn unique_coordinate_bijection(
                 slot = previous;
             }
         }
-        let mut assignment = vec![None; domains.len()];
+        let mut assignment =
+            alloc_filled(domains.len(), None, "catia_bijection_assignment").ok()?;
         for (slot, vertex) in owner.into_iter().enumerate() {
             assignment[vertex?] = Some(slot_classes[slot]);
         }
@@ -451,12 +459,14 @@ pub(crate) fn unique_coordinate_bijection(
             classes
         })
         .collect::<Vec<_>>();
-    let mut capacities = vec![0usize; representatives.len()];
+    let mut capacities =
+        alloc_filled(representatives.len(), 0usize, "catia_bijection_capacities").ok()?;
     for class in &point_classes {
         capacities[*class] += 1;
     }
     let mut slot_classes = Vec::with_capacity(points.len());
-    let mut slots_by_class = vec![Vec::new(); capacities.len()];
+    let mut slots_by_class =
+        alloc_filled(capacities.len(), Vec::new(), "catia_bijection_slots").ok()?;
     for (class, capacity) in capacities.into_iter().enumerate() {
         for _ in 0..capacity {
             let slot = slot_classes.len();
@@ -480,11 +490,16 @@ pub(crate) fn unique_coordinate_bijection(
             }
         }
     }
-    let mut available = vec![Vec::new(); representatives.len()];
+    let mut available = alloc_filled(
+        representatives.len(),
+        Vec::new(),
+        "catia_bijection_available",
+    )
+    .ok()?;
     for (point, class) in point_classes.into_iter().enumerate() {
         available[class].push(point);
     }
-    let mut used = vec![0usize; available.len()];
+    let mut used = alloc_filled(available.len(), 0usize, "catia_bijection_used").ok()?;
     Some(
         classes
             .iter()

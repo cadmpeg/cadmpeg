@@ -5,6 +5,7 @@ use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
 use crate::global::{Global, RealPrecision};
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -216,6 +217,7 @@ pub(crate) fn resolve_transform(
     length_factor: f64,
     precision: RealPrecision,
     path: &mut BTreeSet<u32>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Affine, String> {
     if sequence == 0 {
         return Ok(Affine::IDENTITY);
@@ -225,7 +227,16 @@ pub(crate) fn resolve_transform(
     if sequence % 2 == 0 {
         return Err("transformation pointer names an even Directory sequence".into());
     }
-    if path.len() >= MAX_TRANSFORM_DEPTH {
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("iges_transform_chain", None))
+        .transpose()
+        .map_err(|error| error.to_string())?;
+    let depth_limit = ctx
+        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+        .map_or(MAX_TRANSFORM_DEPTH, |policy| {
+            policy.min(MAX_TRANSFORM_DEPTH)
+        });
+    if path.len() >= depth_limit {
         return Err(format!(
             "transformation chain exceeds {MAX_TRANSFORM_DEPTH} entities"
         ));
@@ -353,6 +364,7 @@ pub(crate) fn resolve_transform(
             length_factor,
             precision,
             path,
+            ctx,
         )?;
         Ok(parent.compose(local))
     })();
@@ -401,6 +413,7 @@ pub(crate) fn project_geometry(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Projection {
     let records = parameters
         .iter()
@@ -498,6 +511,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -630,6 +644,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -691,6 +706,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -928,6 +944,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -1020,37 +1037,38 @@ pub(crate) fn project_geometry(
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }
-    let conics = super::conics::project(ir, directory, parameters, global);
+    let conics = super::conics::project(ir, directory, parameters, global, ctx);
     handled.extend(conics.handled);
     decoded.extend(conics.decoded);
     losses.extend(conics.losses);
     wire_edges.extend(conics.wire_edges);
-    let copious = super::copious::project(ir, directory, parameters, global);
+    let copious = super::copious::project(ir, directory, parameters, global, ctx);
     handled.extend(copious.handled);
     decoded.extend(copious.decoded);
     losses.extend(copious.losses);
     wire_edges.extend(copious.wire_edges);
     free_vertices.extend(copious.free_vertices);
-    let splines = super::splines::project(ir, directory, parameters, global);
+    let splines = super::splines::project(ir, directory, parameters, global, ctx);
     handled.extend(splines.handled);
     decoded.extend(splines.decoded);
     losses.extend(splines.losses);
     wire_edges.extend(splines.wire_edges);
-    let composites = super::composite::project(ir, directory, parameters, global);
+    let composites = super::composite::project(ir, directory, parameters, global, ctx);
     handled.extend(composites.handled);
     decoded.extend(composites.decoded);
     losses.extend(composites.losses);
     wire_edges.extend(composites.wire_edges);
-    let offsets = super::offsets::project(ir, directory, parameters, global);
+    let offsets = super::offsets::project(ir, directory, parameters, global, ctx);
     handled.extend(offsets.handled);
     decoded.extend(offsets.decoded);
     losses.extend(offsets.losses);
     wire_edges.extend(offsets.wire_edges);
-    let analytic_surfaces = super::analytic_surfaces::project(ir, directory, parameters, global);
+    let analytic_surfaces =
+        super::analytic_surfaces::project(ir, directory, parameters, global, ctx);
     handled.extend(analytic_surfaces.handled);
     decoded.extend(analytic_surfaces.decoded);
     losses.extend(analytic_surfaces.losses);
-    let surfaces = super::surfaces::project(ir, directory, parameters, global);
+    let surfaces = super::surfaces::project(ir, directory, parameters, global, ctx);
     handled.extend(surfaces.handled);
     decoded.extend(surfaces.decoded);
     losses.extend(surfaces.losses);
@@ -1080,31 +1098,31 @@ pub(crate) fn project_geometry(
             free_vertices,
         });
     }
-    let trimming = super::trimming::project(ir, directory, parameters, global);
+    let trimming = super::trimming::project(ir, directory, parameters, global, ctx);
     handled.extend(trimming.handled);
     decoded.extend(trimming.decoded);
     losses.extend(trimming.losses);
-    let brep = super::brep::project(ir, directory, parameters, global);
+    let brep = super::brep::project(ir, directory, parameters, global, ctx);
     handled.extend(brep.handled);
     decoded.extend(brep.decoded);
     losses.extend(brep.losses);
-    let csg = super::csg::project(ir, directory, parameters, global);
+    let csg = super::csg::project(ir, directory, parameters, global, ctx);
     handled.extend(csg.handled);
     decoded.extend(csg.decoded);
     losses.extend(csg.losses);
-    let structure = super::structure::project(ir, directory, parameters, global);
+    let structure = super::structure::project(ir, directory, parameters, global, ctx);
     handled.extend(structure.handled);
     decoded.extend(structure.decoded);
     losses.extend(structure.losses);
-    let presentation = super::presentation::project(ir, directory, parameters, global);
+    let presentation = super::presentation::project(ir, directory, parameters, global, ctx);
     handled.extend(presentation.handled);
     decoded.extend(presentation.decoded);
     losses.extend(presentation.losses);
-    let drawing = super::drawing::project(ir, directory, parameters, global);
+    let drawing = super::drawing::project(ir, directory, parameters, global, ctx);
     handled.extend(drawing.handled);
     decoded.extend(drawing.decoded);
     losses.extend(drawing.losses);
-    let annotation = super::annotation::project(ir, directory, parameters, global);
+    let annotation = super::annotation::project(ir, directory, parameters, global, ctx);
     handled.extend(annotation.handled);
     decoded.extend(annotation.decoded);
     losses.extend(annotation.losses);

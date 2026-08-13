@@ -7,6 +7,7 @@ use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{ParameterRecord, TokenValue};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -115,9 +116,10 @@ pub(super) fn pcurve_geometry(
     support: &SurfaceGeometry,
     factor: f64,
     tolerance: Option<f64>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    let (nurbs, range) = bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance)?;
+    let (nurbs, range) = bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx)?;
     let (u_factor, v_factor) = match support {
         SurfaceGeometry::Plane { .. } => (1.0, 1.0),
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => (1.0 / factor, 1.0),
@@ -190,6 +192,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> TrimmingProjection {
     let records = parameters
         .iter()
@@ -592,6 +595,7 @@ pub(super) fn project(
                             &support_geometry,
                             factor,
                             Some(agreement_tolerance),
+                            ctx,
                         )
                     })
                     .collect::<Option<Vec<_>>>();

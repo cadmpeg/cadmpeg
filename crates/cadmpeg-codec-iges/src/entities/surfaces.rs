@@ -5,6 +5,7 @@ use super::geometry::{declared_unit_vector, entity_loss, resolve_transform, sour
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface,
     ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface, SurfaceGeometry,
@@ -59,9 +60,13 @@ fn normalized(vector: Vector3) -> Option<Vector3> {
         .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
 }
 
-fn bounded_nurbs(ir: &CadIr, sequence: u32) -> Option<(NurbsCurve, [f64; 2])> {
+fn bounded_nurbs(
+    ir: &CadIr,
+    sequence: u32,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    super::composite::bounded_nurbs_for_curve(ir, &curve_id)
+    super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx)
 }
 
 fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
@@ -265,6 +270,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> SurfaceProjection {
     let records = parameters
         .iter()
@@ -346,6 +352,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -423,8 +430,8 @@ pub(super) fn project(
             continue;
         }
         let (Some((first, first_interval)), Some((mut second, second_interval))) = (
-            bounded_nurbs(ir, first_sequence),
-            bounded_nurbs(ir, second_sequence),
+            bounded_nurbs(ir, first_sequence, ctx),
+            bounded_nurbs(ir, second_sequence, ctx),
         ) else {
             losses.push(entity_loss(
                 entry,
@@ -545,7 +552,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some((directrix, interval)) = bounded_nurbs(ir, directrix_sequence) else {
+        let Some((directrix, interval)) = bounded_nurbs(ir, directrix_sequence, ctx) else {
             losses.push(entity_loss(
                 entry,
                 "directrix has no bounded polynomial or NURBS carrier",
@@ -674,6 +681,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -697,7 +705,8 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some((generatrix, parameter_interval)) = bounded_nurbs(ir, generatrix_sequence) else {
+        let Some((generatrix, parameter_interval)) = bounded_nurbs(ir, generatrix_sequence, ctx)
+        else {
             losses.push(entity_loss(
                 entry,
                 "generatrix has no bounded polynomial or NURBS carrier",
@@ -1051,6 +1060,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {

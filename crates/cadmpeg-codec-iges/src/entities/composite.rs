@@ -6,6 +6,7 @@ use super::geometry::{entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
     ProceduralCurve, ProceduralCurveDefinition,
@@ -402,8 +403,18 @@ fn bounded_nurbs_for_id(
     curve_id: &CurveId,
     depth: usize,
     join_tolerance: Option<f64>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
-    if depth > MAX_COMPOSITE_DEPTH {
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("iges_composite_flatten", None))
+        .transpose()
+        .ok()?;
+    let depth_limit = ctx
+        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+        .map_or(MAX_COMPOSITE_DEPTH, |policy| {
+            policy.min(MAX_COMPOSITE_DEPTH)
+        });
+    if depth > depth_limit {
         return None;
     }
     let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id)?;
@@ -411,7 +422,8 @@ fn bounded_nurbs_for_id(
         let children = segments
             .iter()
             .map(|segment| {
-                let child = bounded_nurbs_for_id(ir, &segment.curve, depth + 1, join_tolerance)?;
+                let child =
+                    bounded_nurbs_for_id(ir, &segment.curve, depth + 1, join_tolerance, ctx)?;
                 if segment.same_sense {
                     Some(child)
                 } else {
@@ -483,28 +495,36 @@ fn bounded_nurbs_for_id(
     }
 }
 
-fn bounded_nurbs(ir: &CadIr, sequence: u32, join_tolerance: f64) -> Option<(NurbsCurve, [f64; 2])> {
+fn bounded_nurbs(
+    ir: &CadIr,
+    sequence: u32,
+    join_tolerance: f64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    bounded_nurbs_for_id(ir, &curve_id, 0, Some(join_tolerance))
+    bounded_nurbs_for_id(ir, &curve_id, 0, Some(join_tolerance), ctx)
 }
 
 pub(super) fn bounded_nurbs_for_curve(
     ir: &CadIr,
     curve_id: &CurveId,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
-    bounded_nurbs_for_id(ir, curve_id, 0, None)
+    bounded_nurbs_for_id(ir, curve_id, 0, None, ctx)
 }
 
 pub(super) fn bounded_nurbs_for_curve_with_tolerance(
     ir: &CadIr,
     curve_id: &CurveId,
     tolerance: Option<f64>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
     bounded_nurbs_for_id(
         ir,
         curve_id,
         0,
         tolerance.filter(|tolerance| tolerance.is_finite() && *tolerance >= 0.0),
+        ctx,
     )
 }
 
@@ -659,6 +679,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> CompositeProjection {
     let records = parameters
         .iter()
@@ -725,7 +746,7 @@ pub(super) fn project(
         }
         let Some(children) = child_sequences
             .iter()
-            .map(|sequence| bounded_nurbs(ir, *sequence, join_tolerance))
+            .map(|sequence| bounded_nurbs(ir, *sequence, join_tolerance, ctx))
             .collect::<Option<Vec<_>>>()
         else {
             if let Some(edge) = project_degraded_composite(
@@ -1103,9 +1124,9 @@ mod tests {
                 tolerance: None,
             });
         }
-        assert!(bounded_nurbs_for_curve(&ir, &composite_id).is_none());
+        assert!(bounded_nurbs_for_curve(&ir, &composite_id, None).is_none());
         let (carrier, range) =
-            bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001))
+            bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), None)
                 .expect("carrier join within the global resolution should project");
         assert_eq!(range, [0.0, 2.0]);
         assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));

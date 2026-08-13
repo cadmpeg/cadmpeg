@@ -5,6 +5,7 @@ use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -642,6 +643,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Projection {
     let records = parameters
         .iter()
@@ -673,6 +675,7 @@ pub(super) fn project(
                 global.length_factor_mm(),
                 global.real_precision(),
                 &mut BTreeSet::new(),
+                ctx,
             )
             .is_ok();
             entry.status.use_flag == 1
