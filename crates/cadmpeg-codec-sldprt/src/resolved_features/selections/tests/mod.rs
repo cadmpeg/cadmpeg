@@ -15,3 +15,4 @@ use std::collections::{BTreeMap, HashSet};
 
 mod compact_edge;
 mod surfaces;
+mod writer;
