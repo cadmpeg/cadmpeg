@@ -1,27 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch, spatial-sketch, sketch-block, and wrap write encoders.
 
-use super::super::{
-    face_selection_value, feature_input_class, format_length_mm, profile_source,
-    require_same_family, sketch_block_placement,
-};
+use super::super::{feature_input_class, format_length_mm, sketch_block_placement};
+use super::support::{face_selection_value, profile_source, require_same_family};
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FeatureDefinition, WrapMode};
+use cadmpeg_ir::features::{FaceSelection, FeatureId, Length, ProfileRef, WrapMode};
 
 #[allow(
-    clippy::unnecessary_wraps,
-    reason = "Per-feature encoders use one fallible dispatch interface."
+    clippy::too_many_arguments,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::ref_option,
+    clippy::ptr_arg,
+    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
 )]
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_sketch_block_definition(
         &self,
+        sketch: &Option<cadmpeg_ir::sketches::SketchId>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::SketchBlockDefinition { sketch } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if sketch.is_some() {
@@ -49,12 +48,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_sketch_block_instance(
         &self,
+        block: &Option<FeatureId>,
+        placement: &Option<cadmpeg_ir::transform::Transform>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::SketchBlockInstance { block, placement } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         let feature_sources = self.feature_sources;
         Ok({
@@ -88,17 +85,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_wrap(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_wrap(
+        &self,
+        profile: &ProfileRef,
+        face: &FaceSelection,
+        mode: &WrapMode,
+        depth: &Option<Length>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Wrap {
-            profile,
-            face,
-            mode,
-            depth,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         let record_sources = self.record_sources;
         let feature_sources = self.feature_sources;
@@ -165,9 +159,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_sketch(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Sketch { .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             require_same_family(existing, &feature.id, &["Sketch"])?;
@@ -183,9 +174,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_spatial_sketch(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::SpatialSketch { .. } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             require_same_family(existing, &feature.id, &["Sketch"])?;

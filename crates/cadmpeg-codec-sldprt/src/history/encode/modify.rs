@@ -2,31 +2,37 @@
 //! Fillet, chamfer, combine, face/body edit, dome, flex, and scale write encoders.
 
 use super::super::{
-    body_retention_mode, body_selection_value, edge_selection_value, face_selection_value,
-    feature_family, feature_input_class, format_angle_like, format_angle_rad, format_length_like,
-    format_length_mm, format_point3_mm, format_vector3, indexed_name, is_chamfer, is_fillet,
-    parse_bounded_angle_rad, require_direction, require_same_family, resolved_boolean_op,
-    write_native_selection,
+    body_retention_mode, feature_family, feature_input_class, format_angle_rad, format_length_mm,
+    indexed_name, is_chamfer, is_fillet, parse_bounded_angle_rad,
+};
+use super::format::{format_angle_like, format_length_like, format_point3_mm, format_vector3};
+use super::support::{
+    body_selection_value, edge_selection_value, face_selection_value, require_direction,
+    require_same_family, resolved_boolean_op, write_native_selection,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    BodyRetentionMode, BooleanOp, ChamferSpec, EdgeSelection, FaceMotion, FeatureDefinition,
-    FlexMode, Length, RadiusSpec, ScaleCenter,
+    AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferGroup, ChamferSpec,
+    EdgeSelection, FaceMotion, FaceSelection, FilletGroup, FlexMode, Length, RadiusSpec,
+    ScaleCenter, ScaleFactors,
 };
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 
 #[allow(
-    clippy::unnecessary_wraps,
-    reason = "Per-feature encoders use one fallible dispatch interface."
+    clippy::too_many_arguments,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::ref_option,
+    clippy::ptr_arg,
+    reason = "Encoder arguments are borrowed from one FeatureDefinition match."
 )]
 impl NeutralFeatureEncoder<'_, '_, '_> {
-    pub(super) fn encode_fillet(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_fillet(
+        &self,
+        groups: &Vec<FilletGroup>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Fillet { groups } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let [group] = groups.as_slice() else {
@@ -145,15 +151,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_chamfer(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_chamfer(
+        &self,
+        groups: &Vec<ChamferGroup>,
+        flip_direction: &bool,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Chamfer {
-            groups,
-            flip_direction,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let [group] = groups.as_slice() else {
@@ -325,17 +328,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_combine(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_combine(
+        &self,
+        target: &BodySelection,
+        tools: &BodySelection,
+        op: &BooleanOp,
+        keep_tools: &bool,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Combine {
-            target,
-            tools,
-            op,
-            keep_tools,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if existing.is_some_and(|record| {
@@ -382,16 +382,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_cut_with_surface(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_cut_with_surface(
+        &self,
+        targets: &BodySelection,
+        tools: &FaceSelection,
+        reverse: &Option<bool>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::CutWithSurface {
-            targets,
-            tools,
-            reverse,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             require_same_family(existing, &feature.id, &["CutWithSurface", "SurfaceCut"])?;
@@ -423,11 +420,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_delete_body(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_delete_body(
+        &self,
+        bodies: &BodySelection,
+        mode: &BodyRetentionMode,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let selection = body_selection_value(bodies);
@@ -490,11 +488,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_delete_face(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_delete_face(
+        &self,
+        faces: &FaceSelection,
+        heal: &bool,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::DeleteFace { faces, heal } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let faces = face_selection_value(faces);
@@ -519,15 +518,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_replace_face(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_replace_face(
+        &self,
+        targets: &FaceSelection,
+        replacements: &FaceSelection,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::ReplaceFace {
-            targets,
-            replacements,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let targets = face_selection_value(targets);
@@ -557,11 +553,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_move_face(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_move_face(
+        &self,
+        faces: &FaceSelection,
+        motion: &FaceMotion,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::MoveFace { faces, motion } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let faces = face_selection_value(faces);
@@ -622,17 +619,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_move_body(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_move_body(
+        &self,
+        bodies: &BodySelection,
+        translation: &Vector3,
+        rotation: &Option<AxisAngle>,
+        copies: &u32,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::MoveBody {
-            bodies,
-            translation,
-            rotation,
-            copies,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let bodies = body_selection_value(bodies).ok_or_else(|| {
@@ -692,17 +686,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_dome(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_dome(
+        &self,
+        faces: &FaceSelection,
+        height: &Option<Length>,
+        elliptical: &Option<bool>,
+        reverse: &Option<bool>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Dome {
-            faces,
-            height,
-            elliptical,
-            reverse,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let faces = face_selection_value(faces);
@@ -753,11 +744,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_flex(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_flex(
+        &self,
+        axis: &Option<Vector3>,
+        mode: &FlexMode,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Flex { axis, mode } = &feature.definition else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             if existing.is_some_and(|record| !feature_family(record, "Flex")) {
@@ -843,16 +835,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         })
     }
 
-    pub(super) fn encode_scale(&self) -> Result<NeutralFeatureEncoding, CodecError> {
+    pub(super) fn encode_scale(
+        &self,
+        bodies: &BodySelection,
+        center: &Option<ScaleCenter>,
+        factors: &ScaleFactors,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
-        let FeatureDefinition::Scale {
-            bodies,
-            center,
-            factors,
-        } = &feature.definition
-        else {
-            unreachable!("neutral feature encoder dispatched wrong variant")
-        };
         let existing = self.existing;
         Ok({
             let selection = body_selection_value(bodies);
