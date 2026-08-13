@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use cadmpeg_core::decode::View;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -446,20 +447,19 @@ pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<
         (0..payload.len())
             .filter(|index| opcode_offsets.contains(index))
             .filter_map(|index| {
-                if let Some([0xe9, low, high, layout, 0x37, 0xfe, 0xfe]) =
-                    payload.get(index..index + 7)
+                if let Some([0xe9, _, _, layout, 0x37, 0xfe, 0xfe]) = payload.get(index..index + 7)
                 {
                     return Some(EntityValuePacket::Layout {
                         offset: index,
-                        type_selector: u16::from_le_bytes([*low, *high]),
+                        type_selector: View::u16_le_at(payload, index + 1)?,
                         layout: *layout,
                         layout_offset: index + 3,
                     });
                 }
                 match payload.get(index..index + 6) {
-                    Some([0xe8, low, high, 0x37, 0xfe, 0xfe]) => Some(EntityValuePacket::Compact {
+                    Some([0xe8, _, _, 0x37, 0xfe, 0xfe]) => Some(EntityValuePacket::Compact {
                         offset: index,
-                        value_selector: u16::from_le_bytes([*low, *high]),
+                        value_selector: View::u16_le_at(payload, index + 1)?,
                     }),
                     _ => None,
                 }
@@ -496,12 +496,7 @@ fn e9_scalar_packets(
             (payload.get(offset..scalar_offset + 1) == Some(PREFIX.as_slice())
                 && payload.get(scalar_end..packet_end) == Some(TRAILER.as_slice()))
             .then_some(())?;
-            let bits = u64::from_le_bytes(
-                payload
-                    .get(scalar_offset + 1..scalar_end)?
-                    .try_into()
-                    .ok()?,
-            );
+            let bits = View::u64_le_at(payload, scalar_offset + 1)?;
             f64::from_bits(bits)
                 .is_finite()
                 .then_some(EntityValuePacket::E9Scalar {
@@ -559,7 +554,7 @@ fn parse_numeric_value_packet(
     let (prefix1, next) = compact_atom(payload, at)?;
     at = next;
     (payload.get(at) == Some(&0xe8)).then_some(())?;
-    let selector = u16::from_le_bytes(payload.get(at + 1..at + 3)?.try_into().ok()?);
+    let selector = View::u16_le_at(payload, at + 1)?;
     (payload.get(at + 3) == Some(&0x37)).then_some(())?;
     let (layout_atom, next) = one_byte_atom(payload, at + 4)?;
     let (value_atom, next) = one_byte_atom(payload, next)?;
@@ -570,7 +565,7 @@ fn parse_numeric_value_packet(
         match *payload.get(at)? {
             0xe6 => {
                 let end = at.checked_add(9)?;
-                let bits = u64::from_le_bytes(payload.get(at + 1..end)?.try_into().ok()?);
+                let bits = View::u64_le_at(payload, at + 1)?;
                 items.push(NumericPacketItem::Binary64 { bits, offset: at });
                 binary64_count += 1;
                 at = end;
@@ -994,7 +989,7 @@ pub(crate) fn parse_numeric_pair(payload: &[u8]) -> Option<NumericPair> {
         match *payload.get(at)? {
             0xe6 => {
                 let end = at.checked_add(9)?;
-                let bits = u64::from_le_bytes(payload.get(at + 1..end)?.try_into().ok()?);
+                let bits = View::u64_le_at(payload, at + 1)?;
                 slots.push(NumericPairSlot::Binary64 { bits, offset });
                 binary64_count += 1;
                 at = end;
@@ -1153,8 +1148,7 @@ pub fn parse_range_interval(payload: &[u8], start: usize, end: usize) -> Option<
                 match *bytes.get(at)? {
                     0xe6 => {
                         let scalar_end = at.checked_add(9)?;
-                        let bits =
-                            u64::from_le_bytes(bytes.get(at + 1..scalar_end)?.try_into().ok()?);
+                        let bits = View::u64_le_at(bytes, at + 1)?;
                         f64::from_bits(bits).is_finite().then_some(())?;
                         slots.push(RangeIntervalSlot::Binary64 {
                             bits,
@@ -1190,9 +1184,7 @@ fn compact_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
 }
 
 fn u32_le(data: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(
-        data.get(at..at.checked_add(4)?)?.try_into().ok()?,
-    ))
+    View::u32_le_at(data, at)
 }
 
 #[cfg(test)]

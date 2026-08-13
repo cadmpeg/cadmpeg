@@ -6,6 +6,7 @@
 //! fixed-size `f64` array reads.
 
 use super::cursor::Cursor;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::{f64_at, u16_at as u16_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -13,13 +14,16 @@ pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<f64>> {
     if !bytes.len().is_multiple_of(8) {
         return None;
     }
-    bytes
-        .chunks_exact(8)
-        .map(|bytes| {
-            let value = f64::from_le_bytes(bytes.try_into().ok()?);
-            value.is_finite().then_some(value)
-        })
-        .collect()
+    let mut view = View::over_retained(bytes);
+    let mut values = Vec::with_capacity(bytes.len() / 8);
+    while !view.is_empty() {
+        let value = view.f64_le()?;
+        if !value.is_finite() {
+            return None;
+        }
+        values.push(value);
+    }
+    Some(values)
 }
 
 pub(crate) fn read_f64_array<const N: usize>(data: &[u8], start: usize) -> Option<[f64; N]> {

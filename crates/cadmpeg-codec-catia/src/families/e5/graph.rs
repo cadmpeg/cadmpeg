@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::{take_f64s, take_u32 as read_u32, u32_at};
 
 use crate::wire;
@@ -561,26 +562,13 @@ fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
         return None;
     }
     position += 1;
-    let range = [
-        f64::from_le_bytes(
-            record
-                .payload
-                .get(position..position + 8)?
-                .try_into()
-                .ok()?,
-        ),
-        f64::from_le_bytes(
-            record
-                .payload
-                .get(position + 8..position + 16)?
-                .try_into()
-                .ok()?,
-        ),
-    ];
+    let mut view = View::over_retained(record.payload);
+    view.seek(position)?;
+    let range = [view.f64_le()?, view.f64_le()?];
     if range.iter().any(|value| !value.is_finite()) {
         return None;
     }
-    position += 16;
+    position = view.position();
     Some(E5CurveSupport {
         record_id: record.id,
         intersection: record.class == 0xc1,
@@ -601,13 +589,7 @@ fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
     position += 1;
     let mut entries = Vec::with_capacity(representations.len());
     for representation in representations {
-        let parameter = f64::from_le_bytes(
-            record
-                .payload
-                .get(position..position + 8)?
-                .try_into()
-                .ok()?,
-        );
+        let parameter = View::f64_le_at(record.payload, position)?;
         position += 8;
         let code = read_u32(record.payload, &mut position)?;
         if !parameter.is_finite() {
@@ -1107,8 +1089,8 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             }
             let signs: Vec<i16> = sign_bytes
                 .chunks_exact(2)
-                .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
-                .collect();
+                .map(|bytes| View::i16_le_at(bytes, 0))
+                .collect::<Option<Vec<_>>>()?;
             if signs.iter().any(|sign| !matches!(sign, -1 | 1))
                 || faces
                     .iter()
@@ -1140,7 +1122,9 @@ fn records(bytes: &[u8]) -> Vec<Record<'_>> {
         if start + 13 > bytes.len() {
             break;
         }
-        let size = usize::from(u16::from_le_bytes([bytes[start + 5], bytes[start + 6]]));
+        let Some(size) = View::u16_le_at(bytes, start + 5).map(usize::from) else {
+            break;
+        };
         let Some(end) = start.checked_add(13 + size) else {
             break;
         };
@@ -1169,13 +1153,7 @@ fn parse_face(record: &Record<'_>) -> Option<RawFace> {
     for _ in 0..count {
         loops.push(wire::object_ref(record.payload, &mut position, false)?);
     }
-    let trailer_sign = i16::from_le_bytes(
-        record
-            .payload
-            .get(position..position + 2)?
-            .try_into()
-            .ok()?,
-    );
+    let trailer_sign = View::i16_le_at(record.payload, position)?;
     if !matches!(trailer_sign, -1 | 1) || position + 2 != record.payload.len() {
         return None;
     }
@@ -1224,8 +1202,8 @@ fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Option<(Option<bool>,
     }
     let signs: Vec<i16> = trailing[1..]
         .chunks_exact(2)
-        .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
-        .collect();
+        .map(|bytes| View::i16_le_at(bytes, 0))
+        .collect::<Option<Vec<_>>>()?;
     if signs.iter().any(|sign| !matches!(sign, -1..=1)) || !matches!(signs[1], -1 | 1) {
         return None;
     }

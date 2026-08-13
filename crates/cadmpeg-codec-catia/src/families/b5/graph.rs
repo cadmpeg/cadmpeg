@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{View, WorkBudget};
 use cadmpeg_core::le::f64_at;
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry};
@@ -3986,21 +3986,17 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         return None;
     }
     position += 1;
+    let mut view = View::over_retained(&record.payload);
+    view.seek(position)?;
     let mut distinct_knots = Vec::with_capacity(knot_count);
     for _ in 0..knot_count {
-        let value = f64::from_le_bytes(
-            record
-                .payload
-                .get(position..position + 8)?
-                .try_into()
-                .ok()?,
-        );
+        let value = view.f64_le()?;
         if !value.is_finite() {
             return None;
         }
         distinct_knots.push(value);
-        position += 8;
     }
+    position = view.position();
     if distinct_knots.windows(2).any(|pair| pair[0] >= pair[1]) {
         return None;
     }
@@ -4013,28 +4009,17 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         return None;
     }
     let pole_count = endpoint_multiplicity;
+    view.seek(position)?;
     let mut control_points = Vec::with_capacity(usize::try_from(pole_count).ok()?);
     for _ in 0..pole_count {
-        let u = f64::from_le_bytes(
-            record
-                .payload
-                .get(position..position + 8)?
-                .try_into()
-                .ok()?,
-        );
-        let v = f64::from_le_bytes(
-            record
-                .payload
-                .get(position + 8..position + 16)?
-                .try_into()
-                .ok()?,
-        );
+        let u = view.f64_le()?;
+        let v = view.f64_le()?;
         if !u.is_finite() || !v.is_finite() {
             return None;
         }
         control_points.push([u, v]);
-        position += 16;
     }
+    position = view.position();
     let tail = record.payload.get(position..)?;
     let suffix_scalar = scalar(tail, 10)?;
     if tail.len() != 36
@@ -4454,14 +4439,15 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     })
 }
 
-fn line_values<const N: usize>(payload: &[u8], mut position: usize) -> Option<[f64; N]> {
+fn line_values<const N: usize>(payload: &[u8], position: usize) -> Option<[f64; N]> {
+    let mut view = View::over_retained(payload);
+    view.seek(position)?;
     let mut values = [0.0; N];
     for value in &mut values {
-        *value = f64::from_le_bytes(payload.get(position..position + 8)?.try_into().ok()?);
+        *value = view.f64_le()?;
         if !value.is_finite() {
             return None;
         }
-        position += 8;
     }
     Some(values)
 }
@@ -5054,15 +5040,12 @@ fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
         0xb5 => (
             8usize,
             usize::from(*bytes.get(start + 3)?),
-            u32::from_le_bytes(bytes.get(start + 4..start + 8)?.try_into().ok()?),
+            View::u32_le_at(bytes, start + 4)?,
         ),
         0xa8 => (
             11usize,
-            usize::try_from(u32::from_le_bytes(
-                bytes.get(start + 3..start + 7)?.try_into().ok()?,
-            ))
-            .ok()?,
-            u32::from_le_bytes(bytes.get(start + 7..start + 11)?.try_into().ok()?),
+            usize::try_from(View::u32_le_at(bytes, start + 3)?).ok()?,
+            View::u32_le_at(bytes, start + 7)?,
         ),
         _ => return None,
     };
@@ -5385,11 +5368,8 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<B5LoopMetadata> {
     let edge_controls = bytes[3..controls_end]
         .chunks_exact(6)
         .map(|controls| {
-            let controls = [
-                i16::from_le_bytes(controls[0..2].try_into().ok()?),
-                i16::from_le_bytes(controls[2..4].try_into().ok()?),
-                i16::from_le_bytes(controls[4..6].try_into().ok()?),
-            ];
+            let mut view = View::over_retained(controls);
+            let controls = [view.i16_le()?, view.i16_le()?, view.i16_le()?];
             controls
                 .iter()
                 .all(|control| matches!(control, -1 | 1))
@@ -5405,20 +5385,23 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<B5LoopMetadata> {
                 && extended[35] & 1 == 1
                 && extended.get(36..38) == Some(&[0x05, 0x01]) =>
         {
-            let scalars: [f64; 4] = std::array::from_fn(|index| {
-                f64::from_le_bytes(
-                    extended[1 + index * 8..9 + index * 8]
-                        .try_into()
-                        .expect("checked extended loop scalar extent"),
-                )
-            });
-            let floats: [f32; 6] = std::array::from_fn(|index| {
-                f32::from_le_bytes(
-                    extended[38 + index * 4..42 + index * 4]
-                        .try_into()
-                        .expect("checked extended loop float extent"),
-                )
-            });
+            let mut view = View::over_retained(extended);
+            view.seek(1)?;
+            let scalars = [
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+            ];
+            view.seek(38)?;
+            let floats = [
+                view.f32_le()?,
+                view.f32_le()?,
+                view.f32_le()?,
+                view.f32_le()?,
+                view.f32_le()?,
+                view.f32_le()?,
+            ];
             if scalars.iter().any(|value| !value.is_finite())
                 || floats.iter().any(|value| !value.is_finite())
             {

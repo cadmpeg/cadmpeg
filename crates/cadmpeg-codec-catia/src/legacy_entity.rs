@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity framing for the pre-`7C05` design stream.
 
+use cadmpeg_core::decode::View;
+
 use crate::container;
 
 const CATALOG_OPEN: &[u8] = b"\xde\x04\xfe\xfe\x12CATCatalogManager";
@@ -363,7 +365,7 @@ fn parse_run_before(
             if bytes[0] != 0xea || !matches!(bytes[5], 0x81 | 0x82 | 0xe5 | 0xfd) {
                 return None;
             }
-            let entity_id = u32::from_le_bytes(bytes[1..5].try_into().ok()?);
+            let entity_id = View::u32_le_at(bytes, 1)?;
             (entity_id != 0).then_some(LegacyEntityIdentity {
                 offset,
                 entity_id,
@@ -648,8 +650,7 @@ fn parse_scalar_values(
                     if offset.checked_add(14)? > end {
                         return None;
                     }
-                    let value = data.get(offset + 6..offset + 14)?;
-                    let bits = u64::from_le_bytes(value.try_into().ok()?);
+                    let bits = View::u64_le_at(data, offset + 6)?;
                     f64::from_bits(bits)
                         .is_finite()
                         .then_some(LegacyScalarEvaluation::Value(bits))?
@@ -762,7 +763,7 @@ fn parse_integer_values(
                 }
                 (
                     LegacyIntegerEncoding::WideI32,
-                    i32::from_le_bytes(data.get(payload + 1..value_end)?.try_into().ok()?),
+                    View::i32_le_at(data, payload + 1)?,
                     value_end,
                 )
             } else {
@@ -1113,7 +1114,7 @@ fn parse_schema_fields(
                 entity_id: role.entity_id,
                 role_offset: role.offset,
                 boundary_role_offset: boundary.offset,
-                field_code: u16::from_le_bytes([*data.get(offset + 1)?, *data.get(offset + 2)?]),
+                field_code: View::u16_le_at(data, offset + 1)?,
                 payload: data.get(payload_offset..boundary.offset)?.to_vec(),
             })
         })
@@ -1148,11 +1149,7 @@ fn parse_role_selectors(
                 }
                 (
                     LegacyRoleSelectorEncoding::FixedU32,
-                    u32::from_le_bytes(
-                        data.get(selector_offset + 1..selector_end)?
-                            .try_into()
-                            .ok()?,
-                    ),
+                    View::u32_le_at(data, selector_offset + 1)?,
                 )
             } else if (0xd1..=0xe4).contains(&first) {
                 if selector_offset.checked_add(2)? > end {
@@ -1234,9 +1231,7 @@ fn parse_role_selectors(
                     let name_selector = *data.get(role_offset)?;
                     (name_selector != 0 && data.get(role_offset + 1) == Some(&0x80))
                         .then_some(())?;
-                    let selector = u32::from_le_bytes(
-                        data.get(role_offset + 2..field_offset)?.try_into().ok()?,
-                    );
+                    let selector = View::u32_le_at(data, role_offset + 2)?;
                     (selector != 0).then_some(LegacyRoleSelector {
                         offset: role_offset,
                         entity_id,
@@ -1285,7 +1280,7 @@ fn parse_role_selectors(
             (offset.checked_add(4)? <= end
                 && data.get(offset) == Some(&0xe8)
                 && data.get(offset + 3) == Some(&0x01))
-            .then(|| u16::from_le_bytes([data[offset + 1], data[offset + 2]]))
+            .then(|| View::u16_le_at(data, offset + 1))?
         });
     }
     roles
@@ -1306,8 +1301,9 @@ fn parse_text_field(
 ) -> Option<(LegacyTextEncoding, String)> {
     let first = *data.get(payload)?;
     if first == 0 {
-        if let Some(length_bytes) = data.get(payload + 1..payload + 5) {
-            let length = usize::try_from(u32::from_le_bytes(length_bytes.try_into().ok()?)).ok()?;
+        if let Some(length) =
+            View::u32_le_at(data, payload + 1).and_then(|n| usize::try_from(n).ok())
+        {
             if let Some(value) = length_closed_text(data, payload + 5, length, end) {
                 return Some((LegacyTextEncoding::ZeroU32Length, value));
             }
