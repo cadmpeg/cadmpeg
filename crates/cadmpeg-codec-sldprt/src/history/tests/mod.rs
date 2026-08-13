@@ -108,7 +108,13 @@ fn native_with_configuration_lanes(
 }
 
 mod configuration;
+mod equations;
+mod extrusion_profile;
+mod feature_operations;
 mod feature_projection;
 mod offset_planes;
 mod parameters;
+mod sketch_bind;
+mod sketch_relations;
 mod split_and_identity;
+mod tree_binding;
