@@ -2190,13 +2190,13 @@ fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static
         PropertyValue::Binary(view) => view.window(),
         PropertyValue::Clipboard { format, data } if *format == u32::MAX => {
             let bytes = data.window();
-            let header = bytes.get(..12)?;
-            let image_kind = u32::from_le_bytes(header[..4].try_into().ok()?);
-            let header_size = u16::from_le_bytes(header[4..6].try_into().ok()?);
-            let width = u16::from_le_bytes(header[6..8].try_into().ok()?) as u32;
-            let height = u16::from_le_bytes(header[8..10].try_into().ok()?) as u32;
-            let reserved = u16::from_le_bytes(header[10..12].try_into().ok()?);
-            let png = &bytes[12..];
+            let mut header = View::over_retained(bytes);
+            let image_kind = header.u32_le()?;
+            let header_size = header.u16_le()?;
+            let width = header.u16_le()? as u32;
+            let height = header.u16_le()? as u32;
+            let reserved = header.u16_le()?;
+            let png = bytes.get(12..)?;
             let png_header = png.get(..24)?;
             if image_kind != 3
                 || header_size != 8
@@ -2204,8 +2204,8 @@ fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static
                 || height == 0
                 || reserved != 0
                 || !png_header.starts_with(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR")
-                || u32::from_be_bytes(png_header[16..20].try_into().ok()?) != width
-                || u32::from_be_bytes(png_header[20..24].try_into().ok()?) != height
+                || View::u32_be_at(png, 16)? != width
+                || View::u32_be_at(png, 20)? != height
             {
                 return None;
             }

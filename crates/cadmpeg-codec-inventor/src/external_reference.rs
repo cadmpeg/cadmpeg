@@ -170,7 +170,7 @@ fn parse_stream<'a>(
     source: View<'a>,
     document_kind: &DocumentKind,
 ) -> Result<ParsedUfrx<'a>, CodecError> {
-    let mut cursor = Cursor::new(source.window());
+    let mut cursor = Cursor::new(source);
     let schema = cursor.u16("schema")?;
     if !(11..=15).contains(&schema) {
         return Err(CodecError::NotImplemented(format!(
@@ -365,7 +365,7 @@ fn parse_stream<'a>(
         save_year(save_version[2]),
     )?;
     let unparsed_tail = source
-        .child(source.start() + cursor.position, source.end())
+        .child(source.start() + cursor.position(), source.end())
         .ok_or_else(|| CodecError::Malformed("UFRxDoc tail range is invalid".into()))?;
     Ok(ParsedUfrx {
         schema,
@@ -399,9 +399,9 @@ fn parse_embedded_references<'a>(
     ctx.charge_collection_items(count as u64, "admit UFRxDoc embedded references")?;
     let mut references = Vec::with_capacity(count);
     for _ in 0..count {
-        let start = cursor.position;
+        let start = cursor.position();
         let value_0 = cursor.u32("embedded-reference value")?;
-        let filetime = u64::from_le_bytes(cursor.array("embedded-reference FILETIME")?);
+        let filetime = cursor.u64("embedded-reference FILETIME")?;
         let value_1 = cursor.u32("embedded-reference value")?;
         let extended_value = if section_version >= 7 {
             Some(cursor.u32("embedded-reference extended value")?)
@@ -416,7 +416,7 @@ fn parse_embedded_references<'a>(
         let display_name = cursor.utf16(ctx, "embedded-reference display name", 65_536)?;
         let state_values = cursor.array("embedded-reference state values")?;
         let record = source
-            .child(source.start() + start, source.start() + cursor.position)
+            .child(source.start() + start, source.start() + cursor.position())
             .ok_or_else(|| {
                 CodecError::Malformed("UFRxDoc embedded-reference range is invalid".into())
             })?;
@@ -454,7 +454,7 @@ fn parse_occurrences<'a>(
     ctx.charge_collection_items(count as u64, "admit UFRxDoc occurrences")?;
     let mut occurrences = Vec::with_capacity(count);
     for _ in 0..count {
-        let start = cursor.position;
+        let start = cursor.position();
         let end_string_flag = cursor.u32("occurrence end-string flag")?;
         let file_reference_id = cursor.u32("occurrence file-reference id")?;
         let occurrence_id = cursor.u32("occurrence id")?;
@@ -478,7 +478,7 @@ fn parse_occurrences<'a>(
                 cursor.u16("occurrence extended-header padding")?;
                 padding_words += 1;
             }
-            let marker_offset = cursor.position;
+            let marker_offset = cursor.position();
             let marker = cursor.u16("occurrence extended-header marker")?;
             if marker != 0x2080 {
                 return Err(CodecError::Malformed(format!(
@@ -516,7 +516,7 @@ fn parse_occurrences<'a>(
         parse_occurrence_settings(ctx, cursor)?;
         parse_occurrence_export(ctx, cursor, save_year)?;
         let record = source
-            .child(source.start() + start, source.start() + cursor.position)
+            .child(source.start() + start, source.start() + cursor.position())
             .ok_or_else(|| CodecError::Malformed("UFRxDoc occurrence range is invalid".into()))?;
         occurrences.push(UfrxOccurrence {
             end_string_flag,
@@ -731,12 +731,12 @@ fn parse_model_states<'a>(
                 trailer: cursor.u16("model-state parameter trailer")?,
             });
         }
-        let suffix_start = cursor.position;
+        let suffix_start = cursor.position();
         cursor.take(77, "model-state suffix")?;
         let suffix = source
             .child(
                 source.start() + suffix_start,
-                source.start() + cursor.position,
+                source.start() + cursor.position(),
             )
             .ok_or_else(|| {
                 CodecError::Malformed("UFRxDoc model-state suffix range is invalid".into())
@@ -757,7 +757,7 @@ fn parse_schema_table(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
 ) -> Result<(u16, Vec<u16>), CodecError> {
-    let mut cursor = Cursor::new(source.window());
+    let mut cursor = Cursor::new(source);
     let schema = cursor.u16("schema")?;
     let section_count = cursor.count16("section-version count", 256)?;
     ctx.charge_collection_items(
@@ -772,26 +772,26 @@ fn parse_schema_table(
 }
 
 struct Cursor<'a> {
-    bytes: &'a [u8],
-    position: usize,
+    view: View<'a>,
 }
 
 impl<'a> Cursor<'a> {
-    const fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, position: 0 }
+    const fn new(view: View<'a>) -> Self {
+        Self { view }
+    }
+
+    fn position(&self) -> usize {
+        self.view.position().saturating_sub(self.view.start())
     }
 
     fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        let end = self
-            .position
+        let _ = self
+            .position()
             .checked_add(len)
             .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} range overflows")))?;
-        let value = self
-            .bytes
-            .get(self.position..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))?;
-        self.position = end;
-        Ok(value)
+        self.view
+            .take(len)
+            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))
     }
 
     fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
@@ -799,15 +799,19 @@ impl<'a> Cursor<'a> {
     }
 
     fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(self.array(field)?))
+        Ok(View::u16_le_at(self.take(2, field)?, 0).expect("two-byte field"))
     }
 
     fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(self.array(field)?))
+        Ok(View::u32_le_at(self.take(4, field)?, 0).expect("four-byte field"))
     }
 
     fn i32(&mut self, field: &str) -> Result<i32, CodecError> {
-        Ok(i32::from_le_bytes(self.array(field)?))
+        Ok(View::i32_le_at(self.take(4, field)?, 0).expect("four-byte field"))
+    }
+
+    fn u64(&mut self, field: &str) -> Result<u64, CodecError> {
+        Ok(View::u64_le_at(self.take(8, field)?, 0).expect("eight-byte field"))
     }
 
     fn array<const N: usize>(&mut self, field: &str) -> Result<[u8; N], CodecError> {
@@ -822,25 +826,20 @@ impl<'a> Cursor<'a> {
     }
 
     fn peek_u16(&self, field: &str) -> Result<u16, CodecError> {
-        let bytes = self
-            .bytes
-            .get(self.position..self.position.saturating_add(2))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))?;
-        Ok(u16::from_le_bytes(bytes.try_into().expect("two-byte peek")))
+        let mut view = self.view;
+        view.u16_le()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))
     }
 
     fn peek_u32_at(&self, relative: usize, field: &str) -> Result<u32, CodecError> {
-        let start = self
-            .position
+        let _ = self
+            .position()
             .checked_add(relative)
             .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} range overflows")))?;
-        let bytes = self
-            .bytes
-            .get(start..start.saturating_add(4))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))?;
-        Ok(u32::from_le_bytes(
-            bytes.try_into().expect("four-byte peek"),
-        ))
+        let mut view = self.view;
+        view.skip(relative)
+            .and_then(|()| view.u32_le())
+            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))
     }
 
     fn count16(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
@@ -854,7 +853,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn count32(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
-        let offset = self.position;
+        let offset = self.position();
         let value = usize::try_from(self.u32(field)?)
             .map_err(|_| CodecError::Malformed(format!("UFRxDoc {field} is too large")))?;
         if value > maximum {
@@ -885,11 +884,10 @@ impl<'a> Cursor<'a> {
             .checked_mul(2)
             .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} length overflows")))?;
         ctx.charge_retained(len as u64, "retain UFRxDoc string", None)?;
-        let units = self
-            .take(len, field)?
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
+        let mut units = Vec::with_capacity(count);
+        for _ in 0..count {
+            units.push(self.u16(field)?);
+        }
         String::from_utf16(&units)
             .map_err(|_| CodecError::Malformed(format!("UFRxDoc {field} is not UTF-16")))
     }
@@ -1020,7 +1018,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic occurrence fits policy");
-        let mut cursor = Cursor::new(root.window());
+        let mut cursor = Cursor::new(root);
 
         let occurrences = parse_occurrences(&ctx, root, &mut cursor, 28, 2020)
             .expect("extended occurrence parses");
@@ -1030,7 +1028,7 @@ mod tests {
         assert_eq!(occurrences[0].occurrence_id, 17);
         assert_eq!(occurrences[0].title.as_deref(), Some("extended"));
         assert_eq!(occurrences[0].header_padding_words, 2);
-        assert_eq!(cursor.position, bytes.len());
+        assert_eq!(cursor.position(), bytes.len());
     }
 
     #[test]
@@ -1052,7 +1050,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic embedded reference fits policy");
-        let mut cursor = Cursor::new(root.window());
+        let mut cursor = Cursor::new(root);
 
         let references = parse_embedded_references(&ctx, root, &mut cursor, 7)
             .expect("extended embedded reference parses");
@@ -1066,7 +1064,7 @@ mod tests {
         assert_eq!(reference.path, "embedded/component.ipt");
         assert_eq!(reference.state_values, [1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(reference.source.window().len() + 5, bytes.len());
-        assert_eq!(cursor.position, bytes.len());
+        assert_eq!(cursor.position(), bytes.len());
     }
 
     fn fixture(schema: u16) -> (Vec<u8>, usize) {
