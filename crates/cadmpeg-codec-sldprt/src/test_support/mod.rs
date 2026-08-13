@@ -5,6 +5,7 @@
 
 mod container;
 mod history;
+mod ir;
 mod native;
 mod parasolid;
 mod pmi;
@@ -12,6 +13,7 @@ mod tessellation;
 
 pub(crate) use container::*;
 pub(crate) use history::*;
+pub(crate) use ir::*;
 pub(crate) use native::*;
 pub(crate) use parasolid::*;
 pub(crate) use pmi::*;
