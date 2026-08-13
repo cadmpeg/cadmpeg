@@ -9,14 +9,14 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
 
-use super::archive_test_support::{
+use super::RhinoCodec;
+use crate::test_support::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
     line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
     polycurve_payload, polyline_payload, singular_seam_brep_payload, ARC_CLASS, BREP_CLASS,
     EXTRUSION_CLASS, LINE_CLASS, MESH_CLASS, POINT_CLASS, POINT_CLOUD_CLASS, POLYCURVE_CLASS,
     POLYLINE_CLASS, SUBD_CLASS,
 };
-use super::RhinoCodec;
 
 fn decode(bytes: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
     RhinoCodec

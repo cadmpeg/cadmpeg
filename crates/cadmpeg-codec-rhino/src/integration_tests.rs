@@ -3,7 +3,7 @@
 //! End-to-end contracts over synthesized `OpenNURBS` archives.
 
 use super::*;
-use crate::archive_test_support as support;
+use crate::test_support as support;
 use crate::{RhinoArchiveVersion, RhinoEncoder};
 use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
@@ -305,7 +305,7 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
 
 /// Object type for annotation records, per `docs/formats/rhino_3dm.md`.
 const ANNOTATION_OBJECT_TYPE: i64 = 0x0000_0200;
-/// `unit_value` 2 in `archive_test_support::archive` is millimeters.
+/// `unit_value` 2 in `test_support::archive` is millimeters.
 const MILLIMETERS_PER_UNIT: f64 = 1.0;
 
 /// A synthesized archive holding one linear dimension on a rotated plane.

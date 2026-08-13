@@ -3045,7 +3045,7 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         archive,
         0x20,
         MESH_CLASS,
-        &super::archive_test_support::mesh_payload(3, 0, false, false),
+        &crate::test_support::mesh_payload(3, 0, false, false),
     );
     let reference = object_record_with_payload(
         archive,

@@ -132,7 +132,7 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::archive_test_support::{
+    use crate::test_support::{
         class_wrapper, line_payload, polyline_payload, LINE_CLASS, POLYLINE_CLASS,
     };
 

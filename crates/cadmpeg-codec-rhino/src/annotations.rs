@@ -381,7 +381,7 @@ mod tests {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(minor.to_le_bytes());
         body.extend(suffix);
-        crate::archive_test_support::crc_chunk(ANONYMOUS, &body)
+        crate::test_support::crc_chunk(ANONYMOUS, &body)
     }
 
     fn plane() -> Vec<u8> {

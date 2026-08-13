@@ -266,7 +266,7 @@ pub(crate) fn semantic_json(polyedge: &PolyEdge) -> Option<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::archive_test_support::{class_wrapper, crc_chunk};
+    use crate::test_support::{class_wrapper, crc_chunk};
 
     pub(crate) fn polyedge_payload() -> Vec<u8> {
         let mut segment = 1_i32.to_le_bytes().to_vec();
