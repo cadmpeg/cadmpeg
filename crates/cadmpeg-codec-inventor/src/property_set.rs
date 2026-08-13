@@ -91,16 +91,9 @@ impl PropertyValue<'_> {
 }
 
 pub(crate) fn has_property_set_header(bytes: &[u8]) -> bool {
-    bytes.get(..2) == Some(&BYTE_ORDER_LE.to_le_bytes())
-        && bytes
-            .get(2..4)
-            .is_some_and(|version| matches!(u16::from_le_bytes([version[0], version[1]]), 0 | 1))
-        && bytes.get(24..28).is_some_and(|count| {
-            matches!(
-                u32::from_le_bytes(count.try_into().expect("four bytes")),
-                1 | 2
-            )
-        })
+    View::u16_le_at(bytes, 0) == Some(BYTE_ORDER_LE)
+        && matches!(View::u16_le_at(bytes, 2), Some(0 | 1))
+        && matches!(View::u32_le_at(bytes, 24), Some(1 | 2))
 }
 
 pub(crate) fn inventory<'a>(
@@ -117,7 +110,7 @@ pub(crate) fn inventory<'a>(
         }
         let view = snapshot.open(ctx, stream)?;
         if !has_property_set_header(view.window())
-            && view.window().get(..2) != Some(&BYTE_ORDER_LE.to_le_bytes())
+            && View::u16_le_at(view.window(), 0) != Some(BYTE_ORDER_LE)
         {
             continue;
         }
@@ -148,7 +141,7 @@ pub(crate) fn parse_property_set_stream<'a>(
             "OLE property-set stream exceeds {MAX_STREAM_SIZE} bytes"
         )));
     }
-    let mut cursor = Cursor::new(bytes, "OLE property-set stream");
+    let mut cursor = Cursor::new(source, "OLE property-set stream");
     if cursor.u16("byte order")? != BYTE_ORDER_LE {
         return Err(CodecError::Malformed(
             "OLE property-set byte order is not little-endian".into(),
@@ -180,7 +173,7 @@ pub(crate) fn parse_property_set_stream<'a>(
         }
         directories.push((fmtid, cursor.offset("section offset")?));
     }
-    let header_end = cursor.position;
+    let header_end = cursor.position();
     directories.sort_by_key(|(_, offset)| *offset);
     let mut previous_end = header_end;
     let mut sections = Vec::with_capacity(section_count);
@@ -191,7 +184,9 @@ pub(crate) fn parse_property_set_stream<'a>(
             ));
         }
         require_zero_range(bytes, previous_end, offset, "section gap")?;
-        let size = read_u32_at(bytes, offset, "OLE property-set section size")? as usize;
+        let size = View::u32_le_at(bytes, offset).ok_or_else(|| {
+            CodecError::Malformed("truncated OLE property-set section size".into())
+        })? as usize;
         let end = offset.checked_add(size).ok_or_else(|| {
             CodecError::Malformed("OLE property-set section range overflows".into())
         })?;
@@ -223,7 +218,7 @@ fn parse_section<'a>(
     fmtid: [u8; 16],
 ) -> Result<PropertySection<'a>, CodecError> {
     let bytes = source.window();
-    let mut cursor = Cursor::new(bytes, "OLE property-set section");
+    let mut cursor = Cursor::new(source, "OLE property-set section");
     let size = cursor.offset("size")?;
     if size != bytes.len() {
         return Err(CodecError::Malformed(
@@ -289,12 +284,18 @@ fn parse_section<'a>(
     let code_page = ranges
         .iter()
         .find(|(id, _, _)| *id == 1)
-        .map(|(_, start, end)| parse_code_page(&bytes[*start..*end]))
+        .map(|(_, start, end)| parse_code_page(child(source, *start, *end, "code-page property")?))
         .transpose()?;
     let names = ranges
         .iter()
         .find(|(id, _, _)| *id == 0)
-        .map(|(_, start, end)| parse_dictionary(ctx, &bytes[*start..*end], code_page))
+        .map(|(_, start, end)| {
+            parse_dictionary(
+                ctx,
+                child(source, *start, *end, "property dictionary")?,
+                code_page,
+            )
+        })
         .transpose()?
         .unwrap_or_default();
     let mut properties = Vec::with_capacity(property_count);
@@ -326,8 +327,8 @@ fn parse_section<'a>(
     })
 }
 
-fn parse_code_page(bytes: &[u8]) -> Result<u16, CodecError> {
-    let mut cursor = Cursor::new(bytes, "OLE code-page property");
+fn parse_code_page(source: View<'_>) -> Result<u16, CodecError> {
+    let mut cursor = Cursor::new(source, "OLE code-page property");
     if cursor.u16("type")? != 2 || cursor.u16("type padding")? != 0 {
         return Err(CodecError::Malformed(
             "OLE code-page property is not a padded VT_I2".into(),
@@ -345,10 +346,10 @@ fn parse_code_page(bytes: &[u8]) -> Result<u16, CodecError> {
 
 fn parse_dictionary(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
+    source: View<'_>,
     code_page: Option<u16>,
 ) -> Result<BTreeMap<u32, String>, CodecError> {
-    let mut cursor = Cursor::new(bytes, "OLE property dictionary");
+    let mut cursor = Cursor::new(source, "OLE property dictionary");
     let count = cursor.count("entry count", MAX_PROPERTIES)?;
     ctx.charge_collection_items(count as u64, "admit OLE property dictionary entries")?;
     let mut names = BTreeMap::new();
@@ -378,7 +379,7 @@ fn parse_typed_value<'a>(
     raw: View<'a>,
     code_page: Option<u16>,
 ) -> Result<(u16, PropertyValue<'a>), CodecError> {
-    let mut cursor = Cursor::new(raw.window(), "OLE typed property");
+    let mut cursor = Cursor::new(raw, "OLE typed property");
     let type_code = cursor.u16("type")?;
     if cursor.u16("type padding")? != 0 {
         return Err(CodecError::Malformed(
@@ -479,9 +480,9 @@ fn parse_scalar<'a>(
         0x0040 => PropertyValue::Filetime(cursor.u64("FILETIME")?),
         0x0041 | 0x0046 => {
             let size = cursor.count("BLOB size", MAX_STREAM_SIZE)?;
-            let start = cursor.position;
+            let start = cursor.position();
             cursor.take(size, "BLOB")?;
-            let value = PropertyValue::Binary(child(raw, start, cursor.position, "BLOB")?);
+            let value = PropertyValue::Binary(child(raw, start, cursor.position(), "BLOB")?);
             cursor.align4("BLOB padding")?;
             value
         }
@@ -493,18 +494,18 @@ fn parse_scalar<'a>(
                 ));
             }
             let format = cursor.u32("clipboard format")?;
-            let start = cursor.position;
+            let start = cursor.position();
             cursor.take(size - 4, "clipboard data")?;
             let value = PropertyValue::Clipboard {
                 format,
-                data: child(raw, start, cursor.position, "clipboard data")?,
+                data: child(raw, start, cursor.position(), "clipboard data")?,
             };
             cursor.align4("clipboard padding")?;
             value
         }
         0x0048 => PropertyValue::Guid(cursor.array("CLSID")?),
         _ => {
-            cursor.position = cursor.bytes.len();
+            cursor.skip_to_end();
             PropertyValue::Unknown
         }
     };
@@ -517,13 +518,6 @@ fn parse_scalar<'a>(
 fn child<'a>(raw: View<'a>, start: usize, end: usize, field: &str) -> Result<View<'a>, CodecError> {
     raw.child(raw.start() + start, raw.start() + end)
         .ok_or_else(|| CodecError::Malformed(format!("OLE {field} view is invalid")))
-}
-
-fn read_u32_at(bytes: &[u8], offset: usize, field: &str) -> Result<u32, CodecError> {
-    let value = bytes
-        .get(offset..offset.saturating_add(4))
-        .ok_or_else(|| CodecError::Malformed(format!("truncated {field}")))?;
-    Ok(u32::from_le_bytes(value.try_into().expect("four bytes")))
 }
 
 fn require_zero_range(
@@ -550,10 +544,14 @@ fn decode_code_page(bytes: &[u8], code_page: Option<u16>) -> Result<String, Code
                 "OLE Unicode code-page string has an odd byte length".into(),
             ));
         }
-        let mut units = bytes
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
+        let mut view = View::over_retained(bytes);
+        let mut units = Vec::new();
+        while !view.is_empty() {
+            let unit = view.u16_le().ok_or_else(|| {
+                CodecError::Malformed("OLE Unicode code-page string has an odd byte length".into())
+            })?;
+            units.push(unit);
+        }
         require_and_remove_null(&mut units, "OLE Unicode code-page string")?;
         return String::from_utf16(&units)
             .map_err(|_| CodecError::Malformed("OLE code-page string is not UTF-16".into()));
@@ -627,65 +625,81 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 struct Cursor<'a> {
-    bytes: &'a [u8],
-    position: usize,
+    view: View<'a>,
     scope: &'static str,
 }
 
 impl<'a> Cursor<'a> {
-    const fn new(bytes: &'a [u8], scope: &'static str) -> Self {
-        Self {
-            bytes,
-            position: 0,
-            scope,
-        }
+    const fn new(view: View<'a>, scope: &'static str) -> Self {
+        Self { view, scope }
+    }
+
+    fn position(&self) -> usize {
+        self.view.position().saturating_sub(self.view.start())
+    }
+
+    fn skip_to_end(&mut self) {
+        let _ = self.view.seek(self.view.end());
     }
 
     fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        let end = self.position.checked_add(len).ok_or_else(|| {
-            CodecError::Malformed(format!("{} {field} range overflows", self.scope))
-        })?;
-        let value = self
-            .bytes
-            .get(self.position..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))?;
-        self.position = end;
-        Ok(value)
+        if self.view.position().checked_add(len).is_none() {
+            return Err(CodecError::Malformed(format!(
+                "{} {field} range overflows",
+                self.scope
+            )));
+        }
+        self.view
+            .take(len)
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, field)?[0])
+        self.view
+            .u8()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(self.array(field)?))
+        self.view
+            .u16_le()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn i16(&mut self, field: &str) -> Result<i16, CodecError> {
-        Ok(i16::from_le_bytes(self.array(field)?))
+        self.view
+            .i16_le()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(self.array(field)?))
+        self.view
+            .u32_le()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn i32(&mut self, field: &str) -> Result<i32, CodecError> {
-        Ok(i32::from_le_bytes(self.array(field)?))
+        self.view
+            .i32_le()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn u64(&mut self, field: &str) -> Result<u64, CodecError> {
-        Ok(u64::from_le_bytes(self.array(field)?))
+        self.view
+            .u64_le()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn i64(&mut self, field: &str) -> Result<i64, CodecError> {
-        Ok(i64::from_le_bytes(self.array(field)?))
+        self.view
+            .i64_le()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn array<const N: usize>(&mut self, field: &str) -> Result<[u8; N], CodecError> {
-        Ok(self
-            .take(N, field)?
-            .try_into()
-            .expect("cursor returned requested fixed length"))
+        self.view
+            .array()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
     }
 
     fn count(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
@@ -705,7 +719,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn align4(&mut self, field: &str) -> Result<(), CodecError> {
-        let padding = (4 - self.position % 4) % 4;
+        let padding = (4 - self.position() % 4) % 4;
         if self.take(padding, field)?.iter().any(|byte| *byte != 0) {
             return Err(CodecError::Malformed(format!(
                 "{} {field} is nonzero",
@@ -743,18 +757,22 @@ impl<'a> Cursor<'a> {
             CodecError::Malformed(format!("{} {field} length overflows", self.scope))
         })?;
         ctx.charge_retained(byte_len as u64, "retain OLE Unicode property string", None)?;
-        let mut units = self
-            .take(byte_len, field)?
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
+        let mut units = Vec::new();
+        for _ in 0..count {
+            units.push(self.u16(field)?);
+        }
         require_and_remove_null(&mut units, field)?;
         String::from_utf16(&units)
             .map_err(|_| CodecError::Malformed(format!("{} {field} is not UTF-16", self.scope)))
     }
 
     fn zero_finish(self) -> Result<(), CodecError> {
-        if self.bytes[self.position..].iter().all(|byte| *byte == 0) {
+        if self
+            .view
+            .window()
+            .get(self.position()..)
+            .is_some_and(|rest| rest.iter().all(|byte| *byte == 0))
+        {
             Ok(())
         } else {
             Err(CodecError::Malformed(format!(
