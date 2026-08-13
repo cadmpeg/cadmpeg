@@ -3,100 +3,6 @@
 
 use super::*;
 
-pub(super) trait TestEncode {
-    fn encode(
-        &self,
-        ir: &cadmpeg_ir::CadIr,
-        output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_core::CodecError>;
-}
-
-impl TestEncode for F3dCodec {
-    fn encode(
-        &self,
-        ir: &cadmpeg_ir::CadIr,
-        output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_core::CodecError> {
-        self.plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })?
-            .write_to(output)
-    }
-}
-
-pub(super) fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerScan<'_>) -> T) -> T {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let scan = container::scan(&ctx, root).unwrap();
-    f(&scan)
-}
-
-pub(super) fn write_synthetic_manifests<W: Write + Seek>(
-    zip: &mut zip::ZipWriter<W>,
-    options: zip::write::SimpleFileOptions,
-) {
-    zip.start_file("Manifest.dat", options).unwrap();
-    zip.write_all(&crate::manifest::generated_top_level().unwrap())
-        .unwrap();
-    zip.start_file(
-        format!(
-            "{}/Manifest.dat",
-            crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
-        ),
-        options,
-    )
-    .unwrap();
-    zip.write_all(&crate::manifest::generated_design_asset().unwrap())
-        .unwrap();
-}
-
-pub(super) fn assert_f3d_native_parity(ir: &cadmpeg_ir::document::CadIr) {
-    let native = ir.native.namespace("f3d").expect("F3D native namespace");
-    assert_eq!(native.version, crate::native::F3D_NATIVE_VERSION);
-}
-
-pub(super) fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> crate::native::F3dNative {
-    crate::native::F3dNative::load(ir.native.namespace("f3d").expect("F3D native namespace"))
-        .unwrap()
-}
-
-pub(super) struct F3dNativeMut<'a> {
-    ir: &'a mut cadmpeg_ir::document::CadIr,
-    native: crate::native::F3dNative,
-}
-
-impl std::ops::Deref for F3dNativeMut<'_> {
-    type Target = crate::native::F3dNative;
-
-    fn deref(&self) -> &Self::Target {
-        &self.native
-    }
-}
-
-impl std::ops::DerefMut for F3dNativeMut<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.native
-    }
-}
-
-impl Drop for F3dNativeMut<'_> {
-    fn drop(&mut self) {
-        self.native
-            .store(self.ir.native.namespace_mut("f3d"))
-            .unwrap();
-    }
-}
-
-pub(super) fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
-    let native = ir
-        .native
-        .namespace("f3d")
-        .map(crate::native::F3dNative::load)
-        .transpose()
-        .unwrap()
-        .unwrap_or_default();
-    F3dNativeMut { ir, native }
-}
-
 #[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let catalogue_names = crate::native::F3D_FAMILIES
@@ -172,14 +78,6 @@ fn diff_reports_design_material_assignment_changes() {
         .find(|arena| arena.kind == "native.f3d.design_material_assignments")
         .unwrap();
     assert_eq!(arena.modified.len(), 1);
-}
-
-pub(super) fn update_f3d_native<R>(
-    ir: &mut cadmpeg_ir::document::CadIr,
-    update: impl FnOnce(&mut crate::native::F3dNative) -> R,
-) -> R {
-    let mut native = f3d_native_mut(ir);
-    update(&mut native)
 }
 
 #[test]
@@ -884,51 +782,6 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         .any(|curve| curve.id == round_trip_base));
 }
 
-pub(super) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &str) {
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&smbh)),
-            &DecodeOptions::default(),
-        )
-        .expect("revision surface decode");
-    let procedural = result
-        .ir()
-        .model
-        .procedural_surfaces
-        .first()
-        .expect("revision surface construction");
-    let expected = scrubbed_definition(&procedural.definition);
-    let kind = serde_json::to_value(&procedural.definition).expect("kind")["kind"]
-        .as_str()
-        .expect("kind string")
-        .to_string();
-    assert_eq!(kind, expected_kind);
-    let (mut source_less, _, _) = result.into_parts();
-    source_less.source = None;
-    source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let mut encoded = Vec::new();
-    F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect("source-less revision surface encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("source-less revision surface round trip");
-    let actual = scrubbed_definition(
-        &round_trip
-            .ir()
-            .model
-            .procedural_surfaces
-            .first()
-            .expect("round-trip construction")
-            .definition,
-    );
-    assert_eq!(actual, expected);
-}
-
 #[test]
 fn generated_revision_offset_surface_round_trips() {
     let smbh = synthetic_revision_surface_smbh("off_spl_sur", |surface| {
@@ -1213,17 +1066,6 @@ fn revision_loft_type_zero_member_stores_two_pcurve_slots() {
     assert_revision_surface_round_trip(smbh, "loft");
 }
 
-/// Wrap an ASM stream byte blob into a `.f3d` ZIP as `Body1.smbh`.
-pub(super) fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    write_synthetic_manifests(&mut zip, stored);
-    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
-        .unwrap();
-    zip.write_all(smbh).unwrap();
-    zip.finish().unwrap().into_inner()
-}
-
 #[test]
 fn malformed_tspline_cage_degrades_to_a_loss_note() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -1273,39 +1115,6 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
             && loss.message.contains(entry)
             && loss.message.contains("paramesh container has no magic")
     }));
-}
-
-pub(super) fn f3d_with_deflated_smbh(smbh: &[u8]) -> Vec<u8> {
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
-    write_synthetic_manifests(&mut zip, stored);
-    zip.start_file(
-        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-        deflated,
-    )
-    .unwrap();
-    zip.write_all(smbh).unwrap();
-    zip.finish().unwrap().into_inner()
-}
-
-pub(super) fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32) {
-    let central = archive
-        .windows(4)
-        .enumerate()
-        .find_map(|(offset, signature)| {
-            if signature != b"PK\x01\x02" || offset + 46 > archive.len() {
-                return None;
-            }
-            let name_length = u16::from_le_bytes(
-                archive[offset + 28..offset + 30]
-                    .try_into()
-                    .expect("central name-length field"),
-            ) as usize;
-            (archive.get(offset + 46..offset + 46 + name_length) == Some(target)).then_some(offset)
-        })
-        .expect("generated ZIP central-directory entry");
-    archive[central + 24..central + 28].copy_from_slice(&size.to_le_bytes());
 }
 
 #[test]
@@ -1443,18 +1252,6 @@ fn nested_protein_decode_honors_operator_per_expand_ceiling() {
         ),
         "{error:?}"
     );
-}
-
-pub(super) fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    write_synthetic_manifests(&mut zip, stored);
-    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
-        .unwrap();
-    zip.write_all(smbh).unwrap();
-    zip.start_file(name, stored).unwrap();
-    zip.write_all(payload).unwrap();
-    zip.finish().unwrap().into_inner()
 }
 
 #[test]

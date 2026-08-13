@@ -42,3 +42,18 @@ pub(crate) use smbh_blends_test::*;
 
 mod smbh_bf4_test;
 pub(crate) use smbh_bf4_test::*;
+
+mod native_test;
+pub(crate) use native_test::*;
+
+mod manifest_test;
+pub(crate) use manifest_test::*;
+
+mod protein_test;
+pub(crate) use protein_test::*;
+
+mod streams_test;
+pub(crate) use streams_test::*;
+
+mod zip_test;
+pub(crate) use zip_test::*;

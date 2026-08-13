@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+#![allow(unused_imports)] // Path-included children import these names through `use super::*;`.
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -30,7 +31,6 @@ use cadmpeg_asm::asm_header;
 
 #[path = "tests_native.rs"]
 mod native;
-use native::*;
 
 #[path = "tests_writer.rs"]
 mod writer;
@@ -40,7 +40,6 @@ mod design;
 
 #[path = "tests_decode.rs"]
 mod decode;
-use decode::*;
 
 #[path = "tests_surfaces.rs"]
 mod surfaces;
