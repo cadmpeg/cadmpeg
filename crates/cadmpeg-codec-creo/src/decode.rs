@@ -2224,7 +2224,7 @@ fn owning_feature_definition_ref(scan: &ContainerScan, feature_id: u32) -> Optio
 }
 
 #[cfg(test)]
-mod resolved_sketch_tests;
+mod tests;
 
 #[cfg(test)]
 mod plane_reconciliation_tests;
