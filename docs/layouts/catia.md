@@ -77,7 +77,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-catia/src/container.rs` — The parser locates the extent count at the same descriptor offset.
+- `crates/cadmpeg-codec-catia/src/container.rs` — The parser locates the descriptor start 0x50 bytes before the extent-count field.
 
 ## `extent_struct`
 
