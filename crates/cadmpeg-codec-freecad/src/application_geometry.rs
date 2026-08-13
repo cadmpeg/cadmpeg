@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of application-owned mesh and point payloads.
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{BoundedCount, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
@@ -73,23 +73,8 @@ fn association(property: &PropertyRecord) -> SourceObjectAssociation {
 
 fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, CodecError> {
     let mut reader = Reader::new(bytes);
-    let raw_magic = reader.array::<4>("mesh magic")?;
-    let raw_version = reader.array::<4>("mesh version")?;
-    let byte_order = if u32::from_le_bytes(raw_magic) == MESH_MAGIC
-        && u32::from_le_bytes(raw_version) == MESH_VERSION
-    {
-        ByteOrder::Little
-    } else if u32::from_be_bytes(raw_magic) == MESH_MAGIC
-        && u32::from_be_bytes(raw_version) == MESH_VERSION
-    {
-        ByteOrder::Big
-    } else {
-        return Err(CodecError::NotImplemented(format!(
-            "FCStd mesh payload {} has an unsupported header or version",
-            property.id
-        )));
-    };
-    reader.skip(256, "mesh information header")?;
+    let byte_order = reader.mesh_byte_order(&property.id)?;
+    reader.skip(256)?;
     let point_count = reader.count(byte_order, "mesh point count")?;
     let facet_count = reader.count(byte_order, "mesh facet count")?;
     let vertices = (0..point_count)
@@ -97,10 +82,9 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         .collect::<Result<Vec<_>, _>>()?;
     // Each facet consumes three point indices and three neighbour indices (24 bytes),
     // so the declared count cannot exceed the unread payload.
-    let facet_capacity =
-        bounded_len(facet_count as u64, 24, reader.remaining()).ok_or_else(|| {
-            CodecError::Malformed("mesh facet count exceeds remaining payload".into())
-        })?;
+    let facet_capacity = reader.counted(facet_count as u64, 24).ok_or_else(|| {
+        CodecError::Malformed("mesh facet count exceeds remaining payload".into())
+    })?;
     let mut triangles = Vec::with_capacity(facet_capacity);
     for _ in 0..facet_count {
         let triangle = [
@@ -109,12 +93,12 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
             reader.index(byte_order, point_count, "mesh facet point")?,
         ];
         for _ in 0..3 {
-            let _ = reader.u32(byte_order, "mesh facet neighbour")?;
+            let _ = reader.u32(byte_order)?;
         }
         triangles.push(triangle);
     }
     for _ in 0..6 {
-        let value = reader.f32(byte_order, "mesh bounding box")?;
+        let value = reader.f32(byte_order)?;
         if !value.is_finite() {
             return Err(CodecError::Malformed(
                 "FCStd mesh bounding box contains a non-finite value".into(),
@@ -220,57 +204,67 @@ enum ByteOrder {
 }
 
 struct Reader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
+    view: View<'a>,
 }
 
 impl<'a> Reader<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
+        Self {
+            view: View::over_retained(bytes),
+        }
     }
 
     fn remaining(&self) -> usize {
-        self.bytes.len().saturating_sub(self.offset)
+        self.view.remaining()
     }
 
-    fn array<const N: usize>(&mut self, label: &str) -> Result<[u8; N], CodecError> {
-        let end = self
-            .offset
-            .checked_add(N)
-            .ok_or_else(|| CodecError::Malformed(format!("{label} offset overflow")))?;
-        let value = self
-            .bytes
-            .get(self.offset..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
-        self.offset = end;
-        value
-            .try_into()
-            .map_err(|_| CodecError::Malformed(format!("invalid {label} width")))
+    fn counted(&self, count: u64, min_element_size: usize) -> Option<usize> {
+        self.view
+            .counted(count, min_element_size)
+            .map(BoundedCount::get)
     }
 
-    fn skip(&mut self, count: usize, label: &str) -> Result<(), CodecError> {
-        self.offset = self
-            .offset
-            .checked_add(count)
-            .and_then(|end| self.bytes.get(self.offset..end).map(|_| end))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
+    fn skip(&mut self, count: usize) -> Result<(), CodecError> {
+        self.view.req_take(count)?;
         Ok(())
     }
 
-    fn u32(&mut self, order: ByteOrder, label: &str) -> Result<u32, CodecError> {
-        let bytes = self.array::<4>(label)?;
+    fn mesh_byte_order(&mut self, property_id: &str) -> Result<ByteOrder, CodecError> {
+        let start = self.view.position();
+        self.view.req_take(8)?;
+        self.view
+            .seek(start)
+            .ok_or_else(|| CodecError::Malformed("mesh header window is inconsistent".into()))?;
+        if self.view.u32_le() == Some(MESH_MAGIC) && self.view.u32_le() == Some(MESH_VERSION) {
+            return Ok(ByteOrder::Little);
+        }
+        self.view
+            .seek(start)
+            .ok_or_else(|| CodecError::Malformed("mesh header window is inconsistent".into()))?;
+        if self.view.u32_be() == Some(MESH_MAGIC) && self.view.u32_be() == Some(MESH_VERSION) {
+            return Ok(ByteOrder::Big);
+        }
+        Err(CodecError::NotImplemented(format!(
+            "FCStd mesh payload {property_id} has an unsupported header or version"
+        )))
+    }
+
+    fn u32(&mut self, order: ByteOrder) -> Result<u32, CodecError> {
         Ok(match order {
-            ByteOrder::Little => u32::from_le_bytes(bytes),
-            ByteOrder::Big => u32::from_be_bytes(bytes),
+            ByteOrder::Little => self.view.req_u32_le()?,
+            ByteOrder::Big => self.view.req_u32_be()?,
         })
     }
 
-    fn f32(&mut self, order: ByteOrder, label: &str) -> Result<f32, CodecError> {
-        Ok(f32::from_bits(self.u32(order, label)?))
+    fn f32(&mut self, order: ByteOrder) -> Result<f32, CodecError> {
+        Ok(match order {
+            ByteOrder::Little => self.view.req_f32_le()?,
+            ByteOrder::Big => self.view.req_f32_be()?,
+        })
     }
 
     fn count(&mut self, order: ByteOrder, label: &str) -> Result<usize, CodecError> {
-        let count = usize::try_from(self.u32(order, label)?)
+        let count = usize::try_from(self.u32(order)?)
             .map_err(|_| CodecError::Malformed(format!("{label} does not fit usize")))?;
         if count > MAX_ELEMENTS {
             return Err(CodecError::Malformed(format!("{label} exceeds limit")));
@@ -284,7 +278,7 @@ impl<'a> Reader<'a> {
         point_count: usize,
         label: &str,
     ) -> Result<u32, CodecError> {
-        let index = self.u32(order, label)?;
+        let index = self.u32(order)?;
         if usize::try_from(index).map_or(true, |index| index >= point_count) {
             return Err(CodecError::Malformed(format!("{label} is out of bounds")));
         }
@@ -292,11 +286,7 @@ impl<'a> Reader<'a> {
     }
 
     fn point3(&mut self, order: ByteOrder, label: &str) -> Result<Point3, CodecError> {
-        let values = [
-            self.f32(order, label)?,
-            self.f32(order, label)?,
-            self.f32(order, label)?,
-        ];
+        let values = [self.f32(order)?, self.f32(order)?, self.f32(order)?];
         if values.iter().any(|value| !value.is_finite()) {
             return Err(CodecError::Malformed(format!(
                 "{label} contains a non-finite coordinate"
@@ -310,10 +300,10 @@ impl<'a> Reader<'a> {
     }
 
     fn finish(&self, label: &str) -> Result<(), CodecError> {
-        if self.offset != self.bytes.len() {
+        if !self.view.is_empty() {
             return Err(CodecError::Malformed(format!(
                 "{label} has {} trailing bytes",
-                self.bytes.len() - self.offset
+                self.remaining()
             )));
         }
         Ok(())

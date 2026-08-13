@@ -59,7 +59,7 @@ note = "The parser's mesh version matches offset 4."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
-contains = "reader.skip(256, \"mesh information header\")?;"
+contains = "reader.skip(256)?;"
 note = "The parser skips the stated 256-byte information field."
 
 [[record]]
@@ -87,7 +87,7 @@ note = "Offset derived from the three preceding 32-bit indices."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
-contains = "bounded_len(facet_count as u64, 24, reader.remaining())"
+contains = "reader.counted(facet_count as u64, 24)"
 note = "The parser bounds the facet array at 24 bytes per facet, matching the derived stride."
 
 [[record]]
