@@ -200,4 +200,4 @@ fn validate_entry_name(name: &str) -> Result<(), CodecError> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

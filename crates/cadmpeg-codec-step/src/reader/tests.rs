@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
+#![allow(unused_imports)]
 use super::*;
 
 #[test]
@@ -61,4 +64,493 @@ fn implicit_face_plane_work_scales_with_point_count() {
     let (exchange, _) = crate::parse::parse(source).expect("polygon exchange");
 
     assert_eq!(implicit_face_plane_work(&exchange), 4);
+}
+
+use std::fmt::Write as _;
+use std::io::Cursor;
+
+use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::eval::{
+    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
+};
+use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{LengthUnit, Units};
+use cadmpeg_ir::CadIr;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
+
+use crate::ids::StepIdentity;
+use crate::test_support::{decode_inline, export};
+use crate::{
+    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
+};
+
+#[test]
+fn semantic_decode_uses_the_decode_session_work_budget() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let mut semantic_operation = None;
+    for max_work_units in 1..=2048 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_work_units = max_work_units;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx)
+            .expect_err("a small work budget must refuse one decode stage");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if !matches!(
+            limit.context.operation,
+            "step_lex_token"
+                | "step_parse_record"
+                | "step_parse_parameter"
+                | "step_anchor_materialization"
+                | "step_reference_materialization"
+        ) {
+            semantic_operation = Some(limit.context.operation);
+            break;
+        }
+    }
+    assert_eq!(semantic_operation, Some("step_geometry_decode"));
+}
+
+#[test]
+fn semantic_decode_admits_ir_entities_at_stage_boundaries() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));#2=VERTEX_POINT('',#1);ENDSEC;END-ISO-10303-21;";
+    let mut entity_limit = None;
+    for max_entities in 1..=64 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_entities = max_entities;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx)
+            .expect_err("a model entity must be admitted before the next semantic stage");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.context.operation == "step_dependency_decode"
+        {
+            entity_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = entity_limit.expect("IR entities must be charged at a semantic boundary");
+    assert_eq!(limit.additional, 1);
+    assert!(limit.used <= limit.limit);
+}
+
+#[test]
+fn implicit_face_plane_work_is_charged_before_plane_inference() {
+    let point_references = (2..=17)
+        .map(|id| format!("#{id}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let point_records = (2..=17).fold(String::new(), |mut records, id| {
+        writeln!(records, "#{id}=CARTESIAN_POINT('',({id}.,0.,0.));").expect("write point fixture");
+        records
+    });
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POLY_LOOP('',({point_references}));{point_records}ENDSEC;END-ISO-10303-21;"
+    );
+    let mut plane_limit = None;
+    for max_work_units in 1..=65_536 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_work_units = max_work_units;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            source.as_bytes(),
+            &arena,
+            &policy,
+        )
+        .expect("root fits the test policy");
+        let error = crate::reader::decode(source.as_bytes(), DecodeOptions::default(), &ctx)
+            .expect_err("bounded implicit-plane work must be refused at some budget");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.context.operation == "step_implicit_face_plane" {
+            plane_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = plane_limit.expect("implicit face-plane work must have a stable budget gate");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    assert_eq!(limit.additional, 16);
+    assert!(limit.used <= limit.limit);
+}
+
+#[test]
+pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
+    let bytes = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode parsed STEP document");
+
+    assert_eq!(result.ir().source.as_ref().unwrap().format, "step");
+    let unknowns = result.ir().native_unknowns("step").unwrap();
+    assert_eq!(unknowns.len(), 2);
+    assert_eq!(unknowns[0].id.0, "step:data:example_record#1");
+    let retained = result
+        .source_fidelity()
+        .retained_record(&unknowns[0].id.0)
+        .expect("opaque payload is retained in source fidelity");
+    assert_eq!(
+        retained.data.as_deref(),
+        Some(&bytes[retained.offset as usize..(retained.offset + retained.byte_len) as usize])
+    );
+    assert!(unknowns[0]
+        .links
+        .contains(&"step:data:opaque_target#2".to_string()));
+    assert!(!result.report().geometry_transferred);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("EXAMPLE_RECORD")));
+}
+
+#[test]
+fn opaque_links_retain_typed_step_targets() {
+    let result = decode_inline(
+        "#1=EXAMPLE_RECORD('',#2);
+        #2=LINE('typed target',#3,#5);
+        #3=CARTESIAN_POINT('',(0.,0.,0.));
+        #4=DIRECTION('',(1.,0.,0.));
+        #5=VECTOR('',#4,1.);",
+    );
+    let unknowns = result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown records");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].links, vec!["step:data:curve#2".to_string()]);
+}
+
+#[test]
+fn opaque_links_retain_fallback_carrier_targets() {
+    let result = decode_inline(
+        "#1=TRIMMED_CURVE('',#99,(0.),(1.),.T.,.PARAMETER.);
+         #2=EXAMPLE_RECORD('',#1);
+         #99=EXAMPLE_RECORD('missing basis');",
+    );
+    assert!(result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id.0 == "step:data:curve#1"));
+
+    let unknowns = result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown records");
+    let example = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:data:example_record#2")
+        .expect("opaque record referencing fallback carrier");
+    assert!(example.links.contains(&"step:data:curve#1".to_string()));
+
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(!validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::CarrierReachability
+            && finding.entity.as_deref() == Some("step:data:curve#1")
+    }));
+}
+
+#[test]
+pub(crate) fn decode_accounts_for_every_part21_byte() {
+    let bytes = include_bytes!("../../tests/fixtures/ap242_semantic_pmi.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode byte-accounting fixture");
+    let attributes = &result.ir().source.as_ref().unwrap().attributes;
+    let count = |name: &str| attributes[name].parse::<usize>().unwrap();
+
+    assert!(count("bytes_structural") > 0);
+    assert!(count("bytes_typed") > 0);
+    assert_eq!(count("bytes_named_opaque"), 0);
+    assert_eq!(count("bytes_unclassified"), 0);
+    assert_eq!(
+        count("bytes_structural")
+            + count("bytes_typed")
+            + count("bytes_named_opaque")
+            + count("bytes_unclassified"),
+        bytes.len()
+    );
+}
+
+#[test]
+fn every_repository_step_fixture_has_complete_byte_accounting() {
+    let fixtures: &[(&str, &[u8])] = &[
+        (
+            "ap203_sheet",
+            include_bytes!("../../tests/fixtures/ap203_sheet.p21"),
+        ),
+        (
+            "ap214_sheet",
+            include_bytes!("../../tests/fixtures/ap214_sheet.p21"),
+        ),
+        (
+            "ap242_assembly",
+            include_bytes!("../../tests/fixtures/ap242_assembly.p21"),
+        ),
+        (
+            "ap242_conversion_units",
+            include_bytes!("../../tests/fixtures/ap242_conversion_units.p21"),
+        ),
+        (
+            "ap242_ed3_sections",
+            include_bytes!("../../tests/fixtures/ap242_ed3_sections.p21"),
+        ),
+        (
+            "ap242_degree_cone",
+            include_bytes!("../../tests/fixtures/ap242_degree_cone.p21"),
+        ),
+        (
+            "ap242_external_documents",
+            include_bytes!("../../tests/fixtures/ap242_external_documents.p21"),
+        ),
+        (
+            "ap242_geometry",
+            include_bytes!("../../tests/fixtures/ap242_geometry.p21"),
+        ),
+        (
+            "ap242_geometric_set",
+            include_bytes!("../../tests/fixtures/ap242_geometric_set.p21"),
+        ),
+        (
+            "ap242_mapped_assembly",
+            include_bytes!("../../tests/fixtures/ap242_mapped_assembly.p21"),
+        ),
+        (
+            "ap242_minimal",
+            include_bytes!("../../tests/fixtures/ap242_minimal.p21"),
+        ),
+        (
+            "ap242_presentation_pmi",
+            include_bytes!("../../tests/fixtures/ap242_presentation_pmi.p21"),
+        ),
+        (
+            "ap242_semantic_pmi",
+            include_bytes!("../../tests/fixtures/ap242_semantic_pmi.p21"),
+        ),
+        (
+            "ap242_tessellation",
+            include_bytes!("../../tests/fixtures/ap242_tessellation.p21"),
+        ),
+        (
+            "ap242_vertex_loop",
+            include_bytes!("../../tests/fixtures/ap242_vertex_loop.p21"),
+        ),
+        (
+            "complex_instance",
+            include_bytes!("../../tests/fixtures/complex_instance.p21"),
+        ),
+        (
+            "strings",
+            include_bytes!("../../tests/fixtures/strings.p21"),
+        ),
+    ];
+    for &(name, bytes) in fixtures {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let attributes = &result.ir().source.as_ref().unwrap().attributes;
+        let count = |key: &str| attributes[key].parse::<usize>().unwrap();
+        assert_eq!(count("bytes_unclassified"), 0, "{name}");
+        assert_eq!(
+            count("bytes_structural")
+                + count("bytes_typed")
+                + count("bytes_named_opaque")
+                + count("bytes_unclassified"),
+            bytes.len(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
+    let source = String::from_utf8(include_bytes!("../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode unowned pcurve");
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#69"));
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:definitional_representation#70"));
+    let line = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:data:line#71")
+        .expect("unowned pcurve line is retained");
+    assert!(decoded
+        .source_fidelity()
+        .retained_record(&line.id.0)
+        .expect("unowned pcurve line payload is retained")
+        .data
+        .as_deref()
+        .is_some_and(|data| data.starts_with(b"#71=LINE")));
+    assert!(decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .all(|pcurve| pcurve.id.as_str() != "step:data:pcurve#69"));
+}
+
+#[test]
+fn a_protected_unowned_pcurve_stays_opaque() {
+    let source = String::from_utf8(include_bytes!("../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#19=EDGE_CURVE('',#6,#7,#57,.T.);",
+            "#19=EDGE_CURVE('',#6,#7,#72,.T.);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#28,#55);\n#72=TRIMMED_CURVE('',#16,(#69,0.),(#69,10.),.T.,.PARAMETER.);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode protected unowned pcurve");
+    assert!(decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .all(|pcurve| { pcurve.id.as_str() != "step:data:pcurve#69" }));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("protected_pcurves=1")));
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#69"));
+}
+
+#[test]
+fn failed_mandatory_point_root_remains_opaque_and_unbound() {
+    let source = String::from_utf8(include_bytes!("../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#3=CARTESIAN_POINT('',(0.,0.,0.));",
+            "#3=UNSUPPORTED_POINT('',(0.,0.,0.));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode source with unsupported mandatory vertex point");
+
+    assert!(decoded.ir().model.bodies.is_empty());
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:unsupported_point#3"));
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:shell_based_surface_model#31"));
+    assert!(decoded.report().losses.iter().any(|loss| loss
+        .message
+        .contains("STEP topology root #31 rejected: vertex point #3")));
+}
+
+#[test]
+fn unsupported_invisibility_relation_is_retained_as_opaque() {
+    let decoded = decode_inline(
+        "#1=INVISIBILITY((#2));
+         #2=STYLED_ITEM('',(),#3);
+         #3=GEOMETRIC_CURVE_SET('',());",
+    );
+
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#1"));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("INVISIBILITY #1 targets unsupported item #2")
+    }));
+}
+
+#[test]
+fn retention_reports_every_deleted_carrier_category() {
+    let source = String::from_utf8(include_bytes!("../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#78,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71,#84),#50);\n#71=LINE('',#51,#53);\n#74=CARTESIAN_POINT('',(20.,20.,0.));\n#75=DIRECTION('',(0.,0.,1.));\n#76=DIRECTION('',(1.,0.,0.));\n#77=AXIS2_PLACEMENT_3D('',#74,#75,#76);\n#78=PLANE('',#77);\n#79=DIRECTION('',(1.,0.,0.));\n#80=VECTOR('',#79,1.);\n#83=LINE('',#74,#80);\n#84=OPAQUE_REFERENCE(#83,#86);\n#86=POLY_LOOP('',(#74));\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode carrier retention fixture");
+    let message = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("unowned STEP carrier retention"))
+        .map(|loss| loss.message.as_str())
+        .expect("carrier retention report");
+    for category in ["deleted pcurves=1", "points=1", "curves=1", "surfaces=1"] {
+        assert!(message.contains(category), "missing {category}: {message}");
+    }
+    assert!(decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .all(|pcurve| pcurve.id.as_str() != "step:data:pcurve#69"));
+    assert!(decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .all(|curve| curve.id.as_str() != "step:data:curve#83"));
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.as_str() != "step:data:surface#78"));
+    assert!(decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .all(|point| point.id.as_str() != "step:data:point#74"));
 }

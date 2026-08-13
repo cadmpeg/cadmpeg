@@ -22,7 +22,7 @@ mod drawing;
 pub(crate) mod geometry;
 mod index;
 pub(crate) mod pmi;
-mod presentation;
+pub(crate) mod presentation;
 pub(crate) mod product;
 pub(crate) mod tessellation;
 pub(crate) mod topology;
@@ -1157,4 +1157,4 @@ fn collect_references(value: &Value, output: &mut BTreeSet<u64>) {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

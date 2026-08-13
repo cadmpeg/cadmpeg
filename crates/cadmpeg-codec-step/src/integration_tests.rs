@@ -6,6 +6,10 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::examples::unit_cube;
 
+use crate::archive::tests::{
+    codec_detects_and_inspects_ap242_exchange_structure,
+    codec_inspects_edition3_sections_and_external_references,
+};
 use crate::reader::dependencies::tests::decode_reports_data_section_external_dependencies;
 use crate::reader::geometry::tests::{
     decode_conical_apex_and_context_plane_angle_units,
@@ -20,6 +24,14 @@ use crate::reader::pmi::tests::{
     typed_pmi_measure_uses_its_explicit_conversion_unit,
     unresolved_lower_tolerance_does_not_shift_upper_deviation,
 };
+use crate::reader::presentation::tests::{
+    body_color_becomes_per_face_styled_item_presentation,
+    face_appearance_binding_styles_the_advanced_face,
+    face_override_wins_over_body_color_and_body_fills_the_rest,
+    hidden_body_geometry_and_visibility_round_trip,
+    presentation_reader_normalizes_invalid_layer_and_common_datum_inputs,
+    step_color_assets_round_trip_names_and_tessellation_targets_strictly,
+};
 use crate::reader::product::tests::{
     ap203_specified_source_formations_build_occurrence_tree,
     decode_builds_occurrence_placement_from_mapped_item,
@@ -27,6 +39,10 @@ use crate::reader::product::tests::{
     repeated_subassembly_instances_each_receive_the_subtree,
 };
 use crate::reader::tessellation::tests::decode_transfers_ap242_one_based_tessellation_indices;
+use crate::reader::tests::{
+    decode_accounts_for_every_part21_byte,
+    decode_preserves_named_opaque_records_with_exact_byte_spans,
+};
 use crate::reader::topology::tests::{
     decode_and_write_singular_vertex_loops, decode_builds_a_valid_ap203_sheet_brep,
     decode_builds_a_valid_connected_sheet_brep, every_region_of_a_body_is_retained_as_a_shape_item,
@@ -34,18 +50,6 @@ use crate::reader::topology::tests::{
     reader_recovers_a_valid_solid_from_writer_output,
 };
 use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
-use crate::tests::{
-    body_color_becomes_per_face_styled_item_presentation,
-    codec_detects_and_inspects_ap242_exchange_structure,
-    codec_inspects_edition3_sections_and_external_references,
-    decode_accounts_for_every_part21_byte,
-    decode_preserves_named_opaque_records_with_exact_byte_spans,
-    face_appearance_binding_styles_the_advanced_face,
-    face_override_wins_over_body_color_and_body_fills_the_rest,
-    hidden_body_geometry_and_visibility_round_trip,
-    presentation_reader_normalizes_invalid_layer_and_common_datum_inputs,
-    step_color_assets_round_trip_names_and_tessellation_targets_strictly,
-};
 use crate::writer::tests::{
     analytic_conics_round_trip_through_step,
     ap242_writer_round_trips_indexed_tessellation_and_exact_body_link,

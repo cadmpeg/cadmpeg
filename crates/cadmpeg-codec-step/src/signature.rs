@@ -201,4 +201,4 @@ pub(crate) fn validate_detached_cms(input: &[u8]) -> Result<(), &'static str> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
