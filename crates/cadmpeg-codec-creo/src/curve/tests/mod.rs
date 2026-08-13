@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 mod affine;
+mod dump;
 mod relations;
 mod rows;
+mod scan;
 
 use super::*;
 

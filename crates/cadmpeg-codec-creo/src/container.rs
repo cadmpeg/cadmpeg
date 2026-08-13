@@ -2758,3 +2758,6 @@ mod feature_row_definition_tests {
         assert_eq!(definitions[0].owner_feature_id, Some(247));
     }
 }
+
+#[cfg(test)]
+mod tests;
