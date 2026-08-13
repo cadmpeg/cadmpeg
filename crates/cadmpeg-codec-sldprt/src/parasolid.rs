@@ -240,3 +240,6 @@ pub(crate) fn mesh_polyline(payload: &[u8]) -> Option<Vec<Point3>> {
     }
     Some(points.clone())
 }
+
+#[cfg(test)]
+mod tests;
