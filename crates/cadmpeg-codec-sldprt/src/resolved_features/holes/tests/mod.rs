@@ -194,3 +194,4 @@ fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -
 mod axial_profile;
 mod hole_axis;
 mod position;
+mod writer;
