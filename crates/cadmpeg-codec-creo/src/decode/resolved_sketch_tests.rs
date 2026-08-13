@@ -1,5 +1,13 @@
 use super::*;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::topology::Body;
+
+fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
+        .expect("test decode context");
+    run(&ctx)
+}
 
 #[test]
 fn numbered_intersect_name_identifies_section_shape_feature() {
@@ -18158,13 +18166,17 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
         u_periodic: false,
         v_periodic: false,
     };
-    let generator = cubic_extrusion_plane_generator_curve(
-        &surface,
-        PlaneEquation {
-            origin: [0.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-        },
-    )
+    let generator = with_decode_ctx(|ctx| {
+        cubic_extrusion_plane_generator_curve(
+            ctx,
+            &surface,
+            PlaneEquation {
+                origin: [0.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+        )
+    })
+    .expect("resource limits")
     .expect("unique directrix-plane root");
     let CurveGeometry::Nurbs(generator) = generator else {
         panic!("plane section generator must retain its NURBS representation");
@@ -18182,21 +18194,25 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     assert_eq!(weights.len(), 2);
     assert!((weights[0] - weights[1]).abs() <= 1e-12);
 
-    assert!(cubic_extrusion_plane_generator_curve(
+    assert!(with_decode_ctx(|ctx| cubic_extrusion_plane_generator_curve(
+        ctx,
         &surface,
         PlaneEquation {
             origin: [2.0, 0.0, 0.0],
             normal: [1.0, 0.0, 0.0],
         },
-    )
+    ))
+    .expect("resource limits")
     .is_none());
-    assert!(cubic_extrusion_plane_generator_curve(
+    assert!(with_decode_ctx(|ctx| cubic_extrusion_plane_generator_curve(
+        ctx,
         &surface,
         PlaneEquation {
             origin: [0.0, 0.0, 1.0],
             normal: [0.0, 0.0, 1.0],
         },
-    )
+    ))
+    .expect("resource limits")
     .is_none());
     assert_eq!(
         cubic_unit_interval_roots(1.0, -1.5, 0.66, -0.08, 1e-12).len(),

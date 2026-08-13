@@ -50,6 +50,20 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    fn from_offset(bytes: &'a [u8], at: usize) -> Result<Self, CodecError> {
+        let mut view = View::over_retained(bytes);
+        view.seek(at).ok_or_else(|| truncated("manifest offset"))?;
+        Ok(Self { view })
+    }
+
+    fn position(&self) -> usize {
+        self.view.position()
+    }
+
+    fn exhausted(&self) -> bool {
+        self.view.is_empty()
+    }
+
     fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
         self.view.u8().ok_or_else(|| truncated(field))
     }
@@ -194,7 +208,7 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
         let _value = cursor.u32(&format!("top-level manifest registry value {ordinal}"))?;
     }
 
-    parse_asset_tail(bytes, cursor.at)
+    parse_asset_tail(bytes, cursor.position())
 }
 
 fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<TopLevelManifest, CodecError> {
@@ -222,7 +236,7 @@ fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<TopLevelManifest, Code
 }
 
 fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, CodecError> {
-    let mut cursor = Cursor { bytes, at };
+    let mut cursor = Cursor::from_offset(bytes, at)?;
     let asset_folder_guid = cursor.guid("top-level manifest asset-folder GUID")?;
     let asset_folder_count = bounded_nonzero_count(
         cursor.u32("top-level manifest asset-folder count")?,
@@ -243,7 +257,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
         asset_folder_bases.push(base);
     }
     cursor.expect_u32("top-level manifest terminal word", 0)?;
-    if cursor.at == bytes.len() {
+    if cursor.exhausted() {
         return Ok(TopLevelManifest {
             asset_folder_guid,
             asset_folder_bases,
@@ -259,7 +273,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
                 ));
             }
         }
-        1 if cursor.at != bytes.len() => {
+        1 if !cursor.exhausted() => {
             cursor.expect_utf16("top-level manifest export marker", "NA_EXPORT")?;
         }
         1 => {}

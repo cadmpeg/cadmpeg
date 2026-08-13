@@ -1869,7 +1869,7 @@ impl<'a> F3dDecodeSession<'a> {
             stats: _,
             annotation_records,
         } = asm_remainder;
-        let (subds, subd_losses) = crate::tsm::decode(scan)?;
+        let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
         ir.model.subds = subds;
         let mesh_projection = project_mesh_bodies(scan, &mut ir, &mut native, &mut report)?;
         report.losses.extend(subd_losses);
