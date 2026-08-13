@@ -1,4 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
+
+#![allow(clippy::unwrap_used)]
+#![allow(unused_imports)]
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
+    SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
+};
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::CadIr;
+
+use crate::test_support::*;
+use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
 use super::*;
 
 #[test]
@@ -263,4 +294,232 @@ fn reversing_a_range_outside_the_active_nurbs_domain_is_rejected() {
         periodic: false,
     };
     assert!(reverse_nurbs(curve, [-1.0, 5.0]).is_none());
+}
+
+#[test]
+fn decode_concatenates_ordered_composite_curve_children() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    let composite = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
+        panic!("expected a concatenated NURBS cache");
+    };
+    assert_eq!(nurbs.knots, vec![0.0, 0.0, 1.0, 2.0, 2.0]);
+    assert_eq!(nurbs.control_points.len(), 3);
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_curve_point(1, &nurbs.knots, &nurbs.control_points, None, 1.5),
+        Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
+    );
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn composite_join_uses_global_resolution_and_reports_degradation() {
+    let within_resolution = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.000_999)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let within_curve = within_resolution
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .expect("Type 102 curve within the Global resolution");
+    assert!(matches!(
+        within_curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+    ));
+    assert!(within_resolution.report().losses.is_empty());
+
+    let outside_resolution = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let outside_curve = outside_resolution
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .expect("degraded Type 102 curve");
+    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &outside_curve.geometry
+    else {
+        panic!("expected retained native Type 102 carrier")
+    };
+    assert_eq!(
+        segments[1].transition,
+        cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous
+    );
+    assert!(outside_resolution.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+            && loss.message.contains("Global minimum resolution")
+    }));
+    let validation = cadmpeg_ir::validate_neutral(
+        outside_resolution.ir(),
+        outside_resolution.report().losses.clone(),
+    );
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_concatenates_exact_circular_arc_and_line_children() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(mixed_analytic_composite_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let composite = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
+        panic!("expected an exact quadratic composite cache");
+    };
+    assert_eq!(nurbs.degree, 2);
+    assert_eq!(nurbs.control_points.len(), 5);
+    assert_eq!(
+        nurbs.weights.as_ref().unwrap()[1],
+        std::f64::consts::FRAC_1_SQRT_2
+    );
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(heterogeneous_composite_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let composite = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
+        panic!("expected an exact heterogeneous composite carrier");
+    };
+    assert_eq!(nurbs.degree, 2);
+    assert_eq!(nurbs.control_points.len(), 5);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_mixed_degree_composite_pcurve() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(mixed_degree_composite_pcurve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let curve = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D7")
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+        panic!("expected an elevated cubic composite cache");
+    };
+    assert_eq!(nurbs.degree, 3);
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge
+                .curve
+                .as_ref()
+                .is_some_and(|id| id.0 == "iges:model:curve#D7"))
+            .and_then(|edge| edge.param_range),
+        Some([0.0, 2.0])
+    );
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D11")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    assert_eq!(face.loops.len(), 1);
+    assert_eq!(result.ir().model.pcurves.len(), 1);
+    assert!(matches!(
+        result.ir().model.pcurves[0].geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 3, .. }
+    ));
+    assert_eq!(result.ir().model.pcurves[0].fit_tolerance, None);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_child() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_composite_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let composite = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .expect("composite curve should be projected after its spline child");
+    assert!(matches!(
+        composite.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+    ));
+    assert_eq!(result.report().losses.len(), 1);
+    assert!(result.report().losses[0]
+        .message
+        .contains("terminal derivative block disagrees with the last polynomial"));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
