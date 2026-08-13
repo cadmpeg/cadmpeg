@@ -1,0 +1,46 @@
+# build metrics
+# generated at 7edafb575 on vega
+# /usr/bin/time -p around each cargo invocation
+
+## clean build cadmpeg-codec-iges
+$ cargo build -q -p cadmpeg-codec-iges
+real 692.30
+user 139.73
+sys 45.59
+
+## incremental no-op build cadmpeg-codec-iges
+$ cargo build -q -p cadmpeg-codec-iges
+real 1.70
+user 0.07
+sys 0.15
+
+## clean test compile cadmpeg-codec-iges --no-run
+$ cargo test -q -p cadmpeg-codec-iges --no-run
+real 504.00
+user 126.80
+sys 25.16
+
+## clean build cadmpeg CLI
+$ cargo build -q -p cadmpeg
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+  = note: the `linker_messages` lint ignores `-D warnings`
+
+real 1075.73
+user 659.88
+sys 143.38
+
+## test-fast --no-run
+$ cargo test-fast --no-run
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+  = note: the `linker_messages` lint ignores `-D warnings`
+
+real 6826.59
+user 1400.18
+sys 908.43
+
+## target size
+ 28G	target

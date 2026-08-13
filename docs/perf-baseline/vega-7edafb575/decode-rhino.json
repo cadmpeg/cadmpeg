@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "command": "timeout 120 'target/release/cadmpeg' decode '/Users/irvel/side2/cadmpeg/.worktrees/feat/phase4-gates/crates/cadmpeg-codec-rhino/tests/golden/fixtures/brep.3dm' >/dev/null",
+      "mean": 0.0464098416,
+      "stddev": 0.016011106244071698,
+      "median": 0.050399799599999996,
+      "user": 0.004622739999999999,
+      "system": 0.00668302,
+      "min": 0.025517216599999996,
+      "max": 0.06510200860000001,
+      "times": [
+        0.025517216599999996,
+        0.034979383600000004,
+        0.0560507996,
+        0.06510200860000001,
+        0.050399799599999996
+      ],
+      "memory_usage_byte": [
+        8716288,
+        8716288,
+        8716288,
+        8716288,
+        8716288
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

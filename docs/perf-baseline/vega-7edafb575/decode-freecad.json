@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "command": "timeout 120 'target/release/cadmpeg' decode '/Users/irvel/side2/cadmpeg/.worktrees/feat/phase4-gates/corpus/freecad_fcstd/fixtures/core_operations.FCStd' >/dev/null",
+      "mean": 0.2991680675,
+      "stddev": 0.13029784213213133,
+      "median": 0.2507512425,
+      "user": 0.1249606,
+      "system": 0.020108739999999996,
+      "min": 0.1876958255,
+      "max": 0.5167692425,
+      "times": [
+        0.1876958255,
+        0.2249014095,
+        0.5167692425,
+        0.3157226175,
+        0.2507512425
+      ],
+      "memory_usage_byte": [
+        43876352,
+        43876352,
+        45383680,
+        45383680,
+        45383680
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
