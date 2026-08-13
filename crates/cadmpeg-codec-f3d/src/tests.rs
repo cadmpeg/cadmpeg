@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+#![allow(unused_imports)] // Path-included children import these names through `use super::*;`.
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -24,41 +25,12 @@ use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
+use crate::test_support::*;
 use crate::F3dCodec;
 use cadmpeg_asm::asm_header;
 
 #[path = "tests_native.rs"]
 mod native;
-use native::*;
-
-#[path = "tests_writer.rs"]
-mod writer;
 
 #[path = "tests_design.rs"]
 mod design;
-
-#[path = "tests_decode.rs"]
-mod decode;
-use decode::*;
-
-#[path = "tests_surfaces.rs"]
-mod surfaces;
-
-#[path = "tests_procedural.rs"]
-mod procedural;
-
-#[path = "tests_curves.rs"]
-mod curves;
-
-#[path = "tests_materials.rs"]
-mod materials;
-
-#[path = "tests_assembly.rs"]
-mod assembly;
-use assembly::*;
-
-#[path = "golden_tests.rs"]
-mod golden;
-
-#[path = "integration_tests.rs"]
-mod integration_tests;

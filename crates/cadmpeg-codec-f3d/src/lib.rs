@@ -291,4 +291,14 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
+pub(crate) use cadmpeg_core::decode::InspectOptions;
+#[cfg(test)]
+pub(crate) use test_support::*;
+#[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
+mod integration_tests;
+#[cfg(test)]
 mod tests;
