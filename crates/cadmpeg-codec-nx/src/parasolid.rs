@@ -15,7 +15,7 @@ use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
-use crate::view_at::u32_be_at;
+use crate::view_at::{f64_be_at, u16_be_at, u32_be_at, vec3_be_at};
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -347,9 +347,7 @@ pub(crate) fn entity_52_integer_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<Entity52IntegerRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x52, 4, |value| {
-        Some(u32::from_be_bytes(value.try_into().ok()?))
-    })?;
+    let record = counted_value_record_at(bytes, offset, 0x52, 4, |value| u32_be_at(value, 0))?;
     Some(Entity52IntegerRecord {
         offset: record.offset,
         byte_len: record.byte_len,
@@ -364,7 +362,7 @@ pub(crate) fn entity_53_double_record_at(
     offset: usize,
 ) -> Option<Entity53DoubleRecord> {
     let record = counted_value_record_at(bytes, offset, 0x53, 8, |value| {
-        let value = f64::from_be_bytes(value.try_into().ok()?);
+        let value = f64_be_at(value, 0)?;
         value.is_finite().then_some(value)
     })?;
     Some(Entity53DoubleRecord {
@@ -376,11 +374,7 @@ pub(crate) fn entity_53_double_record_at(
 }
 
 fn finite_vector(value: &[u8]) -> Option<[f64; 3]> {
-    let values = value
-        .chunks_exact(8)
-        .map(|component| Some(f64::from_be_bytes(component.try_into().ok()?)))
-        .collect::<Option<Vec<_>>>()?;
-    let values: [f64; 3] = values.try_into().ok()?;
+    let values = vec3_be_at(value, 0)?;
     values
         .iter()
         .all(|value| value.is_finite())
@@ -434,9 +428,7 @@ pub(crate) fn entity_57_axis_record_at(bytes: &[u8], offset: usize) -> Option<En
 
 /// Decode one complete type-88 tag-value record at `offset`.
 pub(crate) fn entity_58_tag_record_at(bytes: &[u8], offset: usize) -> Option<Entity58TagRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x58, 4, |value| {
-        Some(u32::from_be_bytes(value.try_into().ok()?))
-    })?;
+    let record = counted_value_record_at(bytes, offset, 0x58, 4, |value| u32_be_at(value, 0))?;
     Some(Entity58TagRecord {
         offset: record.offset,
         byte_len: record.byte_len,
@@ -464,9 +456,7 @@ pub(crate) fn entity_62_unicode_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<Entity62UnicodeRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x62, 2, |value| {
-        Some(u16::from_be_bytes(value.try_into().ok()?))
-    })?;
+    let record = counted_value_record_at(bytes, offset, 0x62, 2, |value| u16_be_at(value, 0))?;
     let value = String::from_utf16(&record.values).ok()?;
     Some(Entity62UnicodeRecord {
         offset: record.offset,
@@ -496,9 +486,8 @@ fn counted_value_record_at<T>(
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let count = bytes
-        .get(at..at + 4)
-        .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")) as usize)
+    let count = u32_be_at(bytes, at)
+        .map(|value| value as usize)
         .filter(|count| *count > 0)?;
     at += 4;
     let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
@@ -535,9 +524,8 @@ pub(crate) fn entity_54_string_record_at(
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let length = bytes
-        .get(at..at + 4)
-        .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")) as usize)
+    let length = u32_be_at(bytes, at)
+        .map(|value| value as usize)
         .filter(|length| *length > 0)?;
     at += 4;
     let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
@@ -571,14 +559,10 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let flags = bytes
-        .get(at..at + 4)
-        .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))?;
+    let flags = u32_be_at(bytes, at)?;
     at += 4;
     let xmt = read_xmt(bytes, &mut at)?;
-    let sequence = bytes
-        .get(at..at + 4)
-        .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))?;
+    let sequence = u32_be_at(bytes, at)?;
     at += 4;
     let definition_xmt = read_xmt(bytes, &mut at)?;
     (xmt > 1 && sequence != 0 && (1..=0x20).contains(&flags)).then_some(())?;
