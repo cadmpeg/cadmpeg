@@ -11,6 +11,7 @@ use crate::records::{
     DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
@@ -42,45 +43,42 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
             continue;
         };
         let count_offset = start + prefix.len();
-        let Some(count_raw) = bytes.get(count_offset..count_offset + 4) else {
+        let mut view = View::over_retained(bytes);
+        if view.seek(count_offset).is_none() {
+            continue;
+        }
+        let Some(count) = view
+            .u32_le()
+            .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
+        else {
             continue;
         };
-        let count =
-            usize::try_from(u32::from_le_bytes(count_raw.try_into().expect(
-                "invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4",
-            )))
-            .unwrap_or(usize::MAX);
         if count > 100_000 {
             continue;
         }
-        let mut cursor = count_offset + 4;
         let mut decoded = Vec::with_capacity(count);
         for _ in 0..count {
-            if bytes.get(cursor) != Some(&1) {
+            let cursor = view.position();
+            if view.u8() != Some(1) {
                 decoded.clear();
                 break;
             }
-            let Some(id_raw) = bytes.get(cursor + 1..cursor + 9) else {
+            let Some(entity_suffix) = view.u64_le() else {
                 decoded.clear();
                 break;
             };
-            let Some(flags_raw) = bytes.get(cursor + 9..cursor + 11) else {
+            let Some(flags) = view.u16_le() else {
                 decoded.clear();
                 break;
             };
             decoded.push(DesignBodyMember {
                 id: ids::native_design_body_member_id(&entry.name, cursor),
                 byte_offset: cursor as u64,
-                entity_suffix: u64::from_le_bytes(id_raw.try_into().expect(
-                    "invariant: id_raw is an 8-byte slice from bytes.get(range) of length 8",
-                )),
-                flags: u16::from_le_bytes(flags_raw.try_into().expect(
-                    "invariant: flags_raw is a 2-byte slice from bytes.get(range) of length 2",
-                )),
+                entity_suffix,
+                flags,
             });
-            cursor += 11;
         }
-        if decoded.len() == count && bytes.get(cursor) == Some(&0) {
+        if decoded.len() == count && bytes.get(view.position()) == Some(&0) {
             out.extend(decoded);
         }
     }
@@ -281,13 +279,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             *counter += 1;
             let record_index_offset = offset.checked_sub(16);
             let record_index = record_index_offset
-                .and_then(|at| bytes.get(at..at + 4))
-                .map(|raw| {
-                    i32::from_le_bytes(
-                        raw.try_into()
-                            .expect("invariant: bytes.get(at..at+4) is a 4-byte slice"),
-                    )
-                })
+                .and_then(|at| View::i32_le_at(bytes, at))
                 .unwrap_or_default();
             out.push(ConstructionRecipe {
                 id: ids::native_construction_recipe_id(stream, offset),
@@ -327,13 +319,7 @@ fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String,
 }
 
 fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32::from_le_bytes(
-        bytes
-            .get(length_offset..length_offset + 4)?
-            .try_into()
-            .ok()?,
-    ))
-    .ok()?;
+    let length = usize::try_from(View::u32_le_at(bytes, length_offset)?).ok()?;
     if !(1..=8).contains(&length) {
         return None;
     }
@@ -797,10 +783,11 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
 }
 
 fn utf16_le_string(bytes: &[u8]) -> String {
-    let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect();
+    let mut view = View::over_retained(bytes);
+    let mut units = Vec::with_capacity(bytes.len() / 2);
+    while let Some(unit) = view.u16_le() {
+        units.push(unit);
+    }
     String::from_utf16_lossy(&units)
 }
 
