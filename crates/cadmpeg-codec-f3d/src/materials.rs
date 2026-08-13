@@ -427,10 +427,7 @@ fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
         } else if page.get(4..8) == Some(b"\x80\x00\x00\x00") {
             (8, PAGE_SIZE - 8)
         } else if page.get(0..4) == Some(b"\xff\xff\xff\xff") {
-            (
-                8,
-                u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize,
-            )
+            (8, View::u16_le_at(page, 4)? as usize)
         } else {
             return None;
         };
@@ -1140,7 +1137,7 @@ fn legacy_face_appearance_assignments(
 /// Decode the normalized RGBA carrier of a legacy face assignment.
 fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
     let raw = bytes.get(offset..offset + 4 * size_of::<f32>())?;
-    let component = |at: usize| Some(f32::from_le_bytes(raw.get(at..at + 4)?.try_into().ok()?));
+    let component = |at: usize| View::f32_le_at(raw, at);
     let color = Color {
         r: component(0)?,
         g: component(4)?,
@@ -1514,23 +1511,17 @@ fn decode_design_object_types(
                 position += 1;
                 continue;
             }
-            let Some(count_bytes) = bytes.get(after_type..after_type + 4) else {
+            let Some(count) = View::u32_le_at(bytes, after_type).map(|n| n as usize) else {
                 break;
             };
-            let count = u32::from_le_bytes(count_bytes.try_into().expect(
-                "invariant: count_bytes is a 4-byte slice from bytes.get(range) of length 4",
-            )) as usize;
             if count > 200 || after_type + 4 + count * 8 > bytes.len() {
                 position += 1;
                 continue;
             }
             for id_bytes in bytes[after_type + 4..after_type + 4 + count * 8].chunks_exact(8) {
                 out.insert(
-                    u64::from_le_bytes(
-                        id_bytes
-                            .try_into()
-                            .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-                    ),
+                    View::u64_le_at(id_bytes, 0)
+                        .expect("invariant: chunks_exact(8) yields 8-byte slices"),
                     object_type.clone(),
                 );
             }
@@ -1569,11 +1560,9 @@ fn decode_act_channels(
                 position += 1;
                 continue;
             }
-            let count = u32::from_le_bytes(
-                header[14..18]
-                    .try_into()
-                    .expect("invariant: header is an 18-byte slice, so header[14..18] is 4 bytes"),
-            ) as usize;
+            let count = View::u32_le_at(header, 14)
+                .expect("invariant: header is an 18-byte slice, so offset 14 is a 4-byte field")
+                as usize;
             if !(1..=8).contains(&count) {
                 position += 1;
                 continue;
@@ -1646,7 +1635,7 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     for unit in char::decode_utf16(
         payload
             .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]])),
+            .map(|pair| View::u16_le_at(pair, 0).expect("chunks_exact(2)")),
     ) {
         let ch = unit.ok()?;
         if ch.is_control() {
@@ -1708,11 +1697,9 @@ fn definition_catalog<'a>(
         let mut strings = Vec::new();
         let mut position = *start + marker.len();
         while position + 4 <= end && strings.len() < 8 {
-            let length = u32::from_le_bytes(
-                bytes[position..position + 4]
-                    .try_into()
-                    .expect("invariant: bytes[position..position+4] is a 4-byte slice"),
-            ) as usize;
+            let length = View::u32_le_at(bytes, position)
+                .expect("invariant: position + 4 <= end <= bytes.len()")
+                as usize;
             if (1..=200).contains(&length) && position + 4 + length <= end {
                 let raw = &bytes[position + 4..position + 4 + length];
                 if raw.iter().all(|byte| (0x20..=0x7e).contains(byte)) {
@@ -1836,13 +1823,9 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
 }
 
 fn fixed_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {
-    let Some(raw) = bytes
-        .get(offset..offset + 8)
-        .and_then(|raw| raw.try_into().ok())
-    else {
+    let Some(value) = View::f64_le_at(bytes, offset) else {
         return;
     };
-    let value = f64::from_le_bytes(raw);
     if value.is_finite() {
         out.insert(name.to_owned(), value);
     }
@@ -1858,7 +1841,7 @@ fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
     let mut values = [0.0; 4];
     for (ordinal, value) in values.iter_mut().enumerate() {
         let at = offset + ordinal * 8;
-        *value = f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?);
+        *value = View::f64_le_at(bytes, at)?;
     }
     decoded_color(values)
 }
@@ -1868,20 +1851,13 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
     match record.get(slot) {
         Some(0) => Some(0),
         Some(1) if slot + 6 <= record.len() => {
-            let count = u32::from_le_bytes(
-                record[slot + 2..slot + 6]
-                    .try_into()
-                    .expect("invariant: record[slot+2..slot+6] is a 4-byte slice"),
-            ) as usize;
+            let count = View::u32_le_at(record, slot + 2)? as usize;
             if count > 8 {
                 return None;
             }
             let mut position = slot + 6;
             for _ in 0..count {
-                let length_bytes = record.get(position..position + 4)?;
-                let length = u32::from_le_bytes(length_bytes.try_into().expect(
-                    "invariant: length_bytes is a 4-byte slice from bytes.get(range) of length 4",
-                )) as usize;
+                let length = View::u32_le_at(record, position)? as usize;
                 position += 4;
                 record.get(position..position + length)?;
                 position += length;
