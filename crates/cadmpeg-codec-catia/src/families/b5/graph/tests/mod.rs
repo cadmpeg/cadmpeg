@@ -55,4 +55,5 @@ fn extended_loop_metadata(metadata_control: u8) -> Vec<u8> {
 
 mod analytic;
 mod loops;
+mod typed;
 mod walk;

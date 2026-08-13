@@ -9,4 +9,5 @@ pub(crate) fn test_loop_metadata(edge_count: usize) -> B5LoopMetadata {
 }
 
 mod closure;
+mod decode;
 mod pcurves;
