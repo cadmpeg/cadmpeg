@@ -3,7 +3,6 @@
 
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::{f64_at as f64_le, u32_at as u32_le, u64_at as u64_le};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
@@ -60,7 +59,7 @@ fn scan_transformed_reference_plane(
         }
         let start = prefix + PREFIX.len();
         let Some(values) = (0..9)
-            .map(|index| f64_le(payload, start + index * 8))
+            .map(|index| View::f64_le_at(payload, start + index * 8))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -206,7 +205,7 @@ fn scan_vectors(
     {
         let start = offset + token.len() + skip;
         let Some(values) = (0..count)
-            .map(|index| f64_le(payload, start + index * 8))
+            .map(|index| View::f64_le_at(payload, start + index * 8))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -237,7 +236,10 @@ fn scan_part(section: Section<'_>, out: &mut Vec<SourceAttribute>, annotations: 
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
         let start = offset + TOKEN.len();
-        let (Some(id), Some(version)) = (u32_le(payload, start), u32_le(payload, start + 8)) else {
+        let (Some(id), Some(version)) = (
+            View::u32_le_at(payload, start),
+            View::u32_le_at(payload, start + 8),
+        ) else {
             continue;
         };
         out.push(attribute(
@@ -268,9 +270,9 @@ fn scan_configuration_manager(
     {
         let start = offset + TOKEN.len();
         let (Some(minor), Some(states), Some(filetime)) = (
-            u32_le(payload, start + 66),
+            View::u32_le_at(payload, start + 66),
             payload.get(start + 107),
-            u64_le(payload, start + 117),
+            View::u64_le_at(payload, start + 117),
         ) else {
             continue;
         };

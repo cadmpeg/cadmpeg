@@ -3,7 +3,6 @@
 
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
@@ -81,7 +80,7 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
                 .windows(SCENE_SOURCE_MARKER.len() + 4)
                 .filter_map(|window| {
                     (window.starts_with(SCENE_SOURCE_MARKER))
-                        .then(|| u32_le(window, 12))
+                        .then(|| View::u32_le_at(window, 12))
                         .flatten()
                         .filter(|source| *source != 0)
                         .map(|source| (source, class.clone()))
@@ -164,10 +163,10 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     let mut normals = Vec::new();
     let mut channels = Vec::new();
     for index in 0..6 {
-        let item_size = u32_le(bytes, at)? as usize;
-        let kind = u32_le(bytes, at + 4)?;
-        let flags = u32_le(bytes, at + 8)?;
-        let count = u32_le(bytes, at + 12)? as usize;
+        let item_size = View::u32_le_at(bytes, at)? as usize;
+        let kind = View::u32_le_at(bytes, at + 4)?;
+        let flags = View::u32_le_at(bytes, at + 8)?;
+        let count = View::u32_le_at(bytes, at + 12)? as usize;
         let data = at + 16;
         let end = data.checked_add(item_size.checked_mul(count)?)?;
         if end > bytes.len() {
@@ -184,7 +183,7 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         });
         if index == 0 && item_size == 4 && kind == 8 {
             strips = (0..count)
-                .map(|i| u32_le(bytes, data + i * 4).map(|v| v as usize))
+                .map(|i| View::u32_le_at(bytes, data + i * 4).map(|v| v as usize))
                 .collect::<Option<Vec<_>>>()?;
         } else if index == 1 && item_size == 12 && kind == 100 {
             for i in 0..count {
@@ -267,9 +266,10 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
         return Vec::new();
     };
     let end = marker + MARKER.len();
-    let (Some(triangle_count), Some(strip_count)) =
-        (u32_le(payload, end), u32_le(payload, end + 4))
-    else {
+    let (Some(triangle_count), Some(strip_count)) = (
+        View::u32_le_at(payload, end),
+        View::u32_le_at(payload, end + 4),
+    ) else {
         return Vec::new();
     };
     let meshes = parse_table_sequence(payload, end + descriptor_table_offset(payload, end));
@@ -289,10 +289,10 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
 /// fixed 32-byte extension. A compact table begins with item
 /// size 4 at the same position, so it cannot satisfy the extension grammar.
 fn descriptor_table_offset(payload: &[u8], at: usize) -> usize {
-    let extended = u32_le(payload, at + 8) == Some(1)
-        && u32_le(payload, at + 12) == Some(0)
-        && u32_le(payload, at + 16) == Some(0)
-        && u32_le(payload, at + 20).is_some_and(|token| token != 0)
+    let extended = View::u32_le_at(payload, at + 8) == Some(1)
+        && View::u32_le_at(payload, at + 12) == Some(0)
+        && View::u32_le_at(payload, at + 16) == Some(0)
+        && View::u32_le_at(payload, at + 20).is_some_and(|token| token != 0)
         && payload
             .get(at + 24..at + 40)
             .is_some_and(|tail| tail.iter().all(|byte| *byte == 0));

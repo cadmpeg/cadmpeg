@@ -3,7 +3,9 @@
 
 use std::collections::HashMap;
 
-use super::{f64_be, u16_be, LEN_TO_MM};
+use cadmpeg_core::decode::View;
+
+use super::LEN_TO_MM;
 
 const TAG: [u8; 2] = [0x00, 0x3c];
 const COMMON_REFERENCE_COUNT: usize = 5;
@@ -32,13 +34,13 @@ fn parse_payload(
         _ => return None,
     }
     let support_at = tail.checked_add(2)?;
-    let support = u16_be(body, support_at)?;
+    let support = View::u16_be_at(body, support_at)?;
     (support > 1).then_some(())?;
     if tripled_support && body.get(support_at + 2) != Some(&1) {
         return None;
     }
     let distance_at = support_at + if tripled_support { 3 } else { 2 };
-    let distance = f64_be(body, distance_at)? * LEN_TO_MM;
+    let distance = View::f64_be_at(body, distance_at)? * LEN_TO_MM;
     distance.is_finite().then_some(OffsetCarrier {
         support,
         distance,
@@ -52,7 +54,7 @@ fn parse_at(body: &[u8], offset: usize) -> Option<(u16, OffsetCarrier)> {
     if body.get(header) == Some(&0xff) {
         header += 1;
     }
-    let attr = u16_be(body, header)?;
+    let attr = View::u16_be_at(body, header)?;
     (attr > 1).then_some(())?;
 
     let references = header.checked_add(6)?;

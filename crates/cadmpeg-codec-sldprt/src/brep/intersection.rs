@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::be::{f64_at, u16_at, u32_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point2, Point3};
 
@@ -101,9 +101,9 @@ fn composite_records(bytes: &[u8]) -> Vec<(usize, usize, usize)> {
 
 fn finite_point(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
     let point = [
-        f64_at(bytes, at)?,
-        f64_at(bytes, at + 8)?,
-        f64_at(bytes, at + 16)?,
+        View::f64_be_at(bytes, at)?,
+        View::f64_be_at(bytes, at + 8)?,
+        View::f64_be_at(bytes, at + 16)?,
     ];
     point
         .iter()
@@ -114,9 +114,9 @@ fn finite_point(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
 fn finite_tangent(bytes: &[u8], at: usize) -> bool {
     let Some(tangent) = (|| {
         Some([
-            f64_at(bytes, at)?,
-            f64_at(bytes, at + 8)?,
-            f64_at(bytes, at + 16)?,
+            View::f64_be_at(bytes, at)?,
+            View::f64_be_at(bytes, at + 8)?,
+            View::f64_be_at(bytes, at + 16)?,
         ])
     })() else {
         return false;
@@ -143,13 +143,13 @@ fn chart_records(bytes: &[u8]) -> HashMap<u16, Vec<Chart>> {
 }
 
 fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u16, Vec<Chart>)> {
-    let count = u32_at(bytes, body)? as usize;
-    let attr = u16_at(bytes, body + 4)?;
+    let count = View::u32_be_at(bytes, body)? as usize;
+    let attr = View::u16_be_at(bytes, body + 4)?;
     let preamble = body + 6;
-    let base_parameter = f64_at(bytes, preamble)?;
-    let base_scale = f64_at(bytes, preamble + 8)?;
-    let chart_count = u32_at(bytes, preamble + 16)? as usize;
-    let chordal_error = f64_at(bytes, preamble + 20)?;
+    let base_parameter = View::f64_be_at(bytes, preamble)?;
+    let base_scale = View::f64_be_at(bytes, preamble + 8)?;
+    let chart_count = View::u32_be_at(bytes, preamble + 16)? as usize;
+    let chordal_error = View::f64_be_at(bytes, preamble + 20)?;
     if !(2..=4096).contains(&count)
         || chart_count != count
         || !base_parameter.is_finite()
@@ -157,8 +157,8 @@ fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u16, Vec<Chart>)> {
         || base_scale == 0.0
         || !chordal_error.is_finite()
         || chordal_error <= 0.0
-        || f64_at(bytes, preamble + 36) != Some(MISSING_PARAMETER)
-        || f64_at(bytes, preamble + 44) != Some(MISSING_PARAMETER)
+        || View::f64_be_at(bytes, preamble + 36) != Some(MISSING_PARAMETER)
+        || View::f64_be_at(bytes, preamble + 44) != Some(MISSING_PARAMETER)
     {
         return None;
     }
@@ -202,7 +202,10 @@ fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u16, Vec<Chart>)> {
 /// label widths yield a candidate endpoint; composite validation selects the
 /// candidate that matches the chart.
 fn term_at(bytes: &[u8], body: usize, out: &mut HashMap<u16, Vec<[f64; 3]>>) {
-    let (Some(count), Some(attr)) = (u32_at(bytes, body), u16_at(bytes, body + 4)) else {
+    let (Some(count), Some(attr)) = (
+        View::u32_be_at(bytes, body),
+        View::u16_be_at(bytes, body + 4),
+    ) else {
         return;
     };
     if !(1..=2).contains(&count) {
@@ -240,8 +243,8 @@ fn term_records(bytes: &[u8]) -> HashMap<u16, Vec<[f64; 3]>> {
 /// Parse a support-UV body: `count:u32 attr:u16 width_marker:u8(2|3|4)` then
 /// `count` finite f64 values.
 fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, UvRecord)> {
-    let count = u32_at(bytes, body)? as usize;
-    let attr = u16_at(bytes, body + 4)?;
+    let count = View::u32_be_at(bytes, body)? as usize;
+    let attr = View::u16_be_at(bytes, body + 4)?;
     let marker = *bytes.get(body + 6)?;
     if !(2..=4).contains(&marker) {
         return None;
@@ -251,7 +254,7 @@ fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, UvRecord)> {
         return None;
     }
     let values = (0..count)
-        .map(|index| f64_at(bytes, body + 7 + index * 8))
+        .map(|index| View::f64_be_at(bytes, body + 7 + index * 8))
         .collect::<Option<Vec<_>>>()?;
     values
         .iter()
@@ -406,12 +409,12 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
     }
     let mut out = HashMap::new();
     for (offset, body, marker_at) in composite_records(bytes) {
-        let Some(attr) = u16_at(bytes, body) else {
+        let Some(attr) = View::u16_be_at(bytes, body) else {
             continue;
         };
         let payload = marker_at + 1;
         let Some(refs) = (0..6)
-            .map(|index| u16_at(bytes, payload + index * 2))
+            .map(|index| View::u16_be_at(bytes, payload + index * 2))
             .collect::<Option<Vec<u16>>>()
         else {
             continue;

@@ -5035,7 +5035,7 @@ note = "The parser's scene-source marker matches the 12-byte specification marke
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
-contains = ".then(|| u32_le(window, 12))"
+contains = ".then(|| View::u32_le_at(window, 12))"
 note = "The parser reads the source identifier at marker offset +12."
 
 [[record]]
