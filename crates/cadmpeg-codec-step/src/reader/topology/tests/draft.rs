@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::super::*;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, Surface, SurfaceGeometry};
@@ -229,7 +229,7 @@ fn shared_surface_carrier_is_staged_once() {
     };
     let body_id = BodyId("step:data:body#shared-surface".into());
     let region_id = RegionId("step:data:region#shared-surface".into());
-    let built = super::staged_topology(
+    let built = super::super::staged_topology(
         HashSet::new(),
         Vec::new(),
         Vec::new(),

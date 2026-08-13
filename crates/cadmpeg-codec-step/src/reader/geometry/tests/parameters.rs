@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::super::*;
 use cadmpeg_ir::eval::nurbs_curve_point;
 
 #[test]

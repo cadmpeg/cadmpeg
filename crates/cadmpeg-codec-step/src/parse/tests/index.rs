@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{parse, AnchorResolver, BTreeMap, Value};
+use super::super::{parse, AnchorResolver, BTreeMap, Value};
 
 #[test]
 fn entity_index_is_not_part_of_exchange_equality() {
