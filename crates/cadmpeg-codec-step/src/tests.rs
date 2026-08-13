@@ -27,6 +27,7 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
@@ -9004,21 +9005,6 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
         finding.check == cadmpeg_ir::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#79")
     }));
-}
-
-fn export(ir: &CadIr) -> String {
-    let mut buf = Vec::new();
-    write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");
-    String::from_utf8(buf).expect("utf8")
-}
-
-fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
-    let source = format!(
-        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'2;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n{records}\nENDSEC;\nEND-ISO-10303-21;\n"
-    );
-    StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode inline STEP")
 }
 
 #[test]
