@@ -143,8 +143,8 @@ note = "The standard name lies before ds and ends at the fixed tail ds-3..ds. In
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/container.rs"
-contains = "The extent count sits at `desc_offset + 0x50`."
-note = "The parser locates the extent count at the same descriptor offset."
+contains = "let ds = o - 0x50;"
+note = "The parser locates the descriptor start 0x50 bytes before the extent-count field."
 
 [[record]]
 name = "extent_struct"
@@ -586,7 +586,7 @@ anchor = "+3 payload_len:u32le  +7 header_token (W bytes)  payload @ +7+W"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/wire/records.rs"
-contains = "0xa4"
+contains = "byte.checked_sub(0xa4)"
 note = "The parser derives the family width from `data[pos] - 0xa4`, matching the stated `0xA4 + W` rule."
 
 [[record]]
@@ -749,7 +749,7 @@ anchor = "`record_length = YY + 12`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
-contains = "+ 12"
+contains = "usize::from(data[position + 3]) + 12"
 note = "The parser derives the nominal record end as `position + data[position + 3] + 12`, matching the stated `YY + 12`."
 
 [[record]]
@@ -858,7 +858,7 @@ note = "`a9 03 21 71` framing and the record head. The spec's family table start
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
-contains = "[0x21, 0x71]"
+contains = "[0x21, 0x71] => (&[67, 75][..], 83, &[2, 2][..], 93, 2, None, 125)"
 note = "The parser's family table carries the same knot, multiplicity, and pole offsets for this tag."
 
 [[record]]
@@ -964,7 +964,7 @@ note = "The enumerated header fields total 14 bytes but the same sentence states
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/e5/records.rs"
-contains = "const MARKER"
+contains = "const MARKER: &[u8; 3] = b\"\\xe5\\x0d\\x03\";"
 note = "The parser's E5 marker constant; its stride arithmetic is `pos + size + 13`, matching the stated stride and not the enumerated field total."
 
 # --- §7 Outer schema records -------------------------------------------------
@@ -993,7 +993,7 @@ anchor = "7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/value_block.rs"
-contains = "0xfe"
+contains = "bytes.get(terminator) != Some(&0xfe) || bytes.get(next..next + 2) != Some(&[0x7c, 0x02])"
 note = "The parser checks the `FE` terminator at `pos + declared_len` and requires `7C 02` immediately after it."
 
 [[record]]
@@ -1055,7 +1055,7 @@ anchor = "<f2:u32le> <f3:u32le>"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/object_graph.rs"
-contains = "0x00ff_ffff"
+contains = "tag_raw & 0x00ff_ffff"
 note = "The parser masks the stored tag word to its low 24 bits, matching the stated persistent-roster-tag rule."
 
 # --- §4 Marker inventory -----------------------------------------------------
@@ -1156,7 +1156,7 @@ anchor = "`marker[4] A B G R`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/standard/fbb.rs"
-contains = "row[7], row[6], row[5], row[4]"
+contains = "(row[..4] == marker).then_some([row[7], row[6], row[5], row[4]])"
 note = "The parser reads the colour channels from the last four bytes of the eight-byte row in the stated A B G R order."
 
 # --- Not tabulated -----------------------------------------------------------
