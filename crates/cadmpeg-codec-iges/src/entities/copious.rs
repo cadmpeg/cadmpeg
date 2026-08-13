@@ -294,3 +294,6 @@ pub(super) fn project(
         free_vertices,
     }
 }
+
+#[cfg(test)]
+mod tests;

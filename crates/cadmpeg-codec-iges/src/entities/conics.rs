@@ -425,3 +425,6 @@ pub(super) fn project(
         wire_edges,
     }
 }
+
+#[cfg(test)]
+mod tests;
