@@ -32425,145 +32425,158 @@ fn cubic_unit_interval_roots(
 }
 
 fn cubic_extrusion_plane_generator_curve(
+    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     plane: PlaneEquation,
-) -> Option<CurveGeometry> {
-    let boundaries = nurbs_surface_boundaries(nurbs)?;
-    (nurbs.u_degree == 3
-        && nurbs.v_degree == 1
-        && nurbs.u_count == 4
-        && nurbs.v_count == 2
-        && !nurbs.u_periodic
-        && !nurbs.v_periodic)
+) -> Result<Option<CurveGeometry>, CodecError> {
+    fn recognize(
+        ctx: &DecodeContext<'_>,
+        nurbs: &NurbsSurface,
+        plane: PlaneEquation,
+    ) -> Option<Result<CurveGeometry, CodecError>> {
+        let boundaries = nurbs_surface_boundaries(nurbs)?;
+        (nurbs.u_degree == 3
+            && nurbs.v_degree == 1
+            && nurbs.u_count == 4
+            && nurbs.v_count == 2
+            && !nurbs.u_periodic
+            && !nurbs.v_periodic)
+            .then_some(())?;
+        let u_knots = normalized_knot_vector(&nurbs.u_knots)?;
+        let v_knots = normalized_knot_vector(&nurbs.v_knots)?;
+        (u_knots.len() == 8
+            && u_knots
+                .iter()
+                .zip([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+                .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12))
+            && v_knots.len() == 4
+            && v_knots
+                .iter()
+                .zip([0.0, 0.0, 1.0, 1.0])
+                .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12)))
         .then_some(())?;
-    let u_knots = normalized_knot_vector(&nurbs.u_knots)?;
-    let v_knots = normalized_knot_vector(&nurbs.v_knots)?;
-    (u_knots.len() == 8
-        && u_knots
-            .iter()
-            .zip([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
-            .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12))
-        && v_knots.len() == 4
-        && v_knots
-            .iter()
-            .zip([0.0, 0.0, 1.0, 1.0])
-            .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12)))
-    .then_some(())?;
-    let weights = match &nurbs.weights {
-        Some(weights) => weights.clone(),
-        None => alloc_filled(nurbs.control_points.len(), 1.0, "creo_nurbs_weights").ok()?,
-    };
-    (0..4)
-        .all(|u| scalar_near(weights[2 * u], weights[2 * u + 1], 1e-12 * weights[2 * u]))
-        .then_some(())?;
-    let generator = [
-        nurbs.control_points[1].x - nurbs.control_points[0].x,
-        nurbs.control_points[1].y - nurbs.control_points[0].y,
-        nurbs.control_points[1].z - nurbs.control_points[0].z,
-    ];
-    normalized(generator)?;
-    let normal = normalized(plane.normal)?;
-    let tolerance = point_tolerance(nurbs.control_points.iter())?
-        .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
-    let structural_tolerance = 64.0
-        * f64::EPSILON
-        * nurbs
-            .control_points
-            .iter()
-            .flat_map(|point| [point.x, point.y, point.z])
-            .chain(plane.origin)
-            .map(f64::abs)
-            .fold(1.0, f64::max);
-    (generator.iter().copied().all(f64::is_finite)
-        && dot(normal, generator).abs() <= structural_tolerance
-        && (0..4).all(|u| {
-            let current = [
-                nurbs.control_points[2 * u + 1].x - nurbs.control_points[2 * u].x,
-                nurbs.control_points[2 * u + 1].y - nurbs.control_points[2 * u].y,
-                nurbs.control_points[2 * u + 1].z - nurbs.control_points[2 * u].z,
-            ];
-            dot(
-                [
-                    current[0] - generator[0],
-                    current[1] - generator[1],
-                    current[2] - generator[2],
-                ],
-                [
-                    current[0] - generator[0],
-                    current[1] - generator[1],
-                    current[2] - generator[2],
-                ],
-            )
-            .sqrt()
-                <= structural_tolerance
-        }))
-    .then_some(())?;
-    let signed = (0..4)
-        .map(|u| {
-            let point = nurbs.control_points[2 * u];
-            weights[2 * u]
-                * dot(
-                    normal,
+        let weights = match &nurbs.weights {
+            Some(weights) => weights.clone(),
+            None => match ctx.alloc_filled(nurbs.control_points.len(), 1.0, "creo_nurbs_weights") {
+                Ok(weights) => weights,
+                Err(error) => return Some(Err(error)),
+            },
+        };
+        (0..4)
+            .all(|u| scalar_near(weights[2 * u], weights[2 * u + 1], 1e-12 * weights[2 * u]))
+            .then_some(())?;
+        let generator = [
+            nurbs.control_points[1].x - nurbs.control_points[0].x,
+            nurbs.control_points[1].y - nurbs.control_points[0].y,
+            nurbs.control_points[1].z - nurbs.control_points[0].z,
+        ];
+        normalized(generator)?;
+        let normal = normalized(plane.normal)?;
+        let tolerance = point_tolerance(nurbs.control_points.iter())?
+            .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
+        let structural_tolerance = 64.0
+            * f64::EPSILON
+            * nurbs
+                .control_points
+                .iter()
+                .flat_map(|point| [point.x, point.y, point.z])
+                .chain(plane.origin)
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+        (generator.iter().copied().all(f64::is_finite)
+            && dot(normal, generator).abs() <= structural_tolerance
+            && (0..4).all(|u| {
+                let current = [
+                    nurbs.control_points[2 * u + 1].x - nurbs.control_points[2 * u].x,
+                    nurbs.control_points[2 * u + 1].y - nurbs.control_points[2 * u].y,
+                    nurbs.control_points[2 * u + 1].z - nurbs.control_points[2 * u].z,
+                ];
+                dot(
                     [
-                        point.x - plane.origin[0],
-                        point.y - plane.origin[1],
-                        point.z - plane.origin[2],
+                        current[0] - generator[0],
+                        current[1] - generator[1],
+                        current[2] - generator[2],
+                    ],
+                    [
+                        current[0] - generator[0],
+                        current[1] - generator[1],
+                        current[2] - generator[2],
                     ],
                 )
-        })
-        .collect::<Vec<_>>();
-    let cubic = -signed[0] + 3.0 * signed[1] - 3.0 * signed[2] + signed[3];
-    let quadratic = 3.0 * signed[0] - 6.0 * signed[1] + 3.0 * signed[2];
-    let linear = -3.0 * signed[0] + 3.0 * signed[1];
-    let weight_scale = weights.iter().copied().fold(1.0, f64::max);
-    let roots = cubic_unit_interval_roots(
-        cubic,
-        quadratic,
-        linear,
-        signed[0],
-        tolerance * weight_scale,
-    );
-    let [parameter] = roots.as_slice() else {
-        return None;
-    };
-    let parameter = *parameter;
-    let bernstein = [
-        (1.0 - parameter).powi(3),
-        3.0 * parameter * (1.0 - parameter).powi(2),
-        3.0 * parameter.powi(2) * (1.0 - parameter),
-        parameter.powi(3),
-    ];
-    let evaluated = |v| {
-        let weight = (0..4)
-            .map(|u| bernstein[u] * weights[2 * u + v])
-            .sum::<f64>();
-        let coordinate = |coordinate: fn(&Point3) -> f64| {
-            (0..4)
-                .map(|u| {
-                    bernstein[u] * weights[2 * u + v] * coordinate(&nurbs.control_points[2 * u + v])
-                })
-                .sum::<f64>()
-                / weight
+                .sqrt()
+                    <= structural_tolerance
+            }))
+        .then_some(())?;
+        let signed = (0..4)
+            .map(|u| {
+                let point = nurbs.control_points[2 * u];
+                weights[2 * u]
+                    * dot(
+                        normal,
+                        [
+                            point.x - plane.origin[0],
+                            point.y - plane.origin[1],
+                            point.z - plane.origin[2],
+                        ],
+                    )
+            })
+            .collect::<Vec<_>>();
+        let cubic = -signed[0] + 3.0 * signed[1] - 3.0 * signed[2] + signed[3];
+        let quadratic = 3.0 * signed[0] - 6.0 * signed[1] + 3.0 * signed[2];
+        let linear = -3.0 * signed[0] + 3.0 * signed[1];
+        let weight_scale = weights.iter().copied().fold(1.0, f64::max);
+        let roots = cubic_unit_interval_roots(
+            cubic,
+            quadratic,
+            linear,
+            signed[0],
+            tolerance * weight_scale,
+        );
+        let [parameter] = roots.as_slice() else {
+            return None;
         };
-        (
-            Point3::new(
-                coordinate(|point| point.x),
-                coordinate(|point| point.y),
-                coordinate(|point| point.z),
-            ),
-            weight,
-        )
-    };
-    let first = evaluated(0);
-    let second = evaluated(1);
-    let curve = &boundaries[0].curve;
-    Some(CurveGeometry::Nurbs(NurbsCurve {
-        degree: curve.degree,
-        knots: curve.knots.clone(),
-        control_points: vec![first.0, second.0],
-        weights: nurbs.weights.as_ref().map(|_| vec![first.1, second.1]),
-        periodic: curve.periodic,
-    }))
+        let parameter = *parameter;
+        let bernstein = [
+            (1.0 - parameter).powi(3),
+            3.0 * parameter * (1.0 - parameter).powi(2),
+            3.0 * parameter.powi(2) * (1.0 - parameter),
+            parameter.powi(3),
+        ];
+        let evaluated = |v| {
+            let weight = (0..4)
+                .map(|u| bernstein[u] * weights[2 * u + v])
+                .sum::<f64>();
+            let coordinate = |coordinate: fn(&Point3) -> f64| {
+                (0..4)
+                    .map(|u| {
+                        bernstein[u]
+                            * weights[2 * u + v]
+                            * coordinate(&nurbs.control_points[2 * u + v])
+                    })
+                    .sum::<f64>()
+                    / weight
+            };
+            (
+                Point3::new(
+                    coordinate(|point| point.x),
+                    coordinate(|point| point.y),
+                    coordinate(|point| point.z),
+                ),
+                weight,
+            )
+        };
+        let first = evaluated(0);
+        let second = evaluated(1);
+        let curve = &boundaries[0].curve;
+        Some(Ok(CurveGeometry::Nurbs(NurbsCurve {
+            degree: curve.degree,
+            knots: curve.knots.clone(),
+            control_points: vec![first.0, second.0],
+            weights: nurbs.weights.as_ref().map(|_| vec![first.1, second.1]),
+            periodic: curve.periodic,
+        })))
+    }
+    recognize(ctx, nurbs, plane).transpose()
 }
 
 fn analytic_curve_branches(
@@ -32684,10 +32697,11 @@ enum NurbsBoundaryKind {
 }
 
 fn transfer_nurbs_boundary_curves(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> TransferredNurbsBoundaryCurves {
+) -> Result<TransferredNurbsBoundaryCurves, CodecError> {
     let mut result = TransferredNurbsBoundaryCurves {
         ids: BTreeSet::new(),
         endpoint_witnesses: BTreeSet::new(),
@@ -32735,13 +32749,13 @@ fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                nurbs_plane_boundary_curve(nurbs, plane)
-                    .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlane))
-                    .or_else(|| {
-                        cubic_extrusion_plane_generator_curve(nurbs, plane).map(|geometry| {
-                            (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator)
-                        })
+                if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane) {
+                    Some((geometry, NurbsBoundaryKind::ExtrusionPlane))
+                } else {
+                    cubic_extrusion_plane_generator_curve(ctx, nurbs, plane)?.map(|geometry| {
+                        (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator)
                     })
+                }
             }
             (
                 crate::surface::SurfaceKind::Extrusion,
@@ -32798,7 +32812,7 @@ fn transfer_nurbs_boundary_curves(
             }
         }
     }
-    result
+    Ok(result)
 }
 
 fn rowless_round_cylinder_pairs(
@@ -33629,7 +33643,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     } = if ctx.container_only() {
         build_container_ir(&scan)?
     } else {
-        build_ir(&scan)?
+        build_ir(ctx, &scan)?
     };
     ctx.admit_entities(
         ir.model.entity_count() as u64,
@@ -33967,7 +33981,7 @@ fn termination_has_unresolved_operands(termination: &Termination) -> bool {
 }
 
 /// Build source metadata, preserved geometry records, and transferred entities.
-fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
+fn build_ir(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let (meta, mut coverage) = source_meta(scan);
@@ -34291,7 +34305,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
     let mut derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
-    let nurbs_boundary_curves = transfer_nurbs_boundary_curves(scan, &mut ir, &mut annotations);
+    let nurbs_boundary_curves =
+        transfer_nurbs_boundary_curves(ctx, scan, &mut ir, &mut annotations)?;
     let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
     let extrusion_plane_section_generator_curve_count =
         nurbs_boundary_curves.extrusion_plane_section_generator_count;
