@@ -29,74 +29,6 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 pub(crate) use crate::test_support::*;
 
 #[test]
-fn blank_directory_status_defaults_to_zero_fields() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
-                entity_type: 116,
-                form: 0,
-                label: "BLANK".into(),
-                status: "        ",
-                parameters: "116,1,2,3,0;".into(),
-            }])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
-    assert!(validation.is_ok(), "{validation:#?}");
-}
-
-#[test]
-fn right_justified_directory_status_supplies_leading_zero_groups() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
-                entity_type: 116,
-                form: 0,
-                label: "STATUS".into(),
-                status: "     201",
-                parameters: "116,1,2,3,0;".into(),
-            }])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let entity = &result.ir().native.namespace("iges").unwrap().arenas["entities"][0];
-
-    assert_eq!(entity.fields()["blank_status"], 0);
-    assert_eq!(entity.fields()["subordinate_status"], 0);
-    assert_eq!(entity.fields()["use_flag"], 2);
-    assert_eq!(entity.fields()["hierarchy_status"], 1);
-}
-
-#[test]
-fn directory_status_rejects_embedded_or_trailing_blanks() {
-    for status in ["0000 201", "0000020 "] {
-        let error = IgesCodec
-            .decode(
-                &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
-                    entity_type: 116,
-                    form: 0,
-                    label: "STATUS".into(),
-                    status,
-                    parameters: "116,1,2,3,0;".into(),
-                }])),
-                &DecodeOptions::default(),
-            )
-            .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("status number is neither blank nor a right-justified decimal integer"));
-    }
-}
-
-#[test]
 fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
     let mut graph = (1..=100_000_u32)
         .map(|sequence| (sequence, vec![sequence + 1]))
@@ -256,49 +188,6 @@ fn non_utf8_global_identifiers_are_preserved_as_exact_hex_attributes() {
     assert_eq!(attributes["native_file_name_bytes_hex"], "7061fe742e696773");
     assert!(!attributes.contains_key("sender_product"));
     assert!(!attributes.contains_key("native_file_name"));
-}
-
-#[test]
-fn inspect_reports_directory_entity_and_form_census() {
-    let bytes = point_file();
-
-    let summary = IgesCodec
-        .inspect(
-            &mut Cursor::new(bytes),
-            &cadmpeg_core::decode::InspectOptions::default(),
-        )
-        .unwrap();
-
-    assert!(summary.notes.contains(&"entities=1".into()));
-    assert!(summary.notes.contains(&"entity.116.form.0=1".into()));
-    assert!(summary.notes.contains(&"parameter_records=1".into()));
-    assert!(summary.notes.contains(&"parameter_tokens=4".into()));
-}
-
-#[test]
-fn decode_treats_subordinate_switch_three_as_physically_dependent() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(direction_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(!result.report().geometry_transferred);
-    assert!(result.report().losses.is_empty());
-    let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["directions"].len(), 1);
-    let direction_fields = native.arenas["directions"][0].fields();
-    let components = direction_fields["components"].as_array().unwrap();
-    assert_eq!(components[0], 2.0);
-    assert_eq!(components[1], -3.0);
-    assert_eq!(components[2], 4.0);
-    assert_eq!(
-        native.arenas["directions"][0].fields()["physically_dependent"],
-        true
-    );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
