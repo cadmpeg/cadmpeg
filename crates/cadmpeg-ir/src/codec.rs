@@ -370,3 +370,6 @@ impl Encoder for CadirEncoder {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -474,3 +474,6 @@ pub struct SourceMeta {
     #[serde(default)]
     pub attributes: BTreeMap<String, String>,
 }
+
+#[cfg(test)]
+mod tests;
