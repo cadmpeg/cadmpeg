@@ -1145,3 +1145,6 @@ pub(crate) fn project_geometry(
         losses,
     }
 }
+
+#[cfg(test)]
+mod tests;

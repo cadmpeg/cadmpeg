@@ -4473,3 +4473,6 @@ pub(crate) fn store(
         root_inference_blocked,
     })
 }
+
+#[cfg(test)]
+mod tests;

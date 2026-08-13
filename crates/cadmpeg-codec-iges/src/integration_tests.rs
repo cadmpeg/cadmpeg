@@ -763,3 +763,92 @@ fn metadata_pipeline_composes_properties_attributes_associativity_and_native_own
         ),
     ]);
 }
+
+#[test]
+fn repeated_decode_is_canonical() {
+    let bytes = explicit_tetrahedron_solid_with_boolean_file();
+    let first = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let second = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        first.ir().to_canonical_json().unwrap(),
+        second.ir().to_canonical_json().unwrap()
+    );
+    assert_eq!(
+        serde_json::to_vec(first.report()).unwrap(),
+        serde_json::to_vec(second.report()).unwrap()
+    );
+    assert_eq!(first.source_fidelity(), second.source_fidelity());
+}
+
+#[test]
+fn cumulative_l8_domain_fixtures_validate_without_loss() {
+    let (void_solid, _, _, _) = explicit_void_solid_file();
+    let fixtures = [
+        ("point", point_file()),
+        (
+            "conic",
+            conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
+        ),
+        ("nurbs-curve", rational_nurbs_curve_file()),
+        ("spline-surface", parametric_spline_surface_file()),
+        ("revolution", surface_of_revolution_file()),
+        ("trimmed-sheet", trimmed_plane_with_inner_loop_file()),
+        (
+            "manifold-solid",
+            explicit_tetrahedron_solid_with_boolean_file(),
+        ),
+        ("void-solid", void_solid),
+        (
+            "non-manifold-shell",
+            explicit_non_manifold_open_shell_file(),
+        ),
+        ("appearance", colored_explicit_vertex_loop_file()),
+        ("csg", primitive_solids_file()),
+        ("solid-assembly", solid_assembly_file()),
+        ("subfigures", nested_subfigure_file()),
+        ("network", connected_network_subfigure_file()),
+        ("external-references", external_reference_forms_file()),
+        ("attribute-definitions", attribute_definition_forms_file()),
+        ("attribute-instances", attribute_instance_forms_file()),
+        ("properties", variable_schema_property_forms_file()),
+        ("views", view_visibility_forms_file()),
+        ("drawing", drawing_with_properties_file()),
+        ("text", text_annotation_file()),
+        ("dimensions", dimension_forms_file()),
+        ("symbols", symbol_and_sectioned_area_file()),
+        ("associativity", bounded_associativity_forms_file()),
+        ("text-font", text_font_definition_file()),
+        ("units-data", units_data_file()),
+    ];
+
+    for (name, bytes) in fixtures {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert!(
+            result.report().losses.is_empty(),
+            "{name}: {:#?}",
+            result.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral_with_source_fidelity(
+            result.ir(),
+            result.source_fidelity(),
+            Vec::new(),
+        );
+        assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
+    }
+}

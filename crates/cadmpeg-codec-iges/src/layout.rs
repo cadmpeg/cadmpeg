@@ -109,3 +109,6 @@ pub(crate) fn unsupported_error(representation: Representation) -> CodecError {
     };
     CodecError::NotImplemented(format!("IGES {name} representation decode"))
 }
+
+#[cfg(test)]
+mod tests;

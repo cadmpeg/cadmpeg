@@ -2121,3 +2121,6 @@ pub(super) fn project(
         losses,
     }
 }
+
+#[cfg(test)]
+mod tests;
