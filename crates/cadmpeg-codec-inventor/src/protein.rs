@@ -76,11 +76,8 @@ fn parse_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: cadmpeg_core::decode::View<'a>,
 ) -> Result<ParsedProtein<'a>, CodecError> {
-    let header = source
-        .window()
-        .get(..4)
-        .ok_or_else(|| CodecError::Malformed("truncated Inventor Protein length".into()))?;
-    let declared_len = u32::from_le_bytes(header.try_into().expect("four-byte header"));
+    let mut header = source;
+    let declared_len = header.req_u32_le()?;
     if declared_len == 0 {
         if source.window().len() != 4 {
             return Err(CodecError::Malformed(
