@@ -4,6 +4,8 @@
 use super::*;
 use cadmpeg_ir::codec::CodecBackend;
 
+use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
+
 use cadmpeg_ir::codec::{EncodeInput, Encoder};
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {

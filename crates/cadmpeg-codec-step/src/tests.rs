@@ -47,56 +47,6 @@ fn step_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> Vec<u8> {
 }
 
 #[test]
-fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
-    use crate::strings::{decode, decode_utf8, encode};
-
-    assert_eq!(decode(b"it''s").unwrap(), "it's");
-    assert_eq!(decode(b"a\\\\b").unwrap(), "a\\b");
-    assert_eq!(decode(b"\\X\\E9").unwrap(), "é");
-    assert_eq!(decode(b"\\X2\\03A9\\X0\\").unwrap(), "Ω");
-    assert_eq!(decode(b"\\X4\\0001F642\\X0\\").unwrap(), "🙂");
-    assert_eq!(decode(b"\\S\\D").unwrap(), "Ä");
-    assert_eq!(decode(b"\\PA\\\\S\\D").unwrap(), "Ä");
-    assert_eq!(decode(b"\\PB\\\\S\\A").unwrap(), "Á");
-    assert_eq!(decode(b"\\PC\\\\S\\!").unwrap(), "Ħ");
-    assert_eq!(decode(b"\\PD\\\\S\\!").unwrap(), "Ą");
-    assert_eq!(decode(b"\\PE\\\\S\\0").unwrap(), "А");
-    assert_eq!(decode(b"\\PF\\\\S\\G").unwrap(), "ا");
-    assert_eq!(decode(b"\\PG\\\\S\\A").unwrap(), "Α");
-    assert_eq!(decode(b"\\PH\\\\S\\`").unwrap(), "א");
-    assert_eq!(decode(b"\\PI\\\\S\\P").unwrap(), "Ğ");
-    assert_eq!(decode(b"line\\N\\text\\F\\tail").unwrap(), "linetexttail");
-    assert_eq!(decode_utf8(b"caf\xC3\xA9").unwrap(), "café");
-    assert_eq!(
-        decode_utf8(b"caf\xC3\xA9\\X2\\03A9\\X0\\").unwrap(),
-        "caféΩ"
-    );
-    assert_eq!(
-        decode_utf8(b"caf\xE9").unwrap_err().message,
-        "invalid UTF-8 direct string bytes"
-    );
-
-    for text in ["ASCII", "it's \\ quoted", "café Ω 🙂"] {
-        assert_eq!(decode(encode(text).as_bytes()).unwrap(), text);
-    }
-}
-
-#[test]
-fn writer_and_lexer_preserve_apostrophes_and_backslashes_once() {
-    use crate::lex::{lex, TokenKind};
-
-    let source = "O'Brien \\ fixtures";
-    let encoded = crate::writer::string(source);
-    let tokens = lex(encoded.as_bytes()).expect("lex encoded string");
-    let TokenKind::String(bytes) = &tokens[0].kind else {
-        panic!("encoded text did not lex as a string")
-    };
-    assert_eq!(crate::strings::decode(bytes).unwrap(), source);
-    assert!(encoded.contains("O''Brien"));
-    assert!(encoded.contains("\\\\"));
-}
-
-#[test]
 fn lexer_decodes_binary_literals_and_rejects_invalid_bit_boundaries() {
     use crate::lex::{lex, BinaryValue, TokenKind};
 
@@ -9005,54 +8955,6 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
         finding.check == cadmpeg_ir::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#79")
     }));
-}
-
-#[test]
-fn invalid_step_string_escape_is_reported_as_metadata_loss() {
-    let decoded = decode_inline(r"#1=PRODUCT('\X\GG','valid name','',());");
-
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::MetadataNotTransferred)
-            && loss.severity == cadmpeg_ir::Severity::Warning
-            && loss
-                .message
-                .contains("STEP record #1 has an invalid product identifier string")
-    }));
-}
-
-#[test]
-fn edition_three_direct_utf8_text_uses_the_file_description_level() {
-    let mut source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'4;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=PRODUCT('P\xC3\xA9','N\xC3\xB8','',());\nENDSEC;\nEND-ISO-10303-21;\n".to_vec();
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(&mut source), &DecodeOptions::default())
-        .expect("decode edition-three UTF-8 product");
-    let product = decoded
-        .ir()
-        .model
-        .product_definitions
-        .first()
-        .expect("product definition");
-    assert_eq!(product.source_name.as_deref(), Some("Nø"));
-    assert_eq!(product.part_number.as_deref(), Some("Pé"));
-    assert!(!decoded.report().losses.iter().any(|loss| {
-        loss.message.contains("invalid product identifier string")
-            || loss.message.contains("invalid product name string")
-    }));
-}
-
-#[test]
-fn legacy_direct_single_byte_text_keeps_iso_8859_1_mapping() {
-    let mut source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'3;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=PRODUCT('P\xE9','N','',());\nENDSEC;\nEND-ISO-10303-21;\n".to_vec();
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(&mut source), &DecodeOptions::default())
-        .expect("decode legacy ISO-8859-1 product");
-    let product = decoded
-        .ir()
-        .model
-        .product_definitions
-        .first()
-        .expect("product definition");
-    assert_eq!(product.part_number.as_deref(), Some("Pé"));
 }
 
 fn oriented_closed_shell_source(derived_slot: bool) -> String {
