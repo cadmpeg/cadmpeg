@@ -70,7 +70,7 @@ pub(crate) mod placement;
 pub mod primdata;
 pub mod psb;
 pub mod reference;
-pub mod scalar;
+pub(crate) mod scalar;
 pub(crate) mod surface;
 pub mod topology;
 
