@@ -105,3 +105,6 @@ pub struct SubdEdgeUse {
     /// Whether this use traverses the edge from its second endpoint.
     pub reversed: bool,
 }
+
+#[cfg(test)]
+mod tests;

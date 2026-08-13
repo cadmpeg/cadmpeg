@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Property tests for IR validator invariants.
+//! Crate-wide IR tests with no single production owner.
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::redundant_closure_for_method_calls)]

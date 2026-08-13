@@ -4257,3 +4257,6 @@ pub enum PatternForm {
     /// Ordered composition of multiple pattern forms.
     Composite,
 }
+
+#[cfg(test)]
+mod tests;

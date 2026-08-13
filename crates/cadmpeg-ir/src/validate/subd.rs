@@ -179,3 +179,6 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

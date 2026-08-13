@@ -164,3 +164,6 @@ pub struct AppearanceBinding {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub channels: BTreeMap<String, String>,
 }
+
+#[cfg(test)]
+mod tests;

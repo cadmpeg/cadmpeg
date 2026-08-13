@@ -303,3 +303,6 @@ impl Native {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests;

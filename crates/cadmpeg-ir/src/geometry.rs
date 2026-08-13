@@ -3538,3 +3538,6 @@ pub struct Pcurve {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fit_tolerance: Option<f64>,
 }
+
+#[cfg(test)]
+mod tests;
