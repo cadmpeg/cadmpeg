@@ -5,6 +5,13 @@ use super::*;
 use cadmpeg_ir::codec::CodecBackend;
 
 use crate::reader::dependencies::tests::decode_reports_data_section_external_dependencies;
+use crate::reader::pmi::tests::{
+    ap242_dimension_kinds_emit_concrete_schema_entities,
+    common_datum_compartment_round_trips_as_one_precedence,
+    decode_transfers_ap242_presentation_pmi, decode_transfers_ap242_semantic_pmi,
+    typed_pmi_measure_uses_its_explicit_conversion_unit,
+    unresolved_lower_tolerance_does_not_shift_upper_deviation,
+};
 use crate::reader::tessellation::tests::decode_transfers_ap242_one_based_tessellation_indices;
 use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
 

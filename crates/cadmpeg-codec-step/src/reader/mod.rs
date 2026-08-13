@@ -21,7 +21,7 @@ pub(crate) mod dependencies;
 mod drawing;
 mod geometry;
 mod index;
-mod pmi;
+pub(crate) mod pmi;
 mod presentation;
 mod product;
 pub(crate) mod tessellation;

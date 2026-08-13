@@ -1,0 +1,876 @@
+// SPDX-License-Identifier: Apache-2.0
+//! STEP semantic and presentation PMI tests.
+
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
+#![allow(unused_imports)]
+
+use std::fmt::Write as _;
+use std::io::Cursor;
+
+use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::eval::{
+    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
+};
+use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{LengthUnit, Units};
+use cadmpeg_ir::CadIr;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
+
+use crate::ids::StepIdentity;
+use crate::test_support::{decode_inline, export};
+use crate::{
+    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
+};
+
+#[test]
+pub(crate) fn decode_transfers_ap242_semantic_pmi() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
+
+    let bytes = include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21");
+    let mut result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 semantic PMI");
+
+    assert_eq!(result.ir().model.pmi.len(), 5);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("PLUS_MINUS_TOLERANCE #26")));
+    let dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("width"))
+        .unwrap();
+    let PmiDefinition::Dimension {
+        nominal,
+        lower_deviation,
+        upper_deviation,
+        ref limits_and_fits,
+        ..
+    } = dimension.definition
+    else {
+        panic!("width is not a dimension")
+    };
+    assert_eq!(nominal.unwrap().value, 12.0);
+    assert_eq!(lower_deviation.unwrap().value, -0.1);
+    assert_eq!(upper_deviation.unwrap().value, 0.2);
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            dimension: cadmpeg_ir::pmi::DimensionKind::Diameter,
+            ..
+        }
+    )));
+    let fit = limits_and_fits.as_ref().expect("limits and fits");
+    assert_eq!(fit.form_variance, "H");
+    assert_eq!(fit.grade, "7");
+    assert_eq!(fit.source, "ISO 286");
+    let tolerance = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .unwrap();
+    let datum_system = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("primary system"))
+        .expect("datum system");
+    assert!(matches!(
+        &datum_system.definition,
+        PmiDefinition::DatumSystem { references }
+            if references.len() == 1
+                && references[0].precedence == 1
+                && references[0].modifiers == ["maximum_material_requirement", "distance:0.2"]
+    ));
+    assert!(matches!(
+        tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Flatness,
+            magnitude: cadmpeg_ir::PmiValue {
+                value: 0.05,
+                quantity: PmiQuantity::Length,
+            },
+            datum_system: None,
+            ..
+        }
+    ));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+    let semantic = dimension.id.clone();
+    result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
+        id: cadmpeg_ir::ids::PmiId("test:pmi:presentation".into()),
+        name: Some("width note".into()),
+        targets: Vec::new(),
+        definition: PmiDefinition::Presentation {
+            text: Some("12 mm".into()),
+            placement: Some(cadmpeg_ir::transform::Transform::identity()),
+            semantics: vec![semantic],
+        },
+    });
+    let options = StepWriteOptions {
+        schema: StepSchema::Ap242Edition3,
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    let report = write_step(result.ir(), &mut output, &options).expect("write semantic PMI");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("PMI annotation")));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written semantic PMI");
+    assert_eq!(roundtrip.ir().model.pmi.len(), 6);
+    assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::DatumSystem { references }
+            if references.len() == 1
+                && references[0].modifiers
+                    == ["maximum_material_requirement", "distance:0.2"]
+    )));
+    assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::Presentation { semantics, .. } if semantics.len() == 1
+    )));
+    assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            nominal: Some(cadmpeg_ir::PmiValue {
+                value: 12.0,
+                quantity: PmiQuantity::Length,
+            }),
+            lower_deviation: Some(cadmpeg_ir::PmiValue { value: -0.1, .. }),
+            upper_deviation: Some(cadmpeg_ir::PmiValue { value: 0.2, .. }),
+            ..
+        }
+    )));
+}
+
+#[test]
+fn complex_datum_feature_remains_a_dimension_target() {
+    use cadmpeg_ir::pmi::{PmiDefinition, PmiTarget};
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=(COMPOSITE_SHAPE_ASPECT() DATUM_FEATURE() SHAPE_ASPECT('feature','',#5,.T.));
+#10=DIMENSIONAL_SIZE(#6,'width');
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("width"))
+        .expect("complex datum feature dimension");
+    assert!(matches!(
+        &dimension.definition,
+        PmiDefinition::Dimension { .. }
+    ));
+    assert_eq!(
+        dimension.targets,
+        vec![PmiTarget::ShapeAspect {
+            source_id: "#6".into()
+        }]
+    );
+}
+
+#[test]
+fn complex_dimension_inherits_kind_targets_and_nominal_value() {
+    use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiQuantity};
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('feature','',#5,.T.);
+#10=(DIMENSIONAL_LOCATION() DIMENSIONAL_LOCATION_WITH_PATH(#6) DIRECTED_DIMENSIONAL_LOCATION() SHAPE_ASPECT_RELATIONSHIP('centre distance','',#6,#6));
+#13=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(5.0),#1) REPRESENTATION_ITEM('nominal value'));
+#14=SHAPE_DIMENSION_REPRESENTATION('distance value',(#13),#2);
+#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("centre distance"))
+        .expect("complex dimensional location");
+    assert!(matches!(
+        &dimension.definition,
+        PmiDefinition::Dimension {
+            dimension: DimensionKind::Location,
+            nominal: Some(cadmpeg_ir::pmi::PmiValue {
+                value: 5.0,
+                quantity: PmiQuantity::Length,
+            }),
+            ..
+        }
+    ));
+    assert_eq!(
+        dimension.targets,
+        vec![cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
+            source_id: "#6".into()
+        }]
+    );
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("preserved 1 MEASURE_REPRESENTATION_ITEM instance")
+    }));
+}
+
+#[test]
+fn dimensional_characteristic_selects_the_named_nominal_measure() {
+    use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiQuantity, PmiValue};
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('feature','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'width');
+#11=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(11.8),#1) REPRESENTATION_ITEM('lower limit'));
+#12=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(12.2),#1) REPRESENTATION_ITEM('upper limit'));
+#13=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(12.0),#1) REPRESENTATION_ITEM('nominal value'));
+#14=SHAPE_DIMENSION_REPRESENTATION('limits',(#11,#12,#13),#2);
+#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            dimension: DimensionKind::Size,
+            nominal: Some(PmiValue { value, quantity: PmiQuantity::Length }),
+            ..
+        } if (value - 12.0).abs() < 1.0e-12
+    )));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("unnamed measure values; the nominal is ambiguous")
+    }));
+}
+
+#[test]
+fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
+
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
+        "#12=(FLATNESS_TOLERANCE() GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.CIRCULAR.,$) GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT(#11));",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex geometric tolerance");
+    let tolerance = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .expect("complex flatness tolerance");
+    assert!(matches!(
+        tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Flatness,
+            magnitude: cadmpeg_ir::PmiValue {
+                value: 0.05,
+                quantity: PmiQuantity::Length,
+            },
+            ..
+        }
+    ));
+    let PmiDefinition::GeometricTolerance {
+        defined_unit,
+        defined_area_unit,
+        defined_area_second_unit,
+        ..
+    } = &tolerance.definition
+    else {
+        panic!("complex flatness tolerance has the wrong definition")
+    };
+    assert_eq!(
+        defined_unit,
+        &Some(cadmpeg_ir::PmiValue {
+            value: 0.05,
+            quantity: PmiQuantity::Length,
+        })
+    );
+    assert_eq!(defined_area_unit.as_deref(), Some("circular"));
+    assert!(defined_area_second_unit.is_none());
+    let mut output = Vec::new();
+    write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write complex geometric tolerance units");
+    let output = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT"));
+    assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT"));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("FLATNESS_TOLERANCE+GEOMETRIC_TOLERANCE")
+    }));
+}
+
+#[test]
+fn complex_geometric_tolerance_uses_the_leaf_not_a_tolerance_mixin() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
+        "#12=(FAKE_TOLERANCE() FLATNESS_TOLERANCE() GEOMETRIC_TOLERANCE('surface flatness','',#11,#6));",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex geometric tolerance with mixin");
+    let tolerance = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .expect("complex flatness tolerance");
+    assert!(matches!(
+        tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Flatness,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn coaxiality_tolerance_decodes_and_writes_as_a_native_leaf() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
+        "#12=COAXIALITY_TOLERANCE('coaxiality','',#11,#6,#8);",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode coaxiality tolerance");
+    let tolerance = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("coaxiality"))
+        .expect("coaxiality tolerance");
+    assert!(matches!(
+        tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Coaxiality,
+            ..
+        }
+    ));
+    let mut output = Vec::new();
+    write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write coaxiality tolerance");
+    assert!(String::from_utf8(output)
+        .expect("STEP output is UTF-8")
+        .contains("COAXIALITY_TOLERANCE"));
+}
+
+#[test]
+fn complex_geometric_tolerance_links_its_inherited_datum_system() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
+        "#12=(GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE((#8)) GEOMETRIC_TOLERANCE_WITH_MODIFIERS((.MAXIMUM_MATERIAL_REQUIREMENT.,.FREE_STATE.)) FLATNESS_TOLERANCE());",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex geometric tolerance datum system");
+    let tolerance = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .expect("complex flatness tolerance");
+    assert!(matches!(
+        &tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Flatness,
+            datum_system: Some(system),
+            ..
+        } if system.as_str() == "step:presentation:pmi#8"
+    ));
+    let PmiDefinition::GeometricTolerance { modifiers, .. } = &tolerance.definition else {
+        panic!("complex flatness tolerance has the wrong definition")
+    };
+    assert_eq!(
+        modifiers,
+        &[
+            "maximum_material_requirement".to_string(),
+            "free_state".to_string()
+        ]
+    );
+    assert!(result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .any(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. })));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let mut output = Vec::new();
+    let report = crate::write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write complex geometric tolerance with report policy");
+    assert!(!report.losses.iter().any(
+        |loss| loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PmiOmitted)
+    ));
+    let output = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE"));
+    assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_MODIFIERS"));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written complex geometric tolerance");
+    let tolerance = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .expect("roundtripped flatness tolerance");
+    assert!(matches!(
+        &tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            datum_system: Some(_),
+            modifiers,
+            ..
+        } if modifiers == &["maximum_material_requirement", "free_state"]
+    ));
+}
+
+#[test]
+pub(crate) fn decode_transfers_ap242_presentation_pmi() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let bytes = include_bytes!("../../../tests/fixtures/ap242_presentation_pmi.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 presentation PMI");
+
+    assert_eq!(result.ir().model.pmi.len(), 1);
+    let PmiDefinition::Presentation {
+        ref text,
+        ref placement,
+        ..
+    } = result.ir().model.pmi[0].definition
+    else {
+        panic!("annotation occurrence is not presentation PMI")
+    };
+    assert_eq!(text.as_deref(), Some("inspect surface"));
+    let transform = placement.as_ref().unwrap();
+    assert_eq!(transform.rows[0][3], 10.0);
+    assert_eq!(transform.rows[1][3], 20.0);
+    assert_eq!(transform.rows[2][3], 30.0);
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let options = StepWriteOptions {
+        schema: StepSchema::Ap242Edition3,
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    let report = write_step(result.ir(), &mut output, &options).expect("write presentation PMI");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("PMI annotation")));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written presentation PMI");
+    assert_eq!(roundtrip.ir().model.pmi.len(), 1);
+    assert!(matches!(
+        &roundtrip.ir().model.pmi[0].definition,
+        PmiDefinition::Presentation {
+            text: Some(text),
+            placement: Some(transform),
+            ..
+        } if text == "inspect surface"
+            && transform.rows[0][3] == 10.0
+            && transform.rows[1][3] == 20.0
+            && transform.rows[2][3] == 30.0
+    ));
+}
+
+#[test]
+fn malformed_zero_partial_pmi_reference_is_non_panicking() {
+    let result = decode_inline("#5=();\n#10=ANNOTATION_OCCURRENCE('',(),#5);");
+    assert!(result.ir().model.pmi.len() <= 1);
+}
+
+#[test]
+pub(crate) fn unresolved_lower_tolerance_does_not_shift_upper_deviation() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#5=PRODUCT_DEFINITION_SHAPE('','',#99);
+#6=SHAPE_ASPECT('feature','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'width');
+#16=UNRESOLVED_MEASURE();
+#17=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1);
+#18=TOLERANCE_VALUE(#16,#17);
+#19=PLUS_MINUS_TOLERANCE(#18,#10);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            lower_deviation: None,
+            upper_deviation: Some(cadmpeg_ir::PmiValue { value, .. }),
+            ..
+        } if (value - 0.2).abs() < 1.0e-12
+    )));
+}
+
+#[test]
+pub(crate) fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=DATUM_FEATURE('feature','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'width');
+#30=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);
+#31=(CONVERSION_BASED_UNIT('inch',#30) LENGTH_UNIT() NAMED_UNIT(*));
+#13=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(5.0),#31);
+#14=SHAPE_DIMENSION_REPRESENTATION('width value',(#13),#2);
+#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
+            ..
+        } if (value - 127.0).abs() < 1.0e-12
+    )));
+}
+
+#[test]
+fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let mut records = String::from(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#3=PRODUCT_DEFINITION_SHAPE('PMI shape','',#300);
+#4=SHAPE_ASPECT('feature','',#3,.T.);
+#5=DIMENSIONAL_SIZE(#4,'width');
+#6=TOLERANCE_VALUE(#20,#100);
+#7=SHAPE_DIMENSION_REPRESENTATION('width value',(#6),#2);
+#8=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#5,#7);
+#300=UNRESOLVED_PRODUCT();
+",
+    );
+    for id in 20..280 {
+        writeln!(records, "#{id}=UNRESOLVED_MEASURE(#{next});", next = id + 1)
+            .expect("write recursive measure carrier");
+    }
+    records.push_str("#280=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.4),#1);\n");
+
+    let result = decode_inline(&records);
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
+            ..
+        } if (value - 0.4).abs() < 1.0e-12
+    )));
+}
+
+#[test]
+pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
+    use cadmpeg_ir::ids::PmiId;
+    use cadmpeg_ir::pmi::{DimensionKind, GeometricToleranceKind, PmiDefinition};
+
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/fixtures/ap242_semantic_pmi.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode semantic PMI")
+        .into_parts()
+        .0;
+    let template = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::Dimension { .. }))
+        .cloned()
+        .expect("dimension template");
+    ir.model.pmi.clear();
+    for (ordinal, kind) in [
+        DimensionKind::Diameter,
+        DimensionKind::Radius,
+        DimensionKind::Location,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut annotation = template.clone();
+        annotation.id = PmiId(format!("test:pmi:dimension#{ordinal}"));
+        annotation.name = Some(format!("dimension {ordinal}"));
+        let PmiDefinition::Dimension { dimension, .. } = &mut annotation.definition else {
+            unreachable!()
+        };
+        *dimension = kind;
+        ir.model.pmi.push(annotation);
+    }
+    let mut unsupported = template;
+    unsupported.id = PmiId("test:pmi:tolerance#other".into());
+    unsupported.definition = PmiDefinition::GeometricTolerance {
+        tolerance: GeometricToleranceKind::Other("vendor_tolerance".into()),
+        magnitude: cadmpeg_ir::PmiValue {
+            value: 0.1,
+            quantity: cadmpeg_ir::PmiQuantity::Length,
+        },
+        datum_system: None,
+        defined_unit: None,
+        defined_area_unit: None,
+        defined_area_second_unit: None,
+        modifiers: Vec::new(),
+    };
+    ir.model.pmi.push(unsupported);
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write dimensions");
+    let text = String::from_utf8(output.clone()).unwrap();
+    assert!(!text.contains("DIAMETER_SIZE"));
+    assert!(!text.contains("RADIUS_SIZE"));
+    assert!(!text.contains(" = GEOMETRIC_TOLERANCE("));
+    assert!(text.contains(",'diameter')"));
+    assert!(text.contains(",'radius')"));
+    let (exchange, diagnostics) = crate::parse::parse(&output).unwrap();
+    assert!(diagnostics.is_empty());
+    let location = exchange
+        .records
+        .values()
+        .find(|record| {
+            record
+                .partials
+                .first()
+                .is_some_and(|partial| partial.name == "DIMENSIONAL_LOCATION")
+        })
+        .expect("dimensional location");
+    assert_eq!(location.partials[0].parameters.len(), 4);
+    assert!(matches!(
+        location.partials[0].parameters[0],
+        crate::parse::Value::String(_)
+    ));
+    assert!(matches!(
+        location.partials[0].parameters[1],
+        crate::parse::Value::Omitted
+    ));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("PMI annotation")));
+}
+
+#[test]
+pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
+    use cadmpeg_ir::ids::PmiId;
+    use cadmpeg_ir::pmi::{DatumReference, PmiDefinition};
+
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/fixtures/ap242_semantic_pmi.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode semantic PMI")
+        .into_parts()
+        .0;
+    let datum_a = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::Datum { .. }))
+        .cloned()
+        .expect("datum A");
+    let mut datum_b = datum_a.clone();
+    datum_b.id = PmiId("test:model:pmi#datum-b".into());
+    datum_b.definition = PmiDefinition::Datum {
+        identification: "B".into(),
+    };
+    ir.model.pmi.push(datum_b.clone());
+    let system = ir
+        .model
+        .pmi
+        .iter_mut()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. }))
+        .expect("datum system");
+    let PmiDefinition::DatumSystem { references } = &mut system.definition else {
+        unreachable!()
+    };
+    let modifiers = references[0].modifiers.clone();
+    *references = vec![
+        DatumReference {
+            datum: datum_a.id,
+            precedence: 1,
+            common_group: Some(7),
+            modifiers: modifiers.clone(),
+        },
+        DatumReference {
+            datum: datum_b.id,
+            precedence: 1,
+            common_group: Some(7),
+            modifiers: vec!["least_material_requirement".into()],
+        },
+    ];
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write common datum");
+    assert!(String::from_utf8_lossy(&output).contains("COMMON_DATUM_LIST(("));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode common datum");
+    assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::DatumSystem { references }
+            if references.len() == 2
+                && references.iter().all(|reference| reference.precedence == 1)
+                && references.iter().all(|reference| reference.common_group == Some(1))
+                && references[0].modifiers != references[1].modifiers
+    )));
+}
+
+#[test]
+fn complex_datum_names_use_the_inherited_shape_aspect_name() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#7=(DATUM('A') SHAPE_ASPECT('datum name','',#5,.F.));
+#8=(DATUM_SYSTEM((#20)) SHAPE_ASPECT('system name','',#5,.F.));
+#20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#7,());
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let names = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .filter(|annotation| {
+            matches!(
+                annotation.definition,
+                PmiDefinition::Datum { .. } | PmiDefinition::DatumSystem { .. }
+            )
+        })
+        .map(|annotation| annotation.name.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(names, [Some("datum name"), Some("system name")]);
+}
+
+#[test]
+fn complex_datum_reads_identification_from_its_named_partial() {
+    use cadmpeg_ir::pmi::{PmiDefinition, PmiTarget};
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#7=(COMMON_DATUM() DATUM('A') DATUM_FEATURE() SHAPE_ASPECT('datum name','',#5,.F.));
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let datum = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#7")
+        .expect("complex datum");
+    assert_eq!(datum.name.as_deref(), Some("datum name"));
+    assert!(matches!(
+        &datum.definition,
+        PmiDefinition::Datum { identification } if identification == "A"
+    ));
+    assert_eq!(
+        datum.targets,
+        vec![PmiTarget::ShapeAspect {
+            source_id: "#7".into()
+        }]
+    );
+}
