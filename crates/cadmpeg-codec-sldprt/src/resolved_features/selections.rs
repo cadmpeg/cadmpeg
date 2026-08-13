@@ -2617,4 +2617,4 @@ pub(super) fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> u
 }
 
 #[cfg(test)]
-mod selections_tests;
+mod tests;
