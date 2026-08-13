@@ -32,25 +32,6 @@ fn source_record_join_borrows_the_retained_source_image() {
     assert_eq!(retained.as_ptr(), payload_ptr);
 }
 
-fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> crate::native::SldprtNative {
-    crate::native::SldprtNative::load(
-        ir.native
-            .namespace("sldprt")
-            .expect("SLDPRT native namespace"),
-    )
-    .unwrap()
-}
-
-fn update_sldprt_native<R>(
-    ir: &mut cadmpeg_ir::CadIr,
-    update: impl FnOnce(&mut crate::native::SldprtNative) -> R,
-) -> R {
-    let mut native = sldprt_native(ir);
-    let result = update(&mut native);
-    native.store(ir.native.namespace_mut("sldprt")).unwrap();
-    result
-}
-
 #[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let decoded = SldprtCodec

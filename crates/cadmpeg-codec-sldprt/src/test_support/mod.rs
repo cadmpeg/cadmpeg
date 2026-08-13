@@ -5,8 +5,10 @@
 
 mod container;
 mod history;
+mod native;
 mod parasolid;
 
 pub(crate) use container::*;
 pub(crate) use history::*;
+pub(crate) use native::*;
 pub(crate) use parasolid::*;
