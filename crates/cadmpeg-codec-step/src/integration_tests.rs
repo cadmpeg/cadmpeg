@@ -20,6 +20,16 @@ use crate::reader::product::tests::{
 };
 use crate::reader::tessellation::tests::decode_transfers_ap242_one_based_tessellation_indices;
 use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
+use crate::writer::tests::{
+    analytic_conics_round_trip_through_step,
+    ap242_writer_round_trips_indexed_tessellation_and_exact_body_link,
+    nurbs_surface_grid_orientation_is_u_major, rejected_step_write_detects_incomplete_datum_system,
+    standalone_geometry_uses_general_shape_representation,
+    strict_writer_refuses_retained_opaque_step_records_atomically,
+    strict_writer_rejects_before_emitting_bytes, writer_round_trips_edge_based_wire_bodies,
+    writer_round_trips_product_body_ownership, writer_round_trips_rational_nurbs_pcurves,
+    writer_round_trips_rigid_body_placements,
+};
 
 use cadmpeg_ir::codec::{EncodeInput, Encoder};
 
