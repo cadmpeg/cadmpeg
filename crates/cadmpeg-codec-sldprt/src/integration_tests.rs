@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
-use super::*;
+use crate::test_support::*;
 use std::io::Cursor;
 
 use crate::writer::tests::{

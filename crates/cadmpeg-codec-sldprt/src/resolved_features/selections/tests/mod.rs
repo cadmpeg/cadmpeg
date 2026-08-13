@@ -14,5 +14,6 @@ use crate::records::{
 use std::collections::{BTreeMap, HashSet};
 
 mod compact_edge;
+mod delete_body;
 mod surfaces;
 mod writer;
