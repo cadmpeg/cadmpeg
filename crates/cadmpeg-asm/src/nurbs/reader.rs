@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-level readers, markers, and integer/float payload primitives shared across the NURBS decoders.
 
-use cadmpeg_core::le::{f64_at as read_f64, int_at as read_int, u16_at};
+use crate::sab::{int_le_at, vec3_le_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Millimetres per ASM model-space length unit (centimetres).
@@ -25,14 +26,13 @@ const NURBS_MARKER: &[u8] = b"\x0d\x05nurbs";
 /// must be and fails tag dispatch.
 pub(crate) const INT_WIDTHS: [usize; 2] = [8, 4];
 
-/// Read an `int_width`-byte little-endian signed integer.
 /// Consume a `tag`-prefixed integer of `int_width` bytes at `*pos`, advancing
 /// past it.
 pub(crate) fn take_tagged_int(b: &[u8], pos: &mut usize, tag: u8, int_width: usize) -> Option<i64> {
     if *b.get(*pos)? != tag {
         return None;
     }
-    let v = read_int(b, *pos + 1, int_width)?;
+    let v = int_le_at(b, *pos + 1, int_width)?;
     *pos += 1 + int_width;
     Some(v)
 }
@@ -116,7 +116,7 @@ pub(crate) fn read_knots(
             return None;
         }
         value_offsets.push(*pos + 1);
-        knots.push(read_f64(b, *pos + 1)?);
+        knots.push(View::f64_le_at(b, *pos + 1)?);
         *pos += 9;
         multiplicity_offsets.push(*pos + 1);
         mults.push(take_tagged_int(b, pos, 0x04, int_width)?);
@@ -167,7 +167,7 @@ pub(crate) fn read_control_points(
             if *b.get(*pos)? != 0x06 {
                 return None;
             }
-            *comp = read_f64(b, *pos + 1)?;
+            *comp = View::f64_le_at(b, *pos + 1)?;
             *pos += 9;
         }
         points.push(Point3::new(
@@ -215,12 +215,7 @@ pub(crate) fn take_float_array_payloads(
     int_width: usize,
 ) -> Option<Vec<usize>> {
     (*bytes.get(*position)? == 0x04).then_some(())?;
-    let raw = bytes.get(*position + 1..*position + 1 + int_width)?;
-    let count = match int_width {
-        8 => usize::try_from(i64::from_le_bytes(raw.try_into().ok()?)).ok()?,
-        4 => usize::try_from(i32::from_le_bytes(raw.try_into().ok()?)).ok()?,
-        _ => return None,
-    };
+    let count = usize::try_from(int_le_at(bytes, *position + 1, int_width)?).ok()?;
     *position += 1 + int_width;
     (0..count)
         .map(|_| take_double_payload(bytes, position))
@@ -231,7 +226,7 @@ pub(crate) fn take_f64(bytes: &[u8], position: &mut usize) -> Option<f64> {
     if bytes.get(*position) != Some(&0x06) {
         return None;
     }
-    let value = read_f64(bytes, *position + 1)?;
+    let value = View::f64_le_at(bytes, *position + 1)?;
     *position += 9;
     Some(value)
 }
@@ -275,11 +270,11 @@ pub(crate) fn take_native_string(
 ) -> Option<String> {
     let (length, header) = match *bytes.get(*position)? {
         0x07 => (usize::from(*bytes.get(*position + 1)?), 2),
-        0x08 => (usize::from(u16_at(bytes, *position + 1)?), 3),
+        0x08 => (usize::from(View::u16_le_at(bytes, *position + 1)?), 3),
         // The `0x09` length prefix is the stream's integer width, not a fixed
         // four bytes ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#21-tag-table)).
         0x09 => (
-            usize::try_from(read_int(bytes, *position + 1, int_width)?).ok()?,
+            usize::try_from(int_le_at(bytes, *position + 1, int_width)?).ok()?,
             1 + int_width,
         ),
         _ => return None,
@@ -298,7 +293,7 @@ pub(crate) fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64
     if bytes.get(*position) != Some(&0x06) {
         return None;
     }
-    let value = read_f64(bytes, *position + 1)?;
+    let value = View::f64_le_at(bytes, *position + 1)?;
     *position += 9;
     Some(value)
 }
@@ -323,11 +318,7 @@ pub(crate) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
     if bytes.get(*position) != Some(&tag) {
         return None;
     }
-    let values = [
-        read_f64(bytes, *position + 1)?,
-        read_f64(bytes, *position + 9)?,
-        read_f64(bytes, *position + 17)?,
-    ];
+    let values = vec3_le_at(bytes, *position + 1)?;
     *position += 25;
     Some(values)
 }

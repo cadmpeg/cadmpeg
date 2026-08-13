@@ -22,8 +22,7 @@
 //! `resnor`) follow the strings, then the SAB record stream.
 
 use crate::kernel_header::{read_string_region, KernelHeader};
-use cadmpeg_core::le::u32_at;
-use cadmpeg_core::le::u64_at as read_le_u64;
+use cadmpeg_core::decode::View;
 
 /// The ASM magic prefix common to both widths.
 const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
@@ -86,15 +85,15 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
 
     match width {
         8 => {
-            header.save_format_version = u32_at(bytes, 15);
-            header.entity_count = read_le_u64(bytes, 31);
-            header.flags = read_le_u64(bytes, 39);
+            header.save_format_version = View::u32_le_at(bytes, 15);
+            header.entity_count = View::u64_le_at(bytes, 31);
+            header.flags = View::u64_le_at(bytes, 39);
         }
         4 => {
-            header.save_format_version = u32_at(bytes, 15);
-            header.record_count = u32_at(bytes, 19);
-            header.entity_count = u32_at(bytes, 23).map(u64::from);
-            header.flags = u32_at(bytes, 27).map(u64::from);
+            header.save_format_version = View::u32_le_at(bytes, 15);
+            header.record_count = View::u32_le_at(bytes, 19);
+            header.entity_count = View::u32_le_at(bytes, 23).map(u64::from);
+            header.flags = View::u32_le_at(bytes, 27).map(u64::from);
         }
         _ => return Some(header),
     }
