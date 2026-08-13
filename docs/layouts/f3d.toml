@@ -1376,7 +1376,7 @@ anchor = "the u32 code-unit count of a 36-code-unit LP-UTF16 role GUID"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "u32_at(bytes, role_at.checked_add(21)?)? != 1"
+contains = "View::u32_le_at(bytes, role_at.checked_add(21)?)? != 1"
 note = "The parser checks the fixed role-record discriminator."
 
 [[record]]

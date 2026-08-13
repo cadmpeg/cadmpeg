@@ -12,7 +12,6 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
@@ -207,7 +206,7 @@ fn indexed_headers_in(
                 continue;
             };
             if class_tag.len() == 3 && class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-                let Some(record_index) = u32_at(bytes, after_tag) else {
+                let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
                     continue;
                 };
                 return Some((at, record_index));
@@ -227,12 +226,12 @@ pub(crate) fn body_bound_candidates(
             return None;
         }
         let values = [
-            f64_at(bytes, offset + 1)?,
-            f64_at(bytes, offset + 9)?,
-            f64_at(bytes, offset + 17)?,
-            f64_at(bytes, offset + 25)?,
-            f64_at(bytes, offset + 33)?,
-            f64_at(bytes, offset + 41)?,
+            View::f64_le_at(bytes, offset + 1)?,
+            View::f64_le_at(bytes, offset + 9)?,
+            View::f64_le_at(bytes, offset + 17)?,
+            View::f64_le_at(bytes, offset + 25)?,
+            View::f64_le_at(bytes, offset + 33)?,
+            View::f64_le_at(bytes, offset + 41)?,
         ];
         (values.iter().all(|value| value.is_finite())
             && (0..3).all(|axis| values[axis] >= values[axis + 3])
@@ -256,7 +255,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             }
             let framed_name = offset
                 .checked_sub(4)
-                .and_then(|at| u32_at(bytes, at))
+                .and_then(|at| View::u32_le_at(bytes, at))
                 .and_then(|length| usize::try_from(length).ok())
                 == Some(name.len());
             if !framed_name {
@@ -269,7 +268,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 .and_then(|(design_id, design_id_at)| {
                     let selector_at = design_id_at.checked_add(design_id.len())?;
                     Some(ConstructionRecipeSelector {
-                        value: u32_at(bytes, selector_at)?,
+                        value: View::u32_le_at(bytes, selector_at)?,
                         byte_offset: u64::try_from(selector_at).ok()?,
                     })
                 });
@@ -436,9 +435,9 @@ pub(crate) fn body_bindings(
                     "F3D Design body-map carrier entity {entity_id} exceeds u32"
                 ))
             })?;
-            if read_u32(bytes, start) != Some(3)
+            if View::u32_le_at(bytes, start) != Some(3)
                 || bytes.get(start + 4..start + 7) != Some(class_tag.as_bytes())
-                || read_u32(bytes, start + 7) != Some(record_index)
+                || View::u32_le_at(bytes, start + 7) != Some(record_index)
             {
                 return Err(CodecError::Malformed(format!(
                     "F3D Design body-map carrier entity {entity_id} has an invalid indexed header"
@@ -482,7 +481,7 @@ fn parse_body_map_frame(
     {
         return Ok(None);
     }
-    let Some(pair_count) = read_u32(bytes, count_at) else {
+    let Some(pair_count) = View::u32_le_at(bytes, count_at) else {
         return Ok(None);
     };
     let count = usize::try_from(pair_count).map_err(|_| {
@@ -502,7 +501,9 @@ fn parse_body_map_frame(
     let Some(name_at) = pairs_end.checked_add(12) else {
         return Ok(None);
     };
-    if read_u64(bytes, pairs_end).is_none() || read_u32(bytes, pairs_end + 8) != Some(0) {
+    if View::u64_le_at(bytes, pairs_end).is_none()
+        || View::u32_le_at(bytes, pairs_end + 8) != Some(0)
+    {
         return Ok(None);
     }
     let Some(max_name_chars) = name_at
@@ -530,7 +531,9 @@ fn parse_body_map_frame(
     })?;
     for pair in 0..count {
         let at = pairs_start + pair * 16;
-        let (Some(key), Some(suffix)) = (read_u64(bytes, at), read_u64(bytes, at + 8)) else {
+        let (Some(key), Some(suffix)) =
+            (View::u64_le_at(bytes, at), View::u64_le_at(bytes, at + 8))
+        else {
             return Err(CodecError::Malformed(format!(
                 "F3D Design body map at byte {start} has a truncated pair run"
             )));
@@ -762,7 +765,7 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
-        if read_u32(bytes, at) != Some(GUID_CHARS as u32)
+        if View::u32_le_at(bytes, at) != Some(GUID_CHARS as u32)
             || !is_utf16_guid(&bytes[at + 4..at + 4 + GUID_BYTES])
         {
             at += 1;
@@ -770,7 +773,7 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
         }
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
-            if let (0 | 1, Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
+            if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
                 out.push(BrowserNodeRecord {
                     guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
                     entity_suffix: member,

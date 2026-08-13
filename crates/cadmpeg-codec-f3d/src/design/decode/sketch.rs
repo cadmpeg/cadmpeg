@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
+use crate::bytes::{
+    f64s_at, lp_ascii_filtered, lp_utf16_bounded, take_reference, utf16le_at, Reference,
+};
 use crate::container::{role, ContainerScan};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -14,7 +16,6 @@ use crate::records::{
     DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::{f32_at, f64_at, f64s_at, take_f32, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
@@ -335,7 +336,7 @@ fn decode_sketch_visibility_member(
     member_at: usize,
     entity_suffix: u64,
 ) -> Option<DesignSketchVisibility> {
-    let record_index = read_u64(bytes, member_at + 7)?;
+    let record_index = View::u64_le_at(bytes, member_at + 7)?;
     if record_index != entity_suffix || bytes.get(member_at + 15..member_at + 19) != Some(&[0; 4]) {
         return None;
     }
@@ -350,7 +351,7 @@ fn decode_sketch_visibility_member(
     {
         return None;
     }
-    let stream_ordinal = u32_at(bytes, cursor)?;
+    let stream_ordinal = View::u32_le_at(bytes, cursor)?;
     if stream_ordinal == 0 || bytes.get(cursor + 4) != Some(&0) {
         return None;
     }
@@ -451,7 +452,7 @@ pub(crate) fn parse_member_run_head_placement(
     {
         return None;
     }
-    let head_index = u32_at(bytes, paired_at + 20)?;
+    let head_index = View::u32_le_at(bytes, paired_at + 20)?;
     if bytes.get(paired_at + 24..paired_at + 28) != Some(&[0u8; 4][..]) {
         return None;
     }
@@ -538,7 +539,7 @@ pub(crate) fn parse_sketch_placement_candidates(
             || paired_class_tag.len() != 3
             || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
             || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            || u32_at(bytes, paired_after_tag) != Some(record_index)
+            || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
         {
             continue;
         }
@@ -693,14 +694,14 @@ pub fn decode_persistent_references(
                 let offset = cursor + relative;
                 cursor = offset + name.len();
                 let compact_type_offset = offset + name.len();
-                let type_offset = if u32_at(bytes, compact_type_offset) == Some(23) {
+                let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
                     compact_type_offset
-                } else if u32_at(bytes, compact_type_offset) == Some(2)
-                    && u32_at(bytes, compact_type_offset + 4) == Some(14)
+                } else if View::u32_le_at(bytes, compact_type_offset) == Some(2)
+                    && View::u32_le_at(bytes, compact_type_offset + 4) == Some(14)
                     && bytes
                         .get(compact_type_offset + 8..compact_type_offset + 22)
                         .is_some()
-                    && u32_at(bytes, compact_type_offset + 22) == Some(23)
+                    && View::u32_le_at(bytes, compact_type_offset + 22) == Some(23)
                 {
                     compact_type_offset + 22
                 } else {
@@ -766,11 +767,11 @@ pub fn decode_lost_edge_references(
             if after_tag != header_offset + 7
                 || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
-                || u32_at(bytes, header_offset + 25) != Some(marker.len() as u32)
+                || View::u32_le_at(bytes, header_offset + 25) != Some(marker.len() as u32)
             {
                 continue;
             }
-            let Some(record_index) = u32_at(bytes, after_tag) else {
+            let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
                 continue;
             };
             let next_byte_offset = offset + marker.len();
@@ -784,7 +785,7 @@ pub fn decode_lost_edge_references(
             {
                 continue;
             }
-            let Some(next_record_index) = u32_at(bytes, after_next_tag) else {
+            let Some(next_record_index) = View::u32_le_at(bytes, after_next_tag) else {
                 continue;
             };
             out.push(LostEdgeReference {
@@ -839,7 +840,7 @@ pub(crate) fn parse_genesis_entity_header(
     bytes: &[u8],
     start: usize,
 ) -> Option<(u64, String, bool, usize)> {
-    let entity_suffix = u64::from(u32_at(bytes, start + 7)?);
+    let entity_suffix = u64::from(View::u32_le_at(bytes, start + 7)?);
     if entity_suffix == 0 {
         return None;
     }
@@ -847,7 +848,9 @@ pub(crate) fn parse_genesis_entity_header(
     while bytes.get(cursor) == Some(&0) && cursor < start + 35 {
         cursor += 1;
     }
-    if cursor == start + 11 || bytes.get(cursor) != Some(&1) || u32_at(bytes, cursor + 1) != Some(1)
+    if cursor == start + 11
+        || bytes.get(cursor) != Some(&1)
+        || View::u32_le_at(bytes, cursor + 1) != Some(1)
     {
         return None;
     }
@@ -885,10 +888,11 @@ pub(crate) fn parse_sketch_member_run(
     let Some(paired) = next_indexed_record_offset(bytes, from) else {
         return empty;
     };
-    if u32_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
+    if View::u32_le_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
         return empty;
     }
-    let Some(count) = u32_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
+    let Some(count) =
+        View::u32_le_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
     else {
         return empty;
     };
@@ -898,7 +902,7 @@ pub(crate) fn parse_sketch_member_run(
     {
         return empty;
     }
-    let Some(base_point_index) = u32_at(bytes, paired + 57) else {
+    let Some(base_point_index) = View::u32_le_at(bytes, paired + 57) else {
         return empty;
     };
     let mut member_indices = Vec::with_capacity(count + 1);
@@ -912,7 +916,7 @@ pub(crate) fn parse_sketch_member_run(
         {
             return empty;
         }
-        let Some(record_index) = u32_at(bytes, marker + 1) else {
+        let Some(record_index) = View::u32_le_at(bytes, marker + 1) else {
             return empty;
         };
         member_indices.push(record_index);
@@ -932,7 +936,7 @@ pub(crate) fn parse_legacy_sketch_member_run(
     entity_suffix: u32,
 ) -> Option<(Vec<u32>, Vec<u64>)> {
     let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
-    if u32_at(bytes, paired_at + 7) != Some(entity_suffix)
+    if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
         || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
         || bytes.get(paired_at + 19) != Some(&1)
         || bytes.get(paired_at + 24..paired_at + 30) != Some(&[0u8; 6][..])
@@ -947,7 +951,7 @@ pub(crate) fn parse_legacy_sketch_member_run(
     {
         return None;
     }
-    let count = usize::try_from(u32_at(bytes, paired_at + 41)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, paired_at + 41)?).ok()?;
     if count == 0 {
         return None;
     }
@@ -964,7 +968,7 @@ pub(crate) fn parse_legacy_sketch_member_run(
         {
             return None;
         }
-        member_indices.push(u32_at(bytes, marker + 1)?);
+        member_indices.push(View::u32_le_at(bytes, marker + 1)?);
         member_offsets.push((marker + 1) as u64);
     }
     Some((member_indices, member_offsets))
@@ -1142,7 +1146,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<std::collections::HashSet<_>>();
         for &start in &indexed_offsets {
-            let Some(entity_suffix) = u32_at(bytes, start + 7) else {
+            let Some(entity_suffix) = View::u32_le_at(bytes, start + 7) else {
                 continue;
             };
             if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
@@ -1377,7 +1381,7 @@ pub(crate) fn decode_pattern_definition(
     if parsed.state == 0x1000_0000 && parsed.auxiliary_references.len() == 2 {
         let angle_at = reference_end(1)? + 6;
         let evaluated_angle = f64_at(angle_at)?;
-        let evaluated_count = u32_at(payload, angle_at + 8)?;
+        let evaluated_count = View::u32_le_at(payload, angle_at + 8)?;
         if !(1..=100_000).contains(&evaluated_count) {
             return None;
         }
@@ -1412,7 +1416,7 @@ pub(crate) fn decode_pattern_definition(
             ),
         ];
         for (count_at, count_ordinal, distance_ordinal) in clauses {
-            let evaluated_count = u32_at(payload, count_at)?;
+            let evaluated_count = View::u32_le_at(payload, count_at)?;
             if !(1..=100_000).contains(&evaluated_count) {
                 return None;
             }
@@ -1506,7 +1510,7 @@ pub(crate) fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
     if record.get(tail) != Some(&1) || record.get(tail + 5..tail + 11) != Some(&[0u8; 6][..]) {
         return None;
     }
-    u32_at(record, tail + 1)
+    View::u32_le_at(record, tail + 1)
 }
 
 pub(crate) fn decode_sketch_points_from_stream(
@@ -1667,7 +1671,7 @@ pub(crate) fn read_property_block(
         0 => *cursor += 1,
         1 => {
             *cursor += 1;
-            let count = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            let count = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
             if count > MAX_RELATION_RUN {
                 return None;
             }
@@ -1680,7 +1684,7 @@ pub(crate) fn read_property_block(
                 if type_name != "IntrinsicMetaTypeuint64" {
                     return None;
                 }
-                properties.push((key, read_u64(payload, after_type)?));
+                properties.push((key, View::u64_le_at(payload, after_type)?));
                 *cursor = after_type.checked_add(8)?;
             }
         }
@@ -1821,12 +1825,15 @@ fn read_text_reference(
 /// intensity, so a run leaving `[0, 1]` says the record is misframed rather
 /// than that the text carries an out-of-range colour.
 fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
+    let mut view = View::over_retained(payload);
+    view.seek(*cursor)?;
     let mut components = [0f32; 4];
     for component in &mut components {
-        let value = take_f32(payload, cursor)?;
+        let value = view.f32_le()?;
         (0.0..=1.0).contains(&value).then_some(())?;
         *component = value;
     }
+    *cursor = view.position();
     let [r, g, b, a] = components;
     Some(Color { r, g, b, a })
 }
@@ -1907,14 +1914,14 @@ fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<
         0 => *cursor += 1,
         1 => {
             *cursor += 1;
-            let count = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            let count = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
             if count > MAX_RELATION_RUN {
                 return None;
             }
             *cursor = cursor.checked_add(4)?;
             for _ in 0..count {
                 take_reference(payload, cursor)?;
-                u32_at(payload, *cursor)?;
+                View::u32_le_at(payload, *cursor)?;
                 *cursor = cursor.checked_add(4)?;
             }
         }
@@ -1955,7 +1962,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         (None, None) => return None,
     };
     let identity = if is_txt_tag {
-        let rotation = f64_at(payload, cursor)?;
+        let rotation = View::f64_le_at(payload, cursor)?;
         rotation.is_finite().then_some(())?;
         SketchTextIdentity::TxtTag { rotation }
     } else {
@@ -1975,7 +1982,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         SketchTextIdentity::TextexTag => {
             (payload.get(cursor)? == &1).then_some(())?;
             cursor += 1;
-            let width_factor = f64_at(payload, cursor)?;
+            let width_factor = View::f64_le_at(payload, cursor)?;
             cursor = cursor.checked_add(8)?;
             let color = read_sketch_text_color(payload, &mut cursor)?;
             (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
@@ -1989,7 +1996,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
             (None, color)
         }
     };
-    let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let font_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if font_count == 0 || font_count > 1_024 {
         return None;
     }
@@ -1999,7 +2006,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         (payload.get(cursor)? == &0).then_some(())?;
         cursor += 1;
     }
-    let height = f64_at(payload, cursor)? * 10.0;
+    let height = View::f64_le_at(payload, cursor)? * 10.0;
     cursor = cursor.checked_add(8)?;
     (height.is_finite() && height > 0.0).then_some(())?;
     Some(SketchTextHead {
@@ -2023,7 +2030,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
 fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
     if after_tag != 7
-        || u32_at(payload, after_tag).is_none()
+        || View::u32_le_at(payload, after_tag).is_none()
         || payload.get(11..20)?.iter().any(|byte| *byte != 0)
     {
         return None;
@@ -2039,11 +2046,11 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     let persistent_id = property("textex_tag")?;
     (payload.get(cursor)? == &0).then_some(())?;
     cursor += 1;
-    let width_factor = f64_at(payload, cursor)?;
+    let width_factor = View::f64_le_at(payload, cursor)?;
     cursor = cursor.checked_add(8)?;
     (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
     let color = read_sketch_text_color(payload, &mut cursor)?;
-    let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let font_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if font_count == 0 || font_count > 1_024 {
         return None;
     }
@@ -2051,7 +2058,7 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     cursor = after_font;
     (payload.get(cursor)? == &0).then_some(())?;
     cursor += 1;
-    let height = f64_at(payload, cursor)? * 10.0;
+    let height = View::f64_le_at(payload, cursor)? * 10.0;
     cursor = cursor.checked_add(8)?;
     (height.is_finite() && height > 0.0).then_some(())?;
     Some(SketchTextHead {
@@ -2078,9 +2085,9 @@ fn decode_sketch_text_tail(
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     // Horizontal alignment enum and three flag bytes.
-    let horizontal_alignment = Some(u32_at(payload, cursor)?);
+    let horizontal_alignment = Some(View::u32_le_at(payload, cursor)?);
     cursor = cursor.checked_add(7)?;
-    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
@@ -2088,8 +2095,8 @@ fn decode_sketch_text_tail(
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
     // Vertical alignment enum, one flag byte, and the font weight.
-    let vertical_alignment = Some(u32_at(payload, cursor)?);
-    let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
+    let vertical_alignment = Some(View::u32_le_at(payload, cursor)?);
+    let font_weight = View::u32_le_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
     // The class tail opens with the text-type enum, which gates the placement
@@ -2097,7 +2104,7 @@ fn decode_sketch_text_tail(
     // flag byte follows the enum and repeats it, so a slot form that has
     // desynchronized fails here instead of framing a transform out of whatever
     // bytes the walk landed on.
-    let text_type = u32_at(payload, cursor)?;
+    let text_type = View::u32_le_at(payload, cursor)?;
     (u32::from(*payload.get(cursor.checked_add(4)?)?) == text_type).then_some(())?;
     cursor = cursor.checked_add(5)?;
     let placement = match text_type {
@@ -2136,8 +2143,8 @@ fn decode_txt_tag_sketch_text_tail(
 ) -> Option<SketchTextTail> {
     cursor = cursor.checked_add(2)?;
     let anchor = Point2::new(
-        f64_at(payload, cursor)? * 10.0,
-        f64_at(payload, cursor.checked_add(8)?)? * 10.0,
+        View::f64_le_at(payload, cursor)? * 10.0,
+        View::f64_le_at(payload, cursor.checked_add(8)?)? * 10.0,
     );
     (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
     let anchor_run = if class_version < TXT_TAG_ANCHOR_MEMBER_VERSION {
@@ -2146,13 +2153,13 @@ fn decode_txt_tag_sketch_text_tail(
         TXT_TAG_ANCHOR_RUN
     };
     cursor = cursor.checked_add(16 + anchor_run)?;
-    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
     let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
     cursor = after_text;
-    let references = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let references = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if references > MAX_RELATION_RUN {
         return None;
     }
@@ -2160,7 +2167,7 @@ fn decode_txt_tag_sketch_text_tail(
     for _ in 0..references {
         take_reference(payload, &mut cursor)?;
     }
-    let font_weight = u32_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)? as i32;
+    let font_weight = View::u32_le_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
     let owner = take_reference(payload, &mut cursor)?;
@@ -2192,24 +2199,24 @@ fn decode_indexed_sketch_text_tail(
     second_slot: TextReferenceSlot,
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
-    let horizontal_alignment = Some(u32_at(payload, cursor)?);
+    let horizontal_alignment = Some(View::u32_le_at(payload, cursor)?);
     cursor = cursor.checked_add(7)?;
-    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
     let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
-    let vertical_alignment = Some(u32_at(payload, cursor)?);
-    let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
+    let vertical_alignment = Some(View::u32_le_at(payload, cursor)?);
+    let font_weight = View::u32_le_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
-    if !matches!(u32_at(payload, cursor)?, 0 | 1)
-        || u32_at(payload, cursor.checked_add(4)?)? != 1
-        || u32_at(payload, cursor.checked_add(8)?)? != 256
-        || u32_at(payload, cursor.checked_add(12)?)? != 0
-        || u32_at(payload, cursor.checked_add(16)?)? != 0
+    if !matches!(View::u32_le_at(payload, cursor)?, 0 | 1)
+        || View::u32_le_at(payload, cursor.checked_add(4)?)? != 1
+        || View::u32_le_at(payload, cursor.checked_add(8)?)? != 256
+        || View::u32_le_at(payload, cursor.checked_add(12)?)? != 0
+        || View::u32_le_at(payload, cursor.checked_add(16)?)? != 0
         || payload
             .get(cursor.checked_add(20)?..cursor.checked_add(22)?)?
             .iter()
@@ -2217,14 +2224,15 @@ fn decode_indexed_sketch_text_tail(
     {
         return None;
     }
-    let mut scale_cursor = cursor.checked_add(22)?;
-    let scale_u = take_f32(payload, &mut scale_cursor)?;
-    let scale_v = take_f32(payload, &mut scale_cursor)?;
+    let mut scale_view = View::over_retained(payload);
+    scale_view.seek(cursor.checked_add(22)?)?;
+    let scale_u = scale_view.f32_le()?;
+    let scale_v = scale_view.f32_le()?;
     if !scale_u.is_finite() || !scale_v.is_finite() || scale_u <= 0.0 || scale_v <= 0.0 {
         return None;
     }
     (payload
-        .get(scale_cursor..cursor.checked_add(35)?)?
+        .get(scale_view.position()..cursor.checked_add(35)?)?
         .iter()
         .all(|byte| *byte == 0))
     .then_some(())?;
@@ -2423,14 +2431,14 @@ fn decode_version_zero_sketch_point(
     }
     cursor = cursor.checked_add(1)?;
     let coordinate_offset = u32::try_from(cursor).ok()?;
-    let x = f64_at(payload, cursor)?;
-    let y = f64_at(payload, cursor.checked_add(8)?)?;
+    let x = View::f64_le_at(payload, cursor)?;
+    let y = View::f64_le_at(payload, cursor.checked_add(8)?)?;
     cursor = cursor.checked_add(16)?;
     if payload.get(cursor..cursor.checked_add(20)?) != Some(&[0; 20][..])
-        || f32_at(payload, cursor + 20) != Some(1.0)
+        || View::f32_le_at(payload, cursor + 20) != Some(1.0)
         || payload.get(cursor + 24..cursor + 36) != Some(&[0; 12][..])
-        || f32_at(payload, cursor + 36) != Some(1.0)
-        || f32_at(payload, cursor + 40) != Some(1.0)
+        || View::f32_le_at(payload, cursor + 36) != Some(1.0)
+        || View::f32_le_at(payload, cursor + 40) != Some(1.0)
         || payload.get(cursor + 44..cursor + 54) != Some(&[1, 1, 0, 0, 0, 0, 1, 0, 0, 0][..])
     {
         return None;
@@ -2499,12 +2507,12 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     cursor = flags_end;
     let coordinate_offset = u32::try_from(cursor).ok()?;
     let coordinates = [
-        f64_at(payload, cursor)?,
-        f64_at(payload, cursor.checked_add(8)?)?,
-        f64_at(payload, cursor.checked_add(16)?)?,
+        View::f64_le_at(payload, cursor)?,
+        View::f64_le_at(payload, cursor.checked_add(8)?)?,
+        View::f64_le_at(payload, cursor.checked_add(16)?)?,
     ];
     cursor = cursor.checked_add(24)?;
-    let selector = read_u64(payload, cursor)?;
+    let selector = View::u64_le_at(payload, cursor)?;
     let state = *payload.get(cursor.checked_add(8)?)?;
     let reserved_zero_count = if class_version == 8 { 8 } else { 12 };
     let floats_at = cursor.checked_add(9 + reserved_zero_count)?;
@@ -2512,8 +2520,8 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         .get(cursor + 9..floats_at)?
         .iter()
         .any(|byte| *byte != 0)
-        || f32_at(payload, floats_at) != Some(1.0)
-        || f32_at(payload, floats_at + 4) != Some(1.0)
+        || View::f32_le_at(payload, floats_at) != Some(1.0)
+        || View::f32_le_at(payload, floats_at + 4) != Some(1.0)
         || payload.get(floats_at + 8..floats_at + 13) != Some(&[0, 1, 0, 0, 0][..])
     {
         return None;
@@ -2618,7 +2626,7 @@ fn decode_sketch_point_companion(
     } else {
         return None;
     };
-    let count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if count > MAX_RELATION_RUN {
         return None;
     }
@@ -2809,21 +2817,21 @@ pub(crate) struct ParsedSketchSurface {
 
 pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface> {
     if payload.get(20) != Some(&1)
-        || u32_at(payload, 21) != Some(2)
-        || u32_at(payload, 25) != Some(13)
+        || View::u32_le_at(payload, 21) != Some(2)
+        || View::u32_le_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
-        || u32_at(payload, 42) != Some(23)
+        || View::u32_le_at(payload, 42) != Some(23)
         || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
-        || u32_at(payload, 77) != Some(11)
+        || View::u32_le_at(payload, 77) != Some(11)
         || payload.get(81..92) != Some(b"surface_tag")
-        || u32_at(payload, 92) != Some(23)
+        || View::u32_le_at(payload, 92) != Some(23)
         || payload.get(96..119) != Some(b"IntrinsicMetaTypeuint64")
     {
         return None;
     }
-    let entity_genesis = read_u64(payload, 69);
-    let persistent_id = read_u64(payload, 119)?;
-    let point_count = usize::try_from(u32_at(payload, 127)?).ok()?;
+    let entity_genesis = View::u64_le_at(payload, 69);
+    let persistent_id = View::u64_le_at(payload, 119)?;
+    let point_count = usize::try_from(View::u32_le_at(payload, 127)?).ok()?;
     if point_count == 0 || point_count > 100_000 {
         return None;
     }
@@ -2831,18 +2839,19 @@ pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface
     let coordinate_bytes = point_count.checked_mul(24)?;
     let coordinates = f64s_at(payload, 131, coordinate_count)?;
     let degrees_at = 131usize.checked_add(coordinate_bytes)?;
-    let u_degree = u32_at(payload, degrees_at)?;
-    let v_degree = u32_at(payload, degrees_at.checked_add(4)?)?;
-    let u_knot_count = usize::try_from(u32_at(payload, degrees_at.checked_add(8)?)?).ok()?;
+    let u_degree = View::u32_le_at(payload, degrees_at)?;
+    let v_degree = View::u32_le_at(payload, degrees_at.checked_add(4)?)?;
+    let u_knot_count =
+        usize::try_from(View::u32_le_at(payload, degrees_at.checked_add(8)?)?).ok()?;
     let u_knots_at = degrees_at.checked_add(12)?;
     let u_knots = f64s_at(payload, u_knots_at, u_knot_count)?;
     let v_count_at = u_knots_at.checked_add(u_knot_count.checked_mul(8)?)?;
-    let v_knot_count = usize::try_from(u32_at(payload, v_count_at)?).ok()?;
+    let v_knot_count = usize::try_from(View::u32_le_at(payload, v_count_at)?).ok()?;
     let v_knots_at = v_count_at.checked_add(4)?;
     let v_knots = f64s_at(payload, v_knots_at, v_knot_count)?;
     let grid_at = v_knots_at.checked_add(v_knot_count.checked_mul(8)?)?;
-    let u_count = usize::try_from(u32_at(payload, grid_at)?).ok()?;
-    let v_count = usize::try_from(u32_at(payload, grid_at.checked_add(4)?)?).ok()?;
+    let u_count = usize::try_from(View::u32_le_at(payload, grid_at)?).ok()?;
+    let v_count = usize::try_from(View::u32_le_at(payload, grid_at.checked_add(4)?)?).ok()?;
     let expected_u_knots = u_count.checked_add(usize::try_from(u_degree).ok()?.checked_add(1)?)?;
     let expected_v_knots = v_count.checked_add(usize::try_from(v_degree).ok()?.checked_add(1)?)?;
     if u_degree == 0
@@ -2893,7 +2902,7 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
             else {
                 continue;
             };
-            let Some(record_index) = u32_at(bytes, after_tag) else {
+            let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
                 continue;
             };
             let payload = &bytes[record_at..];
@@ -3113,9 +3122,9 @@ fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize, Opti
     if let Some((primary, secondary)) = decode_sketch_curve_identity_variant(payload, 0, 2) {
         return Some((primary, secondary, 0, None));
     }
-    if u32_at(payload, 25) != Some(13)
+    if View::u32_le_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
-        || u32_at(payload, 42) != Some(23)
+        || View::u32_le_at(payload, 42) != Some(23)
         || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
     {
         return None;
@@ -3131,14 +3140,14 @@ fn decode_sketch_curve_identity_variant(
     property_count: u32,
 ) -> Option<(u64, u64)> {
     if payload.get(20) != Some(&1)
-        || u32_at(payload, 21) != Some(property_count)
-        || u32_at(payload, 25 + shift) != Some(14)
+        || View::u32_le_at(payload, 21) != Some(property_count)
+        || View::u32_le_at(payload, 25 + shift) != Some(14)
         || payload.get(29 + shift..43 + shift) != Some(b"crv_primary_id")
-        || u32_at(payload, 43 + shift) != Some(23)
+        || View::u32_le_at(payload, 43 + shift) != Some(23)
         || payload.get(47 + shift..70 + shift) != Some(b"IntrinsicMetaTypeuint64")
-        || u32_at(payload, 78 + shift) != Some(16)
+        || View::u32_le_at(payload, 78 + shift) != Some(16)
         || payload.get(82 + shift..98 + shift) != Some(b"crv_secondary_id")
-        || u32_at(payload, 98 + shift) != Some(23)
+        || View::u32_le_at(payload, 98 + shift) != Some(23)
         || payload.get(102 + shift..125 + shift) != Some(b"IntrinsicMetaTypeuint64")
     {
         return None;
@@ -3195,7 +3204,7 @@ fn decode_sketch_curve_geometry(
 
 fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let values = (0..12)
-        .map(|ordinal| f64_at(payload, 133 + ordinal * 8))
+        .map(|ordinal| View::f64_le_at(payload, 133 + ordinal * 8))
         .collect::<Option<Vec<_>>>()?;
     if values.iter().any(|value| !value.is_finite()) {
         return None;
@@ -3258,7 +3267,7 @@ pub(crate) fn decode_text_frame_line(
         lp_ascii_filtered(payload, cursor, 0..=2000, u8::is_ascii_graphic)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || u32_at(payload, after_tag) != Some(record_index)
+        || View::u32_le_at(payload, after_tag) != Some(record_index)
         || payload.get(after_tag + 4..after_tag + 12) != Some(&[0; 8])
     {
         return None;
@@ -3274,7 +3283,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let base = 133usize;
     let carrier = View::u64_le_at(payload, base)?;
     let carrier_reference = (carrier != u64::MAX).then_some(carrier);
-    if u32_at(payload, base + 8) != Some(3) || payload.get(base + 88) != Some(&1) {
+    if View::u32_le_at(payload, base + 8) != Some(3) || payload.get(base + 88) != Some(&1) {
         return None;
     }
     let subtype_class_tag = std::str::from_utf8(payload.get(base + 12..base + 15)?)
@@ -3283,30 +3292,30 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     if !subtype_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    let degree = u32_at(payload, base + 90)?;
-    let fit_tolerance = f64_at(payload, base + 94)?;
-    let knot_count = usize::try_from(u32_at(payload, base + 102)?).ok()?;
-    if u32_at(payload, base + 106)? as usize != knot_count
-        || u32_at(payload, base + 110)? != 8
+    let degree = View::u32_le_at(payload, base + 90)?;
+    let fit_tolerance = View::f64_le_at(payload, base + 94)?;
+    let knot_count = usize::try_from(View::u32_le_at(payload, base + 102)?).ok()?;
+    if View::u32_le_at(payload, base + 106)? as usize != knot_count
+        || View::u32_le_at(payload, base + 110)? != 8
         || knot_count > 100_000
     {
         return None;
     }
     let knots = f64s_at(payload, base + 114, knot_count)?;
     let weights_at = base + 114 + knot_count * 8;
-    let weight_count = usize::try_from(u32_at(payload, weights_at)?).ok()?;
-    if u32_at(payload, weights_at + 4)? as usize != weight_count
-        || u32_at(payload, weights_at + 8)? != 8
+    let weight_count = usize::try_from(View::u32_le_at(payload, weights_at)?).ok()?;
+    if View::u32_le_at(payload, weights_at + 4)? as usize != weight_count
+        || View::u32_le_at(payload, weights_at + 8)? != 8
         || weight_count > 100_000
     {
         return None;
     }
     let weights = f64s_at(payload, weights_at + 12, weight_count)?;
     let points_at = weights_at + 12 + weight_count * 8;
-    let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
+    let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
     if (weight_count != 0 && point_count != weight_count)
-        || u32_at(payload, points_at + 4)? as usize != point_count
-        || u32_at(payload, points_at + 8)? != 8
+        || View::u32_le_at(payload, points_at + 4)? as usize != point_count
+        || View::u32_le_at(payload, points_at + 8)? != 8
         || knot_count != point_count.checked_add(degree as usize + 1)?
     {
         return None;
@@ -3329,7 +3338,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
         SketchCurveGeometry::Nurbs {
             carrier_reference,
             subtype_class_tag,
-            subtype_record_index: u32_at(payload, base + 15)?,
+            subtype_record_index: View::u32_le_at(payload, base + 15)?,
             degree,
             fit_tolerance: fit_tolerance * 10.0,
             scalar_width: 8,
@@ -3345,7 +3354,7 @@ pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveG
     let base = 133usize;
     let carrier = View::u64_le_at(payload, base)?;
     let carrier_reference = (carrier != u64::MAX).then_some(carrier);
-    if u32_at(payload, base + 8) != Some(3)
+    if View::u32_le_at(payload, base + 8) != Some(3)
         || payload.get(base + 19..base + 27) != Some(&[0; 8])
         || payload.get(base + 27) != Some(&1)
         || payload.get(base + 32..base + 42) != Some(&[0; 10])
@@ -3369,35 +3378,35 @@ pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveG
     if !subtype_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    let degree = u32_at(payload, base + 90)?;
-    let fit_tolerance = f64_at(payload, base + 42)?;
-    let knot_count = usize::try_from(u32_at(payload, base + 102)?).ok()?;
-    let knot_capacity = usize::try_from(u32_at(payload, base + 106)?).ok()?;
+    let degree = View::u32_le_at(payload, base + 90)?;
+    let fit_tolerance = View::f64_le_at(payload, base + 42)?;
+    let knot_count = usize::try_from(View::u32_le_at(payload, base + 102)?).ok()?;
+    let knot_capacity = usize::try_from(View::u32_le_at(payload, base + 106)?).ok()?;
     if degree == 0
         || knot_capacity < knot_count
-        || u32_at(payload, base + 110)? != 8
+        || View::u32_le_at(payload, base + 110)? != 8
         || knot_capacity > 100_000
     {
         return None;
     }
     let knots = f64s_at(payload, base + 114, knot_count)?;
     let weights_at = base + 114 + knot_count * 8;
-    let weight_count = usize::try_from(u32_at(payload, weights_at)?).ok()?;
-    let weight_capacity = usize::try_from(u32_at(payload, weights_at + 4)?).ok()?;
+    let weight_count = usize::try_from(View::u32_le_at(payload, weights_at)?).ok()?;
+    let weight_capacity = usize::try_from(View::u32_le_at(payload, weights_at + 4)?).ok()?;
     if weight_capacity < weight_count
-        || u32_at(payload, weights_at + 8)? != 8
+        || View::u32_le_at(payload, weights_at + 8)? != 8
         || weight_capacity > 100_000
     {
         return None;
     }
     let weights = f64s_at(payload, weights_at + 12, weight_count)?;
     let points_at = weights_at + 12 + weight_count * 8;
-    let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
-    let point_capacity = usize::try_from(u32_at(payload, points_at + 4)?).ok()?;
+    let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
+    let point_capacity = usize::try_from(View::u32_le_at(payload, points_at + 4)?).ok()?;
     if (weight_count != 0 && point_count != weight_count)
         || point_capacity < point_count
         || point_capacity > 100_000
-        || u32_at(payload, points_at + 8)? != 8
+        || View::u32_le_at(payload, points_at + 8)? != 8
         || knot_count != point_count.checked_add(degree as usize + 1)?
     {
         return None;
@@ -3420,7 +3429,7 @@ pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveG
         SketchCurveGeometry::Nurbs {
             carrier_reference,
             subtype_class_tag,
-            subtype_record_index: u32_at(payload, base + 15)?,
+            subtype_record_index: View::u32_le_at(payload, base + 15)?,
             degree,
             fit_tolerance: fit_tolerance * 10.0,
             scalar_width: 8,
@@ -3439,7 +3448,7 @@ pub(crate) fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
 pub(crate) fn decode_compact_planar_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let values_at = 133;
     let values = (0..9)
-        .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
+        .map(|ordinal| View::f64_le_at(payload, values_at + ordinal * 8))
         .collect::<Option<Vec<_>>>()?;
     if values.iter().any(|value| !value.is_finite())
         || values[2] != 0.0
@@ -3463,7 +3472,7 @@ fn decode_line_family(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
 
 fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeometry> {
     let values = (0..12)
-        .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
+        .map(|ordinal| View::f64_le_at(payload, values_at + ordinal * 8))
         .collect::<Option<Vec<_>>>()?;
     if values.iter().any(|value| !value.is_finite()) {
         return None;
@@ -3709,19 +3718,19 @@ fn take_auxiliary_relation_reference(
 /// members: a u32-counted map whose entry is a u64 key, a u32 count, and that
 /// many u64 values; then a u32-counted run of u32.
 fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
-    let entries = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+    let entries = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
     if entries > MAX_RELATION_RUN {
         return None;
     }
     *cursor += 4;
     for _ in 0..entries {
-        let values = usize::try_from(u32_at(payload, *cursor + 8)?).ok()?;
+        let values = usize::try_from(View::u32_le_at(payload, *cursor + 8)?).ok()?;
         if values > MAX_RELATION_RUN {
             return None;
         }
         *cursor += 12 + values * 8;
     }
-    let ordinals = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+    let ordinals = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
     if ordinals > MAX_RELATION_RUN {
         return None;
     }
@@ -3793,7 +3802,7 @@ fn parse_relation_class_members(
             // the counted runs and the unit directions that follow them already
             // reject a misframed record, and the flags do not.
             *cursor += 3;
-            let reference_count = u32_at(payload, *cursor)?;
+            let reference_count = View::u32_le_at(payload, *cursor)?;
             let references = usize::try_from(reference_count).ok()?;
             if references > MAX_RELATION_RUN {
                 return None;
@@ -3862,7 +3871,7 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     let mut member_offsets = Vec::new();
     let mut member_relation_ordinals = Vec::new();
     if paired_run {
-        let member_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+        let member_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
         if member_count > MAX_RELATION_RUN {
             return None;
         }
@@ -3874,7 +3883,7 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
             let (member, offset) = take_relation_reference(payload, &mut cursor)?;
             members.push(member);
             member_offsets.push(offset);
-            member_relation_ordinals.push(u32_at(payload, cursor)?);
+            member_relation_ordinals.push(View::u32_le_at(payload, cursor)?);
             cursor += 4;
         }
     }
@@ -3903,11 +3912,12 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     // paired-run form and a u32 at relation base-class version 0.
     let (state, mut cursor) = match mask_width {
         SketchRelationMaskWidth::U64 => (View::u64_le_at(payload, state_offset)?, state_offset + 8),
-        SketchRelationMaskWidth::U32 => {
-            (u64::from(u32_at(payload, state_offset)?), state_offset + 4)
-        }
+        SketchRelationMaskWidth::U32 => (
+            u64::from(View::u32_le_at(payload, state_offset)?),
+            state_offset + 4,
+        ),
     };
-    let return_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let return_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if return_count > MAX_RELATION_RUN {
         return None;
     }
@@ -3985,7 +3995,7 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
 /// three, a three-digit ASCII class tag, and a u32 record index. The eleven
 /// bytes must be present.
 fn indexed_record_header_at(bytes: &[u8], at: usize) -> bool {
-    u32_at(bytes, at) == Some(3)
+    View::u32_le_at(bytes, at) == Some(3)
         && bytes
             .get(at + 4..at + 7)
             .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit))
@@ -3996,7 +4006,7 @@ fn indexed_record_header_at(bytes: &[u8], at: usize) -> bool {
 /// spends its first seven bytes on the length-prefixed class tag, so the index
 /// always sits at `at + 7`.
 pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
-    u32_at(bytes, at.checked_add(7)?)
+    View::u32_le_at(bytes, at.checked_add(7)?)
 }
 
 pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
@@ -4032,7 +4042,8 @@ pub(crate) fn next_indexed_record_offset_with_index(
 }
 
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
-    (bytes.get(position) == Some(&1)).then_some((u32_at(bytes, position + 1)?, position + 5))
+    (bytes.get(position) == Some(&1))
+        .then_some((View::u32_le_at(bytes, position + 1)?, position + 5))
 }
 
 struct SketchReferenceList {

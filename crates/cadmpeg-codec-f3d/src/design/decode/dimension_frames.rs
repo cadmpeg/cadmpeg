@@ -15,7 +15,6 @@ use crate::records::{
     SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -154,12 +153,12 @@ pub(crate) fn decode_recipe_references(
     if prefix
         .get(..10)
         .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
-        || u32_at(prefix, 10) != Some(1)
-        || u32_at(prefix, 18).is_none_or(|value| value == 0)
+        || View::u32_le_at(prefix, 10) != Some(1)
+        || View::u32_le_at(prefix, 18).is_none_or(|value| value == 0)
     {
         return Vec::new();
     }
-    match u32_at(prefix, 14) {
+    match View::u32_le_at(prefix, 14) {
         Some(2) => decode_paired_recipe_references(prefix, prefix_offset),
         Some(3) => decode_standard_recipe_references(prefix, prefix_offset),
         Some(5) => decode_grouped_recipe_references(prefix, prefix_offset),
@@ -171,7 +170,7 @@ fn decode_standard_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Vec<crate::records::DesignRecipeReference> {
-    if u32_at(prefix, 22).is_none_or(|value| value == 0) {
+    if View::u32_le_at(prefix, 22).is_none_or(|value| value == 0) {
         return Vec::new();
     }
     let mut references = Vec::new();
@@ -205,7 +204,7 @@ fn decode_paired_recipe_references(
 ) -> Vec<crate::records::DesignRecipeReference> {
     const MINIMUM_PAIR_SIZE: usize = 42;
 
-    let Some(pair_count) = usize::try_from(u32_at(prefix, 18).unwrap_or(0)).ok() else {
+    let Some(pair_count) = usize::try_from(View::u32_le_at(prefix, 18).unwrap_or(0)).ok() else {
         return Vec::new();
     };
     if pair_count == 0 || pair_count > prefix.len().saturating_sub(22) / MINIMUM_PAIR_SIZE {
@@ -265,7 +264,8 @@ fn decode_grouped_recipe_references(
     let mut references = Vec::new();
     let mut at = 18usize;
     for _ in 0..GROUP_COUNT {
-        let Some(operand_count) = usize::try_from(u32_at(prefix, at).unwrap_or(0)).ok() else {
+        let Some(operand_count) = usize::try_from(View::u32_le_at(prefix, at).unwrap_or(0)).ok()
+        else {
             return Vec::new();
         };
         let Some(next) = at.checked_add(4) else {
@@ -299,11 +299,11 @@ fn decode_grouped_recipe_references(
 }
 
 pub(crate) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
-    u32_at(prefix, 14) == Some(2) && !decode_recipe_references(prefix, 0).is_empty()
+    View::u32_le_at(prefix, 14) == Some(2) && !decode_recipe_references(prefix, 0).is_empty()
 }
 
 pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
-    u32_at(prefix, 14) == Some(5) && !decode_recipe_references(prefix, 0).is_empty()
+    View::u32_le_at(prefix, 14) == Some(5) && !decode_recipe_references(prefix, 0).is_empty()
 }
 
 #[derive(Clone, Copy)]
@@ -320,14 +320,14 @@ fn decode_recipe_reference_operand(
     token_frame: RecipeReferenceTokenFrame,
     terminated: bool,
 ) -> Option<(Vec<crate::records::DesignRecipeReference>, usize)> {
-    let selector = u32_at(prefix, at).filter(|value| *value != 0)?;
+    let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
     let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
         .then(|| {
             lp_ascii_filtered(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic).and_then(
                 |(token, marker_at)| {
                     (is_decimal_integer_token(token.as_bytes())
-                        && u32_at(prefix, marker_at) == Some(0))
+                        && View::u32_le_at(prefix, marker_at) == Some(0))
                     .then_some((token, token_encoding_at + 4, marker_at + 4))
                 },
             )
@@ -349,7 +349,7 @@ fn decode_recipe_reference_operand(
         .flatten();
     let (token, token_at, marker_at) = length_prefixed.or(packed)?;
     let reference_count =
-        usize::try_from(u32_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
+        usize::try_from(View::u32_le_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
     let reference_bytes = reference_count.checked_mul(4)?;
     let references_at = marker_at.checked_add(4)?;
     if reference_bytes > prefix.len().saturating_sub(references_at) {
@@ -357,7 +357,7 @@ fn decode_recipe_reference_operand(
     }
     let references_end = references_at.checked_add(reference_bytes)?;
     let next = if terminated {
-        if u32_at(prefix, references_end) != Some(0) {
+        if View::u32_le_at(prefix, references_end) != Some(0) {
             return None;
         }
         references_end.checked_add(4)?
@@ -368,7 +368,7 @@ fn decode_recipe_reference_operand(
         .map(|reference_ordinal| {
             let design_reference_at = references_at.checked_add(4 * reference_ordinal)?;
             let design_reference =
-                u32_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+                View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
             Some(crate::records::DesignRecipeReference {
                 selector: i64::from(selector),
                 selector_offset: prefix_offset.saturating_add(at as u64),
@@ -395,14 +395,14 @@ fn recipe_reference_suffix(bytes: &[u8]) -> bool {
     if bytes == [0; 4] {
         return true;
     }
-    if u32_at(bytes, 0) != Some(1)
-        || u32_at(bytes, 4) != Some(1)
-        || u32_at(bytes, 8) != Some(0)
-        || u32_at(bytes, 12) != Some(0)
+    if View::u32_le_at(bytes, 0) != Some(1)
+        || View::u32_le_at(bytes, 4) != Some(1)
+        || View::u32_le_at(bytes, 8) != Some(0)
+        || View::u32_le_at(bytes, 12) != Some(0)
     {
         return false;
     }
-    let Some(reference_count) = u32_at(bytes, 16).filter(|count| *count != 0) else {
+    let Some(reference_count) = View::u32_le_at(bytes, 16).filter(|count| *count != 0) else {
         return false;
     };
     let Some(reference_bytes) = usize::try_from(reference_count)
@@ -415,8 +415,9 @@ fn recipe_reference_suffix(bytes: &[u8]) -> bool {
         return false;
     };
     matches!(bytes.len().checked_sub(terminator_at), Some(4 | 6))
-        && (0..reference_count as usize)
-            .all(|ordinal| u32_at(bytes, 20 + 4 * ordinal).is_some_and(|reference| reference != 0))
+        && (0..reference_count as usize).all(|ordinal| {
+            View::u32_le_at(bytes, 20 + 4 * ordinal).is_some_and(|reference| reference != 0)
+        })
         && bytes[terminator_at..].iter().all(|byte| *byte == 0)
 }
 
@@ -527,7 +528,7 @@ pub(crate) fn recipe_record_prefix(
 ) -> Option<(usize, Vec<u8>)> {
     let prefix_offset = record_offset.checked_add(11)?;
     let prefix_end = family_name_offset.checked_sub(4)?;
-    if u32_at(bytes, prefix_end)? != u32::try_from(family_name_len).ok()? {
+    if View::u32_le_at(bytes, prefix_end)? != u32::try_from(family_name_len).ok()? {
         return None;
     }
     let prefix = bytes.get(prefix_offset..prefix_end)?;
@@ -554,7 +555,7 @@ pub(crate) fn indexed_record_containing(
                 .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at));
         }
         let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        containing = Some((at, class_tag, u32_at(bytes, after_tag)?));
+        containing = Some((at, class_tag, View::u32_le_at(bytes, after_tag)?));
         cursor = at + 11;
     }
     containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end))
@@ -735,15 +736,15 @@ pub(crate) fn parse_dimension_locus_pair(
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-    let record_index = u32_at(bytes, after_tag)?;
+    let record_index = View::u32_le_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
-        || u32_at(bytes, start + 20) != Some(3)
+        || View::u32_le_at(bytes, start + 20) != Some(3)
         || bytes.get(start + 24) != Some(&1)
-        || u32_at(bytes, start + 25) != Some(0)
+        || View::u32_le_at(bytes, start + 25) != Some(0)
         || bytes.get(start + 29..start + 35) != Some(&[0; 6])
         || bytes.get(start + 39) != Some(&1)
         || bytes.get(start + 44..start + 50) != Some(&[0; 6])
@@ -752,8 +753,8 @@ pub(crate) fn parse_dimension_locus_pair(
     {
         return None;
     }
-    let first_geometry_record_index = u32_at(bytes, start + 40)?;
-    let second_geometry_record_index = u32_at(bytes, start + 55)?;
+    let first_geometry_record_index = View::u32_le_at(bytes, start + 40)?;
+    let second_geometry_record_index = View::u32_le_at(bytes, start + 55)?;
     if !geometry_indices.contains(&first_geometry_record_index)
         || !geometry_indices.contains(&second_geometry_record_index)
     {
@@ -764,7 +765,7 @@ pub(crate) fn parse_dimension_locus_pair(
         let at = next_indexed_record_offset(bytes, position)?;
         let (candidate_tag, candidate_after_tag) =
             lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, candidate_after_tag) == Some(record_index) {
+        if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
             break (at, candidate_tag);
         }
         position = at.checked_add(1)?;
@@ -777,15 +778,15 @@ pub(crate) fn parse_dimension_locus_pair(
         class_tag,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
-        opaque_index: u32_at(bytes, start + 35)?,
+        opaque_index: View::u32_le_at(bytes, start + 35)?,
         opaque_index_offset: (start + 35) as u64,
         first_geometry_record_index,
         first_geometry_reference_offset: (start + 40) as u64,
-        first_role: u32_at(bytes, start + 50)?,
+        first_role: View::u32_le_at(bytes, start + 50)?,
         first_role_offset: (start + 50) as u64,
         second_geometry_record_index,
         second_geometry_reference_offset: (start + 55) as u64,
-        second_role: u32_at(bytes, start + 65)?,
+        second_role: View::u32_le_at(bytes, start + 65)?,
         second_role_offset: (start + 65) as u64,
         paired_class_tag,
         paired_byte_offset: paired_byte_offset as u64,
@@ -951,22 +952,22 @@ pub(crate) fn parse_dimension_null_locus_pair(
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionNullLocusPair> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-    let record_index = u32_at(bytes, after_tag)?;
+    let record_index = View::u32_le_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
-        || u32_at(bytes, start + 20) != Some(2)
+        || View::u32_le_at(bytes, start + 20) != Some(2)
         || bytes.get(start + 24) != Some(&1)
-        || u32_at(bytes, start + 25) != Some(0)
+        || View::u32_le_at(bytes, start + 25) != Some(0)
         || bytes.get(start + 29..start + 35) != Some(&[0; 6])
         || bytes.get(start + 39) != Some(&1)
         || bytes.get(start + 44..start + 50) != Some(&[0; 6])
     {
         return None;
     }
-    let geometry_record_index = u32_at(bytes, start + 40)?;
+    let geometry_record_index = View::u32_le_at(bytes, start + 40)?;
     if !geometry_indices.contains(&geometry_record_index) {
         return None;
     }
@@ -975,7 +976,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
         let at = next_indexed_record_offset(bytes, position)?;
         let (candidate_tag, candidate_after_tag) =
             lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, candidate_after_tag) == Some(record_index) {
+        if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
             break (at, candidate_tag);
         }
         position = at.checked_add(1)?;
@@ -989,11 +990,11 @@ pub(crate) fn parse_dimension_null_locus_pair(
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         null_reference_offset: (start + 25) as u64,
-        null_role: u32_at(bytes, start + 35)?,
+        null_role: View::u32_le_at(bytes, start + 35)?,
         null_role_offset: (start + 35) as u64,
         geometry_record_index,
         geometry_reference_offset: (start + 40) as u64,
-        geometry_role: u32_at(bytes, start + 50)?,
+        geometry_role: View::u32_le_at(bytes, start + 50)?,
         geometry_role_offset: (start + 50) as u64,
         paired_class_tag,
         paired_byte_offset: paired_byte_offset as u64,
@@ -1176,8 +1177,8 @@ pub(crate) fn parse_dimension_annotation_frame(
     {
         return None;
     }
-    let record_index = u32_at(bytes, after_tag)?;
-    let count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
+    let record_index = View::u32_le_at(bytes, after_tag)?;
+    let count = usize::try_from(View::u32_le_at(bytes, start + 20)?).ok()?;
     if !(1..=64).contains(&count) {
         return None;
     }
@@ -1189,19 +1190,19 @@ pub(crate) fn parse_dimension_annotation_frame(
         {
             return None;
         }
-        let geometry_record_index = u32_at(bytes, position + 1)?;
+        let geometry_record_index = View::u32_le_at(bytes, position + 1)?;
         if geometry_record_index != 0 && !geometry_indices.contains(&geometry_record_index) {
             return None;
         }
         operands.push(DesignDimensionAnnotationOperand {
             geometry_record_index,
             geometry_reference_offset: (position + 1) as u64,
-            role: u32_at(bytes, position + 11)?,
+            role: View::u32_le_at(bytes, position + 11)?,
             role_offset: (position + 11) as u64,
         });
         position = position.checked_add(15)?;
     }
-    if bytes.get(position) != Some(&1) || u32_at(bytes, position + 1) != Some(1) {
+    if bytes.get(position) != Some(&1) || View::u32_le_at(bytes, position + 1) != Some(1) {
         return None;
     }
     let (key, after_key) = lp_ascii_filtered(bytes, position + 5, 0..=2000, u8::is_ascii_graphic)?;
@@ -1216,7 +1217,7 @@ pub(crate) fn parse_dimension_annotation_frame(
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
         let (tag, after) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after) == Some(record_index) {
+        if View::u32_le_at(bytes, after) == Some(record_index) {
             break (at, tag);
         }
         paired_search = at.checked_add(1)?;
@@ -1226,7 +1227,7 @@ pub(crate) fn parse_dimension_annotation_frame(
         if bytes.get(tail) != Some(&1) || bytes.get(tail + 5..tail + 11) != Some(&[0; 6]) {
             continue;
         }
-        let Some(governing_owner_record_index) = u32_at(bytes, tail + 1) else {
+        let Some(governing_owner_record_index) = View::u32_le_at(bytes, tail + 1) else {
             continue;
         };
         let Some(governing_companion_record_index) =
@@ -1235,7 +1236,7 @@ pub(crate) fn parse_dimension_annotation_frame(
             continue;
         };
         let Some(return_count) =
-            u32_at(bytes, tail + 11).and_then(|count| usize::try_from(count).ok())
+            View::u32_le_at(bytes, tail + 11).and_then(|count| usize::try_from(count).ok())
         else {
             continue;
         };
@@ -1252,7 +1253,7 @@ pub(crate) fn parse_dimension_annotation_frame(
                 valid = false;
                 break;
             }
-            let Some(reference) = u32_at(bytes, cursor + 1) else {
+            let Some(reference) = View::u32_le_at(bytes, cursor + 1) else {
                 valid = false;
                 break;
             };
@@ -1308,7 +1309,7 @@ pub(crate) fn parse_dimension_annotation_frame(
     {
         return None;
     }
-    let owner_reference = u32_at(bytes, paired_byte_offset + 20)?;
+    let owner_reference = View::u32_le_at(bytes, paired_byte_offset + 20)?;
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
@@ -1554,8 +1555,8 @@ pub(crate) fn parse_dimension_locus_group(
     {
         return None;
     }
-    let record_index = u32_at(bytes, start + 7)?;
-    let count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
+    let record_index = View::u32_le_at(bytes, start + 7)?;
+    let count = usize::try_from(View::u32_le_at(bytes, start + 20)?).ok()?;
     if !(1..=64).contains(&count) {
         return None;
     }
@@ -1567,14 +1568,14 @@ pub(crate) fn parse_dimension_locus_group(
         {
             return None;
         }
-        let geometry_record_index = u32_at(bytes, position + 1)?;
+        let geometry_record_index = View::u32_le_at(bytes, position + 1)?;
         if !geometry_indices.contains(&geometry_record_index) {
             return None;
         }
         loci.push(DesignDimensionLocus {
             geometry_record_index,
             geometry_reference_offset: (position + 1) as u64,
-            role: u32_at(bytes, position + 11)?,
+            role: View::u32_le_at(bytes, position + 11)?,
             role_offset: (position + 11) as u64,
         });
         position = position.checked_add(15)?;
@@ -1585,17 +1586,17 @@ pub(crate) fn parse_dimension_locus_group(
     {
         return None;
     }
-    let owner_reference = u32_at(bytes, position + 2)?;
+    let owner_reference = View::u32_le_at(bytes, position + 2)?;
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
     let owner_reference_offset = (position + 2) as u64;
-    let owner_role = u32_at(bytes, position + 12)?;
+    let owner_role = View::u32_le_at(bytes, position + 12)?;
     let owner_role_offset = (position + 12) as u64;
     position = position.checked_add(16)?;
-    let state = u32_at(bytes, position)?;
+    let state = View::u32_le_at(bytes, position)?;
     let state_offset = position as u64;
-    let return_count = usize::try_from(u32_at(bytes, position + 4)?).ok()?;
+    let return_count = usize::try_from(View::u32_le_at(bytes, position + 4)?).ok()?;
     if return_count != count {
         return None;
     }
@@ -1608,7 +1609,7 @@ pub(crate) fn parse_dimension_locus_group(
         {
             return None;
         }
-        let record_index = u32_at(bytes, position + 1)?;
+        let record_index = View::u32_le_at(bytes, position + 1)?;
         if !geometry_indices.contains(&record_index) {
             return None;
         }
@@ -1648,7 +1649,7 @@ pub(crate) fn parse_dimension_locus_group(
         return_members,
         return_member_offsets,
         next_class_tag,
-        next_record_index: u32_at(bytes, next_after_tag)?,
+        next_record_index: View::u32_le_at(bytes, next_after_tag)?,
         next_byte_offset: next_byte_offset as u64,
     })
 }

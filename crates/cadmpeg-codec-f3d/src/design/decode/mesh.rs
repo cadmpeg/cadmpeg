@@ -18,7 +18,7 @@ use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshTextureResource,
     DesignRecordHeader,
 };
-use cadmpeg_core::le::{f64_at, u32_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -128,7 +128,7 @@ impl MeshAffineTransform {
     fn parse(bytes: &[u8], at: usize) -> Option<Self> {
         let mut cells = [0.0; 16];
         for (index, cell) in cells.iter_mut().enumerate() {
-            *cell = f64_at(bytes, at.checked_add(index.checked_mul(8)?)?)?;
+            *cell = View::f64_le_at(bytes, at.checked_add(index.checked_mul(8)?)?)?;
         }
         let transform = Self(cells);
         valid_mesh_transform(transform.rows()).then_some(transform)
@@ -450,7 +450,7 @@ fn exact_record_index(
     frame: TypedPrimaryFrame<'_>,
     record_kind: &str,
 ) -> Result<u32, CodecError> {
-    u32_at(record, 7)
+    View::u32_le_at(record, 7)
         .filter(|record_index| u64::from(*record_index) == frame.entity_id)
         .ok_or_else(|| {
             CodecError::Malformed(format!(
@@ -471,7 +471,7 @@ fn source_offset(frame_start: usize, relative: usize) -> Option<u64> {
 }
 
 fn indexed_class_tag(record: &[u8], at: usize) -> Option<String> {
-    (u32_at(record, at) == Some(3)).then_some(())?;
+    (View::u32_le_at(record, at) == Some(3)).then_some(())?;
     let tag = std::str::from_utf8(record.get(at.checked_add(4)?..at.checked_add(7)?)?).ok()?;
     (tag.len() == 3 && tag.bytes().all(|byte| byte.is_ascii_digit())).then(|| tag.to_owned())
 }
@@ -526,7 +526,7 @@ fn nested_record_identity(
     expected_module: &str,
 ) -> Option<DesignMeshRecordIdentity> {
     let class_tag = indexed_class_tag(record, at)?;
-    (u32_at(record, at.checked_add(7)?) == Some(record_index)).then_some(())?;
+    (View::u32_le_at(record, at.checked_add(7)?) == Some(record_index)).then_some(())?;
     let tag = class_tag.parse::<u32>().ok()?;
     let ordinal = usize::try_from(tag.checked_sub(256)?).ok()?;
     validate_design_type(
@@ -563,7 +563,7 @@ fn counted_local_record_indices(
     record: &[u8],
     count_at: usize,
 ) -> Option<(Vec<u32>, Vec<usize>, usize)> {
-    let count = usize::try_from(u32_at(record, count_at)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(record, count_at)?).ok()?;
     let mut at = count_at.checked_add(4)?;
     (count <= record.len().saturating_sub(at) / SAME_SEGMENT_REFERENCE_BYTES).then_some(())?;
     let mut indices = Vec::with_capacity(count);
@@ -709,7 +709,8 @@ fn parse_mesh_collection_record(
     let parsed = (|| {
         (record.get(11..21) == Some(&[0; 10])).then_some(())?;
         (record.get(25..27) == Some(&[1, 1])).then_some(())?;
-        let first_count = usize::try_from(u32_at(record, MESH_COLLECTION_BODY_COUNT_AT)?).ok()?;
+        let first_count =
+            usize::try_from(View::u32_le_at(record, MESH_COLLECTION_BODY_COUNT_AT)?).ok()?;
         let texture_table_record_index =
             exact_local_record_index(record, MESH_COLLECTION_TEXTURE_REFERENCE_AT)?;
         let base_record = nested_record_identity(
@@ -766,7 +767,8 @@ fn parse_mesh_texture_table_record(
     let identity = record_identity(record, frame, "mesh-texture-table")?;
     let parsed = (|| {
         (record.get(11..21) == Some(&[0; 10])).then_some(())?;
-        let flags_count = usize::try_from(u32_at(record, MESH_TEXTURE_FLAGS_COUNT_AT)?).ok()?;
+        let flags_count =
+            usize::try_from(View::u32_le_at(record, MESH_TEXTURE_FLAGS_COUNT_AT)?).ok()?;
         let mut at = MESH_TEXTURE_FLAGS_COUNT_AT.checked_add(4)?;
         let mut flags = Vec::with_capacity(flags_count);
         let mut flag_keys = HashSet::with_capacity(flags_count);
@@ -778,7 +780,7 @@ fn parse_mesh_texture_table_record(
             .then_some(())?;
             at = end;
             let value_offset = at;
-            let value = u32_at(record, at)?;
+            let value = View::u32_le_at(record, at)?;
             at = at.checked_add(4)?;
             flags.push(MeshTextureMapEntry {
                 ordinal: u32::try_from(ordinal).ok()?,
@@ -789,7 +791,7 @@ fn parse_mesh_texture_table_record(
             });
         }
         let filename_count_at = at;
-        let filename_count = usize::try_from(u32_at(record, at)?).ok()?;
+        let filename_count = usize::try_from(View::u32_le_at(record, at)?).ok()?;
         at = at.checked_add(4)?;
         let mut filenames = Vec::with_capacity(filename_count);
         let mut filename_keys = HashSet::with_capacity(filename_count);
@@ -906,9 +908,9 @@ fn parse_scene_node_record(
     let parsed = (|| {
         (record.len() == 133
             && record.get(11..25) == Some(&[0; 14])
-            && u32_at(record, 25) == Some(2)
-            && u32_at(record, 29) == Some(2)
-            && u32_at(record, 44) == Some(3)
+            && View::u32_le_at(record, 25) == Some(2)
+            && View::u32_le_at(record, 29) == Some(2)
+            && View::u32_le_at(record, 44) == Some(3)
             && record.get(59..83) == Some(&[0; 24])
             && scene_footer_is_exact(record, 83))
         .then_some(())?;

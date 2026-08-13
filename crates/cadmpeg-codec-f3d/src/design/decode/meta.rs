@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::le::{u32_at, u64_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{lp_ascii_filtered, take_reference, Reference};
@@ -89,12 +89,12 @@ fn record_header_class_tag(
     let indexed_matches = after_tag
         .checked_add(4)
         .filter(|entity_end| *entity_end <= end)
-        .and_then(|_| u32_at(bytes, after_tag))
+        .and_then(|_| View::u32_le_at(bytes, after_tag))
         .is_some_and(|entity_id| u64::from(entity_id) == expected_entity_id);
     let named_matches = after_tag
         .checked_add(8)
         .filter(|entity_end| *entity_end <= end)
-        .and_then(|_| u64_at(bytes, after_tag))
+        .and_then(|_| View::u64_le_at(bytes, after_tag))
         == Some(expected_entity_id);
     if !indexed_matches && !named_matches {
         return None;
@@ -299,7 +299,7 @@ fn parse_feature_timeline_record(
 ) -> Option<DesignFeatureTimeline> {
     let (start, end) = (frame.start, frame.end);
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    if class_tag != expected_class_tag || u64_at(bytes, after_tag)? != expected_entity_id {
+    if class_tag != expected_class_tag || View::u64_le_at(bytes, after_tag)? != expected_entity_id {
         return None;
     }
     let (_, payload) = lp_ascii_filtered(
@@ -320,7 +320,7 @@ fn parse_feature_timeline_record(
         return None;
     }
     let item_count_offset = at;
-    let count = usize::try_from(u32_at(bytes, at)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     at = at.checked_add(4)?;
     if count > end.checked_sub(at)? / 11 {
         return None;

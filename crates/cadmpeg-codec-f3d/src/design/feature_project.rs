@@ -33,7 +33,7 @@ use crate::records::{
     DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
 };
-use cadmpeg_core::le::{u32_at, u64_at as read_u64};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -3739,12 +3739,12 @@ fn legacy_form_cage_count(
         if paired.checked_sub(start)? != 100
             || bytes.get(start + 11..start + 21)? != [0; 10]
             || bytes.get(start + 21) != Some(&1)
-            || read_u64(bytes, start + 22)? != u64::from(scope_record_index)
+            || View::u64_le_at(bytes, start + 22)? != u64::from(scope_record_index)
             || bytes.get(start + 30..start + 32)? != [0; 2]
         {
             continue;
         }
-        let count = usize::try_from(u32_at(bytes, start + 32)?).ok()?;
+        let count = usize::try_from(View::u32_le_at(bytes, start + 32)?).ok()?;
         if count != 1 {
             continue;
         }
@@ -3752,7 +3752,7 @@ fn legacy_form_cage_count(
         if bytes.get(member) != Some(&1) || bytes.get(member + 9..member + 13)? != [0, 0, 0xfc, 0] {
             continue;
         }
-        let object = u32::try_from(read_u64(bytes, member + 1)?).ok()?;
+        let object = u32::try_from(View::u64_le_at(bytes, member + 1)?).ok()?;
         if records.offsets(object).is_empty() {
             continue;
         }
@@ -3774,15 +3774,15 @@ fn form_cage_objects(
     let [(offset, paired)] = frames.as_slice() else {
         return None;
     };
-    if read_u64(bytes, offset + 7)? != record_index as u64
+    if View::u64_le_at(bytes, offset + 7)? != record_index as u64
         || bytes.get(offset + 15..offset + 21)? != [0; 6]
         || bytes.get(offset + 21) != Some(&1)
-        || read_u64(bytes, offset + 22)? != scope_record_index as u64
+        || View::u64_le_at(bytes, offset + 22)? != scope_record_index as u64
         || bytes.get(offset + 30..offset + 32)? != [0, 0]
     {
         return None;
     }
-    let count = usize::try_from(u32_at(bytes, offset + 32)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, offset + 32)?).ok()?;
     if paired.checked_sub(*offset)? != 88usize.checked_add(11usize.checked_mul(count)?)? {
         return None;
     }
@@ -3792,7 +3792,7 @@ fn form_cage_objects(
         if bytes.get(cursor) != Some(&1) {
             return None;
         }
-        objects.push(u32::try_from(read_u64(bytes, cursor + 1)?).ok()?);
+        objects.push(u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?);
         if bytes.get(cursor + 9..cursor + 11)? != [0, 0] {
             return None;
         }
@@ -3816,7 +3816,7 @@ fn form_cage_surface(
     {
         return None;
     }
-    let first_wrapper = u32::try_from(read_u64(bytes, object_at + 190)?).ok()?;
+    let first_wrapper = u32::try_from(View::u64_le_at(bytes, object_at + 190)?).ok()?;
     let [first_at] = records.offsets(first_wrapper) else {
         return None;
     };
@@ -3828,7 +3828,7 @@ fn form_cage_surface(
     {
         return None;
     }
-    let second_wrapper = u32::try_from(read_u64(bytes, first_at + 22)?).ok()?;
+    let second_wrapper = u32::try_from(View::u64_le_at(bytes, first_at + 22)?).ok()?;
     let [second_at] = records.offsets(second_wrapper) else {
         return None;
     };
@@ -3838,7 +3838,7 @@ fn form_cage_surface(
     {
         return None;
     }
-    let carrier = u32::try_from(read_u64(bytes, second_at + 21)?).ok()?;
+    let carrier = u32::try_from(View::u64_le_at(bytes, second_at + 21)?).ok()?;
     let carrier_frames = records.frames(carrier).collect::<Vec<_>>();
     let [(carrier_at, carrier_paired)] = carrier_frames.as_slice() else {
         return None;
@@ -3847,12 +3847,12 @@ fn form_cage_surface(
         || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
         || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
         || bytes.get(carrier_at + 317) != Some(&1)
-        || read_u64(bytes, carrier_at + 318)? != scope_record as u64
+        || View::u64_le_at(bytes, carrier_at + 318)? != scope_record as u64
         || bytes.get(carrier_at + 339) != Some(&1)
     {
         return None;
     }
-    u32::try_from(read_u64(bytes, carrier_at + 340)?).ok()
+    u32::try_from(View::u64_le_at(bytes, carrier_at + 340)?).ok()
 }
 
 fn form_cage_serializers(
@@ -3882,8 +3882,8 @@ fn form_cage_serializers(
             {
                 continue;
             }
-            let Some(surface) =
-                read_u64(bytes, after_name + 1).and_then(|surface| u32::try_from(surface).ok())
+            let Some(surface) = View::u64_le_at(bytes, after_name + 1)
+                .and_then(|surface| u32::try_from(surface).ok())
             else {
                 continue;
             };

@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
@@ -88,7 +87,7 @@ fn decode_record_frames(
             let payload_offset = after_tag.checked_add(4).ok_or_else(|| {
                 CodecError::Malformed(format!("F3D ACT record header overflows: {stream}"))
             })?;
-            if payload_offset > end || u32_at(bytes, after_tag) != Some(expected_index) {
+            if payload_offset > end || View::u32_le_at(bytes, after_tag) != Some(expected_index) {
                 return Err(CodecError::Malformed(format!(
                     "F3D ACT record header conflicts with its MetaStream index: {stream}@{start}"
                 )));
@@ -279,8 +278,9 @@ fn decode_table(
     if cursor > frame.end || bytes.get(payload..count_offset) != Some(&[0, 0]) {
         return Err(malformed("prologue"));
     }
-    let count = usize::try_from(u32_at(bytes, count_offset).ok_or_else(|| malformed("count"))?)
-        .map_err(|_| malformed("count"))?;
+    let count =
+        usize::try_from(View::u32_le_at(bytes, count_offset).ok_or_else(|| malformed("count"))?)
+            .map_err(|_| malformed("count"))?;
     if count > frame.end.saturating_sub(cursor) / 15 {
         return Err(malformed("entry count"));
     }
@@ -293,7 +293,8 @@ fn decode_table(
         {
             return Err(malformed("entry reference"));
         }
-        let record_index = u32_at(bytes, index_offset).ok_or_else(|| malformed("entry index"))?;
+        let record_index =
+            View::u32_le_at(bytes, index_offset).ok_or_else(|| malformed("entry index"))?;
         let entity_id_offset = entity_length_offset
             .checked_add(4)
             .ok_or_else(|| malformed("entity key"))?;
@@ -328,9 +329,10 @@ fn decode_table(
         cursor = end;
     }
 
-    let reference_count =
-        usize::try_from(u32_at(bytes, cursor).ok_or_else(|| malformed("table-reference count"))?)
-            .map_err(|_| malformed("table-reference count"))?;
+    let reference_count = usize::try_from(
+        View::u32_le_at(bytes, cursor).ok_or_else(|| malformed("table-reference count"))?,
+    )
+    .map_err(|_| malformed("table-reference count"))?;
     cursor = cursor
         .checked_add(4)
         .ok_or_else(|| malformed("table-reference count"))?;
@@ -355,9 +357,10 @@ fn decode_table(
         cursor = end;
     }
 
-    let registry_count =
-        usize::try_from(u32_at(bytes, cursor).ok_or_else(|| malformed("channel-registry count"))?)
-            .map_err(|_| malformed("channel-registry count"))?;
+    let registry_count = usize::try_from(
+        View::u32_le_at(bytes, cursor).ok_or_else(|| malformed("channel-registry count"))?,
+    )
+    .map_err(|_| malformed("channel-registry count"))?;
     cursor = cursor
         .checked_add(4)
         .ok_or_else(|| malformed("channel-registry count"))?;
@@ -507,7 +510,8 @@ fn decode_channel_group(
     {
         return Ok(None);
     }
-    let Some(count) = u32_at(bytes, count_offset).filter(|count| (1..=8).contains(count)) else {
+    let Some(count) = View::u32_le_at(bytes, count_offset).filter(|count| (1..=8).contains(count))
+    else {
         return Ok(None);
     };
     let mut cursor = count_offset + 4;

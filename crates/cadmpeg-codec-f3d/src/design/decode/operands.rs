@@ -30,7 +30,6 @@ use crate::records::{
     PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -1236,7 +1235,7 @@ pub(crate) fn parse_construction_operand_group(
         return NotAGroup;
     };
     let member_count_at = cursor;
-    let Some(member_count) = u32_at(bytes, cursor) else {
+    let Some(member_count) = View::u32_le_at(bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
@@ -1267,7 +1266,7 @@ pub(crate) fn parse_construction_operand_group(
         auxiliary_record_indices.push(record_index);
         auxiliary_record_offsets.push(offset);
     }
-    let Some(trailing_count) = u32_at(bytes, cursor) else {
+    let Some(trailing_count) = View::u32_le_at(bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
@@ -1285,7 +1284,10 @@ pub(crate) fn parse_construction_operand_group(
     }
     // The role occupies the high word of a u64 whose low word is zero.
     let role_at = cursor;
-    let (Some(0), Some(role)) = (u32_at(bytes, role_at), read_u64(bytes, role_at)) else {
+    let (Some(0), Some(role)) = (
+        View::u32_le_at(bytes, role_at),
+        View::u64_le_at(bytes, role_at),
+    ) else {
         return NotAGroup;
     };
     cursor += 8;
@@ -1294,9 +1296,10 @@ pub(crate) fn parse_construction_operand_group(
     }
     cursor += 10;
     let opaque_index_at = cursor;
-    let (Some(opaque_index), Some(opaque_scalar)) =
-        (u32_at(bytes, cursor), f64_at(bytes, cursor + 4))
-    else {
+    let (Some(opaque_index), Some(opaque_scalar)) = (
+        View::u32_le_at(bytes, cursor),
+        View::f64_le_at(bytes, cursor + 4),
+    ) else {
         return NotAGroup;
     };
     if opaque_index == 0 || !opaque_scalar.is_finite() {
@@ -1310,7 +1313,7 @@ pub(crate) fn parse_construction_operand_group(
     for repeats_ordinal in [true, false] {
         let mut tail = cursor;
         if repeats_ordinal {
-            if u32_at(bytes, tail) != Some(opaque_index) {
+            if View::u32_le_at(bytes, tail) != Some(opaque_index) {
                 continue;
             }
             tail += 4;
@@ -1350,7 +1353,7 @@ pub(crate) fn parse_construction_operand_group(
             else {
                 continue;
             };
-            if u32_at(bytes, after_tag) != Some(header.record_index) {
+            if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
                 continue;
             }
             if closed.replace((variant, after, paired_class_tag)).is_some() {
@@ -1532,7 +1535,7 @@ pub(crate) fn parse_construction_operand_path(
     if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
         return None;
     }
-    let entity_ref = read_u64(bytes, start + 22)?;
+    let entity_ref = View::u64_le_at(bytes, start + 22)?;
     let entity_ref_offset = u64::try_from(start + 22).ok()?;
     let (transform, transform_offset, compact_variant, mut cursor) =
         if bytes.get(start + 30..start + 33)? == [0; 3] {
@@ -1568,7 +1571,7 @@ pub(crate) fn parse_construction_operand_path(
     let following_at = cursor.checked_add(6)?;
     let (following_class_tag, after_tag) =
         lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
-    let following_record_index = u32_at(bytes, after_tag)?;
+    let following_record_index = View::u32_le_at(bytes, after_tag)?;
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
@@ -1606,7 +1609,7 @@ pub(crate) fn parse_construction_operand_transform(
     let following_at = start.checked_add(152)?;
     let (following_class_tag, after_tag) =
         lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
-    let following_record_index = u32_at(bytes, after_tag)?;
+    let following_record_index = View::u32_le_at(bytes, after_tag)?;
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
@@ -1839,7 +1842,7 @@ pub(crate) fn parse_construction_operand_identity(
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =
             lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
-        current_record_index = u32_at(bytes, after_next_tag)?;
+        current_record_index = View::u32_le_at(bytes, after_next_tag)?;
         current_class_tag = next_class_tag;
         chain_started = true;
     }
@@ -1894,7 +1897,8 @@ pub(crate) fn parse_construction_tracking_path(
 ) -> Option<DesignConstructionTrackingPath> {
     if bytes.get(wrapper_at + 11..wrapper_at + 21)? != [0; 10]
         || bytes.get(wrapper_at + 21) != Some(&1)
-        || read_u64(bytes, wrapper_at + 22)? != u64::from(wrapper_record_index.checked_add(1)?)
+        || View::u64_le_at(bytes, wrapper_at + 22)?
+            != u64::from(wrapper_record_index.checked_add(1)?)
         || bytes.get(wrapper_at + 30..wrapper_at + 33)? != [0; 3]
     {
         return None;
@@ -1902,22 +1906,22 @@ pub(crate) fn parse_construction_tracking_path(
     let carrier_at = wrapper_at.checked_add(33)?;
     let (carrier_class_tag, after_carrier_tag) =
         lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
-    let carrier_record_index = u32_at(bytes, after_carrier_tag)?;
+    let carrier_record_index = View::u32_le_at(bytes, after_carrier_tag)?;
     if carrier_record_index != wrapper_record_index.checked_add(1)?
         || bytes.get(carrier_at + 11..carrier_at + 21)? != [0; 10]
-        || u32_at(bytes, carrier_at + 21)? != 1
-        || u32_at(bytes, carrier_at + 25)? != 0
-        || u32_at(bytes, carrier_at + 29)? != 1
-        || u32_at(bytes, carrier_at + 33)? != 2
-        || read_u64(bytes, carrier_at + 45)? != 0
-        || u32_at(bytes, carrier_at + 53)? != 1
-        || read_u64(bytes, carrier_at + 65)? != 0
+        || View::u32_le_at(bytes, carrier_at + 21)? != 1
+        || View::u32_le_at(bytes, carrier_at + 25)? != 0
+        || View::u32_le_at(bytes, carrier_at + 29)? != 1
+        || View::u32_le_at(bytes, carrier_at + 33)? != 2
+        || View::u64_le_at(bytes, carrier_at + 45)? != 0
+        || View::u32_le_at(bytes, carrier_at + 53)? != 1
+        || View::u64_le_at(bytes, carrier_at + 65)? != 0
     {
         return None;
     }
-    let primary_identity = read_u64(bytes, carrier_at + 37)?;
-    let selector = i32_at(bytes, carrier_at + 57)?;
-    let kind = u32_at(bytes, carrier_at + 61)?;
+    let primary_identity = View::u64_le_at(bytes, carrier_at + 37)?;
+    let selector = View::i32_le_at(bytes, carrier_at + 57)?;
+    let kind = View::u32_le_at(bytes, carrier_at + 61)?;
     let mut cursor = carrier_at.checked_add(73)?;
     let (first_related_identity, first_related_identity_offset) =
         take_optional_tracking_identity(bytes, &mut cursor)?;
@@ -1926,7 +1930,7 @@ pub(crate) fn parse_construction_tracking_path(
     let following_at = cursor;
     let (following_class_tag, after_following_tag) =
         lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
-    let following_record_index = u32_at(bytes, after_following_tag)?;
+    let following_record_index = View::u32_le_at(bytes, after_following_tag)?;
     if following_record_index != carrier_record_index.checked_add(1)? {
         return None;
     }
@@ -1957,14 +1961,14 @@ fn take_optional_tracking_identity(
     bytes: &[u8],
     cursor: &mut usize,
 ) -> Option<(Option<u64>, Option<u64>)> {
-    match u32_at(bytes, *cursor)? {
+    match View::u32_le_at(bytes, *cursor)? {
         0 => {
             *cursor = (*cursor).checked_add(4)?;
             Some((None, None))
         }
         1 => {
             let value_at = (*cursor).checked_add(4)?;
-            let value = read_u64(bytes, value_at)?;
+            let value = View::u64_le_at(bytes, value_at)?;
             *cursor = value_at.checked_add(8)?;
             Some((Some(value), Some(u64::try_from(value_at).ok()?)))
         }
@@ -1981,12 +1985,12 @@ pub(crate) fn parse_extrude_selection_group(
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
-        || u32_at(bytes, start + 22)? != scope.record_index
+        || View::u32_le_at(bytes, start + 22)? != scope.record_index
         || bytes.get(start + 26..start + 32)? != [0; 6]
     {
         return None;
     }
-    let member_count = usize::try_from(u32_at(bytes, start + 32)?).ok()?;
+    let member_count = usize::try_from(View::u32_le_at(bytes, start + 32)?).ok()?;
     let mut position = start.checked_add(36)?;
     // Each member consumes 11 bytes; a count the remaining bytes cannot
     // supply is corrupt and must not reach the allocator.
@@ -1999,26 +2003,26 @@ pub(crate) fn parse_extrude_selection_group(
         if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
             return None;
         }
-        members.push(u32_at(bytes, position + 1)?);
+        members.push(View::u32_le_at(bytes, position + 1)?);
         member_offsets.push(u64::try_from(position + 1).ok()?);
         position = position.checked_add(11)?;
     }
-    let opaque_index = u32_at(bytes, position)?;
-    let opaque_scalar = f64_at(bytes, position + 4)?;
+    let opaque_index = View::u32_le_at(bytes, position)?;
+    let opaque_scalar = View::f64_le_at(bytes, position + 4)?;
     if opaque_index == 0
         || !opaque_scalar.is_finite()
-        || u32_at(bytes, position + 12)? != opaque_index
+        || View::u32_le_at(bytes, position + 12)? != opaque_index
         || bytes.get(position + 16) != Some(&1)
-        || u32_at(bytes, position + 17)? != header.record_index.checked_add(2)?
+        || View::u32_le_at(bytes, position + 17)? != header.record_index.checked_add(2)?
         || bytes.get(position + 21..position + 27)? != [0; 6]
         || bytes.get(position + 27) != Some(&1)
         || !matches!(bytes.get(position + 28), Some(0 | 1))
         || bytes.get(position + 29) != Some(&0)
         || bytes.get(position + 30) != Some(&1)
-        || u32_at(bytes, position + 31)? != header.record_index.checked_add(1)?
+        || View::u32_le_at(bytes, position + 31)? != header.record_index.checked_add(1)?
         || bytes.get(position + 35..position + 42)? != [0; 7]
         || bytes.get(position + 42) != Some(&1)
-        || u32_at(bytes, position + 43)? != scope.record_index
+        || View::u32_le_at(bytes, position + 43)? != scope.record_index
         || bytes.get(position + 47..position + 53)? != [0; 6]
     {
         return None;
@@ -2026,7 +2030,7 @@ pub(crate) fn parse_extrude_selection_group(
     let paired_at = position.checked_add(53)?;
     let (paired_class_tag, after_paired_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_paired_tag)? != header.record_index {
+    if View::u32_le_at(bytes, after_paired_tag)? != header.record_index {
         return None;
     }
     Some(DesignExtrudeSelectionGroup {
@@ -2212,14 +2216,14 @@ pub(crate) fn parse_entity_selection_prefix(
     // byte, and add three zero bytes before the first UTF-16 length.
     let asset_start = if bytes.get(start + 11..start + 21)? == [0; 10]
         && bytes.get(start + 21) == Some(&1)
-        && u32_at(bytes, start + 22)? == record_index.checked_add(3)?
+        && View::u32_le_at(bytes, start + 22)? == record_index.checked_add(3)?
         && bytes.get(start + 26..start + 32)? == [0; 6]
-        && u32_at(bytes, start + 32)? == 1
+        && View::u32_le_at(bytes, start + 32)? == 1
     {
         start.checked_add(36)?
     } else if bytes.get(start + 11..start + 23)? == [0; 12]
         && bytes.get(start + 23) == Some(&1)
-        && u32_at(bytes, start + 24)? == record_index.checked_add(3)?
+        && View::u32_le_at(bytes, start + 24)? == record_index.checked_add(3)?
         && bytes.get(start + 28..start + 34)? == [0; 6]
         && bytes.get(start + 34) == Some(&1)
     {
@@ -2231,7 +2235,7 @@ pub(crate) fn parse_entity_selection_prefix(
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
-        || u32_at(bytes, after_context_id)? != 2
+        || View::u32_le_at(bytes, after_context_id)? != 2
         || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
     {
         return None;
@@ -2281,12 +2285,12 @@ pub(crate) fn parse_entity_selection_frame(
         .zip(expected)
     {
         let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag)? != expected {
+        if View::u32_le_at(bytes, after_tag)? != expected {
             return None;
         }
     }
     let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
-    let next_record_index = u32_at(bytes, after_next_tag)?;
+    let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
     let (primary_identity_offset, secondary_identity_offset, curve_secondary_identity_offset) =
         if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
             && identity_at.checked_add(45)? == next_at
@@ -2314,16 +2318,17 @@ pub(crate) fn parse_entity_selection_frame(
         context_id_offset: prefix.context_id_offset,
         identity_record_index: record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
-        primary_identity: read_u64(bytes, primary_identity_offset)?,
+        primary_identity: View::u64_le_at(bytes, primary_identity_offset)?,
         primary_identity_offset: u64::try_from(primary_identity_offset).ok()?,
-        secondary_identity: secondary_identity_offset.and_then(|offset| read_u64(bytes, offset)),
+        secondary_identity: secondary_identity_offset
+            .and_then(|offset| View::u64_le_at(bytes, offset)),
         secondary_identity_offset: secondary_identity_offset
             .and_then(|offset| u64::try_from(offset).ok()),
         curve_secondary_identity: curve_secondary_identity_offset
-            .and_then(|offset| read_u64(bytes, offset))
+            .and_then(|offset| View::u64_le_at(bytes, offset))
             .filter(|identity| *identity != 0),
         curve_secondary_identity_offset: curve_secondary_identity_offset
-            .filter(|offset| read_u64(bytes, *offset).is_some_and(|identity| identity != 0))
+            .filter(|offset| View::u64_le_at(bytes, *offset).is_some_and(|identity| identity != 0))
             .and_then(|offset| u64::try_from(offset).ok()),
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
@@ -2567,7 +2572,7 @@ fn parse_body_recipe_operand_frame(
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
     let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
     let next_at = body_recipe_operand_end(bytes, prologue_end, header.record_index, recipe_at)?;
-    let reference_count = usize::try_from(u32_at(bytes, start + 21)?).ok()?;
+    let reference_count = usize::try_from(View::u32_le_at(bytes, start + 21)?).ok()?;
     if start >= recipe_at
         || recipe_at >= next_at
         || bytes.get(start + 11..start + 21)? != [0; 10]
@@ -2584,9 +2589,9 @@ fn parse_body_recipe_operand_frame(
     let mut references = Vec::with_capacity(reference_count);
     for _ in 0..reference_count {
         references.push(DesignBodyRecipeReference {
-            design_reference: read_u64(bytes, cursor)?,
+            design_reference: View::u64_le_at(bytes, cursor)?,
             design_reference_offset: u64::try_from(cursor).ok()?,
-            form: u32_at(bytes, cursor + 8)?,
+            form: View::u32_le_at(bytes, cursor + 8)?,
             form_offset: u64::try_from(cursor + 8).ok()?,
             candidate_faces: Vec::new(),
             preceding_candidate_faces: Vec::new(),
@@ -2596,17 +2601,17 @@ fn parse_body_recipe_operand_frame(
     }
     if bytes.get(cursor) != Some(&1)
         || bytes.get(cursor + 9..cursor + 11)? != [0; 2]
-        || u32_at(bytes, cursor + 11)? != 1
+        || View::u32_le_at(bytes, cursor + 11)? != 1
     {
         return None;
     }
-    let nested_record_index = read_u64(bytes, cursor + 1)?;
+    let nested_record_index = View::u64_le_at(bytes, cursor + 1)?;
     let asset_id_at = cursor.checked_add(15)?;
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_id_at, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
-        || u32_at(bytes, after_context_id)? != 2
+        || View::u32_le_at(bytes, after_context_id)? != 2
         || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
     {
@@ -2847,7 +2852,7 @@ fn parse_extrude_identity_member(
     if bytes.get(start + 11..start + 21)? != [0; 10] {
         return None;
     }
-    let local_id = read_u64(bytes, start + 21)?;
+    let local_id = View::u64_le_at(bytes, start + 21)?;
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 29, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     let tail_slot_offset = after_context_id.checked_add(4)?;
@@ -2858,12 +2863,13 @@ fn parse_extrude_identity_member(
     };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
-        || u32_at(bytes, after_context_id)? != 2
+        || View::u32_le_at(bytes, after_context_id)? != 2
     {
         return None;
     }
     let fixed_end = start.checked_add(190)?;
-    let (next_record_index, next_byte_offset) = if u32_at(bytes, tail_slot_offset + 1) == Some(0)
+    let (next_record_index, next_byte_offset) = if View::u32_le_at(bytes, tail_slot_offset + 1)
+        == Some(0)
         && after_context_id.checked_add(9)? == fixed_end
     {
         if fixed_end == bytes.len() {
@@ -2872,7 +2878,7 @@ fn parse_extrude_identity_member(
             let (_, after_next_tag) =
                 lp_ascii_filtered(bytes, fixed_end, 0..=2000, u8::is_ascii_graphic)?;
             (
-                u32_at(bytes, after_next_tag)?,
+                View::u32_le_at(bytes, after_next_tag)?,
                 u64::try_from(fixed_end).ok()?,
             )
         }
@@ -2882,7 +2888,7 @@ fn parse_extrude_identity_member(
         let next_at = cursor;
         let (_, after_next_tag) =
             lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_next_tag)? != next_record_index {
+        if View::u32_le_at(bytes, after_next_tag)? != next_record_index {
             return None;
         }
         (next_record_index, u64::try_from(next_at).ok()?)
@@ -2930,11 +2936,11 @@ pub(crate) fn parse_edge_identity_member(
     let asset_offset = marker_offset + 15;
     if bytes.get(start + marker_offset) != Some(&1)
         || bytes.get(start + marker_offset + 5..start + marker_offset + 11)? != [0; 6]
-        || u32_at(bytes, start + marker_offset + 11)? != 1
+        || View::u32_le_at(bytes, start + marker_offset + 11)? != 1
     {
         return None;
     }
-    let local_id = u64::from(u32_at(bytes, start + local_id_offset)?);
+    let local_id = u64::from(View::u32_le_at(bytes, start + local_id_offset)?);
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + asset_offset, 1..=256)?;
     let (context_id, _after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !is_guid_relaxed(&asset_id) || !is_guid_relaxed(&context_id) {
@@ -2961,9 +2967,9 @@ pub(crate) fn parse_sketch_profile(
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
-        || u32_at(bytes, start + 22)? != header.record_index.checked_add(3)?
+        || View::u32_le_at(bytes, start + 22)? != header.record_index.checked_add(3)?
         || bytes.get(start + 26..start + 32)? != [0; 6]
-        || u32_at(bytes, start + 32)? != 1
+        || View::u32_le_at(bytes, start + 32)? != 1
     {
         return None;
     }
@@ -2978,7 +2984,7 @@ pub(crate) fn parse_sketch_profile(
     let (paired_class_tag, after_paired_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
-    if u32_at(bytes, after_paired_tag)? != header.record_index
+    if View::u32_le_at(bytes, after_paired_tag)? != header.record_index
         || !matches!(tail_length, 89 | 93 | 94)
     {
         return None;
@@ -2991,7 +2997,7 @@ pub(crate) fn parse_sketch_profile(
             (57, 70, 82)
         };
         if bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
-            || u32_at(bytes, tail + 8) != Some(1)
+            || View::u32_le_at(bytes, tail + 8) != Some(1)
             || marked_record_reference(bytes, tail + nested_two_at)
                 != header.record_index.checked_add(2)
             || bytes.get(tail + nested_one_at - 2..tail + nested_one_at) != Some(&[0; 2])
@@ -2999,8 +3005,9 @@ pub(crate) fn parse_sketch_profile(
                 != header.record_index.checked_add(1)
             || bytes.get(tail + scope_at - 1) != Some(&0)
             || marked_record_reference(bytes, tail + scope_at).is_none()
-            || u32_at(bytes, tail + 41) == Some(0)
-            || (tail_length == 93 && u32_at(bytes, tail + 41) != u32_at(bytes, tail + 53))
+            || View::u32_le_at(bytes, tail + 41) == Some(0)
+            || (tail_length == 93
+                && View::u32_le_at(bytes, tail + 41) != View::u32_le_at(bytes, tail + 53))
         {
             return None;
         }
@@ -3065,15 +3072,15 @@ fn parse_sketch_profile_region_selection(
     )?;
     let (class_tag, after_class_tag) =
         lp_ascii_filtered(bytes, selection_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_class_tag)? != selection_record_index
+    if View::u32_le_at(bytes, after_class_tag)? != selection_record_index
         || bytes.get(selection_at + 11..selection_at + 21)? != [0; 10]
         || marked_record_reference(bytes, selection_at + 21) != Some(profile_record_index)
         || bytes.get(selection_at + 26..selection_at + 32)? != [0; 6]
-        || u32_at(bytes, selection_at + 32)? != 1
+        || View::u32_le_at(bytes, selection_at + 32)? != 1
     {
         return None;
     }
-    let region_count = usize::try_from(u32_at(bytes, selection_at + 36)?).ok()?;
+    let region_count = usize::try_from(View::u32_le_at(bytes, selection_at + 36)?).ok()?;
     if region_count == 0 {
         return None;
     }
@@ -3099,7 +3106,7 @@ fn parse_sketch_profile_region_selection(
             cursor = cursor.checked_add(1)?;
         }
         let member_count_offset = cursor;
-        let member_count = usize::try_from(u32_at(bytes, cursor)?).ok()?;
+        let member_count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
         cursor = cursor.checked_add(REGION_COUNT_LEN)?;
         if member_count == 0 {
             return None;
@@ -3124,12 +3131,12 @@ fn parse_sketch_profile_region_selection(
         let mut members = Vec::with_capacity(member_count.min(4096));
         for _ in 0..member_count {
             let kind_offset = cursor;
-            let kind = u32_at(bytes, cursor)?;
-            let curve_primary_id = u64::from(u32_at(bytes, cursor.checked_add(4)?)?);
+            let kind = View::u32_le_at(bytes, cursor)?;
+            let curve_primary_id = u64::from(View::u32_le_at(bytes, cursor.checked_add(4)?)?);
             let incidence_words_offset = cursor.checked_add(8)?;
             let mut incidence_words = [0; 8];
             for (ordinal, word) in incidence_words.iter_mut().enumerate() {
-                *word = u32_at(
+                *word = View::u32_le_at(
                     bytes,
                     incidence_words_offset.checked_add(ordinal.checked_mul(4)?)?,
                 )?;
@@ -3167,7 +3174,7 @@ fn parse_sketch_profile_region_selection(
     }
     let (companion_class_tag, after_companion_class_tag) =
         lp_ascii_filtered(bytes, companion_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_companion_class_tag)? != selection_record_index {
+    if View::u32_le_at(bytes, after_companion_class_tag)? != selection_record_index {
         return None;
     }
     Some(DesignSketchProfileRegionSelection {
@@ -3185,7 +3192,7 @@ fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
     if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
         return None;
     }
-    u32_at(bytes, at + 1)
+    View::u32_le_at(bytes, at + 1)
 }
 
 struct ParsedRecipeOperand {
@@ -3294,7 +3301,7 @@ fn parse_recipe_operand(
         .map(|offset| {
             let (class_tag, after_tag) =
                 lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
-            Some((class_tag, u32_at(bytes, after_tag)?))
+            Some((class_tag, View::u32_le_at(bytes, after_tag)?))
         })
         .collect::<Option<Vec<_>>>()?;
     let recipe_record_index = header.record_index.checked_add(3)?;
@@ -3850,7 +3857,7 @@ pub(crate) fn parse_face_operand(
     for offset in &offsets {
         let (class_tag, after_tag) =
             lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
-        indexed.push((class_tag, u32_at(bytes, after_tag)?));
+        indexed.push((class_tag, View::u32_le_at(bytes, after_tag)?));
     }
     let recipe_record_index = header.record_index.checked_add(3)?;
     if indexed[0].1 != header.record_index

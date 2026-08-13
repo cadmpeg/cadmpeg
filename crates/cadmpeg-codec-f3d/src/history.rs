@@ -9,6 +9,7 @@
 //! history records while retaining source bytes for records without typed
 //! semantics.
 
+use crate::bytes::int_at;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
@@ -19,7 +20,6 @@ use crate::history_records::{
 use crate::records::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
-use cadmpeg_core::le::int_at;
 use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 

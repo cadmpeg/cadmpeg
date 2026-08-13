@@ -12,7 +12,48 @@
 use std::ops::RangeInclusive;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, utf16le_at};
+
+/// Read a signed little-endian integer with a four- or eight-byte width.
+pub(crate) fn int_at(bytes: &[u8], offset: usize, width: usize) -> Option<i64> {
+    match width {
+        4 => Some(i64::from(View::i32_le_at(bytes, offset)?)),
+        8 => View::i64_le_at(bytes, offset),
+        _ => None,
+    }
+}
+
+/// Read a u32-length-prefixed byte slice and return it with the end offset.
+pub(crate) fn lp_u32_bytes_at(bytes: &[u8], offset: usize) -> Option<(&[u8], usize)> {
+    let length = usize::try_from(View::u32_le_at(bytes, offset)?).ok()?;
+    let start = offset.checked_add(4)?;
+    let end = start.checked_add(length)?;
+    Some((bytes.get(start..end)?, end))
+}
+
+/// Take a u32-length-prefixed byte slice, advancing only on success.
+pub(crate) fn take_lp_u32_bytes<'a>(bytes: &'a [u8], position: &mut usize) -> Option<&'a [u8]> {
+    let mut view = View::over_retained(bytes);
+    view.seek(*position)?;
+    let length = usize::try_from(view.u32_le()?).ok()?;
+    let value = view.take(length)?;
+    *position = view.position();
+    Some(value)
+}
+
+/// Decode `count` UTF-16LE code units at `offset` and return the end offset.
+pub(crate) fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(String, usize)> {
+    let mut view = View::over_retained(bytes);
+    view.seek(offset)?;
+    let units = view.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
+    Some((String::from_utf16(&units).ok()?, view.position()))
+}
+
+/// Read consecutive little-endian `f64` values at `offset`.
+pub(crate) fn f64s_at(bytes: &[u8], offset: usize, count: usize) -> Option<Vec<f64>> {
+    let mut view = View::over_retained(bytes);
+    view.seek(offset)?;
+    view.read_counted(u64::try_from(count).ok()?, 8, View::f64_le)
+}
 
 /// Read a u32-length-prefixed ASCII string whose length lies in `bounds`,
 /// decoding it as strict UTF-8. Returns the string and the offset past it.
@@ -21,7 +62,7 @@ pub(crate) fn lp_ascii_strict(
     at: usize,
     bounds: RangeInclusive<usize>,
 ) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, at)?).ok()?;
+    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     if !bounds.contains(&length) {
         return None;
     }
@@ -38,7 +79,7 @@ pub(crate) fn lp_ascii_filtered(
     bounds: RangeInclusive<usize>,
     allowed: fn(&u8) -> bool,
 ) -> Option<(String, usize)> {
-    let length = usize::try_from(u32_at(bytes, at)?).ok()?;
+    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     if !bounds.contains(&length) {
         return None;
     }
@@ -56,7 +97,7 @@ pub(crate) fn lp_utf16_bounded(
     at: usize,
     bounds: RangeInclusive<usize>,
 ) -> Option<(String, usize)> {
-    let count = usize::try_from(u32_at(bytes, at)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     if !bounds.contains(&count) {
         return None;
     }
@@ -106,7 +147,7 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
     cursor += 8;
     // One container generation writes the target's type GUID inline, between
     // the entity ID and the `cross_document` flag.
-    let inline_type_guid = if u32_at(bytes, cursor) == Some(36) {
+    let inline_type_guid = if View::u32_le_at(bytes, cursor) == Some(36) {
         let (guid, end) = lp_ascii_filtered(bytes, cursor, 36..=36, u8::is_ascii_graphic)?;
         if !is_guid_hyphenated(&guid) {
             return None;
@@ -127,7 +168,7 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
             match *bytes.get(cursor)? {
                 0 => cursor += 1,
                 1 => {
-                    reference.segment = u32_at(bytes, cursor + 1);
+                    reference.segment = View::u32_le_at(bytes, cursor + 1);
                     cursor += 5;
                 }
                 _ => return None,
@@ -135,7 +176,7 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
         }
         1 => {
             cursor += 1;
-            reference.segment = u32_at(bytes, cursor);
+            reference.segment = View::u32_le_at(bytes, cursor);
             cursor += 4;
             let (_asset, end) = lp_utf16_bounded(bytes, cursor, 0..=64)?;
             cursor = end;
