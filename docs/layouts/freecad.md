@@ -71,7 +71,7 @@ Applies to `DiffuseColor`, `LineColorArray`, and `PointColorArray`. A count of o
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-freecad/src/gui.rs` — The bounded view reads the leading count and each packed-colour record as little-endian u32.
+- `crates/cadmpeg-codec-freecad/src/gui.rs` — The parser bounds each packed-colour record at 4 bytes after the little-endian count prefix.
 
 ## `link_array_side_entry_header`
 
@@ -85,7 +85,7 @@ Fixed prefix only. Placement records carry position plus quaternion (seven compo
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-freecad/src/product.rs` — The parser selects f64 or f32 components by matching the entry length, reading both little-endian.
+- `crates/cadmpeg-codec-freecad/src/product.rs` — The parser matches entry length against a 4-byte count prefix plus 8-byte or 4-byte components.
 
 ## Not tabulated
 
