@@ -4,7 +4,9 @@
 #![allow(clippy::unwrap_used)]
 
 mod container;
+mod history;
 mod parasolid;
 
 pub(crate) use container::*;
+pub(crate) use history::*;
 pub(crate) use parasolid::*;
