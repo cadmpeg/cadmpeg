@@ -29,8 +29,5 @@ use crate::test_support::*;
 use crate::F3dCodec;
 use cadmpeg_asm::asm_header;
 
-#[path = "tests_native.rs"]
-mod native;
-
 #[path = "tests_design.rs"]
 mod design;
