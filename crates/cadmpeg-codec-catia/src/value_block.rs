@@ -6,6 +6,8 @@ use cadmpeg_core::decode::View;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::layout::value_block_7c0b as value_block;
+
 /// One exact `7C0B` value block immediately preceding a schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -115,7 +117,7 @@ pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
             continue;
         }
         let declared_end = pos
-            .checked_add(2)
+            .checked_add(value_block::DECLARED_LEN)
             .and_then(|length_offset| View::u32_le_at(bytes, length_offset))
             .and_then(|length| usize::try_from(length).ok())
             .and_then(|length| pos.checked_add(length))
@@ -135,8 +137,9 @@ pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
 }
 
 fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
-    let declared_len = usize::try_from(View::u32_le_at(bytes, pos + 2)?).ok()?;
-    if declared_len < 6 {
+    let declared_len =
+        usize::try_from(View::u32_le_at(bytes, pos + value_block::DECLARED_LEN)?).ok()?;
+    if declared_len < value_block::LEN {
         return None;
     }
     let terminator = pos.checked_add(declared_len)?;
@@ -148,8 +151,8 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
         pos,
         declared_len,
         total_len: declared_len + 1,
-        payload: bytes[pos + 6..terminator].to_vec(),
-        fields: tokenize(&bytes[pos + 6..terminator]),
+        payload: bytes[pos + value_block::LEN..terminator].to_vec(),
+        fields: tokenize(&bytes[pos + value_block::LEN..terminator]),
     })
 }
 

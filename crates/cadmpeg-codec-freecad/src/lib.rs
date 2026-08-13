@@ -23,6 +23,8 @@ mod drawing;
 mod element_map;
 mod gui;
 mod joint;
+/// Byte-offset constants generated from `docs/layouts/freecad.toml`.
+pub(crate) mod layout;
 mod mutation;
 mod native;
 mod persistence;

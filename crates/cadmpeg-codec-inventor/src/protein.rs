@@ -6,6 +6,8 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+use crate::layout::protein_header;
+
 #[derive(Debug)]
 pub(crate) enum ProteinState<'a> {
     Absent,
@@ -79,21 +81,21 @@ fn parse_stream<'a>(
     let mut header = source;
     let declared_len = header.req_u32_le()?;
     if declared_len == 0 {
-        if source.window().len() != 4 {
+        if source.window().len() != protein_header::LEN {
             return Err(CodecError::Malformed(
                 "empty Inventor Protein stream has trailing bytes".into(),
             ));
         }
         return Ok(ParsedProtein::Empty);
     }
-    let payload_len = source.window().len().saturating_sub(4);
+    let payload_len = source.window().len().saturating_sub(protein_header::LEN);
     if declared_len as usize != payload_len {
         return Err(CodecError::Malformed(format!(
             "Inventor Protein declares {declared_len} bytes but stores {payload_len}"
         )));
     }
     let payload = source
-        .child(source.start() + 4, source.end())
+        .child(source.start() + protein_header::LEN, source.end())
         .ok_or_else(|| CodecError::Malformed("Inventor Protein payload range is invalid".into()))?;
     let archive = ArchiveSnapshot::new(payload)?;
     for entry in archive.entries() {
@@ -179,18 +181,33 @@ mod tests {
 
     #[test]
     fn protein_distinguishes_empty_and_exact_package() {
-        with_stream(&0_u32.to_le_bytes(), |ctx, root| {
+        let empty = 0_u32.to_le_bytes();
+        assert_eq!(empty.len(), 4);
+        with_stream(&empty, |ctx, root| {
+            assert_eq!(root.window().len(), 4);
+            assert_eq!(
+                u32::from_le_bytes(root.window().try_into().expect("empty payload length")),
+                0
+            );
             assert!(matches!(parse_stream(ctx, root), Ok(ParsedProtein::Empty)));
         });
         let zip = zip_fixture("Schemas/ExampleSchema.xml");
         let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
         bytes.extend_from_slice(&zip);
+        assert_eq!(
+            u32::from_le_bytes(bytes[..4].try_into().expect("planted payload length")),
+            zip.len() as u32
+        );
         with_stream(&bytes, |ctx, root| {
-            let ParsedProtein::Package { archive, .. } =
-                parse_stream(ctx, root).expect("synthetic Protein package parses")
+            let ParsedProtein::Package {
+                declared_len,
+                archive,
+                ..
+            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
             else {
                 panic!("package state")
             };
+            assert_eq!(declared_len, zip.len() as u32);
             assert_eq!(archive.entries().len(), 1);
         });
     }

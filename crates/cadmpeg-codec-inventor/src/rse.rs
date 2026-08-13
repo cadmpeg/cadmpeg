@@ -13,6 +13,7 @@ use crate::database::{
     SegmentRegistry,
 };
 use crate::kernel::{select_active_carrier, ActiveCarrierState};
+use crate::layout::bulk_envelope as envelope;
 use crate::records::{frame_bulk_records, parse_meta_tables, MetaTables, RseRecordTable};
 
 /// A validated `V<n>` storage-band number.
@@ -512,7 +513,7 @@ fn parse_bulk_stream<'a>(
 ) -> Result<SegmentBulk<'a>, CodecError> {
     let bytes = source.window();
     let header = bytes
-        .get(..18)
+        .get(..envelope::LEN)
         .ok_or_else(|| CodecError::Malformed("truncated RSe bulk envelope".into()))?;
     if bytes.len() == header.len() {
         return Err(CodecError::Malformed(
@@ -520,8 +521,8 @@ fn parse_bulk_stream<'a>(
         ));
     }
     let mut prefix = [0; 16];
-    prefix.copy_from_slice(&header[..16]);
-    let form = BulkForm(View::u16_le_at(header, 16).expect("18-byte bulk header"));
+    prefix.copy_from_slice(&header[envelope::PREFIX..envelope::FORM]);
+    let form = BulkForm(View::u16_le_at(header, envelope::FORM).expect("18-byte bulk header"));
     let compressed = source
         .child(source.start() + header.len(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;
@@ -778,14 +779,30 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic bulk stream fits policy");
+        assert_eq!(&bytes[..16], &[0x3c; 16]);
+        assert_eq!(
+            u16::from_le_bytes(bytes[16..18].try_into().expect("planted form")),
+            0x0104
+        );
+        assert!(bytes.len() > 18);
         let bulk = parse_bulk_stream(&ctx, root, BulkReadMode::Expand)
             .expect("synthetic bulk stream parses");
+        assert_eq!(bulk.prefix.len(), 16);
         assert_eq!(bulk.prefix, [0x3c; 16]);
         assert_eq!(bulk.form.value(), 0x0104);
         assert_eq!(
             bulk.expanded.expect("expanded in decode mode").window(),
             b"framed bulk records"
         );
+    }
+
+    #[test]
+    fn bulk_stream_rejects_a_truncated_envelope() {
+        let bytes = vec![0x3c; 17];
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("truncated envelope fits policy");
+        assert!(parse_bulk_stream(&ctx, root, BulkReadMode::HeaderOnly).is_err());
     }
 
     #[test]

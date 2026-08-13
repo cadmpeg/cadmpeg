@@ -13,6 +13,7 @@ use cadmpeg_ir::units::Units;
 use sha2::{Digest, Sha256};
 
 use super::*;
+use crate::layout::file_header;
 use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
 
 #[test]
@@ -39,7 +40,7 @@ fn source_less_points_round_trip_across_target_versions() {
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         assert_eq!(
-            std::str::from_utf8(&bytes[24..32])
+            std::str::from_utf8(&bytes[file_header::ARCHIVE_VERSION..file_header::LEN])
                 .expect("required invariant")
                 .trim(),
             value

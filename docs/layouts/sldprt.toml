@@ -55,7 +55,7 @@ anchor = "four zero bytes at +8"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
-contains = "let cell = payload.get(offset..offset + 12)?;"
+contains = "let cell = payload.get(offset..offset + operand_cell::LEN)?;"
 note = "The scalar parser reads the primary and legacy operand as one 12-byte cell."
 
 # --- Container envelopes ---------------------------------------------------
@@ -134,11 +134,6 @@ offset = 22
 type = "u32"
 source = "spec"
 anchor = "pre_sz u32 LE"
-
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/container.rs"
-contains = "const BLOCK_HEADER_LEN: usize = 26;"
-note = "The parser's block-header length matches the 26-byte fixed prefix this table tiles."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/container.rs"
@@ -994,11 +989,6 @@ type = "u16[5]"
 source = "spec"
 anchor = "terminal u16 BE refs"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
-contains = "const SURFACE_DESCRIPTOR_REFS_OFFSET: usize = 32;"
-note = "The decoder reads the terminal array roster at the fixed descriptor offset."
-
 [[record]]
 name = "bspline_array_header"
 kind = "byte"
@@ -1054,7 +1044,7 @@ anchor = "attr u16 BE"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
-contains = "let values_at = p + 6;"
+contains = "let values_at = p + arr_hdr::LEN;"
 note = "The decoder reads array element data immediately after the 6-byte compact header."
 
 # --- §7.3 Intersection carriers --------------------------------------------
@@ -3928,11 +3918,6 @@ offset = 16
 size = 211
 note = "Native reference-point construction state; the solved datum position does not depend on its construction family."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "const POSITION_OFFSETS: [usize; 2] = [243, 259];"
-note = "The parser evaluates both fixed solved-position layouts and requires one distinct result."
-
 [[record]]
 name = "reference_point_long_solved_cache"
 kind = "byte"
@@ -4090,7 +4075,7 @@ anchor = "a second nonzero u16 token at +38"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs"
-contains = "suffix[10..14] != [0xff; 4]"
+contains = "suffix[sparse_tr::OPTIONAL_IDENTITY - sparse_tr::SPARSE_ZERO_PREFIX"
 note = "The parser accepts zero or non-null optional identities and requires the complete sparse trailer."
 
 [[record]]
@@ -4215,7 +4200,7 @@ anchor = "Three finite f64 LE values at +127, +135, and +143 store the solved or
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "record.get(prefix + 119..prefix + 127) == Some(&[0; 8])"
+contains = "prefix + cs_pt::ZERO_BEFORE_ORIGIN..prefix + cs_pt::ORIGIN"
 note = "The parser accepts the 151-byte standard component-point record and reads the origin at +127."
 
 [[record]]
@@ -4326,7 +4311,7 @@ anchor = "Three finite f64 LE values at +141, +149, and +157 store the solved or
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "record.get(prefix + 133..prefix + 141) == Some(&[0; 8])"
+contains = "prefix + cs_ext::ZERO_BEFORE_ORIGIN..prefix + cs_ext::ORIGIN"
 note = "The parser accepts the 165-byte extended component-point record and reads the origin at +141."
 
 [[record]]
@@ -4473,7 +4458,7 @@ anchor = "three finite f64 LE origin coordinates in metres"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "record.get(trailer..trailer + 14)? != [0; 14]"
+contains = "record.get(trailer..trailer + cs_path_suf::ONE)? != [0; 14]"
 note = "The parser requires the 14-byte zero header of the path-relative solved suffix."
 
 [[record]]
@@ -4515,7 +4500,7 @@ anchor = "The f64 LE value at tail +27 repeats the component-point origin Z coor
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "tail.get(4..27)? != [0; 23]"
+contains = "tail.get(ordinal_tail::ZERO_BEFORE_ORIGIN_Z..ordinal_tail::ORIGIN_Z)? != [0; 23]"
 note = "The parser requires 23 zero bytes at ordinal-axis tail +4 before the repeated origin Z."
 
 [[record]]
@@ -4613,7 +4598,7 @@ anchor = "tail +92 stores a nonzero u16 token"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "if tail.len() != 94"
+contains = "if tail.len() != two_pt_tail::LEN"
 note = "The parser requires the 94-byte solved tail after the second extended point record."
 
 [[record]]
@@ -4783,7 +4768,7 @@ anchor = "finite origin-coordinate layout"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "record.get(trailer..trailer + 70)? != [0; 70]"
+contains = "record.get(trailer..trailer + ep_path_suf::ONE)? != [0; 70]"
 note = "The parser requires the 70-byte zero header of the endpoint-path solved suffix."
 
 [[record]]
@@ -4859,7 +4844,7 @@ anchor = "The same direction is repeated as three f64 LE values at +89"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "record.get(prefix + 16..prefix + 32) != Some(&[0; 16])"
+contains = "prefix + line_axis::ZERO_BEFORE_SCALAR..prefix + line_axis::CARRIER_SCALAR"
 note = "The parser requires sixteen zero bytes at line-axis +16 before the carrier scalar."
 
 [[record]]
@@ -4905,11 +4890,6 @@ type = "u16"
 source = "spec"
 anchor = "The final u16 token is nonzero"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "const FRAME_TAIL_LEN: usize = 29;"
-note = "The parser requires one exact tail after the final line-axis record, with the defined optional two-byte zero gap for a one-axis frame."
-
 [[record]]
 name = "constructed_reference_plane_fixed_frame"
 kind = "byte"
@@ -4954,11 +4934,6 @@ type = "f64[3]"
 source = "spec"
 anchor = "Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "pub(super) const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;"
-note = "The parser uses the specified fixed-frame size."
-
 [[record]]
 name = "constructed_reference_plane_matrix_frame"
 kind = "byte"
@@ -4996,11 +4971,6 @@ type = "f64[9]"
 source = "spec"
 anchor = "A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "const MATRIX_REFERENCE_PLANE_FRAME_LEN: usize = 121;"
-note = "The parser uses the specified matrix-frame size."
-
 [[record]]
 name = "display_lists_scene_source_binding"
 kind = "byte"
@@ -5030,7 +5000,7 @@ note = "The parser's scene-source marker matches the 12-byte specification marke
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
-contains = ".then(|| View::u32_le_at(window, 12))"
+contains = ".then(|| View::u32_le_at(window, scene_src::SOURCE_ID))"
 note = "The parser reads the source identifier at marker offset +12."
 
 [[record]]
@@ -5170,7 +5140,7 @@ anchor = "followed by 16 zero bytes at `+24`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
-contains = ".get(at + 24..at + 40)"
+contains = ".get(at + extended_face::ZERO_TAIL..at + extended_face::LEN)"
 note = "The decoder selects the 40-byte extended header or the 8-byte compact header."
 
 [[record]]
@@ -5297,11 +5267,6 @@ type = "u16"
 source = "spec"
 anchor = "+110 | u16 LE | zero marker tail"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
-contains = "const PLANE_REFERENCE_HEADER_LEN: usize = 94;"
-note = "The parser locates the 16-byte component marker at prefix offset +94."
-
 [[record]]
 name = "draft_compact_selection_prefix"
 kind = "byte"
@@ -5348,7 +5313,7 @@ anchor = "a u16 LE zero tail"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
-contains = "let header = marker.checked_sub(12)?;"
+contains = "let header = marker.checked_sub(compact_sel::COMPONENT_MARKER)?;"
 note = "The compact Draft parser validates the fixed selection prefix and its path delimiters."
 
 [[record]]
@@ -5396,11 +5361,6 @@ offset = 96
 type = "f64[3]"
 source = "spec"
 anchor = "the xyz pull-direction unit vector is the final three values at +96, +104, and +112"
-
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
-contains = "const ALIGNED_DIRECTION_OFFSET: usize = 96;"
-note = "The parser reads and validates the unit pull-direction triple at +96."
 
 [[record]]
 name = "draft_extended_direction_frame"
@@ -5452,11 +5412,6 @@ offset = 129
 type = "f64[3]"
 source = "spec"
 anchor = "an unaligned xyz unit vector occupies +129, +137, and +145"
-
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
-contains = "const EXTENDED_DIRECTION_OFFSET: usize = 129;"
-note = "The parser reads the extended-form pull direction only after the nine-byte zero discriminator."
 
 [[record]]
 name = "wide_spatial_marker_coordinate_prefix"

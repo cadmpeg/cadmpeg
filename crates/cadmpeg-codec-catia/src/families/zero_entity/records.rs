@@ -14,6 +14,10 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3};
 
+use crate::layout::a9_03_frame as a9_03;
+use crate::layout::zero_entity_edge_stride_5e1a as edge_5e1a;
+use crate::layout::zero_entity_pcurve_2171 as pcurve_2171;
+use crate::layout::zero_entity_vertex_owner_5d06 as vertex_5d06;
 use crate::nurbs::expand_knots;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector};
 
@@ -290,13 +294,17 @@ fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEnt
     }
     let mut records = Vec::new();
     let mut position = range.start;
-    while position + 4 <= range.end {
-        if data[position..position + 2] != [0xa9, 0x03] {
+    while position + a9_03::LEN <= range.end {
+        if data[position + a9_03::FAMILY..position + a9_03::TAG_HI] != [0xa9, 0x03] {
             position += 1;
             continue;
         }
-        let tag = [data[position + 2], data[position + 3]];
-        let nominal_end = position.checked_add(usize::from(data[position + 3]) + 12);
+        let tag = [
+            data[position + a9_03::TAG_HI],
+            data[position + a9_03::TAG_LO_LENGTH_DRIVER],
+        ];
+        let nominal_end =
+            position.checked_add(usize::from(data[position + a9_03::TAG_LO_LENGTH_DRIVER]) + 12);
         let Some(nominal_end) = nominal_end else {
             break;
         };
@@ -351,8 +359,8 @@ fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Option<usize> {
 
 fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurbsLayout> {
     let tag = [
-        *data.get(record.checked_add(2)?)?,
-        *data.get(record.checked_add(3)?)?,
+        *data.get(record.checked_add(a9_03::TAG_HI)?)?,
+        *data.get(record.checked_add(a9_03::TAG_LO_LENGTH_DRIVER)?)?,
     ];
     let (grid_offset, expected_u_count, expected_v_count) = zero_entity_nurbs_shape(tag)?;
     let knot_start = record.checked_add(23)?;
@@ -956,7 +964,7 @@ fn zero_entity_support_occurrence(
     let uv_offsets = match record.tag {
         [0x21, 0x18] => Some([132, 276]),
         [0x21, 0x45] => Some([145, 321]),
-        [0x21, 0x71] => Some([93, 109]),
+        [0x21, 0x71] => Some([pcurve_2171::POLES, pcurve_2171::POLES + 16]),
         [0x21, 0x72] => Some([158, 366]),
         [0x21, 0x91] => Some([93, 141]),
         [0x21, 0x99] => Some([93, 125]),
@@ -1035,7 +1043,15 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
             None,
             337,
         ),
-        [0x21, 0x71] => (&[67, 75][..], 83, &[2, 2][..], 93, 2, None, 125),
+        [0x21, 0x71] => (
+            &[pcurve_2171::KNOTS, pcurve_2171::KNOTS + 8][..],
+            pcurve_2171::MULTIPLICITIES,
+            &[2, 2][..],
+            pcurve_2171::POLES,
+            2,
+            None,
+            pcurve_2171::LEN,
+        ),
         [0x21, 0x72] => (
             &[67, 75, 83, 91, 99, 107, 115][..],
             123,
@@ -1601,14 +1617,17 @@ pub(crate) fn zero_entity_edge_strides_in_range(
         .into_iter()
         .filter_map(|record| {
             if record.tag != [0x5e, 0x1a]
-                || tagged_u32(data, record.pos + 7) != Some(1)
-                || data.get(record.pos + 37) != Some(&0x21)
+                || tagged_u32(data, record.pos + edge_5e1a::TAGGED_ONE_PREFIX) != Some(1)
+                || data.get(record.pos + edge_5e1a::TERMINAL) != Some(&0x21)
             {
                 return None;
             }
             let mut allocations = [0; 5];
             for (index, allocation) in allocations.iter_mut().enumerate() {
-                *allocation = tagged_u32(data, record.pos.checked_add(12 + index * 5)?)?;
+                *allocation = tagged_u32(
+                    data,
+                    record.pos.checked_add(edge_5e1a::ALLOCATIONS + index * 5)?,
+                )?;
             }
             if allocations.contains(&0) {
                 return None;
@@ -1746,16 +1765,16 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
 }
 
 fn zero_entity_vertex_owner(data: &[u8], record: ZeroEntityRecord) -> bool {
-    let Some(expected_end) = record.pos.checked_add(18) else {
+    let Some(expected_end) = record.pos.checked_add(vertex_5d06::LEN) else {
         return false;
     };
-    let Some(first_token) = record.pos.checked_add(7) else {
+    let Some(first_token) = record.pos.checked_add(vertex_5d06::TAGGED_ONE_A) else {
         return false;
     };
-    let Some(second_token) = record.pos.checked_add(12) else {
+    let Some(second_token) = record.pos.checked_add(vertex_5d06::TAGGED_ONE_B) else {
         return false;
     };
-    let Some(terminal) = record.pos.checked_add(17) else {
+    let Some(terminal) = record.pos.checked_add(vertex_5d06::TERMINAL) else {
         return false;
     };
     record.tag == [0x5d, 0x06]
@@ -1770,12 +1789,16 @@ fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
 }
 
 pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
-    let tag = [*data.get(record + 2)?, *data.get(record + 3)?];
+    let tag = [
+        *data.get(record + a9_03::TAG_HI)?,
+        *data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)?,
+    ];
     if !zero_entity_surface_carrier_tag(tag) {
         return None;
     }
-    let payload_end = record.checked_add(*data.get(record + 3)? as usize + 12)?;
-    let payload = data.get(record + 4..payload_end)?;
+    let payload_end =
+        record.checked_add(*data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)? as usize + 12)?;
+    let payload = data.get(record + a9_03::LEN..payload_end)?;
     match tag {
         [0x27, 0x6a] => zero_entity_plane(payload),
         [0x28, 0x8a] => zero_entity_cylinder(payload),

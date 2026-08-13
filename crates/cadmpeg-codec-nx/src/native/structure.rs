@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use cadmpeg_core::decode::View;
 
 use crate::container::Container;
+use crate::layout::fastload_structure_envelope as envelope;
 use crate::native::om::ObjectUuidValue;
 
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
-const ENVELOPE_LEN: usize = 12;
 
 /// One reusable component prototype named by the fast-load structure roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,7 +178,7 @@ pub fn fast_load_component_roster(
             ordinal: ordinal as u32,
             name,
             source_entry: entry.name.clone(),
-            source_offset: entry_offset + ENVELOPE_LEN as u64 + offset as u64,
+            source_offset: entry_offset + envelope::LEN as u64 + offset as u64,
         })
         .collect();
     let uuids: Vec<_> = candidate
@@ -190,7 +190,7 @@ pub fn fast_load_component_roster(
             ordinal: ordinal as u32,
             uuid,
             source_entry: entry.name.clone(),
-            source_offset: entry_offset + ENVELOPE_LEN as u64 + offset as u64,
+            source_offset: entry_offset + envelope::LEN as u64 + offset as u64,
         })
         .collect();
     let occurrences = candidate
@@ -206,12 +206,12 @@ pub fn fast_load_component_roster(
                 .id
                 .clone(),
             uuid_source_offset: entry_offset
-                + ENVELOPE_LEN as u64
+                + envelope::LEN as u64
                 + candidate.uuid_indices_offset as u64
                 + ordinal as u64,
             source_entry: entry.name.clone(),
             source_offset: entry_offset
-                + ENVELOPE_LEN as u64
+                + envelope::LEN as u64
                 + candidate.occurrences_offset as u64
                 + ordinal as u64,
         })
@@ -220,14 +220,14 @@ pub fn fast_load_component_roster(
 }
 
 fn framed_payload(bytes: &[u8]) -> Option<&[u8]> {
-    if bytes.get(..8)? != [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0] {
+    if bytes.get(..envelope::PAYLOAD_LEN)? != [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0] {
         return None;
     }
-    let payload_len = usize::try_from(View::u32_be_at(bytes, 8)?).ok()?;
-    if payload_len.checked_add(ENVELOPE_LEN)? != bytes.len() {
+    let payload_len = usize::try_from(View::u32_be_at(bytes, envelope::PAYLOAD_LEN)?).ok()?;
+    if payload_len.checked_add(envelope::LEN)? != bytes.len() {
         return None;
     }
-    bytes.get(ENVELOPE_LEN..)
+    bytes.get(envelope::LEN..)
 }
 
 fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {

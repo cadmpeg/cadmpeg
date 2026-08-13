@@ -33,10 +33,6 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 | 4 | 3 | `class_tag` | `bytes[3]` | little | spec | a three-digit ASCII dynamic-class tag |
 | 7 | 4 | `record_index` | `u32` | little | spec | then `u32 record_index` |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/units.rs` — The Design decoder names the eleven-byte indexed-record header length.
-
 ## `sketch_container_visibility_member_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 37 B
@@ -173,10 +169,6 @@ Offsets are relative to the entry-name record's indexed header. The variable u32
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | followed by ten zero bytes |
 | 21 | 11 | `guid_record_reference` | `bytes[11]` | little | spec | a marked same-segment reference to the GUID record at offset 21 |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed entry-name parser reads the GUID reference at the tabulated offset.
-
 ## `paramesh_guid_join_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 83 B
@@ -189,10 +181,6 @@ Offsets are relative to the container-GUID record's indexed header. A type-speci
 | 11 | 21 | `zero_run_21` | `bytes[21]` | little | spec | followed by 21 zero bytes |
 | 32 | 40 | `fusion_uuid` | `bytes[40]` | little | spec | the 36-byte LP-ASCII `fusion_uuid` at offset 32 |
 | 72 | 11 | `entry_name_backlink` | `bytes[11]` | little | spec | a marked same-segment backlink to the entry-name record at offset 72 |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed GUID parser reads the entry-name backlink at the tabulated offset.
 
 ## `paramesh_mesh_body_join_prefix`
 
@@ -219,14 +207,6 @@ Unstated regions:
 - `299..508` (209 B): Presentation fields occupy the span before the feature-scope reference.
 - `552..553` (1 B): One structural byte separates the GUID and Scene-node references.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed mesh-body parser reads the feature-scope reference at the tabulated offset.
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed mesh-body parser reads the container-GUID reference at the tabulated offset.
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed mesh-body parser reads the reciprocal wrapper reference at the tabulated offset.
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed mesh-body parser reads the shared Body-owner reference at the tabulated offset.
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed mesh-body parser reads the Scene-node reference at the tabulated offset.
-
 ## `paramesh_mesh_collection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 38 B
@@ -241,11 +221,6 @@ Offsets are relative to the mesh-collection indexed header. The nested CommonDat
 | 25 | 2 | `constant_01_01` | `bytes[2]` | little | spec | bytes `01 01` at offset 25 |
 | 27 | 11 | `texture_table_reference` | `bytes[11]` | little | spec | a marked same-segment texture-table reference at offset 27 |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed collection parser reads the texture-table reference at the tabulated offset.
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed collection parser starts the nested CommonData record at the end of this prefix.
-
 ## `paramesh_mesh_collection_base_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 24 B
@@ -258,10 +233,6 @@ Offsets are relative to the nested CommonData indexed header at collection offse
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | followed by nine zero bytes |
 | 20 | 4 | `body_count` | `u32` | little | spec | a second u32 body count at collection offset 58 |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The parser addresses this nested-relative field from the collection header.
-
 ## `paramesh_texture_table_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 25 B
@@ -273,10 +244,6 @@ Offsets are relative to the texture-table indexed header. The first variable fla
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | followed by ten zero bytes and a u32 flags-map count |
 | 21 | 4 | `flags_map_count` | `u32` | little | spec | a u32 flags-map count at offset 21 |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed texture-table parser starts the flags map at the tabulated count.
 
 ## `paramesh_texture_filename_prefix`
 
@@ -305,10 +272,6 @@ Spec §3.1 · layout: byte offsets · size: 40 B
 | 21 | 11 | `body_reference` | `bytes[11]` | little | spec | a marked same-segment body reference at offset 21 |
 | 32 | 8 | `zero_tail_8` | `bytes[8]` | little | spec | and eight zero bytes |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The wrapper parser reads the reciprocal body reference at the tabulated offset.
-
 ## `paramesh_feature_scope_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 25 B
@@ -320,10 +283,6 @@ Offsets are relative to the `Base Mesh Feature` indexed header. The ordered body
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | followed by ten zero bytes, a u32 body count at offset 21 |
 | 21 | 4 | `body_count` | `u32` | little | spec | a u32 body count at offset 21 |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed scope parser reads the ordered body run from the tabulated count.
 
 ## `paramesh_feature_scope_base`
 
@@ -350,10 +309,6 @@ Spec §3.1 · layout: byte offsets · size: 95 B
 | 45 | 1 | `footer_marker` | `u8` | little | spec | byte `01` |
 | 46 | 49 | `footer_mask` | `bytes[49]` | little | spec | and a 49-byte mask |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The Scene-state and Scene-node parsers share the exact footer validator.
-
 ## `paramesh_scene_node`
 
 Spec §3.1 · layout: byte offsets · size: 133 B
@@ -371,11 +326,6 @@ Spec §3.1 · layout: byte offsets · size: 133 B
 | 83 | 1 | `footer_marker` | `u8` | little | spec | the same 50-byte Scene footer at offset 83 |
 | 84 | 49 | `footer_mask` | `bytes[49]` | little | spec | the same 50-byte Scene footer at offset 83 |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The Scene-node parser reads the state reference at the tabulated offset.
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The Scene-node parser reads the auxiliary reference at the tabulated offset.
-
 ## `paramesh_collection_owner_backlink_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 273 B
@@ -390,10 +340,6 @@ Offsets are relative to the collection-owner indexed header. The record can cont
 Unstated regions:
 
 - `11..262` (251 B): The owner payload before the reciprocal collection reference is outside this table.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed owner parser reads the reciprocal collection reference at the tabulated offset.
 
 ## `assembly_operand_path_locator_reference_run`
 
@@ -435,7 +381,6 @@ Offsets are relative to the locator's indexed header. The variable-length occurr
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The decoder and validator share the fixed locator length.
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser requires the two-byte zero tail at the end of the 190-byte locator.
 
 ## `assembly_operand_path_wrapper`
@@ -454,7 +399,6 @@ Offsets are relative to the wrapper's indexed header. The next indexed record st
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The decoder and validator share the fixed wrapper length.
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser checks the ten-byte zero run after the wrapper header.
 
 ## `assembly_axial_construction_carrier`

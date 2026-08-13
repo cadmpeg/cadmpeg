@@ -59,7 +59,7 @@ note = "The parser's mesh version matches offset 4."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
-contains = "reader.skip(256)?;"
+contains = "reader.skip(mesh_hdr::LEN - mesh_hdr::INFORMATION)?;"
 note = "The parser skips the stated 256-byte information field."
 
 [[record]]
@@ -87,7 +87,7 @@ note = "Offset derived from the three preceding 32-bit indices."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
-contains = "reader.counted(facet_count as u64, 24)"
+contains = ".counted(facet_count as u64, mesh_facet::LEN)"
 note = "The parser bounds the facet array at 24 bytes per facet, matching the derived stride."
 
 [[record]]
@@ -142,7 +142,7 @@ anchor = "Each side entry begins with a little-endian element count"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-freecad/src/product.rs"
-contains = "4_usize.saturating_add(count.saturating_mul(components).saturating_mul(8))"
+contains = "link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(8))"
 note = "The parser matches entry length against a 4-byte count prefix plus 8-byte or 4-byte components."
 
 # --- Not tabulated -----------------------------------------------------------

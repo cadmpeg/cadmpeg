@@ -610,17 +610,17 @@ anchor = "a u16 form"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-inventor/src/rse.rs"
-contains = "get(..18)"
+contains = "get(..envelope::LEN)"
 note = "The bulk parser reads the 18-byte fixed envelope before the exact zlib member."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-inventor/src/rse.rs"
-contains = "prefix.copy_from_slice(&header[..16])"
+contains = "prefix.copy_from_slice(&header[envelope::PREFIX..envelope::FORM])"
 note = "The bulk parser copies the 16-byte prefix from the envelope start."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-inventor/src/rse.rs"
-contains = "u16_le_at(header, 16)"
+contains = "u16_le_at(header, envelope::FORM)"
 note = "The bulk parser reads the u16 form at envelope offset 16."
 
 [[record]]

@@ -7,6 +7,7 @@ use crate::bytes::{
 use crate::container::{role, ContainerScan};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
+use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
 use crate::records::{
     DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     DesignSketchVisibility, LostEdgeReference, PersistentReference, PersistentReferenceKind,
@@ -336,13 +337,17 @@ fn decode_sketch_visibility_member(
     member_at: usize,
     entity_suffix: u64,
 ) -> Option<DesignSketchVisibility> {
-    let record_index = View::u64_le_at(bytes, member_at + 7)?;
-    if record_index != entity_suffix || bytes.get(member_at + 15..member_at + 19) != Some(&[0; 4]) {
+    let record_index = View::u64_le_at(bytes, member_at + visibility_member::ENTITY_SUFFIX)?;
+    if record_index != entity_suffix
+        || bytes.get(
+            member_at + visibility_member::ZERO_RUN..member_at + visibility_member::OWNER_REFERENCE,
+        ) != Some(&[0; 4])
+    {
         return None;
     }
-    let mut cursor = member_at + 19;
+    let mut cursor = member_at + visibility_member::OWNER_REFERENCE;
     let owner = take_reference(bytes, &mut cursor)?;
-    if cursor != member_at + 30
+    if cursor != member_at + visibility_member::STREAM_ORDINAL
         || owner.target == Some(0)
         || owner.target.is_none()
         || owner.segment.is_some()
@@ -352,17 +357,17 @@ fn decode_sketch_visibility_member(
         return None;
     }
     let stream_ordinal = View::u32_le_at(bytes, cursor)?;
-    if stream_ordinal == 0 || bytes.get(cursor + 4) != Some(&0) {
+    if stream_ordinal == 0 || bytes.get(member_at + visibility_member::RESERVED_ZERO) != Some(&0) {
         return None;
     }
     let stream_ordinal_offset = cursor;
-    let visible_offset = cursor + 5;
+    let visible_offset = member_at + visibility_member::VISIBLE;
     let visible = match bytes.get(visible_offset) {
         Some(0) => false,
         Some(1) => true,
         _ => return None,
     };
-    if bytes.get(visible_offset + 1) != Some(&1) {
+    if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
         return None;
     }
     Some(DesignSketchVisibility {

@@ -19,6 +19,13 @@
 //! * `[[record.code]]` cross-checks assert a literal substring is present in a
 //!   named source file, which is how a table claims agreement with a parser.
 //!
+//! After validation the test emits one `src/layout.rs` per mapped table: a
+//! module of `usize` offset constants per byte-layout record. Records that
+//! declare a `[[record.discrepancy]]` are listed in a comment and omitted.
+//! `UPDATE_LAYOUT_CODE=1` rewrites the checked-in files; a table edit without
+//! regeneration fails the byte-for-byte comparison. Parsing functions are not
+//! generated.
+//!
 //! `layout_validator_rejects_broken_tables` runs the same validator over
 //! broken fixtures in `tests/fixtures/layout-invalid/`.
 
@@ -1071,6 +1078,244 @@ fn cell(text: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Generated layout constants
+// ---------------------------------------------------------------------------
+
+/// Table stem → generated Rust path, repo-relative. `step` is absent because
+/// it has no byte-layout records.
+const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
+    ("asm", "crates/cadmpeg-asm/src/layout.rs"),
+    ("catia", "crates/cadmpeg-codec-catia/src/layout.rs"),
+    ("creo", "crates/cadmpeg-codec-creo/src/layout.rs"),
+    ("f3d", "crates/cadmpeg-codec-f3d/src/layout.rs"),
+    ("freecad", "crates/cadmpeg-codec-freecad/src/layout.rs"),
+    ("iges", "crates/cadmpeg-codec-iges/src/layout.rs"),
+    ("inventor", "crates/cadmpeg-codec-inventor/src/layout.rs"),
+    ("nx", "crates/cadmpeg-codec-nx/src/layout.rs"),
+    ("rhino", "crates/cadmpeg-codec-rhino/src/layout.rs"),
+    ("sldprt", "crates/cadmpeg-codec-sldprt/src/layout.rs"),
+];
+
+const RUST_KEYWORDS: &[&str] = &[
+    "Self", "abstract", "as", "async", "await", "become", "box", "break", "const", "continue",
+    "crate", "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "if", "impl",
+    "in", "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+    "return", "self", "static", "struct", "super", "trait", "true", "try", "type", "typeof",
+    "union", "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
+];
+
+fn is_snake_case(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    let mut prev_underscore = false;
+    for c in chars {
+        if c == '_' {
+            if prev_underscore {
+                return false;
+            }
+            prev_underscore = true;
+            continue;
+        }
+        if !c.is_ascii_lowercase() && !c.is_ascii_digit() {
+            return false;
+        }
+        prev_underscore = false;
+    }
+    !prev_underscore
+}
+
+fn check_ident(kind: &str, name: &str, at: &str, errors: &mut Vec<String>) {
+    if !is_snake_case(name) {
+        errors.push(format!("{at}: {kind} `{name}` is not snake_case"));
+    }
+    if RUST_KEYWORDS.contains(&name) {
+        errors.push(format!("{at}: {kind} `{name}` is a Rust keyword"));
+    }
+}
+
+fn resolved_endian<'a>(
+    file: &'a LayoutFile,
+    record: &'a Record,
+    field: &'a Field,
+) -> Option<&'a str> {
+    field
+        .endianness
+        .as_deref()
+        .or(record.endianness.as_deref())
+        .or(file.endianness.as_deref())
+}
+
+fn endian_phrase(endian: Option<&str>) -> Option<&'static str> {
+    match endian {
+        Some("little") => Some("little-endian"),
+        Some("big") => Some("big-endian"),
+        Some("unstated") => Some("endianness unstated"),
+        _ => None,
+    }
+}
+
+fn fence_text(text: &str) -> String {
+    normalize(text).replace("```", "'''")
+}
+
+/// Turn one validated table into the checked-in `layout.rs` source.
+fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
+    let mut errors = Vec::new();
+    let mut omitted = Vec::new();
+    let mut modules = String::new();
+
+    for record in &file.records {
+        let at = format!("{}: record `{}`", file.format, record.name);
+        if record.kind != RecordKind::Byte {
+            continue;
+        }
+        if !record.discrepancies.is_empty() {
+            let kinds: Vec<&str> = record
+                .discrepancies
+                .iter()
+                .map(|d| match d.kind {
+                    DiscrepancyKind::SizeMismatch => "size_mismatch",
+                    DiscrepancyKind::Overlap => "overlap",
+                })
+                .collect();
+            let note = record
+                .discrepancies
+                .first()
+                .map(|d| fence_text(&d.note))
+                .unwrap_or_default();
+            omitted.push(format!(
+                "// - `{}` ({}): {note}",
+                record.name,
+                kinds.join(", ")
+            ));
+            continue;
+        }
+
+        check_ident("record", &record.name, &at, &mut errors);
+        let mut seen = BTreeSet::new();
+        let mut fields_out = String::new();
+        for field in &record.fields {
+            let at = format!("{at}, field `{}`", field.name);
+            if field.name == "len" {
+                errors.push(format!(
+                    "{at}: field name `len` collides with the record length constant `LEN`"
+                ));
+            }
+            if !is_snake_case(&field.name) {
+                errors.push(format!("{at}: field `{}` is not snake_case", field.name));
+            }
+            let const_name = field.name.to_ascii_uppercase();
+            if !seen.insert(const_name.clone()) {
+                errors.push(format!("{at}: constant `{const_name}` already emitted"));
+            }
+            let Some(offset) = field.offset else {
+                errors.push(format!("{at}: byte field has no offset"));
+                continue;
+            };
+            let ty_part = if is_multibyte_scalar(&field.ty) {
+                match endian_phrase(resolved_endian(file, record, field)) {
+                    Some(endian) => format!("`{}`, {endian}", field.ty),
+                    None => format!("`{}`", field.ty),
+                }
+            } else {
+                format!("`{}`", field.ty)
+            };
+            let _ = writeln!(
+                fields_out,
+                "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
+                field.name, record.section
+            );
+            let _ = writeln!(
+                fields_out,
+                "    pub(crate) const {const_name}: usize = {offset};"
+            );
+        }
+
+        let _ = writeln!(
+            modules,
+            "/// Byte offsets for the `{}` record.",
+            record.name
+        );
+        let _ = writeln!(modules, "///");
+        match record.size {
+            Some(size) => {
+                let _ = writeln!(
+                    modules,
+                    "/// Spec §{}. Record length {size} B.",
+                    record.section
+                );
+            }
+            None => {
+                let _ = writeln!(modules, "/// Spec §{}.", record.section);
+            }
+        }
+        if !record.note.trim().is_empty() {
+            let _ = writeln!(modules, "///");
+            let _ = writeln!(modules, "/// ```text");
+            let _ = writeln!(modules, "/// {}", fence_text(&record.note));
+            let _ = writeln!(modules, "/// ```");
+        }
+        let _ = writeln!(modules, "pub(crate) mod {} {{", record.name);
+        if let Some(size) = record.size {
+            let _ = writeln!(
+                modules,
+                "    /// Record length in bytes. Spec §{}.",
+                record.section
+            );
+            let _ = writeln!(modules, "    pub(crate) const LEN: usize = {size};");
+        }
+        modules.push_str(&fields_out);
+        let _ = writeln!(modules, "}}");
+        let _ = writeln!(modules);
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let mut out = String::new();
+    let _ = writeln!(out, "// SPDX-License-Identifier: Apache-2.0");
+    let _ = writeln!(
+        out,
+        "//! Byte-offset constants generated from `docs/layouts/{}.toml`.",
+        file.format
+    );
+    let _ = writeln!(out, "//!");
+    let _ = writeln!(out, "//! Do not edit by hand. Regenerate with:");
+    let _ = writeln!(
+        out,
+        "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`."
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "#![allow(dead_code)] // Not every generated constant is referenced yet."
+    );
+    let _ = writeln!(out);
+    if !omitted.is_empty() {
+        let _ = writeln!(
+            out,
+            "// Records omitted because the table declares a contradiction."
+        );
+        let _ = writeln!(out, "//");
+        for line in &omitted {
+            let _ = writeln!(out, "{line}");
+        }
+        let _ = writeln!(out);
+    }
+    out.push_str(modules.trim_end());
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1206,6 +1451,90 @@ fn rendered_layout_pages_match_the_tables() {
         stale.is_empty(),
         "rendered layout pages are stale: {}\n\
          regenerate with `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`",
+        stale.join(", ")
+    );
+}
+
+#[test]
+fn every_byte_layout_table_has_a_generated_file() {
+    let root = repo_root();
+    let mapped: BTreeSet<&str> = GENERATED_LAYOUT_RS
+        .iter()
+        .map(|(format, _)| *format)
+        .collect();
+    for path in layout_files(&root.join("docs/layouts")) {
+        let file = parse(&path);
+        let has_byte = file
+            .records
+            .iter()
+            .any(|record| record.kind == RecordKind::Byte);
+        if has_byte {
+            assert!(
+                mapped.contains(file.format.as_str()),
+                "{} has a byte-layout record but is missing from GENERATED_LAYOUT_RS",
+                file.format
+            );
+        } else {
+            assert!(
+                !mapped.contains(file.format.as_str()),
+                "{} has no byte-layout record and must not appear in GENERATED_LAYOUT_RS",
+                file.format
+            );
+        }
+    }
+}
+
+#[test]
+fn generated_layout_code_matches_the_tables() {
+    let root = repo_root();
+    let update = std::env::var_os("UPDATE_LAYOUT_CODE").is_some();
+    let mut stale = Vec::new();
+    let mut emit_errors = Vec::new();
+    for (format, relative) in GENERATED_LAYOUT_RS {
+        let table = root.join("docs/layouts").join(format!("{format}.toml"));
+        let file = parse(&table);
+        assert_eq!(
+            file.format,
+            *format,
+            "{}: format must match the mapping key",
+            table.display()
+        );
+        let rendered = match emit_layout_rs(&file) {
+            Ok(rendered) => rendered,
+            Err(errors) => {
+                emit_errors.extend(errors);
+                continue;
+            }
+        };
+        if *format == "sldprt" {
+            assert!(
+                rendered.contains("`chart_00_28`"),
+                "sldprt layout.rs must list the discrepant chart record as omitted"
+            );
+            assert!(
+                !rendered.contains("mod chart_00_28"),
+                "sldprt layout.rs must not emit constants for a discrepant record"
+            );
+        }
+        let target = root.join(relative);
+        if update {
+            std::fs::write(&target, &rendered).unwrap();
+            continue;
+        }
+        let current = read_text(&target).unwrap_or_default();
+        if current != rendered {
+            stale.push((*relative).to_string());
+        }
+    }
+    assert!(
+        emit_errors.is_empty(),
+        "layout constant emitter rejected a table:\n  {}",
+        emit_errors.join("\n  ")
+    );
+    assert!(
+        stale.is_empty(),
+        "generated layout.rs files are stale: {}\n\
+         regenerate with `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`",
         stale.join(", ")
     );
 }

@@ -8,6 +8,8 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 
+use crate::layout::feature_input_operand_cell12 as operand_cell;
+
 pub(crate) fn named_scalars(
     payload: &[u8],
     parent: &str,
@@ -142,20 +144,25 @@ fn scalar_operands(
     } else {
         35
     };
-    [first, first + 12]
+    [first, first + operand_cell::LEN]
         .into_iter()
         .filter_map(|relative| {
             let offset = trailer_offset.checked_add(relative)?;
-            let cell = payload.get(offset..offset + 12)?;
-            if cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
+            let cell = payload.get(offset..offset + operand_cell::LEN)?;
+            if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
+                || cell[operand_cell::ZERO_TRAILER..operand_cell::LEN] != [0; 4]
+            {
                 return None;
             }
-            let kind = operand_kind([cell[0], cell[1]])?;
+            let kind = operand_kind([
+                cell[operand_cell::CLASS_TOKEN],
+                cell[operand_cell::CLASS_TOKEN + 1],
+            ])?;
             Some(FeatureInputOperand {
                 offset: offset as u64,
                 reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
                 kind,
-                entity_index: View::u16_le_at(cell, 2)?,
+                entity_index: View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
                 entity_ref: None,
             })
         })

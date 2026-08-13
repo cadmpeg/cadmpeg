@@ -5,6 +5,8 @@ use std::fmt;
 
 use cadmpeg_core::decode::View;
 
+use crate::layout::file_header;
+
 /// The fixed ASCII prefix of a 3DM file header.
 pub(crate) const MAGIC: &[u8; 24] = b"3D Geometry File Format ";
 /// The end-of-file chunk typecode.
@@ -152,14 +154,14 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
         .windows(MAGIC.len())
         .position(|window| window == MAGIC)
         .ok_or(FramingError::InvalidHeader)?;
-    let header_end = start_offset.saturating_add(32);
+    let header_end = start_offset.saturating_add(file_header::LEN);
     if bytes.len() < header_end {
         return Err(FramingError::Truncated {
             offset: bytes.len(),
             needed: header_end - bytes.len(),
         });
     }
-    let version = &bytes[start_offset + 24..header_end];
+    let version = &bytes[start_offset + file_header::ARCHIVE_VERSION..header_end];
     let first_digit = version
         .iter()
         .position(u8::is_ascii_digit)

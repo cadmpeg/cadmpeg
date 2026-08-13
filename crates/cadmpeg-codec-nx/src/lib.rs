@@ -79,6 +79,8 @@ pub(crate) mod geometry;
 pub(crate) mod intersection;
 mod jt;
 mod jt_topology;
+/// Byte-offset constants generated from `docs/layouts/nx.toml`.
+pub(crate) mod layout;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod om;

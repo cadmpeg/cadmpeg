@@ -13,6 +13,12 @@ use crate::design::decode::sketch::{
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
+use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
+use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
+use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
+use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::sketch_profile_region_member as region_member;
+use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand,
     DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignConstructionOperandGroup,
@@ -2214,20 +2220,23 @@ pub(crate) fn parse_entity_selection_prefix(
     // Persistent selections use a ten-byte prelude and a u32 presence value.
     // Face-recipe selections add two prelude bytes, encode presence as one
     // byte, and add three zero bytes before the first UTF-16 length.
-    let asset_start = if bytes.get(start + 11..start + 21)? == [0; 10]
-        && bytes.get(start + 21) == Some(&1)
-        && View::u32_le_at(bytes, start + 22)? == record_index.checked_add(3)?
-        && bytes.get(start + 26..start + 32)? == [0; 6]
-        && View::u32_le_at(bytes, start + 32)? == 1
+    let asset_start = if bytes.get(start + 11..start + coil_persist_sel::NESTED_SELECTION_MARKER)?
+        == [0; 10]
+        && bytes.get(start + coil_persist_sel::NESTED_SELECTION_MARKER) == Some(&1)
+        && View::u32_le_at(bytes, start + coil_persist_sel::NESTED_RECORD_INDEX)?
+            == record_index.checked_add(3)?
+        && bytes.get(start + 26..start + coil_persist_sel::ASSET_PRESENCE)? == [0; 6]
+        && View::u32_le_at(bytes, start + coil_persist_sel::ASSET_PRESENCE)? == 1
     {
-        start.checked_add(36)?
-    } else if bytes.get(start + 11..start + 23)? == [0; 12]
-        && bytes.get(start + 23) == Some(&1)
-        && View::u32_le_at(bytes, start + 24)? == record_index.checked_add(3)?
-        && bytes.get(start + 28..start + 34)? == [0; 6]
-        && bytes.get(start + 34) == Some(&1)
+        start.checked_add(coil_persist_sel::ASSET_UUID_LENGTH)?
+    } else if bytes.get(start + 11..start + coil_face_sel::NESTED_SELECTION_MARKER)? == [0; 12]
+        && bytes.get(start + coil_face_sel::NESTED_SELECTION_MARKER) == Some(&1)
+        && View::u32_le_at(bytes, start + coil_face_sel::NESTED_RECORD_INDEX)?
+            == record_index.checked_add(3)?
+        && bytes.get(start + 28..start + coil_face_sel::ASSET_PRESENCE)? == [0; 6]
+        && bytes.get(start + coil_face_sel::ASSET_PRESENCE) == Some(&1)
     {
-        start.checked_add(38)?
+        start.checked_add(coil_face_sel::ASSET_UUID_LENGTH)?
     } else {
         return None;
     };
@@ -2849,11 +2858,14 @@ fn parse_extrude_identity_member(
     bytes: &[u8],
     start: usize,
 ) -> Option<ParsedExtrudeIdentityMember> {
-    if bytes.get(start + 11..start + 21)? != [0; 10] {
+    if bytes.get(start + extrude_member::ZERO_RUN_10..start + extrude_member::LOCAL_IDENTITY)?
+        != [0; 10]
+    {
         return None;
     }
-    let local_id = View::u64_le_at(bytes, start + 21)?;
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 29, 1..=256)?;
+    let local_id = View::u64_le_at(bytes, start + extrude_member::LOCAL_IDENTITY)?;
+    let (asset_id, after_asset_id) =
+        lp_utf16_bounded(bytes, start + extrude_member::ASSET_UUID_LENGTH, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     let tail_slot_offset = after_context_id.checked_add(4)?;
     let tail_slot_present = match bytes.get(tail_slot_offset)? {
@@ -2867,7 +2879,7 @@ fn parse_extrude_identity_member(
     {
         return None;
     }
-    let fixed_end = start.checked_add(190)?;
+    let fixed_end = start.checked_add(extrude_member::LEN)?;
     let (next_record_index, next_byte_offset) = if View::u32_le_at(bytes, tail_slot_offset + 1)
         == Some(0)
         && after_context_id.checked_add(9)? == fixed_end
@@ -2897,9 +2909,9 @@ fn parse_extrude_identity_member(
     };
     Some(ParsedExtrudeIdentityMember {
         local_id,
-        local_id_offset: u64::try_from(start + 21).ok()?,
+        local_id_offset: u64::try_from(start + extrude_member::LOCAL_IDENTITY).ok()?,
         asset_id,
-        asset_id_offset: u64::try_from(start + 33).ok()?,
+        asset_id_offset: u64::try_from(start + extrude_member::ASSET_UUID_UTF16).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         tail_slot_present,
@@ -3046,11 +3058,8 @@ fn parse_sketch_profile_region_selection(
     profile_record_index: u32,
     paired_at: usize,
 ) -> Option<DesignSketchProfileRegionSelection> {
-    const INDEXED_HEADER_LEN: usize = 11;
-    const SELECTION_PREFIX_LEN: usize = 40;
     const REGION_MARKER_LEN: usize = 1;
     const REGION_COUNT_LEN: usize = 4;
-    const REGION_MEMBER_LEN: usize = 40;
     const TERMINATOR_LEN: usize = 5;
 
     let next_header = |position, expected| {
@@ -3058,42 +3067,55 @@ fn parse_sketch_profile_region_selection(
         (indexed_record_index(bytes, at) == Some(expected)).then_some(at)
     };
     let nested_one_at = next_header(
-        paired_at.checked_add(INDEXED_HEADER_LEN)?,
+        paired_at.checked_add(indexed_header::LEN)?,
         profile_record_index.checked_add(1)?,
     )?;
     let nested_two_at = next_header(
-        nested_one_at.checked_add(INDEXED_HEADER_LEN)?,
+        nested_one_at.checked_add(indexed_header::LEN)?,
         profile_record_index.checked_add(2)?,
     )?;
     let selection_record_index = profile_record_index.checked_add(3)?;
     let selection_at = next_header(
-        nested_two_at.checked_add(INDEXED_HEADER_LEN)?,
+        nested_two_at.checked_add(indexed_header::LEN)?,
         selection_record_index,
     )?;
     let (class_tag, after_class_tag) =
         lp_ascii_filtered(bytes, selection_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_class_tag)? != selection_record_index
-        || bytes.get(selection_at + 11..selection_at + 21)? != [0; 10]
-        || marked_record_reference(bytes, selection_at + 21) != Some(profile_record_index)
-        || bytes.get(selection_at + 26..selection_at + 32)? != [0; 6]
-        || View::u32_le_at(bytes, selection_at + 32)? != 1
+        || bytes.get(
+            selection_at + region_selection::ZERO_RUN_10
+                ..selection_at + region_selection::PROFILE_REFERENCE_MARKER,
+        )? != [0; 10]
+        || marked_record_reference(
+            bytes,
+            selection_at + region_selection::PROFILE_REFERENCE_MARKER,
+        ) != Some(profile_record_index)
+        || bytes.get(
+            selection_at + region_selection::ZERO_RUN_6
+                ..selection_at + region_selection::FORMAT_VERSION,
+        )? != [0; 6]
+        || View::u32_le_at(bytes, selection_at + region_selection::FORMAT_VERSION)? != 1
     {
         return None;
     }
-    let region_count = usize::try_from(View::u32_le_at(bytes, selection_at + 36)?).ok()?;
+    let region_count = usize::try_from(View::u32_le_at(
+        bytes,
+        selection_at + region_selection::REGION_COUNT,
+    )?)
+    .ok()?;
     if region_count == 0 {
         return None;
     }
     let minimum_regions_len = region_count
-        .checked_mul(REGION_COUNT_LEN.checked_add(REGION_MEMBER_LEN)?)?
+        .checked_mul(REGION_COUNT_LEN.checked_add(region_member::LEN)?)?
         .checked_add(
             region_count
                 .checked_sub(1)?
                 .checked_mul(REGION_MARKER_LEN)?,
         )?
         .checked_add(TERMINATOR_LEN)?
-        .checked_add(INDEXED_HEADER_LEN)?;
-    let mut cursor = selection_at.checked_add(SELECTION_PREFIX_LEN)?;
+        .checked_add(indexed_header::LEN)?;
+    let mut cursor = selection_at.checked_add(region_selection::LEN)?;
     if cursor.checked_add(minimum_regions_len)? > bytes.len() {
         return None;
     }
@@ -3116,11 +3138,11 @@ fn parse_sketch_profile_region_selection(
             .checked_mul(
                 REGION_MARKER_LEN
                     .checked_add(REGION_COUNT_LEN)?
-                    .checked_add(REGION_MEMBER_LEN)?,
+                    .checked_add(region_member::LEN)?,
             )?
             .checked_add(TERMINATOR_LEN)?
-            .checked_add(INDEXED_HEADER_LEN)?;
-        let member_run_len = member_count.checked_mul(REGION_MEMBER_LEN)?;
+            .checked_add(indexed_header::LEN)?;
+        let member_run_len = member_count.checked_mul(region_member::LEN)?;
         if cursor
             .checked_add(member_run_len)?
             .checked_add(trailing_minimum_len)?
@@ -3132,8 +3154,11 @@ fn parse_sketch_profile_region_selection(
         for _ in 0..member_count {
             let kind_offset = cursor;
             let kind = View::u32_le_at(bytes, cursor)?;
-            let curve_primary_id = u64::from(View::u32_le_at(bytes, cursor.checked_add(4)?)?);
-            let incidence_words_offset = cursor.checked_add(8)?;
+            let curve_primary_id = u64::from(View::u32_le_at(
+                bytes,
+                cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
+            )?);
+            let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORDS_3)?;
             let mut incidence_words = [0; 8];
             for (ordinal, word) in incidence_words.iter_mut().enumerate() {
                 *word = View::u32_le_at(
@@ -3155,11 +3180,14 @@ fn parse_sketch_profile_region_selection(
                 kind,
                 kind_offset: u64::try_from(kind_offset).ok()?,
                 curve_primary_id,
-                curve_primary_id_offset: u64::try_from(cursor.checked_add(4)?).ok()?,
+                curve_primary_id_offset: u64::try_from(
+                    cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
+                )
+                .ok()?,
                 incidence_words,
                 incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
             });
-            cursor = cursor.checked_add(REGION_MEMBER_LEN)?;
+            cursor = cursor.checked_add(region_member::LEN)?;
         }
         regions.push(DesignSketchProfileRegion {
             member_count_offset: u64::try_from(member_count_offset).ok()?,
@@ -3181,7 +3209,10 @@ fn parse_sketch_profile_region_selection(
         record_index: selection_record_index,
         byte_offset: u64::try_from(selection_at).ok()?,
         class_tag,
-        region_count_offset: u64::try_from(selection_at.checked_add(36)?).ok()?,
+        region_count_offset: u64::try_from(
+            selection_at.checked_add(region_selection::REGION_COUNT)?,
+        )
+        .ok()?,
         regions,
         companion_class_tag,
         companion_byte_offset: u64::try_from(companion_at).ok()?,

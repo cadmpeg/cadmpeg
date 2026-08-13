@@ -4,6 +4,9 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+use crate::layout::meta_body_prefix as meta_prefix;
+use crate::layout::meta_type_descriptor as type_desc;
+
 const SECTION_COUNT: usize = 11;
 const TERMINAL_ID_LEN: usize = 16;
 const SECTION_11_PAYLOAD_LEN: usize = 0x48;
@@ -62,7 +65,7 @@ pub(crate) fn parse_meta_tables<'a>(
     body: View<'a>,
 ) -> Result<MetaTables<'a>, CodecError> {
     let bytes = body.window();
-    if bytes.len() < 14 + TERMINAL_ID_LEN {
+    if bytes.len() < meta_prefix::LEN + TERMINAL_ID_LEN {
         return Err(CodecError::Malformed(
             "truncated RSe metadata table body".into(),
         ));
@@ -72,7 +75,7 @@ pub(crate) fn parse_meta_tables<'a>(
         *value = read_u16(bytes, index * 2, "metadata prefix")?;
     }
 
-    let mut offset = 14;
+    let mut offset = meta_prefix::LEN;
     let (block_count, section_1_payload, section_1_footer, next) =
         counted_section(body, offset, 4, "block-size table")?;
     if block_count > 1_000_000 {
@@ -114,7 +117,7 @@ pub(crate) fn parse_meta_tables<'a>(
     });
     offset = next;
     let (type_count, section_4_payload, section_4_footer, _) =
-        counted_section(body, offset, 28, "type table")?;
+        counted_section(body, offset, type_desc::LEN, "type table")?;
     if type_count > 256 {
         return Err(CodecError::Malformed(
             "RSe type table has more than 256 entries".into(),
@@ -128,21 +131,21 @@ pub(crate) fn parse_meta_tables<'a>(
     for index in 0..type_count {
         let entry = section_4_payload
             .window()
-            .get(index * 28..index * 28 + 28)
+            .get(index * type_desc::LEN..index * type_desc::LEN + type_desc::LEN)
             .expect("counted type-table payload has exact entries");
         let mut id = [0; 16];
-        id.copy_from_slice(&entry[..16]);
+        id.copy_from_slice(&entry[type_desc::TYPE_ID..type_desc::FIELD_0_KIND]);
         types.push(TypeDescriptor {
             index: index as u8,
             id,
             fields: [
                 (
-                    View::u16_le_at(entry, 16).expect("two-byte field"),
-                    View::u32_le_at(entry, 18).expect("four-byte field"),
+                    View::u16_le_at(entry, type_desc::FIELD_0_KIND).expect("two-byte field"),
+                    View::u32_le_at(entry, type_desc::FIELD_0_VALUE).expect("four-byte field"),
                 ),
                 (
-                    View::u16_le_at(entry, 22).expect("two-byte field"),
-                    View::u32_le_at(entry, 24).expect("four-byte field"),
+                    View::u16_le_at(entry, type_desc::FIELD_1_KIND).expect("two-byte field"),
+                    View::u32_le_at(entry, type_desc::FIELD_1_VALUE).expect("four-byte field"),
                 ),
             ],
         });
@@ -188,7 +191,7 @@ pub(crate) fn parse_meta_tables<'a>(
     reverse_sections.reverse();
     sections.extend(reverse_sections);
     debug_assert_eq!(sections.len(), SECTION_COUNT);
-    debug_assert_eq!(section_1_footer, 14 + 4 + block_count * 4);
+    debug_assert_eq!(section_1_footer, meta_prefix::LEN + 4 + block_count * 4);
     Ok(MetaTables {
         prefix,
         blocks,
@@ -563,9 +566,17 @@ mod tests {
     fn metadata_tables_frame_forward_and_backward_sections() {
         let body = meta_fixture();
         with_view(&body, |ctx, view| {
+            let planted_prefix = [3_u16, 0, 2, 1, 0, 4, 0]
+                .into_iter()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>();
+            assert_eq!(&body[..14], planted_prefix.as_slice());
             let tables = parse_meta_tables(ctx, view).expect("synthetic metadata tables parse");
+            assert_eq!(tables.prefix, [3, 0, 2, 1, 0, 4, 0]);
             assert_eq!(tables.blocks.len(), 2);
             assert_eq!(tables.types.len(), 1);
+            assert_eq!(tables.types[0].id, [0x55; 16]);
+            assert_eq!(tables.types[0].fields, [(1, 2), (3, 4)]);
             assert_eq!(tables.sections.len(), 11);
             assert_eq!(tables.sections[10].payload.window().len(), 0x48);
         });

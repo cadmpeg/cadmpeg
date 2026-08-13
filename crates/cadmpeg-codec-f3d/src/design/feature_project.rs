@@ -22,6 +22,8 @@ use crate::ids::{
     self, native_stream, neutral_feature_id, neutral_parameter_id, neutral_sketch_id,
     neutral_spatial_sketch_id,
 };
+use crate::layout::coil_long_scope_fixed_prologue as coil_long;
+use crate::layout::form_compact_one_cage_list as form_cage;
 use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
@@ -3736,23 +3738,32 @@ fn legacy_form_cage_count(
     scope_record_index: u32,
 ) -> Option<usize> {
     for (start, paired) in records.frames(record_index) {
-        if paired.checked_sub(start)? != 100
-            || bytes.get(start + 11..start + 21)? != [0; 10]
-            || bytes.get(start + 21) != Some(&1)
-            || View::u64_le_at(bytes, start + 22)? != u64::from(scope_record_index)
-            || bytes.get(start + 30..start + 32)? != [0; 2]
+        if paired.checked_sub(start)? != form_cage::LEN
+            || bytes.get(start + form_cage::ZERO_RUN_10..start + form_cage::OWNER_MARKER)?
+                != [0; 10]
+            || bytes.get(start + form_cage::OWNER_MARKER) != Some(&1)
+            || View::u64_le_at(bytes, start + form_cage::OWNER_SCOPE_RECORD_INDEX)?
+                != u64::from(scope_record_index)
+            || bytes.get(start + form_cage::ZERO_RUN_2..start + form_cage::CAGE_COUNT)? != [0; 2]
         {
             continue;
         }
-        let count = usize::try_from(View::u32_le_at(bytes, start + 32)?).ok()?;
+        let count = usize::try_from(View::u32_le_at(bytes, start + form_cage::CAGE_COUNT)?).ok()?;
         if count != 1 {
             continue;
         }
-        let member = start + 36;
-        if bytes.get(member) != Some(&1) || bytes.get(member + 9..member + 13)? != [0, 0, 0xfc, 0] {
+        let member = start + form_cage::MEMBER_MARKER;
+        if bytes.get(member) != Some(&1)
+            || bytes.get(start + form_cage::MEMBER_ZERO..start + form_cage::MEMBER_FLAGS + 2)?
+                != [0, 0, 0xfc, 0]
+        {
             continue;
         }
-        let object = u32::try_from(View::u64_le_at(bytes, member + 1)?).ok()?;
+        let object = u32::try_from(View::u64_le_at(
+            bytes,
+            start + form_cage::CAGE_OBJECT_RECORD_INDEX,
+        )?)
+        .ok()?;
         if records.offsets(object).is_empty() {
             continue;
         }
@@ -6856,7 +6867,9 @@ fn project_coil(
         // Boolean target and must not suppress the typed result.
         None
     } else {
-        let expected_role = if scope.coil_operation_offset == scope.byte_offset.checked_add(22) {
+        let expected_role = if scope.coil_operation_offset
+            == scope.byte_offset.checked_add(coil_long::OPERATION as u64)
+        {
             0x0000_0004_0000_0000
         } else {
             0x0000_0008_0000_0000

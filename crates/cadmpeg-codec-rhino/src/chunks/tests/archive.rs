@@ -8,6 +8,8 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
 
+use crate::layout::compressed_buffer_prologue as compressed;
+use crate::layout::long_chunk_header_v50 as long_v50;
 use crate::test_support::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
     line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
@@ -35,7 +37,10 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[test]
 fn open_nurbs_object_record_short_typecodes_decode() {
     let record = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
-    assert_eq!(&record[12..16], &0x8200_0071_u32.to_le_bytes());
+    assert_eq!(
+        &record[long_v50::LEN..long_v50::LEN + 4],
+        &0x8200_0071_u32.to_le_bytes()
+    );
     assert_eq!(
         &record[record.len() - 16..record.len() - 12],
         &0x8200_007f_u32.to_le_bytes()
@@ -461,7 +466,8 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
     let mut optional_crc = mesh_payload(3, 5, false, false);
     let vertex_buffer = 1 + 8 + 64 + 16 + 64 + 4 + 5 + 4 + 8;
     let normal_buffer = vertex_buffer + 4 + 4 + 1 + 48;
-    optional_crc[normal_buffer + 4..normal_buffer + 8].copy_from_slice(&0_u32.to_le_bytes());
+    optional_crc[normal_buffer + compressed::CRC32..normal_buffer + compressed::METHOD]
+        .copy_from_slice(&0_u32.to_le_bytes());
     let result = decode(&archive(&[object_record(0x20, MESH_CLASS, &optional_crc)]));
     assert_eq!(
         result.ir().model.tessellations.len(),
@@ -722,7 +728,7 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
 fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
     let mut malformed_zlib = mesh_payload(3, 0, false, false);
     let common_bytes = 1 + 8 + 64 + 16 + 64 + 4 + 5 + 4 + 8;
-    malformed_zlib[common_bytes + 8] = 1;
+    malformed_zlib[common_bytes + compressed::METHOD] = 1;
 
     let mut missing_child = polycurve_payload(
         &[0.0, 1.0, 2.0],
@@ -782,9 +788,12 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
 #[test]
 fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let mut payload = brep_payload(false);
-    let nested_length =
-        i64::from_le_bytes(payload[5..13].try_into().expect("required invariant")) as usize;
-    let nested_end = 1 + 12 + nested_length;
+    let nested_length = i64::from_le_bytes(
+        payload[(1 + long_v50::DECLARED_LENGTH)..=long_v50::LEN]
+            .try_into()
+            .expect("required invariant"),
+    ) as usize;
+    let nested_end = 1 + long_v50::LEN + nested_length;
     payload[nested_end - 1] ^= 1;
     let brep = object_record(0x10, BREP_CLASS, &payload);
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 1.0, 1.0]));
@@ -811,7 +820,8 @@ fn impossible_outer_object_bound_is_blocking() {
         .windows(typecode.len())
         .position(|window| window == typecode)
         .expect("object record");
-    bytes[record + 4..record + 12].copy_from_slice(&i64::MAX.to_le_bytes());
+    bytes[record + long_v50::DECLARED_LENGTH..record + long_v50::LEN]
+        .copy_from_slice(&i64::MAX.to_le_bytes());
     RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect_err("impossible outer object bound must block archive decode");

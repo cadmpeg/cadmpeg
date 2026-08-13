@@ -92,6 +92,8 @@ pub(crate) mod f3z;
 pub(crate) mod history;
 mod history_records;
 mod ids;
+/// Byte-offset constants generated from `docs/layouts/f3d.toml`.
+pub(crate) mod layout;
 mod manifest;
 pub(crate) mod materials;
 mod metastream;

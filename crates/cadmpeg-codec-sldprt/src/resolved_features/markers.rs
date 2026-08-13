@@ -34,6 +34,10 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{BTreeMap, HashMap};
 
+use crate::layout::compact_legacy_code_two_profile_point as code_two;
+use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
+use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
+
 /// Project spatial sketches from their model-space marker coordinates or bounded lines.
 pub(crate) fn spatial_sketches(
     model_features: &mut [cadmpeg_ir::features::Feature],
@@ -272,9 +276,11 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 if prefix == SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(0)
                     && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             prefix
                 if prefix == SKETCH_MARKER
@@ -288,9 +294,11 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 if prefix == SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(1)
                     && locus == [0x05, 0x00, 0x01, 0x00]
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             prefix
                 if (prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER)
@@ -298,9 +306,11 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                     && locus == [0x04, 0x00, 0x02, 0x00]
                     && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
                     && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             prefix
                 if prefix == LEGACY_SKETCH_MARKER
@@ -326,9 +336,11 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                     && matches!(marker_native_code(payload, offset), Some(0 | 2 | 3))
                     && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
                     && marker_object_index(payload, offset).is_some()
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, false)
+                (offset.checked_add(spatial_pre::COORDINATES)?, false)
             }
             prefix
                 if prefix == LEGACY_EXTENDED_SKETCH_MARKER
@@ -353,18 +365,22 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 if prefix == LEGACY_EXTENDED_SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(1)
                     && locus == [0x04, 0x00, 0x02, 0x00]
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             prefix
                 if prefix == LEGACY_EXTENDED_SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(0)
                     && locus == [0x05, 0x00, 0x01, 0x00]
                     && marker_object_index(payload, offset).is_some()
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             _ => return None,
         };
@@ -1130,7 +1146,7 @@ pub(super) fn legacy_140_profile_point_variant_coordinates(
     offset: usize,
 ) -> Option<[f64; 2]> {
     let code = marker_native_code(payload, offset)?;
-    let link_state = View::u16_le_at(payload, offset + 76)?;
+    let link_state = View::u16_le_at(payload, offset + pt_140::LINK_STATE)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || code != 1
         || !matches!(link_state, 1..=3)
@@ -1139,13 +1155,16 @@ pub(super) fn legacy_140_profile_point_variant_coordinates(
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
-        || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
+        || payload.get(offset + pt_140::STATE_VALUE..offset + pt_140::COORDINATE_TAG)
+            != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + pt_140::COORDINATE_TAG..offset + pt_140::COORDINATE_FIRST)
+            != Some(&[0x1e, 0x00])
+        || payload.get(offset + pt_140::ZERO_LINK_PREFIX..offset + pt_140::LINK_STATE)
+            != Some(&[0; 2])
     {
         return None;
     }
-    let cell = payload.get(offset + 78..offset + 90)?;
+    let cell = payload.get(offset + pt_140::INCIDENCE_CELL..offset + pt_140::LINK_TERMINATOR)?;
     let selector = View::u16_le_at(cell, 0)?;
     let identifier = View::u16_le_at(cell, 2)?;
     if selector == 0
@@ -1153,8 +1172,9 @@ pub(super) fn legacy_140_profile_point_variant_coordinates(
         || identifier == u16::MAX
         || cell[4..8] != [0xff; 4]
         || cell[8..12] != [0; 4]
-        || payload.get(offset + 90..offset + 96) != Some(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00])
-        || !sketch_marker_prefix_at(payload, offset.checked_add(140)?)
+        || payload.get(offset + pt_140::LINK_TERMINATOR..offset + pt_140::TRAILER_PREFIX)
+            != Some(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(pt_140::LEN)?)
     {
         return None;
     }
@@ -1175,7 +1195,7 @@ pub(super) fn legacy_140_profile_point_variant_coordinates(
         && valid_identity(identity(136))
         && identity(132) != identity(136);
     (terminal || paired_at_128 || paired_at_132)
-        .then(|| finite_coordinate_pair(payload, offset + 58))?
+        .then(|| finite_coordinate_pair(payload, offset + pt_140::COORDINATE_FIRST))?
 }
 
 fn compact_legacy_linked_profile_point_coordinates(
@@ -1227,27 +1247,37 @@ pub(super) fn compact_legacy_code_two_profile_point_coordinates(
 ) -> Option<[f64; 2]> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
-        || payload.get(offset + 13..offset + 17) != Some(&2u32.to_le_bytes())
-        || payload.get(offset + 17..offset + 19) != Some(&[0; 2])
-        || payload.get(offset + 19..offset + 25) != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
-        || payload.get(offset + 25..offset + 31) != Some(&[0; 6])
-        || payload.get(offset + 31..offset + 42) != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        || payload.get(offset + 42..offset + 44) != Some(&[0x1e, 0x00])
-        || payload.get(offset + 60..offset + 62) != Some(&[0; 2])
-        || payload.get(offset + 62..offset + 64) != Some(&[0x04, 0x00])
-        || payload.get(offset + 80..offset + 82) != Some(&[0; 2])
-        || payload.get(offset + 82..offset + 86) != Some(&[0xfe, 0xff, 0xff, 0xff])
-        || payload.get(offset + 86..offset + 120) != Some(&[0; 34])
-        || payload.get(offset + 120..offset + 124) != Some(&2u32.to_le_bytes())
-        || payload.get(offset + 124..offset + 128) != Some(&[0; 4])
+        || payload.get(offset + code_two::NATIVE_KIND..offset + code_two::ZERO_PREFIX)
+            != Some(&2u32.to_le_bytes())
+        || payload.get(offset + code_two::ZERO_PREFIX..offset + code_two::PROFILE_LOCUS)
+            != Some(&[0; 2])
+        || payload.get(offset + code_two::PROFILE_LOCUS..offset + code_two::ZERO_STATE)
+            != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
+        || payload.get(offset + code_two::ZERO_STATE..offset + code_two::SELECTOR) != Some(&[0; 6])
+        || payload.get(offset + code_two::SELECTOR..offset + code_two::COORDINATE_TAG)
+            != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload.get(offset + code_two::COORDINATE_TAG..offset + code_two::COORDINATE_FIRST)
+            != Some(&[0x1e, 0x00])
+        || payload.get(offset + code_two::ZERO_LINK_PREFIX..offset + code_two::OPERAND_TAG)
+            != Some(&[0; 2])
+        || payload.get(offset + code_two::OPERAND_TAG..offset + code_two::OPERAND_FIRST)
+            != Some(&[0x04, 0x00])
+        || payload.get(offset + code_two::LINK_TERMINATOR..offset + code_two::ZERO_TRAILER)
+            != Some(&[0, 0, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + code_two::ZERO_TRAILER..offset + code_two::TRAILER_KIND)
+            != Some(&[0; 34])
+        || payload.get(offset + code_two::TRAILER_KIND..offset + code_two::ZERO_IDENTITY_PREFIX)
+            != Some(&2u32.to_le_bytes())
+        || payload.get(offset + code_two::ZERO_IDENTITY_PREFIX..offset + code_two::IDENTITY)
+            != Some(&[0; 4])
         || payload
-            .get(offset + 128..offset + 132)
+            .get(offset + code_two::IDENTITY..offset + code_two::LEN)
             .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
-        || !sketch_marker_prefix_at(payload, offset.saturating_add(132))
+        || !sketch_marker_prefix_at(payload, offset.saturating_add(code_two::LEN))
     {
         return None;
     }
-    let cells = [64, 72].map(|relative| {
+    let cells = [code_two::OPERAND_FIRST, code_two::OPERAND_SECOND].map(|relative| {
         let cell = payload.get(offset + relative..offset + relative + 8)?;
         Some((
             operand_kind(cell[..2].try_into().ok()?)?,
@@ -1265,7 +1295,7 @@ pub(super) fn compact_legacy_code_two_profile_point_coordinates(
     ) {
         return None;
     }
-    finite_coordinate_pair(payload, offset + 44)
+    finite_coordinate_pair(payload, offset + code_two::COORDINATE_FIRST)
 }
 
 pub(super) fn compact_legacy_embedded_geometry_coordinates(

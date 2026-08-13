@@ -77,7 +77,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-catia/src/container.rs` — The parser locates the descriptor start 0x50 bytes before the extent-count field.
+- `crates/cadmpeg-codec-catia/src/container.rs` — The parser locates the descriptor start EXTENT_COUNT bytes before the extent-count field.
 
 ## `extent_struct`
 
@@ -295,7 +295,7 @@ Header only; the payload of `YY + 8` bytes follows at +4, so the record length i
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs` — The parser derives the nominal record end as `position + data[position + 3] + 12`, matching the stated `YY + 12`.
+- `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs` — The parser derives the nominal record end as `position + data[position + TAG_LO_LENGTH_DRIVER] + 12`, matching the stated `YY + 12`.
 
 ## `zero_entity_edge_stride_5e1a`
 

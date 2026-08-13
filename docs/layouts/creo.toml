@@ -199,7 +199,7 @@ anchor = "The body ends with `f7 19`."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-creo/src/surface.rs"
-contains = "self.body.get(9..16) == Some(&[0x70, 0xbf, 0xe3, 0x4f, 0x05, 0x11, 0x10])"
+contains = "Some(&[0x70, 0xbf, 0xe3, 0x4f, 0x05, 0x11, 0x10])"
 note = "The parser gates on length 56, `0x18` at 0, the seven-byte literal at 9..16, and `f7 19` at 54..56, matching every stated range."
 
 # --- §2 PSB primitive encoding ----------------------------------------------

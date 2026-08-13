@@ -19,6 +19,11 @@ use std::ops::Range;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::{ContainerEntry, ContainerSummary};
 
+use crate::layout::extent_struct as extent;
+use crate::layout::fbb_face_row as fbb_row;
+use crate::layout::inner_header as inner_hdr;
+use crate::layout::outer_header as outer_hdr;
+use crate::layout::stream_descriptor_header as stream_desc;
 use crate::variant::Variant;
 
 /// The outer and inner container magic.
@@ -397,8 +402,10 @@ pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
 
 fn outer_body_range(data: &[u8]) -> Option<Range<usize>> {
     data.starts_with(OUTER_MAGIC).then_some(())?;
-    let directory_offset = usize::try_from(View::u32_be_at(data, 8)?).ok()?;
-    let directory_length = usize::try_from(View::u32_be_at(data, 12)?).ok()?;
+    let directory_offset =
+        usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET)?).ok()?;
+    let directory_length =
+        usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH)?).ok()?;
     (directory_offset.checked_add(directory_length)? == data.len()
         && directory_length <= directory_offset)
         .then_some(directory_length..directory_offset)
@@ -414,9 +421,9 @@ fn outer_body_range(data: &[u8]) -> Option<Range<usize>> {
 pub(crate) fn outer_preamble_range(data: &[u8]) -> Option<Range<usize>> {
     let body = outer_body_range(data).or_else(|| {
         (data.starts_with(OUTER_MAGIC)
-            && View::u32_be_at(data, 8) == Some(0)
-            && View::u32_be_at(data, 12) == Some(0))
-        .then_some(OUTER_MAGIC.len() + 8..data.len())
+            && View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET) == Some(0)
+            && View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH) == Some(0))
+        .then_some(outer_hdr::FILL_FF..data.len())
     })?;
     let end = data[body.clone()]
         .windows(FINJPL_MARKER.len())
@@ -711,16 +718,16 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
             .map(|directory| directory.inner)
             .or_else(|| outer_stream_directory_range(&scan.data).map(|range| range.start))
             .unwrap_or(scan.data.len());
-        if OUTER_MAGIC.len() + 8 < outer_end {
-            ranges.push((OUTER_MAGIC.len() + 8)..outer_end);
+        if outer_hdr::FILL_FF < outer_end {
+            ranges.push(outer_hdr::FILL_FF..outer_end);
         }
     }
     if let Some(inner) = scan.inner.as_ref() {
         add_directory(&mut ranges, inner);
     }
 
-    if ranges.is_empty() && scan.data.len() > OUTER_MAGIC.len() + 8 {
-        ranges.push((OUTER_MAGIC.len() + 8)..scan.data.len());
+    if ranges.is_empty() && scan.data.len() > outer_hdr::FILL_FF {
+        ranges.push(outer_hdr::FILL_FF..scan.data.len());
     }
     ranges.sort_by_key(|range| (range.start, range.end));
     ranges.dedup();
@@ -761,11 +768,11 @@ pub fn looks_like_catia(prefix: &[u8]) -> bool {
 pub(crate) fn fbb_run_ranges(body: &[u8]) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
     let mut position = 0;
-    while position + 8 <= body.len() {
+    while position + fbb_row::LEN <= body.len() {
         if is_fbb_row(&body[position..]) {
             let start = position;
-            while position + 8 <= body.len() && is_fbb_row(&body[position..]) {
-                position += 8;
+            while position + fbb_row::LEN <= body.len() && is_fbb_row(&body[position..]) {
+                position += fbb_row::LEN;
             }
             ranges.push(start..position);
         } else {
@@ -778,7 +785,9 @@ pub(crate) fn fbb_run_ranges(body: &[u8]) -> Vec<Range<usize>> {
 /// A standard face-outer-bound row. Bit 7 of the leading `30` byte is a form
 /// flag; the structural `04 04 ff` tail is stable.
 pub(crate) fn is_fbb_row(bytes: &[u8]) -> bool {
-    bytes.len() >= 4 && bytes[0] & 0x7f == 0x30 && bytes[1..4] == [0x04, 0x04, 0xff]
+    bytes.len() >= fbb_row::ALPHA
+        && bytes[0] & 0x7f == 0x30
+        && bytes[1..fbb_row::ALPHA] == [0x04, 0x04, 0xff]
 }
 
 fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
@@ -793,12 +802,12 @@ fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
 /// container or no parseable directory (the non-nested `a9 03` variant, and the
 /// contiguous-body exception whose directory catalogues no BREP streams).
 pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
-    if data.len() < 16 {
+    if data.len() < inner_hdr::LEN {
         return None;
     }
     let inner = find_subslice(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
-    let a = View::u32_be_at(data, inner.checked_add(8)?)? as usize;
-    let b = View::u32_be_at(data, inner.checked_add(12)?)?;
+    let a = View::u32_be_at(data, inner.checked_add(inner_hdr::DIRECTORY_OFFSET_DELTA)?)? as usize;
+    let b = View::u32_be_at(data, inner.checked_add(inner_hdr::DIRECTORY_LENGTH)?)?;
     let dir_offset = inner.checked_add(a)?;
     let magic_end = dir_offset.checked_add(DIR_MAGIC.len())?;
     if data.get(dir_offset..magic_end) != Some(DIR_MAGIC) {
@@ -825,8 +834,8 @@ pub fn outer_stream_directory_range(data: &[u8]) -> Option<Range<usize>> {
 }
 
 fn parse_outer_stream_directory_with_range(data: &[u8]) -> Option<(Range<usize>, InnerDir)> {
-    let dir_offset = usize::try_from(View::u32_be_at(data, 8)?).ok()?;
-    let dir_length = usize::try_from(View::u32_be_at(data, 12)?).ok()?;
+    let dir_offset = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET)?).ok()?;
+    let dir_length = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH)?).ok()?;
     let dir_end = dir_offset.checked_add(dir_length)?;
     (dir_end == data.len()).then_some(())?;
     let directory = parse_directory_region(data, 0, dir_offset, dir_length)?;
@@ -851,7 +860,7 @@ fn parse_directory_region(
 
     // At each candidate extent-count field, validate every extent and the
     // descriptor-header logical length; a candidate that validates fully is a
-    // real descriptor. The extent count sits at `desc_offset + 0x50`.
+    // real descriptor. The extent count sits at `desc_offset + EXTENT_COUNT`.
     let mut o = 0usize;
     while o + 4 <= dirbuf.len() {
         let Some(k) = View::u32_be_at(dirbuf, o).and_then(|value| usize::try_from(value).ok())
@@ -859,13 +868,15 @@ fn parse_directory_region(
             break;
         };
         let extents_end = k
-            .checked_mul(20)
+            .checked_mul(extent::LEN)
             .and_then(|extent_bytes| o.checked_add(4)?.checked_add(extent_bytes));
         if k != 0 && extents_end.is_some_and(|end| end <= dirbuf.len()) {
             if let Some((extents, cum)) = parse_extents(dirbuf, o, k, physical_base, file_len) {
-                if cum > 0 && o >= 0x50 {
-                    let ds = o - 0x50;
-                    let logical_length = View::u32_be_at(dirbuf, ds + 0x0c).unwrap_or(0);
+                if cum > 0 && o >= stream_desc::EXTENT_COUNT {
+                    let ds = o - stream_desc::EXTENT_COUNT;
+                    let logical_length =
+                        View::u32_be_at(dirbuf, ds + stream_desc::LOGICAL_STREAM_LENGTH)
+                            .unwrap_or(0);
                     if logical_length as usize == cum {
                         descriptors.push(Descriptor {
                             name: descriptor_name(dirbuf, ds),
@@ -902,12 +913,12 @@ fn parse_extents(
     let mut extents = Vec::with_capacity(k);
     let mut cum: usize = 0;
     for i in 0..k {
-        let base = o + 4 + 20 * i;
-        let phys_off = View::u32_be_at(dirbuf, base)?;
-        let phys_len = View::u32_be_at(dirbuf, base + 4)?;
-        let log_len = View::u32_be_at(dirbuf, base + 8)?;
-        let log_off = View::u32_be_at(dirbuf, base + 12)?;
-        let flags = View::u32_be_at(dirbuf, base + 16)?;
+        let base = o + 4 + extent::LEN * i;
+        let phys_off = View::u32_be_at(dirbuf, base + extent::PHYS_OFF)?;
+        let phys_len = View::u32_be_at(dirbuf, base + extent::PHYS_LEN)?;
+        let log_len = View::u32_be_at(dirbuf, base + extent::LOG_LEN)?;
+        let log_off = View::u32_be_at(dirbuf, base + extent::LOG_OFF)?;
+        let flags = View::u32_be_at(dirbuf, base + extent::FLAGS)?;
         let phys_end = physical_base
             .checked_add(phys_off as usize)?
             .checked_add(phys_len as usize)?;
@@ -959,7 +970,7 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
     let Some(header_name_start) = ds.checked_add(0x10) else {
         return String::new();
     };
-    let Some(header_end) = ds.checked_add(0x50) else {
+    let Some(header_end) = ds.checked_add(stream_desc::EXTENT_COUNT) else {
         return String::new();
     };
     let Some(header_name) = dirbuf.get(header_name_start..header_end) else {
@@ -1264,8 +1275,8 @@ fn identify_variant(
 /// Identify a whole `.CATPart` byte image.
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
-    let outer_dir_offset = View::u32_be_at(&data, 8).unwrap_or(0);
-    let outer_dir_length = View::u32_be_at(&data, 12).unwrap_or(0);
+    let outer_dir_offset = View::u32_be_at(&data, outer_hdr::DIRECTORY_OFFSET).unwrap_or(0);
+    let outer_dir_length = View::u32_be_at(&data, outer_hdr::DIRECTORY_LENGTH).unwrap_or(0);
 
     let outer = parse_outer_stream_directory(&data);
     let inner = parse_stream_directory(&data);
@@ -1299,7 +1310,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         census.fbb_runs = fbb_ranges.len();
         census.fbb_face_rows = fbb_ranges
             .iter()
-            .map(|range| (range.end - range.start) / 8)
+            .map(|range| (range.end - range.start) / fbb_row::LEN)
             .sum();
         census.edge_delimiters = count_subslice(b, EDGE_DELIMITER);
         census.vertex_markers = count_subslice(b, VERTEX_MARKER);

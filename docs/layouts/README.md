@@ -14,9 +14,18 @@ is: the specification keeps the semantics, the table keeps the numbers.
 ```sh
 cargo test -p cadmpeg --test layout_tables                       # validate
 UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables  # regenerate the .md pages
+UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables  # regenerate crate layout.rs files
 ```
 
-Never edit a `<format>.md` by hand; regenerate it.
+Never edit a `<format>.md` or a generated `src/layout.rs` by hand; regenerate them.
+
+A table edit without regeneration fails the test. After regenerating, rebuild, run the owning crate's tests, and review the diff.
+
+The generated file holds `usize` offset constants only: one module per byte-layout record, `LEN` for the record length, and one constant per field. Records that declare a `[[record.discrepancy]]` are omitted, with the reason in a comment. Slot records, column records, tokens, composite types, byte values, widths, and endianness stay in hand-written code and pins. Parsing functions are not generated.
+
+Decoder code imports a record module by path or alias (`use crate::layout::block_frame_header as block;`). Never glob-import a layout module.
+
+The mapping from table to generated file is the explicit list `GENERATED_LAYOUT_RS` in `crates/cadmpeg/tests/layout_tables.rs`. `step` is not in that list: it has no byte-layout records.
 
 ## What the validator enforces
 

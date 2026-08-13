@@ -21,6 +21,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
+use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
@@ -1111,7 +1112,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
             "legacy decoder requires V1".to_string(),
         ));
     }
-    let mut offset = header.start_offset + 32;
+    let mut offset = header.start_offset + file_header::LEN;
     let comment =
         chunk_at(data, offset, data.len(), ArchiveVersion::V1, false).map_err(malformed)?;
     if comment.typecode != TCODE_COMMENT || comment.short {

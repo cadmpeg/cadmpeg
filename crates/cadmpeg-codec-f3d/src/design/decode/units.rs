@@ -10,10 +10,11 @@
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::layout::indexed_design_record_header as indexed_header;
 use cadmpeg_core::decode::View;
 
 /// An indexed-record header: `u32 3`, three class-tag digits, `u32 index`.
-const HEADER_LEN: usize = 11;
+const HEADER_LEN: usize = indexed_header::LEN;
 /// One reference slot: `01`, a `u32` record index, and six zero bytes.
 const REFERENCE_LEN: usize = 11;
 /// The collection names six unit systems.

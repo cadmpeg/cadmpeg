@@ -3,6 +3,8 @@
 use super::super::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
 use super::super::{CLASS_MARKER, NAME_MARKER};
 use super::*;
+use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
+use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
     FeatureInputName,
@@ -966,7 +968,7 @@ fn skew_reference_axes_do_not_complete_legacy_triad() {
 
 #[test]
 fn fixed_reference_plane_uses_all_three_stored_basis_vectors() {
-    let mut frame = [0; FIXED_REFERENCE_PLANE_FRAME_LEN];
+    let mut frame = [0; fixed_plane::LEN];
     for (offset, value) in [
         (0, 0.374_f64),
         (8, -0.25),
@@ -1020,7 +1022,7 @@ fn reference_plane_frame_identity_canonicalizes_signed_zero() {
 #[test]
 fn offset_plane_frame_pair_stores_result_before_reference() {
     let frame = |origin_x: f64| {
-        let mut bytes = [0; FIXED_REFERENCE_PLANE_FRAME_LEN];
+        let mut bytes = [0; fixed_plane::LEN];
         for (offset, value) in [
             (0, origin_x / 1000.0),
             (8, 0.0),
@@ -1073,7 +1075,7 @@ fn offset_plane_frame_pair_stores_result_before_reference() {
 #[test]
 fn offset_plane_frame_pair_uses_matrix_axes_instead_of_fixed_prefixes() {
     let frame = |origin_x: f64| {
-        let mut bytes = [0; MATRIX_REFERENCE_PLANE_FRAME_LEN];
+        let mut bytes = [0; matrix_plane::LEN];
         for (offset, value) in [
             (0, origin_x),
             (24, 1.0),
@@ -1175,7 +1177,7 @@ fn tangent_plane_frame_is_anchored_to_its_constraint_class() {
     payload.extend((CLASS.len() as u16).to_le_bytes());
     payload.extend(CLASS.as_bytes());
     let body = payload.len();
-    payload.resize(body + FIXED_REFERENCE_PLANE_FRAME_LEN, 0);
+    payload.resize(body + fixed_plane::LEN, 0);
     for (relative, value) in [
         (0, 0.0125_f64),
         (24, 1.0),
@@ -1213,7 +1215,7 @@ fn offset_plane_face_reference_owns_a_fixed_plane_frame() {
     payload.extend((CLASS.len() as u16).to_le_bytes());
     payload.extend(CLASS.as_bytes());
     let body = payload.len();
-    payload.resize(body + FIXED_REFERENCE_PLANE_FRAME_LEN, 0);
+    payload.resize(body + fixed_plane::LEN, 0);
     for (relative, value) in [(0, 0.0025_f64), (24, 1.0), (57, 1.0), (89, 1.0)] {
         payload[body + relative..body + relative + 8].copy_from_slice(&value.to_le_bytes());
     }
@@ -1241,7 +1243,7 @@ fn named_reference_plane_data_classes_anchor_frame_lengths() {
         (payload, root)
     };
 
-    let mut fixed = [0; FIXED_REFERENCE_PLANE_FRAME_LEN];
+    let mut fixed = [0; fixed_plane::LEN];
     for (offset, value) in [
         (0, 0.0125_f64),
         (24, 1.0),
@@ -1610,7 +1612,7 @@ fn matrix_reference_plane_uses_basis_columns() {
 #[test]
 fn matrix_reference_plane_owns_its_fixed_frame_prefix() {
     let root = 9;
-    let mut payload = vec![0; root + MATRIX_REFERENCE_PLANE_FRAME_LEN];
+    let mut payload = vec![0; root + matrix_plane::LEN];
     for (relative, value) in [
         (24, 1.0_f64),
         (49, 0.0),
@@ -1628,7 +1630,7 @@ fn matrix_reference_plane_owns_its_fixed_frame_prefix() {
     payload[root + 48] = 1;
 
     assert_eq!(
-        fixed_reference_plane_frame(&payload[root..root + FIXED_REFERENCE_PLANE_FRAME_LEN]),
+        fixed_reference_plane_frame(&payload[root..root + fixed_plane::LEN]),
         Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),

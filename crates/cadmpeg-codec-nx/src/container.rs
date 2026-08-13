@@ -11,6 +11,12 @@ use std::borrow::Cow;
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 
+use crate::layout::directory_entry as dir_entry;
+use crate::layout::directory_file_payload as file_payload;
+use crate::layout::extrefstream_handle_set_record as handle_set;
+use crate::layout::splmsstr_header as splmsstr;
+use crate::layout::ug_part_segment_index_row as index_row;
+
 /// The eight-byte signature used to identify an SPLMSSTR container.
 pub const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
@@ -191,20 +197,25 @@ impl Container<'_> {
         let (offset, size) = entry.file_span?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let payload = self.data.get(offset..offset.checked_add(size)?)?;
-        let row_one = payload.get(12..24)?;
-        let type_code = View::u32_le_at(row_one, 0)?;
-        let subtype_code = View::u32_le_at(row_one, 4)?;
-        let byte_len = usize::try_from(View::u32_le_at(row_one, 8)?).ok()?;
-        if type_code != 1 || subtype_code != 1 || !(24..=payload.len()).contains(&byte_len) {
+        let row_one = payload.get(index_row::LEN..index_row::LEN * 2)?;
+        let type_code = View::u32_le_at(row_one, index_row::TYPE_CODE)?;
+        let subtype_code = View::u32_le_at(row_one, index_row::SUBTYPE_CODE)?;
+        let byte_len = usize::try_from(View::u32_le_at(row_one, index_row::VALUE)?).ok()?;
+        if type_code != 1
+            || subtype_code != 1
+            || !(index_row::LEN * 2..=payload.len()).contains(&byte_len)
+        {
             return None;
         }
-        let complete_len = byte_len / 12 * 12;
+        let complete_len = byte_len / index_row::LEN * index_row::LEN;
         let rows = payload[..complete_len]
-            .chunks_exact(12)
+            .chunks_exact(index_row::LEN)
             .map(|row| SegmentIndexRow {
-                type_code: View::u32_le_at(row, 0).expect("complete segment-index row"),
-                subtype_code: View::u32_le_at(row, 4).expect("complete segment-index row"),
-                value: View::u32_le_at(row, 8).expect("complete segment-index row"),
+                type_code: View::u32_le_at(row, index_row::TYPE_CODE)
+                    .expect("complete segment-index row"),
+                subtype_code: View::u32_le_at(row, index_row::SUBTYPE_CODE)
+                    .expect("complete segment-index row"),
+                value: View::u32_le_at(row, index_row::VALUE).expect("complete segment-index row"),
             })
             .collect();
         Some((
@@ -511,14 +522,16 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
     };
     let parse_record = |record_id, offset, end| -> Option<ExtrefRecord> {
         let bytes = payload.get(offset..end)?;
-        (bytes.get(..4) == Some(&[1, 0, 0, 0]) && bytes.get(6) == Some(&1)).then_some(())?;
-        let declared_count = View::u16_be_at(bytes, 4)?;
+        (bytes.get(..handle_set::N) == Some(&[1, 0, 0, 0])
+            && bytes.get(handle_set::MARKER_A) == Some(&1))
+        .then_some(())?;
+        let declared_count = View::u16_be_at(bytes, handle_set::N)?;
         let mut id_slots = [0; 4];
         for (slot, value) in id_slots.iter_mut().enumerate() {
-            *value = View::u32_le_at(bytes, 7 + slot * 4)?;
+            *value = View::u32_le_at(bytes, handle_set::ID_SLOTS + slot * 4)?;
         }
-        (bytes.get(23) == Some(&1)).then_some(())?;
-        let count = usize::from(*bytes.get(24)?);
+        (bytes.get(handle_set::MARKER_B) == Some(&1)).then_some(())?;
+        let count = usize::from(*bytes.get(handle_set::COUNT)?);
         (count >= 2).then_some(())?;
         let handle_token_count = count - 1;
         let prefix_byte_len = 26usize.checked_add(handle_token_count.checked_mul(5)?)?;
@@ -526,7 +539,7 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
             .then_some(())?;
         let mut handles = Vec::with_capacity(handle_token_count);
         for handle_index in 0..handle_token_count {
-            let token = 25 + handle_index * 5;
+            let token = handle_set::LEN + handle_index * 5;
             (bytes.get(token) == Some(&0xe0)).then_some(())?;
             handles.push(View::u32_be_at(bytes, token + 1)?);
         }
@@ -682,9 +695,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
             "missing SPLMSSTR magic".to_string(),
         ));
     }
-    let version = data.get(8).copied().unwrap_or(0);
-    let file_tag = u24_le(&data, 9);
-    let footer_offset = u48_le(&data, 0x11);
+    let version = data.get(splmsstr::VERSION_TAG).copied().unwrap_or(0);
+    let file_tag = u24_le(&data, splmsstr::FILE_TAG);
+    let footer_offset = u48_le(&data, splmsstr::FOOTER_OFFSET);
     let fo = usize::try_from(footer_offset)
         .map_err(|_| CodecError::Malformed("FOOTER offset exceeds address space".to_string()))?;
     if fo > data.len() {
@@ -697,8 +710,13 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         .checked_sub(4)
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
-    let (header_entry_count, mut entries, header_end) =
-        directory_region(&data, 0x19, *b"HEADER", Region::Header, fo)?;
+    let (header_entry_count, mut entries, header_end) = directory_region(
+        &data,
+        splmsstr::HEADER_MARKER,
+        *b"HEADER",
+        Region::Header,
+        fo,
+    )?;
     let (footer_entry_count, footer_entries, footer_end) =
         directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
     entries.extend(footer_entries);
@@ -802,7 +820,7 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
     if !(6..=128).contains(&name_len) {
         return None;
     }
-    let name_start = o + 4;
+    let name_start = o + dir_entry::LEN;
     let name_end = name_start + name_len;
     let raw = data.get(name_start..name_end)?;
     if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
@@ -813,7 +831,7 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let file_span = match (
         View::u64_le_at(data, payload),
-        View::u64_le_at(data, payload + 8),
+        View::u64_le_at(data, payload + file_payload::SIZE),
     ) {
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);
@@ -830,7 +848,7 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
             region,
             file_span,
         },
-        payload + 16,
+        payload + file_payload::LEN,
     ))
 }
 

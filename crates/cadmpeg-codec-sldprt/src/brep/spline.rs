@@ -10,6 +10,10 @@ use cadmpeg_core::decode::View;
 
 use super::{Carrier, CarrierGeometry, LEN_TO_MM};
 
+use crate::layout::bspline_array_header as arr_hdr;
+use crate::layout::bspline_compact_array_header as compact_arr;
+use crate::layout::bspline_surface_descriptor as surf_desc;
+
 #[derive(Default)]
 struct Arrays {
     f64s: HashMap<u16, Vec<f64>>,
@@ -58,8 +62,6 @@ struct SurfaceDescriptor {
 // The body after the tag and optional envelope marker is fixed-width. It
 // contains the attribute plus the complete NURBS_SURF definition and the
 // five terminal array references.
-const SURFACE_DESCRIPTOR_BODY_LEN: usize = 42;
-const SURFACE_DESCRIPTOR_REFS_OFFSET: usize = 32;
 const MAX_ARRAY_VALUES: usize = 1_000_000;
 
 fn logical_byte(bytes: &[u8], at: usize) -> Option<bool> {
@@ -78,37 +80,45 @@ fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescripto
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let end = p.checked_add(SURFACE_DESCRIPTOR_BODY_LEN)?;
+    let end = p.checked_add(surf_desc::LEN)?;
     if end > bytes.len() {
         return None;
     }
-    let attr = View::u16_be_at(bytes, p)?;
-    let u_periodic = logical_byte(bytes, p + 2)?;
-    let v_periodic = logical_byte(bytes, p + 3)?;
-    let u_degree = View::u16_be_at(bytes, p + 4).map(u32::from)?;
-    let v_degree = View::u16_be_at(bytes, p + 6).map(u32::from)?;
+    let attr = View::u16_be_at(bytes, p + surf_desc::ATTR)?;
+    let u_periodic = logical_byte(bytes, p + surf_desc::U_PERIODIC)?;
+    let v_periodic = logical_byte(bytes, p + surf_desc::V_PERIODIC)?;
+    let u_degree = View::u16_be_at(bytes, p + surf_desc::U_DEGREE).map(u32::from)?;
+    let v_degree = View::u16_be_at(bytes, p + surf_desc::V_DEGREE).map(u32::from)?;
     let u_degree_usize = usize::try_from(u_degree).ok()?;
     let v_degree_usize = usize::try_from(v_degree).ok()?;
-    let u_count = usize::try_from(View::u32_be_at(bytes, p + 8)?).ok()?;
-    let v_count = usize::try_from(View::u32_be_at(bytes, p + 12)?).ok()?;
+    let u_count = usize::try_from(View::u32_be_at(bytes, p + surf_desc::U_POLE_COUNT)?).ok()?;
+    let v_count = usize::try_from(View::u32_be_at(bytes, p + surf_desc::V_POLE_COUNT)?).ok()?;
     // Knot-type bytes, closure flags, and surface form have no IR fields, but
     // their positions are part of the fixed descriptor and are consumed here
     // so the following count and reference fields cannot slide into them.
-    let _u_knot_type = *bytes.get(p + 16)?;
-    let _v_knot_type = *bytes.get(p + 17)?;
-    let u_knot_count = usize::try_from(View::u32_be_at(bytes, p + 18)?).ok()?;
-    let v_knot_count = usize::try_from(View::u32_be_at(bytes, p + 22)?).ok()?;
-    let rational = logical_byte(bytes, p + 26)?;
-    let _u_closed = logical_byte(bytes, p + 27)?;
-    let _v_closed = logical_byte(bytes, p + 28)?;
-    let _surface_form = *bytes.get(p + 29)?;
-    let dimension = View::u16_be_at(bytes, p + 30).map(usize::from)?;
+    let _u_knot_type = *bytes.get(p + surf_desc::U_KNOT_TYPE)?;
+    let _v_knot_type = *bytes.get(p + surf_desc::V_KNOT_TYPE)?;
+    let u_knot_count = usize::try_from(View::u32_be_at(
+        bytes,
+        p + surf_desc::U_DISTINCT_KNOT_COUNT,
+    )?)
+    .ok()?;
+    let v_knot_count = usize::try_from(View::u32_be_at(
+        bytes,
+        p + surf_desc::V_DISTINCT_KNOT_COUNT,
+    )?)
+    .ok()?;
+    let rational = logical_byte(bytes, p + surf_desc::RATIONAL)?;
+    let _u_closed = logical_byte(bytes, p + surf_desc::U_CLOSED)?;
+    let _v_closed = logical_byte(bytes, p + surf_desc::V_CLOSED)?;
+    let _surface_form = *bytes.get(p + surf_desc::SURFACE_FORM)?;
+    let dimension = View::u16_be_at(bytes, p + surf_desc::VERTEX_DIM).map(usize::from)?;
     let refs = [
-        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET)?,
-        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 2)?,
-        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 4)?,
-        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 6)?,
-        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 8)?,
+        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS)?,
+        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS + 2)?,
+        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS + 4)?,
+        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS + 6)?,
+        View::u16_be_at(bytes, p + surf_desc::ARRAY_REFS + 8)?,
     ];
 
     if attr <= 1
@@ -159,9 +169,9 @@ fn scan_arrays(bytes: &[u8], compact_attrs: Option<&HashSet<u16>>) -> Arrays {
     let mut arrays = Arrays::default();
     for off in 0..bytes.len().saturating_sub(9) {
         if bytes.get(off) == Some(&0) {
-            let count = usize::from(bytes[off + 1]);
+            let count = usize::from(bytes[off + compact_arr::COUNT]);
             if count > 0 {
-                if let Some(attr) = View::u16_be_at(bytes, off + 2)
+                if let Some(attr) = View::u16_be_at(bytes, off + compact_arr::ATTR)
                     .filter(|attr| compact_attrs.is_some_and(|attrs| attrs.contains(attr)))
                 {
                     arrays
@@ -179,16 +189,16 @@ fn scan_arrays(bytes: &[u8], compact_attrs: Option<&HashSet<u16>>) -> Arrays {
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
-        let Some(count) = View::u32_be_at(bytes, p).map(|v| v as usize) else {
+        let Some(count) = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(|v| v as usize) else {
             continue;
         };
-        let Some(attr) = View::u16_be_at(bytes, p + 4) else {
+        let Some(attr) = View::u16_be_at(bytes, p + arr_hdr::ATTR) else {
             continue;
         };
         if attr <= 1 || count > MAX_ARRAY_VALUES {
             continue;
         }
-        let values_at = p + 6;
+        let values_at = p + arr_hdr::LEN;
         if tag == 0x7f {
             let Some(values) = (0..count)
                 .map(|i| View::u16_be_at(bytes, values_at + i * 2))
@@ -223,7 +233,7 @@ fn compact_f64_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<f64>>
         .collect::<Vec<_>>();
     for compact in arrays.compact.get(&attr).into_iter().flatten() {
         let Some(values) = (0..compact.count)
-            .map(|index| View::f64_be_at(bytes, compact.offset + 4 + index * 8))
+            .map(|index| View::f64_be_at(bytes, compact.offset + compact_arr::LEN + index * 8))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -244,7 +254,7 @@ fn compact_u16_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<u16>>
         .collect::<Vec<_>>();
     for compact in arrays.compact.get(&attr).into_iter().flatten() {
         let Some(values) = (0..compact.count)
-            .map(|index| View::u16_be_at(bytes, compact.offset + 4 + index * 2))
+            .map(|index| View::u16_be_at(bytes, compact.offset + compact_arr::LEN + index * 2))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -371,11 +381,12 @@ fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
-        let Some(count) = View::u32_be_at(bytes, p).map(|value| value as usize) else {
+        let Some(count) = View::u32_be_at(bytes, p + arr_hdr::COUNT).map(|value| value as usize)
+        else {
             continue;
         };
-        if View::u16_be_at(bytes, p + 4) == Some(attr) {
-            return Some((p + 6, count));
+        if View::u16_be_at(bytes, p + arr_hdr::ATTR) == Some(attr) {
+            return Some((p + arr_hdr::LEN, count));
         }
     }
     None
@@ -387,13 +398,14 @@ fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySp
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
-        let Some(count) = View::u32_be_at(bytes, p).and_then(|value| usize::try_from(value).ok())
+        let Some(count) = View::u32_be_at(bytes, p + arr_hdr::COUNT)
+            .and_then(|value| usize::try_from(value).ok())
         else {
             continue;
         };
-        if count <= MAX_ARRAY_VALUES && View::u16_be_at(bytes, p + 4) == Some(attr) {
+        if count <= MAX_ARRAY_VALUES && View::u16_be_at(bytes, p + arr_hdr::ATTR) == Some(attr) {
             spans.push(ArraySpan {
-                start: p + 6,
+                start: p + arr_hdr::LEN,
                 count,
             });
         }
@@ -405,7 +417,7 @@ fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySp
             .into_iter()
             .flatten()
             .map(|array| ArraySpan {
-                start: array.offset + 4,
+                start: array.offset + compact_arr::LEN,
                 count: array.count,
             }),
     );

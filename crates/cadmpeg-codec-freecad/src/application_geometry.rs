@@ -10,6 +10,8 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::SourceObjectAssociation;
 
+use crate::layout::mesh_facet;
+use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
 use crate::native::{EntryRecord, PropertyRecord};
 
 const MAX_ELEMENTS: usize = 1_000_000;
@@ -74,7 +76,7 @@ fn association(property: &PropertyRecord) -> SourceObjectAssociation {
 fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, CodecError> {
     let mut reader = Reader::new(bytes);
     let byte_order = reader.mesh_byte_order(&property.id)?;
-    reader.skip(256)?;
+    reader.skip(mesh_hdr::LEN - mesh_hdr::INFORMATION)?;
     let point_count = reader.count(byte_order, "mesh point count")?;
     let facet_count = reader.count(byte_order, "mesh facet count")?;
     let vertices = (0..point_count)
@@ -82,9 +84,11 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         .collect::<Result<Vec<_>, _>>()?;
     // Each facet consumes three point indices and three neighbour indices (24 bytes),
     // so the declared count cannot exceed the unread payload.
-    let facet_capacity = reader.counted(facet_count as u64, 24).ok_or_else(|| {
-        CodecError::Malformed("mesh facet count exceeds remaining payload".into())
-    })?;
+    let facet_capacity = reader
+        .counted(facet_count as u64, mesh_facet::LEN)
+        .ok_or_else(|| {
+            CodecError::Malformed("mesh facet count exceeds remaining payload".into())
+        })?;
     let mut triangles = Vec::with_capacity(facet_capacity);
     for _ in 0..facet_count {
         let triangle = [
@@ -231,7 +235,7 @@ impl<'a> Reader<'a> {
 
     fn mesh_byte_order(&mut self, property_id: &str) -> Result<ByteOrder, CodecError> {
         let start = self.view.position();
-        self.view.req_take(8)?;
+        self.view.req_take(mesh_hdr::INFORMATION)?;
         self.view
             .seek(start)
             .ok_or_else(|| CodecError::Malformed("mesh header window is inconsistent".into()))?;
@@ -352,7 +356,7 @@ pub(crate) mod tests {
         let mut mesh = Vec::new();
         mesh.extend_from_slice(&0xa0b0_c0d0_u32.to_le_bytes());
         mesh.extend_from_slice(&0x0001_0000_u32.to_le_bytes());
-        mesh.extend_from_slice(&[0; 256]);
+        mesh.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
         mesh.extend_from_slice(&3_u32.to_le_bytes());
         mesh.extend_from_slice(&1_u32.to_le_bytes());
         for value in [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {

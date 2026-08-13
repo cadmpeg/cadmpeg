@@ -8,6 +8,8 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::Exactness;
 
+use crate::layout::transformed_reference_plane_metadata as trans_plane;
+
 pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<SourceAttribute> {
     let mut out = Vec::new();
     for section in scan.sections() {
@@ -57,7 +59,7 @@ fn scan_transformed_reference_plane(
         if payload.get(prefix..prefix + PREFIX.len()) != Some(PREFIX) {
             continue;
         }
-        let start = prefix + PREFIX.len();
+        let start = prefix + trans_plane::CENTER;
         let Some(values) = (0..9)
             .map(|index| View::f64_le_at(payload, start + index * 8))
             .collect::<Option<Vec<_>>>()

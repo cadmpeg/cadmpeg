@@ -46,6 +46,8 @@ pub(crate) mod design_feature;
 pub(crate) mod entity_table;
 pub(crate) mod families;
 pub(crate) mod formula;
+/// Byte-offset constants generated from `docs/layouts/catia.toml`.
+pub(crate) mod layout;
 pub(crate) mod legacy_entity;
 pub(crate) mod native;
 pub(crate) mod nurbs;

@@ -85,13 +85,13 @@ source = "spec"
 anchor = "byte 80 is ASCII `1`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-iges/src/layout.rs"
-contains = "flag[1..5] == 75_u32.to_be_bytes()"
+path = "crates/cadmpeg-codec-iges/src/representation.rs"
+contains = "flag[binary_flag::REMAINING_BYTE_COUNT..binary_flag::PRIMITIVE_BIT_LENGTHS] == 75_u32.to_be_bytes()"
 note = "Representation detection requires the fixed big-endian byte count."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-iges/src/layout.rs"
-contains = "flag[73..79].iter().all(|byte| matches!(byte, b' ' | b'0'))"
+path = "crates/cadmpeg-codec-iges/src/representation.rs"
+contains = "matches!(byte, b' ' | b'0')"
 note = "Representation detection validates the six-byte Binary sequence padding as ASCII blanks or zeroes."
 
 [[record]]

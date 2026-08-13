@@ -10,6 +10,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::read_xmt_width as read_xmt;
+use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
+use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
@@ -509,16 +511,32 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
     (xmt > 10).then_some(())?;
     let shift = escape + xmt_len - 2;
-    let u_periodic = logical_at(bytes, pos + 4 + shift)?;
-    let v_periodic = logical_at(bytes, pos + 5 + shift)?;
-    let u_degree = View::u16_be_at(bytes, pos + 6 + shift)?;
-    let v_degree = View::u16_be_at(bytes, pos + 8 + shift)?;
-    let u_count = usize::try_from(View::u32_be_at(bytes, pos + 10 + shift)?).ok()?;
-    let v_count = usize::try_from(View::u32_be_at(bytes, pos + 14 + shift)?).ok()?;
-    let u_knot_type = *bytes.get(pos + 18 + shift)?;
-    let v_knot_type = *bytes.get(pos + 19 + shift)?;
-    let u_distinct = usize::try_from(View::u32_be_at(bytes, pos + 20 + shift)?).ok()?;
-    let v_distinct = usize::try_from(View::u32_be_at(bytes, pos + 24 + shift)?).ok()?;
+    let u_periodic = logical_at(bytes, pos + surf_desc::U_PERIODIC + shift)?;
+    let v_periodic = logical_at(bytes, pos + surf_desc::V_PERIODIC + shift)?;
+    let u_degree = View::u16_be_at(bytes, pos + surf_desc::U_DEGREE + shift)?;
+    let v_degree = View::u16_be_at(bytes, pos + surf_desc::V_DEGREE + shift)?;
+    let u_count = usize::try_from(View::u32_be_at(
+        bytes,
+        pos + surf_desc::U_POLE_COUNT + shift,
+    )?)
+    .ok()?;
+    let v_count = usize::try_from(View::u32_be_at(
+        bytes,
+        pos + surf_desc::V_POLE_COUNT + shift,
+    )?)
+    .ok()?;
+    let u_knot_type = *bytes.get(pos + surf_desc::U_KNOT_TYPE + shift)?;
+    let v_knot_type = *bytes.get(pos + surf_desc::V_KNOT_TYPE + shift)?;
+    let u_distinct = usize::try_from(View::u32_be_at(
+        bytes,
+        pos + surf_desc::U_DISTINCT_KNOT_COUNT + shift,
+    )?)
+    .ok()?;
+    let v_distinct = usize::try_from(View::u32_be_at(
+        bytes,
+        pos + surf_desc::V_DISTINCT_KNOT_COUNT + shift,
+    )?)
+    .ok()?;
     ((u_count > 0)
         && (v_count > 0)
         && valid_knot_type(u_knot_type)
@@ -649,20 +667,28 @@ fn curve_descriptor_at(
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
     (xmt > 10).then_some(())?;
     let shift = escape + xmt_len - 2;
-    let degree = View::u16_be_at(bytes, pos + 4 + shift)?;
-    let poles = usize::try_from(View::u32_be_at(bytes, pos + 6 + shift)?).ok()?;
-    let dimension = View::u16_be_at(bytes, pos + 10 + shift)?;
-    let distinct = usize::try_from(View::u32_be_at(bytes, pos + 12 + shift)?).ok()?;
-    let knot_type = *bytes.get(pos + 16 + shift)?;
-    let periodic = logical_at(bytes, pos + 17 + shift)?;
+    let degree = View::u16_be_at(bytes, pos + curve_desc::DEGREE + shift)?;
+    let poles = usize::try_from(View::u32_be_at(
+        bytes,
+        pos + curve_desc::POLE_COUNT + shift,
+    )?)
+    .ok()?;
+    let dimension = View::u16_be_at(bytes, pos + curve_desc::DIMENSION + shift)?;
+    let distinct = usize::try_from(View::u32_be_at(
+        bytes,
+        pos + curve_desc::DISTINCT_KNOT_COUNT + shift,
+    )?)
+    .ok()?;
+    let knot_type = *bytes.get(pos + curve_desc::KNOT_TYPE + shift)?;
+    let periodic = logical_at(bytes, pos + curve_desc::PERIODIC + shift)?;
     ((poles > 0) && matches!(dimension, 2..=4) && (distinct > 0) && valid_knot_type(knot_type))
         .then_some(())?;
     if matches!(
-        bytes.get(pos + 17 + shift..pos + 21 + shift),
+        bytes.get(pos + curve_desc::PERIODIC + shift..pos + curve_desc::LEN + shift),
         Some([0, 0, 0, 1] | [0, 0, 1, 4])
     ) {
         let status_references = (|| {
-            let mut at = pos + 21 + shift;
+            let mut at = pos + curve_desc::LEN + shift;
             let mut references = [0; 3];
             for reference in &mut references {
                 let (value, consumed) = read_xmt(bytes, at)?;

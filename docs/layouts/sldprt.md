@@ -72,7 +72,6 @@ Fixed prefix only. `preamble[pre_sz]` and `payload[comp_sz]` follow; the record 
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/container.rs` — The parser's block-header length matches the 26-byte fixed prefix this table tiles.
 - `crates/cadmpeg-codec-sldprt/src/container.rs` — The parser's marker matches the spec's stated marker bytes.
 
 ## `cache_cell_header`
@@ -360,10 +359,6 @@ Body-relative after the two-byte tag and optional marker. Offsets are relative t
 | 29 | 1 | `surface_form` | `u8` | big | spec | surface_form |
 | 30 | 2 | `vertex_dim` | `u16` | big | spec | vertex_dim |
 | 32 | 10 | `array_refs` | `u16[5]` | big | spec | terminal u16 BE refs |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs` — The decoder reads the terminal array roster at the fixed descriptor offset.
 
 ## `bspline_array_header`
 
@@ -1039,10 +1034,6 @@ Unstated regions:
 
 - `16..227` (211 B): Native reference-point construction state; the solved datum position does not depend on its construction family.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser evaluates both fixed solved-position layouts and requires one distinct result.
-
 ## `reference_point_long_solved_cache`
 
 Spec §2 · layout: byte offsets · size: 293 B
@@ -1302,10 +1293,6 @@ Spec §2 · layout: byte offsets · size: 29 B
 | 3 | 24 | `origin` | `f64[3]` | little | spec | Three finite f64 LE values at +3 store the origin in metres |
 | 27 | 2 | `terminator` | `u16` | little | spec | The final u16 token is nonzero |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires one exact tail after the final line-axis record, with the defined optional two-byte zero gap for a one-axis frame.
-
 ## `constructed_reference_plane_fixed_frame`
 
 Spec §2 · layout: byte offsets · size: 97 B
@@ -1320,10 +1307,6 @@ Offsets begin immediately after the data-class name. A valid 121-byte matrix fra
 | 49 | 24 | `u_axis` | `f64[3]` | little | spec | Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 | 73 | 24 | `v_axis` | `f64[3]` | little | spec | Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser uses the specified fixed-frame size.
-
 ## `constructed_reference_plane_matrix_frame`
 
 Spec §2 · layout: byte offsets · size: 121 B
@@ -1336,10 +1319,6 @@ Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneDa
 | 24 | 24 | `normal` | `f64[3]` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 48 | 1 | `frame_marker` | `u8` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 49 | 72 | `basis_matrix` | `f64[9]` | little | spec | A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser uses the specified matrix-frame size.
 
 ## `display_lists_scene_source_binding`
 
@@ -1433,10 +1412,6 @@ Unstated regions:
 - `19..47` (28 B): Zero bytes.
 - `63..72` (9 B): Zero bytes.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser locates the 16-byte component marker at prefix offset +94.
-
 ## `draft_compact_selection_prefix`
 
 Spec §2 · layout: byte offsets · size: 30 B
@@ -1471,10 +1446,6 @@ Unstated regions:
 - `16..24` (8 B): Zero bytes.
 - `24..96` (72 B): Nine finite f64 LE values precede the pull direction.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser reads and validates the unit pull-direction triple at +96.
-
 ## `draft_extended_direction_frame`
 
 Spec §2 · layout: byte offsets · size: 153 B
@@ -1491,10 +1462,6 @@ Unstated regions:
 - `16..24` (8 B): Zero bytes.
 - `24..120` (96 B): Twelve finite f64 LE values; the final three do not form a unit vector in this form.
 - `120..129` (9 B): Zero-byte extended-form discriminator.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser reads the extended-form pull direction only after the nine-byte zero discriminator.
 
 ## `wide_spatial_marker_coordinate_prefix`
 

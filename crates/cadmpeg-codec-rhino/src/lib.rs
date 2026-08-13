@@ -27,6 +27,8 @@ pub(crate) mod extrusion;
 pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;
+/// Byte-offset constants generated from `docs/layouts/rhino.toml`.
+pub(crate) mod layout;
 pub(crate) mod legacy;
 #[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
 pub(crate) mod loss;

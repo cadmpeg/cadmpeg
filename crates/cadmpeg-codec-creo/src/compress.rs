@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded decoder for the historical Unix `compress` (`.Z`) LZW stream.
 
+use crate::layout::unix_compress_header as unix_compress;
+
 const BLOCK_MODE: u8 = 0x80;
 const CLEAR: u16 = 256;
 
 pub(crate) fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
-    let [0x1f, 0x9d, flags, rest @ ..] = data else {
+    if data.get(unix_compress::MAGIC..unix_compress::FLAGS) != Some(&[0x1f, 0x9d]) {
         return None;
-    };
+    }
+    let flags = *data.get(unix_compress::FLAGS)?;
+    let rest = data.get(unix_compress::LEN..)?;
     let max_bits = usize::from(flags & 0x1f);
     if !(9..=16).contains(&max_bits) || flags & !(BLOCK_MODE | 0x1f) != 0 {
         return None;

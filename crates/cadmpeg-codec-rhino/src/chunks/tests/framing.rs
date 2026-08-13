@@ -14,6 +14,10 @@ use crate::chunks::{
     parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
     TCODE_CRC, TCODE_ENDOFFILE, TCODE_SHORT,
 };
+use crate::layout::endoffile_record_v50 as eof_v50;
+use crate::layout::file_header;
+use crate::layout::long_chunk_header_v2 as long_v2;
+use crate::layout::long_chunk_header_v50 as long_v50;
 use crate::settings;
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
@@ -50,7 +54,7 @@ fn parses_exact_header_and_scope() {
     }
     assert!(parse_header(&header("0")).is_err());
     let mut invalid = header("50");
-    invalid[24] = b'0';
+    invalid[file_header::ARCHIVE_VERSION] = b'0';
     assert!(matches!(
         parse_header(&invalid),
         Err(FramingError::InvalidHeader)
@@ -82,12 +86,12 @@ fn parses_widths_short_long_and_bounds() {
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
     assert!(parsed.short);
     assert_eq!(parsed.value, 42);
-    assert_eq!(parsed.next_offset, 8);
+    assert_eq!(parsed.next_offset, long_v2::LEN);
 
     let bytes = long_chunk(ArchiveVersion::V4, 9, &[1, 2, 3]);
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V4, false).expect("required invariant");
-    assert_eq!(parsed.body, 8..11);
+    assert_eq!(parsed.body, long_v2::LEN..11);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..11);
     assert_eq!(parsed.next_offset, 11);
@@ -95,7 +99,7 @@ fn parses_widths_short_long_and_bounds() {
     let bytes = long_chunk(ArchiveVersion::V5, 9, &[1, 2, 3]);
     let parsed =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).expect("required invariant");
-    assert_eq!(parsed.body, 12..15);
+    assert_eq!(parsed.body, long_v50::LEN..15);
     assert_eq!(parsed.header_start, 0);
     assert_eq!(parsed.range(), 0..15);
     assert_eq!(parsed.next_offset, 15);
@@ -161,10 +165,11 @@ fn keeps_packed_and_anonymous_versions_distinct() {
 #[test]
 fn validates_eof_width_size_and_truncation() {
     for archive in [ArchiveVersion::V4, ArchiveVersion::V5] {
-        let mut bytes = vec![0; 32];
+        let mut bytes = vec![0; file_header::LEN];
         let marker = eof(
             archive,
-            32 + 12
+            file_header::LEN
+                + 12
                 + if archive.uses_eight_byte_values() {
                     16
                 } else {
@@ -173,7 +178,7 @@ fn validates_eof_width_size_and_truncation() {
         );
         bytes.extend(marker);
         let size = bytes.len();
-        let marker_start = 32;
+        let marker_start = file_header::LEN;
         let replacement = eof(archive, size);
         bytes[marker_start..].copy_from_slice(&replacement);
         assert_eq!(
@@ -186,7 +191,7 @@ fn validates_eof_width_size_and_truncation() {
         let mut mismatch = bytes.clone();
         let size_offset = marker_start
             + if archive.uses_eight_byte_values() {
-                12
+                eof_v50::FILE_SIZE
             } else {
                 8
             };
@@ -200,13 +205,13 @@ fn validates_eof_width_size_and_truncation() {
         );
         assert!(parse_eof(&bytes[..bytes.len() - 1], marker_start, archive).is_err());
     }
-    let bytes = vec![0; 32];
+    let bytes = vec![0; file_header::LEN];
     assert_eq!(
-        parse_eof(&bytes, 32, ArchiveVersion::V1).expect("required invariant"),
+        parse_eof(&bytes, file_header::LEN, ArchiveVersion::V1).expect("required invariant"),
         None
     );
     assert!(matches!(
-        parse_eof(&bytes, 32, ArchiveVersion::V2),
+        parse_eof(&bytes, file_header::LEN, ArchiveVersion::V2),
         Err(FramingError::MissingEof)
     ));
 }

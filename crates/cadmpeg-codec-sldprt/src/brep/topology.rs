@@ -23,6 +23,8 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
 
+use crate::layout::world_point as world_pt;
+
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
@@ -303,13 +305,13 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
 /// three big-endian f64 (metres) at body+14.
 fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
     let p = body_start(buf, off, 0x1d)?;
-    if p + 38 > buf.len() {
+    if p + world_pt::LEN > buf.len() {
         return None;
     }
     let attr = attr_at(buf, p)?;
     let (refs, xyz_at) = if prefixed {
         let mut refs = Vec::new();
-        let mut cursor = p + 6;
+        let mut cursor = p + world_pt::REFS;
         while buf.get(cursor + 2) == Some(&1) && refs.len() < 16 {
             refs.push(View::u16_be_at(buf, cursor)?);
             cursor += 3;
@@ -319,7 +321,7 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
         }
         (refs, cursor)
     } else {
-        (refs_be(buf, p + 6, 4)?, p + 14)
+        (refs_be(buf, p + world_pt::REFS, 4)?, p + world_pt::XYZ)
     };
     if refs.first().is_none_or(|reference| *reference > 1) {
         return None;

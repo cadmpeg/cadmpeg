@@ -225,11 +225,6 @@ type = "u64"
 source = "spec"
 anchor = "`39..47` | little-endian u64 flags; bit 0 is set iff the stream carries a history partition"
 
-[[record.code]]
-path = "crates/cadmpeg-asm/src/asm_header.rs"
-contains = "const BF8_STRING_REGION_START: usize = 47;"
-note = "The BinaryFile8 parser starts the string region at the declared 47-byte prefix."
-
 [[record]]
 name = "asmheader_binaryfile4"
 kind = "byte"
@@ -273,11 +268,6 @@ type = "u32"
 source = "spec"
 anchor = "`27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition"
 
-[[record.code]]
-path = "crates/cadmpeg-asm/src/asm_header.rs"
-contains = "const BF4_STRING_REGION_START: usize = 31;"
-note = "The BinaryFile4 parser starts the string region at the declared 31-byte prefix."
-
 [[record]]
 name = "acisheader_binaryfile4"
 kind = "byte"
@@ -320,11 +310,6 @@ offset = 27
 type = "u32"
 source = "spec"
 anchor = "`27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§3)"
-
-[[record.code]]
-path = "crates/cadmpeg-asm/src/acis_header.rs"
-contains = "const STRING_REGION_START: usize = 31;"
-note = "The ACIS parser uses the declared 31-byte fixed prefix."
 
 # --- §5.2 ASM topology records (BinaryFile8) ------------------------
 

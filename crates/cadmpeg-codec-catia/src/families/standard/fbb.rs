@@ -7,6 +7,7 @@ use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
     CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology, TrimRecord,
 };
+use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::reconstruct_incidence_candidates;
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::motif_port_points;
@@ -56,11 +57,17 @@ pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Option<usize> {
 #[must_use]
 pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
     let (start, count, _) = selected_standard_run(bytes)?;
-    let marker: [u8; 4] = bytes.get(start..start + 4)?.try_into().ok()?;
+    let marker: [u8; 4] = bytes.get(start..start + fbb_row::ALPHA)?.try_into().ok()?;
     (0..count)
         .map(|index| {
-            let row = bytes.get(start + index * 8..start + (index + 1) * 8)?;
-            (row[..4] == marker).then_some([row[7], row[6], row[5], row[4]])
+            let row =
+                bytes.get(start + index * fbb_row::LEN..start + (index + 1) * fbb_row::LEN)?;
+            (row[..fbb_row::ALPHA] == marker).then_some([
+                row[fbb_row::RED],
+                row[fbb_row::GREEN],
+                row[fbb_row::BLUE],
+                row[fbb_row::ALPHA],
+            ])
         })
         .collect()
 }
@@ -484,7 +491,7 @@ pub(crate) struct StandardFbbGroup {
 pub(crate) fn standard_fbb_groups(bytes: &[u8]) -> Vec<StandardFbbGroup> {
     crate::container::fbb_run_ranges(bytes)
         .into_iter()
-        .filter_map(|range| parse_standard_group(bytes, range.start, range.len() / 8))
+        .filter_map(|range| parse_standard_group(bytes, range.start, range.len() / fbb_row::LEN))
         .collect()
 }
 
@@ -493,7 +500,7 @@ fn parse_standard_group(
     face_start: usize,
     face_count: usize,
 ) -> Option<StandardFbbGroup> {
-    let after_faces = face_start.checked_add(face_count.checked_mul(8)?)?;
+    let after_faces = face_start.checked_add(face_count.checked_mul(fbb_row::LEN)?)?;
     let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let topologies = [1, 2, 3]
@@ -516,7 +523,7 @@ pub(crate) fn selected_standard_run(bytes: &[u8]) -> Option<(usize, usize, usize
     let ranges = crate::container::fbb_run_ranges(bytes);
     if let [range] = ranges.as_slice() {
         // A single marker run has no competing population to disambiguate.
-        return Some((range.start, range.len() / 8, range.end));
+        return Some((range.start, range.len() / fbb_row::LEN, range.end));
     }
     let groups = standard_fbb_groups(bytes);
     match groups.as_slice() {
@@ -532,13 +539,15 @@ pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
     let mut best = None;
     let mut tied = false;
     let mut position = 0;
-    while position + 8 <= bytes.len() {
+    while position + fbb_row::LEN <= bytes.len() {
         if crate::container::is_fbb_row(&bytes[position..]) {
             let start = position;
             let mut count = 0;
-            while position + 8 <= bytes.len() && crate::container::is_fbb_row(&bytes[position..]) {
+            while position + fbb_row::LEN <= bytes.len()
+                && crate::container::is_fbb_row(&bytes[position..])
+            {
                 count += 1;
-                position += 8;
+                position += fbb_row::LEN;
             }
             if best.is_none_or(|(_, best_count, _)| count > best_count) {
                 best = Some((start, count, position));

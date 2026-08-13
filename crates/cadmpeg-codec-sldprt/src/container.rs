@@ -15,12 +15,14 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
+use crate::layout::block_frame_header as block_hdr;
+use crate::layout::cache_cell_header as cache_hdr;
+use crate::layout::outer_header as outer_hdr;
+use crate::layout::tail_directory_entry as dir_ent;
+use crate::layout::zlb_wrapper_header as zlb_hdr;
+
 /// Marker shared by block, cache-cell, and directory frames.
 pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
-
-/// Bytes between a marker and its preamble in a block frame
-/// (`marker[6] + type_id[4] + crc32[4] + comp_sz[4] + uncomp_sz[4] + pre_sz[4]`).
-const BLOCK_HEADER_LEN: usize = 26;
 
 /// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
 /// from driving an unbounded allocation. Real part streams sit far below this.
@@ -265,8 +267,6 @@ impl ContainerScan<'_> {
     }
 }
 
-/// The outer header magic length (`file_id` + `version`).
-const OUTER_HEADER_LEN: usize = 8;
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = [
     0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
@@ -287,10 +287,10 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
                 })
             });
     }
-    if prefix.len() < OUTER_HEADER_LEN + MARKER.len() {
+    if prefix.len() < outer_hdr::LEN + MARKER.len() {
         return false;
     }
-    prefix[OUTER_HEADER_LEN..]
+    prefix[outer_hdr::LEN..]
         .windows(MARKER.len())
         .any(|w| w == MARKER)
 }
@@ -323,14 +323,16 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     }
     let version = {
         let mut view = View::over_retained(bytes);
-        view.seek(4).and_then(|()| view.u32_be()).unwrap_or(0)
+        view.seek(outer_hdr::VERSION)
+            .and_then(|()| view.u32_be())
+            .unwrap_or(0)
     };
 
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
 
-    let mut i = OUTER_HEADER_LEN;
+    let mut i = outer_hdr::LEN;
     // Every marker hit is tried as a block first (the CRC gate is effectively
     // false-positive-free), then as a cache cell, then as a directory entry.
     while i + MARKER.len() <= bytes.len() {
@@ -339,7 +341,7 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
             continue;
         }
         if let Some(block) = try_block(bytes, i) {
-            i = block.offset + BLOCK_HEADER_LEN + block.preamble_len + block.comp_sz as usize;
+            i = block.offset + block_hdr::LEN + block.preamble_len + block.comp_sz as usize;
             blocks.push(block.into_block());
             continue;
         }
@@ -437,24 +439,26 @@ fn decode_wrapped_payload_budgeted<'a>(
     source: View<'a>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let payload = source.window();
-    if payload.get(..16) != Some(&WRAPPED_PAYLOAD_MAGIC) {
+    if payload.get(..WRAPPED_PAYLOAD_MAGIC.len()) != Some(&WRAPPED_PAYLOAD_MAGIC) {
         return Ok(None);
     }
-    let Some(uncompressed_size) = View::u32_le_at(payload, 16).map(u64::from) else {
+    let Some(uncompressed_size) =
+        View::u32_le_at(payload, zlb_hdr::UNCOMPRESSED_SIZE).map(u64::from)
+    else {
         return Ok(None);
     };
-    let Some(compressed_size) =
-        View::u32_le_at(payload, 20).and_then(|size| usize::try_from(size).ok())
+    let Some(compressed_size) = View::u32_le_at(payload, zlb_hdr::ZLIB_MEMBER_SIZE)
+        .and_then(|size| usize::try_from(size).ok())
     else {
         return Ok(None);
     };
     if uncompressed_size == 0 || compressed_size == 0 {
         return Ok(None);
     }
-    let Some(member_end) = 24usize.checked_add(compressed_size) else {
+    let Some(member_end) = zlb_hdr::LEN.checked_add(compressed_size) else {
         return Ok(None);
     };
-    let Some(member) = payload.get(24..member_end) else {
+    let Some(member) = payload.get(zlb_hdr::LEN..member_end) else {
         return Ok(None);
     };
     let mut decoder = flate2::read::ZlibDecoder::new(member);
@@ -523,11 +527,11 @@ impl RawBlock {
 }
 
 fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
-    let type_id = View::u32_le_at(bytes, off + 6)?;
-    let crc = View::u32_le_at(bytes, off + 10)?;
-    let comp_sz = View::u32_le_at(bytes, off + 14)?;
-    let uncomp_sz = View::u32_le_at(bytes, off + 18)?;
-    let pre_sz = View::u32_le_at(bytes, off + 22)?;
+    let type_id = View::u32_le_at(bytes, off + block_hdr::TYPE_ID)?;
+    let crc = View::u32_le_at(bytes, off + block_hdr::CRC32)?;
+    let comp_sz = View::u32_le_at(bytes, off + block_hdr::COMP_SZ)?;
+    let uncomp_sz = View::u32_le_at(bytes, off + block_hdr::UNCOMP_SZ)?;
+    let pre_sz = View::u32_le_at(bytes, off + block_hdr::PRE_SZ)?;
 
     let comp = comp_sz as usize;
     let pre = pre_sz as usize;
@@ -535,7 +539,7 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     if comp == 0 || uncomp == 0 || uncomp > MAX_UNCOMP {
         return None;
     }
-    let payload_start = off + BLOCK_HEADER_LEN + pre;
+    let payload_start = off + block_hdr::LEN + pre;
     let payload = bytes.get(payload_start..payload_start + comp)?;
 
     let inflated = raw_inflate(payload, uncomp)?;
@@ -547,7 +551,7 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     }
 
     let preamble = bytes
-        .get(off + BLOCK_HEADER_LEN..payload_start)
+        .get(off + block_hdr::LEN..payload_start)
         .unwrap_or(&[]);
     let section = nibble_swap_name(preamble);
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
@@ -612,10 +616,10 @@ fn crc32(bytes: &[u8]) -> u32 {
 /// (`f@+10 == 2L`, `f@+14 == L/2`, `f@+18 == L`, `f@+22 == name_len`) plus a
 /// printable nibble-swapped name ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#12-cache-cell-section-index-grid)).
 fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
-    let two_l = View::u32_le_at(bytes, off + 10)?;
-    let half_l = View::u32_le_at(bytes, off + 14)?;
-    let l = View::u32_le_at(bytes, off + 18)?;
-    let name_len = View::u32_le_at(bytes, off + 22)?;
+    let two_l = View::u32_le_at(bytes, off + cache_hdr::TWO_L)?;
+    let half_l = View::u32_le_at(bytes, off + cache_hdr::HALF_L)?;
+    let l = View::u32_le_at(bytes, off + cache_hdr::L)?;
+    let name_len = View::u32_le_at(bytes, off + cache_hdr::NAME_LEN)?;
 
     if l == 0 || two_l != l.wrapping_mul(2) || half_l != l / 2 {
         return None;
@@ -623,7 +627,7 @@ fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
     if name_len == 0 || name_len >= 500 {
         return None;
     }
-    let name_start = off + 26;
+    let name_start = off + cache_hdr::LEN;
     let raw = bytes.get(name_start..name_start + name_len as usize)?;
     let name = nibble_swap_name(raw)?;
     Some(CacheCell {
@@ -637,21 +641,24 @@ fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
 /// +18, a size at +14, a name length at +22, a 14-byte descriptor, then a
 /// printable nibble-swapped name ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#13-tail-section-directory)).
 fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
-    let type_id = View::u32_le_at(bytes, off + 6)?;
-    let zero_a = View::u32_le_at(bytes, off + 10)?;
-    let size = View::u32_le_at(bytes, off + 14)?;
-    let zero_b = View::u32_le_at(bytes, off + 18)?;
-    let name_len = View::u32_le_at(bytes, off + 22)?;
+    let type_id = View::u32_le_at(bytes, off + dir_ent::TYPE_ID)?;
+    let zero_a = View::u32_le_at(bytes, off + dir_ent::ZERO_AT_10)?;
+    let size = View::u32_le_at(bytes, off + dir_ent::SIZE)?;
+    let zero_b = View::u32_le_at(bytes, off + dir_ent::ZERO_AT_18)?;
+    let name_len = View::u32_le_at(bytes, off + dir_ent::NAME_LEN)?;
     if zero_a != 0 || zero_b != 0 {
         return None;
     }
     if name_len == 0 || name_len >= 500 {
         return None;
     }
-    let name_start = off + 40; // 26 + 14-byte descriptor
+    let name_start = off + dir_ent::LEN;
     let raw = bytes.get(name_start..name_start + name_len as usize)?;
     let name = nibble_swap_name(raw)?;
-    let descriptor = bytes.get(off + 26..off + 40)?.try_into().ok()?;
+    let descriptor = bytes
+        .get(off + dir_ent::DESCRIPTOR..off + dir_ent::LEN)?
+        .try_into()
+        .ok()?;
     let trailer = bytes
         .get(name_start + name_len as usize..name_start + name_len as usize + 6)?
         .try_into()

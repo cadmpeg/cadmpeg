@@ -67,6 +67,16 @@ path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
 contains = "3D Geometry File Format "
 note = "The parser's 24-byte magic matches offset 0."
 
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
+contains = "start_offset.saturating_add(file_header::LEN)"
+note = "The parser's header length matches the 32-byte start section."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
+contains = "start_offset + file_header::ARCHIVE_VERSION"
+note = "The parser reads the archive version at offset 24."
+
 [[record]]
 name = "uuid_wire_form"
 kind = "byte"
@@ -105,6 +115,11 @@ source = "spec"
 anchor = "Data4: eight bytes unchanged"
 note = "Not a number: the eight bytes are copied verbatim, so no byte order applies."
 
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/wire.rs"
+contains = "canonical[uuid_wire::DATA4..].copy_from_slice(&bytes[uuid_wire::DATA4..])"
+note = "The parser copies Data4 from wire offset 8."
+
 [[record]]
 name = "long_chunk_header_v2"
 kind = "byte"
@@ -132,6 +147,11 @@ path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
 contains = "TCODE_SHORT: u32 = 0x8000_0000"
 note = "The parser's short-chunk flag matches the §4 constant that selects between the long and short forms."
 
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks/tests/framing.rs"
+contains = "parsed.next_offset, long_v2::LEN"
+note = "The parser's below-50 long header is 8 bytes."
+
 [[record]]
 name = "long_chunk_header_v50"
 kind = "byte"
@@ -153,6 +173,11 @@ offset = 4
 type = "i64"
 source = "spec"
 anchor = "archive version >= 50  i64"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks/tests/archive.rs"
+contains = "record + long_v50::DECLARED_LENGTH..record + long_v50::LEN"
+note = "The parser's version-50 length word occupies offsets 4..12."
 
 [[record]]
 name = "endoffile_record_v50"
@@ -188,6 +213,11 @@ path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
 contains = "TCODE_ENDOFFILE: u32 = 0x0000_7fff"
 note = "The parser's end-of-file typecode matches the stated value."
 
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks/tests/framing.rs"
+contains = "eof_v50::FILE_SIZE"
+note = "The parser reads the version-50 file-size field at offset 12."
+
 [[record]]
 name = "class_uuid_chunk_body"
 kind = "byte"
@@ -209,6 +239,11 @@ offset = 16
 type = "u32"
 source = "spec"
 anchor = "sixteen UUID bytes and four checksum bytes"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/objects.rs"
+contains = "uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN"
+note = "The parser requires the class-UUID chunk body to be 20 bytes."
 
 [[record]]
 name = "compressed_buffer_prologue"
@@ -238,6 +273,11 @@ offset = 8
 type = "u8"
 source = "spec"
 anchor = "u8 method"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks/tests/archive.rs"
+contains = "normal_buffer + compressed::CRC32..normal_buffer + compressed::METHOD"
+note = "The parser's compressed-buffer CRC occupies offsets 4..8."
 
 [[record]]
 name = "on_plane"
@@ -366,6 +406,11 @@ offset = 4
 type = "i32"
 source = "spec"
 anchor = "i32 minor"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/extrusion.rs"
+contains = "body_start + anon_ver::MINOR..body_start + anon_ver::LEN"
+note = "The parser's anonymous version minor word occupies offsets 4..8."
 
 # --- Typecode inventory (§6.1, §6.4) ----------------------------------------
 

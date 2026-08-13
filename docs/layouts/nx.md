@@ -75,7 +75,6 @@ Unstated regions:
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-nx/src/container.rs` — The parser's magic matches offset 0x00.
-- `crates/cadmpeg-codec-nx/src/container.rs` — The parser reads the 48-bit footer offset at 0x11, matching this table.
 
 ## `directory_entry`
 
@@ -122,10 +121,6 @@ Spec §2.3 · layout: byte offsets · size: 12 B
 | 4 | 4 | `zero_word` | `bytes[4]` | — | spec | `ff ff ff ff 00 00 00 00 payload_len:u32 BE` |
 | 8 | 4 | `payload_len` | `u32` | big | spec | payload_len:u32 BE`. `payload_len + 12` equals the bounded directory-entry size |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/native/structure.rs` — The parser's envelope length matches the stated twelve bytes.
-
 ## `om_section_header`
 
 Spec §7.1 · layout: byte offsets · size: 14 B
@@ -155,10 +150,6 @@ Byte order is zero and the reserved word is zero. Field offsets are derived by l
 | 81 | 4 | `reserved` | `u32` | little | derived | Offset derived by laying the stated ordered field list out from the header start. |
 | 85 | 4 | `toc_offset` | `u32` | little | derived | Offset derived by laying the stated ordered field list out from the header start. |
 | 89 | 16 | `lsg_segment_id` | `bytes[16]` | little | derived | Offset derived by laying the stated ordered field list out from the header start. |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/native/display_jt.rs` — The parser's version-field length matches the stated 80 bytes; it reads `byte_order` at 80 and `toc_offset` from 85..89.
 
 ## `jt_toc_entry`
 
@@ -207,10 +198,6 @@ Offsets are derived by laying the spec's ordered field list out from the block s
 | 97 | 1 | `normal_quantization_factor` | `u8` | little | derived | Offset derived by laying the stated ordered field list out from the block start. |
 | 98 | 1 | `texture_quantization_bits` | `u8` | little | derived | Offset derived by laying the stated ordered field list out from the block start. |
 | 99 | 1 | `color_quantization_bits` | `u8` | little | derived | Offset derived by laying the stated ordered field list out from the block start; it closes the stated 100-byte total exactly. |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/native/display_jt.rs` — The parser reads `vertex_version` at 86 and `vertex_bindings` at 88, matching the derived offsets.
 
 ## `toggle_information_stream`
 
@@ -299,10 +286,6 @@ Unstated regions:
 
 - `0..8` (8 B): Type tag, XMT index, and the `node_id:u32` at record offset +4 (§5.1 states `Types carrying 'node_id:u32' place it at record offset '+4'`).
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 14 matches the declared 39 bytes, which the field list closes exactly.
-
 ## `edge_node`
 
 Spec §5.1 · layout: byte offsets · size: 32 B
@@ -322,10 +305,6 @@ Spec §5.1 · layout: byte offsets · size: 32 B
 Unstated regions:
 
 - `0..8` (8 B): Type tag, XMT index, and the `node_id:u32` at record offset +4.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 16 matches the declared 32 bytes, which the field list closes exactly.
 
 ## `fin_node`
 
@@ -350,10 +329,6 @@ Unstated regions:
 
 - `0..4` (4 B): Type tag and XMT index. FIN carries no `node_id`, so its field block starts at +4.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 17 matches the declared 23 bytes, which the field list closes exactly.
-
 ## `vertex_node`
 
 Spec §5.1 · layout: byte offsets · size: 28 B
@@ -372,10 +347,6 @@ Unstated regions:
 
 - `0..8` (8 B): Type tag, XMT index, and the `node_id:u32` at record offset +4.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 18 matches the declared 28 bytes, which the field list closes exactly.
-
 ## `loop_node`
 
 Spec §5.1 · layout: byte offsets · size: 16 B
@@ -390,10 +361,6 @@ Spec §5.1 · layout: byte offsets · size: 16 B
 Unstated regions:
 
 - `0..8` (8 B): Type tag, XMT index, and the `node_id:u32` at record offset +4.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 15 matches the declared 16 bytes, which the field list closes exactly.
 
 ## `shell_node`
 
@@ -415,10 +382,6 @@ Unstated regions:
 
 - `0..4` (4 B): Type tag and XMT index; the spec's field list starts at the `node_id` at +4.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 13 matches the declared 24 bytes, which the field list closes exactly.
-
 ## `point_node`
 
 Spec §5.1 · layout: byte offsets · size: 40 B
@@ -435,10 +398,6 @@ Unstated regions:
 
 - `0..8` (8 B): Type tag, XMT index, and the `node_id:u32` at record offset +4.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 29 matches the declared 40 bytes, which the field list closes exactly.
-
 ## `line_payload`
 
 Spec §6.1 · layout: byte offsets · size: 67 B
@@ -454,10 +413,6 @@ Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 30 length matches the declared 67 bytes, which the field list closes exactly.
-
 ## `circle_payload`
 
 Spec §6.1 · layout: byte offsets · size: 99 B
@@ -472,10 +427,6 @@ Spec §6.1 · layout: byte offsets · size: 99 B
 Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 31 length matches the declared 99 bytes, which the field list closes exactly.
 
 ## `ellipse_payload`
 
@@ -493,10 +444,6 @@ Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 32 length matches the declared 107 bytes, which the field list closes exactly.
-
 ## `plane_payload`
 
 Spec §6.1 · layout: byte offsets · size: 91 B
@@ -510,10 +457,6 @@ Spec §6.1 · layout: byte offsets · size: 91 B
 Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 50 length matches the declared 91 bytes, which the field list closes exactly.
 
 ## `cylinder_payload`
 
@@ -529,10 +472,6 @@ Spec §6.1 · layout: byte offsets · size: 99 B
 Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 51 length matches the declared 99 bytes, which the field list closes exactly.
 
 ## `cone_payload`
 
@@ -551,10 +490,6 @@ Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 52 length matches the declared 115 bytes, which the field list closes exactly.
-
 ## `sphere_payload`
 
 Spec §6.1 · layout: byte offsets · size: 99 B
@@ -572,10 +507,6 @@ Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 53 length matches the declared 99 bytes, which the field list closes exactly.
-
 ## `torus_payload`
 
 Spec §6.1 · layout: byte offsets · size: 107 B
@@ -591,10 +522,6 @@ Spec §6.1 · layout: byte offsets · size: 107 B
 Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 54 length matches the declared 107 bytes, which the field list closes exactly.
 
 ## `offset_surf_payload`
 
@@ -612,10 +539,6 @@ The compact partition record ends after `offset_distance`, closing the §4.1 len
 Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 60 matches the declared 31 bytes, which the field list closes exactly.
 
 ## `trimmed_curve_payload`
 
@@ -635,10 +558,6 @@ Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 133 matches the declared 85 bytes, which the field list closes exactly.
-
 ## `sp_curve_payload`
 
 Spec §6.4 · layout: byte offsets · size: 33 B
@@ -653,10 +572,6 @@ Spec §6.4 · layout: byte offsets · size: 33 B
 Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 137 matches the declared 33 bytes, which the field list closes exactly.
 
 ## `intersection_type_38`
 
@@ -676,10 +591,6 @@ Spec §6.3 · layout: byte offsets · size: 31 B
 Unstated regions:
 
 - `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 38, which §4.1 does not state.
 
 ## `chart_s_preamble`
 
@@ -723,10 +634,6 @@ Unstated regions:
 
 - `0..4` (4 B): Type tag and the encoded XMT identity.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/nurbs.rs` — The parser reads the two logical flags at the declared shifted offsets.
-
 ## `nurbs_curve_descriptor_prefix`
 
 Spec §6.2 · layout: byte offsets · size: 21 B
@@ -748,10 +655,6 @@ Offsets are relative to the type tag after the optional envelope and large-index
 Unstated regions:
 
 - `0..4` (4 B): Type tag and the encoded XMT identity.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/nurbs.rs` — The parser reads the curve and pcurve periodic flag at the declared shifted offset.
 
 ## Not tabulated
 

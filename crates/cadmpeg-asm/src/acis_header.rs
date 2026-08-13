@@ -9,11 +9,10 @@
 use cadmpeg_core::decode::View;
 
 use crate::kernel_header::{read_string_region, KernelHeader};
+use crate::layout::acisheader_binaryfile4 as acis_bf4;
 
 /// Exact binary ACIS magic, without a width suffix.
 pub const MAGIC: &[u8; 15] = b"ACIS BinaryFile";
-
-const STRING_REGION_START: usize = 31;
 
 /// Whether `bytes` starts with the binary ACIS magic and at least one header
 /// byte follows it.
@@ -28,10 +27,10 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
     }
     let mut header = KernelHeader {
         width: 4,
-        save_format_version: View::u32_le_at(bytes, 15),
-        record_count: View::u32_le_at(bytes, 19),
-        entity_count: View::u32_le_at(bytes, 23).map(u64::from),
-        flags: View::u32_le_at(bytes, 27).map(u64::from),
+        save_format_version: View::u32_le_at(bytes, acis_bf4::SAVE_FORMAT_VERSION),
+        record_count: View::u32_le_at(bytes, acis_bf4::RECORD_COUNT),
+        entity_count: View::u32_le_at(bytes, acis_bf4::ENTITY_COUNT).map(u64::from),
+        flags: View::u32_le_at(bytes, acis_bf4::FLAGS).map(u64::from),
         product_family: None,
         product_version: None,
         save_date: None,
@@ -39,7 +38,7 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
         linear: None,
         angular: None,
     };
-    let (strings, doubles, _) = read_string_region(bytes, STRING_REGION_START);
+    let (strings, doubles, _) = read_string_region(bytes, acis_bf4::LEN);
     let mut strings = strings.into_iter();
     header.product_family = strings.next();
     header.product_version = strings.next();
@@ -54,7 +53,7 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
 /// Byte offset immediately after the three strings and three doubles.
 pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
     parse(bytes)?;
-    let (strings, doubles, position) = read_string_region(bytes, STRING_REGION_START);
+    let (strings, doubles, position) = read_string_region(bytes, acis_bf4::LEN);
     (strings.len() == 3 && doubles.len() == 3).then_some(position)
 }
 

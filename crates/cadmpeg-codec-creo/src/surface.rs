@@ -7,6 +7,8 @@
 
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
 
+use crate::layout::type24_first_coordinate_bounded_round as type24_round;
+use crate::layout::type24_segmented_first_coordinate_bounded_round as type24_seg;
 use crate::psb::{self, compact_int};
 use crate::scalar;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1197,17 +1199,17 @@ impl SurfaceParameterRecord {
                 scalar::decode_tabulated_cylinder_first_coordinate(&self.body, offset, cache)?;
             value.is_finite().then_some((value, end))
         };
-        let (first_diameter, first_end) = decode_at(7)?;
-        (first_end == 15).then_some(())?;
-        let (second_diameter, mut cursor) = decode_at(16)?;
-        (cursor == 24).then_some(())?;
+        let (first_diameter, first_end) = decode_at(type24_round::FIRST_DIAMETER_ENDPOINT)?;
+        (first_end == type24_round::SEPARATOR).then_some(())?;
+        let (second_diameter, mut cursor) = decode_at(type24_round::SECOND_DIAMETER_ENDPOINT)?;
+        (cursor == type24_round::EXTENT_SCALARS).then_some(())?;
         let mut coordinates = Vec::with_capacity(6);
         for _ in 0..5 {
             let (value, next) = decode_at(cursor)?;
             coordinates.push(value);
             cursor = next;
         }
-        (cursor == 49).then_some(())?;
+        (cursor == type24_round::TERMINAL).then_some(())?;
         coordinates.push(0.0);
         let [a0, a1, a2, b0, b1, b2] = coordinates.as_slice() else {
             unreachable!("six bounded round coordinates")
@@ -1235,17 +1237,17 @@ impl SurfaceParameterRecord {
                 scalar::decode_tabulated_cylinder_first_coordinate(&self.body, offset, cache)?;
             value.is_finite().then_some((value, end))
         };
-        let (first_diameter, first_end) = decode_at(1)?;
-        (first_end == 9).then_some(())?;
-        let (second_diameter, mut cursor) = decode_at(16)?;
-        (cursor == 24).then_some(())?;
+        let (first_diameter, first_end) = decode_at(type24_seg::FIRST_DIAMETER_ENDPOINT)?;
+        (first_end == type24_seg::LITERAL_RUN).then_some(())?;
+        let (second_diameter, mut cursor) = decode_at(type24_seg::SECOND_DIAMETER_ENDPOINT)?;
+        (cursor == type24_seg::EXTENT_COORDINATES).then_some(())?;
         let mut coordinates = Vec::with_capacity(6);
         for _ in 0..6 {
             let (value, next) = decode_at(cursor)?;
             coordinates.push(value);
             cursor = next;
         }
-        (cursor == 54).then_some(())?;
+        (cursor == type24_seg::TRAILER).then_some(())?;
         let [a0, a1, a2, b0, b1, b2] = coordinates.as_slice() else {
             unreachable!("six bounded segmented-round coordinates")
         };
@@ -1262,17 +1264,20 @@ impl SurfaceParameterRecord {
     }
 
     fn is_type24_first_coordinate_round_body(&self) -> bool {
-        self.body.len() == 50
+        self.body.len() == type24_round::LEN
             && self.body.get(..2) == Some(&[0x4c, 0xb7])
-            && self.body.get(15) == Some(&0x12)
-            && self.body.get(49) == Some(&0x18)
+            && self.body.get(type24_round::SEPARATOR) == Some(&0x12)
+            && self.body.get(type24_round::TERMINAL) == Some(&0x18)
     }
 
     fn is_type24_segmented_first_coordinate_round_body(&self) -> bool {
-        self.body.len() == 56
-            && self.body.first() == Some(&0x18)
-            && self.body.get(9..16) == Some(&[0x70, 0xbf, 0xe3, 0x4f, 0x05, 0x11, 0x10])
-            && self.body.get(54..56) == Some(&[0xf7, 0x19])
+        self.body.len() == type24_seg::LEN
+            && self.body.get(type24_seg::OPENER) == Some(&0x18)
+            && self
+                .body
+                .get(type24_seg::LITERAL_RUN..type24_seg::SECOND_DIAMETER_ENDPOINT)
+                == Some(&[0x70, 0xbf, 0xe3, 0x4f, 0x05, 0x11, 0x10])
+            && self.body.get(type24_seg::TRAILER..type24_seg::LEN) == Some(&[0xf7, 0x19])
     }
 
     fn type24_scalar_frame_round_layout(&self) -> Option<Type24RoundEnvelope> {

@@ -32,6 +32,7 @@ use crate::feature::{
     FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
     FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
+use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
@@ -994,14 +995,17 @@ fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
 fn model_name(data: &[u8]) -> Option<(String, usize)> {
     const PREFIX: &[u8] = b"#- CMNM ";
     let marker = find(data, PREFIX, 0)?;
-    let start = marker + PREFIX.len();
+    let start = marker + cmnm::NAME_LENGTH_HEX;
     find(data, PREFIX, start).is_none().then_some(())?;
-    let length_bytes = data.get(start..start + 3)?;
+    let length_bytes = data.get(start..marker + cmnm::LEN)?;
     let length = usize::from_str_radix(std::str::from_utf8(length_bytes).ok()?, 16).ok()?;
-    let name = data.get(start + 3..start + 3 + length)?;
+    let name = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length)?;
     (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
         .then_some(())?;
-    Some((std::str::from_utf8(name).ok()?.to_string(), start + 3))
+    Some((
+        std::str::from_utf8(name).ok()?.to_string(),
+        marker + cmnm::LEN,
+    ))
 }
 
 fn relation_model_name(filename: &str) -> Option<&str> {

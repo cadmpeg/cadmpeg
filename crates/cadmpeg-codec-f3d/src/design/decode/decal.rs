@@ -6,6 +6,9 @@ use crate::container::{role, ContainerScan};
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids;
+use crate::layout::design_decal_image_asset_record as decal_asset;
+use crate::layout::design_decal_image_name_prefix as decal_name;
+use crate::layout::design_decal_scope_prefix as decal_scope;
 use crate::records::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignDecalImage, DesignParameterScope,
 };
@@ -148,19 +151,26 @@ fn parse_decal_image_frame(
     scope_record_index: u32,
     scope_at: usize,
 ) -> Option<DesignDecalImage> {
-    if bytes.get(scope_at + 11..scope_at + 21)? != [0; 10] {
+    if bytes.get(scope_at + decal_scope::ZERO_RUN_10..scope_at + decal_scope::ASSET_REFERENCE)?
+        != [0; 10]
+    {
         return None;
     }
-    let asset_reference_at = scope_at + 21;
+    let asset_reference_at = scope_at + decal_scope::ASSET_REFERENCE;
     let asset_record_index = marked_reference(bytes, asset_reference_at)?;
-    if bytes.get(scope_at + 26..scope_at + 32)? != [0; 6] {
+    if bytes.get(
+        scope_at + decal_scope::ASSET_REFERENCE_ZERO_RUN..scope_at + decal_scope::MAPPING_MODE,
+    )? != [0; 6]
+    {
         return None;
     }
-    let mapping_mode_at = scope_at + 32;
+    let mapping_mode_at = scope_at + decal_scope::MAPPING_MODE;
     let mapping_mode = *bytes.get(mapping_mode_at)?;
-    let target_group_reference_at = scope_at + 33;
+    let target_group_reference_at = scope_at + decal_scope::TARGET_GROUP_REFERENCE;
     let target_group_record_index = marked_reference(bytes, target_group_reference_at)?;
-    if bytes.get(scope_at + 38..scope_at + 44)? != [0; 6] {
+    if bytes.get(scope_at + decal_scope::TARGET_REFERENCE_ZERO_RUN..scope_at + decal_scope::LEN)?
+        != [0; 6]
+    {
         return None;
     }
 
@@ -209,7 +219,7 @@ fn parse_decal_image_frame(
         name_byte_offset: u64::try_from(name_at).ok()?,
         name_frame_length: u64::try_from(next_at.checked_sub(name_at)?).ok()?,
         asset_name,
-        asset_name_offset: u64::try_from(name_at + 25).ok()?,
+        asset_name_offset: u64::try_from(name_at + decal_name::LEN).ok()?,
     })
 }
 
@@ -221,29 +231,38 @@ fn parse_decal_asset_record(
     let (asset_class_tag, after_asset_tag) =
         lp_ascii_filtered(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
-        || bytes.get(asset_at + 11..asset_at + 19)? != [0; 8]
+        || bytes.get(
+            asset_at + decal_asset::ZERO_RUN_8
+                ..asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE,
+        )? != [0; 8]
     {
         return None;
     }
-    let asset_entity_reference_at = asset_at + 19;
+    let asset_entity_reference_at = asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE;
     let asset_entity_suffix = marked_reference(bytes, asset_entity_reference_at)?;
-    if bytes.get(asset_at + 24..asset_at + 30)? != [0; 6] {
+    if bytes.get(asset_at + decal_asset::ZERO_RUN_6..asset_at + decal_asset::LEN)? != [0; 6] {
         return None;
     }
-    let name_at = next_indexed_record_offset(bytes, asset_at + 11)?;
-    if name_at != asset_at + 30 {
+    let name_at = next_indexed_record_offset(bytes, asset_at + decal_asset::ZERO_RUN_8)?;
+    if name_at != asset_at + decal_asset::LEN {
         return None;
     }
     let (name_class_tag, after_name_tag) =
         lp_ascii_filtered(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
     let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
     if name_record_index != asset_record_index.checked_add(1)?
-        || bytes.get(name_at + 11..name_at + 21)? != [0; 10]
+        || bytes.get(
+            name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
+        )? != [0; 10]
     {
         return None;
     }
-    let (asset_name, after_asset_name) = lp_utf16_bounded(bytes, name_at + 21, 1..=1024)?;
-    let next_at = next_indexed_record_offset(bytes, name_at + 11)?;
+    let (asset_name, after_asset_name) = lp_utf16_bounded(
+        bytes,
+        name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
+        1..=1024,
+    )?;
+    let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
     if after_asset_name != next_at {
         return None;
     }

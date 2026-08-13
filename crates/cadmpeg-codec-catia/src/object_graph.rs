@@ -6,6 +6,7 @@ use cadmpeg_core::decode::View;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::layout::outer_alias_row as alias_row;
 use crate::{catalog, value_block};
 
 /// One decoded outer object graph.
@@ -336,12 +337,13 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
         .enumerate()
         .filter(|(_, bytes)| *bytes == MARKER)
         .filter_map(|(pos, _)| {
-            let tag_raw = View::u32_le_at(data, pos + 4)?;
+            let row = pos.checked_sub(alias_row::MARKER)?;
+            let tag_raw = View::u32_le_at(data, row + alias_row::TAG)?;
             let tag = tag_raw & 0x00ff_ffff;
-            if pos + 20 > data.len() {
+            if row + alias_row::LEN > data.len() {
                 return None;
             }
-            let lead_raw = View::u32_le_at(data, pos.checked_sub(4)?)?;
+            let lead_raw = View::u32_le_at(data, row + alias_row::LEAD)?;
             let group = alias_group_membership(data, pos);
             let lead = if lead_raw & 0xff == 1 {
                 AliasLead::SurfaceSupportStorage
@@ -356,18 +358,22 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
             } else {
                 AliasLead::Unclassified(lead_raw)
             };
-            let f1 = [data[pos + 9], data[pos + 10], data[pos + 11]];
+            let f1 = [
+                data[row + alias_row::F1],
+                data[row + alias_row::F1 + 1],
+                data[row + alias_row::F1 + 2],
+            ];
             Some(SurfaceAlias {
                 pos,
                 lead,
                 lead_raw,
                 tag,
                 tag_raw,
-                flag: data[pos + 8],
+                flag: data[row + alias_row::FLAG],
                 f1,
                 entity_record_ordinal: f1[2],
-                f2: View::u32_le_at(data, pos + 12)?,
-                f3: View::u32_le_at(data, pos + 16)?,
+                f2: View::u32_le_at(data, row + alias_row::F2)?,
+                f3: View::u32_le_at(data, row + alias_row::F3)?,
                 group,
             })
         })

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::chunks::TCODE_ENDOFFILE;
+use crate::layout::compressed_buffer_prologue as compressed;
 use crate::MAGIC;
 
 pub(crate) const POINT_CLASS: [u8; 16] = [
@@ -252,7 +253,8 @@ pub(crate) fn mesh_payload(major: u8, minor: u8, bad_vertex_crc: bool, mapping: 
             let start = payload.len();
             payload.extend(mesh_buffer(&bytes));
             if bad_vertex_crc && start == mesh_common((major << 4) | minor).len() {
-                payload[start + 4..start + 8].copy_from_slice(&0_u32.to_le_bytes());
+                payload[start + compressed::CRC32..start + compressed::METHOD]
+                    .copy_from_slice(&0_u32.to_le_bytes());
             }
         }
     }

@@ -49,8 +49,8 @@ The six one-byte primitive length fields select the bit widths used by the remai
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-iges/src/layout.rs` — Representation detection requires the fixed big-endian byte count.
-- `crates/cadmpeg-codec-iges/src/layout.rs` — Representation detection validates the six-byte Binary sequence padding as ASCII blanks or zeroes.
+- `crates/cadmpeg-codec-iges/src/representation.rs` — Representation detection requires the fixed big-endian byte count.
+- `crates/cadmpeg-codec-iges/src/representation.rs` — Representation detection validates the six-byte Binary sequence padding as ASCII blanks or zeroes.
 
 ## `canonical_card`
 

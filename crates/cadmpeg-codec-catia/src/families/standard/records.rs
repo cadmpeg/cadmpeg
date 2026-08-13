@@ -9,6 +9,14 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::layout::analytic_surface_cone as analytic_cone;
+use crate::layout::analytic_surface_cylinder as analytic_cylinder;
+use crate::layout::analytic_surface_plane as analytic_plane;
+use crate::layout::analytic_surface_sphere as analytic_sphere;
+use crate::layout::analytic_surface_torus as analytic_torus;
+use crate::layout::freeform_surface_core as freeform_core;
+use crate::layout::vertex_roster_row as vertex_roster;
+
 /// The standard-nested plane bounds record. Its three-byte tag is the bridge to
 /// the matching `SurfacicReps` plane marker.
 #[derive(Debug, Clone)]
@@ -131,7 +139,7 @@ pub fn standard_face_bounds(
 impl StandardSurfaceRecord {
     fn pos(&self) -> usize {
         match self {
-            Self::Analytic(prefix) => prefix.pos - 5,
+            Self::Analytic(prefix) => prefix.pos - analytic_plane::MARKER,
             Self::Freeform { pos, .. } => *pos,
         }
     }
@@ -141,14 +149,15 @@ impl StandardSurfaceRecord {
             Self::Analytic(prefix) => {
                 self.pos()
                     + match prefix.kind {
-                        0x32 => 49,
-                        0x33 | 0x34 => 73,
-                        0x35 => 65,
-                        0x38 => 77,
+                        0x32 => analytic_plane::LEN,
+                        0x33 => analytic_cylinder::LEN,
+                        0x34 => analytic_cone::LEN,
+                        0x35 => analytic_sphere::LEN,
+                        0x38 => analytic_torus::LEN,
                         _ => unreachable!("analytic roster kinds are filtered"),
                     }
             }
-            Self::Freeform { pos, .. } => pos + 47,
+            Self::Freeform { pos, .. } => pos + freeform_core::LEN,
         }
     }
 }
@@ -168,19 +177,25 @@ pub fn standard_surface_records(
     let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
     for prefix in surface_prefixes(brep) {
         if face_sense(brep, &prefix).is_some() {
-            records.insert(prefix.pos - 5, StandardSurfaceRecord::Analytic(prefix));
+            records.insert(
+                prefix.pos - analytic_plane::MARKER,
+                StandardSurfaceRecord::Analytic(prefix),
+            );
         }
     }
     let analytic_ranges = records
         .values()
         .filter_map(|record| match record {
-            StandardSurfaceRecord::Analytic(prefix) => Some((prefix.pos - 5, record.end())),
+            StandardSurfaceRecord::Analytic(prefix) => {
+                Some((prefix.pos - analytic_plane::MARKER, record.end()))
+            }
             StandardSurfaceRecord::Freeform { .. } => None,
         })
         .collect::<Vec<_>>();
     let mut next_analytic = analytic_ranges.iter().copied().peekable();
-    for pos in 0..brep.len().saturating_sub(46) {
-        if brep.get(pos + 3..pos + 6) != Some(&[0, 0, 0]) {
+    for pos in 0..brep.len().saturating_sub(freeform_core::SIGN) {
+        if brep.get(pos + freeform_core::ZERO_RUN..pos + freeform_core::BOUNDS) != Some(&[0, 0, 0])
+        {
             continue;
         }
         while next_analytic
@@ -191,17 +206,17 @@ pub fn standard_surface_records(
         }
         if next_analytic
             .peek()
-            .is_some_and(|(analytic_start, _)| *analytic_start < pos + 47)
+            .is_some_and(|(analytic_start, _)| *analytic_start < pos + freeform_core::LEN)
         {
             continue;
         }
         let tag = u24_le(brep, pos);
-        let forward = match brep[pos + 46] {
+        let forward = match brep[pos + freeform_core::SIGN] {
             0x01 => true,
             0xff => false,
             _ => continue,
         };
-        let Some(bounds) = face_bounds_at(brep, pos + 6) else {
+        let Some(bounds) = face_bounds_at(brep, pos + freeform_core::BOUNDS) else {
             continue;
         };
         if tag == 0 {
@@ -283,14 +298,20 @@ pub fn standard_surface_records(
 /// Read the trailing per-face orientation byte from a complete analytic
 /// `SurfacicReps` record. `true` means the face follows the carrier normal.
 pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
-    let length = match prefix.kind {
-        0x32 => 49,
-        0x33 | 0x34 => 73,
-        0x35 => 65,
-        0x38 => 77,
+    let sign = match prefix.kind {
+        0x32 => analytic_plane::SIGN,
+        0x33 => analytic_cylinder::SIGN,
+        0x34 => analytic_cone::SIGN,
+        0x35 => analytic_sphere::SIGN,
+        0x38 => analytic_torus::SIGN,
         _ => return None,
     };
-    match *brep.get(prefix.pos.checked_sub(5)?.checked_add(length - 1)?)? {
+    match *brep.get(
+        prefix
+            .pos
+            .checked_sub(analytic_plane::MARKER)?
+            .checked_add(sign)?,
+    )? {
         0x01 => Some(true),
         0xff => Some(false),
         _ => None,
@@ -307,21 +328,25 @@ pub fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<
     }
     let mut solutions = Vec::new();
     let mut position = 0usize;
-    while position + 7 <= source.len() {
-        if source[position] != 0x54 || source[position + 4..position + 7] != [0, 0, 0] {
+    while position + vertex_roster::LEN <= source.len() {
+        if source[position + vertex_roster::MARKER] != 0x54
+            || source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
+                != [0, 0, 0]
+        {
             position += 1;
             continue;
         }
         let start = position;
         let mut identities = Vec::new();
-        while position + 7 <= source.len()
-            && source[position] == 0x54
-            && source[position + 4..position + 7] == [0, 0, 0]
+        while position + vertex_roster::LEN <= source.len()
+            && source[position + vertex_roster::MARKER] == 0x54
+            && source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
+                == [0, 0, 0]
         {
             let identity = u32::from_le_bytes([
-                source[position + 1],
-                source[position + 2],
-                source[position + 3],
+                source[position + vertex_roster::TAG],
+                source[position + vertex_roster::TAG + 1],
+                source[position + vertex_roster::TAG + 2],
                 0,
             ]);
             if identities
@@ -331,7 +356,7 @@ pub fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<
                 break;
             }
             identities.push(identity);
-            position += 7;
+            position += vertex_roster::LEN;
         }
         if identities.len() == vertex_count {
             solutions.push(identities);
@@ -353,7 +378,7 @@ pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
     if brep.len() < 8 {
         return out;
     }
-    for i in 5..brep.len() - 3 {
+    for i in analytic_plane::MARKER..brep.len() - 3 {
         if brep[i] != 0x00 || brep[i + 1] != 0x33 {
             continue;
         }
@@ -366,7 +391,7 @@ pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
         }
         out.push(SurfacePrefix {
             pos: i,
-            target: u24_le(brep, i - 5),
+            target: u24_le(brep, i - analytic_plane::MARKER),
             kind,
         });
     }

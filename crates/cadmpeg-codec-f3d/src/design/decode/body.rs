@@ -6,6 +6,7 @@ use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
+use crate::layout::indexed_design_record_header as indexed_header;
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DesignBodyBinding,
     DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
@@ -436,8 +437,11 @@ pub(crate) fn body_bindings(
                 ))
             })?;
             if View::u32_le_at(bytes, start) != Some(3)
-                || bytes.get(start + 4..start + 7) != Some(class_tag.as_bytes())
-                || View::u32_le_at(bytes, start + 7) != Some(record_index)
+                || bytes
+                    .get(start + indexed_header::CLASS_TAG..start + indexed_header::RECORD_INDEX)
+                    != Some(class_tag.as_bytes())
+                || View::u32_le_at(bytes, start + indexed_header::RECORD_INDEX)
+                    != Some(record_index)
             {
                 return Err(CodecError::Malformed(format!(
                     "F3D Design body-map carrier entity {entity_id} has an invalid indexed header"
@@ -470,13 +474,13 @@ fn parse_body_map_frame(
     prefix_len: usize,
 ) -> Result<Option<Vec<BodyBinding>>, CodecError> {
     let Some(count_at) = start
-        .checked_add(11)
+        .checked_add(indexed_header::LEN)
         .and_then(|payload| payload.checked_add(prefix_len))
     else {
         return Ok(None);
     };
     if !bytes
-        .get(start + 11..count_at)
+        .get(start + indexed_header::LEN..count_at)
         .is_some_and(|prefix| prefix.iter().all(|byte| *byte == 0))
     {
         return Ok(None);

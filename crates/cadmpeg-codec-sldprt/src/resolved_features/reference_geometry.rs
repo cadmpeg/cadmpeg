@@ -18,6 +18,22 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
+use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
+use crate::layout::coordinate_system_component_path_prefix as cs_path_pre;
+use crate::layout::coordinate_system_component_path_suffix as cs_path_suf;
+use crate::layout::coordinate_system_component_point as cs_pt;
+use crate::layout::coordinate_system_endpoint_path_prefix as ep_path_pre;
+use crate::layout::coordinate_system_endpoint_path_suffix as ep_path_suf;
+use crate::layout::coordinate_system_extended_component_point as cs_ext;
+use crate::layout::coordinate_system_line_axis as line_axis;
+use crate::layout::coordinate_system_ordinal_axis_tail as ordinal_tail;
+use crate::layout::coordinate_system_two_point_separator as two_pt_sep;
+use crate::layout::coordinate_system_two_point_tail as two_pt_tail;
+use crate::layout::coordinate_system_xy_tail as xy_tail;
+use crate::layout::reference_point_long_solved_cache as pt_long;
+use crate::layout::reference_point_short_solved_cache as pt_short;
+
 pub(super) fn reconcile_reference_plane_frame_with_source(
     explicit: Option<(Point3, Vector3, Vector3)>,
     constraint: Option<(Point3, Vector3, Vector3)>,
@@ -554,7 +570,6 @@ fn resolved_reference_point(
     record_end: usize,
 ) -> Option<Point3> {
     const HEADER_PREFIX: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0xc0];
-    const POSITION_OFFSETS: [usize; 2] = [243, 259];
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let object_id = name.object_id?;
@@ -564,32 +579,47 @@ fn resolved_reference_point(
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
     let header = payload.get(name_end..name_end.checked_add(16)?)?;
     if header[..HEADER_PREFIX.len()] != HEADER_PREFIX
-        || header[8..12] != object_id.to_le_bytes()
-        || header[12..16] != [0; 4]
+        || header[pt_short::OBJECT_ID..pt_short::ZERO_AFTER_ID] != object_id.to_le_bytes()
+        || header[pt_short::ZERO_AFTER_ID..pt_short::ZERO_AFTER_ID + 4] != [0; 4]
     {
         return None;
     }
 
-    let mut points = POSITION_OFFSETS
-        .into_iter()
-        .filter_map(|relative| {
-            let start = name_end.checked_add(relative)?;
-            let end = start.checked_add(34)?;
-            if end > record_end
-                || payload.get(start.checked_sub(16)?..start) != Some(&[0; 16])
-                || !matches!(View::u16_le_at(payload, start + 24)?, 4 | 5)
-                || payload.get(start + 26..end) != Some(&[0; 8])
-            {
-                return None;
-            }
-            let scalar = |offset: usize| {
-                let native = View::f64_le_at(payload, start + offset)?;
-                let value = native * NATIVE_TO_IR;
-                value.is_finite().then_some(value)
-            };
-            Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
-        })
-        .collect::<Vec<_>>();
+    let mut points = [
+        (
+            pt_short::ZERO_BEFORE_POSITION,
+            pt_short::POSITION,
+            pt_short::CONSTRUCTION_FORM,
+            pt_short::ZERO_TRAILER,
+            pt_short::LEN,
+        ),
+        (
+            pt_long::ZERO_BEFORE_POSITION,
+            pt_long::POSITION,
+            pt_long::CONSTRUCTION_FORM,
+            pt_long::ZERO_TRAILER,
+            pt_long::LEN,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(zero_before, position, form, trailer, len)| {
+        let start = name_end.checked_add(position)?;
+        let end = name_end.checked_add(len)?;
+        if end > record_end
+            || payload.get(name_end + zero_before..start) != Some(&[0; 16])
+            || !matches!(View::u16_le_at(payload, name_end + form)?, 4 | 5)
+            || payload.get(name_end + trailer..end) != Some(&[0; 8])
+        {
+            return None;
+        }
+        let scalar = |offset: usize| {
+            let native = View::f64_le_at(payload, start + offset)?;
+            let value = native * NATIVE_TO_IR;
+            value.is_finite().then_some(value)
+        };
+        Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
+    })
+    .collect::<Vec<_>>();
     points.sort_by_key(reference_point_key);
     points.dedup_by_key(|point| reference_point_key(point));
     let [point] = points.as_slice() else {
@@ -677,8 +707,6 @@ pub(crate) fn enrich_history_coordinate_systems(
 }
 
 fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
-    const AXIS_RECORD_LEN: usize = 113;
-
     if let Some(frame) = coordinate_system_two_point_frame(record) {
         return Some(frame);
     }
@@ -693,8 +721,8 @@ fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3
             *direction,
             Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z),
             vec![
-                (offset.checked_add(AXIS_RECORD_LEN)?, false),
-                (offset.checked_add(AXIS_RECORD_LEN + 2)?, true),
+                (offset.checked_add(line_axis::LEN)?, false),
+                (offset.checked_add(line_axis::LEN + 2)?, true),
             ],
         ),
         [(first_offset, _, first_direction), (last_offset, _, last_direction)]
@@ -703,7 +731,7 @@ fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3
             (
                 *first_direction,
                 *last_direction,
-                vec![(last_offset.checked_add(AXIS_RECORD_LEN)?, false)],
+                vec![(last_offset.checked_add(line_axis::LEN)?, false)],
             )
         }
         _ => return None,
@@ -735,19 +763,22 @@ fn coordinate_system_ordinal_axes(
 ) -> Option<(Vector3, Vector3)> {
     let tail = record.get(origin_end..)?;
     if !matches!(tail.len(), 37 | 39)
-        || tail.get(4..27)? != [0; 23]
-        || tail.get(35..)?.chunks_exact(2).any(|token| token == [0, 0])
+        || tail.get(ordinal_tail::ZERO_BEFORE_ORIGIN_Z..ordinal_tail::ORIGIN_Z)? != [0; 23]
+        || tail
+            .get(ordinal_tail::LEN..)?
+            .chunks_exact(2)
+            .any(|token| token == [0, 0])
     {
         return None;
     }
     let ordinals = [
-        usize::from(View::u16_le_at(tail, 0)?),
-        usize::from(View::u16_le_at(tail, 2)?),
+        usize::from(View::u16_le_at(tail, ordinal_tail::X_AXIS_ORDINAL)?),
+        usize::from(View::u16_le_at(tail, ordinal_tail::Y_AXIS_ORDINAL)?),
     ];
     if ordinals[0] == ordinals[1] || ordinals.iter().any(|ordinal| !(1..=3).contains(ordinal)) {
         return None;
     }
-    let repeated_z = finite_f64(tail, 27)? * 1000.0;
+    let repeated_z = finite_f64(tail, ordinal_tail::ORIGIN_Z)? * 1000.0;
     if (repeated_z + 0.0).to_bits() != (origin.z + 0.0).to_bits() {
         return None;
     }
@@ -764,25 +795,24 @@ fn coordinate_system_tail(
     offsets: &[(usize, bool)],
     origin: Point3,
 ) -> Option<[u8; 3]> {
-    const FRAME_TAIL_LEN: usize = 29;
     let candidates = offsets
         .iter()
         .filter_map(|(offset, has_zero_gap)| {
             if *has_zero_gap && record.get(offset.checked_sub(2)?..*offset) != Some(&[0; 2]) {
                 return None;
             }
-            let bytes = record.get(*offset..offset.checked_add(FRAME_TAIL_LEN)?)?;
-            let flips: [u8; 3] = bytes.get(..3)?.try_into().ok()?;
+            let bytes = record.get(*offset..offset.checked_add(xy_tail::LEN)?)?;
+            let flips: [u8; 3] = bytes.get(..xy_tail::ORIGIN)?.try_into().ok()?;
             if flips.iter().any(|value| !matches!(value, 0 | 1))
                 || flips[2] != 0
-                || bytes.get(27..29) == Some(&[0, 0])
+                || bytes.get(xy_tail::TERMINATOR..xy_tail::LEN) == Some(&[0, 0])
             {
                 return None;
             }
             let tail_origin = Point3::new(
-                finite_f64(bytes, 3)? * 1000.0,
-                finite_f64(bytes, 11)? * 1000.0,
-                finite_f64(bytes, 19)? * 1000.0,
+                finite_f64(bytes, xy_tail::ORIGIN)? * 1000.0,
+                finite_f64(bytes, xy_tail::ORIGIN + 8)? * 1000.0,
+                finite_f64(bytes, xy_tail::ORIGIN + 16)? * 1000.0,
             );
             (reference_point_key(&tail_origin) == reference_point_key(&origin)).then_some(flips)
         })
@@ -832,17 +862,24 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrig
         .enumerate()
         .filter(|(_, bytes)| *bytes == COMPACT_EDGE_VECTOR_MARKER)
         .filter_map(|(marker, _)| {
-            let prefix = marker.checked_sub(92)?;
-            if record.get(prefix..prefix + 17)? != PREFIX
-                || record.get(prefix + 17..prefix + 45)? != [0; 28]
-                || record.get(prefix + 45..prefix + 61)? != [0xff; 16]
-                || record.get(prefix + 61..prefix + 69)? != [0; 8]
-                || record.get(prefix + 73..prefix + 80)? != [0; 7]
+            let prefix = marker.checked_sub(ep_path_pre::COMPONENT_MARKER)?;
+            if record.get(prefix..prefix + ep_path_pre::ZERO_HEADER)? != PREFIX
+                || record.get(prefix + ep_path_pre::ZERO_HEADER..prefix + ep_path_pre::SENTINEL)?
+                    != [0; 28]
+                || record.get(
+                    prefix + ep_path_pre::SENTINEL..prefix + ep_path_pre::ZERO_BEFORE_SELECTOR,
+                )? != [0xff; 16]
+                || record.get(
+                    prefix + ep_path_pre::ZERO_BEFORE_SELECTOR..prefix + ep_path_pre::SELECTOR,
+                )? != [0; 8]
+                || record.get(
+                    prefix + ep_path_pre::ZERO_BEFORE_COUNT..prefix + ep_path_pre::PATH_ENTRY_COUNT,
+                )? != [0; 7]
             {
                 return None;
             }
-            let selector = View::u32_le_at(record, prefix + 69)?;
-            let token = View::u32_le_at(record, prefix + 88)?;
+            let selector = View::u32_le_at(record, prefix + ep_path_pre::SELECTOR)?;
+            let token = View::u32_le_at(record, prefix + ep_path_pre::TOKEN)?;
             if matches!(selector, 0 | u32::MAX) || matches!(token, 0 | u32::MAX) {
                 return None;
             }
@@ -851,35 +888,46 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrig
                 return None;
             }
             let trailer = path_end.checked_add(8)?;
-            if record.get(trailer..trailer + 70)? != [0; 70]
-                || record.get(trailer + 70..trailer + 74)? != 1u32.to_le_bytes()
-                || record.get(trailer + 74..trailer + 78)? != [0; 4]
-                || record.get(trailer + 82..trailer + 94)? != [0; 12]
+            if record.get(trailer..trailer + ep_path_suf::ONE)? != [0; 70]
+                || record
+                    .get(trailer + ep_path_suf::ONE..trailer + ep_path_suf::ZERO_BEFORE_OBJECT)?
+                    != 1u32.to_le_bytes()
+                || record.get(
+                    trailer + ep_path_suf::ZERO_BEFORE_OBJECT..trailer + ep_path_suf::OBJECT_ID,
+                )? != [0; 4]
+                || record.get(
+                    trailer + ep_path_suf::ZERO_BEFORE_HANDLES..trailer + ep_path_suf::HANDLES,
+                )? != [0; 12]
             {
                 return None;
             }
-            let object = View::u32_le_at(record, trailer + 78)?;
-            let handles = trailer.checked_add(94)?;
+            let object = View::u32_le_at(record, trailer + ep_path_suf::OBJECT_ID)?;
+            let handles = trailer.checked_add(ep_path_suf::HANDLES)?;
             if matches!(object, 0 | u32::MAX)
                 || record.get(handles..handles + 8)? != HANDLES
-                || record.get(handles + 8..handles + 12)? != [0; 4]
-                || record.get(handles + 16..handles + 24)? != [0; 8]
+                || record.get(
+                    trailer + ep_path_suf::ZERO_BEFORE_GENERATION
+                        ..trailer + ep_path_suf::GENERATION,
+                )? != [0; 4]
+                || record
+                    .get(trailer + ep_path_suf::ZERO_BEFORE_ORIGIN..trailer + ep_path_suf::ORIGIN)?
+                    != [0; 8]
             {
                 return None;
             }
-            let generation = View::u32_le_at(record, handles + 12)?;
+            let generation = View::u32_le_at(record, trailer + ep_path_suf::GENERATION)?;
             if matches!(generation, 0 | u32::MAX) {
                 return None;
             }
             Some(CoordinateSystemOrigin {
                 point: Point3::new(
-                    finite_f64(record, handles + 24)? * 1000.0,
-                    finite_f64(record, handles + 32)? * 1000.0,
-                    finite_f64(record, handles + 40)? * 1000.0,
+                    finite_f64(record, trailer + ep_path_suf::ORIGIN)? * 1000.0,
+                    finite_f64(record, trailer + ep_path_suf::ORIGIN + 8)? * 1000.0,
+                    finite_f64(record, trailer + ep_path_suf::ORIGIN + 16)? * 1000.0,
                 ),
                 generation,
                 start: prefix,
-                end: handles.checked_add(48)?,
+                end: trailer.checked_add(ep_path_suf::LEN)?,
                 kind: CoordinateSystemOriginKind::EndpointPath,
             })
         })
@@ -894,13 +942,15 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
         .enumerate()
         .filter(|(_, bytes)| matches!(bytes[0], 0x2d | 0x2f) && bytes[1..] == *PREFIX_SUFFIX)
         .filter_map(|(prefix, _)| {
-            if record.get(prefix + 10..prefix + 45) != Some(&[0; 35])
-                || record.get(prefix + 45..prefix + 61) != Some(&[0xff; 16])
-                || record.get(prefix + 61..prefix + 69) != Some(&[0; 8])
+            if record.get(prefix + cs_pt::ZERO_HEADER..prefix + cs_pt::SENTINEL) != Some(&[0; 35])
+                || record.get(prefix + cs_pt::SENTINEL..prefix + cs_pt::ZERO_BEFORE_SOURCE)
+                    != Some(&[0xff; 16])
+                || record.get(prefix + cs_pt::ZERO_BEFORE_SOURCE..prefix + cs_pt::SOURCE_ID)
+                    != Some(&[0; 8])
             {
                 return None;
             }
-            let source = View::u32_le_at(record, prefix + 69)?;
+            let source = View::u32_le_at(record, prefix + cs_pt::SOURCE_ID)?;
             if source == 0 {
                 return None;
             }
@@ -913,50 +963,65 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
                     kind: CoordinateSystemOriginKind::ComponentPath,
                 });
             }
-            let stamp = View::u32_le_at(record, prefix + 73)?;
+            let stamp = View::u32_le_at(record, prefix + cs_pt::SOURCE_STAMP)?;
             if stamp == 0 || stamp == u32::MAX {
                 return None;
             }
-            let (object, generation, origin_offset, record_len, kind) =
-                if record.get(prefix + 77..prefix + 79) == Some(&[0; 2])
-                    && record.get(prefix + 79..prefix + 81) == Some(&1u16.to_le_bytes())
-                    && record.get(prefix + 81..prefix + 87) == Some(&[0; 6])
-                    && record.get(prefix + 91..prefix + 103) == Some(&[0; 12])
-                    && record.get(prefix + 103..prefix + 111) == Some(HANDLES)
-                    && record.get(prefix + 111..prefix + 115) == Some(&[0; 4])
-                    && record.get(prefix + 119..prefix + 127) == Some(&[0; 8])
-                {
-                    (
-                        View::u32_le_at(record, prefix + 87)?,
-                        View::u32_le_at(record, prefix + 115)?,
-                        127,
-                        151,
-                        CoordinateSystemOriginKind::Standard,
-                    )
-                } else if record.get(prefix + 81..prefix + 85) == Some(&[0xff; 4])
-                    && record.get(prefix + 85..prefix + 89) == Some(&[0; 4])
-                    && record.get(prefix + 93..prefix + 97) == Some(&1u32.to_le_bytes())
-                    && record.get(prefix + 97..prefix + 101) == Some(&[0; 4])
-                    && record.get(prefix + 105..prefix + 117) == Some(&[0; 12])
-                    && record.get(prefix + 117..prefix + 125) == Some(HANDLES)
-                    && record.get(prefix + 125..prefix + 129) == Some(&[0; 4])
-                    && record.get(prefix + 133..prefix + 141) == Some(&[0; 8])
-                {
-                    let reference = View::u32_le_at(record, prefix + 77)?;
-                    let count = View::u32_le_at(record, prefix + 89)?;
-                    if matches!(reference, 0 | u32::MAX) || matches!(count, 0 | u32::MAX) {
-                        return None;
-                    }
-                    (
-                        View::u32_le_at(record, prefix + 101)?,
-                        View::u32_le_at(record, prefix + 129)?,
-                        141,
-                        165,
-                        CoordinateSystemOriginKind::Extended,
-                    )
-                } else {
+            let (object, generation, origin_offset, record_len, kind) = if record
+                .get(prefix + cs_pt::ZERO_SELECTOR..prefix + cs_pt::ONE_SELECTOR)
+                == Some(&[0; 2])
+                && record.get(prefix + cs_pt::ONE_SELECTOR..prefix + cs_pt::ZERO_BEFORE_OBJECT)
+                    == Some(&1u16.to_le_bytes())
+                && record.get(prefix + cs_pt::ZERO_BEFORE_OBJECT..prefix + cs_pt::OBJECT_ID)
+                    == Some(&[0; 6])
+                && record.get(prefix + cs_pt::ZERO_BEFORE_HANDLES..prefix + cs_pt::HANDLES)
+                    == Some(&[0; 12])
+                && record.get(prefix + cs_pt::HANDLES..prefix + cs_pt::ZERO_BEFORE_GENERATION)
+                    == Some(HANDLES)
+                && record.get(prefix + cs_pt::ZERO_BEFORE_GENERATION..prefix + cs_pt::GENERATION)
+                    == Some(&[0; 4])
+                && record.get(prefix + cs_pt::ZERO_BEFORE_ORIGIN..prefix + cs_pt::ORIGIN)
+                    == Some(&[0; 8])
+            {
+                (
+                    View::u32_le_at(record, prefix + cs_pt::OBJECT_ID)?,
+                    View::u32_le_at(record, prefix + cs_pt::GENERATION)?,
+                    cs_pt::ORIGIN,
+                    cs_pt::LEN,
+                    CoordinateSystemOriginKind::Standard,
+                )
+            } else if record.get(prefix + cs_ext::SENTINEL..prefix + cs_ext::ZERO_BEFORE_COUNT)
+                == Some(&[0xff; 4])
+                && record.get(prefix + cs_ext::ZERO_BEFORE_COUNT..prefix + cs_ext::REFERENCE_COUNT)
+                    == Some(&[0; 4])
+                && record.get(prefix + cs_ext::ONE..prefix + cs_ext::ZERO_BEFORE_OBJECT)
+                    == Some(&1u32.to_le_bytes())
+                && record.get(prefix + cs_ext::ZERO_BEFORE_OBJECT..prefix + cs_ext::OBJECT_ID)
+                    == Some(&[0; 4])
+                && record.get(prefix + cs_ext::ZERO_BEFORE_HANDLES..prefix + cs_ext::HANDLES)
+                    == Some(&[0; 12])
+                && record.get(prefix + cs_ext::HANDLES..prefix + cs_ext::ZERO_BEFORE_GENERATION)
+                    == Some(HANDLES)
+                && record.get(prefix + cs_ext::ZERO_BEFORE_GENERATION..prefix + cs_ext::GENERATION)
+                    == Some(&[0; 4])
+                && record.get(prefix + cs_ext::ZERO_BEFORE_ORIGIN..prefix + cs_ext::ORIGIN)
+                    == Some(&[0; 8])
+            {
+                let reference = View::u32_le_at(record, prefix + cs_ext::REFERENCE_ID)?;
+                let count = View::u32_le_at(record, prefix + cs_ext::REFERENCE_COUNT)?;
+                if matches!(reference, 0 | u32::MAX) || matches!(count, 0 | u32::MAX) {
                     return None;
-                };
+                }
+                (
+                    View::u32_le_at(record, prefix + cs_ext::OBJECT_ID)?,
+                    View::u32_le_at(record, prefix + cs_ext::GENERATION)?,
+                    cs_ext::ORIGIN,
+                    cs_ext::LEN,
+                    CoordinateSystemOriginKind::Extended,
+                )
+            } else {
+                return None;
+            };
             if object == 0 || generation == 0 || generation == u32::MAX {
                 return None;
             }
@@ -987,43 +1052,49 @@ fn coordinate_system_two_point_frame(record: &[u8]) -> Option<(Point3, Vector3, 
         return None;
     }
     let separator = record.get(origin.end..axis_point.start)?;
-    if separator.len() != 14
-        || separator.get(0..6)? != [2, 0, 1, 0, 0, 0]
-        || separator.get(8..10)? != [1, 0]
-        || [6usize, 10, 12]
-            .into_iter()
-            .any(|offset| separator.get(offset..offset + 2) == Some(&[0, 0]))
+    if separator.len() != two_pt_sep::LEN
+        || separator.get(two_pt_sep::SELECTORS..two_pt_sep::FIRST_TOKEN)? != [2, 0, 1, 0, 0, 0]
+        || separator.get(two_pt_sep::ONE..two_pt_sep::FINAL_TOKENS)? != [1, 0]
+        || [
+            two_pt_sep::FIRST_TOKEN,
+            two_pt_sep::FINAL_TOKENS,
+            two_pt_sep::FINAL_TOKENS + 2,
+        ]
+        .into_iter()
+        .any(|offset| separator.get(offset..offset + 2) == Some(&[0, 0]))
     {
         return None;
     }
     let tail = record.get(axis_point.end..)?;
-    if tail.len() != 94
-        || tail.get(40) != Some(&0)
-        || tail.get(65..68)? != [0; 3]
-        || tail.get(92..94) == Some(&[0, 0])
+    if tail.len() != two_pt_tail::LEN
+        || tail.get(two_pt_tail::SEPARATOR) != Some(&0)
+        || tail.get(two_pt_tail::ZERO_BEFORE_ORIGIN..two_pt_tail::ORIGIN)? != [0; 3]
+        || tail.get(two_pt_tail::TERMINAL_TOKEN..two_pt_tail::LEN) == Some(&[0, 0])
     {
         return None;
     }
     let cached_origin = Point3::new(
-        finite_f64(tail, 68)? * 1000.0,
-        finite_f64(tail, 76)? * 1000.0,
-        finite_f64(tail, 84)? * 1000.0,
+        finite_f64(tail, two_pt_tail::ORIGIN)? * 1000.0,
+        finite_f64(tail, two_pt_tail::ORIGIN + 8)? * 1000.0,
+        finite_f64(tail, two_pt_tail::ORIGIN + 16)? * 1000.0,
     );
     if reference_point_key(&cached_origin) != reference_point_key(&origin.point)
-        || (finite_f64(tail, 0)? * 1000.0 + 0.0).to_bits() != (origin.point.y + 0.0).to_bits()
-        || (finite_f64(tail, 8)? * 1000.0 + 0.0).to_bits() != (origin.point.z + 0.0).to_bits()
+        || (finite_f64(tail, two_pt_tail::ORIGIN_YZ)? * 1000.0 + 0.0).to_bits()
+            != (origin.point.y + 0.0).to_bits()
+        || (finite_f64(tail, two_pt_tail::ORIGIN_YZ + 8)? * 1000.0 + 0.0).to_bits()
+            != (origin.point.z + 0.0).to_bits()
     {
         return None;
     }
     let x_axis = Vector3::new(
-        finite_f64(tail, 16)?,
-        finite_f64(tail, 24)?,
-        finite_f64(tail, 32)?,
+        finite_f64(tail, two_pt_tail::X_DIRECTION)?,
+        finite_f64(tail, two_pt_tail::X_DIRECTION + 8)?,
+        finite_f64(tail, two_pt_tail::X_DIRECTION + 16)?,
     );
     let repeated = Vector3::new(
-        finite_f64(tail, 41)?,
-        finite_f64(tail, 49)?,
-        finite_f64(tail, 57)?,
+        finite_f64(tail, two_pt_tail::REPEATED_X_DIRECTION)?,
+        finite_f64(tail, two_pt_tail::REPEATED_X_DIRECTION + 8)?,
+        finite_f64(tail, two_pt_tail::REPEATED_X_DIRECTION + 16)?,
     );
     if (x_axis.dot(x_axis) - 1.0).abs() > 1.0e-9 || x_axis != repeated {
         return None;
@@ -1049,8 +1120,10 @@ fn coordinate_system_component_path_origin(
 ) -> Option<(Point3, u32, usize)> {
     const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     const NULL_SLOT: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
-    let marker = prefix.checked_add(92)?;
-    if record.get(prefix + 73..prefix + 80)? != [0xff; 7] {
+    let marker = prefix.checked_add(cs_path_pre::COMPONENT_MARKER)?;
+    if record.get(prefix + cs_path_pre::SENTINEL..prefix + cs_path_pre::PATH_ENTRY_COUNT)?
+        != [0xff; 7]
+    {
         return None;
     }
     let path_end = compact_component_path_end_at(record, marker)?;
@@ -1059,34 +1132,41 @@ fn coordinate_system_component_path_origin(
     } else {
         path_end
     };
-    if record.get(trailer..trailer + 14)? != [0; 14]
-        || record.get(trailer + 14..trailer + 18)? != 1u32.to_le_bytes()
-        || record.get(trailer + 18..trailer + 22)? != [0; 4]
-        || record.get(trailer + 26..trailer + 38)? != [0; 12]
+    if record.get(trailer..trailer + cs_path_suf::ONE)? != [0; 14]
+        || record.get(trailer + cs_path_suf::ONE..trailer + cs_path_suf::ZERO_BEFORE_OBJECT)?
+            != 1u32.to_le_bytes()
+        || record
+            .get(trailer + cs_path_suf::ZERO_BEFORE_OBJECT..trailer + cs_path_suf::OBJECT_ID)?
+            != [0; 4]
+        || record.get(trailer + cs_path_suf::ZERO_BEFORE_HANDLES..trailer + cs_path_suf::HANDLES)?
+            != [0; 12]
     {
         return None;
     }
-    let object = View::u32_le_at(record, trailer + 22)?;
-    let handles = trailer.checked_add(38)?;
+    let object = View::u32_le_at(record, trailer + cs_path_suf::OBJECT_ID)?;
+    let handles = trailer.checked_add(cs_path_suf::HANDLES)?;
     if matches!(object, 0 | u32::MAX)
         || record.get(handles..handles + 8)? != HANDLES
-        || record.get(handles + 8..handles + 12)? != [0; 4]
-        || record.get(handles + 16..handles + 24)? != [0; 8]
+        || record
+            .get(trailer + cs_path_suf::ZERO_BEFORE_GENERATION..trailer + cs_path_suf::GENERATION)?
+            != [0; 4]
+        || record.get(trailer + cs_path_suf::ZERO_BEFORE_ORIGIN..trailer + cs_path_suf::ORIGIN)?
+            != [0; 8]
     {
         return None;
     }
-    let generation = View::u32_le_at(record, handles + 12)?;
+    let generation = View::u32_le_at(record, trailer + cs_path_suf::GENERATION)?;
     if matches!(generation, 0 | u32::MAX) {
         return None;
     }
     Some((
         Point3::new(
-            finite_f64(record, handles + 24)? * 1000.0,
-            finite_f64(record, handles + 32)? * 1000.0,
-            finite_f64(record, handles + 40)? * 1000.0,
+            finite_f64(record, trailer + cs_path_suf::ORIGIN)? * 1000.0,
+            finite_f64(record, trailer + cs_path_suf::ORIGIN + 8)? * 1000.0,
+            finite_f64(record, trailer + cs_path_suf::ORIGIN + 16)? * 1000.0,
         ),
         generation,
-        handles.checked_add(48)?,
+        trailer.checked_add(cs_path_suf::LEN)?,
     ))
 }
 
@@ -1101,28 +1181,34 @@ fn coordinate_system_line_axes(
         .enumerate()
         .filter(|(prefix, bytes)| *prefix >= origin_end && *bytes == PREFIX)
         .filter_map(|(prefix, _)| {
-            if record.get(prefix + 8..prefix + 12) != Some(&[0; 4])
-                || record.get(prefix + 12..prefix + 16) != Some(&generation.to_le_bytes())
-                || record.get(prefix + 16..prefix + 32) != Some(&[0; 16])
-                || record.get(prefix + 88) != Some(&0)
+            if record
+                .get(prefix + line_axis::ZERO_BEFORE_GENERATION..prefix + line_axis::GENERATION)
+                != Some(&[0; 4])
+                || record
+                    .get(prefix + line_axis::GENERATION..prefix + line_axis::ZERO_BEFORE_SCALAR)
+                    != Some(&generation.to_le_bytes())
+                || record
+                    .get(prefix + line_axis::ZERO_BEFORE_SCALAR..prefix + line_axis::CARRIER_SCALAR)
+                    != Some(&[0; 16])
+                || record.get(prefix + line_axis::SEPARATOR) != Some(&0)
             {
                 return None;
             }
-            let scalar = finite_f64(record, prefix + 32)?;
+            let scalar = finite_f64(record, prefix + line_axis::CARRIER_SCALAR)?;
             let point = Point3::new(
-                finite_f64(record, prefix + 40)? * 1000.0,
-                finite_f64(record, prefix + 48)? * 1000.0,
-                finite_f64(record, prefix + 56)? * 1000.0,
+                finite_f64(record, prefix + line_axis::LINE_POINT)? * 1000.0,
+                finite_f64(record, prefix + line_axis::LINE_POINT + 8)? * 1000.0,
+                finite_f64(record, prefix + line_axis::LINE_POINT + 16)? * 1000.0,
             );
             let direction = Vector3::new(
-                finite_f64(record, prefix + 64)?,
-                finite_f64(record, prefix + 72)?,
-                finite_f64(record, prefix + 80)?,
+                finite_f64(record, prefix + line_axis::DIRECTION)?,
+                finite_f64(record, prefix + line_axis::DIRECTION + 8)?,
+                finite_f64(record, prefix + line_axis::DIRECTION + 16)?,
             );
             let repeated = Vector3::new(
-                finite_f64(record, prefix + 89)?,
-                finite_f64(record, prefix + 97)?,
-                finite_f64(record, prefix + 105)?,
+                finite_f64(record, prefix + line_axis::REPEATED_DIRECTION)?,
+                finite_f64(record, prefix + line_axis::REPEATED_DIRECTION + 8)?,
+                finite_f64(record, prefix + line_axis::REPEATED_DIRECTION + 16)?,
             );
             let repeated_matches = (direction.x - repeated.x).abs() <= 1.0e-12
                 && (direction.y - repeated.y).abs() <= 1.0e-12
@@ -2106,8 +2192,6 @@ pub(super) fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u
     Some(*alias)
 }
 
-pub(super) const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
-const MATRIX_REFERENCE_PLANE_FRAME_LEN: usize = 121;
 pub(super) const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
 const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
 
@@ -2140,13 +2224,13 @@ pub(super) fn constraint_reference_plane_frame(
 ) -> Option<(Point3, Vector3, Vector3)> {
     let body = class_offset.checked_add(6 + class_name.len())?;
     match class_name {
-        "moConstraintCoincLineAtAnglePlaneRefplaneData_c" => matrix_reference_plane_frame(
-            payload.get(body..body + MATRIX_REFERENCE_PLANE_FRAME_LEN)?,
-        ),
+        "moConstraintCoincLineAtAnglePlaneRefplaneData_c" => {
+            matrix_reference_plane_frame(payload.get(body..body + matrix_plane::LEN)?)
+        }
         "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
         | "moFacePtRefPlnData_c"
         | "moFixedRefPlnData_c" => {
-            fixed_reference_plane_frame(payload.get(body..body + FIXED_REFERENCE_PLANE_FRAME_LEN)?)
+            fixed_reference_plane_frame(payload.get(body..body + fixed_plane::LEN)?)
         }
         "moDefaultRefPlnData_c" | "moConstraintPrllPlnTanOneCylinderRefplaneData_c" => {
             minimal_reference_plane_frame(
@@ -2154,12 +2238,11 @@ pub(super) fn constraint_reference_plane_frame(
             )
         }
         "moFaceRefPlnData_c" => {
-            fixed_reference_plane_frame(payload.get(body..body + FIXED_REFERENCE_PLANE_FRAME_LEN)?)
-                .or_else(|| {
-                    minimal_reference_plane_frame(
-                        payload.get(body..body + MINIMAL_REFERENCE_PLANE_FRAME_LEN)?,
-                    )
-                })
+            fixed_reference_plane_frame(payload.get(body..body + fixed_plane::LEN)?).or_else(|| {
+                minimal_reference_plane_frame(
+                    payload.get(body..body + MINIMAL_REFERENCE_PLANE_FRAME_LEN)?,
+                )
+            })
         }
         _ => None,
     }
@@ -2184,22 +2267,38 @@ pub(super) fn reference_plane_frame_key(
 
 pub(super) fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    if bytes.len() != FIXED_REFERENCE_PLANE_FRAME_LEN || bytes.get(48) != Some(&1) {
+    if bytes.len() != fixed_plane::LEN || bytes.get(fixed_plane::FRAME_MARKER) != Some(&1) {
         return None;
     }
     let scalar = |offset| {
         let value = View::f64_le_at(bytes, offset)?;
         value.is_finite().then_some(value)
     };
-    let native_origin = [scalar(0)?, scalar(8)?, scalar(16)?];
+    let native_origin = [
+        scalar(fixed_plane::ORIGIN)?,
+        scalar(fixed_plane::ORIGIN + 8)?,
+        scalar(fixed_plane::ORIGIN + 16)?,
+    ];
     let origin = Point3::new(
         native_origin[0] * NATIVE_TO_IR,
         native_origin[1] * NATIVE_TO_IR,
         native_origin[2] * NATIVE_TO_IR,
     );
-    let normal = Vector3::new(scalar(24)?, scalar(32)?, scalar(40)?);
-    let u_axis = Vector3::new(scalar(49)?, scalar(57)?, scalar(65)?);
-    let v_axis = Vector3::new(scalar(73)?, scalar(81)?, scalar(89)?);
+    let normal = Vector3::new(
+        scalar(fixed_plane::NORMAL)?,
+        scalar(fixed_plane::NORMAL + 8)?,
+        scalar(fixed_plane::NORMAL + 16)?,
+    );
+    let u_axis = Vector3::new(
+        scalar(fixed_plane::U_AXIS)?,
+        scalar(fixed_plane::U_AXIS + 8)?,
+        scalar(fixed_plane::U_AXIS + 16)?,
+    );
+    let v_axis = Vector3::new(
+        scalar(fixed_plane::V_AXIS)?,
+        scalar(fixed_plane::V_AXIS + 8)?,
+        scalar(fixed_plane::V_AXIS + 16)?,
+    );
     let norm =
         |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
     let dot =
@@ -2220,7 +2319,7 @@ fn fixed_reference_plane_frame_candidates(
     matrix_candidates: &[(usize, ReferencePlaneFrame)],
 ) -> Vec<(usize, ReferencePlaneFrame)> {
     payload
-        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+        .windows(fixed_plane::LEN)
         .enumerate()
         .filter(|(offset, _)| {
             matrix_candidates
@@ -2400,12 +2499,12 @@ pub(super) fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Ve
     let dot =
         |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     let fixed_ranges = payload
-        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+        .windows(fixed_plane::LEN)
         .enumerate()
         .filter_map(|(offset, bytes)| {
             fixed_reference_plane_frame(bytes)
                 .is_some()
-                .then_some(offset..offset + FIXED_REFERENCE_PLANE_FRAME_LEN)
+                .then_some(offset..offset + fixed_plane::LEN)
         })
         .collect::<Vec<_>>();
     let mut frames = payload
@@ -2497,22 +2596,38 @@ fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, Refere
         )
     };
     payload
-        .windows(MATRIX_REFERENCE_PLANE_FRAME_LEN)
+        .windows(matrix_plane::LEN)
         .enumerate()
         .filter_map(|(offset, bytes)| {
-            if bytes[48] != 1 {
+            if bytes[matrix_plane::FRAME_MARKER] != 1 {
                 return None;
             }
             let origin = Point3::new(
-                scalar(bytes, 0)? * NATIVE_TO_IR,
-                scalar(bytes, 8)? * NATIVE_TO_IR,
-                scalar(bytes, 16)? * NATIVE_TO_IR,
+                scalar(bytes, matrix_plane::ORIGIN)? * NATIVE_TO_IR,
+                scalar(bytes, matrix_plane::ORIGIN + 8)? * NATIVE_TO_IR,
+                scalar(bytes, matrix_plane::ORIGIN + 16)? * NATIVE_TO_IR,
             );
-            let normal = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
+            let normal = Vector3::new(
+                scalar(bytes, matrix_plane::NORMAL)?,
+                scalar(bytes, matrix_plane::NORMAL + 8)?,
+                scalar(bytes, matrix_plane::NORMAL + 16)?,
+            );
             let rows = [
-                Vector3::new(scalar(bytes, 49)?, scalar(bytes, 57)?, scalar(bytes, 65)?),
-                Vector3::new(scalar(bytes, 73)?, scalar(bytes, 81)?, scalar(bytes, 89)?),
-                Vector3::new(scalar(bytes, 97)?, scalar(bytes, 105)?, scalar(bytes, 113)?),
+                Vector3::new(
+                    scalar(bytes, matrix_plane::BASIS_MATRIX)?,
+                    scalar(bytes, matrix_plane::BASIS_MATRIX + 8)?,
+                    scalar(bytes, matrix_plane::BASIS_MATRIX + 16)?,
+                ),
+                Vector3::new(
+                    scalar(bytes, matrix_plane::BASIS_MATRIX + 24)?,
+                    scalar(bytes, matrix_plane::BASIS_MATRIX + 32)?,
+                    scalar(bytes, matrix_plane::BASIS_MATRIX + 40)?,
+                ),
+                Vector3::new(
+                    scalar(bytes, matrix_plane::BASIS_MATRIX + 48)?,
+                    scalar(bytes, matrix_plane::BASIS_MATRIX + 56)?,
+                    scalar(bytes, matrix_plane::BASIS_MATRIX + 64)?,
+                ),
             ];
             let u_axis = Vector3::new(rows[0].x, rows[1].x, rows[2].x);
             let v_axis = Vector3::new(rows[0].y, rows[1].y, rows[2].y);

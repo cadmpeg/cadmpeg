@@ -9,6 +9,10 @@ use cadmpeg_ir::tessellation::TessellationChannel;
 use cadmpeg_ir::topology::Sense;
 use std::collections::HashMap;
 
+use crate::layout::display_lists_compact_face_header as compact_face;
+use crate::layout::display_lists_extended_face_header as extended_face;
+use crate::layout::display_lists_scene_source_binding as scene_src;
+
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const SCENE_SOURCE_MARKER: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00,
@@ -77,10 +81,10 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
                 .map_or(payload.len(), |(offset, _)| *offset);
             let records = &payload[start..end];
             records
-                .windows(SCENE_SOURCE_MARKER.len() + 4)
+                .windows(scene_src::LEN)
                 .filter_map(|window| {
                     (window.starts_with(SCENE_SOURCE_MARKER))
-                        .then(|| View::u32_le_at(window, 12))
+                        .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
                         .flatten()
                         .filter(|source| *source != 0)
                         .map(|source| (source, class.clone()))
@@ -267,8 +271,8 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
     };
     let end = marker + MARKER.len();
     let (Some(triangle_count), Some(strip_count)) = (
-        View::u32_le_at(payload, end),
-        View::u32_le_at(payload, end + 4),
+        View::u32_le_at(payload, end + compact_face::TRIANGLE_COUNT),
+        View::u32_le_at(payload, end + compact_face::STRIP_COUNT),
     ) else {
         return Vec::new();
     };
@@ -289,17 +293,17 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
 /// fixed 32-byte extension. A compact table begins with item
 /// size 4 at the same position, so it cannot satisfy the extension grammar.
 fn descriptor_table_offset(payload: &[u8], at: usize) -> usize {
-    let extended = View::u32_le_at(payload, at + 8) == Some(1)
-        && View::u32_le_at(payload, at + 12) == Some(0)
-        && View::u32_le_at(payload, at + 16) == Some(0)
-        && View::u32_le_at(payload, at + 20).is_some_and(|token| token != 0)
+    let extended = View::u32_le_at(payload, at + extended_face::FORM) == Some(1)
+        && View::u32_le_at(payload, at + extended_face::ZERO_AT_12) == Some(0)
+        && View::u32_le_at(payload, at + extended_face::ZERO_AT_16) == Some(0)
+        && View::u32_le_at(payload, at + extended_face::FORM_TOKEN).is_some_and(|token| token != 0)
         && payload
-            .get(at + 24..at + 40)
+            .get(at + extended_face::ZERO_TAIL..at + extended_face::LEN)
             .is_some_and(|tail| tail.iter().all(|byte| *byte == 0));
     if extended {
-        40
+        extended_face::LEN
     } else {
-        8
+        compact_face::LEN
     }
 }
 

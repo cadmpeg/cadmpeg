@@ -16,6 +16,8 @@
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
+use crate::layout::attribute_instance_00_51 as attr_inst;
+
 /// Attribute family binding a face to its producing feature.
 const ATOM_ID: &str = "ATOM_ID_2001";
 
@@ -252,22 +254,22 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
         };
-        if View::u16_be_at(buf, p + 6) != Some(0) {
+        if View::u16_be_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
             continue;
         }
-        let Some(definition) = View::u16_be_at(buf, p + 10) else {
+        let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
             continue;
         };
         if definitions.get(&definition).copied() != Some(ATOM_ID) {
             continue;
         }
-        let Some(face_attr) = View::u16_be_at(buf, p + 12) else {
+        let Some(face_attr) = View::u16_be_at(buf, p + attr_inst::OWNER_ATTRIBUTE_ID) else {
             continue;
         };
         if face_attr <= 1 {
             continue;
         }
-        let Some(values) = atom_payload(buf, p + 14, &lists) else {
+        let Some(values) = atom_payload(buf, p + attr_inst::LEN, &lists) else {
             continue;
         };
         let atom = FaceAtom {
@@ -308,19 +310,21 @@ pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
         };
-        if View::u16_be_at(buf, p + 6) != Some(0) {
+        if View::u16_be_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
             continue;
         }
-        let Some(definition) = View::u16_be_at(buf, p + 10) else {
+        let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
             continue;
         };
         if definitions.get(&definition).copied() != Some(LAST_BODY_MODIFIER) {
             continue;
         }
-        let Some(body_attr) = View::u16_be_at(buf, p + 12).filter(|attr| *attr > 1) else {
+        let Some(body_attr) =
+            View::u16_be_at(buf, p + attr_inst::OWNER_ATTRIBUTE_ID).filter(|attr| *attr > 1)
+        else {
             continue;
         };
-        let Some(values) = referenced_payload(buf, p + 14, &lists, |values| {
+        let Some(values) = referenced_payload(buf, p + attr_inst::LEN, &lists, |values| {
             values.len() == 1 && values[0] > 0
         }) else {
             found.insert(body_attr, None);

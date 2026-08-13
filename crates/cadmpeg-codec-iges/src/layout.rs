@@ -1,114 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES representation dispatch and unsupported-layout inspection.
+//! Byte-offset constants generated from `docs/layouts/iges.toml`.
+//!
+//! Do not edit by hand. Regenerate with:
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
-use crate::card;
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
-use cadmpeg_ir::codec::Confidence;
-use std::collections::BTreeMap;
-use std::io::{ErrorKind, SeekFrom};
+#![allow(dead_code)] // Not every generated constant is referenced yet.
 
-const DETECTION_PREFIX_BYTES: usize = 512;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Representation {
-    FixedAscii,
-    CompressedAscii,
-    Binary,
-    Unknown,
+/// Byte offsets for the `binary_flag` record.
+///
+/// Spec §Physical representation. Record length 80 B.
+///
+/// ```text
+/// The six one-byte primitive length fields select the bit widths used by the remaining Binary representation. Each displacement counts its section and any following null padding.
+/// ```
+pub(crate) mod binary_flag {
+    /// Record length in bytes. Spec §Physical representation.
+    pub(crate) const LEN: usize = 80;
+    /// Offset of `identifier` (`bytes[1]`). Spec §Physical representation.
+    pub(crate) const IDENTIFIER: usize = 0;
+    /// Offset of `remaining_byte_count` (`u32`, big-endian). Spec §Physical representation.
+    pub(crate) const REMAINING_BYTE_COUNT: usize = 1;
+    /// Offset of `primitive_bit_lengths` (`bytes[6]`). Spec §Physical representation.
+    pub(crate) const PRIMITIVE_BIT_LENGTHS: usize = 5;
+    /// Offset of `section_displacements` (`bytes[30]`). Spec §Physical representation.
+    pub(crate) const SECTION_DISPLACEMENTS: usize = 11;
+    /// Offset of `unassigned` (`bytes[31]`). Spec §Physical representation.
+    pub(crate) const UNASSIGNED: usize = 41;
+    /// Offset of `section_marker` (`bytes[1]`). Spec §Physical representation.
+    pub(crate) const SECTION_MARKER: usize = 72;
+    /// Offset of `sequence_padding` (`bytes[6]`). Spec §Physical representation.
+    pub(crate) const SEQUENCE_PADDING: usize = 73;
+    /// Offset of `sequence` (`bytes[1]`). Spec §Physical representation.
+    pub(crate) const SEQUENCE: usize = 79;
 }
-
-fn compressed_ascii(prefix: &[u8]) -> bool {
-    let Some(flag) = prefix.get(..80) else {
-        return false;
-    };
-    flag[72] == b'C' && flag.iter().all(|byte| (b' '..=b'~').contains(byte))
-}
-
-fn binary(prefix: &[u8]) -> bool {
-    let Some(flag) = prefix.get(..80) else {
-        return false;
-    };
-    flag[0] == b'B'
-        && flag[1..5] == 75_u32.to_be_bytes()
-        && flag[11] == b'B'
-        && flag[16] == b'S'
-        && flag[21] == b'G'
-        && flag[26] == b'D'
-        && flag[31] == b'P'
-        && flag[36] == b'T'
-        && flag[72] == b'B'
-        && flag[73..79].iter().all(|byte| matches!(byte, b' ' | b'0'))
-        && flag[79] == b'1'
-}
-
-pub(crate) fn classify_prefix(prefix: &[u8]) -> Representation {
-    if compressed_ascii(prefix) {
-        Representation::CompressedAscii
-    } else if binary(prefix) {
-        Representation::Binary
-    } else if card::detect_fixed_ascii(prefix) == Confidence::High {
-        Representation::FixedAscii
-    } else {
-        Representation::Unknown
-    }
-}
-
-pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
-    match classify_prefix(prefix) {
-        Representation::FixedAscii | Representation::CompressedAscii | Representation::Binary => {
-            Confidence::High
-        }
-        Representation::Unknown => Confidence::No,
-    }
-}
-
-pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Representation, CodecError> {
-    let position = reader.stream_position()?;
-    let mut prefix = vec![0; DETECTION_PREFIX_BYTES];
-    let mut count = 0;
-    while count < prefix.len() {
-        match reader.read(&mut prefix[count..]) {
-            Ok(0) => break,
-            Ok(read) => count += read,
-            Err(error) if error.kind() == ErrorKind::Interrupted => {}
-            Err(error) => return Err(CodecError::Io(error)),
-        }
-    }
-    prefix.truncate(count);
-    reader.seek(SeekFrom::Start(position))?;
-    Ok(classify_prefix(&prefix))
-}
-
-pub(crate) fn unsupported_summary(representation: Representation) -> ContainerSummary {
-    let kind = match representation {
-        Representation::CompressedAscii => "compressed-ascii",
-        Representation::Binary => "binary",
-        Representation::FixedAscii | Representation::Unknown => "unknown",
-    };
-    ContainerSummary {
-        format: "iges".into(),
-        container_kind: kind.into(),
-        entries: vec![ContainerEntry {
-            name: "flag".into(),
-            role: "representation-flag".into(),
-            compression: "none".into(),
-            compressed_size: 80,
-            uncompressed_size: 80,
-            attributes: BTreeMap::from([("representation".into(), kind.into())]),
-        }],
-        notes: vec![format!("unsupported_representation={kind}")],
-    }
-}
-
-pub(crate) fn unsupported_error(representation: Representation) -> CodecError {
-    let name = match representation {
-        Representation::CompressedAscii => "Compressed ASCII",
-        Representation::Binary => "Binary",
-        Representation::FixedAscii => "Fixed ASCII",
-        Representation::Unknown => "unknown",
-    };
-    CodecError::NotImplemented(format!("IGES {name} representation decode"))
-}
-
-#[cfg(test)]
-mod tests;

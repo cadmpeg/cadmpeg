@@ -13,6 +13,20 @@ use crate::design::decode::meta::{
 use crate::design::decode::scopes::parse_parameter_scope;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids;
+use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::paramesh_body_wrapper as body_wrapper;
+use crate::layout::paramesh_collection_owner_backlink_prefix as collection_owner;
+use crate::layout::paramesh_entry_name_prefix as entry_name_prefix;
+use crate::layout::paramesh_feature_scope_base as feature_scope_base;
+use crate::layout::paramesh_feature_scope_prefix as feature_scope;
+use crate::layout::paramesh_guid_join_prefix as guid_join;
+use crate::layout::paramesh_mesh_body_join_prefix as mesh_body;
+use crate::layout::paramesh_mesh_collection_base_prefix as mesh_collection_base;
+use crate::layout::paramesh_mesh_collection_prefix as mesh_collection;
+use crate::layout::paramesh_scene_node as scene_node;
+use crate::layout::paramesh_scene_state as scene_state;
+use crate::layout::paramesh_texture_filename_prefix as texture_filename;
+use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshTextureResource,
@@ -73,32 +87,10 @@ const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54
 const MESH_BODY_OWNER_TYPE_VERSION: u32 = 4;
 
 /// Row-major 4x4 f64 matrix byte length.
+#[cfg(test)]
 const MATRIX_BYTES: usize = 128;
-const MESH_BODY_FIRST_MATRIX_AT: usize = 42;
-const MESH_BODY_MATRIX_SEPARATOR_BYTES: usize = 1;
-const MESH_BODY_SECOND_MATRIX_AT: usize =
-    MESH_BODY_FIRST_MATRIX_AT + MATRIX_BYTES + MESH_BODY_MATRIX_SEPARATOR_BYTES;
-const MESH_BODY_SCOPE_REFERENCE_AT: usize = 508;
-const MESH_BODY_WRAPPER_REFERENCE_AT: usize = 519;
-const MESH_BODY_OWNER_REFERENCE_AT: usize = 530;
-const MESH_BODY_GUID_REFERENCE_AT: usize = 541;
-const MESH_BODY_SCENE_NODE_REFERENCE_AT: usize = 553;
-const SAME_SEGMENT_REFERENCE_BYTES: usize = 11;
-const MESH_ENTRY_GUID_REFERENCE_AT: usize = 21;
-const MESH_ENTRY_NAME_AT: usize = 32;
-const MESH_GUID_VALUE_AT: usize = 32;
-const MESH_GUID_ENTRY_REFERENCE_AT: usize = 72;
-const MESH_COLLECTION_BODY_COUNT_AT: usize = 21;
-const MESH_COLLECTION_TEXTURE_REFERENCE_AT: usize = 27;
-const MESH_COLLECTION_BASE_RECORD_AT: usize = 38;
-const MESH_COLLECTION_BASE_BODY_COUNT_AT: usize = 58;
-const MESH_TEXTURE_FLAGS_COUNT_AT: usize = 21;
-const MESH_WRAPPER_BODY_REFERENCE_AT: usize = 21;
-const MESH_FEATURE_BODY_COUNT_AT: usize = 21;
-const MESH_COLLECTION_OWNER_BACKLINK_AT: usize = 262;
-const SCENE_NODE_STATE_REFERENCE_AT: usize = 33;
-const SCENE_NODE_AUXILIARY_REFERENCE_AT: usize = 48;
-const SCENE_FOOTER_BYTES: usize = 50;
+const SAME_SEGMENT_REFERENCE_BYTES: usize = indexed_header::LEN;
+const SCENE_FOOTER_BYTES: usize = scene_state::LEN - scene_state::FOOTER_MARKER;
 
 /// One mesh body's geometry, in model millimetres.
 pub(crate) struct MeshBody {
@@ -228,8 +220,8 @@ pub(crate) fn valid_mesh_transform(transform: [[f64; 4]; 4]) -> bool {
 
 /// The two equal affine maps stored by a mesh-body class record.
 fn mesh_body_transform(payload: &[u8]) -> Option<MeshAffineTransform> {
-    let first = MeshAffineTransform::parse(payload, MESH_BODY_FIRST_MATRIX_AT)?;
-    let second = MeshAffineTransform::parse(payload, MESH_BODY_SECOND_MATRIX_AT)?;
+    let first = MeshAffineTransform::parse(payload, mesh_body::FIRST_TRANSFORM)?;
+    let second = MeshAffineTransform::parse(payload, mesh_body::SECOND_TRANSFORM)?;
     (first == second).then_some(first)
 }
 
@@ -526,7 +518,8 @@ fn nested_record_identity(
     expected_module: &str,
 ) -> Option<DesignMeshRecordIdentity> {
     let class_tag = indexed_class_tag(record, at)?;
-    (View::u32_le_at(record, at.checked_add(7)?) == Some(record_index)).then_some(())?;
+    (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?) == Some(record_index))
+        .then_some(())?;
     let tag = class_tag.parse::<u32>().ok()?;
     let ordinal = usize::try_from(tag.checked_sub(256)?).ok()?;
     validate_design_type(
@@ -597,15 +590,21 @@ fn parse_mesh_entry_name_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-entry-name")?;
     let parsed = (|| {
-        (record.get(11..21) == Some(&[0; 10])).then_some(())?;
-        let guid_record_index = exact_local_record_index(record, MESH_ENTRY_GUID_REFERENCE_AT)?;
-        let (entry_name, end) = lp_utf16_bounded(record, MESH_ENTRY_NAME_AT, 1..=1024)?;
+        (record.get(entry_name_prefix::ZERO_RUN_10..entry_name_prefix::GUID_RECORD_REFERENCE)
+            == Some(&[0; 10]))
+        .then_some(())?;
+        let guid_record_index =
+            exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)?;
+        let (entry_name, end) = lp_utf16_bounded(record, entry_name_prefix::LEN, 1..=1024)?;
         (end == record.len()).then_some(MeshEntryNameRecord {
             identity,
             guid_record_index,
             entry_name,
-            guid_reference_offset: source_offset(frame.start, MESH_ENTRY_GUID_REFERENCE_AT)?,
-            entry_name_offset: source_offset(frame.start, MESH_ENTRY_NAME_AT.checked_add(4)?)?,
+            guid_reference_offset: source_offset(
+                frame.start,
+                entry_name_prefix::GUID_RECORD_REFERENCE,
+            )?,
+            entry_name_offset: source_offset(frame.start, entry_name_prefix::LEN.checked_add(4)?)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-entry-name", frame.entity_id))
@@ -625,17 +624,18 @@ fn parse_mesh_guid_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-GUID")?;
     let parsed = (|| {
-        (record.get(11..32) == Some(&[0; 21])).then_some(())?;
-        let (fusion_uuid, end) = lp_ascii_strict(record, MESH_GUID_VALUE_AT, 36..=36)?;
-        (end == MESH_GUID_ENTRY_REFERENCE_AT && is_guid_hyphenated(&fusion_uuid)).then_some(())?;
+        (record.get(guid_join::ZERO_RUN_21..guid_join::FUSION_UUID) == Some(&[0; 21]))
+            .then_some(())?;
+        let (fusion_uuid, end) = lp_ascii_strict(record, guid_join::FUSION_UUID, 36..=36)?;
+        (end == guid_join::ENTRY_NAME_BACKLINK && is_guid_hyphenated(&fusion_uuid)).then_some(())?;
         let entry_name_record_index =
-            exact_local_record_index(record, MESH_GUID_ENTRY_REFERENCE_AT)?;
+            exact_local_record_index(record, guid_join::ENTRY_NAME_BACKLINK)?;
         Some(MeshGuidRecord {
             identity,
             entry_name_record_index,
             fusion_uuid,
-            fusion_uuid_offset: source_offset(frame.start, MESH_GUID_VALUE_AT.checked_add(4)?)?,
-            entry_reference_offset: source_offset(frame.start, MESH_GUID_ENTRY_REFERENCE_AT)?,
+            fusion_uuid_offset: source_offset(frame.start, guid_join::FUSION_UUID.checked_add(4)?)?,
+            entry_reference_offset: source_offset(frame.start, guid_join::ENTRY_NAME_BACKLINK)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-GUID", frame.entity_id))
@@ -655,17 +655,19 @@ fn parse_mesh_body_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-body")?;
     let parsed = (|| {
-        (record.get(11..21) == Some(&[0; 10])).then_some(())?;
-        let scope_record_index = exact_local_record_index(record, MESH_BODY_SCOPE_REFERENCE_AT)?;
-        let wrapper_record_index =
-            exact_local_record_index(record, MESH_BODY_WRAPPER_REFERENCE_AT)?;
-        let owner_record_index = exact_local_record_index(record, MESH_BODY_OWNER_REFERENCE_AT)?;
-        let guid_record_index = exact_local_record_index(record, MESH_BODY_GUID_REFERENCE_AT)?;
+        (record.get(mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10) == Some(&[0; 10]))
+            .then_some(())?;
+        let scope_record_index =
+            exact_local_record_index(record, mesh_body::FEATURE_SCOPE_REFERENCE)?;
+        let wrapper_record_index = exact_local_record_index(record, mesh_body::WRAPPER_REFERENCE)?;
+        let owner_record_index = exact_local_record_index(record, mesh_body::BODY_OWNER_REFERENCE)?;
+        let guid_record_index =
+            exact_local_record_index(record, mesh_body::CONTAINER_GUID_REFERENCE)?;
         let scene_node_record_index =
-            exact_local_record_index(record, MESH_BODY_SCENE_NODE_REFERENCE_AT)?;
+            exact_local_record_index(record, mesh_body::SCENE_NODE_REFERENCE)?;
         let collection_reference_at = record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?;
         (collection_reference_at
-            >= MESH_BODY_SCENE_NODE_REFERENCE_AT.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?)
+            >= mesh_body::SCENE_NODE_REFERENCE.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?)
         .then_some(())?;
         let collection_record_index = exact_local_record_index(record, collection_reference_at)?;
         let transform = mesh_body_transform(record)?;
@@ -678,13 +680,13 @@ fn parse_mesh_body_record(
             scene_node_record_index,
             collection_record_index,
             transform,
-            scope_reference_offset: source_offset(frame.start, MESH_BODY_SCOPE_REFERENCE_AT)?,
-            wrapper_reference_offset: source_offset(frame.start, MESH_BODY_WRAPPER_REFERENCE_AT)?,
-            owner_reference_offset: source_offset(frame.start, MESH_BODY_OWNER_REFERENCE_AT)?,
-            guid_reference_offset: source_offset(frame.start, MESH_BODY_GUID_REFERENCE_AT)?,
+            scope_reference_offset: source_offset(frame.start, mesh_body::FEATURE_SCOPE_REFERENCE)?,
+            wrapper_reference_offset: source_offset(frame.start, mesh_body::WRAPPER_REFERENCE)?,
+            owner_reference_offset: source_offset(frame.start, mesh_body::BODY_OWNER_REFERENCE)?,
+            guid_reference_offset: source_offset(frame.start, mesh_body::CONTAINER_GUID_REFERENCE)?,
             scene_node_reference_offset: source_offset(
                 frame.start,
-                MESH_BODY_SCENE_NODE_REFERENCE_AT,
+                mesh_body::SCENE_NODE_REFERENCE,
             )?,
             collection_reference_offset: source_offset(frame.start, collection_reference_at)?,
         })
@@ -707,16 +709,19 @@ fn parse_mesh_collection_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-collection")?;
     let parsed = (|| {
-        (record.get(11..21) == Some(&[0; 10])).then_some(())?;
-        (record.get(25..27) == Some(&[1, 1])).then_some(())?;
+        (record.get(mesh_collection::ZERO_RUN_10..mesh_collection::BODY_COUNT) == Some(&[0; 10]))
+            .then_some(())?;
+        (record.get(mesh_collection::CONSTANT_01_01..mesh_collection::TEXTURE_TABLE_REFERENCE)
+            == Some(&[1, 1]))
+        .then_some(())?;
         let first_count =
-            usize::try_from(View::u32_le_at(record, MESH_COLLECTION_BODY_COUNT_AT)?).ok()?;
+            usize::try_from(View::u32_le_at(record, mesh_collection::BODY_COUNT)?).ok()?;
         let texture_table_record_index =
-            exact_local_record_index(record, MESH_COLLECTION_TEXTURE_REFERENCE_AT)?;
+            exact_local_record_index(record, mesh_collection::TEXTURE_TABLE_REFERENCE)?;
         let base_record = nested_record_identity(
             record,
             frame.start,
-            MESH_COLLECTION_BASE_RECORD_AT,
+            mesh_collection::LEN,
             record.len(),
             identity.record_index,
             meta,
@@ -725,9 +730,15 @@ fn parse_mesh_collection_record(
             MESH_COLLECTION_BASE_TYPE_VERSION,
             COMMON_DATA_MODULE,
         )?;
-        (record.get(49..58) == Some(&[0; 9])).then_some(())?;
-        let (body_record_indices, body_reference_offsets, owner_at) =
-            counted_local_record_indices(record, MESH_COLLECTION_BASE_BODY_COUNT_AT)?;
+        (record.get(
+            mesh_collection::LEN + mesh_collection_base::ZERO_RUN_9
+                ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
+        ) == Some(&[0; 9]))
+        .then_some(())?;
+        let (body_record_indices, body_reference_offsets, owner_at) = counted_local_record_indices(
+            record,
+            mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
+        )?;
         (first_count == body_record_indices.len()).then_some(())?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
@@ -737,13 +748,16 @@ fn parse_mesh_collection_record(
             texture_table_record_index,
             body_record_indices,
             count_offsets: [
-                source_offset(frame.start, MESH_COLLECTION_BODY_COUNT_AT)?,
-                source_offset(frame.start, MESH_COLLECTION_BASE_BODY_COUNT_AT)?,
+                source_offset(frame.start, mesh_collection::BODY_COUNT)?,
+                source_offset(
+                    frame.start,
+                    mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
+                )?,
             ],
             body_reference_offsets: absolute_offsets(frame.start, body_reference_offsets)?,
             texture_reference_offset: source_offset(
                 frame.start,
-                MESH_COLLECTION_TEXTURE_REFERENCE_AT,
+                mesh_collection::TEXTURE_TABLE_REFERENCE,
             )?,
             owner_record_index,
             owner_reference_offset: source_offset(frame.start, owner_at)?,
@@ -766,10 +780,11 @@ fn parse_mesh_texture_table_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-texture-table")?;
     let parsed = (|| {
-        (record.get(11..21) == Some(&[0; 10])).then_some(())?;
+        (record.get(texture_table::ZERO_RUN_10..texture_table::FLAGS_MAP_COUNT) == Some(&[0; 10]))
+            .then_some(())?;
         let flags_count =
-            usize::try_from(View::u32_le_at(record, MESH_TEXTURE_FLAGS_COUNT_AT)?).ok()?;
-        let mut at = MESH_TEXTURE_FLAGS_COUNT_AT.checked_add(4)?;
+            usize::try_from(View::u32_le_at(record, texture_table::FLAGS_MAP_COUNT)?).ok()?;
+        let mut at = texture_table::FLAGS_MAP_COUNT.checked_add(4)?;
         let mut flags = Vec::with_capacity(flags_count);
         let mut flag_keys = HashSet::with_capacity(flags_count);
         for ordinal in 0..flags_count {
@@ -816,7 +831,7 @@ fn parse_mesh_texture_table_record(
         (at == record.len() && flag_keys == filename_keys).then_some(())?;
         Some(MeshTextureTableRecord {
             identity,
-            flags_count_offset: source_offset(frame.start, MESH_TEXTURE_FLAGS_COUNT_AT)?,
+            flags_count_offset: source_offset(frame.start, texture_table::FLAGS_MAP_COUNT)?,
             filename_count_offset: source_offset(frame.start, filename_count_at)?,
             flags,
             filenames,
@@ -839,13 +854,16 @@ fn parse_mesh_wrapper_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-wrapper")?;
     let parsed = (|| {
-        (record.len() == 40 && record.get(11..21) == Some(&[0; 10])).then_some(())?;
-        let body_record_index = exact_local_record_index(record, MESH_WRAPPER_BODY_REFERENCE_AT)?;
-        (record.get(32..40) == Some(&[0; 8])).then_some(())?;
+        (record.len() == body_wrapper::LEN
+            && record.get(body_wrapper::ZERO_RUN_10..body_wrapper::BODY_REFERENCE)
+                == Some(&[0; 10]))
+        .then_some(())?;
+        let body_record_index = exact_local_record_index(record, body_wrapper::BODY_REFERENCE)?;
+        (record.get(body_wrapper::ZERO_TAIL_8..body_wrapper::LEN) == Some(&[0; 8])).then_some(())?;
         Some(MeshWrapperRecord {
             identity,
             body_record_index,
-            body_reference_offset: source_offset(frame.start, MESH_WRAPPER_BODY_REFERENCE_AT)?,
+            body_reference_offset: source_offset(frame.start, body_wrapper::BODY_REFERENCE)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-wrapper", frame.entity_id))
@@ -885,9 +903,9 @@ fn parse_mesh_scene_state_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-scene-state")?;
-    (record.len() == 95
-        && record.get(11..45) == Some(&[0; 34])
-        && scene_footer_is_exact(record, 45))
+    (record.len() == scene_state::LEN
+        && record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER) == Some(&[0; 34])
+        && scene_footer_is_exact(record, scene_state::FOOTER_MARKER))
     .then_some(identity)
     .ok_or_else(|| malformed_frame("mesh-scene-state", frame.entity_id))
 }
@@ -906,25 +924,28 @@ fn parse_scene_node_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-scene-node")?;
     let parsed = (|| {
-        (record.len() == 133
-            && record.get(11..25) == Some(&[0; 14])
-            && View::u32_le_at(record, 25) == Some(2)
-            && View::u32_le_at(record, 29) == Some(2)
-            && View::u32_le_at(record, 44) == Some(3)
-            && record.get(59..83) == Some(&[0; 24])
-            && scene_footer_is_exact(record, 83))
+        (record.len() == scene_node::LEN
+            && record.get(scene_node::ZERO_RUN_14..scene_node::CONSTANT_TWO_A) == Some(&[0; 14])
+            && View::u32_le_at(record, scene_node::CONSTANT_TWO_A) == Some(2)
+            && View::u32_le_at(record, scene_node::CONSTANT_TWO_B) == Some(2)
+            && View::u32_le_at(record, scene_node::CONSTANT_THREE) == Some(3)
+            && record.get(scene_node::ZERO_RUN_24..scene_node::FOOTER_MARKER) == Some(&[0; 24])
+            && scene_footer_is_exact(record, scene_node::FOOTER_MARKER))
         .then_some(())?;
         Some(MeshSceneNodeRecord {
             identity,
-            state_record_index: exact_local_record_index(record, SCENE_NODE_STATE_REFERENCE_AT)?,
-            state_reference_offset: source_offset(frame.start, SCENE_NODE_STATE_REFERENCE_AT)?,
+            state_record_index: exact_local_record_index(
+                record,
+                scene_node::SCENE_STATE_REFERENCE,
+            )?,
+            state_reference_offset: source_offset(frame.start, scene_node::SCENE_STATE_REFERENCE)?,
             auxiliary_record_index: exact_local_record_index(
                 record,
-                SCENE_NODE_AUXILIARY_REFERENCE_AT,
+                scene_node::AUXILIARY_RECORD_REFERENCE,
             )?,
             auxiliary_reference_offset: source_offset(
                 frame.start,
-                SCENE_NODE_AUXILIARY_REFERENCE_AT,
+                scene_node::AUXILIARY_RECORD_REFERENCE,
             )?,
         })
     })();
@@ -965,9 +986,10 @@ fn parse_mesh_scope_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-feature-scope")?;
     let parsed = (|| {
-        (record.get(11..21) == Some(&[0; 10])).then_some(())?;
+        (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
+            .then_some(())?;
         let (body_record_indices, body_reference_offsets, body_list_end) =
-            counted_local_record_indices(record, MESH_FEATURE_BODY_COUNT_AT)?;
+            counted_local_record_indices(record, feature_scope::BODY_COUNT)?;
         let header = DesignRecordHeader {
             id: String::new(),
             record_index: identity.record_index,
@@ -980,8 +1002,9 @@ fn parse_mesh_scope_record(
         .then_some(())?;
         let paired_at = usize::try_from(scope.paired_byte_offset).ok()?;
         let paired_relative = paired_at.checked_sub(frame.start)?;
-        (body_list_end <= paired_relative && paired_relative.checked_add(30) == Some(record.len()))
-            .then_some(())?;
+        (body_list_end <= paired_relative
+            && paired_relative.checked_add(feature_scope_base::LEN) == Some(record.len()))
+        .then_some(())?;
         let base_record = nested_record_identity(
             record,
             frame.start,
@@ -994,14 +1017,18 @@ fn parse_mesh_scope_record(
             MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
             DATA_MODEL_MODULE,
         )?;
-        (record.get(paired_relative + 11..paired_relative + 19) == Some(&[0; 8])).then_some(())?;
-        let owner_at = paired_relative.checked_add(19)?;
+        (record.get(
+            paired_relative + feature_scope_base::ZERO_RUN_8
+                ..paired_relative + feature_scope_base::SCOPE_OWNER_REFERENCE,
+        ) == Some(&[0; 8]))
+        .then_some(())?;
+        let owner_at = paired_relative.checked_add(feature_scope_base::SCOPE_OWNER_REFERENCE)?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         Some(MeshScopeRecord {
             identity,
             base_record,
             body_record_indices,
-            body_count_offset: source_offset(frame.start, MESH_FEATURE_BODY_COUNT_AT)?,
+            body_count_offset: source_offset(frame.start, feature_scope::BODY_COUNT)?,
             body_reference_offsets: absolute_offsets(frame.start, body_reference_offsets)?,
             owner_record_index,
             owner_reference_offset: source_offset(frame.start, owner_at)?,
@@ -1024,13 +1051,16 @@ fn parse_mesh_collection_owner_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let collection_record_index =
-        exact_local_record_index(record, MESH_COLLECTION_OWNER_BACKLINK_AT)
+        exact_local_record_index(record, collection_owner::COLLECTION_BACKLINK)
             .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?;
     Ok(MeshCollectionOwnerRecord {
         identity,
         collection_record_index,
-        collection_reference_offset: source_offset(frame.start, MESH_COLLECTION_OWNER_BACKLINK_AT)
-            .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+        collection_reference_offset: source_offset(
+            frame.start,
+            collection_owner::COLLECTION_BACKLINK,
+        )
+        .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
     })
 }
 
@@ -1048,9 +1078,16 @@ fn parse_mesh_texture_filename_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let parsed = (|| {
-        (record.get(11..21) == Some(&[0; 10])).then_some(())?;
-        let (filename, end) = lp_utf16_bounded(record, 21, 1..=1024)?;
-        (end == record.len()).then_some((identity, filename, source_offset(frame.start, 25)?))
+        (record.get(texture_filename::ZERO_RUN_10..texture_filename::BASENAME_CODE_UNIT_COUNT)
+            == Some(&[0; 10]))
+        .then_some(())?;
+        let (filename, end) =
+            lp_utf16_bounded(record, texture_filename::BASENAME_CODE_UNIT_COUNT, 1..=1024)?;
+        (end == record.len()).then_some((
+            identity,
+            filename,
+            source_offset(frame.start, texture_filename::LEN)?,
+        ))
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-texture-filename", frame.entity_id))
 }
@@ -1385,10 +1422,10 @@ where
                 fusion_uuid_offset: guid.fusion_uuid_offset,
                 transform: body.transform.rows(),
                 transform_offsets: [
-                    source_offset(body_byte_offset, MESH_BODY_FIRST_MATRIX_AT).ok_or_else(
+                    source_offset(body_byte_offset, mesh_body::FIRST_TRANSFORM).ok_or_else(
                         || stream_error("the first mesh transform has an addressable offset"),
                     )?,
-                    source_offset(body_byte_offset, MESH_BODY_SECOND_MATRIX_AT).ok_or_else(
+                    source_offset(body_byte_offset, mesh_body::SECOND_TRANSFORM).ok_or_else(
                         || stream_error("the second mesh transform has an addressable offset"),
                     )?,
                 ],
@@ -1600,7 +1637,7 @@ mod tests {
     }
 
     fn mesh_body_payload(cells: [f64; 16]) -> Vec<u8> {
-        let mut payload = vec![0; MESH_BODY_FIRST_MATRIX_AT];
+        let mut payload = vec![0; mesh_body::FIRST_TRANSFORM];
         payload.extend_from_slice(&matrix(cells));
         payload.push(0);
         payload.extend_from_slice(&matrix(cells));
@@ -1692,21 +1729,33 @@ mod tests {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.resize(600, 0);
-        bytes[MESH_BODY_FIRST_MATRIX_AT..MESH_BODY_FIRST_MATRIX_AT + MATRIX_BYTES]
+        bytes[mesh_body::FIRST_TRANSFORM..mesh_body::FIRST_TRANSFORM + MATRIX_BYTES]
             .copy_from_slice(&matrix(identity));
-        bytes[MESH_BODY_SECOND_MATRIX_AT..MESH_BODY_SECOND_MATRIX_AT + MATRIX_BYTES]
+        bytes[mesh_body::SECOND_TRANSFORM..mesh_body::SECOND_TRANSFORM + MATRIX_BYTES]
             .copy_from_slice(&matrix(identity));
-        put_reference(&mut bytes, MESH_BODY_SCOPE_REFERENCE_AT, scope_record_index);
         put_reference(
             &mut bytes,
-            MESH_BODY_WRAPPER_REFERENCE_AT,
+            mesh_body::FEATURE_SCOPE_REFERENCE,
+            scope_record_index,
+        );
+        put_reference(
+            &mut bytes,
+            mesh_body::WRAPPER_REFERENCE,
             wrapper_record_index,
         );
-        put_reference(&mut bytes, MESH_BODY_OWNER_REFERENCE_AT, owner_record_index);
-        put_reference(&mut bytes, MESH_BODY_GUID_REFERENCE_AT, guid_record_index);
         put_reference(
             &mut bytes,
-            MESH_BODY_SCENE_NODE_REFERENCE_AT,
+            mesh_body::BODY_OWNER_REFERENCE,
+            owner_record_index,
+        );
+        put_reference(
+            &mut bytes,
+            mesh_body::CONTAINER_GUID_REFERENCE,
+            guid_record_index,
+        );
+        put_reference(
+            &mut bytes,
+            mesh_body::SCENE_NODE_REFERENCE,
             scene_node_record_index,
         );
         let tail_at = bytes.len() - SAME_SEGMENT_REFERENCE_BYTES;
@@ -1874,7 +1923,7 @@ mod tests {
     ) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
-        bytes.resize(MESH_COLLECTION_OWNER_BACKLINK_AT, 0);
+        bytes.resize(collection_owner::COLLECTION_BACKLINK, 0);
         push_reference(&mut bytes, collection_record_index);
         bytes
     }
@@ -2424,7 +2473,8 @@ mod tests {
     #[test]
     fn mesh_graph_rejects_body_count_disagreement() {
         let mut graph = synthetic_mesh_graph(false);
-        graph.bytes[MESH_COLLECTION_BASE_BODY_COUNT_AT..MESH_COLLECTION_BASE_BODY_COUNT_AT + 4]
+        graph.bytes[mesh_collection::LEN + mesh_collection_base::BODY_COUNT
+            ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT + 4]
             .copy_from_slice(&2u32.to_le_bytes());
         let mut no_asset = no_texture_asset;
         assert!(matches!(
@@ -2508,7 +2558,7 @@ mod tests {
         let start = sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID).start;
         put_reference(
             &mut graph.bytes,
-            start + MESH_COLLECTION_OWNER_BACKLINK_AT,
+            start + collection_owner::COLLECTION_BACKLINK,
             101,
         );
         let mut no_asset = no_texture_asset;
@@ -2655,7 +2705,7 @@ mod tests {
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
         let mut mismatched = mesh_body_payload(identity);
-        mismatched[MESH_BODY_SECOND_MATRIX_AT..MESH_BODY_SECOND_MATRIX_AT + 8]
+        mismatched[mesh_body::SECOND_TRANSFORM..mesh_body::SECOND_TRANSFORM + 8]
             .copy_from_slice(&2.0f64.to_le_bytes());
         assert!(mesh_body_transform(&mismatched).is_none());
 

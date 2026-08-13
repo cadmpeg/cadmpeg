@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::brep::ShapePayloadRecord;
+use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{JointRecord, ObjectRecord, ProductNodeRecord, PropertyRecord};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -500,7 +501,7 @@ fn parse_placement_list(
     let (count, width) = list_layout(view, 7, "PlacementList")?;
     (0..count)
         .map(|index| {
-            let offset = 4 + index * width * 7;
+            let offset = link_array::LEN + index * width * 7;
             let values = (0..7)
                 .map(|component| read_real(view, offset + component * width, width))
                 .collect::<Vec<_>>();
@@ -521,7 +522,7 @@ fn parse_vector_list(
     let (count, width) = list_layout(view, 3, "ScaleList")?;
     (0..count)
         .map(|index| {
-            let offset = 4 + index * width * 3;
+            let offset = link_array::LEN + index * width * 3;
             Ok([
                 read_real(view, offset, width),
                 read_real(view, offset + width, width),
@@ -556,14 +557,16 @@ fn list_layout(
     name: &str,
 ) -> Result<(usize, usize), CodecError> {
     let len = view.end().saturating_sub(view.start());
-    if len < 4 {
+    if len < link_array::LEN {
         return Err(CodecError::Malformed(format!("{name} is truncated")));
     }
     let mut head = view;
     head.seek(view.start()).expect("window start");
     let count = head.u32_le().expect("four-byte count") as usize;
-    let double_len = 4_usize.saturating_add(count.saturating_mul(components).saturating_mul(8));
-    let float_len = 4_usize.saturating_add(count.saturating_mul(components).saturating_mul(4));
+    let double_len =
+        link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(8));
+    let float_len =
+        link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(4));
     if len == double_len {
         Ok((count, 8))
     } else if len == float_len {

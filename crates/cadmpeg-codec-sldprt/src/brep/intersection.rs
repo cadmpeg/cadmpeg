@@ -17,6 +17,9 @@ use cadmpeg_ir::math::{Point2, Point3};
 
 use super::{Carrier, CarrierGeometry, LEN_TO_MM};
 
+use crate::layout::intersection_composite as isect;
+use crate::layout::support_uv_00_cc as support_uv;
+
 /// Chart parameter sentinel marking an absent value.
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 /// Fixed bytes between an inline `term_use` label and its terminator body.
@@ -81,7 +84,7 @@ fn composite_records(bytes: &[u8]) -> Vec<(usize, usize, usize)> {
     let mut records = record_bodies(bytes, 0x26)
         .into_iter()
         .filter_map(|body| {
-            let marker = body.checked_add(16)?;
+            let marker = body.checked_add(isect::MARKER)?;
             matches!(bytes.get(marker), Some(0x2b | 0x2d)).then_some((body - 2, body, marker))
         })
         .collect::<Vec<_>>();
@@ -91,7 +94,7 @@ fn composite_records(bytes: &[u8]) -> Vec<(usize, usize, usize)> {
             continue;
         }
         let body = offset + 3;
-        let marker = body + 16;
+        let marker = body + isect::MARKER;
         if matches!(bytes.get(marker), Some(0x2b | 0x2d)) {
             records.push((offset, body, marker));
         }
@@ -243,9 +246,9 @@ fn term_records(bytes: &[u8]) -> HashMap<u16, Vec<[f64; 3]>> {
 /// Parse a support-UV body: `count:u32 attr:u16 width_marker:u8(2|3|4)` then
 /// `count` finite f64 values.
 fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, UvRecord)> {
-    let count = View::u32_be_at(bytes, body)? as usize;
-    let attr = View::u16_be_at(bytes, body + 4)?;
-    let marker = *bytes.get(body + 6)?;
+    let count = View::u32_be_at(bytes, body + support_uv::COUNT)? as usize;
+    let attr = View::u16_be_at(bytes, body + support_uv::ATTR)?;
+    let marker = *bytes.get(body + support_uv::WIDTH)?;
     if !(2..=4).contains(&marker) {
         return None;
     }
@@ -254,7 +257,7 @@ fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, UvRecord)> {
         return None;
     }
     let values = (0..count)
-        .map(|index| View::f64_be_at(bytes, body + 7 + index * 8))
+        .map(|index| View::f64_be_at(bytes, body + support_uv::LEN + index * 8))
         .collect::<Option<Vec<_>>>()?;
     values
         .iter()
@@ -408,11 +411,11 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
         return HashMap::new();
     }
     let mut out = HashMap::new();
-    for (offset, body, marker_at) in composite_records(bytes) {
-        let Some(attr) = View::u16_be_at(bytes, body) else {
+    for (offset, body, _) in composite_records(bytes) {
+        let Some(attr) = View::u16_be_at(bytes, body + isect::ATTR) else {
             continue;
         };
-        let payload = marker_at + 1;
+        let payload = body + isect::PAYLOAD;
         let Some(refs) = (0..6)
             .map(|index| View::u16_be_at(bytes, payload + index * 2))
             .collect::<Option<Vec<u16>>>()
@@ -469,7 +472,7 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
             carrier: Carrier {
                 attr,
                 offset,
-                end: payload + 12,
+                end: body + isect::LEN,
                 geometry: CarrierGeometry::Curve(selected.geometry),
                 frame: None,
                 parameter_range: None,

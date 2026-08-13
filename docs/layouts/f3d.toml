@@ -52,11 +52,6 @@ type = "u32"
 source = "spec"
 anchor = "then `u32 record_index`"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/units.rs"
-contains = "const HEADER_LEN: usize = 11;"
-note = "The Design decoder names the eleven-byte indexed-record header length."
-
 [[record]]
 name = "sketch_container_visibility_member_prefix"
 kind = "byte"
@@ -192,7 +187,7 @@ anchor = "with six trailing zero bytes"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
-contains = "let mapping_mode_at = scope_at + 32;"
+contains = "let mapping_mode_at = scope_at + decal_scope::MAPPING_MODE;"
 note = "The decoder reads the mapping mode after validating both marked-reference envelopes."
 
 [[record]]
@@ -233,7 +228,7 @@ anchor = "six zero bytes at offsets 24 through 29"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
-contains = "if name_at != asset_at + 30"
+contains = "if name_at != asset_at + decal_asset::LEN"
 note = "The parser requires the paired image-name header at the exact end of this record."
 
 [[record]]
@@ -267,7 +262,7 @@ anchor = "An LP-UTF16 archive-entry basename begins at offset 21"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
-contains = "lp_utf16_bounded(bytes, name_at + 21, 1..=1024)"
+contains = "name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT"
 note = "The parser bounds the variable basename after this fixed prefix."
 
 [[record]]
@@ -336,7 +331,7 @@ anchor = "`u32 local_ordinal`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
-contains = "let scalar = frame.get(39..parameter_marker)?;"
+contains = "let scalar = frame.get(owner_prefix::LEN..parameter_marker)?;"
 note = "The structural owner parser starts the selected scalar envelope after the tabulated prefix."
 
 [[record]]
@@ -431,11 +426,6 @@ type = "bytes[11]"
 source = "spec"
 anchor = "a marked same-segment reference to the GUID record at offset 21"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_ENTRY_GUID_REFERENCE_AT: usize = 21;"
-note = "The typed entry-name parser reads the GUID reference at the tabulated offset."
-
 [[record]]
 name = "paramesh_guid_join_prefix"
 kind = "byte"
@@ -471,11 +461,6 @@ offset = 72
 type = "bytes[11]"
 source = "spec"
 anchor = "a marked same-segment backlink to the entry-name record at offset 72"
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_GUID_ENTRY_REFERENCE_AT: usize = 72;"
-note = "The typed GUID parser reads the entry-name backlink at the tabulated offset."
 
 [[record]]
 name = "paramesh_mesh_body_join_prefix"
@@ -568,31 +553,6 @@ type = "bytes[11]"
 source = "spec"
 anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_BODY_SCOPE_REFERENCE_AT: usize = 508;"
-note = "The typed mesh-body parser reads the feature-scope reference at the tabulated offset."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_BODY_GUID_REFERENCE_AT: usize = 541;"
-note = "The typed mesh-body parser reads the container-GUID reference at the tabulated offset."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_BODY_WRAPPER_REFERENCE_AT: usize = 519;"
-note = "The typed mesh-body parser reads the reciprocal wrapper reference at the tabulated offset."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_BODY_OWNER_REFERENCE_AT: usize = 530;"
-note = "The typed mesh-body parser reads the shared Body-owner reference at the tabulated offset."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_BODY_SCENE_NODE_REFERENCE_AT: usize = 553;"
-note = "The typed mesh-body parser reads the Scene-node reference at the tabulated offset."
-
 [[record]]
 name = "paramesh_mesh_collection_prefix"
 kind = "byte"
@@ -636,16 +596,6 @@ type = "bytes[11]"
 source = "spec"
 anchor = "a marked same-segment texture-table reference at offset 27"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_COLLECTION_TEXTURE_REFERENCE_AT: usize = 27;"
-note = "The typed collection parser reads the texture-table reference at the tabulated offset."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_COLLECTION_BASE_RECORD_AT: usize = 38;"
-note = "The typed collection parser starts the nested CommonData record at the end of this prefix."
-
 [[record]]
 name = "paramesh_mesh_collection_base_prefix"
 kind = "byte"
@@ -675,11 +625,6 @@ type = "u32"
 source = "spec"
 anchor = "a second u32 body count at collection offset 58"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_COLLECTION_BASE_BODY_COUNT_AT: usize = 58;"
-note = "The parser addresses this nested-relative field from the collection header."
-
 [[record]]
 name = "paramesh_texture_table_prefix"
 kind = "byte"
@@ -708,11 +653,6 @@ offset = 21
 type = "u32"
 source = "spec"
 anchor = "a u32 flags-map count at offset 21"
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_TEXTURE_FLAGS_COUNT_AT: usize = 21;"
-note = "The typed texture-table parser starts the flags map at the tabulated count."
 
 [[record]]
 name = "paramesh_texture_filename_prefix"
@@ -745,7 +685,7 @@ anchor = "one nonempty u32-count UTF-16LE archive-entry basename"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "let (filename, end) = lp_utf16_bounded(record, 21, 1..=1024)?;"
+contains = "lp_utf16_bounded(record, texture_filename::BASENAME_CODE_UNIT_COUNT, 1..=1024)?"
 note = "The typed filename parser reads the count at the tabulated offset and requires an exact record end."
 
 [[record]]
@@ -783,11 +723,6 @@ type = "bytes[8]"
 source = "spec"
 anchor = "and eight zero bytes"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_WRAPPER_BODY_REFERENCE_AT: usize = 21;"
-note = "The wrapper parser reads the reciprocal body reference at the tabulated offset."
-
 [[record]]
 name = "paramesh_feature_scope_prefix"
 kind = "byte"
@@ -816,11 +751,6 @@ offset = 21
 type = "u32"
 source = "spec"
 anchor = "a u32 body count at offset 21"
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_FEATURE_BODY_COUNT_AT: usize = 21;"
-note = "The typed scope parser reads the ordered body run from the tabulated count."
 
 [[record]]
 name = "paramesh_feature_scope_base"
@@ -852,7 +782,7 @@ anchor = "a marked same-segment owner reference at offset 19"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "paired_relative.checked_add(30) == Some(record.len())"
+contains = "paired_relative.checked_add(feature_scope_base::LEN) == Some(record.len())"
 note = "The scope parser requires the nested base record to end exactly 30 bytes after its header."
 
 [[record]]
@@ -889,11 +819,6 @@ offset = 46
 type = "bytes[49]"
 source = "spec"
 anchor = "and a 49-byte mask"
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const SCENE_FOOTER_BYTES: usize = 50;"
-note = "The Scene-state and Scene-node parsers share the exact footer validator."
 
 [[record]]
 name = "paramesh_scene_node"
@@ -972,16 +897,6 @@ type = "bytes[49]"
 source = "spec"
 anchor = "the same 50-byte Scene footer at offset 83"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const SCENE_NODE_STATE_REFERENCE_AT: usize = 33;"
-note = "The Scene-node parser reads the state reference at the tabulated offset."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const SCENE_NODE_AUXILIARY_REFERENCE_AT: usize = 48;"
-note = "The Scene-node parser reads the auxiliary reference at the tabulated offset."
-
 [[record]]
 name = "paramesh_collection_owner_backlink_prefix"
 kind = "byte"
@@ -1008,11 +923,6 @@ offset = 262
 type = "bytes[11]"
 source = "spec"
 anchor = "Its marked same-segment reference at offset 262 points back to the collection."
-
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "const MESH_COLLECTION_OWNER_BACKLINK_AT: usize = 262;"
-note = "The typed owner parser reads the reciprocal collection reference at the tabulated offset."
 
 [[record]]
 name = "assembly_operand_path_locator_reference_run"
@@ -1060,7 +970,7 @@ note = "The compact assembly forms use the two tabulated scope-relative locator-
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "let count_at = scope_at.checked_add(locator_offsets[0].checked_sub(4)?)?;"
+contains = "locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?"
 note = "The parser locates the count immediately before the first locator reference."
 
 [[record]]
@@ -1142,13 +1052,8 @@ source = "spec"
 anchor = "two zero bytes at offset 188"
 
 [[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
-contains = "pub(crate) const OPERAND_PATH_LOCATOR_LENGTH: usize = 190;"
-note = "The decoder and validator share the fixed locator length."
-
-[[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "bytes.get(locator_at.checked_add(188)?..locator_at.checked_add(190)?)? != [0; 2]"
+contains = "locator_at.checked_add(path_locator::ZERO_TAIL_2)?"
 note = "The parser requires the two-byte zero tail at the end of the 190-byte locator."
 
 [[record]]
@@ -1195,13 +1100,8 @@ source = "spec"
 anchor = "a marked reference to path record `N+1` at offset 26"
 
 [[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
-contains = "pub(crate) const OPERAND_PATH_WRAPPER_LENGTH: usize = 37;"
-note = "The decoder and validator share the fixed wrapper length."
-
-[[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "bytes.get(wrapper_at.checked_add(11)?..wrapper_at.checked_add(21)?)? != [0; 10]"
+contains = "wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?"
 note = "The parser checks the ten-byte zero run after the wrapper header."
 
 [[record]]
@@ -1269,22 +1169,22 @@ anchor = "The carrier's paired indexed header starts at offset 380"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "let construction_transform_at = start.checked_add(48)?;"
+contains = "start.checked_add(axial_carrier::OPERAND_TRANSFORM)?"
 note = "The parser reads and compares the construction transform at the tabulated offset."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "exact_same_segment_record_reference(bytes, start.checked_add(192)?)?"
+contains = "start.checked_add(axial_carrier::FIRST_AXIS_RECORD_REFERENCE)?"
 note = "The parser reads the first axis reference at the tabulated offset."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "exact_same_segment_record_reference(bytes, start.checked_add(208)?)?"
+contains = "start.checked_add(axial_carrier::SECOND_AXIS_RECORD_REFERENCE)?"
 note = "The parser reads the second axis reference at the tabulated offset."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "let paired_at = start.checked_add(380)?;"
+contains = "start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?"
 note = "The parser requires the paired construction header at the tabulated offset."
 
 [[record]]
@@ -1325,7 +1225,7 @@ anchor = "and u32 value 1. Two 36-code-unit LP-UTF16 GUIDs follow"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "selector_at.checked_add(11)?..selector_at.checked_add(22)?"
+contains = "selector_at.checked_add(axial_selector::ZERO_RUN_11)?"
 note = "The parser checks the fixed selector zero run."
 
 [[record]]
@@ -1366,7 +1266,7 @@ anchor = "the u32 code-unit count of a 36-code-unit LP-UTF16 role GUID"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "View::u32_le_at(bytes, role_at.checked_add(21)?)? != 1"
+contains = "role_at.checked_add(axial_role::CONSTANT_ONE)?"
 note = "The parser checks the fixed role-record discriminator."
 
 [[record]]
@@ -3155,7 +3055,7 @@ anchor = "Its profile normal is three contiguous unit-length f64 values at `oper
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "let profile_normal_offset = operation_offset.checked_add(18)?;"
+contains = "operation_offset.checked_add(extrude_fields::PROFILE_NORMAL)?"
 note = "The current Extrude parser anchors the profile-normal and nullable-slot run at the tabulated offset."
 
 [[record]]
@@ -3189,7 +3089,7 @@ anchor = "the second-side value at first-side offset `+13`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "let second_side_extent_offset = first_side_extent_offset.checked_add(13)?;"
+contains = "first_side_extent_offset.checked_add(extrude_extent_pair::SECOND_SIDE_EXTENT)?"
 note = "The current Extrude parser verifies the nine-byte zero run before reading the second-side value."
 
 [[record]]
@@ -3223,7 +3123,7 @@ anchor = "the first-side value `2` follows that byte"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "View::u32_le_at(bytes, extent_cursor.checked_add(5)?) != Some(2)"
+contains = "extent_cursor.checked_add(extrude_target::FIRST_SIDE_EXTENT)?"
 note = "The current Extrude parser requires first-side extent value 2 five bytes after the target ordinal."
 
 [[record]]
@@ -3276,7 +3176,7 @@ anchor = "A u32 geometry-kind discriminator follows the Boolean"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "0 => (None, None, marker_offset.checked_add(1)?, 208),"
+contains = "0 => (None, None, start.checked_add(early_absent::OPERATION)?, 208),"
 note = "The absent-prefix arm places the operation immediately after the marker and the scope reference count at offset 208."
 
 [[record]]
@@ -3336,7 +3236,7 @@ anchor = "A u32 geometry-kind discriminator follows the Boolean"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "prefix_value_offset.checked_add(4)?,"
+contains = "start.checked_add(early_present::OPERATION)?"
 note = "The present-prefix arm places the operation four bytes after the prefix u32."
 
 [[record]]

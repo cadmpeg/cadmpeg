@@ -7,6 +7,9 @@ use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::ids::{self, native_stream};
+use crate::layout::design_parameter_owner_prefix as owner_prefix;
+use crate::layout::indexed_companion_record_prefix as companion_prefix;
+use crate::layout::indexed_design_record_header as indexed_header;
 use crate::records::{
     ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
@@ -386,18 +389,18 @@ pub fn decode_parameter_owners(
 
 pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if after_tag != 7
+    if after_tag != indexed_header::RECORD_INDEX
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || frame.get(11..19) != Some(&[0; 8])
-        || frame.get(19..24) != Some(&[1, 1, 0, 0, 0])
-        || frame.get(24) != Some(&1)
-        || frame.get(29..35) != Some(&[0; 6])
+        || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
+        || frame.get(owner_prefix::ONE_MARKER..owner_prefix::SCOPE_MARKER) != Some(&[1, 1, 0, 0, 0])
+        || frame.get(owner_prefix::SCOPE_MARKER) != Some(&1)
+        || frame.get(owner_prefix::ZERO_RUN_6..owner_prefix::LOCAL_ORDINAL) != Some(&[0; 6])
     {
         return None;
     }
-    let record_index = View::u32_le_at(frame, 7)?;
-    let scope_record_index = View::u32_le_at(frame, 25)?;
+    let record_index = View::u32_le_at(frame, indexed_header::RECORD_INDEX)?;
+    let scope_record_index = View::u32_le_at(frame, owner_prefix::SCOPE_RECORD_INDEX)?;
 
     // Parse the fixed suffix backward from the exact paired-header boundary.
     // This prevents a valid shorter prefix from being accepted as the record.
@@ -442,7 +445,7 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         return None;
     }
 
-    let scalar = frame.get(39..parameter_marker)?;
+    let scalar = frame.get(owner_prefix::LEN..parameter_marker)?;
     let (evaluated_value, evaluated_value_offset) = match scalar.len() {
         9 if scalar.first() == Some(&0) => (View::f64_le_at(frame, 40)?, 40),
         6 if scalar.get(..2) == Some(&[0, 1]) => (f64::from(View::u32_le_at(frame, 41)?), 41),
@@ -474,7 +477,7 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         class_tag,
         record_index,
         scope_record_index,
-        local_ordinal: View::u32_le_at(frame, 35)?,
+        local_ordinal: View::u32_le_at(frame, owner_prefix::LOCAL_ORDINAL)?,
         evaluated_value,
         evaluated_value_offset,
         parameter_record_index,
@@ -533,18 +536,20 @@ pub fn decode_parameter_companions(
 
 pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> {
     let (class_tag, after_tag) = lp_ascii_filtered(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if prefix.len() != 58
-        || after_tag != 7
+    if prefix.len() != companion_prefix::LEN
+        || after_tag != indexed_header::RECORD_INDEX
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || prefix.get(11..31) != Some(&[0; 20])
-        || prefix.get(31) != Some(&1)
-        || prefix.get(36..42) != Some(&[0; 6])
-        || prefix.get(50..58) != Some(&[0; 8])
+        || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)
+            != Some(&[0; 20])
+        || prefix.get(companion_prefix::OWNER_MARKER) != Some(&1)
+        || prefix.get(companion_prefix::ZERO_RUN_6..companion_prefix::TIMESTAMP_MICROS)
+            != Some(&[0; 6])
+        || prefix.get(companion_prefix::ZERO_RUN_8..companion_prefix::LEN) != Some(&[0; 8])
     {
         return None;
     }
-    let timestamp_micros = View::u64_le_at(prefix, 42)?;
+    let timestamp_micros = View::u64_le_at(prefix, companion_prefix::TIMESTAMP_MICROS)?;
     if timestamp_micros == 0 {
         return None;
     }
@@ -552,11 +557,11 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameter
         id: String::new(),
         byte_offset: 0,
         class_tag,
-        record_index: View::u32_le_at(prefix, 7)?,
-        owner_record_index: View::u32_le_at(prefix, 32)?,
+        record_index: View::u32_le_at(prefix, indexed_header::RECORD_INDEX)?,
+        owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
         timestamp_micros,
-        timestamp_micros_offset: 42,
-        payload_byte_offset: 58,
+        timestamp_micros_offset: companion_prefix::TIMESTAMP_MICROS as u64,
+        payload_byte_offset: companion_prefix::LEN as u64,
         payload_byte_length: 0,
         owned_recipe_ids: Vec::new(),
     })

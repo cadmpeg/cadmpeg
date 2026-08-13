@@ -8,6 +8,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
+use crate::layout::jt_document_header as jt_hdr;
+use crate::layout::jt_toc_entry as jt_toc;
+use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
+
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
@@ -940,7 +944,7 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
     body: &[u8],
 ) -> Option<ParsedJtTriStripShapeNode> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-    if family.len() < 100 || View::u16_le_at(family, 0)? != 1 {
+    if family.len() < jt_family::LEN || View::u16_le_at(family, jt_family::SHAPE_VERSION)? != 1 {
         return None;
     }
     let f32_at = |offset: usize| View::f32_le_at(family, offset).filter(|value| value.is_finite());
@@ -966,23 +970,29 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
         ];
         (range[0] >= 0 && range[0] <= range[1]).then_some(range)
     };
-    let compression_level = f32_at(82).filter(|value| (0.0..=1.0).contains(value))?;
-    let area = f32_at(50).filter(|value| *value >= 0.0)?;
-    let vertex_version = View::u16_le_at(family, 86)?;
+    let compression_level =
+        f32_at(jt_family::COMPRESSION_LEVEL).filter(|value| (0.0..=1.0).contains(value))?;
+    let area = f32_at(jt_family::AREA).filter(|value| *value >= 0.0)?;
+    let vertex_version = View::u16_le_at(family, jt_family::VERTEX_VERSION)?;
     if !matches!(vertex_version, 1 | 2) {
         return None;
     }
-    let expected_len = if vertex_version == 1 { 100 } else { 108 };
+    let expected_len = if vertex_version == 1 {
+        jt_family::LEN
+    } else {
+        108
+    };
     if family.len() != expected_len {
         return None;
     }
-    let vertex_bindings = View::u64_le_at(family, 88)?;
-    let vertex_quantization_bits = family[96];
-    let normal_quantization_factor = family[97];
-    let texture_quantization_bits = family[98];
-    let color_quantization_bits = family[99];
-    let version_2_vertex_bindings = (vertex_version == 2)
-        .then(|| View::u64_le_at(family, 100).expect("version-2 binding lane is fixed-width"));
+    let vertex_bindings = View::u64_le_at(family, jt_family::VERTEX_BINDINGS)?;
+    let vertex_quantization_bits = family[jt_family::VERTEX_QUANTIZATION_BITS];
+    let normal_quantization_factor = family[jt_family::NORMAL_QUANTIZATION_FACTOR];
+    let texture_quantization_bits = family[jt_family::TEXTURE_QUANTIZATION_BITS];
+    let color_quantization_bits = family[jt_family::COLOR_QUANTIZATION_BITS];
+    let version_2_vertex_bindings = (vertex_version == 2).then(|| {
+        View::u64_le_at(family, jt_family::LEN).expect("version-2 binding lane is fixed-width")
+    });
     if vertex_quantization_bits > 24
         || normal_quantization_factor > 13
         || texture_quantization_bits > 24
@@ -991,13 +1001,13 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
         return None;
     }
     Some(ParsedJtTriStripShapeNode {
-        reserved_bounds: bounds_at(2)?,
-        untransformed_bounds: bounds_at(26)?,
+        reserved_bounds: bounds_at(jt_family::RESERVED_BOUNDS)?,
+        untransformed_bounds: bounds_at(jt_family::UNTRANSFORMED_BOUNDS)?,
         area,
-        vertex_count_range: range_at(54)?,
-        node_count_range: range_at(62)?,
-        polygon_count_range: range_at(70)?,
-        memory_byte_len: View::u32_le_at(family, 78)?,
+        vertex_count_range: range_at(jt_family::VERTEX_COUNT_RANGE)?,
+        node_count_range: range_at(jt_family::NODE_COUNT_RANGE)?,
+        polygon_count_range: range_at(jt_family::POLYGON_COUNT_RANGE)?,
+        memory_byte_len: View::u32_le_at(family, jt_family::MEMORY_BYTE_LEN)?,
         compression_level,
         vertex_version,
         vertex_bindings,
@@ -1357,7 +1367,6 @@ pub fn display_jt_documents(
     container: &Container,
     indices: &[DisplayJtIndex],
 ) -> Vec<DisplayJtDocument> {
-    const VERSION_FIELD_LEN: usize = 80;
     let entries = container
         .entries
         .iter()
@@ -1396,7 +1405,7 @@ pub fn display_jt_documents(
         let Some(document) = stream.get(document_start..document_end) else {
             return Vec::new();
         };
-        let Some(version_bytes) = document.get(..VERSION_FIELD_LEN) else {
+        let Some(version_bytes) = document.get(..jt_hdr::BYTE_ORDER) else {
             return Vec::new();
         };
         if !version_bytes.starts_with(b"Version ")
@@ -1423,16 +1432,16 @@ pub fn display_jt_documents(
         else {
             return Vec::new();
         };
-        let Some(&byte_order) = document.get(80) else {
+        let Some(&byte_order) = document.get(jt_hdr::BYTE_ORDER) else {
             return Vec::new();
         };
-        if byte_order != 0 || document.get(81..85) != Some(&[0; 4]) {
+        if byte_order != 0 || document.get(jt_hdr::RESERVED..jt_hdr::TOC_OFFSET) != Some(&[0; 4]) {
             return Vec::new();
         }
-        let Some(toc_offset) = View::u32_le_at(document, 85) else {
+        let Some(toc_offset) = View::u32_le_at(document, jt_hdr::TOC_OFFSET) else {
             return Vec::new();
         };
-        let Some(lsg_segment_id) = document.get(89..105) else {
+        let Some(lsg_segment_id) = document.get(jt_hdr::LSG_SEGMENT_ID..jt_hdr::LEN) else {
             return Vec::new();
         };
         let Ok(toc_start) = usize::try_from(toc_offset) else {
@@ -1449,7 +1458,7 @@ pub fn display_jt_documents(
         }
         let Some(toc_end) = toc_start
             .checked_add(4)
-            .and_then(|start| start.checked_add(toc_count_usize.checked_mul(28)?))
+            .and_then(|start| start.checked_add(toc_count_usize.checked_mul(jt_toc::LEN)?))
         else {
             return Vec::new();
         };
@@ -1462,10 +1471,11 @@ pub fn display_jt_documents(
             .map_or(row.id.as_str(), |(_, key)| key);
         let mut toc_entries = Vec::with_capacity(toc_count_usize);
         for ordinal in 0..toc_count_usize {
-            let offset = toc_start + 4 + ordinal * 28;
-            let bytes = &document[offset..offset + 28];
-            let segment_offset = View::u32_le_at(bytes, 16).expect("fixed row");
-            let segment_byte_len = View::u32_le_at(bytes, 20).expect("fixed row");
+            let offset = toc_start + 4 + ordinal * jt_toc::LEN;
+            let bytes = &document[offset..offset + jt_toc::LEN];
+            let segment_offset = View::u32_le_at(bytes, jt_toc::SEGMENT_OFFSET).expect("fixed row");
+            let segment_byte_len =
+                View::u32_le_at(bytes, jt_toc::SEGMENT_BYTE_LEN).expect("fixed row");
             let Some(segment_end) = usize::try_from(segment_offset)
                 .ok()
                 .and_then(|start| start.checked_add(segment_byte_len as usize))
@@ -1481,10 +1491,10 @@ pub fn display_jt_documents(
             toc_entries.push(DisplayJtTocEntry {
                 id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
                 ordinal: ordinal as u32,
-                segment_id: bytes[..16].to_vec(),
+                segment_id: bytes[jt_toc::SEGMENT_ID..jt_toc::SEGMENT_OFFSET].to_vec(),
                 segment_offset,
                 segment_byte_len,
-                attributes: bytes[24..28].to_vec(),
+                attributes: bytes[jt_toc::ATTRIBUTES..jt_toc::LEN].to_vec(),
                 source_offset: stream_source_offset + document_start as u64 + offset as u64,
             });
         }

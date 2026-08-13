@@ -6,6 +6,7 @@ use crate::container::{role, ContainerScan};
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::sketch::{decode_constraint_kinds, next_indexed_record_offset};
 use crate::ids::{self, native_stream};
+use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
     ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
@@ -262,7 +263,7 @@ fn decode_grouped_recipe_references(
     const GROUP_COUNT: usize = 5;
 
     let mut references = Vec::new();
-    let mut at = 18usize;
+    let mut at = grouped_recipe::LEN;
     for _ in 0..GROUP_COUNT {
         let Some(operand_count) = usize::try_from(View::u32_le_at(prefix, at).unwrap_or(0)).ok()
         else {
@@ -299,11 +300,13 @@ fn decode_grouped_recipe_references(
 }
 
 pub(crate) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
-    View::u32_le_at(prefix, 14) == Some(2) && !decode_recipe_references(prefix, 0).is_empty()
+    View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) == Some(2)
+        && !decode_recipe_references(prefix, 0).is_empty()
 }
 
 pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
-    View::u32_le_at(prefix, 14) == Some(5) && !decode_recipe_references(prefix, 0).is_empty()
+    View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) == Some(5)
+        && !decode_recipe_references(prefix, 0).is_empty()
 }
 
 #[derive(Clone, Copy)]

@@ -143,8 +143,8 @@ note = "The standard name lies before ds and ends at the fixed tail ds-3..ds. In
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/container.rs"
-contains = "let ds = o - 0x50;"
-note = "The parser locates the descriptor start 0x50 bytes before the extent-count field."
+contains = "let ds = o - stream_desc::EXTENT_COUNT;"
+note = "The parser locates the descriptor start EXTENT_COUNT bytes before the extent-count field."
 
 [[record]]
 name = "extent_struct"
@@ -749,8 +749,8 @@ anchor = "`record_length = YY + 12`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
-contains = "usize::from(data[position + 3]) + 12"
-note = "The parser derives the nominal record end as `position + data[position + 3] + 12`, matching the stated `YY + 12`."
+contains = "usize::from(data[position + a9_03::TAG_LO_LENGTH_DRIVER]) + 12"
+note = "The parser derives the nominal record end as `position + data[position + TAG_LO_LENGTH_DRIVER] + 12`, matching the stated `YY + 12`."
 
 [[record]]
 name = "zero_entity_edge_stride_5e1a"
@@ -858,7 +858,7 @@ note = "`a9 03 21 71` framing and the record head. The spec's family table start
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
-contains = "[0x21, 0x71] => (&[67, 75][..], 83, &[2, 2][..], 93, 2, None, 125)"
+contains = "[0x21, 0x71] => ( &[pcurve_2171::KNOTS, pcurve_2171::KNOTS + 8][..], pcurve_2171::MULTIPLICITIES, &[2, 2][..], pcurve_2171::POLES, 2, None, pcurve_2171::LEN,"
 note = "The parser's family table carries the same knot, multiplicity, and pole offsets for this tag."
 
 [[record]]
@@ -1156,7 +1156,7 @@ anchor = "`marker[4] A B G R`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/standard/fbb.rs"
-contains = "(row[..4] == marker).then_some([row[7], row[6], row[5], row[4]])"
+contains = "(row[..fbb_row::ALPHA] == marker).then_some([ row[fbb_row::RED], row[fbb_row::GREEN], row[fbb_row::BLUE], row[fbb_row::ALPHA],"
 note = "The parser reads the colour channels from the last four bytes of the eight-byte row in the stated A B G R order."
 
 # --- Not tabulated -----------------------------------------------------------

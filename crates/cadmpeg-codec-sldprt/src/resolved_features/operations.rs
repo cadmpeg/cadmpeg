@@ -3,6 +3,7 @@
 use super::is_class_token;
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
+use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
@@ -244,32 +245,44 @@ pub(super) fn feature_inline_operation_fields(
     let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
     let trailer = name_offset.checked_add(6 + name_bytes)?;
     let bytes = lane.native_payload.get(trailer..trailer + 19)?;
-    let terminated = bytes[16..19] == [0xff, 0xfe, 0xff]
+    let terminated = bytes[sparse_tr::SPARSE_ZERO_PREFIX..19] == [0xff, 0xfe, 0xff]
         || lane
             .native_payload
-            .get(trailer + 16..trailer + 40)
+            .get(trailer + sparse_tr::SPARSE_ZERO_PREFIX..trailer + sparse_tr::LEN)
             .is_some_and(|suffix| {
-                (suffix[..6] == [0; 6]
-                    && suffix[6..8] == [1, 0]
-                    && suffix[8..10] != [0, 0]
-                    && suffix[10..14] != [0xff; 4]
-                    && suffix[14..22] == [0; 8]
-                    && suffix[22..24] != [0, 0])
+                (suffix[..sparse_tr::SPARSE_MARKER - sparse_tr::SPARSE_ZERO_PREFIX] == [0; 6]
+                    && suffix[sparse_tr::SPARSE_MARKER - sparse_tr::SPARSE_ZERO_PREFIX
+                        ..sparse_tr::FIRST_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
+                        == [1, 0]
+                    && suffix[sparse_tr::FIRST_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX
+                        ..sparse_tr::OPTIONAL_IDENTITY - sparse_tr::SPARSE_ZERO_PREFIX]
+                        != [0, 0]
+                    && suffix[sparse_tr::OPTIONAL_IDENTITY - sparse_tr::SPARSE_ZERO_PREFIX
+                        ..sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
+                        != [0xff; 4]
+                    && suffix[sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX
+                        ..sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
+                        == [0; 8]
+                    && suffix[sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX..] != [0, 0])
                     || (suffix[..4] == [0, 0, 1, 0]
                         && suffix[4..8] != [0; 4]
                         && suffix[8..18] == [0; 10]
                         && suffix[18..20] != [0, 0]
                         && suffix[20..24] == [0; 4])
             });
-    if bytes[..4] != [0; 4]
-        || bytes[8..12] != name.object_id?.to_le_bytes()
-        || bytes[12..16] != [0; 4]
+    if bytes[sparse_tr::ZERO_HEADER..sparse_tr::FAMILY] != [0; 4]
+        || bytes[sparse_tr::OBJECT_ID..sparse_tr::ZERO_AFTER_OBJECT]
+            != name.object_id?.to_le_bytes()
+        || bytes[sparse_tr::ZERO_AFTER_OBJECT..sparse_tr::SPARSE_ZERO_PREFIX] != [0; 4]
         || !terminated
-        || !matches!(bytes[6], 0 | 2)
+        || !matches!(bytes[sparse_tr::OPERATION], 0 | 2)
     {
         return None;
     }
-    Some((View::u16_le_at(bytes, 4)?, bytes[6]))
+    Some((
+        View::u16_le_at(bytes, sparse_tr::FAMILY)?,
+        bytes[sparse_tr::OPERATION],
+    ))
 }
 
 /// Project an inline Boolean operation from a recognized complete family.
