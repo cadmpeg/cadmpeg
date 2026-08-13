@@ -24,6 +24,7 @@ use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
+use crate::test_support::*;
 use crate::F3dCodec;
 use cadmpeg_asm::asm_header;
 

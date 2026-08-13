@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Shared synthetic byte-fixture builders for the crate's `#[cfg(test)]` suites.
+//!
+//! Helpers hand-build `.f3d` ZIP archives and ASM stream payloads.
+#![allow(clippy::unwrap_used)]
+#![allow(
+    clippy::cloned_ref_to_slice_refs,
+    clippy::default_trait_access,
+    clippy::if_not_else,
+    clippy::needless_pass_by_value,
+    clippy::range_plus_one,
+    clippy::semicolon_if_nothing_returned,
+    clippy::trivially_copy_pass_by_ref
+)]
+
+mod tokens_test;
+pub(crate) use tokens_test::*;
+
+mod smbh_header_test;
+pub(crate) use smbh_header_test::*;
+
+mod smbh_blocks_test;
+pub(crate) use smbh_blocks_test::*;
+
+mod smbh_geometry_test;
+pub(crate) use smbh_geometry_test::*;
+
+mod smbh_pcurves_test;
+pub(crate) use smbh_pcurves_test::*;
+
+mod smbh_curves_test;
+pub(crate) use smbh_curves_test::*;
+
+mod smbh_surfaces_test;
+pub(crate) use smbh_surfaces_test::*;
+
+mod smbh_revision_test;
+pub(crate) use smbh_revision_test::*;
+
+mod smbh_blends_test;
+pub(crate) use smbh_blends_test::*;
+
+mod smbh_bf4_test;
+pub(crate) use smbh_bf4_test::*;

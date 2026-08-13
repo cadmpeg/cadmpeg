@@ -291,4 +291,6 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
 mod tests;
