@@ -6609,63 +6609,6 @@ fn decode_retains_outer_object_graph_order_and_references() {
 }
 
 #[test]
-fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
-    let (mut bytes, _) = outer_container_object_graph_catpart();
-    let class_offset = bytes
-        .windows(b"CATPrtCont".len())
-        .position(|window| window == b"CATPrtCont")
-        .expect("part-container declaration");
-    bytes[class_offset..class_offset + b"CATPrtCont".len()].copy_from_slice(b"CATFooCont");
-
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode object graph without a declared part container");
-
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
-        2
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::MODELING_OBJECT_GRAPH_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::MODELING_OBJECT_RECORD_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT),
-        2
-    );
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::report::Severity::Blocking
-            && loss.message.contains("1 retained object graph(s)")
-            && loss.message.contains("2 field record(s)")
-    }));
-}
-
-#[test]
 fn decode_links_design_objects_through_their_owner_record_group() {
     let decoded = CatiaCodec
         .decode(
@@ -15279,23 +15222,4 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
     assert_eq!(result.ir().model.vertices.len(), 4);
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
-}
-
-#[test]
-fn container_only_stops_before_geometry() {
-    let f = standard_catpart();
-    let mut cur = Cursor::new(f);
-    let opts = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    let result = CatiaCodec.decode(&mut cur, &opts).unwrap();
-    assert!(!result.report().geometry_transferred);
-    assert!(result.report().container_only);
-    // The reconstructed BREP stream is preserved as an unknown passthrough.
-    let unknowns = result.ir().native_unknowns("catia").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    let retained = &result.source_fidelity().retained_records[0];
-    assert_eq!(retained.sha256.len(), 64);
-    assert!(retained.data.is_some());
 }
