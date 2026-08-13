@@ -1,4 +1,4 @@
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
@@ -12,10 +12,7 @@ use zip::write::SimpleFileOptions;
 
 use crate::FcstdCodec;
 
-const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
-));
+pub(crate) use crate::test_support::*;
 
 #[test]
 fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
@@ -357,15 +354,6 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
             .map(|entry| entry.data.as_slice()),
         Some(b"edited payload".as_slice())
     );
-}
-
-fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
-    let errors = cadmpeg_ir::validate_neutral(ir, Vec::new())
-        .findings
-        .into_iter()
-        .filter(|finding| finding.severity >= cadmpeg_ir::Severity::Error)
-        .collect::<Vec<_>>();
-    assert!(errors.is_empty(), "{errors:#?}");
 }
 
 #[test]
@@ -5952,40 +5940,6 @@ fn transfers_binary_exact_curve_and_surface_carriers() {
     );
     assert_eq!(result.ir().model.coedges.len(), 1);
     assert!(result.report().geometry_transferred);
-}
-
-fn archive(document: &str) -> Vec<u8> {
-    archive_entries(&[("Document.xml", document.as_bytes())])
-}
-
-fn archive_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut bytes = Cursor::new(Vec::new());
-    let mut zip = zip::ZipWriter::new(&mut bytes);
-    for (name, data) in entries {
-        zip.start_file(
-            *name,
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
-        )
-        .expect("start entry");
-        zip.write_all(data).expect("write entry");
-    }
-    zip.finish().expect("finish ZIP");
-    bytes.into_inner()
-}
-
-fn streaming_archive(document: &str) -> Vec<u8> {
-    streaming_archive_with_options(document, SimpleFileOptions::default())
-}
-
-fn streaming_archive_with_options(document: &str, options: SimpleFileOptions) -> Vec<u8> {
-    let mut zip = zip::ZipWriter::new_stream(Vec::new());
-    zip.start_file(
-        "Document.xml",
-        options.compression_method(zip::CompressionMethod::Deflated),
-    )
-    .expect("start streamed entry");
-    zip.write_all(document.as_bytes()).expect("write entry");
-    zip.finish().expect("finish ZIP").into_inner()
 }
 
 #[test]
