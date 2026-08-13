@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::be::u32_at as u32_be;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_core::{ContainerEntry, ContainerSummary};
 
@@ -349,7 +350,7 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
         if matches!(marker, 0x01 | 0xd0..=0xd8) {
             continue;
         }
-        let length = usize::from(u16::from_be_bytes([*data.get(at)?, *data.get(at + 1)?]));
+        let length = usize::from(View::u16_be_at(data, at)?);
         if length < 2 {
             return None;
         }
@@ -362,8 +363,8 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
             if length < 8 {
                 return None;
             }
-            let width = u16::from_be_bytes([data[payload + 3], data[payload + 4]]);
-            let height = u16::from_be_bytes([data[payload + 1], data[payload + 2]]);
+            let width = View::u16_be_at(data, payload + 3)?;
+            let height = View::u16_be_at(data, payload + 1)?;
             let components = data[payload + 5];
             let expected_length = 8usize.checked_add(3usize.checked_mul(components.into())?)?;
             if width == 0
@@ -544,7 +545,7 @@ fn e5_record_end(data: &[u8], position: usize) -> Option<usize> {
         return None;
     }
     let header = data.get(position..position.checked_add(7)?)?;
-    let size = usize::from(u16::from_le_bytes([header[5], header[6]]));
+    let size = usize::from(View::u16_le_at(header, 5)?);
     let end = position.checked_add(size.checked_add(13)?)?;
     (end <= data.len()).then_some(end)
 }
