@@ -390,7 +390,7 @@ Complete compact-array header including its leading zero byte. Element data foll
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs` — The decoder indexes compact records by referenced attribute and resolves their element width from the descriptor role.
+- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs` — The decoder reads array element data immediately after the 6-byte compact header.
 
 ## `intersection_composite`
 
@@ -1063,10 +1063,6 @@ Unstated regions:
 
 - `16..243` (227 B): Native reference-point construction state; the solved datum position does not depend on its construction family.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser evaluates both fixed solved-position layouts and requires one distinct result.
-
 ## `extrusion_sparse_operation_trailer`
 
 Spec §2 · layout: byte offsets · size: 40 B
@@ -1115,7 +1111,7 @@ Spec §2 · layout: byte offsets · size: 151 B
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires exactly one complete standard or extended component-point record.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser accepts the 151-byte standard component-point record and reads the origin at +127.
 
 ## `coordinate_system_extended_component_point`
 
@@ -1140,7 +1136,7 @@ Spec §2 · layout: byte offsets · size: 165 B
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser selects the complete standard or extended suffix and returns its exact end offset.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser accepts the 165-byte extended component-point record and reads the origin at +141.
 
 ## `coordinate_system_component_path_prefix`
 
@@ -1160,7 +1156,7 @@ The counted compact component path starts immediately after this prefix. Its byt
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs` — The owning component-path parser requires one complete counted interpretation and returns its exact end.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs` — The owning component-path parser starts counted entries 18 bytes after the compact marker.
 
 ## `coordinate_system_component_path_suffix`
 
@@ -1183,7 +1179,7 @@ Path-end-relative. An optional eight-byte terminal null slot precedes this suffi
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser validates the path-relative trailer and returns the exact solved-suffix end.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires the 14-byte zero header of the path-relative solved suffix.
 
 ## `coordinate_system_ordinal_axis_tail`
 
@@ -1200,7 +1196,7 @@ Origin-end-relative. One or two nonzero u16 tokens follow this fixed core and te
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser validates the exact tail, maps distinct one-based ordinals to the global basis, and constructs the cross-product Z axis.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires 23 zero bytes at ordinal-axis tail +4 before the repeated origin Z.
 
 ## `coordinate_system_two_point_separator`
 
@@ -1229,7 +1225,7 @@ Spec §2 · layout: byte offsets · size: 94 B
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires two extended point records, validates the complete repeated cache, and constructs Y from the point displacement perpendicular to X.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires the 94-byte solved tail after the second extended point record.
 
 ## `coordinate_system_endpoint_path_prefix`
 
@@ -1272,7 +1268,7 @@ Path-end-relative after the required eight-byte null slot.
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser validates the endpoint prefix, one counted path, the required null slot, and the complete path-relative solved suffix.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires the 70-byte zero header of the endpoint-path solved suffix.
 
 ## `coordinate_system_line_axis`
 
@@ -1292,7 +1288,7 @@ Spec §2 · layout: byte offsets · size: 113 B
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser retains the line point and direction and requires every axis record to share the component-point generation word.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires sixteen zero bytes at line-axis +16 before the carrier scalar.
 
 ## `coordinate_system_xy_tail`
 
@@ -1376,7 +1372,6 @@ Offsets begin immediately after the `moTransRefPlaneData_c` class token.
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/metadata.rs` — The parser requires the fixed prefix before reading the value fields.
-- `crates/cadmpeg-codec-sldprt/src/writer.rs` — The writer emits the fixed prefix before the value fields.
 
 ## `display_lists_compact_face_header`
 
@@ -1407,7 +1402,7 @@ Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The decoder selects the descriptor-table offset from the complete extended-header grammar.
+- `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The decoder selects the 40-byte extended header or the 8-byte compact header.
 
 ## `draft_plane_reference_prefix`
 
