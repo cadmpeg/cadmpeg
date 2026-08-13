@@ -6,6 +6,21 @@ use super::*;
 use cadmpeg_ir::codec::CodecBackend;
 
 use crate::container::tests::rejects_unsafe_names;
+use crate::design::tests::booleans_patterns::{
+    transfers_partdesign_boolean_base_and_group_rules,
+    transfers_uniform_irregular_and_two_axis_patterns,
+};
+use crate::design::tests::construction::transfers_part_construction_geometry_features;
+use crate::design::tests::holes_extrude::{
+    transfers_branch_complete_threaded_counterdrill_hole,
+    transfers_non_default_extrusion_termination_branches,
+};
+use crate::design::tests::primitives::transfers_part_and_partdesign_analytic_primitives;
+use crate::design::tests::sketches::{
+    neutralizes_symmetric_locus_distance_and_point_on_object_constraints,
+    transfers_bounded_rational_sketch_nurbs, transfers_full_and_bounded_sketch_conics,
+    transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults,
+};
 use crate::persistence::tests::{
     legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts,
     schema_three_uses_the_object_envelope_and_defaults_file_version,

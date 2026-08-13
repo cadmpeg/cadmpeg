@@ -5201,3 +5201,6 @@ mod profile_tests {
         assert!(profiles.iter().all(|profile| profile.len() == 1));
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;
