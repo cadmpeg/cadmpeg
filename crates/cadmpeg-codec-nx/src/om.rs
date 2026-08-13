@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::view_at::u32_le_at;
+use crate::view_at::{u32_be_at, u32_le_at};
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4297,7 +4297,9 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
         if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
             continue;
         }
-        let trailer = u32::from_be_bytes(bytes[at + 1..at + 5].try_into().expect("four bytes"));
+        let Some(trailer) = u32_be_at(bytes, at + 1) else {
+            continue;
+        };
         lanes.push(DatumPlaneObjectIndexLane {
             offset: start,
             declared_count,
@@ -4828,9 +4830,7 @@ fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<(Vec<u32>, Vec<usiz
     let mut offsets = Vec::with_capacity(count - 1);
     for _ in 1..count {
         offsets.push(*at);
-        values.push(u32::from_be_bytes(
-            bytes.get(*at..*at + 4)?.try_into().ok()?,
-        ));
+        values.push(u32_be_at(bytes, *at)?);
         *at += 4;
     }
     Some((values, offsets))
@@ -5410,24 +5410,21 @@ pub fn references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
     let mut at = 0usize;
     while at < bytes.len() {
         if bytes[at] == 0xe0 {
-            if let Some(raw) = bytes
-                .get(at + 1..at + 5)
-                .and_then(|raw| raw.try_into().ok())
-            {
+            if let Some(value) = u32_be_at(bytes, at + 1) {
                 out.push(ReferenceValue {
                     offset: base_offset + at,
                     kind: ReferenceKind::PersistentHandle,
-                    value: u32::from_be_bytes(raw),
+                    value,
                 });
                 at += 5;
                 continue;
             }
         } else if bytes[at] & 0xf0 == 0xc0 {
-            if let Some(raw) = bytes.get(at..at + 4).and_then(|raw| raw.try_into().ok()) {
+            if let Some(value) = u32_be_at(bytes, at) {
                 out.push(ReferenceValue {
                     offset: base_offset + at,
                     kind: ReferenceKind::Tagged28,
-                    value: u32::from_be_bytes(raw) & 0x0fff_ffff,
+                    value: value & 0x0fff_ffff,
                 });
                 at += 4;
                 continue;
@@ -5586,12 +5583,7 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
             break;
         };
         let offset = at + relative;
-        let Some(payload_len) = bytes
-            .get(offset + 8..offset + 12)
-            .and_then(|raw| raw.try_into().ok())
-            .map(u32::from_be_bytes)
-            .map(|value| value as usize)
-        else {
+        let Some(payload_len) = u32_be_at(bytes, offset + 8).map(|value| value as usize) else {
             break;
         };
         let standard_end = offset
@@ -5930,9 +5922,8 @@ fn offset_store_product_anchored_form(bytes: &[u8]) -> Option<OffsetStoreControl
                 value | (u32::from(*byte) << (shift * 8))
             })
     });
-    let values = bytes[leading_width..*product_offset]
-        .chunks_exact(4)
-        .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk")))
+    let values = (0..(*product_offset - leading_width) / 4)
+        .map(|index| u32_le_at(bytes, leading_width + index * 4).expect("four-byte chunk"))
         .collect();
     Some(OffsetStoreControlForm::ProductAnchored {
         leading_value: leading_value.map(|value| (leading_width, value)),
