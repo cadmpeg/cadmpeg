@@ -4,9 +4,7 @@
 //! curve-support/edge-incidence table, standard vertex rosters, and the
 //! inline big-endian curved-surface parameter block.
 
-use cadmpeg_core::be::f32_at as f32_be;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -568,10 +566,10 @@ fn standard_curve_support_row_at(
     let (geometry, refs) = if header == Some(&LINE) {
         (StandardCurveGeometry::Line, position + 9)
     } else if header == Some(&CIRCLE) {
-        let cx = f32_be(brep, position + 9)?;
-        let cy = f32_be(brep, position + 13)?;
-        let cz = f32_be(brep, position + 17)?;
-        let radius = f32_be(brep, position + 21)?;
+        let cx = View::f32_be_at(brep, position + 9)?;
+        let cy = View::f32_be_at(brep, position + 13)?;
+        let cz = View::f32_be_at(brep, position + 17)?;
+        let radius = View::f32_be_at(brep, position + 21)?;
         if !cx.is_finite()
             || !cy.is_finite()
             || !cz.is_finite()
@@ -820,7 +818,7 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
 
 fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
     match *bytes.get(at)? {
-        0xff => Some((u32_le(bytes, at + 1)? as usize, at + 5)),
+        0xff => Some((View::u32_le_at(bytes, at + 1)? as usize, at + 5)),
         value => Some((value as usize, at + 1)),
     }
 }

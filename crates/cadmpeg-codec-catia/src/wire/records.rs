@@ -13,7 +13,6 @@
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::math::Point3;
 
 use super::bytes::{compact_int, f64_le};
@@ -241,8 +240,8 @@ fn parse_consolidated_record(
         .and_then(|byte| byte.checked_sub(0xa4))
         .filter(|width| (1..=3).contains(width))
     {
-        let length =
-            u32_le(data, pos.checked_add(3)?).and_then(|value| usize::try_from(value).ok())?;
+        let length = View::u32_le_at(data, pos.checked_add(3)?)
+            .and_then(|value| usize::try_from(value).ok())?;
         (ConsolidatedFamily::A, width, pos.checked_add(7)?, length)
     } else {
         let width = data

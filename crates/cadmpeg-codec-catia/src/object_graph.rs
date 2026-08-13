@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer `7C08` feature and object-ownership graph decoder.
 
-use cadmpeg_core::le::u32_at as u32_le;
+use cadmpeg_core::decode::View;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -338,12 +338,12 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
         .enumerate()
         .filter(|(_, bytes)| *bytes == MARKER)
         .filter_map(|(pos, _)| {
-            let tag_raw = u32_le(data, pos + 4)?;
+            let tag_raw = View::u32_le_at(data, pos + 4)?;
             let tag = tag_raw & 0x00ff_ffff;
             if pos + 20 > data.len() {
                 return None;
             }
-            let lead_raw = u32_le(data, pos.checked_sub(4)?)?;
+            let lead_raw = View::u32_le_at(data, pos.checked_sub(4)?)?;
             let group = alias_group_membership(data, pos);
             let lead = if lead_raw & 0xff == 1 {
                 AliasLead::SurfaceSupportStorage
@@ -368,8 +368,8 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
                 flag: data[pos + 8],
                 f1,
                 entity_record_ordinal: f1[2],
-                f2: u32_le(data, pos + 12)?,
-                f3: u32_le(data, pos + 16)?,
+                f2: View::u32_le_at(data, pos + 12)?,
+                f3: View::u32_le_at(data, pos + 16)?,
                 group,
             })
         })
@@ -394,9 +394,9 @@ fn alias_group_membership(data: &[u8], marker: usize) -> Option<AliasGroupMember
         return None;
     };
     Some(AliasGroupMembership {
-        prototype: u32_le(data, start + 2)?,
-        group_id: u32_le(data, start + 6)?,
-        target_slot: u32_le(data, marker + 11)?,
+        prototype: View::u32_le_at(data, start + 2)?,
+        group_id: View::u32_le_at(data, start + 6)?,
+        target_slot: View::u32_le_at(data, marker + 11)?,
         storage_prefix: storage.to_vec(),
     })
 }
@@ -448,7 +448,7 @@ pub(crate) fn parse_all_with_paired_roots(
         }
         let declared_end = pos
             .checked_add(2)
-            .and_then(|length_offset| u32_le(data, length_offset))
+            .and_then(|length_offset| View::u32_le_at(data, length_offset))
             .and_then(|length| usize::try_from(length).ok())
             .and_then(|length| pos.checked_add(length));
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
@@ -511,7 +511,7 @@ fn parse_candidate(
     pos: usize,
     allow_opaque_childless_records: bool,
 ) -> Option<ObjectGraph> {
-    let total_len = usize::try_from(u32_le(data, pos + 2)?).ok()?;
+    let total_len = usize::try_from(View::u32_le_at(data, pos + 2)?).ok()?;
     let end = pos.checked_add(total_len)?;
     if total_len < 15 || end > data.len() {
         return None;
@@ -519,7 +519,7 @@ fn parse_candidate(
     let mut at = pos + 6;
     let mut records = Vec::new();
     while at + 6 <= end && data.get(at..at + 2) == Some(&[0x7c, 0x09]) {
-        let record_len = usize::try_from(u32_le(data, at + 2)?).ok()?;
+        let record_len = usize::try_from(View::u32_le_at(data, at + 2)?).ok()?;
         let record_end = at.checked_add(record_len)?;
         if record_len < 6 || record_end > end {
             return None;
@@ -533,7 +533,7 @@ fn parse_candidate(
                     return None;
                 }
                 let child = head_start + relative;
-                let child_len = usize::try_from(u32_le(data, child + 2)?).ok()?;
+                let child_len = usize::try_from(View::u32_le_at(data, child + 2)?).ok()?;
                 (child_len >= 6 && child.checked_add(child_len) == Some(record_end))
                     .then_some((child, child_len))
             });
@@ -1105,7 +1105,7 @@ fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
 
 fn tagged_value(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     if matches!(bytes.get(at), Some(0x80 | 0x32)) && at.checked_add(5)? < bytes.len() {
-        return Some((u32_le(bytes, at + 1)?, 5));
+        return Some((View::u32_le_at(bytes, at + 1)?, 5));
     }
     atom(bytes, at)
 }
@@ -1129,7 +1129,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
             }
             0xe5 if blob_end(bytes, at).is_some() => {
                 let declared_len =
-                    usize::try_from(u32_le(bytes, at + 1).expect("checked blob header"))
+                    usize::try_from(View::u32_le_at(bytes, at + 1).expect("checked blob header"))
                         .expect("u32 fits supported usize");
                 let start = at + 5;
                 let end = blob_end(bytes, at).expect("checked blob extent");
@@ -1151,7 +1151,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     continue;
                 };
                 let table_at = at + 1 + advance;
-                let Some(table_count) = u32_le(bytes, table_at) else {
+                let Some(table_count) = View::u32_le_at(bytes, table_at) else {
                     fields.push(PayloadField::Atom {
                         value: 0x3c,
                         offset,
@@ -1243,12 +1243,12 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 let tag = bytes[at];
                 fields.push(if tag == 0x80 {
                     PayloadField::Atom {
-                        value: u32_le(bytes, at + 1).expect("checked escaped atom extent"),
+                        value: View::u32_le_at(bytes, at + 1).expect("checked escaped atom extent"),
                         offset,
                     }
                 } else {
                     PayloadField::Reference {
-                        value: u32_le(bytes, at + 1).expect("checked scalar extent"),
+                        value: View::u32_le_at(bytes, at + 1).expect("checked scalar extent"),
                         offset,
                     }
                 });
@@ -1314,7 +1314,7 @@ fn parse_bulk_table_rows(
         if bytes.get(at) != Some(&0x80) {
             return None;
         }
-        let handle = u32_le(bytes, at + 1)?;
+        let handle = View::u32_le_at(bytes, at + 1)?;
         at += 5;
         rows.push(BulkTableRow {
             row_id,
@@ -1337,7 +1337,7 @@ fn bulk_row_id(bytes: &[u8], at: &mut usize) -> Option<u32> {
     if bytes.get(start) == Some(&0x80) {
         let end = start.checked_add(5)?;
         if end.checked_add(5)? <= bytes.len() && bytes.get(end) == Some(&0x80) {
-            candidates.push((u32_le(bytes, start + 1)?, end));
+            candidates.push((View::u32_le_at(bytes, start + 1)?, end));
         }
     }
     let [(value, end)] = candidates.as_slice() else {
@@ -1353,7 +1353,7 @@ fn blob_end(bytes: &[u8], at: usize) -> Option<usize> {
 }
 
 fn blob_declared_end(bytes: &[u8], at: usize) -> Option<usize> {
-    let declared_len = usize::try_from(u32_le(bytes, at + 1)?).ok()?;
+    let declared_len = usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?;
     at.checked_add(5)?.checked_add(declared_len)
 }
 

@@ -6,7 +6,6 @@
 //! pcurves.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u16_at as u16_le;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashSet};
@@ -761,7 +760,7 @@ pub(crate) fn b2_long_61_from_records(
                 if data.get(at) != Some(&0x0a) {
                     return None;
                 }
-                *reference = u16_le(data, at + 1)?;
+                *reference = View::u16_le_at(data, at + 1)?;
                 at += 3;
             }
             let scalar = f64_le(data, at)?;
@@ -1655,7 +1654,7 @@ pub(crate) fn b2_construction_uses_from_records(
         }
         let (support_id, at) = match data.get(payload + 1) {
             Some(0x08) => {
-                let Some(value) = u16_le(data, payload + 2) else {
+                let Some(value) = View::u16_le_at(data, payload + 2) else {
                     continue;
                 };
                 (u32::from(value), payload + 4)
@@ -1796,7 +1795,7 @@ pub(crate) fn b2_revolutions_from_records(
         {
             continue;
         }
-        let Some(profile_allocation_id) = u16_le(data, p + 1) else {
+        let Some(profile_allocation_id) = View::u16_le_at(data, p + 1) else {
             continue;
         };
         let Some(axis_frame) = read_f64_array::<12>(data, p + 3) else {
@@ -2490,7 +2489,7 @@ pub(crate) fn b2_offset_supports_from_records(
             let length = frame.end - frame.payload;
             let (support_id, at) = match data.get(frame.payload) {
                 Some(0x08) if length == 0x2b => (
-                    u32::from(u16_le(data, frame.payload + 1)?),
+                    u32::from(View::u16_le_at(data, frame.payload + 1)?),
                     frame.payload + 3,
                 ),
                 Some(0x0c) if length == 0x2c => {

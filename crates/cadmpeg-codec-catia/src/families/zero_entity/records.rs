@@ -7,7 +7,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
@@ -951,7 +950,7 @@ fn zero_entity_support_occurrence(
     if data.get(record.pos + 12) != Some(&0x10) {
         return None;
     }
-    let face_local_slot = u32_le(data, record.pos + 13)?;
+    let face_local_slot = View::u32_le_at(data, record.pos + 13)?;
     if face_local_slot == 0 {
         return None;
     }
@@ -1768,7 +1767,7 @@ fn zero_entity_vertex_owner(data: &[u8], record: ZeroEntityRecord) -> bool {
 }
 
 fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
-    (data.get(at) == Some(&0x10)).then(|| u32_le(data, at + 1))?
+    (data.get(at) == Some(&0x10)).then(|| View::u32_le_at(data, at + 1))?
 }
 
 pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
