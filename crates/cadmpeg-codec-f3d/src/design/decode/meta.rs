@@ -486,3 +486,6 @@ pub fn decode_feature_timelines(
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests;

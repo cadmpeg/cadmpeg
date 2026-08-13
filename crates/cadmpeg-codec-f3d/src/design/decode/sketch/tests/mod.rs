@@ -10,6 +10,7 @@
 
 pub(super) use super::*;
 
+mod constraints;
 mod curves;
 mod placement;
 mod points;
