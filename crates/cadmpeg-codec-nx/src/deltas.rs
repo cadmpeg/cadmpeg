@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 use crate::framing::read_xmt_width as read_xmt;
 use crate::view_at::{f64_be_at, u16_be_at, u32_be_at, u64_be_at, vec3_be_at};
+use cadmpeg_core::decode::View;
 
 /// One complete admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
@@ -3043,15 +3044,11 @@ fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(
     let data_at = count_at.checked_add(4 + xmt_len)?;
     let finite_end = |value_count: usize| {
         let end = data_at.checked_add(value_count.checked_mul(8)?)?;
-        stream
-            .get(data_at..end)?
-            .chunks_exact(8)
-            .all(|raw| {
-                let value = f64::from_be_bytes(
-                    raw.try_into()
-                        .expect("chunks_exact(8) yields eight-byte slices"),
-                );
-                value.is_finite() && (value == 0.0 || value.is_normal())
+        let raw = stream.get(data_at..end)?;
+        (0..value_count)
+            .all(|i| {
+                f64_be_at(raw, i * 8)
+                    .is_some_and(|value| value.is_finite() && (value == 0.0 || value.is_normal()))
             })
             .then_some(end)
     };
@@ -3174,9 +3171,9 @@ fn consume_nurbs_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
 }
 
 fn compact_tombstone(stream: &[u8], offset: usize) -> Option<u32> {
-    let first = i16::from_be_bytes([*stream.get(offset + 2)?, *stream.get(offset + 3)?]);
+    let first = View::i16_be_at(stream, offset + 2)?;
     if first < 0 {
-        let quotient = u16::from_be_bytes([*stream.get(offset + 4)?, *stream.get(offset + 5)?]);
+        let quotient = u16_be_at(stream, offset + 4)?;
         return (quotient == 1)
             .then_some(u32::from(quotient) * 32_767 + u32::from(first.unsigned_abs()));
     }

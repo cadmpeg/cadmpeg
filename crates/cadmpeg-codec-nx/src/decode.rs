@@ -9646,10 +9646,7 @@ pub(crate) fn jpeg_dimensions(payload: &[u8]) -> Option<(u16, u16, u8, u8)> {
         if marker == 0x01 || (0xd0..=0xd7).contains(&marker) {
             continue;
         }
-        let length = usize::from(u16::from_be_bytes([
-            *payload.get(offset)?,
-            *payload.get(offset + 1)?,
-        ]));
+        let length = usize::from(View::u16_be_at(payload, offset)?);
         if length < 2 {
             return None;
         }
@@ -9658,8 +9655,8 @@ pub(crate) fn jpeg_dimensions(payload: &[u8]) -> Option<(u16, u16, u8, u8)> {
         let segment = payload.get(segment_start..segment_end)?;
         if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
             let precision = *segment.first()?;
-            let height = u16::from_be_bytes([*segment.get(1)?, *segment.get(2)?]);
-            let width = u16::from_be_bytes([*segment.get(3)?, *segment.get(4)?]);
+            let height = View::u16_be_at(segment, 1)?;
+            let width = View::u16_be_at(segment, 3)?;
             let components = *segment.get(5)?;
             if width == 0
                 || height == 0

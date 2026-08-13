@@ -308,21 +308,14 @@ fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord> {
     let raw = bytes.get(data..end)?;
     let values = if tag == 127 {
         ArrayValues::U16(
-            raw.chunks_exact(2)
-                .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
-                .collect(),
+            (0..count)
+                .map(|i| u16_be_at(raw, i * 2))
+                .collect::<Option<Vec<_>>>()?,
         )
     } else {
-        let values = raw
-            .chunks_exact(8)
-            .map(|bytes| {
-                f64::from_be_bytes(
-                    bytes
-                        .try_into()
-                        .expect("chunks_exact(8) yields eight-byte slices"),
-                )
-            })
-            .collect::<Vec<_>>();
+        let values = (0..count)
+            .map(|i| f64_be_at(raw, i * 8))
+            .collect::<Option<Vec<_>>>()?;
         values.iter().all(|value| value.is_finite()).then_some(())?;
         ArrayValues::F64(values)
     };
@@ -443,16 +436,9 @@ fn curve_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
 }
 
 fn finite_f64_values(raw: &[u8]) -> Option<Vec<f64>> {
-    let values = raw
-        .chunks_exact(8)
-        .map(|bytes| {
-            f64::from_be_bytes(
-                bytes
-                    .try_into()
-                    .expect("chunks_exact(8) yields eight-byte slices"),
-            )
-        })
-        .collect::<Vec<_>>();
+    let values = (0..raw.len() / 8)
+        .map(|i| f64_be_at(raw, i * 8))
+        .collect::<Option<Vec<_>>>()?;
     values
         .iter()
         .all(|value| value.is_finite())
