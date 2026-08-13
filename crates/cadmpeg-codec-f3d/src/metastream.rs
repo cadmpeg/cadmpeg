@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared Fusion `MetaStream` segment framing.
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 
@@ -118,18 +119,17 @@ fn take_counted_run(bytes: &[u8], at: &mut usize, stride: usize) -> Option<()> {
 }
 
 fn take_record_index(bytes: &[u8], at: &mut usize) -> Option<Vec<RecordIndexEntry>> {
-    let count = usize::try_from(u32_at(bytes, *at)?).ok()?;
+    let count = u32_at(bytes, *at)?;
     let records_at = at.checked_add(4)?;
-    let records_end = count.checked_mul(16)?.checked_add(records_at)?;
-    let raw_records = bytes.get(records_at..records_end)?;
-    let mut records = Vec::with_capacity(count);
-    for raw_record in raw_records.chunks_exact(16) {
-        records.push(RecordIndexEntry {
-            entity_id: u64::from_le_bytes(raw_record[..8].try_into().ok()?),
-            bulk_offset: u64::from_le_bytes(raw_record[8..].try_into().ok()?),
-        });
-    }
-    *at = records_end;
+    let mut view = View::over_retained(bytes);
+    view.seek(records_at)?;
+    let records = view.read_counted(u64::from(count), 16, |view| {
+        Some(RecordIndexEntry {
+            entity_id: view.u64_le()?,
+            bulk_offset: view.u64_le()?,
+        })
+    })?;
+    *at = view.position();
     Some(records)
 }
 
@@ -280,7 +280,14 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             "type entity ids",
             ids_at,
         )?;
-        let raw_ids = require(bytes.get(ids_at..ids_end), "type entity ids", ids_at)?;
+        require(bytes.get(ids_at..ids_end), "type entity ids", ids_at)?;
+        let mut id_view = View::over_retained(bytes);
+        require(id_view.seek(ids_at), "type entity ids", ids_at)?;
+        let entity_ids = require(
+            id_view.read_counted(id_count as u64, 8, View::u64_le),
+            "type entity ids",
+            ids_at,
+        )?;
         at = ids_end;
         types.push(SegmentType {
             id: String::new(),
@@ -293,15 +300,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             version,
             version_offset: version_offset as u64,
             module,
-            entity_ids: raw_ids
-                .chunks_exact(8)
-                .map(|raw| {
-                    u64::from_le_bytes(
-                        raw.try_into()
-                            .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-                    )
-                })
-                .collect(),
+            entity_ids,
             entity_id_offsets: (0..id_count)
                 .map(|index| (ids_at + index * 8) as u64)
                 .collect(),

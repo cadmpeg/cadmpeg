@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 
@@ -636,7 +637,7 @@ fn marker_ref(
     if bytes.get(position) != Some(&1) {
         return None;
     }
-    let value = u32::from_le_bytes(bytes.get(position + 1..position + 5)?.try_into().ok()?);
+    let value = View::u32_le_at(bytes, position + 1)?;
     let end = position.checked_add(5)?.checked_add(zero_count)?;
     if end > frame_end {
         return None;
@@ -652,10 +653,7 @@ fn marker_value(bytes: &[u8], position: usize, frame_end: usize) -> Option<(u32,
     if bytes.get(position) != Some(&1) || position.checked_add(5)? > frame_end {
         return None;
     }
-    Some((
-        u32::from_le_bytes(bytes.get(position + 1..position + 5)?.try_into().ok()?),
-        position + 5,
-    ))
+    Some((View::u32_le_at(bytes, position + 1)?, position + 5))
 }
 
 #[cfg(test)]

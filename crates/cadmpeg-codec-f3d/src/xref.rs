@@ -10,6 +10,7 @@
 
 use serde::Deserialize;
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
@@ -204,9 +205,9 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
 /// JSON bytes; count 0 is the empty slot and carries no declaration.
 pub fn docstruct(scan: &ContainerScan) -> Option<Docstruct> {
     let bytes = scan.entry_bytes(PROPERTIES_ENTRY).ok()?;
-    let (count, payload) = bytes.split_first_chunk::<4>()?;
-    let count = u32::from_le_bytes(*count) as usize;
-    let payload = payload.get(..count)?;
+    let mut view = View::over_retained(bytes);
+    let count = view.u32_le()? as usize;
+    let payload = view.take(count)?;
     let value: serde_json::Value = serde_json::from_slice(payload).ok()?;
     let docstruct = value.get("docstruct")?;
     Some(Docstruct {
@@ -569,10 +570,13 @@ fn placement_tail(body: &[u8], mut at: usize) -> Option<()> {
 }
 
 fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+    let mut view = View::over_retained(bytes);
+    view.seek(at)?;
     let mut rows = [[0.0; 4]; 4];
-    for (index, value) in rows.iter_mut().flatten().enumerate() {
-        let offset = at.checked_add(index.checked_mul(8)?)?;
-        *value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+    for row in &mut rows {
+        for value in row {
+            *value = view.f64_le()?;
+        }
     }
     if !rows.iter().flatten().all(|value| value.is_finite()) || rows[3] != [0.0, 0.0, 0.0, 1.0] {
         return None;

@@ -4,7 +4,8 @@
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::dimension_frames::{
-    bind_recipe_reference_candidates, decode_recipe_references, recipe_record_prefix,
+    bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
+    recipe_record_prefix,
 };
 use crate::design::decode::scopes::payload_prologue;
 use crate::design::decode::sketch::{
@@ -3342,23 +3343,11 @@ fn parse_recipe_operand(
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(family_name.len())?;
-    let recipe_program_bytes =
-        bytes.get(recipe_program_at..usize::try_from(next_byte_offset).ok()?)?;
-    if recipe_program_bytes.is_empty()
-        || recipe_program_bytes.len() % 4 != 0
-        || recipe_program_bytes.len() > 64 * 1024
-    {
+    let recipe_program_end = usize::try_from(next_byte_offset).ok()?;
+    if recipe_program_end.checked_sub(recipe_program_at)? > 64 * 1024 {
         return None;
     }
-    let recipe_program = recipe_program_bytes
-        .chunks_exact(4)
-        .map(|raw| {
-            i32::from_le_bytes(
-                raw.try_into()
-                    .expect("invariant: chunks_exact(4) yields four-byte slices"),
-            )
-        })
-        .collect();
+    let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
     Some(ParsedRecipeOperand {
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
         paired_class_tag: indexed[0].0.clone(),
@@ -3905,23 +3894,11 @@ pub(crate) fn parse_face_operand(
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(family_name_len)?;
-    let recipe_program_bytes =
-        bytes.get(recipe_program_at..usize::try_from(next_byte_offset).ok()?)?;
-    if recipe_program_bytes.is_empty()
-        || recipe_program_bytes.len() % 4 != 0
-        || recipe_program_bytes.len() > 64 * 1024
-    {
+    let recipe_program_end = usize::try_from(next_byte_offset).ok()?;
+    if recipe_program_end.checked_sub(recipe_program_at)? > 64 * 1024 {
         return None;
     }
-    let recipe_program = recipe_program_bytes
-        .chunks_exact(4)
-        .map(|raw| {
-            i32::from_le_bytes(
-                raw.try_into()
-                    .expect("invariant: chunks_exact(4) yields four-byte slices"),
-            )
-        })
-        .collect::<Vec<_>>();
+    let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
     let program_kind = face_recipe_program_kind(&recipe_program)?;
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
     let recipe_node_indices = recipe_program
