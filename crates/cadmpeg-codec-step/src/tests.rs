@@ -1127,7 +1127,7 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
 }
 
 #[test]
-fn codec_detects_and_inspects_ap242_exchange_structure() {
+pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
 
@@ -1339,7 +1339,7 @@ fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
 }
 
 #[test]
-fn codec_inspects_edition3_sections_and_external_references() {
+pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
     let bytes = include_bytes!("../tests/fixtures/ap242_ed3_sections.p21");
     let summary = StepCodec::default()
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
@@ -1475,7 +1475,7 @@ fn parser_rejects_invalid_signature_base64() {
 }
 
 #[test]
-fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
+pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -1553,7 +1553,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
 }
 
 #[test]
-fn decode_accounts_for_every_part21_byte() {
+pub(crate) fn decode_accounts_for_every_part21_byte() {
     let bytes = include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -1688,7 +1688,7 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
 }
 
 #[test]
-fn decode_transfers_placed_analytic_geometry_in_millimetres() {
+pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
     let bytes = include_bytes!("../tests/fixtures/ap242_geometry.p21");
@@ -1941,7 +1941,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
 }
 
 #[test]
-fn procedural_step_geometry_round_trips_as_native_entities() {
+pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     let source = StepCodec::default()
         .decode(
             &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_geometry.p21")),
@@ -2056,7 +2056,7 @@ fn complex_swept_surfaces_decode_named_partials() {
 }
 
 #[test]
-fn decode_conical_apex_and_context_plane_angle_units() {
+pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
     let bytes = include_bytes!("../tests/fixtures/ap242_degree_cone.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -2079,7 +2079,7 @@ fn decode_conical_apex_and_context_plane_angle_units() {
 }
 
 #[test]
-fn decode_and_write_singular_vertex_loops() {
+pub(crate) fn decode_and_write_singular_vertex_loops() {
     let bytes = include_bytes!("../tests/fixtures/ap242_vertex_loop.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -2106,7 +2106,7 @@ fn decode_and_write_singular_vertex_loops() {
 }
 
 #[test]
-fn decode_resolves_conversion_units_and_linear_uncertainty() {
+pub(crate) fn decode_resolves_conversion_units_and_linear_uncertainty() {
     let bytes = include_bytes!("../tests/fixtures/ap242_conversion_units.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -2186,7 +2186,7 @@ fn decode_scales_geometry_by_its_representation_context() {
 }
 
 #[test]
-fn decode_builds_a_valid_connected_sheet_brep() {
+pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
     use cadmpeg_ir::topology::{BodyKind, Sense};
 
     let bytes = include_bytes!("../tests/fixtures/ap214_sheet.p21");
@@ -2601,7 +2601,7 @@ fn disconnected_brep_outer_shell_is_rejected_without_role_corruption() {
 }
 
 #[test]
-fn decode_builds_a_valid_ap203_sheet_brep() {
+pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
     use cadmpeg_ir::topology::BodyKind;
 
     let bytes = include_bytes!("../tests/fixtures/ap203_sheet.p21");
@@ -5574,7 +5574,7 @@ fn distinct_roots_with_shared_topology_get_owner_scopes() {
 }
 
 #[test]
-fn reader_recovers_a_valid_solid_from_writer_output() {
+pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
     use cadmpeg_ir::topology::BodyKind;
 
     let source = unit_cube();
@@ -5594,7 +5594,7 @@ fn reader_recovers_a_valid_solid_from_writer_output() {
 }
 
 #[test]
-fn step_color_assets_round_trip_names_and_tessellation_targets_strictly() {
+pub(crate) fn step_color_assets_round_trip_names_and_tessellation_targets_strictly() {
     let cases: [(&[u8], StepSchema, &[&str]); 2] = [
         (
             include_bytes!("../tests/fixtures/ap214_sheet.p21"),
@@ -7253,7 +7253,7 @@ fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
 }
 
 #[test]
-fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
+pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::topology::Loop;
 
@@ -7411,7 +7411,7 @@ fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
 }
 
 #[test]
-fn every_region_of_a_body_is_retained_as_a_shape_item() {
+pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     let mut region = ir.model.regions[0].clone();
@@ -7487,7 +7487,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
 }
 
 #[test]
-fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
+pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
     use cadmpeg_ir::pmi::PmiDefinition;
     use cadmpeg_ir::presentation::PresentationItem;
 
@@ -8010,7 +8010,7 @@ fn replicas_retain_bounded_parent_relations() {
 }
 
 #[test]
-fn hidden_body_geometry_and_visibility_round_trip() {
+pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     let mut ir = unit_cube();
     ir.model.bodies[0].visible = Some(false);
     let mut buf = Vec::new();
@@ -8074,7 +8074,7 @@ fn unsupported_invisibility_relation_is_retained_as_opaque() {
 }
 
 #[test]
-fn body_color_becomes_per_face_styled_item_presentation() {
+pub(crate) fn body_color_becomes_per_face_styled_item_presentation() {
     let mut ir = unit_cube();
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
         r: 0.25,
@@ -8112,7 +8112,7 @@ fn body_color_becomes_per_face_styled_item_presentation() {
 }
 
 #[test]
-fn face_appearance_binding_styles_the_advanced_face() {
+pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
@@ -8391,7 +8391,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
 /// Every face must be styled (body color pushed down onto the faces that do not
 /// override it), and the overriding face must carry its own color.
 #[test]
-fn face_override_wins_over_body_color_and_body_fills_the_rest() {
+pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
@@ -8456,6 +8456,3 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     counts.sort_unstable();
     assert_eq!(counts, vec![1, face_count - 1]);
 }
-
-#[path = "integration_tests.rs"]
-mod integration_tests;
