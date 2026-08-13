@@ -79,7 +79,8 @@ pub(crate) mod deltas;
 pub(crate) mod evaluation;
 mod framing;
 pub(crate) mod geometry;
-pub mod intersection;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+pub(crate) mod intersection;
 mod jt;
 mod jt_topology;
 pub(crate) mod native;

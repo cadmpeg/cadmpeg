@@ -32,6 +32,11 @@ pub fn geometry_surfaces(data: &[u8]) {
     let _ = crate::geometry::surfaces(data);
 }
 
+/// Exercise NX surface-intersection chart decoding.
+pub fn intersection(data: &[u8]) {
+    let _ = crate::intersection::curves(data, crate::intersection::ChartPointLayout::Xyz3);
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -41,6 +46,7 @@ mod tests {
         super::geometry_points(&[]);
         super::geometry_curves(&[]);
         super::geometry_surfaces(&[]);
+        super::intersection(&[]);
     }
 
     #[test]
@@ -49,5 +55,11 @@ mod tests {
         super::geometry_points(&stream);
         super::geometry_curves(&stream);
         super::geometry_surfaces(&stream);
+    }
+
+    #[test]
+    fn intersection_wrapper_accepts_fixture() {
+        let stream = crate::test_support::charted_intersection_curve_topology_partition_stream();
+        super::intersection(&stream);
     }
 }
