@@ -51,6 +51,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputLane, FeatureInputRelationFamily, SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -2475,12 +2476,7 @@ fn legacy_config_collinear_sketch(
     {
         return None;
     }
-    let negative_u = f64::from_le_bytes(
-        lane.native_payload
-            .get(negative_offset + 58..negative_offset + 66)?
-            .try_into()
-            .ok()?,
-    );
+    let negative_u = View::f64_le_at(&lane.native_payload, negative_offset + 58)?;
     if !negative_u.is_finite() || negative_u >= 0.0 {
         return None;
     }

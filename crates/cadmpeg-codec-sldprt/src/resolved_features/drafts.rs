@@ -9,6 +9,7 @@ use super::selections::{
 };
 use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
 
 const PLANE_REFERENCE_HEADER_LEN: usize = 94;
@@ -152,11 +153,9 @@ fn compact_draft_selection_at(
     marker: usize,
 ) -> Option<(u8, Vec<Vec<FeatureInputComponentPathEntry>>, usize)> {
     let header = marker.checked_sub(12)?;
-    usize::try_from(u32::from_le_bytes(
-        payload.get(header..header + 4)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (1..=MAX_PATH_CELLS).contains(count))?;
+    usize::try_from(View::u32_le_at(payload, header)?)
+        .ok()
+        .filter(|count| (1..=MAX_PATH_CELLS).contains(count))?;
     let role_bytes = payload.get(header + 4..header + 8)?;
     let role = is_component_vector_selector(role_bytes).then(|| match role_bytes[1] {
         2 => 2,
@@ -220,9 +219,8 @@ fn unique_declared_plane_reference_token(lane: &FeatureInputLane) -> Option<[u8;
         let body = usize::try_from(class.offset)
             .ok()?
             .checked_add(6 + class.name.len())?;
-        let token: [u8; 2] = lane.native_payload.get(body..body + 2)?.try_into().ok()?;
-        let value = u16::from_le_bytes(token);
-        is_class_token(value).then_some(token)
+        let value = View::u16_le_at(&lane.native_payload, body)?;
+        is_class_token(value).then_some(value.to_le_bytes())
     });
     let first = tokens.next()?;
     tokens.all(|token| token == first).then_some(first)
@@ -235,11 +233,7 @@ fn draft_plane_reference_at(
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>, usize)> {
     let header = payload.get(offset..offset.checked_add(PLANE_REFERENCE_HEADER_LEN)?)?;
     if offset + PLANE_REFERENCE_HEADER_LEN > object_end
-        || !header[2..4]
-            .try_into()
-            .ok()
-            .map(u16::from_le_bytes)
-            .is_some_and(is_class_token)
+        || !View::u16_le_at(header, 2).is_some_and(is_class_token)
         || header[4..8] != 2u32.to_le_bytes()
         || !matches!(&header[8..11], [0 | 0x40, 0, 0])
         || header[11..15] == [0; 4]
@@ -247,17 +241,13 @@ fn draft_plane_reference_at(
         || header[19..47] != [0; 28]
         || header[47..63] != [0xff; 16]
         || header[63..72] != [0; 9]
-        || !header[72..74]
-            .try_into()
-            .ok()
-            .map(u16::from_le_bytes)
-            .is_some_and(is_class_token)
+        || !View::u16_le_at(header, 72).is_some_and(is_class_token)
         || header[78..82] != [0; 4]
         || !is_component_vector_selector(&header[86..90])
     {
         return None;
     }
-    usize::try_from(u32::from_le_bytes(header[82..86].try_into().ok()?))
+    usize::try_from(View::u32_le_at(header, 82)?)
         .ok()
         .filter(|count| (2..=MAX_PATH_CELLS).contains(count))?;
     let marker = offset + PLANE_REFERENCE_HEADER_LEN;
@@ -287,7 +277,7 @@ fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Ve
                 return None;
             }
             let scalar = |relative: usize| {
-                let value = f64::from_le_bytes(frame.get(relative..relative + 8)?.try_into().ok()?);
+                let value = View::f64_le_at(frame, relative)?;
                 value.is_finite().then_some(value)
             };
             if !(DIRECTION_FRAME_PREFIX_LEN..ALIGNED_DIRECTION_FRAME_LEN)

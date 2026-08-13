@@ -9,6 +9,7 @@ use super::write_prepare::{
 };
 use super::{CLASS_MARKER, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER};
 use crate::records::{FeatureInputOperandKind, SketchInputKind, SketchRelationKind};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
@@ -758,29 +759,18 @@ pub(super) fn append_coordinate_marker_link(
         .enumerate()
         .filter_map(|(offset, bytes)| (bytes == SKETCH_MARKER).then_some(offset))
         .filter(|offset| marker_coordinates(payload, *offset).is_some())
-        .filter(|offset| {
-            payload
-                .get(*offset + 138..*offset + 142)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                == Some(u32::from(owner_local_id))
-        })
+        .filter(|offset| View::u32_le_at(payload, *offset + 138) == Some(u32::from(owner_local_id)))
         .collect::<Vec<_>>();
     let [offset] = offsets.as_slice() else {
         return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT reverse relation cannot identify coordinate marker {owner_local_id}"
         )));
     };
-    let count = usize::from(u16::from_le_bytes(
-        payload
-            .get(*offset + 84..*offset + 86)
-            .and_then(|bytes| bytes.try_into().ok())
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::Malformed(
-                    "source-less SLDPRT coordinate marker is truncated".into(),
-                )
-            })?,
-    ));
+    let count = usize::from(View::u16_le_at(payload, *offset + 84).ok_or_else(|| {
+        cadmpeg_core::CodecError::Malformed(
+            "source-less SLDPRT coordinate marker is truncated".into(),
+        )
+    })?);
     if count >= 2 {
         return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT coordinate marker {owner_local_id} exceeds two reverse relations"
