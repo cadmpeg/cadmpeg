@@ -12,6 +12,7 @@ mod generated_nurbs;
 mod generated_source;
 mod interpolation_spline;
 mod numbered_intersect;
+mod resolved;
 mod saved_line;
 mod schema;
 mod section_solver_constraints_require_complete_unique_semantics;
