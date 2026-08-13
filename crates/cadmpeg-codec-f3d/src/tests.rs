@@ -35,18 +35,6 @@ mod native;
 #[path = "tests_design.rs"]
 mod design;
 
-#[path = "tests_decode.rs"]
-mod decode;
-
-#[path = "tests_surfaces.rs"]
-mod surfaces;
-
-#[path = "tests_procedural.rs"]
-mod procedural;
-
-#[path = "tests_curves.rs"]
-mod curves;
-
 #[path = "tests_materials.rs"]
 mod materials;
 

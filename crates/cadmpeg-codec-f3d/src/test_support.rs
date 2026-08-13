@@ -60,3 +60,6 @@ pub(crate) use zip_test::*;
 
 mod assembly_test;
 pub(crate) use assembly_test::*;
+
+mod procedural_test;
+pub(crate) use procedural_test::*;
