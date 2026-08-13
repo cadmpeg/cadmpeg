@@ -632,3 +632,6 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
         companion.owned_recipe_ids = owned.into_iter().map(|recipe| recipe.id.clone()).collect();
     }
 }
+
+#[cfg(test)]
+mod tests;
