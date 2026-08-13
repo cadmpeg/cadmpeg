@@ -185,7 +185,7 @@ fn object_stream_frame_walk_requires_a_length_closed_a8_child_run() {
 
 #[test]
 fn object_stream_frame_walk_ignores_marker_shaped_inline_surface_poles() {
-    let mut bytes = crate::tests::a8_surface_stream();
+    let mut bytes = crate::test_support::a8_surface_stream();
     let mut nested_b5 = vec![0xb5, 0x03, 0x5e, 0x01];
     nested_b5.extend_from_slice(&7u32.to_le_bytes());
     nested_b5.push(0x00);
@@ -202,7 +202,7 @@ fn object_stream_frame_walk_ignores_marker_shaped_inline_surface_poles() {
 
 #[test]
 fn object_stream_frame_walk_descends_after_inline_surface_poles() {
-    let mut bytes = crate::tests::a8_surface_stream();
+    let mut bytes = crate::test_support::a8_surface_stream();
     let mut nested_b5 = vec![0xb5, 0x03, 0x5e, 0x01];
     nested_b5.extend_from_slice(&7u32.to_le_bytes());
     nested_b5.push(0x00);
@@ -221,7 +221,7 @@ fn object_stream_frame_walk_descends_after_inline_surface_poles() {
 
 #[test]
 fn object_stream_frame_walk_descends_after_inline_surface_tail() {
-    let mut bytes = crate::tests::a8_inline_tail_surface_stream();
+    let mut bytes = crate::test_support::a8_inline_tail_surface_stream();
     let mut nested_b5 = vec![0xb5, 0x03, 0x5e, 0x01];
     nested_b5.extend_from_slice(&7u32.to_le_bytes());
     nested_b5.push(0x00);
@@ -260,22 +260,22 @@ fn object_stream_runs_end_at_non_frame_bytes() {
 
 #[test]
 fn object_stream_runs_cross_complete_vertex_allocations() {
-    let mut bytes = crate::tests::b5_closed_triangle_stream();
-    crate::tests::append_b5_record(&mut bytes, 0x5e, 900, &[]);
+    let mut bytes = crate::test_support::b5_closed_triangle_stream();
+    crate::test_support::append_b5_record(&mut bytes, 0x5e, 900, &[]);
 
     assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
 }
 
 #[test]
 fn object_stream_runs_cross_support_bound_external_pole_allocations() {
-    let bytes = crate::tests::a8_elided_surface_stream_with_native_vertex_chain();
+    let bytes = crate::test_support::a8_elided_surface_stream_with_native_vertex_chain();
 
     assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
 }
 
 #[test]
 fn topology_parse_does_not_join_records_across_object_stream_runs() {
-    let original = crate::tests::b5_closed_triangle_stream();
+    let original = crate::test_support::b5_closed_triangle_stream();
     let frames = object_stream_frames(&original);
     let split = frames[frames.len() / 2].start;
     let mut separated = original.clone();
@@ -288,7 +288,7 @@ fn topology_parse_does_not_join_records_across_object_stream_runs() {
 
 #[test]
 fn topology_runs_retain_only_their_own_vertex_allocations() {
-    let first = crate::tests::b5_closed_triangle_stream();
+    let first = crate::test_support::b5_closed_triangle_stream();
     let mut bytes = first.clone();
     bytes.push(0xff);
     bytes.extend_from_slice(&first);
@@ -302,7 +302,7 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
 
 #[test]
 fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
-    let original = crate::tests::b5_closed_triangle_stream();
+    let original = crate::test_support::b5_closed_triangle_stream();
     let expected = parse(&original).expect("closed source graph");
     let isolated = object_stream_frames(&original)
         .into_iter()
@@ -320,7 +320,7 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
 
 #[test]
 fn topology_parse_does_not_borrow_geometry_from_another_population() {
-    let original = crate::tests::b5_closed_triangle_stream();
+    let original = crate::test_support::b5_closed_triangle_stream();
     let expected = parse(&original).expect("closed source graph");
     let geometry = object_stream_frames(&original)
         .into_iter()
@@ -331,7 +331,7 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
     separated.drain(geometry.start..geometry.end);
     separated.push(0xff);
     separated.extend_from_slice(&geometry_bytes);
-    crate::tests::append_b5_record(&mut separated, 0x5e, 900, &[]);
+    crate::test_support::append_b5_record(&mut separated, 0x5e, 900, &[]);
 
     assert_ne!(parse(&separated), Some(expected));
     assert_eq!(object_stream_populations(&separated).len(), 2);
@@ -363,7 +363,7 @@ fn framed_records_ignore_marker_shaped_bytes_inside_b5_payloads() {
 
 #[test]
 fn indexed_frame_parse_matches_one_shot_parse() {
-    let bytes = crate::tests::b5_closed_triangle_stream();
+    let bytes = crate::test_support::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes);
     let records = records_from_frames(&bytes, &frames);
 
@@ -1358,7 +1358,7 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
 
 #[test]
 fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
-    let mut graph = parse(&crate::tests::b5_closed_triangle_stream()).expect("B5 graph");
+    let mut graph = parse(&crate::test_support::b5_closed_triangle_stream()).expect("B5 graph");
     assert!(graph.complete);
     graph.edges.insert(
         301,
@@ -1392,12 +1392,12 @@ fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
 
 #[test]
 fn duplicate_face_loop_ownership_does_not_close_the_graph() {
-    let mut bytes = crate::tests::b5_closed_triangle_stream();
+    let mut bytes = crate::test_support::b5_closed_triangle_stream();
     let mut face_payload = vec![0x82];
-    face_payload.extend_from_slice(&crate::tests::b5_object_ref(100));
-    face_payload.extend_from_slice(&crate::tests::b5_object_ref(400));
+    face_payload.extend_from_slice(&crate::test_support::b5_object_ref(100));
+    face_payload.extend_from_slice(&crate::test_support::b5_object_ref(400));
     face_payload.push(0x03);
-    crate::tests::append_b5_record(&mut bytes, 0x5f, 902, &face_payload);
+    crate::test_support::append_b5_record(&mut bytes, 0x5f, 902, &face_payload);
 
     let graph = parse(&bytes).expect("structurally parseable B5 graph");
 

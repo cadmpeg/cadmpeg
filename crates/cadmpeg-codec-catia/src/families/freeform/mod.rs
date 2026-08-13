@@ -2605,7 +2605,7 @@ mod tests {
 
     #[test]
     fn object_stream_selection_uses_the_unique_topology_root_run() {
-        let topology = crate::tests::b5_closed_triangle_stream();
+        let topology = crate::test_support::b5_closed_triangle_stream();
         let mut unrelated = vec![0xb5, 0x03, 0x5e, 0x01];
         unrelated.extend_from_slice(&99u32.to_le_bytes());
         unrelated.push(0x00);
@@ -2621,7 +2621,7 @@ mod tests {
 
     #[test]
     fn object_stream_selection_refuses_multiple_topology_root_runs() {
-        let topology = crate::tests::b5_closed_triangle_stream();
+        let topology = crate::test_support::b5_closed_triangle_stream();
         let selection = crate::families::b5::graph::select_object_stream_population(
             &[topology.clone(), topology],
             None,
@@ -2634,7 +2634,7 @@ mod tests {
 
     #[test]
     fn object_stream_selection_stops_before_materializing_over_budget_records() {
-        let topology = crate::tests::b5_closed_triangle_stream();
+        let topology = crate::test_support::b5_closed_triangle_stream();
         let budget = cadmpeg_core::decode::WorkBudget::new(1);
 
         let selection =
@@ -2686,7 +2686,7 @@ mod tests {
     #[test]
     fn consolidated_line_profile_retains_its_stored_wire_interval() {
         let mut ir = CadIr::empty(Units::default());
-        let bytes = crate::tests::b2_line_profile_stream();
+        let bytes = crate::test_support::b2_line_profile_stream();
         let wires = append_consolidated_line_profiles(
             &mut ir,
             &mut AnnotationBuilder::new(),
@@ -2718,7 +2718,7 @@ mod tests {
     #[test]
     fn rolling_ball_pool_retains_both_exact_limiting_curves() {
         let mut ir = CadIr::empty(Units::default());
-        let bytes = crate::tests::a5_freeform_curve_stream();
+        let bytes = crate::test_support::a5_freeform_curve_stream();
         append_freeform_surface_pools(
             &mut ir,
             &mut AnnotationBuilder::new(),
@@ -2743,8 +2743,8 @@ mod tests {
 
     #[test]
     fn freeform_fallback_distinguishes_grouped_and_standalone_cylinders() {
-        let mut bytes = crate::tests::b2_cylinder_stream();
-        bytes.extend_from_slice(&crate::tests::b2_embedded_cylinder_stream());
+        let mut bytes = crate::test_support::b2_cylinder_stream();
+        bytes.extend_from_slice(&crate::test_support::b2_embedded_cylinder_stream());
 
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
@@ -2868,15 +2868,15 @@ mod tests {
             Point3::new(1.0, 4.0, 3.0),
             Point3::new(2.0, 2.0 + 2.0 * 0.5f64.cos(), 3.0 + 2.0 * 0.5f64.sin()),
         ];
-        let mut bytes = crate::tests::b2_cylinder_stream();
+        let mut bytes = crate::test_support::b2_cylinder_stream();
         for point in points {
             bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
             for value in [point.x, point.y, point.z] {
                 bytes.extend_from_slice(&(value as f32).to_le_bytes());
             }
         }
-        let mut edge_run = crate::tests::a5_native_edge_run_stream(6, 139, 142);
-        let second_pcurve = crate::tests::a5_pcurve_stream().len();
+        let mut edge_run = crate::test_support::a5_native_edge_run_stream(6, 139, 142);
+        let second_pcurve = crate::test_support::a5_pcurve_stream().len();
         for (offset, value) in [10.0f64, 11.0, 20.0, 21.0].into_iter().enumerate() {
             let start = second_pcurve + 33 + 8 * offset;
             edge_run[start..start + 8].copy_from_slice(&value.to_le_bytes());
@@ -3023,7 +3023,7 @@ mod tests {
 
     #[test]
     fn consolidated_plane_support_transfers_both_surface_curve_sides() {
-        let plane_stream = crate::tests::b2_plane_carrier_stream();
+        let plane_stream = crate::test_support::b2_plane_carrier_stream();
         let plane_end = crate::families::b2::records::b2_plane_carriers(&plane_stream)[0].end;
         let mut bytes = plane_stream[..plane_end].to_vec();
         let points = [Point3::new(10.0, 20.0, 0.0), Point3::new(11.0, 20.0, 1.0)];
@@ -3033,7 +3033,7 @@ mod tests {
                 bytes.extend_from_slice(&(value as f32).to_le_bytes());
             }
         }
-        bytes.extend_from_slice(&crate::tests::a5_native_edge_run_stream(6, 139, 142));
+        bytes.extend_from_slice(&crate::test_support::a5_native_edge_run_stream(6, 139, 142));
 
         let mut ir = CadIr::empty(Units::default());
         for (index, position) in points.into_iter().enumerate() {
@@ -3289,7 +3289,7 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_exact_consolidated_spheres() {
-        let bytes = crate::tests::b2_sphere_stream();
+        let bytes = crate::test_support::b2_sphere_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(
@@ -3311,7 +3311,7 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_exact_consolidated_tori() {
-        let bytes = crate::tests::b2_torus_stream();
+        let bytes = crate::test_support::b2_torus_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(
@@ -3334,7 +3334,7 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_range_origin_cylinder_carriers() {
-        let bytes = crate::tests::b2_range_origin_cylinder_stream();
+        let bytes = crate::test_support::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(

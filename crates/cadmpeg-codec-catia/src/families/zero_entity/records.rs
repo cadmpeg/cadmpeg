@@ -1900,7 +1900,7 @@ fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{
+    use crate::test_support::{
         zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
         zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
     };

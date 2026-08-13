@@ -152,7 +152,7 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
 
 #[test]
 fn pcurve_requires_one_complete_clamped_bezier_frame() {
-    let payload = crate::tests::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
+    let payload = crate::test_support::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
     let record = |payload| B5Record {
         offset: 0,
         family: 0xb5,

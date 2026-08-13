@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::tests::{
+use crate::test_support::{
     append_e5_record, e5_circle_stream, e5_plane_stream, e5_plane_stream_with_transform_scalars,
     e5_torus_stream, e5_uv_line_payload, le_f32, le_f64,
 };

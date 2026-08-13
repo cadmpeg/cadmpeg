@@ -411,8 +411,8 @@ fn standard_face_population_rejects_equal_largest_fbb_runs() {
 
 #[test]
 fn standard_face_population_withholds_multiple_complete_fbb_groups() {
-    let mut bytes = crate::tests::standard_quad_topology_stream();
-    bytes.extend(crate::tests::standard_quad_topology_stream());
+    let mut bytes = crate::test_support::standard_quad_topology_stream();
+    bytes.extend(crate::test_support::standard_quad_topology_stream());
 
     let groups = standard_fbb_groups(&bytes);
     assert_eq!(groups.len(), 2);
@@ -427,7 +427,7 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
 
 #[test]
 fn standard_helpers_share_the_source_closed_face_population() {
-    let mut bytes = crate::tests::standard_quad_topology_stream();
+    let mut bytes = crate::test_support::standard_quad_topology_stream();
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xaa, 0xbb, 0xcc, 0xdd]);
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0x11, 0x22, 0x33, 0x44]);
 

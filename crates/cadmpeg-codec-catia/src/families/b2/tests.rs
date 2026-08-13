@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::tests::{
+use crate::test_support::{
     a5_surface_stream, b2_circle_stream, b2_cone_face_stream, b2_cone_stream,
     b2_construction_use_stream, b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
     b2_edge_parameter_stream, b2_edge_parameter_stream_for, b2_embedded_cylinder_stream,
@@ -115,7 +115,7 @@ fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
         0x40,
     ]);
     for value in values {
-        stream.extend_from_slice(&crate::tests::le_f64(value));
+        stream.extend_from_slice(&crate::test_support::le_f64(value));
     }
 
     let carriers = crate::families::b2::records::b2_plane_carriers(&stream);

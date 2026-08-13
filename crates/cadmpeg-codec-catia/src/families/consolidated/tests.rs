@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::tests::{
+use crate::test_support::{
     a5_circle_bound_edge_stream, a5_cone_bound_edge_stream, a5_cylinder_bound_edge_stream,
     a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream,
     a5_nurbs_pair_bound_edge_stream, a5_pcurve_stream, a5_torus_bound_edge_stream,
@@ -434,7 +434,7 @@ fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
     use crate::families::consolidated::records::ConsolidatedSupportBinding;
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
-        &crate::tests::a5_sphere_bound_edge_stream(),
+        &crate::test_support::a5_sphere_bound_edge_stream(),
     );
     assert!(blocks[0]
         .supports
@@ -448,8 +448,8 @@ fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
 
 #[test]
 fn a5_edge_binding_rejects_duplicate_sphere_endpoint_lifts() {
-    let mut bytes = crate::tests::a5_sphere_bound_edge_stream();
-    bytes.extend_from_slice(&crate::tests::b2_sphere_stream());
+    let mut bytes = crate::test_support::a5_sphere_bound_edge_stream();
+    bytes.extend_from_slice(&crate::test_support::b2_sphere_stream());
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
     assert_eq!(blocks[0].supports, [None, None]);
@@ -458,7 +458,7 @@ fn a5_edge_binding_rejects_duplicate_sphere_endpoint_lifts() {
 #[test]
 fn a5_edge_binding_rejects_duplicate_torus_endpoint_lifts() {
     let mut bytes = a5_torus_bound_edge_stream();
-    bytes.extend_from_slice(&crate::tests::b2_torus_stream());
+    bytes.extend_from_slice(&crate::test_support::b2_torus_stream());
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
     assert_eq!(blocks[0].supports, [None, None]);

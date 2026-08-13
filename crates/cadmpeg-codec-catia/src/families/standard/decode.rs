@@ -658,7 +658,7 @@ mod consolidated_analytic_refinement_tests {
 
     #[test]
     fn unique_quantized_torus_refines_every_matching_face_to_binary64() {
-        let mut bytes = crate::tests::b2_torus_stream();
+        let mut bytes = crate::test_support::b2_torus_stream();
         let exact_x = 1.000_000_01_f64;
         bytes[5..13].copy_from_slice(&exact_x.to_le_bytes());
         let coarse = SurfaceGeometry::Torus {
@@ -685,7 +685,7 @@ mod consolidated_analytic_refinement_tests {
 
     #[test]
     fn sphere_refinement_requires_one_matching_consolidated_carrier() {
-        let mut bytes = crate::tests::b2_sphere_stream();
+        let mut bytes = crate::test_support::b2_sphere_stream();
         let exact_x = 1.000_000_01_f64;
         bytes[5..13].copy_from_slice(&exact_x.to_le_bytes());
         let coarse = SurfaceGeometry::Sphere {
@@ -720,8 +720,8 @@ mod consolidated_analytic_refinement_tests {
 
     #[test]
     fn cylinder_and_cone_refinement_use_their_complete_exact_frames() {
-        let mut bytes = crate::tests::b2_cylinder_stream();
-        bytes.extend_from_slice(&crate::tests::b2_cone_stream());
+        let mut bytes = crate::test_support::b2_cylinder_stream();
+        bytes.extend_from_slice(&crate::test_support::b2_cone_stream());
         let mut surfaces = vec![
             Some(SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 3.0),

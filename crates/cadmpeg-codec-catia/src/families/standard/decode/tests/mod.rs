@@ -23,7 +23,7 @@ pub(super) use crate::families::standard::decode::{
 };
 
 pub(super) use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
-pub(super) use crate::tests::{append_b5_record, b5_closed_triangle_stream, le_f64};
+pub(super) use crate::test_support::{append_b5_record, b5_closed_triangle_stream, le_f64};
 
 pub(super) use crate::families::standard::records::{
     StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds, StandardSurfaceRecord,

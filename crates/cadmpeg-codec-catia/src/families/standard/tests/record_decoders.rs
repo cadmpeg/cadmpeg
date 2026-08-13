@@ -3,7 +3,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
 use crate::families::standard::records::{StandardFaceBounds, StandardSurfaceRecord};
-use crate::tests::{
+use crate::test_support::{
     a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
     fbb_only_quad_topology_stream, le_f32, le_f64, standard_quad_topology_stream,
 };

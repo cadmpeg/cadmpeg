@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::tests::{
+use crate::test_support::{
     a5_freeform_curve_stream, a5_freeform_curve_stream_with_count, a5_guide_curve_stream,
     a5_guide_curve_stream_with_count, a5_pcurve_stream, a5_pcurve_stream_with_count,
     a5_rational_surface_stream, a5_surface_extrapolated_short_tail, a5_surface_extrapolated_tail,
