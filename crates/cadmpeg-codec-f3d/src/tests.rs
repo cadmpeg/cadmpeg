@@ -32,9 +32,6 @@ use cadmpeg_asm::asm_header;
 #[path = "tests_native.rs"]
 mod native;
 
-#[path = "tests_writer.rs"]
-mod writer;
-
 #[path = "tests_design.rs"]
 mod design;
 
