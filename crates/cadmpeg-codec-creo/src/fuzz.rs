@@ -16,12 +16,18 @@ pub fn curve_prototypes(data: &[u8]) {
     let _ = crate::curve::prototypes(data);
 }
 
+/// Exercise Creo surface namespace row extraction.
+pub fn surface_rows(data: &[u8]) {
+    let _ = crate::surface::rows(data);
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn wrappers_accept_empty() {
         super::datum(&[]);
         super::curve_prototypes(&[]);
+        super::surface_rows(&[]);
     }
 
     #[test]
@@ -29,5 +35,6 @@ mod tests {
         let data = crate::test_support::build_prt("1.0", &[]);
         super::datum(&data);
         super::curve_prototypes(&data);
+        super::surface_rows(&data);
     }
 }

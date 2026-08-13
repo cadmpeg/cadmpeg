@@ -71,7 +71,7 @@ pub mod primdata;
 pub mod psb;
 pub mod reference;
 pub mod scalar;
-pub mod surface;
+pub(crate) mod surface;
 pub mod topology;
 
 #[cfg(feature = "fuzzing")]
