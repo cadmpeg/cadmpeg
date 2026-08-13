@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+mod consolidated;
 mod constraint;
 mod design;
 mod entity;

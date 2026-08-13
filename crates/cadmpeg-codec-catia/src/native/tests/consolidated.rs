@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Tests over synthetic byte fixtures. No real CAD file exists in this repo and
-//! none may be added, so every fixture is a hand-built `.CATPart` byte image
-//! whose bytes exercise the real container, variant-detection, and geometry
-//! decode paths and fail if the code regresses.
+//! Native-namespace tests for consolidated family layouts.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
