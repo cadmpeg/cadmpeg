@@ -5,6 +5,7 @@ use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::topology::Body;
 
+mod admission;
 mod blind_circular;
 mod carrier_solver;
 mod generated_nurbs;
