@@ -7,6 +7,12 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeIn
 use cadmpeg_ir::examples::unit_cube;
 
 use crate::reader::dependencies::tests::decode_reports_data_section_external_dependencies;
+use crate::reader::geometry::tests::{
+    decode_conical_apex_and_context_plane_angle_units,
+    decode_resolves_conversion_units_and_linear_uncertainty,
+    decode_transfers_placed_analytic_geometry_in_millimetres,
+    procedural_step_geometry_round_trips_as_native_entities,
+};
 use crate::reader::pmi::tests::{
     ap242_dimension_kinds_emit_concrete_schema_entities,
     common_datum_compartment_round_trips_as_one_precedence,
@@ -28,17 +34,13 @@ use crate::tests::{
     codec_inspects_edition3_sections_and_external_references,
     decode_accounts_for_every_part21_byte, decode_and_write_singular_vertex_loops,
     decode_builds_a_valid_ap203_sheet_brep, decode_builds_a_valid_connected_sheet_brep,
-    decode_conical_apex_and_context_plane_angle_units,
     decode_preserves_named_opaque_records_with_exact_byte_spans,
-    decode_resolves_conversion_units_and_linear_uncertainty,
-    decode_transfers_placed_analytic_geometry_in_millimetres,
     every_region_of_a_body_is_retained_as_a_shape_item,
     face_appearance_binding_styles_the_advanced_face,
     face_outer_bound_is_canonicalized_ahead_of_inner_bounds,
     face_override_wins_over_body_color_and_body_fills_the_rest,
     hidden_body_geometry_and_visibility_round_trip,
     presentation_reader_normalizes_invalid_layer_and_common_datum_inputs,
-    procedural_step_geometry_round_trips_as_native_entities,
     reader_recovers_a_valid_solid_from_writer_output,
     step_color_assets_round_trip_names_and_tessellation_targets_strictly,
 };

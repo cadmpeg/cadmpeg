@@ -1,0 +1,823 @@
+// SPDX-License-Identifier: Apache-2.0
+//! STEP geometry, pcurve, NURBS, unit, replica, and trim tests.
+
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
+#![allow(unused_imports)]
+
+use std::fmt::Write as _;
+use std::io::Cursor;
+
+use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::eval::{
+    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
+};
+use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{LengthUnit, Units};
+use cadmpeg_ir::CadIr;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
+
+use crate::ids::StepIdentity;
+use crate::test_support::{decode_inline, export};
+use crate::{
+    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
+};
+
+#[test]
+fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#52=DIRECTION('',(1.,0.));", "#52=DIRECTION('',(0.,1.));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode source with invalid pcurve");
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+            && loss.message.contains("one optional pcurve")
+            && loss.message.contains("not continuous")
+    }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn surface_curve_retains_direct_surface_support() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+                "#57=SURFACE_CURVE('',#16,(#70),.CURVE_3D.);\n#70=PLANE('',#27);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode direct surface-curve support");
+
+    let support = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#70")
+        .expect("direct surface support carrier");
+    assert_eq!(
+        support
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#57")
+    );
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn pcurve_trimmed_carrier_is_not_promoted_to_a_3d_curve() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#72),#50);\n#71=LINE('',#51,#53);\n#72=TRIMMED_CURVE('',#71,(0.),(1.),.T.,.PARAMETER.);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode pcurve trimmed carrier");
+
+    assert!(decoded.ir().model.curves.iter().all(|curve| {
+        curve.id.as_str() != "step:data:curve#71" && curve.id.as_str() != "step:data:curve#72"
+    }));
+    assert!(decoded.report().losses.iter().all(|loss| {
+        !loss
+            .message
+            .contains("TRIMMED_CURVE #72 has invalid or unresolved basis/trim selectors")
+    }));
+}
+
+#[test]
+fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#70=TRIMMED_CURVE('',#57,(0.),(1.),.T.,.PARAMETER.);\n#71=GEOMETRIC_SET('',(#70));\n#72=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#71),#2);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode surface-curve trim");
+
+    assert!(decoded.ir().model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#70"
+            && matches!(curve.geometry, CurveGeometry::Line { .. })
+    }));
+    assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
+        curve.curve.as_str() == "step:data:curve#70"
+            && matches!(
+                &curve.definition,
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { source, .. }
+                    if source.as_str() == "step:data:curve#16"
+            )
+    }));
+    assert!(decoded.report().losses.iter().all(|loss| {
+        !loss
+            .message
+            .contains("TRIMMED_CURVE #70 has invalid or unresolved basis/trim selectors")
+    }));
+}
+
+#[test]
+fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#53=VECTOR('',#52,1.);",
+            "#53=VECTOR('',#52,10.);",
+        )
+        .replace(
+            "#54=LINE('',#51,#53);",
+            "#54=TRIMMED_CURVE('',#71,(PARAMETER_VALUE(1.)),(PARAMETER_VALUE(0.)),.F.,.PARAMETER.);\n#71=LINE('',#51,#53);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode opposed-sense pcurve trim");
+    let pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("trimmed pcurve");
+    assert!(matches!(
+        &pcurve.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Trimmed {
+            parameter_range: [start, end],
+            ..
+        } if *start == 0.0 && *end == 1.0
+    ));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#53=VECTOR('',#52,1.);", "#53=VECTOR('',#52,10.);")
+        .replace(
+            "#54=LINE('',#51,#53);",
+            "#54=TRIMMED_CURVE('',#71,(PARAMETER_VALUE(-1.)),(PARAMETER_VALUE(2.)),.T.,.PARAMETER.);\n#71=LINE('',#51,#53);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode stale pcurve trim");
+    let pcurve = cadmpeg_ir::ids::PcurveId("step:data:pcurve#56".into());
+    let use_ = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| &coedge.pcurves)
+        .find(|use_| use_.pcurve == pcurve)
+        .expect("stale trimmed pcurve use");
+    assert_eq!(use_.parameter_range, Some([0.0, 1.0]));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)")
+        .replace(
+            "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+            "#4=CARTESIAN_POINT('',(1.,0.,0.));",
+        )
+        .replace("#13=VECTOR('',#10,10.);", "#13=VECTOR('',#10,1.);")
+        .replace(
+            "#27=AXIS2_PLACEMENT_3D('',#3,#9,#10);",
+            "#70=CARTESIAN_POINT('',(0.,-1.,0.));\n#71=DIRECTION('',(1.,0.,0.));\n#72=DIRECTION('',(0.,1.,0.));\n#27=AXIS2_PLACEMENT_3D('',#70,#71,#72);",
+        )
+        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,1.);")
+        .replace("#52=DIRECTION('',(1.,0.));", "#52=DIRECTION('',(0.,1.));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode cylindrical pcurve");
+
+    let pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("cylindrical pcurve");
+    assert!(matches!(
+        pcurve.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
+            if direction.u.abs() < 1.0e-12 && (direction.v - 10.0).abs() < 1.0e-12
+    ));
+}
+
+#[test]
+fn periodic_surface_pcurve_selection_seeds_line_parameter_branches() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#3=CARTESIAN_POINT('',(0.,0.,0.));",
+            "#3=CARTESIAN_POINT('',(-1.,0.,0.));",
+        )
+        .replace(
+            "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+            "#4=CARTESIAN_POINT('',(-0.5403023058681398,0.,0.8414709848078965));",
+        )
+        .replace("#16=LINE('',#3,#13);", "#16=CIRCLE('',#27,1.);")
+        .replace(
+            "#27=AXIS2_PLACEMENT_3D('',#3,#9,#10);",
+            "#70=CARTESIAN_POINT('',(0.,0.,0.));\n#71=DIRECTION('',(0.,1.,0.));\n#72=DIRECTION('',(1.,0.,0.));\n#27=AXIS2_PLACEMENT_3D('',#70,#71,#72);",
+        )
+        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,1.);");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode periodic cylindrical pcurve");
+
+    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+            && loss.message.contains("curve #57")
+            && loss.message.contains("no pcurve")
+    }));
+}
+
+#[test]
+fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#54=LINE('',#51,#53);", "#54=UNSUPPORTED_CURVE('',#51);");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode sheet with unsupported optional pcurve");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| loss
+        .message
+        .contains("PCURVE #56 has no decoded surface or 2D curve")));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("conflicts with decoded topology")));
+}
+
+#[test]
+fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
+    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::math::Point2;
+
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#52=DIRECTION('',(1.,0.));",
+                "#52=CARTESIAN_POINT('',(1.,2.));",
+            )
+            .replace(
+                "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+                "#4=CARTESIAN_POINT('',(3.,2.,0.));",
+            )
+            .replace("#53=VECTOR('',#52,1.);", "#53=CARTESIAN_POINT('',(3.,2.));")
+            .replace("#54=LINE('',#51,#53);", "#54=POLYLINE('',(#51,#52,#53));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode polyline pcurve");
+
+    assert!(matches!(
+        &decoded.ir().model.pcurves[0].geometry,
+        PcurveGeometry::Nurbs {
+            degree: 1,
+            control_points,
+            weights: None,
+            periodic: false,
+            ..
+        } if control_points == &[
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 2.0),
+            Point2::new(3.0, 2.0),
+        ]
+    ));
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+}
+
+#[test]
+fn planar_pcurve_coordinates_follow_the_document_length_unit() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode non-millimetre planar pcurve");
+
+    let pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("planar pcurve");
+    assert!(matches!(
+        pcurve.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
+            if (direction.u - 10.0).abs() < 1.0e-12
+    ));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn degree_valued_cylindrical_pcurve_is_not_reinterpreted() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#3=CARTESIAN_POINT('',(0.,0.,0.));",
+            "#3=CARTESIAN_POINT('',(-1.,0.,0.));",
+        )
+        .replace(
+            "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+            "#4=CARTESIAN_POINT('',(-1.,10.,0.));",
+        )
+        .replace(
+            "#10=DIRECTION('',(1.,0.,0.));",
+            "#10=DIRECTION('',(0.,1.,0.));",
+        )
+        .replace(
+            "#27=AXIS2_PLACEMENT_3D('',#3,#9,#10);",
+            "#70=CARTESIAN_POINT('',(0.,0.,0.));\n#71=DIRECTION('',(0.,1.,0.));\n#72=DIRECTION('',(1.,0.,0.));\n#27=AXIS2_PLACEMENT_3D('',#70,#71,#72);",
+        )
+        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,1.);")
+        .replace(
+            "#51=CARTESIAN_POINT('',(0.,0.));",
+            "#51=CARTESIAN_POINT('',(180.,0.));",
+        )
+        .replace("#52=DIRECTION('',(1.,0.));", "#52=DIRECTION('',(0.,1.));")
+        .replace("#53=VECTOR('',#52,1.);", "#53=VECTOR('',#52,10.);");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode degree-valued cylindrical pcurve");
+
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+            && loss.message.contains("curve #57")
+            && loss.message.contains("pcurve is omitted")
+    }));
+}
+
+#[test]
+fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#51=CARTESIAN_POINT('',(0.,0.));",
+                "#51=CARTESIAN_POINT('',(0.,1.));",
+            )
+            .replace(
+                "#54=LINE('',#51,#53);",
+                "#54=TRIMMED_CURVE('',#71,(0.),(10.),.T.,.PARAMETER.);",
+            )
+            .replace(
+                "#68=STYLED_ITEM('',(#66),#19);",
+                "#68=STYLED_ITEM('',(#66),#19);\n#71=LINE('',#51,#53);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode inconsistent optional pcurve");
+
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(
+        decoded.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains("optional pcurve")
+        }),
+        "{:#?}",
+        decoded.report().losses
+    );
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#56"));
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+fn equivalent_seam_source() -> String {
+    String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+            "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
+        )
+}
+
+fn distinct_seam_source() -> String {
+    equivalent_seam_source().replace(
+        "#71=LINE('',#51,#53);",
+        "#71=POLYLINE('',(#51,#72,#73));\n#72=CARTESIAN_POINT('',(5.,5.));\n#73=CARTESIAN_POINT('',(10.,0.));",
+    )
+}
+
+fn seam_source_with_one_endpoint_continuous_candidate() -> String {
+    equivalent_seam_source().replace(
+        "#71=LINE('',#51,#53);",
+        "#71=LINE('',#72,#53);\n#72=CARTESIAN_POINT('',(0.,5.));",
+    )
+}
+
+#[test]
+fn equivalent_seam_pcurve_candidates_select_one_carrier() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(equivalent_seam_source()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode equivalent seam pcurves");
+
+    let coedge = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| !coedge.pcurves.is_empty())
+        .expect("equivalent seam coedge");
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
+    assert!(decoded.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("no unique endpoint-continuous pcurve selects one")));
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(distinct_seam_source()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode distinct tied seam pcurves");
+
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    let losses: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        })
+        .collect();
+    assert_eq!(
+        losses.len(),
+        1,
+        "unexpected losses: {:#?}",
+        decoded.report().losses
+    );
+    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(
+        losses[0].message,
+        "curve #57 associates 2 pcurves with surface #28; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+    );
+}
+
+#[test]
+fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(seam_source_with_one_endpoint_continuous_candidate()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode endpoint-continuous seam pcurve");
+
+    let coedge = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| !coedge.pcurves.is_empty())
+        .expect("seam coedge");
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
+    assert!(decoded.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("no unique endpoint-continuous pcurve selects one")));
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn an_unambiguous_pcurve_still_binds() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unambiguous pcurve");
+
+    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+}
+
+#[test]
+fn ambiguous_pcurves_do_not_reject_the_body() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = distinct_seam_source()
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=MANIFOLD_SOLID_BREP('',#30);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode solid with ambiguous seam pcurves");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Solid);
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn intersection_curve_binds_its_basis_curve_and_pcurves() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+                "#57=INTERSECTION_CURVE('',#16,(#56),.PCURVE_S1.);",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode intersection curve");
+
+    let edge = decoded
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.as_str() == "step:data:edge#19")
+        .expect("intersection-curve edge");
+    assert_eq!(
+        edge.curve.as_ref().map(CurveId::as_str),
+        Some("step:data:curve#16")
+    );
+    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+    assert!(decoded.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("surface-curve #57 has no resolvable basis")));
+}
+
+#[test]
+fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#51=CARTESIAN_POINT('',(0.,0.));\n#52=DIRECTION('',(1.,0.));",
+            "#51=CARTESIAN_POINT('',(0.,0.));\n#52=DIRECTION('',(1.,0.));\n#58=CARTESIAN_POINT('',(10.,0.));",
+        )
+        .replace(
+            "#54=LINE('',#51,#53);",
+            "#54=QUASI_UNIFORM_CURVE('',1,(#51,#58),.UNSPECIFIED.,.F.,.F.);",
+        )
+        .replace(
+            "#55=DEFINITIONAL_REPRESENTATION('',(#54),#50);",
+            "#55=(DEFINITIONAL_REPRESENTATION()REPRESENTATION('',(#54),#50)SHAPE_REPRESENTATION());",
+        );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode quasi-uniform pcurve");
+
+    assert!(result.ir().model.pcurves.iter().any(|pcurve| {
+        matches!(
+            &pcurve.geometry,
+            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+                degree: 1,
+                knots,
+                control_points,
+                weights: None,
+                periodic: false,
+            } if knots == &[0.0, 0.0, 1.0, 1.0] && control_points.len() == 2
+        )
+    }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn direct_boundary_curve_builds_a_curve_bounded_surface() {
+    for boundary_type in ["BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"] {
+        let source = format!(
+            "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n\
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));\n\
+#3=CARTESIAN_POINT('',(0.,0.,0.));\n\
+#4=DIRECTION('',(0.,0.,1.));\n\
+#5=DIRECTION('',(1.,0.,0.));\n\
+#6=AXIS2_PLACEMENT_3D('',#3,#4,#5);\n\
+#7=CIRCLE('',#6,5.);\n\
+#8=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#7);\n\
+#9={boundary_type}('',(#8),.F.);\n\
+#10=PLANE('',#6);\n\
+#11=CURVE_BOUNDED_SURFACE('bounded',#10,(#9),.F.);\n\
+#12=GEOMETRIC_SET('',(#11));\n\
+#13=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#12),#2);\n",
+        );
+        let result = decode_inline(&source);
+
+        let boundary = result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == "step:data:curve#9")
+            .expect("boundary curve carrier");
+        assert!(matches!(
+            &boundary.geometry,
+            CurveGeometry::Composite { segments, .. }
+                if segments.len() == 1 && segments[0].curve.as_str() == "step:data:curve#7"
+        ));
+
+        let bounded = result
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "step:construction:curve_bounded_surface#11")
+            .expect("curve-bounded surface");
+        assert!(matches!(
+            &bounded.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }
+                if boundaries == &[CurveId("step:data:curve#9".to_owned())]
+        ));
+        assert!(!result.report().losses.iter().any(|loss| {
+            loss.message
+                .contains("has invalid, cyclic, or unresolved segments")
+        }));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap203_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#36=COMPOSITE_CURVE('nested edge',(#33),.F.);",
+            "#36=(BOUNDED_CURVE() CURVE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('nested edge') SURFACE_CURVE(#16,(#44),.PCURVE_S1.));",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#38=(GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D'));\n#39=CARTESIAN_POINT('',(0.,0.));\n#40=DIRECTION('',(1.,0.));\n#41=VECTOR('',#40,1.);\n#42=LINE('',#39,#41);\n#43=DEFINITIONAL_REPRESENTATION('',(#42),#38);\n#44=PCURVE('',#28,#43);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex surface curve boundary");
+
+    let (boundaries, boundary_pcurves) = decoded
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find_map(|surface| match &surface.definition {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+                boundaries,
+                boundary_pcurves,
+                ..
+            } => Some((boundaries, boundary_pcurves)),
+            _ => None,
+        })
+        .expect("curve-bounded surface");
+    assert_eq!(
+        boundaries,
+        &[cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
+    );
+    assert!(
+        decoded
+            .ir()
+            .model
+            .pcurves
+            .iter()
+            .any(|pcurve| pcurve.id.as_str() == "step:data:pcurve#44"),
+        "pcurves={:#?}, losses={:#?}",
+        decoded.ir().model.pcurves,
+        decoded.report().losses
+    );
+    assert_eq!(
+        boundary_pcurves,
+        &[cadmpeg_ir::ids::PcurveId("step:data:pcurve#44".into())]
+    );
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn free_surface_curve_keeps_its_three_dimensional_basis_reachable() {
+    let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#80=CARTESIAN_POINT('',(20.,0.,0.));\n#81=DIRECTION('',(1.,0.,0.));\n#82=VECTOR('',#81,1.);\n#83=LINE('',#80,#82);\n#84=SURFACE_CURVE('',#83,(#56),.PCURVE_S1.);\n#85=GEOMETRIC_SET('free surface curve',(#84));\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode free surface curve");
+
+    let basis = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "step:data:curve#83")
+        .expect("surface-curve basis");
+    assert_eq!(
+        basis
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#84")
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(!validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::report::Check::CarrierReachability
+            && finding.entity.as_deref() == Some("step:data:curve#83")
+    }));
+}

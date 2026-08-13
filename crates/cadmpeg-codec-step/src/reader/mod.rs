@@ -19,7 +19,7 @@ use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
 pub(crate) mod dependencies;
 mod drawing;
-mod geometry;
+pub(crate) mod geometry;
 mod index;
 pub(crate) mod pmi;
 mod presentation;
