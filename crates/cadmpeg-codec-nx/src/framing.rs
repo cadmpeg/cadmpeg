@@ -7,6 +7,8 @@
 //! field validity gates after framing.
 #![deny(clippy::disallowed_methods)]
 
+use cadmpeg_core::decode::View;
+
 /// One structurally complete fixed-record interpretation.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FixedRecordFrame {
@@ -89,12 +91,14 @@ pub(crate) fn read_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> O
 /// Decode the compact and extended XMT forms. The extended form uses a negative
 /// signed remainder followed by a quotient: `quotient * 32767 + remainder`.
 pub(crate) fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
-    let first = i16::from_be_bytes([*stream.get(at)?, *stream.get(at + 1)?]);
+    let mut view = View::over_retained(stream);
+    view.seek(at)?;
+    let first = view.i16_be()?;
     if first >= 0 {
         return Some((first as u32, 0));
     }
     let remainder = first.unsigned_abs();
-    let quotient = u16::from_be_bytes([*stream.get(at + 2)?, *stream.get(at + 3)?]);
+    let quotient = view.u16_be()?;
     let value = u32::from(quotient) * 32_767 + u32::from(remainder);
     Some((value, 2))
 }
