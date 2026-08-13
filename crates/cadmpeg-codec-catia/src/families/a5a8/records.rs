@@ -12,7 +12,6 @@ use crate::wire::records::{
     ConsolidatedRecord,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::geometry::{
     NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
     RollingBallJetSite, SurfaceGeometry,
@@ -108,7 +107,8 @@ fn a8_frames(data: &[u8], class: u8) -> Vec<A8Frame> {
             pos += 1;
             continue;
         }
-        let Some(length) = u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
+        let Some(length) =
+            View::u32_le_at(data, pos + 3).and_then(|value| usize::try_from(value).ok())
         else {
             pos += 1;
             continue;
@@ -121,7 +121,7 @@ fn a8_frames(data: &[u8], class: u8) -> Vec<A8Frame> {
             pos += 1;
             continue;
         };
-        let Some(object_id) = u32_le(data, pos + 7) else {
+        let Some(object_id) = View::u32_le_at(data, pos + 7) else {
             pos += 1;
             continue;
         };
@@ -153,12 +153,12 @@ fn object_stream_frame(data: &[u8], pos: usize) -> Option<ObjectStreamFrame> {
         0xb5 => (
             pos.checked_add(8)?,
             usize::from(*data.get(pos + 3)?),
-            u32_le(data, pos + 4)?,
+            View::u32_le_at(data, pos + 4)?,
         ),
         0xa8 => (
             pos.checked_add(11)?,
-            usize::try_from(u32_le(data, pos + 3)?).ok()?,
-            u32_le(data, pos + 7)?,
+            usize::try_from(View::u32_le_at(data, pos + 3)?).ok()?,
+            View::u32_le_at(data, pos + 7)?,
         ),
         _ => return None,
     };
@@ -1683,13 +1683,13 @@ fn object_stream_reference(bytes: &[u8], at: &mut usize) -> Option<u32> {
     let lead = *bytes.get(*at)?;
     let (value, width) = match lead {
         0x38 => (u32_le_24(bytes, *at + 1)?, 4),
-        0x30 => (u32::from(u16_le(bytes, *at + 1)?) << 8, 3),
+        0x30 => (u32::from(View::u16_le_at(bytes, *at + 1)?) << 8, 3),
         0x28 => (
             u32::from(*bytes.get(*at + 1)?) | (u32::from(*bytes.get(*at + 2)?) << 16),
             3,
         ),
         0x20 => (u32::from(*bytes.get(*at + 1)?) << 16, 2),
-        0x18 => (u32::from(u16_le(bytes, *at + 1)?), 3),
+        0x18 => (u32::from(View::u16_le_at(bytes, *at + 1)?), 3),
         0x10 => (u32::from(*bytes.get(*at + 1)?) << 8, 2),
         0x08 => (u32::from(*bytes.get(*at + 1)?), 2),
         0x80..=0xff => (u32::from(lead - 0x80), 1),

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C02` UTF-8 string catalogs.
 
-use cadmpeg_core::le::u32_at as u32_le;
+use cadmpeg_core::decode::View;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ pub fn parse(bytes: &[u8]) -> Vec<Catalog> {
         }
         let declared_end = pos
             .checked_add(2)
-            .and_then(|length_offset| u32_le(bytes, length_offset))
+            .and_then(|length_offset| View::u32_le_at(bytes, length_offset))
             .and_then(|length| usize::try_from(length).ok())
             .and_then(|length| pos.checked_add(length));
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
@@ -67,7 +67,7 @@ pub fn parse(bytes: &[u8]) -> Vec<Catalog> {
 }
 
 fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
-    let total_len = usize::try_from(u32_le(bytes, pos + 2)?).ok()?;
+    let total_len = usize::try_from(View::u32_le_at(bytes, pos + 2)?).ok()?;
     let end = pos.checked_add(total_len)?;
     if total_len < 8 || end > bytes.len() {
         return None;
@@ -80,7 +80,10 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
     let mut entries = Vec::with_capacity(entry_count);
     for ordinal in 0..entry_count {
         let (value_len, header_len) = match *bytes.get(at)? {
-            0 => (usize::try_from(u32_le(bytes, at + 1)?).ok()?, 5usize),
+            0 => (
+                usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?,
+                5usize,
+            ),
             len => (usize::from(len).checked_sub(1)?, 1usize),
         };
         let value_start = at.checked_add(header_len)?;

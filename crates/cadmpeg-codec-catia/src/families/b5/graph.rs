@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::{View, WorkBudget};
-use cadmpeg_core::le::f64_at;
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry};
 use cadmpeg_ir::math::Point2;
@@ -3943,7 +3942,7 @@ fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f
 }
 
 fn scalar(bytes: &[u8], offset: usize) -> Option<f64> {
-    let value = f64_at(bytes, offset)?;
+    let value = View::f64_le_at(bytes, offset)?;
     value.is_finite().then_some(value)
 }
 

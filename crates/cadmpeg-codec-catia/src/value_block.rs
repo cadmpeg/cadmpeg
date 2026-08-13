@@ -2,7 +2,6 @@
 //! Framed CATIA `7C0B` value blocks.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at as u32_le;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -117,7 +116,7 @@ pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
         }
         let declared_end = pos
             .checked_add(2)
-            .and_then(|length_offset| u32_le(bytes, length_offset))
+            .and_then(|length_offset| View::u32_le_at(bytes, length_offset))
             .and_then(|length| usize::try_from(length).ok())
             .and_then(|length| pos.checked_add(length))
             .and_then(|terminator| terminator.checked_add(1));
@@ -136,7 +135,7 @@ pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
 }
 
 fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
-    let declared_len = usize::try_from(u32_le(bytes, pos + 2)?).ok()?;
+    let declared_len = usize::try_from(View::u32_le_at(bytes, pos + 2)?).ok()?;
     if declared_len < 6 {
         return None;
     }

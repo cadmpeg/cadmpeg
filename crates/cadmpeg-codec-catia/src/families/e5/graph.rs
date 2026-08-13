@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::{take_f64s, take_u32 as read_u32, u32_at};
 
 use crate::wire;
 
@@ -587,11 +586,12 @@ fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
         return None;
     }
     position += 1;
+    let mut view = View::over_retained(record.payload);
+    view.seek(position)?;
     let mut entries = Vec::with_capacity(representations.len());
     for representation in representations {
-        let parameter = View::f64_le_at(record.payload, position)?;
-        position += 8;
-        let code = read_u32(record.payload, &mut position)?;
+        let parameter = view.f64_le()?;
+        let code = view.u32_le()?;
         if !parameter.is_finite() {
             return None;
         }
@@ -601,7 +601,7 @@ fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
             code,
         });
     }
-    (position == record.payload.len()).then_some(E5Bounds {
+    view.is_empty().then_some(E5Bounds {
         record_id: record.id,
         entries,
     })
@@ -613,10 +613,12 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
     }
     let mut position = 1;
     let surface = wire::object_ref(record.payload, &mut position, false)?;
+    let mut view = View::over_retained(record.payload);
+    view.seek(position)?;
     match record.class {
         0x96 => {
-            let values = take_f64s(record.payload, &mut position, 6)?;
-            if position != record.payload.len() || values.iter().any(|value| !value.is_finite()) {
+            let values = view.read_counted(6, 8, View::f64_le)?;
+            if !view.is_empty() || values.iter().any(|value| !value.is_finite()) {
                 return None;
             }
             Some(E5Pcurve::Line {
@@ -627,13 +629,10 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
             })
         }
         0x97 => {
-            let center = take_f64s(record.payload, &mut position, 2)?;
-            let codes = [
-                read_u32(record.payload, &mut position)?,
-                read_u32(record.payload, &mut position)?,
-            ];
-            let values = take_f64s(record.payload, &mut position, 5)?;
-            if position != record.payload.len()
+            let center = view.read_counted(2, 8, View::f64_le)?;
+            let codes = [view.u32_le()?, view.u32_le()?];
+            let values = view.read_counted(5, 8, View::f64_le)?;
+            if !view.is_empty()
                 || center.iter().chain(&values).any(|value| !value.is_finite())
                 || values[0] <= 0.0
             {
@@ -653,37 +652,36 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
     }
 }
 
-fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option<E5Pcurve> {
-    let degree = read_u32(payload, &mut position)?;
-    let zero0 = read_u32(payload, &mut position)?;
-    let zero1 = read_u32(payload, &mut position)?;
-    let site_count = usize::try_from(read_u32(payload, &mut position)?).ok()?;
-    let zero2 = read_u32(payload, &mut position)?;
-    let zero3 = read_u32(payload, &mut position)?;
-    let zero4 = read_u32(payload, &mut position)?;
+fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5Pcurve> {
+    let mut view = View::over_retained(payload);
+    view.seek(position)?;
+    let degree = view.u32_le()?;
+    let zero0 = view.u32_le()?;
+    let zero1 = view.u32_le()?;
+    let site_count = usize::try_from(view.u32_le()?).ok()?;
+    let zero2 = view.u32_le()?;
+    let zero3 = view.u32_le()?;
+    let zero4 = view.u32_le()?;
     if degree != 5 || site_count == 0 || [zero0, zero1, zero2, zero3, zero4] != [0; 5] {
         return None;
     }
+    let site_count_u64 = u64::try_from(site_count).ok()?;
     let mut knots = vec![0.0];
-    knots.extend(take_f64s(payload, &mut position, site_count - 1)?);
-    let mut multiplicities = Vec::with_capacity(site_count);
-    for _ in 0..site_count {
-        multiplicities.push(read_u32(payload, &mut position)?);
-    }
-    if usize::try_from(read_u32(payload, &mut position)?).ok()? != site_count {
+    knots.extend(view.read_counted(site_count_u64.checked_sub(1)?, 8, View::f64_le)?);
+    let multiplicities = view.read_counted(site_count_u64, 4, View::u32_le)?;
+    if usize::try_from(view.u32_le()?).ok()? != site_count {
         return None;
     }
-    let x = take_f64s(payload, &mut position, site_count)?;
-    let y = take_f64s(payload, &mut position, site_count)?;
-    let dx = take_f64s(payload, &mut position, site_count)?;
-    let dy = take_f64s(payload, &mut position, site_count)?;
-    if payload.get(position..position + 2) != Some(&1u16.to_le_bytes()) {
+    let x = view.read_counted(site_count_u64, 8, View::f64_le)?;
+    let y = view.read_counted(site_count_u64, 8, View::f64_le)?;
+    let dx = view.read_counted(site_count_u64, 8, View::f64_le)?;
+    let dy = view.read_counted(site_count_u64, 8, View::f64_le)?;
+    if view.u16_le()? != 1 {
         return None;
     }
-    position += 2;
-    let ddx = take_f64s(payload, &mut position, site_count)?;
-    let ddy = take_f64s(payload, &mut position, site_count)?;
-    let range_values = take_f64s(payload, &mut position, 2)?;
+    let ddx = view.read_counted(site_count_u64, 8, View::f64_le)?;
+    let ddy = view.read_counted(site_count_u64, 8, View::f64_le)?;
+    let range_values = view.read_counted(2, 8, View::f64_le)?;
     let expected_multiplicities: Vec<u32> = if site_count == 1 {
         vec![degree + 1]
     } else {
@@ -693,7 +691,7 @@ fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option
             .collect()
     };
     let final_knot = *knots.last()?;
-    if position != payload.len()
+    if !view.is_empty()
         || knots.iter().any(|value| !value.is_finite())
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
         || multiplicities != expected_multiplicities
@@ -1134,7 +1132,7 @@ fn records(bytes: &[u8]) -> Vec<Record<'_>> {
         }
         records.push(Record {
             class: bytes[start + 3],
-            id: u32_at(bytes, start + 9).expect("record header bounds were checked"),
+            id: View::u32_le_at(bytes, start + 9).expect("record header bounds were checked"),
             payload: &bytes[start + 13..end],
         });
         position = end;
