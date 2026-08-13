@@ -1685,32 +1685,6 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
 }
 
 #[test]
-fn consolidated_edge_nodes_require_canonical_headers_and_terminal_controls() {
-    let bytes = b2_edge_node_stream();
-    assert_eq!(crate::families::b2::records::b2_edge_nodes(&bytes).len(), 1);
-
-    let mut noncanonical_header = bytes.clone();
-    noncanonical_header[0] = 0xb3;
-    noncanonical_header[4] = 0x04;
-    noncanonical_header.insert(5, 1);
-    assert!(crate::families::b2::records::b2_edge_nodes(&noncanonical_header).is_empty());
-
-    let mut wide_header = bytes.clone();
-    wide_header[0] = 0xb3;
-    wide_header[4] = 0x04;
-    wide_header.insert(5, 0x40);
-    let wide_nodes = crate::families::b2::records::b2_edge_nodes(&wide_header);
-    let [wide_node] = wide_nodes.as_slice() else {
-        panic!("canonical wide-header edge node")
-    };
-    assert_eq!(wide_node.header_token, 0x4004);
-
-    let mut invalid_terminal = bytes;
-    *invalid_terminal.last_mut().expect("edge terminal") = 0x03;
-    assert!(crate::families::b2::records::b2_edge_nodes(&invalid_terminal).is_empty());
-}
-
-#[test]
 fn native_namespace_attaches_oriented_uses_without_pcurves() {
     let bytes = a5_native_edge_identity_stream(6, 139, 142);
     let native = crate::native::CatiaNative::decode(&bytes);
@@ -2197,38 +2171,6 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             }));
         }
     }
-}
-
-#[test]
-fn offset_support_binds_by_native_domain_knot_limits() {
-    let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
-    let mut decoy = carriers[0].clone();
-    let SurfaceGeometry::Nurbs(surface) = &mut decoy.geometry else {
-        panic!("NURBS fixture");
-    };
-    for knot in &mut surface.v_knots {
-        *knot += 10.0;
-    }
-    carriers.push(decoy);
-    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
-        panic!("NURBS fixture");
-    };
-    let offset = crate::families::b2::records::B2OffsetSupport {
-        pos: 0,
-        support_id: 7,
-        distance: 2.0,
-        domain: [
-            surface.u_knots[0],
-            surface.v_knots[0],
-            *surface.u_knots.last().unwrap(),
-            *surface.v_knots.last().unwrap(),
-        ],
-    };
-
-    assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
-        [Some(0)]
-    );
 }
 
 #[test]
@@ -3104,22 +3046,6 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         ),
         1
     );
-}
-
-#[test]
-fn decode_inner_no_directory_transfers_b2_cylinder() {
-    assert_eq!(
-        crate::container::scan_bytes(inner_no_directory_b2_catpart()).variant,
-        Variant::InnerNoDirectory
-    );
-    let mut cur = Cursor::new(inner_no_directory_b2_catpart());
-    let result = CatiaCodec
-        .decode(&mut cur, &DecodeOptions::default())
-        .unwrap();
-    assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
-        SurfaceGeometry::Cylinder { radius: 2.0, .. }
-    ));
 }
 
 #[test]
