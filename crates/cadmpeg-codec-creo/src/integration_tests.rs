@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized Creo PSB byte images.
+#![allow(clippy::unwrap_used)]
 
-use super::*;
+use std::io::Cursor;
+
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::CodecBackend;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::sketches::SketchConstraintDefinition;
+
+use crate::container::role;
+use crate::test_support::*;
+use crate::CreoCodec;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     CreoCodec
@@ -191,7 +198,7 @@ fn featdefs_pipeline_retains_solver_relations_and_resolved_dimension_inputs() {
     payload.extend_from_slice(
         b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
           \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
-          \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+          \xe0\x01status\0\x04\xe0\x01items\0\xf8\x01\xf7\x6c\xfb\xe2\
           \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
           \xf3\xf7\x6b\xe2\
           triples_ptr\0\xf4\x04\xf8\x02\xf7\x6d\xfb\xe2\
