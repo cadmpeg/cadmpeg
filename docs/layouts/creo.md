@@ -61,7 +61,7 @@ The low five flag bits give the maximum code width from 9 through 16; bit 7 enab
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-creo/src/compress.rs` — The parser matches the same two magic bytes and reads the flag byte at offset 2.
+- `crates/cadmpeg-codec-creo/src/container.rs` — The container names the same two-byte Unix-compress magic.
 
 ## `cmnm_model_name_record`
 
@@ -135,7 +135,7 @@ A scalar token occupies one slot and a standalone `12` occupies one zero-valued 
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-creo/src/curve.rs` — The parser gates the pcurve endpoint body on exactly eight decoded slots.
+- `crates/cadmpeg-codec-creo/src/curve.rs` — The parser reconstructs the eight-slot pcurve endpoint body as `[f64; 8]`.
 
 ## `local_sys_support_frame`
 
@@ -152,7 +152,7 @@ Reused by plane, cylinder, cone, and torus prototypes, by curve-equation frames,
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-creo/src/scalar.rs` — The parser gates the local-system frame on exactly twelve decoded slots.
+- `crates/cadmpeg-codec-creo/src/scalar.rs` — The parser expands the local-system support frame as twelve `f64` slots.
 
 ## Not tabulated
 
