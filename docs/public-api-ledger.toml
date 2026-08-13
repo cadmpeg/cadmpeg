@@ -334,3 +334,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::DecodeResult::{ir_mut,report_mut,source_fidelity_mut}"
 reason = "in-place merge and test edits mutate a live DecodeResult; accessors replace public fields"
+
+[[change]]
+commit = "a7e203c68cc8044d1c9d966d568c7a69f62d969e"
+crate = "cadmpeg-codec-creo"
+kind = "visibility"
+item = "cadmpeg_codec_creo::{container,curve,feature,legacy,primdata,psb,reference,scalar,surface,topology}"
+reason = "hide parser modules behind fuzz facade"
