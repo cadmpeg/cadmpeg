@@ -5025,7 +5025,7 @@ anchor = "nonzero u32 LE source identifier"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
-contains = "const SCENE_SOURCE_MARKER: &[u8] = &["
+contains = "const SCENE_SOURCE_MARKER: &[u8] = &[ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, ];"
 note = "The parser's scene-source marker matches the 12-byte specification marker."
 
 [[record.code]]
