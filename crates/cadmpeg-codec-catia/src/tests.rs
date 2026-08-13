@@ -23,47 +23,6 @@ use crate::CatiaCodec;
 
 pub(crate) use crate::test_support::*;
 
-struct NativeFieldsMut<'a> {
-    record: &'a mut cadmpeg_ir::NativeRecord,
-    fields: Option<serde_json::Map<String, serde_json::Value>>,
-}
-
-impl std::ops::Deref for NativeFieldsMut<'_> {
-    type Target = serde_json::Map<String, serde_json::Value>;
-
-    fn deref(&self) -> &Self::Target {
-        self.fields.as_ref().expect("native fields guard")
-    }
-}
-
-impl std::ops::DerefMut for NativeFieldsMut<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.fields.as_mut().expect("native fields guard")
-    }
-}
-
-impl Drop for NativeFieldsMut<'_> {
-    fn drop(&mut self) {
-        let id = self.record.id().to_owned();
-        let fields = self.fields.take().expect("native fields guard");
-        *self.record = cadmpeg_ir::NativeRecord::new(id, fields);
-    }
-}
-
-trait NativeRecordTestExt {
-    fn fields_mut(&mut self) -> NativeFieldsMut<'_>;
-}
-
-impl NativeRecordTestExt for cadmpeg_ir::NativeRecord {
-    fn fields_mut(&mut self) -> NativeFieldsMut<'_> {
-        let fields = self.fields();
-        NativeFieldsMut {
-            record: self,
-            fields: Some(fields),
-        }
-    }
-}
-
 #[test]
 fn consolidated_record_sources_follow_physical_stream_extents() {
     let scan = crate::container::scan_bytes(standard_catpart());
