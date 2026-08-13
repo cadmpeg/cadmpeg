@@ -4076,4 +4076,4 @@ fn compact_position_assignments(
 }
 
 #[cfg(test)]
-mod hole_axis_tests;
+mod tests;
