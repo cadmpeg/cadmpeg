@@ -5350,4 +5350,4 @@ fn extended_horizontal_axis_endpoint_indices(payload: &[u8], offset: usize) -> O
 }
 
 #[cfg(test)]
-mod endpoints_tests;
+mod tests;
