@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized CATPart byte images.
 
-use super::*;
+#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+
+use std::io::Cursor;
+
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::CodecBackend;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::report::{LossCategory, Severity};
+
+use crate::test_support::*;
+use crate::variant::Variant;
+use crate::CatiaCodec;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     CatiaCodec
@@ -265,4 +273,37 @@ fn decode_refuses_when_max_entities_is_below_route_entity_count() {
         .decode(&mut Cursor::new(standard_catpart()), &options)
         .expect_err("max_entities below route entity count must refuse at admission");
     assert_entity_resource_limit(&error);
+}
+
+#[test]
+fn every_decode_path_populates_v1_annotations() {
+    let fixtures = [
+        standard_catpart(),
+        fbb_only_catpart(),
+        zero_entity_catpart(),
+        zero_entity_cylinder_catpart(),
+        e5_catpart(),
+        a8_catpart(),
+        inner_no_directory_a8_catpart(),
+    ];
+    for fixture in fixtures {
+        let decoded = CatiaCodec
+            .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+            .unwrap();
+        assert_every_entity_has_v1_annotation(decoded.ir(), &decoded.source_fidelity().annotations);
+    }
+
+    let container_only = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_every_entity_has_v1_annotation(
+        container_only.ir(),
+        &container_only.source_fidelity().annotations,
+    );
 }
