@@ -377,6 +377,7 @@ pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError
 #[cfg(test)]
 mod tests {
     use super::{parse, primary_record_frames, MetaStream, RecordIndexEntry};
+    use crate::test_support::design_metastream;
 
     fn lp_ascii(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -557,5 +558,93 @@ mod tests {
             primary_record_frames(&secondary_outside_primary, 14),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
+    }
+    #[test]
+    fn design_type_table_attributes_each_entry_to_its_own_type() {
+        use crate::metastream::parse;
+
+        let first = "11111111-1111-1111-1111-111111111111";
+        let second = "22222222-2222-2222-2222-222222222222";
+        let third = "33333333-3333-3333-3333-333333333333";
+        let base = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        // The middle entry is a root type: its base GUID is the empty string, so
+        // its length prefix is a four-byte zero run rather than a GUID.
+        let bytes = design_metastream(&[
+            (first, base, 3, "Fusion", &[10, 11]),
+            (second, "", 7, "MSketch", &[20]),
+            (third, second, 11, "Body", &[30, 31, 32]),
+        ]);
+        let types = parse(&bytes, "synthetic MetaStream")
+            .expect("a segment closing on its own end parses")
+            .types;
+        assert_eq!(types.len(), 3);
+
+        // Every field of an entry belongs to that entry, not to its successor.
+        assert_eq!(types[0].type_guid, first);
+        assert_eq!(types[0].base_type_guid.as_deref(), Some(base));
+        assert_eq!(types[0].version, 3);
+        assert_eq!(types[0].module, "Fusion");
+        assert_eq!(types[0].entity_ids, [10, 11]);
+
+        assert_eq!(types[1].type_guid, second);
+        assert_eq!(types[1].base_type_guid, None);
+        assert_eq!(types[1].base_type_guid_offset, None);
+        assert_eq!(types[1].version, 7);
+        assert_eq!(types[1].module, crate::records::DESIGN_MODULE_SKETCH);
+        assert_eq!(types[1].entity_ids, [20]);
+
+        assert_eq!(types[2].type_guid, third);
+        assert_eq!(types[2].base_type_guid.as_deref(), Some(second));
+        assert_eq!(types[2].version, 11);
+        assert_eq!(types[2].module, crate::records::DESIGN_MODULE_BODY);
+        assert_eq!(types[2].entity_ids, [30, 31, 32]);
+
+        // Every reported offset addresses the field it names.
+        let string_at = |offset: u64, length: usize| {
+            std::str::from_utf8(&bytes[offset as usize..offset as usize + length])
+                .expect("ASCII field")
+                .to_owned()
+        };
+        let u32_at = |offset: u64| {
+            u32::from_le_bytes(
+                bytes[offset as usize..offset as usize + 4]
+                    .try_into()
+                    .expect("4-byte field"),
+            )
+        };
+        for design_type in &types {
+            assert!(design_type.byte_offset < design_type.type_guid_offset);
+            assert_eq!(
+                string_at(design_type.type_guid_offset, 36),
+                design_type.type_guid
+            );
+            assert_eq!(u32_at(design_type.version_offset), design_type.version);
+            if let (Some(base), Some(offset)) = (
+                &design_type.base_type_guid,
+                design_type.base_type_guid_offset,
+            ) {
+                assert_eq!(&string_at(offset, 36), base);
+            }
+            for (entity_id, offset) in design_type
+                .entity_ids
+                .iter()
+                .zip(&design_type.entity_id_offsets)
+            {
+                assert_eq!(
+                    u64::from_le_bytes(
+                        bytes[*offset as usize..*offset as usize + 8]
+                            .try_into()
+                            .expect("8-byte field")
+                    ),
+                    *entity_id
+                );
+            }
+        }
+
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert!(parse(&trailing, "trailing MetaStream").is_err());
+        assert!(parse(&bytes[..bytes.len() - 1], "truncated MetaStream").is_err());
+        assert!(parse(&bytes[..bytes.len() - 4], "flag-only MetaStream").is_err());
     }
 }

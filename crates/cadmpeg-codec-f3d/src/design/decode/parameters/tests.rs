@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(
+    unused_imports,
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args
 )]
 
+use std::io::{Cursor, Write};
+
+use zip::CompressionMethod;
+
 use super::{parse_design_parameter, parse_parameter_companion, parse_parameter_owner};
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
 use crate::records::DesignParameterKind;
+use crate::test_support::*;
 
 fn compact_owned_parameter_record(
     owner_record_index: u32,
@@ -531,4 +537,105 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     );
     prefix[42..50].fill(0);
     assert!(parse_parameter_companion(&prefix).is_none());
+}
+
+#[test]
+fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
+    fn owner_frame() -> Vec<u8> {
+        let mut frame = vec![0; 104];
+        frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+        frame[4..7].copy_from_slice(b"292");
+        frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+        frame[19] = 1;
+        frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+        frame[24] = 1;
+        frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+        frame[35..39].copy_from_slice(&2u32.to_le_bytes());
+        frame[40..48].copy_from_slice(&6.0f64.to_le_bytes());
+        frame[48] = 1;
+        frame[49..53].copy_from_slice(&45u32.to_le_bytes());
+        frame[59..63].copy_from_slice(&9u32.to_le_bytes());
+        frame[67] = 1;
+        frame[68..72].copy_from_slice(&12u32.to_le_bytes());
+        frame[78] = 1;
+        frame[79] = 1;
+        frame[81] = 1;
+        frame[82..86].copy_from_slice(&46u32.to_le_bytes());
+        frame[93] = 1;
+        frame[94..98].copy_from_slice(&12u32.to_le_bytes());
+        frame
+    }
+    fn paired_header() -> [u8; 11] {
+        let mut header = [0; 11];
+        header[0..4].copy_from_slice(&3u32.to_le_bytes());
+        header[4..7].copy_from_slice(b"293");
+        header[7..11].copy_from_slice(&44u32.to_le_bytes());
+        header
+    }
+    fn archive(stream: &str, bulk: &[u8]) -> Vec<u8> {
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(stream, stored).unwrap();
+        zip.write_all(bulk).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let parameter = crate::records::DesignParameter {
+        id: crate::ids::native_design_parameter_id(stream, 200),
+        byte_offset: 200,
+        class_tag: "305".into(),
+        record_index: 45,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(222),
+        source_ordinal: 0,
+        owner_record_index: Some(44),
+        expression: "6 cm".into(),
+        expression_offset: 240,
+        source_kind: "Distance".into(),
+        source_kind_offset: 260,
+        kind: crate::records::DesignParameterKind::Feature,
+        unit: Some("cm".into()),
+        unit_offset: Some(280),
+        name: "distance".into(),
+        name_offset: 300,
+        evaluated_value: 6.0,
+        evaluated_value_offset: 320,
+    };
+    let header = crate::records::DesignRecordHeader {
+        id: crate::ids::native_design_record_header_id(stream, 0),
+        record_index: 44,
+        class_tag: "292".into(),
+        byte_offset: 0,
+    };
+
+    let mut exact = owner_frame();
+    exact.extend_from_slice(&paired_header());
+    let owners = with_scan(&archive(stream, &exact), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("exact owner frame");
+    let [owner] = owners.as_slice() else {
+        panic!("expected one parameter owner");
+    };
+    assert_eq!(owner.frame_length, 104);
+    assert_eq!(owner.evaluated_value_offset, 40);
+
+    let mut extended = owner_frame();
+    extended.push(0);
+    extended.extend_from_slice(&paired_header());
+    let error = with_scan(&archive(stream, &extended), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect_err("an owner-shaped prefix must not shorten the exact frame");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
