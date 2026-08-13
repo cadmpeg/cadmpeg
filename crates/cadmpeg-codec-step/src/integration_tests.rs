@@ -1,10 +1,58 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
-use super::*;
-use cadmpeg_ir::codec::CodecBackend;
+use std::io::Cursor;
 
-use cadmpeg_ir::codec::{EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::examples::unit_cube;
+
+use crate::reader::dependencies::tests::decode_reports_data_section_external_dependencies;
+use crate::reader::pmi::tests::{
+    ap242_dimension_kinds_emit_concrete_schema_entities,
+    common_datum_compartment_round_trips_as_one_precedence,
+    decode_transfers_ap242_presentation_pmi, decode_transfers_ap242_semantic_pmi,
+    typed_pmi_measure_uses_its_explicit_conversion_unit,
+    unresolved_lower_tolerance_does_not_shift_upper_deviation,
+};
+use crate::reader::product::tests::{
+    ap203_specified_source_formations_build_occurrence_tree,
+    decode_builds_occurrence_placement_from_mapped_item,
+    decode_builds_product_occurrences_with_relative_placement,
+    repeated_subassembly_instances_each_receive_the_subtree,
+};
+use crate::reader::tessellation::tests::decode_transfers_ap242_one_based_tessellation_indices;
+use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
+use crate::tests::{
+    body_color_becomes_per_face_styled_item_presentation,
+    codec_detects_and_inspects_ap242_exchange_structure,
+    codec_inspects_edition3_sections_and_external_references,
+    decode_accounts_for_every_part21_byte, decode_and_write_singular_vertex_loops,
+    decode_builds_a_valid_ap203_sheet_brep, decode_builds_a_valid_connected_sheet_brep,
+    decode_conical_apex_and_context_plane_angle_units,
+    decode_preserves_named_opaque_records_with_exact_byte_spans,
+    decode_resolves_conversion_units_and_linear_uncertainty,
+    decode_transfers_placed_analytic_geometry_in_millimetres,
+    every_region_of_a_body_is_retained_as_a_shape_item,
+    face_appearance_binding_styles_the_advanced_face,
+    face_outer_bound_is_canonicalized_ahead_of_inner_bounds,
+    face_override_wins_over_body_color_and_body_fills_the_rest,
+    hidden_body_geometry_and_visibility_round_trip,
+    presentation_reader_normalizes_invalid_layer_and_common_datum_inputs,
+    procedural_step_geometry_round_trips_as_native_entities,
+    reader_recovers_a_valid_solid_from_writer_output,
+    step_color_assets_round_trip_names_and_tessellation_targets_strictly,
+};
+use crate::writer::tests::{
+    analytic_conics_round_trip_through_step,
+    ap242_writer_round_trips_indexed_tessellation_and_exact_body_link,
+    nurbs_surface_grid_orientation_is_u_major, rejected_step_write_detects_incomplete_datum_system,
+    standalone_geometry_uses_general_shape_representation,
+    strict_writer_refuses_retained_opaque_step_records_atomically,
+    strict_writer_rejects_before_emitting_bytes, writer_round_trips_edge_based_wire_bodies,
+    writer_round_trips_product_body_ownership, writer_round_trips_rational_nurbs_pcurves,
+    writer_round_trips_rigid_body_placements,
+};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());

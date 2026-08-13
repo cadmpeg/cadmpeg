@@ -1543,3 +1543,6 @@ impl ValueExt for Value {
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

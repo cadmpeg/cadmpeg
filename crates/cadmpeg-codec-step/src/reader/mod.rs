@@ -17,14 +17,14 @@ use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 use crate::ids::StepIdentity;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
-mod dependencies;
+pub(crate) mod dependencies;
 mod drawing;
 mod geometry;
 mod index;
-mod pmi;
+pub(crate) mod pmi;
 mod presentation;
-mod product;
-mod tessellation;
+pub(crate) mod product;
+pub(crate) mod tessellation;
 mod topology;
 mod validation;
 
