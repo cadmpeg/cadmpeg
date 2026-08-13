@@ -43,9 +43,6 @@ pub(crate) mod views;
 pub(crate) mod wire;
 mod writer;
 
-#[cfg(test)]
-mod external_transfer_tests;
-
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 #[path = "fuzzing.rs"]
@@ -190,10 +187,8 @@ impl Encoder for RhinoEncoder {
 }
 
 #[cfg(test)]
-mod archive_test_support;
-#[cfg(test)]
-mod archive_tests;
-#[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-mod tests;
+mod integration_tests;
+#[cfg(test)]
+pub(crate) mod test_support;

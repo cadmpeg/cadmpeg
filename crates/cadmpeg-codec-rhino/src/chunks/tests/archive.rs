@@ -4,19 +4,18 @@ use std::fmt::Write;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};
 
-use super::archive_test_support::{
+use crate::test_support::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
     line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
     polycurve_payload, polyline_payload, singular_seam_brep_payload, ARC_CLASS, BREP_CLASS,
     EXTRUSION_CLASS, LINE_CLASS, MESH_CLASS, POINT_CLASS, POINT_CLOUD_CLASS, POLYCURVE_CLASS,
     POLYLINE_CLASS, SUBD_CLASS,
 };
-use super::RhinoCodec;
+use crate::RhinoCodec;
 
 fn decode(bytes: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
     RhinoCodec
@@ -146,9 +145,9 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let large = object_record(1, [0; 16], &[0x55; 64]);
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     let bytes = archive(&[large.clone(), point.clone()]);
-    let scan = super::container::scan_owned(bytes).expect("complete archive scan");
-    let result = super::decode::with_expand(&scan, |expand| {
-        let mut context = super::decode::DecodeContext::new(&scan, expand);
+    let scan = crate::container::scan_owned(bytes).expect("complete archive scan");
+    let result = crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
         context.commit()
     });
@@ -162,9 +161,9 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     assert_eq!(retained[1].data.as_deref(), Some(point.as_slice()));
 
     let two_points = archive(&[point.clone(), point.clone()]);
-    let scan = super::container::scan_owned(two_points).expect("complete archive scan");
-    let result = super::decode::with_expand(&scan, |expand| {
-        let mut context = super::decode::DecodeContext::new(&scan, expand);
+    let scan = crate::container::scan_owned(two_points).expect("complete archive scan");
+    let result = crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
         context.commit()
     });
@@ -209,15 +208,15 @@ fn repeat_decode_is_byte_deterministic_for_ir_and_report() {
 #[test]
 fn subd_complete_object_commits_across_supported_archive_bands() {
     for (version, archive_band) in [
-        ("50", super::chunks::ArchiveVersion::V5),
-        ("60", super::chunks::ArchiveVersion::V6),
-        ("70", super::chunks::ArchiveVersion::V7),
-        ("80", super::chunks::ArchiveVersion::V8),
+        ("50", crate::chunks::ArchiveVersion::V5),
+        ("60", crate::chunks::ArchiveVersion::V6),
+        ("70", crate::chunks::ArchiveVersion::V7),
+        ("80", crate::chunks::ArchiveVersion::V8),
     ] {
         let object = object_record(
             0x0004_0000,
             SUBD_CLASS,
-            &super::subd::tests::quad_payload(archive_band),
+            &crate::subd::tests::quad_payload(archive_band),
         );
         let result = decode(&archive_version(version, &[object]));
         assert_eq!(result.ir().model.subds.len(), 1, "archive {version}");
@@ -481,7 +480,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
 #[test]
 fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
     for minor in 0..=3 {
-        let payload = super::extrusion::tests::archive_payload(
+        let payload = crate::extrusion::tests::archive_payload(
             minor,
             [minor != 2, minor == 2],
             false,
@@ -513,7 +512,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
         .is_ok());
     }
 
-    let payload = super::extrusion::tests::archive_payload(2, [true, true], true, false);
+    let payload = crate::extrusion::tests::archive_payload(2, [true, true], true, false);
     let result = decode(&archive(&[object_record(0x10, EXTRUSION_CLASS, &payload)]));
     assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
     assert_eq!(result.ir().model.faces.len(), 2);
@@ -526,7 +525,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
 
 #[test]
 fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
-    let mut malformed = super::extrusion::tests::archive_payload(2, [true, false], false, false);
+    let mut malformed = crate::extrusion::tests::archive_payload(2, [true, false], false, false);
     let profile_count = malformed.len() - 4 - 2 - 4;
     malformed[profile_count..profile_count + 4].copy_from_slice(&2_i32.to_le_bytes());
     let body = &malformed[12..malformed.len() - 4];
@@ -564,10 +563,10 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
 fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances() {
     let payload = brep_payload(false);
     assert_eq!(payload[13], 0x10);
-    super::brep::parse(
+    crate::brep::parse(
         &payload,
         0..payload.len(),
-        super::chunks::ArchiveVersion::V5,
+        crate::chunks::ArchiveVersion::V5,
         None,
     )
     .expect("direct Brep fixture parse");

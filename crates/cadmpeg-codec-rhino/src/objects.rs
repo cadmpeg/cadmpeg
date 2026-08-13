@@ -1391,3 +1391,6 @@ pub(crate) fn resolve_identities(
         object.warnings.extend(local_warnings);
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

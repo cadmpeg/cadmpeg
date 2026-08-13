@@ -1378,7 +1378,7 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::archive_test_support::crc_chunk;
+    use crate::test_support::crc_chunk;
 
     #[test]
     fn angular_measurement_uses_counterclockwise_extension_sweep() {

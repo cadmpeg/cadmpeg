@@ -722,3 +722,6 @@ pub(crate) fn decode(
         crate::mesh::MeshExpand::new(ctx, root),
     ))
 }
+
+#[cfg(test)]
+pub(crate) mod tests;
