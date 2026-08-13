@@ -30,10 +30,6 @@ use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severit
 use cadmpeg_ir::units::{Tolerances, Units};
 use std::collections::BTreeMap;
 
-#[cfg(feature = "fuzzing")]
-#[doc(hidden)]
-pub mod fuzz;
-
 /// The stable format identifier and native namespace.
 const FORMAT: &str = "sat";
 
