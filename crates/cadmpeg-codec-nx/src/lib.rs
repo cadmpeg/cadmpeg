@@ -99,6 +99,10 @@ mod vec3_at;
 #[doc(hidden)]
 pub mod fuzz;
 
+#[cfg(feature = "profile")]
+#[doc(hidden)]
+pub mod profile;
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
