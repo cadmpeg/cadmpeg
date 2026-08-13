@@ -13,13 +13,14 @@
 //! Use [`crate::topology`] to resolve returned record offsets into topology.
 #![deny(clippy::disallowed_methods)]
 
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::framing::{
     fixed_len, fixed_record_boundary, fixed_record_candidates, read_sequence_at, FixedRecordFrame,
 };
-use crate::view_at::{f64_be_at, vec3_be_at};
+use crate::vec3_at::vec3_be_at;
 
 /// A decoded analytic surface and its source offset.
 #[derive(Debug, Clone)]
@@ -233,7 +234,7 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let origin = vec3_be_at(s, b + 19)?;
     let axis = vec3_be_at(s, b + 43)?;
-    let radius = f64_be_at(s, b + 67)?;
+    let radius = View::f64_be_at(s, b + 67)?;
     let x_axis = vec3_be_at(s, b + 75)?;
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(origin) || !valid_radius(radius) {
         return None;
@@ -249,9 +250,9 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let origin = vec3_be_at(s, b + 19)?;
     let axis = vec3_be_at(s, b + 43)?;
-    let radius = f64_be_at(s, b + 67)?;
-    let sin_half = f64_be_at(s, b + 75)?;
-    let cos_half = f64_be_at(s, b + 83)?;
+    let radius = View::f64_be_at(s, b + 67)?;
+    let sin_half = View::f64_be_at(s, b + 75)?;
+    let cos_half = View::f64_be_at(s, b + 83)?;
     let x_axis = vec3_be_at(s, b + 91)?;
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(origin) || !valid_cone_radius(radius)
     {
@@ -279,7 +280,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 
 fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let center = vec3_be_at(s, b + 19)?;
-    let radius = f64_be_at(s, b + 43)?;
+    let radius = View::f64_be_at(s, b + 43)?;
     let axis = vec3_be_at(s, b + 51)?;
     let x_axis = vec3_be_at(s, b + 75)?;
     if !is_orthonormal_frame(axis, x_axis) || !valid_position(center) || !valid_radius(radius) {
@@ -296,8 +297,8 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
 fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let center = vec3_be_at(s, b + 19)?;
     let axis = vec3_be_at(s, b + 43)?;
-    let major = f64_be_at(s, b + 67)?;
-    let minor = f64_be_at(s, b + 75)?;
+    let major = View::f64_be_at(s, b + 67)?;
+    let minor = View::f64_be_at(s, b + 75)?;
     let x_axis = vec3_be_at(s, b + 83)?;
     // A horn torus (major == minor) is valid; both radii must be positive and
     // finite. A zero major radius is degenerate and rejected.
@@ -335,7 +336,7 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
     let center = vec3_be_at(s, b + 19)?;
     let normal = vec3_be_at(s, b + 43)?;
     let x_axis = vec3_be_at(s, b + 67)?;
-    let radius = f64_be_at(s, b + 91)?;
+    let radius = View::f64_be_at(s, b + 91)?;
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
@@ -351,8 +352,8 @@ fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
     let center = vec3_be_at(s, b + 19)?;
     let normal = vec3_be_at(s, b + 43)?;
     let x_axis = vec3_be_at(s, b + 67)?;
-    let major = f64_be_at(s, b + 91)?;
-    let minor = f64_be_at(s, b + 99)?;
+    let major = View::f64_be_at(s, b + 91)?;
+    let minor = View::f64_be_at(s, b + 99)?;
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(center) {
         return None;
     }

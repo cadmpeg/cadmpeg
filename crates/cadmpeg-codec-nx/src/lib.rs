@@ -91,7 +91,7 @@ pub(crate) mod om;
 pub(crate) mod om_tokens;
 pub mod parasolid;
 pub mod topology;
-mod view_at;
+mod vec3_at;
 
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]

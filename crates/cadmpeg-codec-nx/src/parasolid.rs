@@ -15,7 +15,7 @@ use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
-use crate::view_at::{f64_be_at, u16_be_at, u32_be_at, vec3_be_at};
+use crate::vec3_at::vec3_be_at;
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -326,7 +326,7 @@ pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<Field
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let count = usize::try_from(u32_be_at(bytes, at)?).ok()?;
+    let count = usize::try_from(View::u32_be_at(bytes, at)?).ok()?;
     (count > 0).then_some(())?;
     at += 4;
     let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
@@ -347,7 +347,8 @@ pub(crate) fn entity_52_integer_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<Entity52IntegerRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x52, 4, |value| u32_be_at(value, 0))?;
+    let record =
+        counted_value_record_at(bytes, offset, 0x52, 4, |value| View::u32_be_at(value, 0))?;
     Some(Entity52IntegerRecord {
         offset: record.offset,
         byte_len: record.byte_len,
@@ -362,7 +363,7 @@ pub(crate) fn entity_53_double_record_at(
     offset: usize,
 ) -> Option<Entity53DoubleRecord> {
     let record = counted_value_record_at(bytes, offset, 0x53, 8, |value| {
-        let value = f64_be_at(value, 0)?;
+        let value = View::f64_be_at(value, 0)?;
         value.is_finite().then_some(value)
     })?;
     Some(Entity53DoubleRecord {
@@ -428,7 +429,8 @@ pub(crate) fn entity_57_axis_record_at(bytes: &[u8], offset: usize) -> Option<En
 
 /// Decode one complete type-88 tag-value record at `offset`.
 pub(crate) fn entity_58_tag_record_at(bytes: &[u8], offset: usize) -> Option<Entity58TagRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x58, 4, |value| u32_be_at(value, 0))?;
+    let record =
+        counted_value_record_at(bytes, offset, 0x58, 4, |value| View::u32_be_at(value, 0))?;
     Some(Entity58TagRecord {
         offset: record.offset,
         byte_len: record.byte_len,
@@ -456,7 +458,8 @@ pub(crate) fn entity_62_unicode_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<Entity62UnicodeRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x62, 2, |value| u16_be_at(value, 0))?;
+    let record =
+        counted_value_record_at(bytes, offset, 0x62, 2, |value| View::u16_be_at(value, 0))?;
     let value = String::from_utf16(&record.values).ok()?;
     Some(Entity62UnicodeRecord {
         offset: record.offset,
@@ -486,7 +489,7 @@ fn counted_value_record_at<T>(
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let count = u32_be_at(bytes, at)
+    let count = View::u32_be_at(bytes, at)
         .map(|value| value as usize)
         .filter(|count| *count > 0)?;
     at += 4;
@@ -524,7 +527,7 @@ pub(crate) fn entity_54_string_record_at(
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let length = u32_be_at(bytes, at)
+    let length = View::u32_be_at(bytes, at)
         .map(|value| value as usize)
         .filter(|length| *length > 0)?;
     at += 4;
@@ -559,10 +562,10 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
     if bytes.get(at) == Some(&0xff) {
         at += 1;
     }
-    let flags = u32_be_at(bytes, at)?;
+    let flags = View::u32_be_at(bytes, at)?;
     at += 4;
     let xmt = read_xmt(bytes, &mut at)?;
-    let sequence = u32_be_at(bytes, at)?;
+    let sequence = View::u32_be_at(bytes, at)?;
     at += 4;
     let definition_xmt = read_xmt(bytes, &mut at)?;
     (xmt > 1 && sequence != 0 && (1..=0x20).contains(&flags)).then_some(())?;
@@ -613,7 +616,7 @@ fn attribute_identifiers(bytes: &[u8]) -> Vec<AttributeIdentifier<'_>> {
             if bytes.get(at) == Some(&0xff) {
                 at += 1;
             }
-            let name_len = usize::try_from(u32_be_at(bytes, at)?).ok()?;
+            let name_len = usize::try_from(View::u32_be_at(bytes, at)?).ok()?;
             at += 4;
             let xmt = read_xmt(bytes, &mut at)?;
             let name_end = at.checked_add(name_len)?;
@@ -642,12 +645,12 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             if bytes.get(at) == Some(&0xff) {
                 at += 1;
             }
-            let field_count = u32_be_at(bytes, at)?;
+            let field_count = View::u32_be_at(bytes, at)?;
             at += 4;
             let xmt = read_xmt(bytes, &mut at)?;
             let next_definition_xmt = read_xmt(bytes, &mut at)?;
             let identifier_xmt = read_xmt(bytes, &mut at)?;
-            let type_id = u32_be_at(bytes, at)?;
+            let type_id = View::u32_be_at(bytes, at)?;
             at += 4;
             let action_codes: [u8; 8] = bytes.get(at..at + 8)?.try_into().ok()?;
             (xmt > 1
