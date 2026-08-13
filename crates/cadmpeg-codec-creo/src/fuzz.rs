@@ -36,6 +36,21 @@ pub fn scalar(data: &[u8]) {
     let _ = decode(data, 0);
 }
 
+/// Exercise Creo compact integer decoding.
+pub fn compact_int(data: &[u8]) {
+    let _ = crate::psb::compact_int(data, 0);
+}
+
+/// Exercise Creo PSB token stream parsing.
+pub fn psb_tokens(data: &[u8]) {
+    let _ = crate::psb::tokens(data);
+}
+
+/// Exercise Creo short-form float decoding.
+pub fn short_form_float(data: &[u8]) {
+    let _ = crate::psb::short_form_float(data, 0);
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -44,6 +59,9 @@ mod tests {
         super::curve_prototypes(&[]);
         super::surface_rows(&[]);
         super::scalar(&[]);
+        super::compact_int(&[]);
+        super::psb_tokens(&[]);
+        super::short_form_float(&[]);
     }
 
     #[test]
@@ -53,5 +71,8 @@ mod tests {
         super::curve_prototypes(&data);
         super::surface_rows(&data);
         super::scalar(&data);
+        super::compact_int(&data);
+        super::psb_tokens(&data);
+        super::short_form_float(&data);
     }
 }

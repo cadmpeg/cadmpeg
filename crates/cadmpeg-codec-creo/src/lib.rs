@@ -68,7 +68,8 @@ pub mod feature;
 pub mod legacy;
 pub(crate) mod placement;
 pub mod primdata;
-pub mod psb;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+pub(crate) mod psb;
 pub mod reference;
 pub(crate) mod scalar;
 pub(crate) mod surface;
