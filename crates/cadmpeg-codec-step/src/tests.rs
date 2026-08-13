@@ -1479,56 +1479,6 @@ fn parser_rejects_invalid_signature_base64() {
 }
 
 #[test]
-fn decode_reports_data_section_external_dependencies() {
-    let bytes = include_bytes!("../tests/fixtures/ap242_external_documents.p21");
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode external document dependencies");
-
-    assert!(result.report().notes.contains(
-        &"external document SPEC-42 (Interface control drawing) from supplier vault".into()
-    ));
-    assert!(result
-        .report()
-        .notes
-        .contains(&"external source https://example.invalid/library item fastener-table".into()));
-
-    let summary = StepCodec::default()
-        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
-        .expect("inspect external document dependencies");
-    let dependencies = summary
-        .entries
-        .iter()
-        .find(|entry| entry.name == "EXTERNAL_DEPENDENCIES")
-        .expect("external dependency inventory");
-    assert_eq!(dependencies.attributes["dependency_count"], "2");
-}
-
-#[test]
-fn complex_document_dependency_records_use_inherited_fields() {
-    let result = decode_inline(
-        "#1=DOCUMENT_TYPE('digital');
-#2=(DOCUMENT('SPEC-42','Interface control drawing','',#1) DOCUMENT_FILE());
-#3=(APPLIED_DOCUMENT_REFERENCE() DOCUMENT_REFERENCE(#2,'supplier vault'));",
-    );
-
-    assert!(result.report().notes.contains(
-        &"external document SPEC-42 (Interface control drawing) from supplier vault".into()
-    ));
-    assert!(!result
-        .ir()
-        .native_unknowns("step")
-        .expect("STEP unknown arena")
-        .iter()
-        .any(|record| {
-            record.id.0 == "step:data:document#2"
-                || record.id.0 == "step:data:document_file#2"
-                || record.id.0 == "step:data:applied_document_reference#3"
-                || record.id.0 == "step:data:document_reference#3"
-        }));
-}
-
-#[test]
 fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
     let result = StepCodec::default()

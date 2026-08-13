@@ -17,7 +17,7 @@ use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 use crate::ids::StepIdentity;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
-mod dependencies;
+pub(crate) mod dependencies;
 mod drawing;
 mod geometry;
 mod index;
