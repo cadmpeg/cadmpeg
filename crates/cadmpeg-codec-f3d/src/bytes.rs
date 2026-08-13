@@ -11,6 +11,7 @@
 
 use std::ops::RangeInclusive;
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, utf16le_at};
 
 /// Read a u32-length-prefixed ASCII string whose length lies in `bounds`,
@@ -101,7 +102,7 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
     if present != 1 {
         return None;
     }
-    let target = u64::from_le_bytes(bytes.get(cursor..cursor + 8)?.try_into().ok()?);
+    let target = View::u64_le_at(bytes, cursor)?;
     cursor += 8;
     // One container generation writes the target's type GUID inline, between
     // the entity ID and the `cross_document` flag.

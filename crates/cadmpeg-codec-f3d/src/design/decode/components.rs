@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode fixed local component-occurrence carriers.
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 
@@ -62,11 +63,8 @@ pub(crate) fn exact_component_occurrence(
     {
         return None;
     }
-    let component_record_index =
-        u64::from_le_bytes(bytes.get(start + 25..start + 33)?.try_into().ok()?);
-    if u64::from_le_bytes(bytes.get(start + 198..start + 206)?.try_into().ok()?)
-        != component_record_index
-    {
+    let component_record_index = View::u64_le_at(bytes, start + 25)?;
+    if View::u64_le_at(bytes, start + 198)? != component_record_index {
         return None;
     }
     let occurrence_ordinal = u32_at(bytes, start + 40)?;

@@ -4,6 +4,7 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::is_guid_hyphenated;
@@ -39,34 +40,22 @@ struct AssetManifestHeader {
 }
 
 struct Cursor<'a> {
-    bytes: &'a [u8],
-    at: usize,
+    view: View<'a>,
 }
 
 impl<'a> Cursor<'a> {
-    const fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, at: 0 }
+    fn new(bytes: &'a [u8]) -> Self {
+        Self {
+            view: View::over_retained(bytes),
+        }
     }
 
     fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
-        let value = *self.bytes.get(self.at).ok_or_else(|| truncated(field))?;
-        self.at += 1;
-        Ok(value)
+        self.view.u8().ok_or_else(|| truncated(field))
     }
 
     fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        let end = self
-            .at
-            .checked_add(4)
-            .ok_or_else(|| malformed(field, "offset overflow"))?;
-        let raw = self
-            .bytes
-            .get(self.at..end)
-            .ok_or_else(|| truncated(field))?;
-        self.at = end;
-        Ok(u32::from_le_bytes(raw.try_into().expect(
-            "invariant: the manifest u32 slice has four bytes",
-        )))
+        self.view.u32_le().ok_or_else(|| truncated(field))
     }
 
     fn expect_u32(&mut self, field: &str, expected: u32) -> Result<(), CodecError> {
@@ -82,18 +71,10 @@ impl<'a> Cursor<'a> {
 
     fn ascii(&mut self, field: &str) -> Result<String, CodecError> {
         let count = self.count(field, MAX_MANIFEST_STRING_UNITS)?;
-        let end = self
-            .at
-            .checked_add(count)
-            .ok_or_else(|| malformed(field, "length overflow"))?;
-        let raw = self
-            .bytes
-            .get(self.at..end)
-            .ok_or_else(|| truncated(field))?;
+        let raw = self.view.take(count).ok_or_else(|| truncated(field))?;
         if !raw.iter().all(|byte| matches!(byte, 0x20..=0x7e)) {
             return Err(malformed(field, "contains a non-printable ASCII byte"));
         }
-        self.at = end;
         Ok(std::str::from_utf8(raw)
             .expect("invariant: printable ASCII is UTF-8")
             .to_owned())
@@ -112,30 +93,11 @@ impl<'a> Cursor<'a> {
 
     fn utf16(&mut self, field: &str) -> Result<String, CodecError> {
         let count = self.count(field, MAX_MANIFEST_STRING_UNITS)?;
-        let byte_count = count
-            .checked_mul(2)
-            .ok_or_else(|| malformed(field, "length overflow"))?;
-        let end = self
-            .at
-            .checked_add(byte_count)
-            .ok_or_else(|| malformed(field, "length overflow"))?;
-        let raw = self
-            .bytes
-            .get(self.at..end)
+        let units = self
+            .view
+            .read_counted(count as u64, 2, View::u16_le)
             .ok_or_else(|| truncated(field))?;
-        let units = raw
-            .chunks_exact(2)
-            .map(|unit| {
-                u16::from_le_bytes(
-                    unit.try_into()
-                        .expect("invariant: UTF-16 chunks have two bytes"),
-                )
-            })
-            .collect::<Vec<_>>();
-        let value = String::from_utf16(&units)
-            .map_err(|_| malformed(field, "contains invalid UTF-16LE"))?;
-        self.at = end;
-        Ok(value)
+        String::from_utf16(&units).map_err(|_| malformed(field, "contains invalid UTF-16LE"))
     }
 
     fn expect_utf16(&mut self, field: &str, expected: &str) -> Result<(), CodecError> {
@@ -170,10 +132,10 @@ impl<'a> Cursor<'a> {
     }
 
     fn finish(self, field: &str) -> Result<(), CodecError> {
-        if self.at != self.bytes.len() {
+        if !self.view.is_empty() {
             return Err(malformed(
                 field,
-                format!("{} trailing byte(s)", self.bytes.len() - self.at),
+                format!("{} trailing byte(s)", self.view.remaining()),
             ));
         }
         Ok(())

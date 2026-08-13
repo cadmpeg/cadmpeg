@@ -14,6 +14,7 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, PersistentSubentityTag,
     SketchCurveIdentity, SketchPoint,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
@@ -560,21 +561,11 @@ pub(crate) fn indexed_record_containing(
 }
 
 pub(crate) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> Option<Vec<i32>> {
-    let program = bytes.get(start..end)?;
-    if program.is_empty() || !program.len().is_multiple_of(4) {
+    let mut view = View::over_retained(bytes).child(start, end)?;
+    if view.remaining() == 0 || !view.remaining().is_multiple_of(4) {
         return None;
     }
-    Some(
-        program
-            .chunks_exact(4)
-            .map(|word| {
-                i32::from_le_bytes(
-                    word.try_into()
-                        .expect("invariant: chunks_exact(4) yields four-byte slices"),
-                )
-            })
-            .collect(),
-    )
+    view.read_counted((view.remaining() / 4) as u64, 4, View::i32_le)
 }
 
 /// Decode paired typed sketch loci nested immediately after dimensional
@@ -1219,8 +1210,7 @@ pub(crate) fn parse_dimension_annotation_frame(
     if key != "EntityGenesis" || meta_type != "IntrinsicMetaTypeuint64" {
         return None;
     }
-    let entity_genesis =
-        u64::from_le_bytes(bytes.get(after_type..after_type + 8)?.try_into().ok()?);
+    let entity_genesis = View::u64_le_at(bytes, after_type)?;
     let annotation_byte_offset = after_type.checked_add(8)?;
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
