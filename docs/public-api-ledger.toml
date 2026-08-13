@@ -369,3 +369,10 @@ crate = "cadmpeg-codec-sat"
 kind = "visibility"
 item = "cadmpeg_codec_sat::fuzz"
 reason = "remove unused fuzz module and fuzzing feature"
+
+[[change]]
+commit = "a7e203c68cc8044d1c9d966d568c7a69f62d969e"
+crate = "cadmpeg-codec-creo"
+kind = "visibility"
+item = "cadmpeg_codec_creo::{container,curve,feature,legacy,primdata,psb,reference,scalar,surface,topology}"
+reason = "hide parser modules behind fuzz facade"
