@@ -90,7 +90,8 @@ pub(crate) mod om;
 #[allow(dead_code)] // Object-model token parsing is an internal dependency.
 pub(crate) mod om_tokens;
 pub mod parasolid;
-pub mod topology;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+pub(crate) mod topology;
 mod vec3_at;
 
 #[cfg(feature = "fuzzing")]

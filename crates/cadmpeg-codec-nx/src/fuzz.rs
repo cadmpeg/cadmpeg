@@ -47,6 +47,17 @@ pub fn nurbs_surfaces(data: &[u8]) {
     let _ = crate::nurbs::surfaces(data);
 }
 
+/// Exercise NX Parasolid topology parsing.
+pub fn topology(data: &[u8]) {
+    let _ = crate::topology::Graph::parse(data);
+    let _ = crate::topology::composite_curves(data);
+    let _ = crate::topology::intersection_data_curves(data);
+    let _ = crate::topology::blend_surfaces(data);
+    let _ = crate::topology::offset_surfaces(data);
+    let _ = crate::topology::surface_curves(data);
+    let _ = crate::topology::trimmed_curves(data);
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -59,6 +70,7 @@ mod tests {
         super::intersection(&[]);
         super::nurbs_curves(&[]);
         super::nurbs_surfaces(&[]);
+        super::topology(&[]);
     }
 
     #[test]
@@ -80,5 +92,11 @@ mod tests {
         let stream = crate::test_support::bspline_partition_stream();
         super::nurbs_curves(&stream);
         super::nurbs_surfaces(&stream);
+    }
+
+    #[test]
+    fn topology_wrapper_accepts_fixture() {
+        let stream = crate::test_support::topology_partition_stream();
+        super::topology(&stream);
     }
 }
