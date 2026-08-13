@@ -9,8 +9,8 @@ use flate2::Compression;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::LossCategory;
@@ -30,13 +30,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         SimpleHoleForm,
     };
     use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
-    use cadmpeg_ir::features::{
-        FeatureDefinition, HoleKind, HolePlacement, Length, Termination,
-    };
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length, Termination};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
-        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
-        VertexId,
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::native::Native;
@@ -280,12 +277,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     .is_none());
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(super::blind_hole_body_projection(
-        &sheet,
-        std::slice::from_ref(&operation),
-        &outputs,
-    )
-    .is_none());
+    assert!(
+        super::blind_hole_body_projection(&sheet, std::slice::from_ref(&operation), &outputs,)
+            .is_none()
+    );
     assert!(super::blind_hole_body_projection(
         &ir,
         &[operation.clone(), "second-operation".into()],
@@ -307,8 +302,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
-        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
-        VertexId,
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::native::Native;
@@ -587,9 +581,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     missing_shoulder.model.shells[0]
         .faces
         .retain(|face| face != &FaceId("shoulder-face".into()));
-    assert!(
-        super::counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none()
-    );
+    assert!(super::counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none());
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
     assert!(super::counterbore_body_projection(&sheet, &operations, &outputs).is_none());
@@ -714,9 +706,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     ));
 
     ir.model.procedural_surfaces.push(make_offset(99, -40.0));
-    assert!(
-        super::offset_surface_feature_definition(&ir, std::slice::from_ref(&output)).is_some()
-    );
+    assert!(super::offset_surface_feature_definition(&ir, std::slice::from_ref(&output)).is_some());
     ir.model.procedural_surfaces.pop();
 
     let conflicting = make_offset(2, -30.0);
@@ -775,8 +765,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         .expect("output body")
         .kind = cadmpeg_ir::topology::BodyKind::Sheet;
     assert!(
-        super::thicken_feature_definition(&sheet_output, std::slice::from_ref(&output))
-            .is_none()
+        super::thicken_feature_definition(&sheet_output, std::slice::from_ref(&output)).is_none()
     );
 
     let input = BodyId("nx:s4:body#input".into());
@@ -886,11 +875,10 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
         unreachable!()
     };
     *support = SurfaceId("nx:s4:nurbs-surf#other".into());
-    assert!(super::thicken_feature_definition(
-        &mismatched_support,
-        std::slice::from_ref(&output)
-    )
-    .is_none());
+    assert!(
+        super::thicken_feature_definition(&mismatched_support, std::slice::from_ref(&output))
+            .is_none()
+    );
 
     let ProceduralSurfaceDefinition::Offset { distance, .. } = &mut ir
         .model
@@ -1000,8 +988,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let first_support = SurfaceId("nx:s4:blend-support#a".into());
     let second_support = SurfaceId("nx:s4:blend-support#b".into());
     for procedural in &mut face_blend_ir.model.procedural_surfaces {
-        let ProceduralSurfaceDefinition::Blend { supports, .. } = &mut procedural.definition
-        else {
+        let ProceduralSurfaceDefinition::Blend { supports, .. } = &mut procedural.definition else {
             unreachable!()
         };
         *supports = [
@@ -1139,10 +1126,9 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::parasolid::{
-        ParasolidAttributeDefinition, ParasolidEntity51NumericKind,
-        ParasolidEntity51NumericUse, ParasolidEntity52IntegerRecord,
-        ParasolidEntity53DoubleRecord, ParasolidTopologyAttributeClassUse,
-        ParasolidTopologyAttributeListReference,
+        ParasolidAttributeDefinition, ParasolidEntity51NumericKind, ParasolidEntity51NumericUse,
+        ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
+        ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeListReference,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -1439,9 +1425,8 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
 #[test]
 fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     use crate::native::parasolid::{
-        ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
-        ParasolidAttributeFieldValueKind, ParasolidTopologyAttributeClassUse,
-        ParasolidTopologyAttributeListReference,
+        ParasolidAttributeDefinition, ParasolidAttributeFieldUse, ParasolidAttributeFieldValueKind,
+        ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeListReference,
     };
 
     let reference = ParasolidTopologyAttributeListReference {
@@ -1536,9 +1521,9 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
 
     use crate::native::parasolid::{
         ParasolidAttributeFieldValueKind as Kind, ParasolidEntity51StructuredUse,
-        ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
-        ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
-        ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
+        ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
+        ParasolidEntityVectorRecord, ParasolidTopologyAttributeListReference,
+        ParasolidVectorValueKind,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();

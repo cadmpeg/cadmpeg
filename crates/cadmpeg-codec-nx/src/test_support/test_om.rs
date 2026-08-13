@@ -686,4 +686,3 @@ pub(crate) fn size_framed_om_section_with_repeated_operations(count: usize) -> V
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
 }
-

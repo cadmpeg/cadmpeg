@@ -17,7 +17,7 @@ pub(crate) fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOption
     }
 }
 
+mod blend_contact;
 mod emission;
 mod parameterization;
-mod blend_contact;
 mod selection;

@@ -9,8 +9,8 @@ use flate2::Compression;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::LossCategory;
@@ -134,13 +134,8 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     expressions[2].source_entry = "section-a".into();
     expressions[2].source_table = "table-a".into();
     assert_eq!(
-        super::feature_block_dimensions(
-            &[construction],
-            &[binding],
-            &declarations,
-            &expressions,
-        )
-        .len(),
+        super::feature_block_dimensions(&[construction], &[binding], &declarations, &expressions,)
+            .len(),
         1
     );
 }
@@ -325,8 +320,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
 #[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     use super::{
-        FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord,
-        FeatureSketchReference,
+        FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,
     };
 
     let label = FeatureOperationLabel {
@@ -490,8 +484,7 @@ fn nx_offset_store_block_bytes_follow_catalog_identity() {
         (&[0xcc][..], 107)
     );
 
-    let control_free =
-        super::offset_data_block_bytes_for_section(4, 200, None, &[first, second]);
+    let control_free = super::offset_data_block_bytes_for_section(4, 200, None, &[first, second]);
     assert_eq!(
         control_free["nx:om-data-blocks-4:block#0"],
         (&[0xbb][..], 206)
@@ -1061,9 +1054,7 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
 
     let mut mismatched = lane.clone();
     mismatched.object_indices[1] = 102;
-    assert!(
-        super::feature_extrude_construction_profiles(&references, &[mismatched]).is_empty()
-    );
+    assert!(super::feature_extrude_construction_profiles(&references, &[mismatched]).is_empty());
 
     let mut unresolved = FeatureOperationBodyReferenceLane {
         id: "lane".to_string(),
@@ -1078,9 +1069,7 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         source_offsets: vec![20, 21],
     };
     unresolved.data_blocks[1] = None;
-    assert!(
-        super::feature_extrude_construction_profiles(&references, &[unresolved]).is_empty()
-    );
+    assert!(super::feature_extrude_construction_profiles(&references, &[unresolved]).is_empty());
 }
 
 #[test]
@@ -1263,11 +1252,10 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
 
     let mut unresolved = reference;
     unresolved.data_block = None;
-    assert!(super::feature_extrude_32_constructions(
-        &[unresolved],
-        std::slice::from_ref(&branch),
-    )
-    .is_empty());
+    assert!(
+        super::feature_extrude_32_constructions(&[unresolved], std::slice::from_ref(&branch),)
+            .is_empty()
+    );
     let mut unresolved_lane = branch;
     unresolved_lane.first_data_blocks[0] = None;
     assert!(super::feature_extrude_32_constructions(
@@ -1326,16 +1314,15 @@ fn data_block_object_frame_ids_include_the_store_qualifier() {
 fn feature_input_identity_groups_require_distinct_operations_and_preserve_order() {
     use super::{feature_input_block_identity_groups, FeatureInputBlock};
 
-    let input =
-        |id: &str, operation: &str, slot: u8, block: &str, offset: u64| FeatureInputBlock {
-            id: id.to_string(),
-            operation_label: operation.to_string(),
-            input_slot: slot,
-            object_index: 7,
-            raw_object_index: vec![7],
-            data_block: block.to_string(),
-            source_offset: offset,
-        };
+    let input = |id: &str, operation: &str, slot: u8, block: &str, offset: u64| FeatureInputBlock {
+        id: id.to_string(),
+        operation_label: operation.to_string(),
+        input_slot: slot,
+        object_index: 7,
+        raw_object_index: vec![7],
+        data_block: block.to_string(),
+        source_offset: offset,
+    };
     let groups = feature_input_block_identity_groups(&[
         input("late", "operation-b", 1, "block-7", 30),
         input("single-a", "operation-a", 0, "block-8", 10),
@@ -1654,8 +1641,7 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use super::{
         feature_sketch_fixed_points, feature_sketch_payload_named_records,
-        FeatureSketchConstructionPayload, FeatureSketchPayloadFixedPair,
-        FeatureSketchPayloadName,
+        FeatureSketchConstructionPayload, FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
     };
     let payload = FeatureSketchConstructionPayload {
         id: "payload".to_string(),
@@ -1761,8 +1747,7 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
 #[test]
 fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane() {
     use super::{
-        feature_sketch_preceding_named_point_uses, FeatureSketchReference,
-        OffsetStoreNamedPoint,
+        feature_sketch_preceding_named_point_uses, FeatureSketchReference, OffsetStoreNamedPoint,
     };
 
     let reference = |ordinal, terminal, block: Option<&str>| FeatureSketchReference {
@@ -1796,10 +1781,8 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
             "nx:om-data-blocks-2:block#11",
         ],
     );
-    let uses = feature_sketch_preceding_named_point_uses(
-        &references,
-        std::slice::from_ref(&preceding),
-    );
+    let uses =
+        feature_sketch_preceding_named_point_uses(&references, std::slice::from_ref(&preceding));
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].first_sketch_reference, references[0].id);
     assert_eq!(uses[0].named_point, preceding.id);
@@ -1822,9 +1805,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         "nx:offset-store:named-point#3-11",
         &["nx:om-data-blocks-3:block#11"],
     );
-    assert!(
-        feature_sketch_preceding_named_point_uses(&references, &[gap, other_store]).is_empty()
-    );
+    assert!(feature_sketch_preceding_named_point_uses(&references, &[gap, other_store]).is_empty());
 
     let unresolved = [references[0].clone(), reference(1, true, None)];
     assert!(feature_sketch_preceding_named_point_uses(
@@ -1851,8 +1832,8 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
 #[test]
 fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     use super::{
-        feature_sketch_point_groups, feature_sketch_point_uses,
-        FeatureSketchNamedPointBlockUse, FeatureSketchPoint, OffsetStoreNamedPoint,
+        feature_sketch_point_groups, feature_sketch_point_uses, FeatureSketchNamedPointBlockUse,
+        FeatureSketchPoint, OffsetStoreNamedPoint,
     };
 
     let operation_label = "nx:feature-history:operation-label#1-4".to_string();

@@ -9,8 +9,8 @@ use flate2::Compression;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::LossCategory;
@@ -131,31 +131,24 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
-    let operand =
-        |ordinal, object_index| crate::native::features::FeatureOperationBodyOperand {
-            id: format!("operand#{ordinal}"),
-            operation_label: "operation#0".to_string(),
-            body_object_index: 10,
-            body_reference_ordinal: 0,
-            ordinal,
-            operand_object_index: object_index,
-            raw_operand_object_index: vec![object_index as u8],
-            operand_data_block: None,
-            segment_body_bindings: vec![format!("binding#{ordinal}")],
-            source_offset: u64::from(ordinal),
-        };
+    let operand = |ordinal, object_index| crate::native::features::FeatureOperationBodyOperand {
+        id: format!("operand#{ordinal}"),
+        operation_label: "operation#0".to_string(),
+        body_object_index: 10,
+        body_reference_ordinal: 0,
+        ordinal,
+        operand_object_index: object_index,
+        raw_operand_object_index: vec![object_index as u8],
+        operand_data_block: None,
+        segment_body_bindings: vec![format!("binding#{ordinal}")],
+        source_offset: u64::from(ordinal),
+    };
     let operands = [operand(0, 20), operand(1, 30)];
     let references = operands.iter().collect::<Vec<_>>();
     let roots = BTreeMap::from([(10, 10), (20, 20), (30, 30)]);
 
     assert_eq!(
-        super::sew_body_feature_definition(
-            Some(10),
-            &[],
-            &references,
-            &roots,
-            &BTreeMap::new(),
-        ),
+        super::sew_body_feature_definition(Some(10), &[], &references, &roots, &BTreeMap::new(),),
         Some(FeatureDefinition::SewBodies {
             bodies: BodySelection::Local {
                 bodies: vec![
@@ -381,10 +374,7 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
         source_offset: 0,
     };
     assert_eq!(
-        super::offset_store_trim_body_feature_definition(
-            std::slice::from_ref(&body),
-            &[&operand],
-        ),
+        super::offset_store_trim_body_feature_definition(std::slice::from_ref(&body), &[&operand],),
         Some(FeatureDefinition::TrimBodies {
             targets: BodySelection::Local {
                 bodies: vec!["nx:om-data-blocks-2:block#114".to_string()],
@@ -398,11 +388,10 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
         })
     );
     assert!(super::offset_store_trim_body_feature_definition(&[], &[&operand]).is_none());
-    assert!(super::offset_store_trim_body_feature_definition(
-        &[body.clone(), body],
-        &[&operand],
-    )
-    .is_none());
+    assert!(
+        super::offset_store_trim_body_feature_definition(&[body.clone(), body], &[&operand],)
+            .is_none()
+    );
     assert_eq!(
         super::offset_store_trim_body_feature_definition(
             std::slice::from_ref(&(114, "nx:om-data-blocks-2:block#114".to_string())),
@@ -633,24 +622,12 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         }
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition(
-            "TEXT",
-            &["annotation", "Arial"],
-            None,
-            None,
-            None,
-        ),
+        super::non_boolean_feature_definition("TEXT", &["annotation", "Arial"], None, None, None,),
         cadmpeg_ir::features::FeatureDefinition::Native { .. }
     ));
     assert!(!super::projects_neutral_feature("TEXT"));
     assert!(matches!(
-        super::non_boolean_feature_definition(
-            "BLOCK",
-            &[],
-            Some([10.0, 20.0, 30.0]),
-            None,
-            None,
-        ),
+        super::non_boolean_feature_definition("BLOCK", &[], Some([10.0, 20.0, 30.0]), None, None,),
         cadmpeg_ir::features::FeatureDefinition::Block {
             dimensions: Some([
                 cadmpeg_ir::features::Length(10.0),
@@ -744,9 +721,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
             source_properties.clone(),
         ),
     ];
-    for (object_indices, outputs, body_references, body_operands, strings, properties) in
-        rejected
-    {
+    for (object_indices, outputs, body_references, body_operands, strings, properties) in rejected {
         assert!(super::non_modeling_history_definition(
             "EXTRACT_STRING",
             &object_indices,
@@ -1017,8 +992,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             .surfaces
             .iter_mut()
             .filter_map(|surface| {
-                let SurfaceGeometry::Plane { origin, normal, .. } = &mut surface.geometry
-                else {
+                let SurfaceGeometry::Plane { origin, normal, .. } = &mut surface.geometry else {
                     return None;
                 };
                 let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
@@ -1239,9 +1213,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ir.model.surfaces.push(second_surface);
 
     assert!(super::sphere_body_projection(&ir, &[]).is_none());
-    assert!(
-        super::sphere_body_projection(&ir, &[body, BodyId("second-body".into())]).is_none()
-    );
+    assert!(super::sphere_body_projection(&ir, &[body, BodyId("second-body".into())]).is_none());
 }
 
 #[test]
@@ -1406,13 +1378,8 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         scalar_lanes: vec!["lane".into(), "other-lane".into()],
         block_references: vec!["blocks".into(), "other-blocks".into()],
     };
-    let properties = super::simple_hole_native_properties(
-        operation,
-        &[template],
-        &[lane],
-        &[blocks],
-        &[group],
-    );
+    let properties =
+        super::simple_hole_native_properties(operation, &[template], &[lane], &[blocks], &[group]);
     assert_eq!(properties["simple_hole_template"], "template");
     assert_eq!(properties["simple_hole_repeated_scalar_lane"], "lane");
     assert_eq!(
@@ -1440,8 +1407,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     use cadmpeg_ir::features::HolePlacement;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
-        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
-        VertexId,
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::native::Native;
@@ -1602,11 +1568,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         outputs[&operations[1]].clone(),
     )]);
     assert_eq!(
-        super::hole_axis_placements_for_operations(
-            &single_hole,
-            &single_operation,
-            &single_output,
-        ),
+        super::hole_axis_placements_for_operations(&single_hole, &single_operation, &single_output,),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -1621,11 +1583,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     origin.y = 91.0;
     assert_eq!(
-        super::hole_axis_placements_for_operations(
-            &single_hole,
-            &single_operation,
-            &single_output,
-        ),
+        super::hole_axis_placements_for_operations(&single_hole, &single_operation, &single_output,),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -1666,8 +1624,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         )])
     );
     let mut different_radii = ir.clone();
-    let SurfaceGeometry::Cylinder { radius, .. } =
-        &mut different_radii.model.surfaces[1].geometry
+    let SurfaceGeometry::Cylinder { radius, .. } = &mut different_radii.model.surfaces[1].geometry
     else {
         unreachable!()
     };
@@ -1714,23 +1671,18 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     *radius += 0.1;
-    assert!(
-        hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,).is_empty()
-    );
+    assert!(hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,).is_empty());
     let mut coincident_boundaries = ir.clone();
-    let CurveGeometry::Circle { center, .. } =
-        &mut coincident_boundaries.model.curves[1].geometry
+    let CurveGeometry::Circle { center, .. } = &mut coincident_boundaries.model.curves[1].geometry
     else {
         unreachable!()
     };
     center.y = 0.0;
     assert!(
-        hole_diameters_for_operations(&coincident_boundaries, &operations, &outputs,)
-            .is_empty()
+        hole_diameters_for_operations(&coincident_boundaries, &operations, &outputs,).is_empty()
     );
     let mut nonparallel = single_hole.clone();
-    let SurfaceGeometry::Cylinder { axis, .. } = &mut nonparallel.model.surfaces[1].geometry
-    else {
+    let SurfaceGeometry::Cylinder { axis, .. } = &mut nonparallel.model.surfaces[1].geometry else {
         unreachable!()
     };
     *axis = Vector3::new(0.0, 0.0, 1.0);
@@ -1796,8 +1748,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         free_vertices: Vec::new(),
     });
     distinct.model.faces[1].shell = ShellId("second-shell".into());
-    let SurfaceGeometry::Cylinder { radius, .. } = &mut distinct.model.surfaces[1].geometry
-    else {
+    let SurfaceGeometry::Cylinder { radius, .. } = &mut distinct.model.surfaces[1].geometry else {
         unreachable!()
     };
     *radius = 3.0;
@@ -1844,10 +1795,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     assert!(hole_diameters_for_operations(
         &ir,
         &operations,
-        &std::collections::BTreeMap::from([(
-            "hole-a".to_string(),
-            vec![BodyId("body".into())],
-        )]),
+        &std::collections::BTreeMap::from([("hole-a".to_string(), vec![BodyId("body".into())],)]),
     )
     .is_empty());
 
@@ -1883,8 +1831,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 color: None,
                 tolerance: None,
             });
-            for (boundary, (loop_id, radius)) in loops.into_iter().zip([2.55, 3.55]).enumerate()
-            {
+            for (boundary, (loop_id, radius)) in loops.into_iter().zip([2.55, 3.55]).enumerate() {
                 let curve = CurveId(format!("cone-curve-{bore}-{end}-{boundary}"));
                 let edge = EdgeId(format!("cone-edge-{bore}-{end}-{boundary}"));
                 let coedge = CoedgeId(format!("cone-coedge-{bore}-{end}-{boundary}"));

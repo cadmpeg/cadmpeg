@@ -9,8 +9,8 @@ use flate2::Compression;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::LossCategory;
@@ -26,8 +26,7 @@ use super::*;
 #[test]
 fn segment_body_lineage_statuses_cover_every_bound_image() {
     use super::{
-        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
-        FeatureOperationLabel,
+        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
     };
     use crate::native::segments::{segment_body_lineage_statuses, SegmentBodyBinding};
     let labels = [
@@ -506,8 +505,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
 #[test]
 fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
     use super::{
-        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
-        FeatureOperationLabel,
+        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
     };
     use crate::native::segments::{segment_body_lineage_statuses, SegmentBodyBinding};
 
@@ -575,8 +573,7 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
 fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
     use super::{
         feature_simple_hole_construction_groups, FeatureOperationLabel,
-        FeatureSimpleHoleRepeatedScalarLane,
-        FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
+        FeatureSimpleHoleRepeatedScalarLane, FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
     };
     let label = |id: &str, ordinal: u32| FeatureOperationLabel {
         id: id.into(),
@@ -643,8 +640,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         reference("operation#1-2", "block-4"),
     ];
     assert!(
-        feature_simple_hole_construction_groups(&labels, &lanes, &duplicate_references)
-            .is_empty()
+        feature_simple_hole_construction_groups(&labels, &lanes, &duplicate_references).is_empty()
     );
 
     let duplicate_lanes = [
@@ -658,24 +654,20 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         reference("operation#1-3", "block-4"),
         reference("operation#1-4", "block-4"),
     ];
-    assert!(feature_simple_hole_construction_groups(
-        &labels,
-        &duplicate_lanes,
-        &shared_references
-    )
-    .is_empty());
+    assert!(
+        feature_simple_hole_construction_groups(&labels, &duplicate_lanes, &shared_references)
+            .is_empty()
+    );
 
     let unknown_lanes = [lane("operation#1-8"), lane("operation#1-9")];
     let unknown_references = [
         reference("operation#1-8", "block-4"),
         reference("operation#1-9", "block-4"),
     ];
-    assert!(feature_simple_hole_construction_groups(
-        &labels,
-        &unknown_lanes,
-        &unknown_references
-    )
-    .is_empty());
+    assert!(
+        feature_simple_hole_construction_groups(&labels, &unknown_lanes, &unknown_references)
+            .is_empty()
+    );
 }
 
 #[test]
@@ -735,8 +727,8 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
 #[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
     use super::{
-        feature_block_payload_point_groups, feature_block_payload_points,
-        FeatureBlockPayloadName, FeatureBlockPayloadNamedRecord, FeatureBlockPayloadScalar,
+        feature_block_payload_point_groups, feature_block_payload_points, FeatureBlockPayloadName,
+        FeatureBlockPayloadNamedRecord, FeatureBlockPayloadScalar,
     };
 
     let operation_label = "operation".to_string();
@@ -901,16 +893,15 @@ fn operation_history_groups_interleaved_sections_before_reversing() {
 
 #[test]
 fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
-    let label =
-        |section: &str, ordinal, value: &str, source_offset| super::FeatureOperationLabel {
-            id: format!("{section}-{ordinal}"),
-            section_link: section.to_string(),
-            ordinal,
-            value: value.to_string(),
-            object_indices: [None; 4],
-            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
-            source_offset,
-        };
+    let label = |section: &str, ordinal, value: &str, source_offset| super::FeatureOperationLabel {
+        id: format!("{section}-{ordinal}"),
+        section_link: section.to_string(),
+        ordinal,
+        value: value.to_string(),
+        object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        source_offset,
+    };
     let labels = [
         label("first", 1, "oldest-first", 210),
         label("second", 1, "oldest-second", 110),

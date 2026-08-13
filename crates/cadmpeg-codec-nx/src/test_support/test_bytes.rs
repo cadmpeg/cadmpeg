@@ -75,7 +75,6 @@ pub(crate) fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }
 
-
 /// Write three big-endian doubles into `rec` starting at `at`.
 pub(crate) fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
@@ -111,7 +110,6 @@ pub(crate) fn record(tag: u8, len: usize) -> Vec<u8> {
     r[1] = tag;
     r
 }
-
 
 pub(crate) fn zlib_compress(raw: &[u8]) -> Vec<u8> {
     // Level 1 emits the `78 01` zlib header NX/Parasolid streams use.

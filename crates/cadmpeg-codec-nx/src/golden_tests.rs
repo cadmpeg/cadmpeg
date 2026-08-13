@@ -731,9 +731,7 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ),
         (
             "two_support_ext11_charted_intersection_curve_stream",
-            two_support_charted_intersection_curve_stream_with_second_plane_axis([
-                0.0, 0.0, 1.0,
-            ]),
+            two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]),
             two_support_ext11_charted_intersection_curve_stream(false),
         ),
         (
@@ -743,9 +741,7 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ),
         (
             "partial_ext11_charted_intersection_curve_stream",
-            two_support_charted_intersection_curve_stream_with_second_plane_axis([
-                0.0, 0.0, 1.0,
-            ]),
+            two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]),
             partial_ext11_charted_intersection_curve_stream(),
         ),
     ];
@@ -758,16 +754,15 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 
 /// Serialize decode + inspect output as stable pretty JSON. Errors are frozen.
 fn snapshot(bytes: &[u8]) -> String {
-    let decode =
-        match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => serde_json::json!({
-                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                "report": serde_json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": serde_json::to_value(result.source_fidelity())
-                    .expect("serialize source_fidelity"),
-            }),
-            Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
-        };
+    let decode = match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+        Ok(result) => serde_json::json!({
+            "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+            "report": serde_json::to_value(result.report()).expect("serialize report"),
+            "source_fidelity": serde_json::to_value(result.source_fidelity())
+                .expect("serialize source_fidelity"),
+        }),
+        Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
+    };
     let inspect =
         match NxCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
             Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
@@ -839,8 +834,7 @@ fn golden_snapshots_are_byte_identical() {
                 continue;
             }
         };
-        if let Err(mismatch) = cadmpeg_test_support::golden::snapshots_agree(&expected, &actual)
-        {
+        if let Err(mismatch) = cadmpeg_test_support::golden::snapshots_agree(&expected, &actual) {
             failures.push(format!(
                 "fixture `{name}`: output diverged from golden {mismatch}"
             ));
@@ -872,8 +866,7 @@ fn golden_output_is_deterministic() {
 fn covered_arenas() -> BTreeSet<String> {
     let mut covered = BTreeSet::new();
     for (_, bytes) in fixtures() {
-        let Ok(result) = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        else {
+        let Ok(result) = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) else {
             continue;
         };
         if let Some(namespace) = result.ir().native.namespace("nx") {

@@ -974,4 +974,3 @@ pub(crate) fn fully_extend_common_header(stream: &mut Vec<u8>, marker: [u8; 4]) 
         stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
     }
 }
-

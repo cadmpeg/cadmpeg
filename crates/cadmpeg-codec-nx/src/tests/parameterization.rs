@@ -1399,4 +1399,3 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         &offsets[1]
     ));
 }
-

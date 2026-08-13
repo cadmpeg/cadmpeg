@@ -5,17 +5,17 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
-mod bytes;
-mod deltas;
-mod om;
-mod prt;
-mod streams;
+mod test_bytes;
+mod test_deltas;
+mod test_om;
+mod test_prt;
+mod test_streams;
 
-pub(crate) use bytes::*;
-pub(crate) use deltas::*;
-pub(crate) use om::*;
-pub(crate) use prt::*;
-pub(crate) use streams::*;
+pub(crate) use test_bytes::*;
+pub(crate) use test_deltas::*;
+pub(crate) use test_om::*;
+pub(crate) use test_prt::*;
+pub(crate) use test_streams::*;
 
 pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
     let arena = cadmpeg_core::decode::DecodeArena::new();

@@ -8,7 +8,6 @@ use cadmpeg_ir::features::Length;
 use cadmpeg_ir::ids::BodyId;
 use std::collections::BTreeMap;
 
-
 pub(crate) fn hole_diameters_for_operations(
     ir: &CadIr,
     operations: &[String],
@@ -30,13 +29,11 @@ pub(crate) fn simple_hole_diameters(
         .enumerate()
         .map(|(position, template)| (template.operation_label.as_str(), position))
         .collect::<BTreeMap<_, _>>();
-    let Some(operations) = simple_hole_operations(templates, groups, &operation_positions)
-    else {
+    let Some(operations) = simple_hole_operations(templates, groups, &operation_positions) else {
         return BTreeMap::new();
     };
     hole_diameters_for_operations(ir, &operations, outputs)
 }
-
 
 mod configuration;
 mod holes_offsets_and_attributes;

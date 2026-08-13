@@ -2,6 +2,9 @@
 #![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
+// Fixture builders used Vec::with_capacity and iter::repeat_n while this suite
+// lived at crate root; deltas.rs denies those methods for production.
+#![allow(clippy::disallowed_methods)]
 
 use std::io::Cursor;
 

@@ -9,8 +9,8 @@ use flate2::Compression;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::LossCategory;
@@ -140,14 +140,10 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
 
     let mut conflicting = assignment;
     conflicting.color_definition = "nx:test:color#other".into();
-    assert!(resolve_rm_face_colors(
-        &face_ids,
-        &[conflicting],
-        &[definition],
-        &[record],
-        &pairs,
-    )
-    .is_empty());
+    assert!(
+        resolve_rm_face_colors(&face_ids, &[conflicting], &[definition], &[record], &pairs,)
+            .is_empty()
+    );
 }
 
 #[test]
@@ -365,20 +361,19 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
 
 #[test]
 fn active_configuration_retains_complete_evaluated_parameter_state() {
-    let parameter =
-        |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {
-            id: ParameterId(id.into()),
-            owner: None,
-            ordinal,
-            name: id.into(),
-            expression: id.into(),
-            display: None,
-            value,
-            dependencies,
-            properties: BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        };
+    let parameter = |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {
+        id: ParameterId(id.into()),
+        owner: None,
+        ordinal,
+        name: id.into(),
+        expression: id.into(),
+        display: None,
+        value,
+        dependencies,
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     ir.model.parameters = vec![
         parameter(
@@ -666,10 +661,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
     )];
     let mut annotations = AnnotationBuilder::new();
-    super::attach_active_configuration_feature_states(
-        &mut missing_dependency,
-        &mut annotations,
-    );
+    super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations);
     assert_eq!(missing_dependency.model.features[0].suppressed, None);
     assert!(missing_dependency.model.configurations[0]
         .feature_states
@@ -991,14 +983,13 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         source_table: "table".to_string(),
         source_offset: 0,
     };
-    let parameter_use =
-        |id: &str, expression: &str| crate::native::features::FeatureParameterUse {
-            id: id.to_string(),
-            operation_label: "operation".to_string(),
-            expression: expression.to_string(),
-            bindings: vec![format!("binding-{id}")],
-            source_offsets: vec![0],
-        };
+    let parameter_use = |id: &str, expression: &str| crate::native::features::FeatureParameterUse {
+        id: id.to_string(),
+        operation_label: "operation".to_string(),
+        expression: expression.to_string(),
+        bindings: vec![format!("binding-{id}")],
+        source_offsets: vec![0],
+    };
     let expressions = vec![
         expression("expression-a", "p1_length", "p2_length * 2"),
         expression("expression-b", "p2_length", "12.5"),
@@ -1078,11 +1069,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
     ];
     assert!(super::native_feature_parameters(&use_refs, &duplicate_expressions).is_empty());
     let unresolved = [parameter_use("use-c", "missing")];
-    assert!(super::native_feature_parameters(
-        &unresolved.iter().collect::<Vec<_>>(),
-        &expressions,
-    )
-    .is_empty());
+    assert!(
+        super::native_feature_parameters(&unresolved.iter().collect::<Vec<_>>(), &expressions,)
+            .is_empty()
+    );
 }
 
 #[test]
@@ -1485,16 +1475,15 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         reference("reference#duplicate-a", "operation#duplicate", 102),
         reference("reference#duplicate-b", "operation#duplicate", 103),
     ];
-    let input =
-        |id: &str, operation_label: &str, slot: u8, data_block: &str| FeatureInputBlock {
-            id: id.to_string(),
-            operation_label: operation_label.to_string(),
-            input_slot: slot,
-            object_index: u32::from(slot),
-            raw_object_index: vec![slot],
-            data_block: data_block.to_string(),
-            source_offset: 0,
-        };
+    let input = |id: &str, operation_label: &str, slot: u8, data_block: &str| FeatureInputBlock {
+        id: id.to_string(),
+        operation_label: operation_label.to_string(),
+        input_slot: slot,
+        object_index: u32::from(slot),
+        raw_object_index: vec![slot],
+        data_block: data_block.to_string(),
+        source_offset: 0,
+    };
     let blocks = [
         DataBlock {
             id: "block#exact-input".to_string(),
@@ -1627,9 +1616,8 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
 
-    let id =
-        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream)
-            .expect("one emitted body has an exact segment binding");
+    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream)
+        .expect("one emitted body has an exact segment binding");
 
     assert_eq!(
         id,
@@ -1656,9 +1644,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 
 #[test]
 fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
-    use cadmpeg_ir::features::{
-        BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId,
-    };
+    use cadmpeg_ir::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -1802,23 +1788,11 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
     history.record_writer(None, Some(&blocks[&402]), &[], &offset_prior);
 
     assert_eq!(
-        super::boolean_participant_writer(
-            target,
-            401,
-            Some(&blocks),
-            &BTreeMap::new(),
-            &history,
-        ),
+        super::boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
         Some(&offset_prior)
     );
     assert_eq!(
-        super::boolean_participant_writer(
-            tools,
-            402,
-            Some(&blocks),
-            &BTreeMap::new(),
-            &history,
-        ),
+        super::boolean_participant_writer(tools, 402, Some(&blocks), &BTreeMap::new(), &history,),
         Some(&offset_prior)
     );
     assert_eq!(
