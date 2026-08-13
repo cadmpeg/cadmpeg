@@ -1406,3 +1406,6 @@ pub(crate) fn parse_setting(
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

@@ -5,5 +5,6 @@
 #![allow(clippy::unwrap_used)]
 
 mod test_archive;
+pub(crate) mod test_dump;
 
 pub(crate) use test_archive::*;

@@ -124,24 +124,4 @@ pub(crate) fn scaled_coordinate(value: f64, scale: f64) -> Option<f64> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::Uuid;
-
-    /// `to_wire` inverts `from_wire` on the mixed-endian group transposition.
-    #[test]
-    fn wire_and_canonical_forms_round_trip() {
-        let canonical = Uuid::from_canonical([
-            0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76,
-            0xad, 0xe5,
-        ]);
-        let wire = canonical.to_wire();
-        assert_eq!(
-            wire,
-            [
-                0x3b, 0x73, 0x59, 0x05, 0x32, 0x53, 0xd1, 0x49, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76,
-                0xad, 0xe5,
-            ]
-        );
-        assert_eq!(Uuid::from_wire(wire), canonical);
-    }
-}
+mod tests;
