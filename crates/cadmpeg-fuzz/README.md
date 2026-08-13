@@ -67,7 +67,7 @@ Native writing and replay:
   source-less planning, topology synthesis, unsupported-native rejection,
   inspection, semantic re-decode, validation, and byte-exact replay.
 
-Focused parser coverage:
+Focused parser coverage. Focused codec parser targets import `::fuzz` only.
 
 - Kernel: `acis_header`
 - F3D: `f3d_asm_header`, `f3d_sab_frame`, `f3d_nurbs_surfaces`,
