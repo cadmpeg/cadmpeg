@@ -139,4 +139,56 @@ mod tests {
             "referential_integrity must not reject under Identity-only set: {filtered:?}"
         );
     }
+
+    #[test]
+    fn documented_route_constants_match_admit_subsets() {
+        assert_eq!(
+            DRAFT_CORE_CHECKS,
+            &[
+                Check::Identity,
+                Check::ReferentialIntegrity,
+                Check::NativeLinks,
+                Check::LoopClosure,
+                Check::CoedgePairing,
+                Check::ShellTopology,
+                Check::WireTopology,
+                Check::CarrierReachability,
+                Check::ParameterDomain,
+                Check::Bounds,
+                Check::GeometricConsistency,
+            ]
+        );
+        assert_eq!(RHINO_INSTANCE_CHECKS, DRAFT_CORE_CHECKS);
+        assert_eq!(CATIA_ADMISSION_CHECKS, DRAFT_CORE_CHECKS);
+        assert_eq!(SLDPRT_EXPORT_PRECONDITION_CHECKS, DRAFT_CORE_CHECKS);
+        assert_eq!(
+            RHINO_DRAFT_CHECKS.len(),
+            DRAFT_CORE_CHECKS.len() + 1,
+            "Rhino draft is core plus Annotations"
+        );
+        assert_eq!(
+            &RHINO_DRAFT_CHECKS[..DRAFT_CORE_CHECKS.len()],
+            DRAFT_CORE_CHECKS
+        );
+        assert_eq!(
+            RHINO_DRAFT_CHECKS[DRAFT_CORE_CHECKS.len()],
+            Check::Annotations
+        );
+        assert!(!DRAFT_CORE_CHECKS.contains(&Check::ArenaOrder));
+        assert!(!DRAFT_CORE_CHECKS.contains(&Check::Counts));
+        assert!(!RHINO_DRAFT_CHECKS.contains(&Check::ArenaOrder));
+
+        let accepted = accepted_empty();
+        let rejected = rejected_missing_point("test:model");
+        for allowed in [
+            DRAFT_CORE_CHECKS,
+            RHINO_DRAFT_CHECKS,
+            RHINO_INSTANCE_CHECKS,
+            CATIA_ADMISSION_CHECKS,
+            SLDPRT_EXPORT_PRECONDITION_CHECKS,
+        ] {
+            assert!(admit(&accepted, allowed, Vec::new()).is_ok());
+            assert!(!admit(&rejected, allowed, Vec::new()).is_ok());
+        }
+    }
 }

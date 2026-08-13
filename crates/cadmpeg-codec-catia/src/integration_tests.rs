@@ -235,3 +235,34 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
         assert_valid(&result);
     }
 }
+
+fn assert_entity_resource_limit(error: &cadmpeg_core::CodecError) {
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn decode_refuses_when_max_entities_is_zero() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 0;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(standard_catpart()), &options)
+        .expect_err("max_entities=0 must refuse at CATIA entity admission");
+    assert_entity_resource_limit(&error);
+}
+
+#[test]
+fn decode_refuses_when_max_entities_is_below_route_entity_count() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 1;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(standard_catpart()), &options)
+        .expect_err("max_entities below route entity count must refuse at admission");
+    assert_entity_resource_limit(&error);
+}

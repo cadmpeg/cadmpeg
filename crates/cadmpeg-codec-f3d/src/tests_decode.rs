@@ -1698,6 +1698,26 @@ fn inspect_enumerates_and_reads_headers() {
 }
 
 #[test]
+fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 0;
+    let error = F3dCodec
+        .decode(&mut Cursor::new(synthetic_f3d(true)), &options)
+        .expect_err("max_entities=0 must refuse at archive admission");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.context.operation == "admit F3D archive entries"
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn decode_refuses_when_max_entities_is_below_archive_entry_cardinality() {
     use cadmpeg_core::decode::ResourceDimension;
 
