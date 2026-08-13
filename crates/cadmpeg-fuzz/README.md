@@ -56,6 +56,7 @@ decoding:
 - `nx_container`
 - `rhino_container`
 - `iges_container`
+- `sat_container`
 
 Native writing and replay:
 
@@ -92,6 +93,8 @@ Focused parser coverage. Focused codec parser targets import `::fuzz` only.
   `rhino_polyedge`
 - FCStd: `fcstd_xml`, `fcstd_gui`, `fcstd_brep`, `fcstd_element_map`,
   `fcstd_auxiliary`
+- IGES: `iges_cards`, `iges_global`, `iges_directory`, `iges_parameters` go
+  through `cadmpeg_codec_iges::fuzz`
 
 IR and STEP:
 

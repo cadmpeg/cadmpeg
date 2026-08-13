@@ -457,7 +457,6 @@ fn zero_entity_nurbs_knot_lane(
 }
 
 /// Inventory every complete framed record in the one-based global namespace.
-#[cfg(any(test, feature = "fuzzing"))]
 #[must_use]
 pub fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity> {
     zero_entity_record_inventory_in_range(data, 0..data.len())

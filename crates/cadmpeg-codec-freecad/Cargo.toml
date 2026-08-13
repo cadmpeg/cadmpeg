@@ -15,10 +15,6 @@ rust-version.workspace = true
 # tests from the repository checkout.
 exclude = ["tests/golden/**"]
 
-[features]
-# reserved no-op; re-add `pub mod fuzz` when a focused harness needs an internal parser.
-fuzzing = []
-
 [dependencies]
 cadmpeg-container.workspace = true
 cadmpeg-core.workspace = true

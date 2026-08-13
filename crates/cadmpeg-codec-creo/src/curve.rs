@@ -374,6 +374,8 @@ pub enum CurveSuffixStatus {
     /// Exactly one canonical suffix boundary exists.
     Unique,
     /// Multiple canonical suffix boundaries exist; connectivity is withheld.
+    #[allow(dead_code)]
+    // Parser currently emits Unique only; Ambiguous is the withheld-connectivity state for multiple suffix boundaries.
     Ambiguous {
         /// Number of byte-valid suffix boundaries.
         candidate_count: usize,

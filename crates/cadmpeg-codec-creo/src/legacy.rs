@@ -126,18 +126,23 @@ pub struct ValueRecord<T> {
 pub type NumericRecord<T> = ValueRecord<NumericPayload<T>>;
 
 /// One run in a type-2 real array.
+#[cfg(test)]
 pub type RealRun = NumericRun<Real>;
 /// Complete semantic payload of one legacy type-2 value row.
+#[cfg(test)]
 pub type RealPayload = NumericPayload<Real>;
 /// One completely decoded legacy type-2 attribute value.
 pub type RealRecord = NumericRecord<Real>;
 /// One run in a type-1 integer array.
+#[cfg(test)]
 pub type IntegerRun = NumericRun<i32>;
 /// Complete semantic payload of one legacy type-1 value row.
+#[cfg(test)]
 pub type IntegerPayload = NumericPayload<i32>;
 /// One completely decoded legacy type-1 attribute value.
 pub type IntegerRecord = NumericRecord<i32>;
 /// Complete semantic payload of one unsigned-decimal legacy value.
+#[cfg(test)]
 pub type UnsignedPayload = NumericPayload<u32>;
 /// One completely decoded unsigned-decimal legacy attribute value.
 pub type UnsignedRecord = NumericRecord<u32>;

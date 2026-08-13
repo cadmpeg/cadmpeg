@@ -300,7 +300,6 @@ pub struct SurfaceAlias {
 
 /// Literal unresolved `7C D9` marker occurrence and bounded source context.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(any(test, feature = "fuzzing"))]
 pub struct Marker7cd9 {
     /// Marker byte offset.
     pub pos: usize,
@@ -312,7 +311,6 @@ pub struct Marker7cd9 {
 
 /// Expose literal `7C D9` occurrences without assigning record framing or semantics.
 #[must_use]
-#[cfg(any(test, feature = "fuzzing"))]
 pub fn markers_7cd9(data: &[u8], context_len: usize) -> Vec<Marker7cd9> {
     let positions: Vec<usize> = data
         .windows(2)
@@ -413,7 +411,6 @@ pub(crate) fn is_alias_group_storage_prefix(storage: &[u8]) -> bool {
 
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
 #[must_use]
-#[cfg(any(test, feature = "fuzzing"))]
 pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
     parse_all(data)
         .into_iter()
@@ -422,7 +419,6 @@ pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
 
 /// Parse every length-closed `7C08` object graph in source order.
 #[must_use]
-#[cfg(any(test, feature = "fuzzing"))]
 pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
     parse_all_with_paired_roots(data, &std::collections::HashMap::new())
 }

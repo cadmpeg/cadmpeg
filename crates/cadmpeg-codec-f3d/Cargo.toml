@@ -24,8 +24,6 @@ categories = ["encoding", "parser-implementations", "graphics"]
 # derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
 # generating them costs 22% of this crate tree's compile time.
 schema = ["dep:schemars", "cadmpeg-asm/schema", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
-# reserved no-op; re-add `pub mod fuzz` when a focused harness needs an internal parser.
-fuzzing = []
 
 [dependencies]
 cadmpeg-asm.workspace = true

@@ -49,7 +49,7 @@ Run the capability profiler against a directory of `.prt` files for a
 deterministic JSON census:
 
 ```sh
-cargo run -p cadmpeg-codec-nx --features profile --bin nx_profile -- FIXTURES OUTPUT.json
+cargo run -p cadmpeg-codec-nx --bin nx_profile -- FIXTURES OUTPUT.json
 ```
 
 ## Data model

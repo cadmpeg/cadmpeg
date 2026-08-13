@@ -102,7 +102,6 @@ pub(crate) mod container;
 #[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
 pub(crate) mod decode;
 mod feature_schema;
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 #[path = "fuzzing.rs"]
 pub mod fuzz;

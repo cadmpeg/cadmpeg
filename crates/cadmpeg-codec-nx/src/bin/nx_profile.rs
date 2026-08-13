@@ -11,10 +11,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cadmpeg_codec_nx::profile::{
-    evaluate_saved_body_census, BodyCensusEvaluation, UnsupportedBodyCensusReason,
-};
-use cadmpeg_codec_nx::NxCodec;
+use cadmpeg_codec_nx::{saved_body_census_evidence, BodyCensusEvidence, NxCodec};
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
@@ -415,9 +412,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     for loss in &decoded.report().losses {
         if loss.severity >= Severity::Warning {
             *losses.entry(loss.code.category()).or_insert(0) += 1;
-            *loss_codes
-                .entry(loss.code.as_str().to_string())
-                .or_insert(0) += 1;
+            *loss_codes.entry(loss.code.as_str()).or_insert(0) += 1;
             *loss_details.entry(loss.message.clone()).or_insert(0) += 1;
         }
     }
@@ -567,68 +562,27 @@ fn normalized_color(color: Color) -> bool {
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
 fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<RederivationBoundary>) {
-    match evaluate_saved_body_census(ir) {
-        BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
-        BodyCensusEvaluation::Mismatch { .. } => (
+    let BodyCensusEvidence {
+        verified,
+        reason,
+        feature,
+        feature_name,
+        feature_family,
+        feature_ordinal,
+    } = saved_body_census_evidence(ir);
+    if verified {
+        (VerificationStatus::Verified, None)
+    } else {
+        (
             VerificationStatus::Missing,
             Some(RederivationBoundary {
-                feature: None,
-                feature_name: None,
-                feature_family: None,
-                feature_ordinal: None,
-                reason: "saved_body_census_mismatch".to_string(),
+                feature,
+                feature_name,
+                feature_family,
+                feature_ordinal,
+                reason: reason.unwrap_or_else(|| "unknown_evaluation_boundary".to_string()),
             }),
-        ),
-        BodyCensusEvaluation::Unsupported { feature, reason } => {
-            let boundary_feature = feature.as_ref().and_then(|id| {
-                ir.model
-                    .features
-                    .iter()
-                    .find(|candidate| candidate.id == *id)
-            });
-            let feature_name = boundary_feature.and_then(|feature| feature.name.clone());
-            let feature_family = boundary_feature.and_then(|feature| {
-                serde_json::to_value(&feature.definition)
-                    .ok()?
-                    .get("definition")?
-                    .as_str()
-                    .map(str::to_string)
-            });
-            let feature_ordinal = boundary_feature.map(|feature| feature.ordinal);
-            let reason = match reason {
-                UnsupportedBodyCensusReason::UnresolvedSuppression => "unresolved_suppression",
-                UnsupportedBodyCensusReason::UnsupportedFeatureDefinition => {
-                    "unsupported_feature_definition"
-                }
-                UnsupportedBodyCensusReason::IncompleteFeatureDefinition => {
-                    "incomplete_feature_definition"
-                }
-                UnsupportedBodyCensusReason::InvalidOutputLineage => "invalid_output_lineage",
-                UnsupportedBodyCensusReason::InvalidHistoryOrder => "invalid_history_order",
-                UnsupportedBodyCensusReason::ConfigurationEvaluation => "configuration_evaluation",
-                _ => "unknown_evaluation_boundary",
-            };
-            (
-                VerificationStatus::Missing,
-                Some(RederivationBoundary {
-                    feature: feature.map(|id| id.0),
-                    feature_name,
-                    feature_family,
-                    feature_ordinal,
-                    reason: reason.to_string(),
-                }),
-            )
-        }
-        _ => (
-            VerificationStatus::Missing,
-            Some(RederivationBoundary {
-                feature: None,
-                feature_name: None,
-                feature_family: None,
-                feature_ordinal: None,
-                reason: "unknown_evaluation_boundary".to_string(),
-            }),
-        ),
+        )
     }
 }
 

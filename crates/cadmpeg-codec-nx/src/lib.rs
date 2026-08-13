@@ -2,8 +2,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read Siemens NX `.prt` files into [`cadmpeg_ir::document::CadIr`].
 //!
-//! [`NxCodec`] is the normal public decode API. The optional `fuzzing`
-//! feature exposes `fuzz` wrappers. The codec recognizes the `SPLMSSTR`
+//! [`NxCodec`] is the normal public decode API. A hidden `fuzz` module
+//! exposes `()`-returning parser wrappers. The codec recognizes the `SPLMSSTR`
 //! container signature, extracts compressed Parasolid neutral-binary streams
 //! from the canonical part payload, and decodes supported geometry and
 //! topology. Detection uses file content because NX and Creo share the `.prt`
@@ -73,35 +73,28 @@
 pub(crate) mod container;
 #[allow(dead_code)] // Internal orchestration remains behind the codec facade.
 pub(crate) mod decode;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod deltas;
 #[allow(dead_code)] // Internal evaluation is reached by selected decode paths.
 pub(crate) mod evaluation;
 mod framing;
 pub(crate) mod geometry;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod intersection;
 mod jt;
 mod jt_topology;
 pub(crate) mod native;
 pub(crate) mod nurbs;
-#[allow(dead_code)] // Object-model parsing is reached through decode and fuzz.
 pub(crate) mod om;
 #[allow(dead_code)] // Object-model token parsing is an internal dependency.
 pub(crate) mod om_tokens;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod parasolid;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod topology;
 mod vec3_at;
 
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzz;
 
-#[cfg(feature = "profile")]
 #[doc(hidden)]
-pub mod profile;
+pub use evaluation::{saved_body_census_evidence, BodyCensusEvidence};
 
 use std::collections::BTreeMap;
 

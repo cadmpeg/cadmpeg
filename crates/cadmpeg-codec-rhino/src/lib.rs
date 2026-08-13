@@ -43,7 +43,6 @@ pub(crate) mod views;
 pub(crate) mod wire;
 mod writer;
 
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 #[path = "fuzzing.rs"]
 pub mod fuzz;

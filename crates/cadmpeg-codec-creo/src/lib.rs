@@ -2,8 +2,8 @@
 //! Inspect and structurally decode PTC Creo Parametric and Pro/ENGINEER `.prt`
 //! files stored in the PSB container.
 //!
-//! [`CreoCodec`] is the normal public decode API. The optional `fuzzing`
-//! feature exposes `fuzz` wrappers. It implements [`cadmpeg_ir::codec::Codec`]:
+//! [`CreoCodec`] is the normal public decode API. A hidden `fuzz` module
+//! exposes `()`-returning parser wrappers. It implements [`cadmpeg_ir::codec::Codec`]:
 //! it detects the `#UGC:2` PSB signature, inspects named sections, and decodes
 //! the geometry, topology, sketches, and design records supported for that
 //! layout.
@@ -60,28 +60,19 @@
 mod compress;
 pub(crate) mod container;
 pub(crate) mod coverage;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod curve;
 pub(crate) mod datum;
 pub(crate) mod decode;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
-#[allow(unused_imports)]
 pub(crate) mod feature;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod legacy;
 pub(crate) mod placement;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod primdata;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod psb;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod reference;
 pub(crate) mod scalar;
 pub(crate) mod surface;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod topology;
 
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzz;
 

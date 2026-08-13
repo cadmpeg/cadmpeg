@@ -16,6 +16,7 @@ pub fn datum(data: &[u8]) {
 /// Exercise Creo curve prototype extraction.
 pub fn curve_prototypes(data: &[u8]) {
     let _ = crate::curve::prototypes(data);
+    let _ = crate::curve::expression_records(data);
 }
 
 /// Exercise Creo surface namespace row extraction.
@@ -48,6 +49,7 @@ pub fn psb_tokens(data: &[u8]) {
 
 /// Exercise Creo short-form float decoding.
 pub fn short_form_float(data: &[u8]) {
+    let _ = crate::psb::is_short_form_float(data.first().copied().unwrap_or(0));
     let _ = crate::psb::short_form_float(data, 0);
 }
 

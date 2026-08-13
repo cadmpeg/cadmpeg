@@ -58,5 +58,5 @@ Build and test operations:
   `validate_native`; keep implementation modules `pub(crate)` or private.
 - `cadmpeg-validate` was not extracted: the visitor/eval surface is too wide for
   the rebuild win. Validate remains in `cadmpeg-ir`. Focused parser access uses
-  one feature-gated `#[doc(hidden)] pub mod fuzz` entry point. Read-only codecs
+  one `#[doc(hidden)] pub mod fuzz` entry point. Read-only codecs
   do not invent encoders.

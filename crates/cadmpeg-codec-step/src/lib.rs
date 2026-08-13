@@ -51,21 +51,14 @@
 mod archive;
 mod geometry;
 mod ids;
-#[allow(dead_code)] // Parser entry points are consumed by the hidden fuzz facade.
 mod lex;
-#[cfg(not(feature = "fuzzing"))]
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 mod parse;
-#[cfg(feature = "fuzzing")]
-#[doc(hidden)]
-pub mod parse;
 mod reader;
 mod signature;
 #[allow(dead_code)] // String helpers are part of the internal parser layer.
 mod strings;
 mod writer;
 
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzz;
 

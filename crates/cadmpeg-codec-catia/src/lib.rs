@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
-//! [`CatiaCodec`] is the normal public decode API. The optional `fuzzing`
-//! feature exposes `fuzz` wrappers. It implements the shared [`Codec`]
+//! [`CatiaCodec`] is the normal public decode API. A hidden `fuzz` module
+//! exposes `()`-returning parser wrappers. It implements the shared [`Codec`]
 //! interface: it detects the `V5_CFV2` file signature, inspects the catalogued
 //! logical streams, identifies the storage variant, and decodes the record
 //! families supported for that variant.
@@ -56,7 +56,6 @@ pub(crate) mod value_block;
 pub(crate) mod variant;
 pub(crate) mod wire;
 
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzz;
 

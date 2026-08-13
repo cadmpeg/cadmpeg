@@ -101,6 +101,83 @@ pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
     }
 }
 
+/// Saved-body census evidence for the profile harness.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyCensusEvidence {
+    /// Whether neutral evaluation exactly reproduced the saved body census.
+    pub verified: bool,
+    /// Semantic boundary or mismatch code; absent when verified.
+    pub reason: Option<String>,
+    /// Feature identity at the boundary, if any.
+    pub feature: Option<String>,
+    /// Feature display name at the boundary, if any.
+    pub feature_name: Option<String>,
+    /// Feature definition family at the boundary, if any.
+    pub feature_family: Option<String>,
+    /// Feature history ordinal at the boundary, if any.
+    pub feature_ordinal: Option<u64>,
+}
+
+/// Saved-body census evidence for the profile harness.
+#[doc(hidden)]
+pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvidence {
+    match evaluate_saved_body_census(ir) {
+        BodyCensusEvaluation::Verified { .. } => BodyCensusEvidence {
+            verified: true,
+            reason: None,
+            feature: None,
+            feature_name: None,
+            feature_family: None,
+            feature_ordinal: None,
+        },
+        BodyCensusEvaluation::Mismatch { .. } => BodyCensusEvidence {
+            verified: false,
+            reason: Some("saved_body_census_mismatch".to_string()),
+            feature: None,
+            feature_name: None,
+            feature_family: None,
+            feature_ordinal: None,
+        },
+        BodyCensusEvaluation::Unsupported { feature, reason } => {
+            let boundary_feature = feature.as_ref().and_then(|id| {
+                ir.model
+                    .features
+                    .iter()
+                    .find(|candidate| candidate.id == *id)
+            });
+            let feature_name = boundary_feature.and_then(|feature| feature.name.clone());
+            let feature_family = boundary_feature.and_then(|feature| {
+                serde_json::to_value(&feature.definition)
+                    .ok()?
+                    .get("definition")?
+                    .as_str()
+                    .map(str::to_string)
+            });
+            let feature_ordinal = boundary_feature.map(|feature| feature.ordinal);
+            let reason = match reason {
+                UnsupportedBodyCensusReason::UnresolvedSuppression => "unresolved_suppression",
+                UnsupportedBodyCensusReason::UnsupportedFeatureDefinition => {
+                    "unsupported_feature_definition"
+                }
+                UnsupportedBodyCensusReason::IncompleteFeatureDefinition => {
+                    "incomplete_feature_definition"
+                }
+                UnsupportedBodyCensusReason::InvalidOutputLineage => "invalid_output_lineage",
+                UnsupportedBodyCensusReason::InvalidHistoryOrder => "invalid_history_order",
+                UnsupportedBodyCensusReason::ConfigurationEvaluation => "configuration_evaluation",
+            };
+            BodyCensusEvidence {
+                verified: false,
+                reason: Some(reason.to_string()),
+                feature: feature.map(|id| id.0),
+                feature_name,
+                feature_family,
+                feature_ordinal,
+            }
+        }
+    }
+}
+
 fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> bool {
     if ir.model.configurations.is_empty()
         || (saved.is_empty() && ir.model.features.iter().all(is_body_neutral_feature))

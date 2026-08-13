@@ -143,6 +143,7 @@ impl SignatureSection {
     /// defined by the alphabet projection, not by transport controls such as
     /// line endings. `None` means that the supplied source does not contain
     /// the recorded range.
+    #[allow(dead_code)] // Alphabet projection for signature verification; not on the decode path.
     pub fn signed_alphabet_bytes(&self, input: &[u8]) -> Option<Vec<u8>> {
         Some(
             input

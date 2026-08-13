@@ -7,15 +7,29 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
+/// Desktop salvage ceilings for fuzz wrappers.
+///
+/// `DecodePolicy::service()` tightens collection and entity limits 8–16× and
+/// would silently shrink coverage. Wrappers must not copy that profile.
+fn fuzz_policy() -> DecodePolicy {
+    DecodePolicy::default()
+}
+
 /// Exercise the NX deltas walker.
 pub fn deltas(data: &[u8]) {
     let _ = crate::deltas::walk(data);
+    let mid = data.len() / 2;
+    let _ = crate::deltas::unmatched_terminal_tombstones(&data[..mid], &data[mid..]);
 }
 
 /// Exercise NX object-model indexed section framing.
 pub fn om(data: &[u8]) {
+    let _ = crate::om::compact_indices(data);
     for section in crate::om::indexed_sections(data) {
         let _ = section.numeric_expressions();
+    }
+    for section in crate::om::sections(data) {
+        let _ = section.operation_body_references();
     }
 }
 
@@ -36,7 +50,9 @@ pub fn geometry_surfaces(data: &[u8]) {
 
 /// Exercise NX surface-intersection chart decoding.
 pub fn intersection(data: &[u8]) {
-    let _ = crate::intersection::curves(data, crate::intersection::ChartPointLayout::Xyz3);
+    for curve in crate::intersection::curves(data, crate::intersection::ChartPointLayout::Xyz3) {
+        let _ = (curve.references, curve.pos);
+    }
 }
 
 /// Exercise NX NURBS curve extraction.
@@ -51,7 +67,11 @@ pub fn nurbs_surfaces(data: &[u8]) {
 
 /// Exercise NX Parasolid topology parsing.
 pub fn topology(data: &[u8]) {
-    let _ = crate::topology::Graph::parse(data);
+    let graph = crate::topology::Graph::parse(data);
+    for node in graph.of_kind(12) {
+        let _ = node.byte_at(0);
+        let _ = node.f64_at(0);
+    }
     let _ = crate::topology::composite_curves(data);
     let _ = crate::topology::intersection_data_curves(data);
     let _ = crate::topology::blend_surfaces(data);
@@ -63,14 +83,17 @@ pub fn topology(data: &[u8]) {
 /// Exercise NX Parasolid stream extraction.
 pub fn parasolid(data: &[u8]) {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
+    let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &fuzz_policy()) else {
         return;
     };
     let Ok(container) = crate::container::scan_bytes(data.to_vec()) else {
         return;
     };
-    let _ = crate::parasolid::extract_streams(&ctx, root, &container);
+    if let Ok(streams) = crate::parasolid::extract_streams(&ctx, root, &container) {
+        for stream in streams {
+            let _ = stream.consumed;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -87,6 +110,18 @@ mod tests {
         super::nurbs_surfaces(&[]);
         super::topology(&[]);
         super::parasolid(&[]);
+    }
+
+    #[test]
+    fn deltas_wrapper_accepts_fixture() {
+        let stream = crate::test_support::status_framed_deltas_stream();
+        super::deltas(&stream);
+    }
+
+    #[test]
+    fn om_wrapper_accepts_fixture() {
+        super::om(&crate::test_support::indexed_om_section());
+        super::om(&crate::test_support::size_framed_om_section());
     }
 
     #[test]

@@ -509,7 +509,6 @@ pub(crate) fn dimensions(
 ///
 /// Used by focused tests and the `sldprt_pmi` fuzz target. Parent/section are
 /// placeholders; production decode supplies real block identities.
-#[cfg(any(test, feature = "fuzzing"))]
 pub(crate) fn parse_payload(payload: &[u8], losses: &mut Vec<LossNote>) -> Vec<PmiDimension> {
     let mut annotations = Annotations::default();
     let mut records = Vec::new();

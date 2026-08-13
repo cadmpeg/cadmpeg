@@ -183,6 +183,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-sat"
+version = "0.5.0"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+]
+
+[[package]]
 name = "cadmpeg-codec-sldprt"
 version = "0.5.0"
 dependencies = [
@@ -244,6 +253,7 @@ dependencies = [
  "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
+ "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
  "cadmpeg-container",

@@ -5,11 +5,9 @@
 
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
-#[cfg(any(test, feature = "fuzzing"))]
-use crate::wire::records::consolidated_records;
 use crate::wire::records::{
-    a_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
-    ConsolidatedRecord,
+    a_family_frames_from_records, consolidated_records, parse_consolidated_pcurve,
+    ConsolidatedFrame, ConsolidatedPcurve, ConsolidatedRecord,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
@@ -1205,7 +1203,6 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
-#[cfg(any(test, feature = "fuzzing"))]
 pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     a8_frames(data, 0x34)
         .into_iter()
@@ -1414,7 +1411,6 @@ fn a8_external_grid_candidates(
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
-#[cfg(any(test, feature = "fuzzing"))]
 pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     let records = consolidated_records(data);
     a5_surfaces_from_records(data, &records)

@@ -136,9 +136,17 @@ pub fn subd(data: &[u8]) {
     let _ = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
 }
 
+/// Desktop salvage ceilings for fuzz wrappers.
+///
+/// `DecodePolicy::service()` tightens collection and entity limits 8–16× and
+/// would silently shrink coverage. Wrappers must not copy that profile.
+fn fuzz_policy() -> cadmpeg_core::decode::DecodePolicy {
+    cadmpeg_core::decode::DecodePolicy::default()
+}
+
 fn with_expand(data: &[u8], f: impl FnOnce(crate::mesh::MeshExpand<'_>)) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let policy = fuzz_policy();
     let Ok((ctx, root)) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     else {

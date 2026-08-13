@@ -10,9 +10,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-#[cfg(feature = "fuzzing")]
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
@@ -739,7 +737,6 @@ fn read_buffer<'a>(
     Ok(Some(bytes))
 }
 
-#[cfg(feature = "fuzzing")]
 pub(crate) fn fuzz_buffer(data: &[u8]) {
     let Some(expected) = View::u16_le_at(data, 0).map(usize::from) else {
         return;

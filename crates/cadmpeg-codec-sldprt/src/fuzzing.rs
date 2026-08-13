@@ -42,13 +42,11 @@ pub fn pmi(data: &[u8]) {
         if record.item_count != 1 {
             continue;
         }
-        let start = match usize::try_from(record.value_offset) {
-            Ok(start) => start,
-            Err(_) => continue,
+        let Ok(start) = usize::try_from(record.value_offset) else {
+            continue;
         };
-        let end = match start.checked_add(8) {
-            Some(end) => end,
-            None => continue,
+        let Some(end) = start.checked_add(8) else {
+            continue;
         };
         let Some(slot) = data.get(start..end) else {
             continue;

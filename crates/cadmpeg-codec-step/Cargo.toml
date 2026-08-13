@@ -14,9 +14,6 @@ keywords = ["cad", "step", "iso-10303", "ap242", "brep"]
 categories = ["encoding", "graphics"]
 exclude = ["tests/golden/**"]
 
-[features]
-fuzzing = []
-
 [dependencies]
 base64.workspace = true
 cadmpeg-container.workspace = true
@@ -39,4 +36,3 @@ workspace = true
 [[bench]]
 name = "step_pipeline"
 harness = false
-required-features = ["fuzzing"]
