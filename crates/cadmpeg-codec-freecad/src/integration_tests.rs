@@ -11,6 +11,10 @@ use crate::persistence::tests::{
     schema_three_uses_the_object_envelope_and_defaults_file_version,
     schema_two_uses_the_feature_envelope_and_common_property_grammar,
 };
+use crate::writer::tests::{
+    write_target_and_source_requirements_are_explicit,
+    writer_rejects_unserialized_declaration_and_stale_payload_edits,
+};
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     FcstdCodec

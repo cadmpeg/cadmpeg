@@ -457,8 +457,12 @@ pub(crate) fn escape_xml(value: &str, output: &mut String, attribute: bool) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::test_support::*;
+    use crate::FcstdCodec;
+    use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+    use std::io::Cursor;
 
     #[test]
     fn property_edits_use_value_order_when_raw_xml_is_identical() {
@@ -518,5 +522,191 @@ mod tests {
         assert_eq!(serialized.matches("&#9;").count(), 2);
         assert_eq!(serialized.matches("&#10;").count(), 2);
         assert_eq!(serialized.matches("&#13;").count(), 2);
+    }
+
+    #[test]
+    fn writes_typed_property_edits_and_preserves_other_entries() {
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(CORE_DESIGN_PRODUCT),
+                &DecodeOptions::default(),
+            )
+            .expect("decode source");
+        let source_entries = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("namespace")
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .expect("entries");
+        let mut edited = decoded.ir().clone();
+        FcstdCodec
+            .set_property_value_attribute(
+                &mut edited,
+                crate::FcstdPropertyOwner::Document,
+                "Label",
+                0,
+                "value",
+                "edited & verified",
+            )
+            .expect("edit Label");
+
+        let mut encoded = Vec::new();
+        let report = FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &edited,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
+            .expect("encode edit");
+        assert!(report.losses.is_empty());
+        let round_trip = FcstdCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("decode output");
+        let output_namespace = round_trip
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("namespace");
+        let output_properties = output_namespace
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .expect("properties");
+        let output_label = output_properties
+            .iter()
+            .find(|property| {
+                property.owner == crate::native::native_id("document", "0")
+                    && property.name == "Label"
+            })
+            .expect("document Label");
+        assert_eq!(
+            output_label.values[0]
+                .attributes
+                .get("value")
+                .map(String::as_str),
+            Some("edited & verified")
+        );
+        let output_entries = output_namespace
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .expect("entries");
+        for source in source_entries
+            .iter()
+            .filter(|entry| entry.name != "Document.xml")
+        {
+            let output = output_entries
+                .iter()
+                .find(|entry| entry.name == source.name)
+                .expect("preserved entry");
+            assert_eq!(output.data, source.data, "{}", source.name);
+        }
+        assert!(crate::validate_native(round_trip.ir()).is_empty());
+    }
+
+    #[test]
+    pub(crate) fn write_target_and_source_requirements_are_explicit() {
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(CORE_DESIGN_PRODUCT),
+                &DecodeOptions::default(),
+            )
+            .expect("decode source");
+        let unsupported = FcstdCodec
+            .encode_with_options(
+                decoded.ir(),
+                &mut Vec::new(),
+                crate::FcstdWriteOptions {
+                    schema_version: 3,
+                    file_version: 1,
+                },
+            )
+            .expect_err("unsupported target must fail");
+        assert!(unsupported.to_string().contains("SchemaVersion=3"));
+
+        let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let missing_graph = FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+            .expect_err("missing graph must fail");
+        assert!(missing_graph.to_string().contains("source-less"));
+    }
+
+    #[test]
+    fn seekable_encoder_matches_the_write_only_fallback() {
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(CORE_DESIGN_PRODUCT),
+                &DecodeOptions::default(),
+            )
+            .expect("decode source");
+        let mut staged = Vec::new();
+        FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: decoded.ir(),
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut staged))
+            .expect("write-only fallback");
+        let mut streamed = Cursor::new(Vec::new());
+        crate::writer::write_seekable(
+            decoded.ir(),
+            &mut streamed,
+            crate::FcstdWriteOptions::default(),
+        )
+        .expect("seekable writer");
+
+        assert_eq!(streamed.into_inner(), staged);
+    }
+
+    #[test]
+    pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(CORE_DESIGN_PRODUCT),
+                &DecodeOptions::default(),
+            )
+            .expect("decode source");
+
+        let mut declaration_edit = decoded.ir().clone();
+        let namespace = declaration_edit.native.namespace_mut("fcstd");
+        let mut objects = namespace
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .expect("objects");
+        objects[0].type_name = "App::FeaturePython".into();
+        namespace
+            .set_arena("objects", &objects)
+            .expect("replace objects");
+        let error = FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &declaration_edit,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+            .expect_err("unserialized declaration edit must fail");
+        assert!(error.to_string().contains("declaration edits"));
+
+        let (mut stale_entry, _, _) = decoded.into_parts();
+        let namespace = stale_entry.native.namespace_mut("fcstd");
+        let mut entries = namespace
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .expect("entries");
+        entries
+            .iter_mut()
+            .find(|entry| entry.name != "Document.xml")
+            .expect("side entry")
+            .data
+            .push(0);
+        namespace
+            .set_arena("entries", &entries)
+            .expect("replace entries");
+        let error = FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &stale_entry,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+            .expect_err("stale entry metadata must fail");
+        assert!(error.to_string().contains("stale length or digest"));
     }
 }
