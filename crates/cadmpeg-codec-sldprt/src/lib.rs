@@ -384,8 +384,6 @@ fn source_records<'a>(
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-mod spatial_write_tests;
+pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod writer_roundtrip_tests;
