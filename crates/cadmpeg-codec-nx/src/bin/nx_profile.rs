@@ -11,6 +11,9 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use cadmpeg_codec_nx::profile::{
+    evaluate_saved_body_census, BodyCensusEvaluation, UnsupportedBodyCensusReason,
+};
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -564,9 +567,7 @@ fn normalized_color(color: Color) -> bool {
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
 fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<RederivationBoundary>) {
-    use cadmpeg_codec_nx::evaluation::{BodyCensusEvaluation, UnsupportedBodyCensusReason};
-
-    match cadmpeg_codec_nx::evaluation::evaluate_saved_body_census(ir) {
+    match evaluate_saved_body_census(ir) {
         BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
         BodyCensusEvaluation::Mismatch { .. } => (
             VerificationStatus::Missing,
