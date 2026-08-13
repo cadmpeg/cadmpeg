@@ -12,6 +12,12 @@ use crate::reader::pmi::tests::{
     typed_pmi_measure_uses_its_explicit_conversion_unit,
     unresolved_lower_tolerance_does_not_shift_upper_deviation,
 };
+use crate::reader::product::tests::{
+    ap203_specified_source_formations_build_occurrence_tree,
+    decode_builds_occurrence_placement_from_mapped_item,
+    decode_builds_product_occurrences_with_relative_placement,
+    repeated_subassembly_instances_each_receive_the_subtree,
+};
 use crate::reader::tessellation::tests::decode_transfers_ap242_one_based_tessellation_indices;
 use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
 

@@ -23,7 +23,7 @@ mod geometry;
 mod index;
 pub(crate) mod pmi;
 mod presentation;
-mod product;
+pub(crate) mod product;
 pub(crate) mod tessellation;
 mod topology;
 mod validation;
