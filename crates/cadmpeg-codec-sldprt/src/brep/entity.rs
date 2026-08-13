@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stream-scope entity records needed for body membership.
 
-use super::{u16_be, u32_be};
-use cadmpeg_core::be::f64_at as f64_be;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
@@ -166,7 +165,7 @@ fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16
         let mut out = Vec::new();
         let mut p = at;
         while body.get(p) == Some(&1) {
-            out.push(u16_be(body, p.checked_add(1)?)?);
+            out.push(View::u16_be_at(body, p.checked_add(1)?)?);
             p = p.checked_add(3)?;
         }
         if !out.is_empty() && body.get(p) == Some(&0) {
@@ -174,7 +173,7 @@ fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16
         }
     }
     let refs = (0..count)
-        .map(|index| u16_be(body, at + index * 2))
+        .map(|index| View::u16_be_at(body, at + index * 2))
         .collect::<Option<Vec<_>>>()?;
     Some((refs, at.checked_add(count.checked_mul(2)?)?))
 }
@@ -189,16 +188,16 @@ fn scan_entities(body: &[u8], schema: &str, prefixed: bool) -> Vec<EntityRecord>
         if body.get(p) == Some(&0xff) {
             p += 1;
         }
-        let Some(flags) = u32_be(body, p) else {
+        let Some(flags) = View::u32_be_at(body, p) else {
             continue;
         };
-        let Some(attr) = u16_be(body, p + 4) else {
+        let Some(attr) = View::u16_be_at(body, p + 4) else {
             continue;
         };
-        let Some(seq) = u32_be(body, p + 6) else {
+        let Some(seq) = View::u32_be_at(body, p + 6) else {
             continue;
         };
-        let Some(disc) = u16_be(body, p + 10) else {
+        let Some(disc) = View::u16_be_at(body, p + 10) else {
             continue;
         };
         let flo = (flags & 0xff) as u8;
@@ -231,8 +230,8 @@ fn scan_entities(body: &[u8], schema: &str, prefixed: bool) -> Vec<EntityRecord>
 
 fn class_root_attrs_at(body: &[u8], offset: usize) -> Option<Vec<u16>> {
     let token_at = offset.checked_add(CLASS_ROOT_INDEX_PREFIX.len())?;
-    let token = u16_be(body, token_at)?;
-    let count = u32_be(body, token_at.checked_add(2)?)?;
+    let token = View::u16_be_at(body, token_at)?;
+    let count = View::u32_be_at(body, token_at.checked_add(2)?)?;
     let preamble_at = token_at.checked_add(6)?;
     let roots_at = preamble_at.checked_add(6)?;
     if token <= 1 || body.get(preamble_at..roots_at) != Some(&[0, 0, 0, 0, 0, 1]) {
@@ -246,7 +245,7 @@ fn class_root_attrs_at(body: &[u8], offset: usize) -> Option<Vec<u16>> {
     let mut roots = Vec::with_capacity(count);
     let mut distinct = HashSet::new();
     for index in 0..count {
-        let attr = u16_be(body, roots_at.checked_add(index.checked_mul(2)?)?)?;
+        let attr = View::u16_be_at(body, roots_at.checked_add(index.checked_mul(2)?)?)?;
         if attr <= 1 || !distinct.insert(attr) {
             return None;
         }
@@ -279,14 +278,14 @@ fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
     if body.get(p) == Some(&0xff) {
         p += 1;
     }
-    if u32_be(body, p)? & 0xff != 3 {
+    if View::u32_be_at(body, p)? & 0xff != 3 {
         return None;
     }
-    let attr = u16_be(body, p + 4)?;
+    let attr = View::u16_be_at(body, p + 4)?;
     let [r, g, b] = [
-        f64_be(body, p + 6)?,
-        f64_be(body, p + 14)?,
-        f64_be(body, p + 22)?,
+        View::f64_be_at(body, p + 6)?,
+        View::f64_be_at(body, p + 14)?,
+        View::f64_be_at(body, p + 22)?,
     ];
     if attr <= 1
         || ![r, g, b]

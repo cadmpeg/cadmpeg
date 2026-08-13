@@ -15,9 +15,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::be::u32_at as be_u32;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -2827,10 +2825,10 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
                 if payload.get(8..16) != Some(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']) {
                     continue;
                 }
-                let Some(width) = be_u32(payload, 16) else {
+                let Some(width) = View::u32_be_at(payload, 16) else {
                     continue;
                 };
-                let Some(height) = be_u32(payload, 20) else {
+                let Some(height) = View::u32_be_at(payload, 20) else {
                     continue;
                 };
                 let Some(fields) = payload.get(24..29) else {
@@ -2847,15 +2845,17 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
                 png_index += 1;
             }
             "bmp-thumbnail" => {
-                let (Some(width), Some(height), Some(image_size)) =
-                    (le_i32(payload, 8), le_i32(payload, 12), le_u32(payload, 24))
-                else {
+                let (Some(width), Some(height), Some(image_size)) = (
+                    View::i32_le_at(payload, 8),
+                    View::i32_le_at(payload, 12),
+                    View::u32_le_at(payload, 24),
+                ) else {
                     continue;
                 };
                 let (Some(planes), Some(bits_per_pixel), Some(compression)) = (
-                    le_u16(payload, 16),
-                    le_u16(payload, 18),
-                    le_u32(payload, 20),
+                    View::u16_le_at(payload, 16),
+                    View::u16_le_at(payload, 18),
+                    View::u32_le_at(payload, 20),
                 ) else {
                     continue;
                 };

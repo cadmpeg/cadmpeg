@@ -6,7 +6,9 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
-use super::{f64_be, u16_be, u32_be, Carrier, CarrierGeometry, LEN_TO_MM};
+use cadmpeg_core::decode::View;
+
+use super::{Carrier, CarrierGeometry, LEN_TO_MM};
 
 #[derive(Default)]
 struct Arrays {
@@ -80,33 +82,33 @@ fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescripto
     if end > bytes.len() {
         return None;
     }
-    let attr = u16_be(bytes, p)?;
+    let attr = View::u16_be_at(bytes, p)?;
     let u_periodic = logical_byte(bytes, p + 2)?;
     let v_periodic = logical_byte(bytes, p + 3)?;
-    let u_degree = u16_be(bytes, p + 4).map(u32::from)?;
-    let v_degree = u16_be(bytes, p + 6).map(u32::from)?;
+    let u_degree = View::u16_be_at(bytes, p + 4).map(u32::from)?;
+    let v_degree = View::u16_be_at(bytes, p + 6).map(u32::from)?;
     let u_degree_usize = usize::try_from(u_degree).ok()?;
     let v_degree_usize = usize::try_from(v_degree).ok()?;
-    let u_count = usize::try_from(u32_be(bytes, p + 8)?).ok()?;
-    let v_count = usize::try_from(u32_be(bytes, p + 12)?).ok()?;
+    let u_count = usize::try_from(View::u32_be_at(bytes, p + 8)?).ok()?;
+    let v_count = usize::try_from(View::u32_be_at(bytes, p + 12)?).ok()?;
     // Knot-type bytes, closure flags, and surface form have no IR fields, but
     // their positions are part of the fixed descriptor and are consumed here
     // so the following count and reference fields cannot slide into them.
     let _u_knot_type = *bytes.get(p + 16)?;
     let _v_knot_type = *bytes.get(p + 17)?;
-    let u_knot_count = usize::try_from(u32_be(bytes, p + 18)?).ok()?;
-    let v_knot_count = usize::try_from(u32_be(bytes, p + 22)?).ok()?;
+    let u_knot_count = usize::try_from(View::u32_be_at(bytes, p + 18)?).ok()?;
+    let v_knot_count = usize::try_from(View::u32_be_at(bytes, p + 22)?).ok()?;
     let rational = logical_byte(bytes, p + 26)?;
     let _u_closed = logical_byte(bytes, p + 27)?;
     let _v_closed = logical_byte(bytes, p + 28)?;
     let _surface_form = *bytes.get(p + 29)?;
-    let dimension = u16_be(bytes, p + 30).map(usize::from)?;
+    let dimension = View::u16_be_at(bytes, p + 30).map(usize::from)?;
     let refs = [
-        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET)?,
-        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 2)?,
-        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 4)?,
-        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 6)?,
-        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 8)?,
+        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET)?,
+        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 2)?,
+        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 4)?,
+        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 6)?,
+        View::u16_be_at(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 8)?,
     ];
 
     if attr <= 1
@@ -159,7 +161,7 @@ fn scan_arrays(bytes: &[u8], compact_attrs: Option<&HashSet<u16>>) -> Arrays {
         if bytes.get(off) == Some(&0) {
             let count = usize::from(bytes[off + 1]);
             if count > 0 {
-                if let Some(attr) = u16_be(bytes, off + 2)
+                if let Some(attr) = View::u16_be_at(bytes, off + 2)
                     .filter(|attr| compact_attrs.is_some_and(|attrs| attrs.contains(attr)))
                 {
                     arrays
@@ -177,10 +179,10 @@ fn scan_arrays(bytes: &[u8], compact_attrs: Option<&HashSet<u16>>) -> Arrays {
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
-        let Some(count) = u32_be(bytes, p).map(|v| v as usize) else {
+        let Some(count) = View::u32_be_at(bytes, p).map(|v| v as usize) else {
             continue;
         };
-        let Some(attr) = u16_be(bytes, p + 4) else {
+        let Some(attr) = View::u16_be_at(bytes, p + 4) else {
             continue;
         };
         if attr <= 1 || count > MAX_ARRAY_VALUES {
@@ -189,7 +191,7 @@ fn scan_arrays(bytes: &[u8], compact_attrs: Option<&HashSet<u16>>) -> Arrays {
         let values_at = p + 6;
         if tag == 0x7f {
             let Some(values) = (0..count)
-                .map(|i| u16_be(bytes, values_at + i * 2))
+                .map(|i| View::u16_be_at(bytes, values_at + i * 2))
                 .collect::<Option<Vec<_>>>()
             else {
                 continue;
@@ -197,7 +199,7 @@ fn scan_arrays(bytes: &[u8], compact_attrs: Option<&HashSet<u16>>) -> Arrays {
             arrays.u16s.entry(attr).or_insert(values);
         } else {
             let Some(values) = (0..count)
-                .map(|i| f64_be(bytes, values_at + i * 8))
+                .map(|i| View::f64_be_at(bytes, values_at + i * 8))
                 .collect::<Option<Vec<_>>>()
             else {
                 continue;
@@ -221,7 +223,7 @@ fn compact_f64_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<f64>>
         .collect::<Vec<_>>();
     for compact in arrays.compact.get(&attr).into_iter().flatten() {
         let Some(values) = (0..compact.count)
-            .map(|index| f64_be(bytes, compact.offset + 4 + index * 8))
+            .map(|index| View::f64_be_at(bytes, compact.offset + 4 + index * 8))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -242,7 +244,7 @@ fn compact_u16_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<u16>>
         .collect::<Vec<_>>();
     for compact in arrays.compact.get(&attr).into_iter().flatten() {
         let Some(values) = (0..compact.count)
-            .map(|index| u16_be(bytes, compact.offset + 4 + index * 2))
+            .map(|index| View::u16_be_at(bytes, compact.offset + 4 + index * 2))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -274,25 +276,25 @@ fn scan_curve_descriptors(bytes: &[u8]) -> HashMap<u16, CurveDescriptor> {
         if bytes.get(p) == Some(&0xff) {
             p += 1;
         }
-        let Some(attr) = u16_be(bytes, p) else {
+        let Some(attr) = View::u16_be_at(bytes, p) else {
             continue;
         };
-        let Some(degree) = u16_be(bytes, p + 2).map(u32::from) else {
+        let Some(degree) = View::u16_be_at(bytes, p + 2).map(u32::from) else {
             continue;
         };
-        let Some(control_count) = u32_be(bytes, p + 4).map(|v| v as usize) else {
+        let Some(control_count) = View::u32_be_at(bytes, p + 4).map(|v| v as usize) else {
             continue;
         };
-        let Some(dimension) = u16_be(bytes, p + 8).map(|v| v as usize) else {
+        let Some(dimension) = View::u16_be_at(bytes, p + 8).map(|v| v as usize) else {
             continue;
         };
-        let Some(control_attr) = u16_be(bytes, p + 19) else {
+        let Some(control_attr) = View::u16_be_at(bytes, p + 19) else {
             continue;
         };
-        let Some(multiplicity_attr) = u16_be(bytes, p + 21) else {
+        let Some(multiplicity_attr) = View::u16_be_at(bytes, p + 21) else {
             continue;
         };
-        let Some(knot_attr) = u16_be(bytes, p + 23) else {
+        let Some(knot_attr) = View::u16_be_at(bytes, p + 23) else {
             continue;
         };
         if attr <= 1 || !(dimension == 3 || dimension == 4) || control_count == 0 {
@@ -316,7 +318,7 @@ fn curve_descriptor<'a>(
     descriptors: &'a HashMap<u16, CurveDescriptor>,
 ) -> Option<&'a CurveDescriptor> {
     (attr_at + 2..(attr_at + 24).min(bytes.len().saturating_sub(1)))
-        .filter_map(|at| u16_be(bytes, at))
+        .filter_map(|at| View::u16_be_at(bytes, at))
         .find_map(|reference| descriptors.get(&reference))
 }
 
@@ -369,10 +371,10 @@ fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
-        let Some(count) = u32_be(bytes, p).map(|value| value as usize) else {
+        let Some(count) = View::u32_be_at(bytes, p).map(|value| value as usize) else {
             continue;
         };
-        if u16_be(bytes, p + 4) == Some(attr) {
+        if View::u16_be_at(bytes, p + 4) == Some(attr) {
             return Some((p + 6, count));
         }
     }
@@ -385,10 +387,11 @@ fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySp
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
-        let Some(count) = u32_be(bytes, p).and_then(|value| usize::try_from(value).ok()) else {
+        let Some(count) = View::u32_be_at(bytes, p).and_then(|value| usize::try_from(value).ok())
+        else {
             continue;
         };
-        if count <= MAX_ARRAY_VALUES && u16_be(bytes, p + 4) == Some(attr) {
+        if count <= MAX_ARRAY_VALUES && View::u16_be_at(bytes, p + 4) == Some(attr) {
             spans.push(ArraySpan {
                 start: p + 6,
                 count,
@@ -413,13 +416,13 @@ fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySp
 
 fn f64_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<f64>> {
     (0..span.count)
-        .map(|index| f64_be(bytes, span.start + index * 8))
+        .map(|index| View::f64_be_at(bytes, span.start + index * 8))
         .collect()
 }
 
 fn u16_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<u16>> {
     (0..span.count)
-        .map(|index| u16_be(bytes, span.start + index * 2))
+        .map(|index| View::u16_be_at(bytes, span.start + index * 2))
         .collect()
 }
 
@@ -614,7 +617,7 @@ pub(crate) fn patch_nurbs_surface(
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let descriptor_attr = u16_be(bytes, p + 17)?;
+    let descriptor_attr = View::u16_be_at(bytes, p + 17)?;
     let descriptor = descriptors.get(&descriptor_attr)?;
     let [control_attr, _, _, u_knot_attr, v_knot_attr] = descriptor.refs;
     let dimension = if old.weights.is_some() { 4 } else { 3 };
@@ -666,7 +669,7 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if bytes.get(p) == Some(&0xff) {
             p += 1;
         }
-        let Some(attr) = u16_be(bytes, p) else {
+        let Some(attr) = View::u16_be_at(bytes, p) else {
             continue;
         };
         let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
@@ -827,10 +830,10 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if bytes.get(p) == Some(&0xff) {
             p += 1;
         }
-        let Some(attr) = u16_be(bytes, p) else {
+        let Some(attr) = View::u16_be_at(bytes, p) else {
             continue;
         };
-        let Some(descriptor_attr) = u16_be(bytes, p + 17) else {
+        let Some(descriptor_attr) = View::u16_be_at(bytes, p + 17) else {
             continue;
         };
         let Some(descriptor) = descriptors.get(&descriptor_attr) else {

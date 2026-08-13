@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::be::{f64_at, u16_at};
+use cadmpeg_core::decode::View;
 
 use super::LEN_TO_MM;
 
@@ -61,7 +61,7 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
     if bytes.get(body) == Some(&0xff) {
         body += 1;
     }
-    let attr = u16_at(bytes, body)?;
+    let attr = View::u16_be_at(bytes, body)?;
     if attr == 0 || !matches!(bytes.get(body + 16), Some(0x2b | 0x2d)) {
         return None;
     }
@@ -71,19 +71,19 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
         return None;
     }
     let references = [
-        u16_at(bytes, payload + 1)?,
-        u16_at(bytes, payload + 3)?,
-        u16_at(bytes, payload + 5)?,
+        View::u16_be_at(bytes, payload + 1)?,
+        View::u16_be_at(bytes, payload + 3)?,
+        View::u16_be_at(bytes, payload + 5)?,
     ];
     if references.contains(&0) {
         return None;
     }
     let values = payload + 7;
     let values = [
-        f64_at(bytes, values)?,
-        f64_at(bytes, values + 8)?,
-        f64_at(bytes, values + 16)?,
-        f64_at(bytes, values + 24)?,
+        View::f64_be_at(bytes, values)?,
+        View::f64_be_at(bytes, values + 8)?,
+        View::f64_be_at(bytes, values + 16)?,
+        View::f64_be_at(bytes, values + 24)?,
     ];
     if values.iter().any(|value| !value.is_finite())
         || (values[2].abs() - 1.0).abs() > 1.0e-12

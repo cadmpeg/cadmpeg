@@ -13,7 +13,7 @@
 //! modeling-history ordinal that wrote it. Deltas streams carry no attribute
 //! dictionary, so a deltas body yields no bindings.
 
-use super::{u16_be, u32_be};
+use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
 /// Attribute family binding a face to its producing feature.
@@ -89,8 +89,10 @@ fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
         let Some(p) = record_body(buf, off, 0x4f) else {
             continue;
         };
-        let Some(len) = u32_be(buf, p) else { continue };
-        let Some(node) = u16_be(buf, p + 4) else {
+        let Some(len) = View::u32_be_at(buf, p) else {
+            continue;
+        };
+        let Some(node) = View::u16_be_at(buf, p + 4) else {
             continue;
         };
         if node <= 1 {
@@ -120,7 +122,7 @@ fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
         let Some(p) = record_body(buf, end, 0x50) else {
             continue;
         };
-        let Some(definition) = u16_be(buf, p + 4).filter(|node| *node > 1) else {
+        let Some(definition) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
             continue;
         };
         match found.entry(definition) {
@@ -147,10 +149,10 @@ fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
         let Some(p) = record_body(buf, off, 0x52) else {
             continue;
         };
-        let Some(count) = u32_be(buf, p) else {
+        let Some(count) = View::u32_be_at(buf, p) else {
             continue;
         };
-        let Some(node) = u16_be(buf, p + 4).filter(|node| *node > 1) else {
+        let Some(node) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
             continue;
         };
         let Some(data) = p.checked_add(6) else {
@@ -169,7 +171,7 @@ fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
             let Some(value) = index
                 .checked_mul(4)
                 .and_then(|delta| data.checked_add(delta))
-                .and_then(|at| u32_be(buf, at))
+                .and_then(|at| View::u32_be_at(buf, at))
             else {
                 values.clear();
                 break;
@@ -212,7 +214,7 @@ where
     let mut found: Option<&[u32]> = None;
     let mut at = from;
     while at + 2 <= buf.len() && !opens_record(buf, at) {
-        let node = u16_be(buf, at)?;
+        let node = View::u16_be_at(buf, at)?;
         if let Some(values) = lists.get(&node) {
             if accepts(values) {
                 match found {
@@ -250,16 +252,16 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
         };
-        if u16_be(buf, p + 6) != Some(0) {
+        if View::u16_be_at(buf, p + 6) != Some(0) {
             continue;
         }
-        let Some(definition) = u16_be(buf, p + 10) else {
+        let Some(definition) = View::u16_be_at(buf, p + 10) else {
             continue;
         };
         if definitions.get(&definition).copied() != Some(ATOM_ID) {
             continue;
         }
-        let Some(face_attr) = u16_be(buf, p + 12) else {
+        let Some(face_attr) = View::u16_be_at(buf, p + 12) else {
             continue;
         };
         if face_attr <= 1 {
@@ -306,16 +308,16 @@ pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
         };
-        if u16_be(buf, p + 6) != Some(0) {
+        if View::u16_be_at(buf, p + 6) != Some(0) {
             continue;
         }
-        let Some(definition) = u16_be(buf, p + 10) else {
+        let Some(definition) = View::u16_be_at(buf, p + 10) else {
             continue;
         };
         if definitions.get(&definition).copied() != Some(LAST_BODY_MODIFIER) {
             continue;
         }
-        let Some(body_attr) = u16_be(buf, p + 12).filter(|attr| *attr > 1) else {
+        let Some(body_attr) = View::u16_be_at(buf, p + 12).filter(|attr| *attr > 1) else {
             continue;
         };
         let Some(values) = referenced_payload(buf, p + 14, &lists, |values| {

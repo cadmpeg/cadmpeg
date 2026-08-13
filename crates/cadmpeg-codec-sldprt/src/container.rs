@@ -12,7 +12,6 @@ use std::io::Read;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
-use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
@@ -69,7 +68,7 @@ pub fn payload_family(payload: &[u8]) -> &'static str {
 }
 
 fn is_bmp_thumbnail(payload: &[u8]) -> bool {
-    let Some(header_size) = u32_le(payload, 4) else {
+    let Some(header_size) = View::u32_le_at(payload, 4) else {
         return false;
     };
     let Some(bits_per_pixel) = View::u16_le_at(payload, 18) else {
@@ -441,10 +440,11 @@ fn decode_wrapped_payload_budgeted<'a>(
     if payload.get(..16) != Some(&WRAPPED_PAYLOAD_MAGIC) {
         return Ok(None);
     }
-    let Some(uncompressed_size) = u32_le(payload, 16).map(u64::from) else {
+    let Some(uncompressed_size) = View::u32_le_at(payload, 16).map(u64::from) else {
         return Ok(None);
     };
-    let Some(compressed_size) = u32_le(payload, 20).and_then(|size| usize::try_from(size).ok())
+    let Some(compressed_size) =
+        View::u32_le_at(payload, 20).and_then(|size| usize::try_from(size).ok())
     else {
         return Ok(None);
     };
@@ -523,11 +523,11 @@ impl RawBlock {
 }
 
 fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
-    let type_id = u32_le(bytes, off + 6)?;
-    let crc = u32_le(bytes, off + 10)?;
-    let comp_sz = u32_le(bytes, off + 14)?;
-    let uncomp_sz = u32_le(bytes, off + 18)?;
-    let pre_sz = u32_le(bytes, off + 22)?;
+    let type_id = View::u32_le_at(bytes, off + 6)?;
+    let crc = View::u32_le_at(bytes, off + 10)?;
+    let comp_sz = View::u32_le_at(bytes, off + 14)?;
+    let uncomp_sz = View::u32_le_at(bytes, off + 18)?;
+    let pre_sz = View::u32_le_at(bytes, off + 22)?;
 
     let comp = comp_sz as usize;
     let pre = pre_sz as usize;
@@ -612,10 +612,10 @@ fn crc32(bytes: &[u8]) -> u32 {
 /// (`f@+10 == 2L`, `f@+14 == L/2`, `f@+18 == L`, `f@+22 == name_len`) plus a
 /// printable nibble-swapped name ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#12-cache-cell-section-index-grid)).
 fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
-    let two_l = u32_le(bytes, off + 10)?;
-    let half_l = u32_le(bytes, off + 14)?;
-    let l = u32_le(bytes, off + 18)?;
-    let name_len = u32_le(bytes, off + 22)?;
+    let two_l = View::u32_le_at(bytes, off + 10)?;
+    let half_l = View::u32_le_at(bytes, off + 14)?;
+    let l = View::u32_le_at(bytes, off + 18)?;
+    let name_len = View::u32_le_at(bytes, off + 22)?;
 
     if l == 0 || two_l != l.wrapping_mul(2) || half_l != l / 2 {
         return None;
@@ -637,11 +637,11 @@ fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
 /// +18, a size at +14, a name length at +22, a 14-byte descriptor, then a
 /// printable nibble-swapped name ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#13-tail-section-directory)).
 fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
-    let type_id = u32_le(bytes, off + 6)?;
-    let zero_a = u32_le(bytes, off + 10)?;
-    let size = u32_le(bytes, off + 14)?;
-    let zero_b = u32_le(bytes, off + 18)?;
-    let name_len = u32_le(bytes, off + 22)?;
+    let type_id = View::u32_le_at(bytes, off + 6)?;
+    let zero_a = View::u32_le_at(bytes, off + 10)?;
+    let size = View::u32_le_at(bytes, off + 14)?;
+    let zero_b = View::u32_le_at(bytes, off + 18)?;
+    let name_len = View::u32_le_at(bytes, off + 22)?;
     if zero_a != 0 || zero_b != 0 {
         return None;
     }

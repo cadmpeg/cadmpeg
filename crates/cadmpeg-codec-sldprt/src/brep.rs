@@ -18,7 +18,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32_at as u32_be};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -303,7 +303,9 @@ fn parse_carrier_at_marker(
 ) -> Option<Carrier> {
     let values_at = marker_at.checked_add(1)?;
     let end = values_at.checked_add(n.checked_mul(8)?)?;
-    let vals = f64_run(body, values_at, n)?;
+    let mut view = View::over_retained(body);
+    view.seek(values_at)?;
+    let vals = view.read_counted(n as u64, 8, View::f64_be)?;
     if vals.iter().any(|value| !value.is_finite()) {
         return None;
     }
@@ -339,7 +341,7 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     let tag_end = off.checked_add(2)?;
     let has_ff = body.get(tag_end) == Some(&0xff);
     let hdr = tag_end.checked_add(usize::from(has_ff))?;
-    let attr = u16_be(body, hdr)?;
+    let attr = View::u16_be_at(body, hdr)?;
     let mut candidates = analytic_marker_candidates(body, hdr)?
         .into_iter()
         .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
