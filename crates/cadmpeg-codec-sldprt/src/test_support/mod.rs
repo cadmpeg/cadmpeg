@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+mod appearance;
 mod container;
 mod history;
 mod ir;
@@ -11,6 +12,7 @@ mod parasolid;
 mod pmi;
 mod tessellation;
 
+pub(crate) use appearance::*;
 pub(crate) use container::*;
 pub(crate) use history::*;
 pub(crate) use ir::*;

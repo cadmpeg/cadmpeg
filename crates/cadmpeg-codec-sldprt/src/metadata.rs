@@ -321,3 +321,6 @@ fn attribute(
         values,
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1157,6 +1157,18 @@ pub(crate) fn arc_sketch_body() -> Vec<u8> {
     body
 }
 
+pub(crate) fn count_entity51_family(payload: &[u8], flags: u32, disc: u16) -> usize {
+    use cadmpeg_core::decode::View;
+    payload
+        .windows(14)
+        .filter(|window| {
+            window[0..2] == [0x00, 0x51]
+                && View::u32_be_at(window, 2) == Some(flags)
+                && View::u16_be_at(window, 12) == Some(disc)
+        })
+        .count()
+}
+
 pub(crate) fn nurbs_sketch_body(rational: bool) -> Vec<u8> {
     let mut body = triangle_body();
     body.extend(if rational {

@@ -13,5 +13,6 @@ use crate::records::{
 };
 use cadmpeg_ir::math::Point3;
 
+mod lanes;
 mod profile_points;
 mod spatial;

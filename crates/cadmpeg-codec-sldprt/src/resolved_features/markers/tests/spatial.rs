@@ -962,3 +962,23 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     assert_eq!(entity.kind, SketchInputKind::Point);
     assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
 }
+
+#[test]
+fn spatial_vertex_record_decodes_model_coordinates() {
+    let mut payload = vec![0x55; 7];
+    payload.extend([
+        0xff, 0xfe, 0xff, 0x06, b'V', 0x00, b'e', 0x00, b'r', 0x00, b't', 0x00, b'e', 0x00, b'x',
+        0x00,
+    ]);
+    payload.extend([0x00; 27]);
+    payload.extend([0x0e, 0x00]);
+    for value in [1.25f64, -2.5, 3.75] {
+        payload.extend(value.to_le_bytes());
+    }
+    assert_eq!(
+        crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
+        vec![cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)]
+    );
+    payload[7 + 43] = 0x1e;
+    assert!(crate::resolved_features::markers::spatial_vertex_coordinates(&payload).is_empty());
+}
