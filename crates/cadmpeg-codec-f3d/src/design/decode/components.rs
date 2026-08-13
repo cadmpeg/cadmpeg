@@ -2,7 +2,6 @@
 //! Decode fixed local component-occurrence carriers.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
@@ -50,13 +49,13 @@ pub(crate) fn exact_component_occurrence(
     if after_tag != start.checked_add(7)? {
         return None;
     }
-    let record_index = u32_at(bytes, after_tag)?;
+    let record_index = View::u32_le_at(bytes, after_tag)?;
     let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
     let frame_length = end.checked_sub(start)?;
     if !matches!(frame_length, BASE_FRAME_LENGTH | PLACED_FRAME_LENGTH)
         || bytes.get(start + 11..start + 19)? != [0; 8]
         || bytes.get(start + 19) != Some(&1)
-        || u32_at(bytes, start + 20)? != 1
+        || View::u32_le_at(bytes, start + 20)? != 1
         || bytes.get(start + 24) != Some(&1)
         || bytes.get(start + 196) != Some(&0)
         || bytes.get(start + 197) != Some(&1)
@@ -67,7 +66,7 @@ pub(crate) fn exact_component_occurrence(
     if View::u64_le_at(bytes, start + 198)? != component_record_index {
         return None;
     }
-    let occurrence_ordinal = u32_at(bytes, start + 40)?;
+    let occurrence_ordinal = View::u32_le_at(bytes, start + 40)?;
     if occurrence_ordinal == 0 {
         return None;
     }

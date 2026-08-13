@@ -11,7 +11,6 @@
 use serde::Deserialize;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
@@ -487,7 +486,7 @@ fn occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
         return None;
     }
     at += 1;
-    let count = usize::try_from(u32_at(body, at)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(body, at)?).ok()?;
     if count == 0 || count > 4096 {
         return None;
     }
@@ -499,7 +498,7 @@ fn occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
         if let Some(link_name) = element.link_name {
             link_names.push(link_name);
         }
-        discriminators.push(u32_at(body, at)?);
+        discriminators.push(View::u32_le_at(body, at)?);
         at += 4;
     }
     if body.get(at) != Some(&0) {
@@ -545,7 +544,7 @@ fn occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
 /// Consume the three reference runs that close a placement, returning `Some`
 /// only when they end exactly at the record end.
 fn placement_tail(body: &[u8], mut at: usize) -> Option<()> {
-    let count = usize::try_from(u32_at(body, at)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(body, at)?).ok()?;
     if count > 256 {
         return None;
     }
@@ -557,7 +556,7 @@ fn placement_tail(body: &[u8], mut at: usize) -> Option<()> {
     // two closing references. Its tag byte is neither reference presence value.
     if !matches!(body.get(at), Some(0 | 1)) {
         at += 1;
-        let tagged = usize::try_from(u32_at(body, at)?).ok()?;
+        let tagged = usize::try_from(View::u32_le_at(body, at)?).ok()?;
         if tagged > 256 {
             return None;
         }

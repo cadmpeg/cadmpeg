@@ -14,7 +14,6 @@ use std::io::{Cursor, Write};
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
@@ -1097,7 +1096,7 @@ fn legacy_face_appearance_assignments(
             continue;
         };
         let mut cursor = marker_at + marker_len;
-        let Some(optional_name_count) = u32_at(bytes, cursor) else {
+        let Some(optional_name_count) = View::u32_le_at(bytes, cursor) else {
             continue;
         };
         if optional_name_count == 0 {
@@ -1625,7 +1624,7 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
 /// Decode one LP-UTF16 string at `offset`, validating unit by unit so a
 /// non-string byte window bails out before allocating.
 fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let count = usize::try_from(u32_at(bytes, offset)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, offset)?).ok()?;
     if !(2..=256).contains(&count) {
         return None;
     }

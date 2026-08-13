@@ -9,7 +9,7 @@ use crate::ids;
 use crate::records::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignDecalImage, DesignParameterScope,
 };
-use cadmpeg_core::le::u32_at;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition};
@@ -168,7 +168,7 @@ fn parse_decal_image_frame(
     let mut asset_record = None;
     while let Some(asset_at) = next_indexed_record_offset(bytes, position) {
         position = asset_at.checked_add(1)?;
-        if u32_at(bytes, asset_at + 7) != Some(asset_record_index) {
+        if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
             continue;
         }
         let Some(candidate) = parse_decal_asset_record(bytes, asset_at, asset_record_index) else {
@@ -220,7 +220,7 @@ fn parse_decal_asset_record(
 ) -> Option<DecalAssetRecord> {
     let (asset_class_tag, after_asset_tag) =
         lp_ascii_filtered(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_asset_tag)? != asset_record_index
+    if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
         || bytes.get(asset_at + 11..asset_at + 19)? != [0; 8]
     {
         return None;
@@ -236,7 +236,7 @@ fn parse_decal_asset_record(
     }
     let (name_class_tag, after_name_tag) =
         lp_ascii_filtered(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
-    let name_record_index = u32_at(bytes, after_name_tag)?;
+    let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
     if name_record_index != asset_record_index.checked_add(1)?
         || bytes.get(name_at + 11..name_at + 21)? != [0; 10]
     {
@@ -262,7 +262,7 @@ fn parse_decal_asset_record(
 }
 
 fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
-    (bytes.get(at) == Some(&1)).then(|| u32_at(bytes, at + 1))?
+    (bytes.get(at) == Some(&1)).then(|| View::u32_le_at(bytes, at + 1))?
 }
 
 #[cfg(test)]

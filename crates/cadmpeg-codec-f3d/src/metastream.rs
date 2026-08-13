@@ -2,7 +2,6 @@
 //! Shared Fusion `MetaStream` segment framing.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_hyphenated, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
@@ -110,7 +109,7 @@ pub(crate) fn primary_record_frames(
 }
 
 fn take_counted_run(bytes: &[u8], at: &mut usize, stride: usize) -> Option<()> {
-    let count = usize::try_from(u32_at(bytes, *at)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, *at)?).ok()?;
     let start = at.checked_add(4)?;
     let end = count.checked_mul(stride)?.checked_add(start)?;
     bytes.get(start..end)?;
@@ -119,7 +118,7 @@ fn take_counted_run(bytes: &[u8], at: &mut usize, stride: usize) -> Option<()> {
 }
 
 fn take_record_index(bytes: &[u8], at: &mut usize) -> Option<Vec<RecordIndexEntry>> {
-    let count = u32_at(bytes, *at)?;
+    let count = View::u32_le_at(bytes, *at)?;
     let records_at = at.checked_add(4)?;
     let mut view = View::over_retained(bytes);
     view.seek(records_at)?;
@@ -145,7 +144,7 @@ fn require<T>(value: Option<T>, field: &'static str, offset: usize) -> Result<T,
 
 fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
     let present_at = *at;
-    let present = require(u32_at(bytes, *at), "version-context presence", *at)?;
+    let present = require(View::u32_le_at(bytes, *at), "version-context presence", *at)?;
     *at = require(at.checked_add(4), "version-context presence", *at)?;
     match present {
         0 => Ok(()),
@@ -191,7 +190,7 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
                 });
             }
             *at = next;
-            require(u32_at(bytes, *at), "version-context revision", *at)?;
+            require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
             Ok(())
         }
@@ -213,7 +212,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     )?;
     let at = require(at.checked_add(4), "segment id", at)?;
     let (_, at) = require(lp_utf16_bounded(bytes, at, 0..=256), "asset GUID", at)?;
-    let magic = require(u32_at(bytes, at), "serializer magic", at)?;
+    let magic = require(View::u32_le_at(bytes, at), "serializer magic", at)?;
     let at = require(
         at.checked_add(if magic == 1234 { 16 } else { 8 }),
         "serializer integer group",
@@ -237,7 +236,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     let mut at = require(at.checked_add(8), "segment type code", at)?;
     require(bytes.get(..at), "segment type code", at.min(bytes.len()))?;
 
-    let count = require(u32_at(bytes, at), "type count", at)?;
+    let count = require(View::u32_le_at(bytes, at), "type count", at)?;
     at = require(at.checked_add(4), "type count", at)?;
     let mut types = Vec::new();
     for _ in 0..count {
@@ -259,7 +258,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         )?;
         at = next;
         let version_offset = at;
-        let version = require(u32_at(bytes, at), "type version", at)?;
+        let version = require(View::u32_le_at(bytes, at), "type version", at)?;
         at = require(at.checked_add(4), "type version", at)?;
         let (module, next) = require(
             lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
@@ -267,11 +266,15 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             at,
         )?;
         at = next;
-        let id_count = usize::try_from(require(u32_at(bytes, at), "type entity count", at)?)
-            .map_err(|_| ParseFailure {
-                field: "type entity count",
-                offset: at,
-            })?;
+        let id_count = usize::try_from(require(
+            View::u32_le_at(bytes, at),
+            "type entity count",
+            at,
+        )?)
+        .map_err(|_| ParseFailure {
+            field: "type entity count",
+            offset: at,
+        })?;
         let ids_at = require(at.checked_add(4), "type entity count", at)?;
         let ids_end = require(
             id_count
@@ -336,7 +339,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     }
     if at < bytes.len() {
         take_version_context(bytes, &mut at)?;
-        let properties = require(u32_at(bytes, at), "property count", at)?;
+        let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
         at = require(at.checked_add(4), "property count", at)?;
         for _ in 0..properties {
             let (_, next) = require(
