@@ -35,9 +35,6 @@ mod native;
 #[path = "tests_design.rs"]
 mod design;
 
-#[path = "tests_materials.rs"]
-mod materials;
-
 #[path = "tests_assembly.rs"]
 mod assembly;
 

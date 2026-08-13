@@ -1,7 +1,409 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Materials-domain synthetic tests and fixtures.
+//! Materials-module unit tests and appearance suites.
+#![allow(clippy::unwrap_used)]
+#![allow(unused_imports)]
+#![allow(
+    clippy::cloned_ref_to_slice_refs,
+    clippy::default_trait_access,
+    clippy::if_not_else,
+    clippy::needless_pass_by_value,
+    clippy::range_plus_one,
+    clippy::semicolon_if_nothing_returned,
+    clippy::trivially_copy_pass_by_ref
+)]
+
+use std::io::{Cursor, Read, Seek, Write};
+
+use cadmpeg_asm::asm_header;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
+use zip::CompressionMethod;
+
+use crate::bytes::lp_utf16_bytes;
+use crate::container::{self, role};
+use crate::test_support::*;
+use crate::F3dCodec;
 
 use super::*;
+
+fn raw_body_map_pair(
+    asm_key_offset: usize,
+    entity_suffix: u64,
+) -> crate::design::decode::body::BodyBinding {
+    crate::design::decode::body::BodyBinding {
+        blob_name: "BREP.synthetic.smbh".into(),
+        blob_name_offset: asm_key_offset + 32,
+        pair_count: 2,
+        pair_ordinal: 0,
+        asm_key: 7,
+        asm_key_offset,
+        entity_suffix,
+        entity_suffix_offset: asm_key_offset + 8,
+    }
+}
+
+fn resolved_body_binding(
+    stream: &str,
+    asm_key_offset: u64,
+    entity_suffix: u64,
+    blob_name: &str,
+    body: &str,
+) -> crate::records::DesignBodyBinding {
+    crate::records::DesignBodyBinding {
+        id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
+        stream: stream.into(),
+        pair_count: 1,
+        pair_ordinal: 0,
+        asm_body_key: 7,
+        asm_body_key_offset: asm_key_offset,
+        entity_suffix,
+        entity_suffix_offset: asm_key_offset + 8,
+        blob_name: blob_name.into(),
+        blob_name_offset: asm_key_offset + 32,
+        body: Some(cadmpeg_ir::ids::BodyId(body.into())),
+    }
+}
+
+#[test]
+fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
+    let body_map = [raw_body_map_pair(25, 100), raw_body_map_pair(41, 100)];
+    let Err(error) = super::unique_body_map_pair(&body_map, 100, "material assignment") else {
+        panic!("one Design entity must not select two map pairs")
+    };
+    assert!(error
+        .to_string()
+        .contains("matches multiple body-map pairs"));
+}
+
+#[test]
+fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let first = resolved_body_binding(
+        stream,
+        25,
+        100,
+        "BREP.first.smbh",
+        "f3d:brep/first/brep:entity#1",
+    );
+    let second_body = cadmpeg_ir::ids::BodyId("f3d:brep/second/brep:entity#1".into());
+    let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", &second_body.0);
+    let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
+    let visual_guid = "11111111-2222-3333-4444-555555555555";
+    let appearance = cadmpeg_ir::appearance::Appearance {
+        id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#second".into()),
+        name: None,
+        asset_guid: Some(visual_guid.into()),
+        library_id: None,
+        visual_guid: Some(visual_guid.into()),
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    };
+    let assignment = crate::records::DesignMaterialAssignment {
+        id: owner,
+        asm_body_key: 7,
+        asm_body_key_offset: 125,
+        entity_suffix: 200,
+        entity_suffix_offset: 133,
+        entity_id: "0_200".into(),
+        entity_id_offset: 500,
+        visual_guid: visual_guid.into(),
+        visual_guid_offset: 600,
+        physical_token: None,
+        physical_token_offset: None,
+        visual_preset: None,
+        visual_preset_offset: None,
+    };
+    let projected = super::bind_bodies(
+        &[appearance],
+        &[assignment],
+        &std::collections::HashMap::new(),
+        &std::collections::HashMap::new(),
+        &[first, second],
+    )
+    .expect("blob-qualified material binding");
+    let [binding] = projected.as_slice() else {
+        panic!("one appearance binding expected")
+    };
+    assert_eq!(
+        binding.target,
+        cadmpeg_ir::appearance::AppearanceTarget::Body(second_body)
+    );
+}
+
+#[test]
+fn presetless_assignment_matches_only_its_visual_guid() {
+    let appearance_guid = "11111111-2222-3333-4444-555555555555";
+    let mut appearance = cadmpeg_ir::appearance::Appearance {
+        id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#catalog".into()),
+        name: None,
+        asset_guid: Some(appearance_guid.into()),
+        library_id: None,
+        visual_guid: Some(appearance_guid.into()),
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    };
+    let mut assignment = crate::records::DesignMaterialAssignment {
+        id: "f3d:design:material-assignment#1".into(),
+        asm_body_key: 7,
+        asm_body_key_offset: 25,
+        entity_suffix: 100,
+        entity_suffix_offset: 33,
+        entity_id: "0_100".into(),
+        entity_id_offset: 500,
+        visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
+        visual_guid_offset: 600,
+        physical_token: None,
+        physical_token_offset: None,
+        visual_preset: None,
+        visual_preset_offset: None,
+    };
+
+    assert!(
+        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+            .expect("valid preset-less assignment")
+            .is_none()
+    );
+
+    assignment.visual_guid = appearance_guid.into();
+    assert!(
+        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+            .expect("exact visual-token assignment")
+            .is_some()
+    );
+
+    assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
+    assignment.visual_preset = Some("Prism-017".into());
+    appearance.name = Some("Prism-017".into());
+    assert!(
+        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+            .expect("present preset-name fallback")
+            .is_some()
+    );
+}
+
+#[test]
+fn complete_visual_token_selects_one_revision_record() {
+    let base_token = "11111111-2222-3333-4444-555555555555";
+    let revised_token = "11111111-2222-3333-4444-555555555555_Post2015";
+    let appearance = |id: &str, token: &str| cadmpeg_ir::appearance::Appearance {
+        id: cadmpeg_ir::ids::AppearanceId(id.into()),
+        name: None,
+        asset_guid: Some(token.into()),
+        library_id: None,
+        visual_guid: Some(token.into()),
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    };
+    let appearances = [
+        appearance("f3d:appearance#base", base_token),
+        appearance("f3d:appearance#revised", revised_token),
+    ];
+
+    let selected = super::appearance_for_visual_token(&appearances, revised_token, None)
+        .expect("unique complete visual token")
+        .expect("revised appearance exists");
+    assert_eq!(selected.id.as_str(), "f3d:appearance#revised");
+
+    let duplicates = [
+        appearance("f3d:appearance#first", revised_token),
+        appearance("f3d:appearance#second", revised_token),
+    ];
+    assert!(matches!(
+        super::appearance_for_visual_token(&duplicates, revised_token, None),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn visual_preset_fallback_requires_one_record() {
+    let appearance = |id: &str| cadmpeg_ir::appearance::Appearance {
+        id: cadmpeg_ir::ids::AppearanceId(id.into()),
+        name: Some("Prism-017".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    };
+    let appearances = [
+        appearance("f3d:appearance#first"),
+        appearance("f3d:appearance#second"),
+    ];
+
+    assert!(matches!(
+        super::appearance_for_visual_token(
+            &appearances,
+            "11111111-2222-3333-4444-555555555555",
+            Some("Prism-017"),
+        ),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
+    let mut record = vec![0; 120];
+    record[102] = 2;
+    assert_eq!(super::generic_connection_delta(&record, 0), None);
+
+    record[102] = 1;
+    record[104..108].copy_from_slice(&1u32.to_le_bytes());
+    record[108..112].copy_from_slice(&16u32.to_le_bytes());
+    assert_eq!(super::generic_connection_delta(&record, 0), None);
+}
+
+fn distance_record(unit: u32, value: f64) -> cadmpeg_protein::DecodedRecord {
+    cadmpeg_protein::DecodedRecord {
+        ordinal: 0,
+        logical_offset: 0,
+        schema: "TestSchema".into(),
+        guid: String::new(),
+        base: String::new(),
+        asset_lib_id: String::new(),
+        properties: std::collections::BTreeMap::from([(
+            "test_Depth".to_owned(),
+            cadmpeg_protein::DecodedProperty {
+                value_offset: 0,
+                value: cadmpeg_protein::PropertyValue::Distance { unit, value },
+                connections: Vec::new(),
+            },
+        )]),
+    }
+}
+
+#[test]
+fn decoded_color_requires_finite_normalized_channels() {
+    assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
+    for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+        assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
+    }
+}
+
+/// The three length tags of the Distance quantity class each convert to
+/// the IR's millimetres. `0x200e` is millimetre, not centimetre.
+#[test]
+fn distance_tags_convert_to_millimetres() {
+    for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)] {
+        let record = distance_record(unit, value);
+        assert_eq!(super::distance_property(&record, "Depth"), Some(expected));
+    }
+}
+
+#[test]
+fn schema_primary_colour_wins_over_rival_colour_members() {
+    for (schema, primary_id) in [
+        ("GenericSchema", "generic_diffuse"),
+        ("MetalSchema", "metal_color"),
+        ("MetallicPaintSchema", "metallicpaint_base_color"),
+        ("PlasticVinylSchema", "plasticvinyl_color"),
+        ("PrismLayeredSchema", "layered_diffuse"),
+        ("PrismMetalSchema", "metal_f0"),
+        ("PrismOpaqueSchema", "opaque_albedo"),
+        ("PrismTransparentSchema", "transparent_color"),
+        ("PrismWoodSchema", "surface_albedo"),
+    ] {
+        let mut properties = std::collections::BTreeMap::from([
+            color_property("common_Tint_color", [0.75, 0.75, 0.75, 1.0]),
+            color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
+            (
+                "common_Tint_toggle".to_owned(),
+                cadmpeg_protein::DecodedProperty {
+                    value_offset: 0,
+                    value: cadmpeg_protein::PropertyValue::Boolean(false),
+                    connections: Vec::new(),
+                },
+            ),
+        ]);
+        properties.insert(
+            primary_id.to_owned(),
+            cadmpeg_protein::DecodedProperty {
+                value_offset: 0,
+                value: cadmpeg_protein::PropertyValue::Color([0.125, 0.25, 0.375, 1.0]),
+                connections: Vec::new(),
+            },
+        );
+        let record = appearance_record(schema, properties);
+        assert_eq!(
+            super::appearance_base_color(&record).map(|color| color.g),
+            Some(0.25),
+            "{schema} selects {primary_id}"
+        );
+    }
+}
+
+#[test]
+fn enabled_common_tint_replaces_the_schema_primary_colour() {
+    let mut properties = std::collections::BTreeMap::from([
+        color_property("opaque_albedo", [0.125, 0.25, 0.375, 1.0]),
+        color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
+        color_property("common_Tint_color", [0.75, 0.625, 0.5, 1.0]),
+    ]);
+    properties.insert(
+        "common_Tint_toggle".to_owned(),
+        cadmpeg_protein::DecodedProperty {
+            value_offset: 0,
+            value: cadmpeg_protein::PropertyValue::Boolean(true),
+            connections: Vec::new(),
+        },
+    );
+    let record = appearance_record("PrismOpaqueSchema", properties);
+    assert_eq!(
+        super::appearance_base_color(&record).map(|color| color.g),
+        Some(0.625)
+    );
+}
+
+fn color_property(id: &str, color: [f64; 4]) -> (String, cadmpeg_protein::DecodedProperty) {
+    (
+        id.to_owned(),
+        cadmpeg_protein::DecodedProperty {
+            value_offset: 0,
+            value: cadmpeg_protein::PropertyValue::Color(color),
+            connections: Vec::new(),
+        },
+    )
+}
+
+fn appearance_record(
+    schema: &str,
+    properties: std::collections::BTreeMap<String, cadmpeg_protein::DecodedProperty>,
+) -> cadmpeg_protein::DecodedRecord {
+    cadmpeg_protein::DecodedRecord {
+        ordinal: 0,
+        logical_offset: 0,
+        schema: schema.to_owned(),
+        guid: "11111111-2222-3333-4444-555555555555".to_owned(),
+        base: "Prism-001".to_owned(),
+        asset_lib_id: String::new(),
+        properties,
+    }
+}
+
+/// A Distance whose tag names a quantity other than length has no
+/// millimetre reading and must not be silently taken as one.
+#[test]
+fn a_non_length_distance_tag_yields_no_value() {
+    let record = distance_record(0x0002_1008, 1.0);
+    assert_eq!(super::distance_property(&record, "Depth"), None);
+}
 
 #[test]
 fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
