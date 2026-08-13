@@ -812,4 +812,4 @@ fn marker_entities_inner(
 }
 
 #[cfg(test)]
-mod profile_join_tests;
+mod tests;
