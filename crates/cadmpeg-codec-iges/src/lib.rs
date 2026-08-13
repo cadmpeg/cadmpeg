@@ -180,6 +180,6 @@ impl Encoder for IgesEncoder {
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod integration_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod test_support;
