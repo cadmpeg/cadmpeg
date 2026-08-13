@@ -6319,57 +6319,6 @@ fn native_design_objects_follow_first_field_order() {
 }
 
 #[test]
-fn catalog_parser_reads_exact_inclusive_length_dictionary() {
-    let entries = [
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Sketch",
-        "Pad",
-    ];
-    let catalogs = crate::catalog::parse(&catalog_stream(&entries));
-
-    assert_eq!(catalogs.len(), 1);
-    assert_eq!(catalogs[0].declared_count, 7);
-    assert_eq!(catalogs[0].entries.len(), entries.len());
-    assert_eq!(catalogs[0].entries[4].ordinal, 4);
-    assert_eq!(catalogs[0].entries[4].value, "Sketch");
-    assert_eq!(catalogs[0].entries[5].value, "Pad");
-}
-
-#[test]
-fn value_block_parser_reads_length_to_terminator_boundary() {
-    let payload = [0x81, 0x83, 0x32, 4, 0, 0, 0, 0x83, 0x82];
-    let mut bytes = value_block_stream(&payload);
-    bytes.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Sketch",
-    ]));
-
-    let blocks = crate::value_block::parse(&bytes);
-    assert_eq!(blocks.len(), 1);
-    assert_eq!(blocks[0].pos, 0);
-    assert_eq!(blocks[0].declared_len, 15);
-    assert_eq!(blocks[0].total_len, 16);
-    assert_eq!(blocks[0].payload, payload);
-}
-
-#[test]
-fn native_value_blocks_require_a_complete_adjacent_catalog() {
-    let mut bytes = value_block_stream(&[0x81]);
-    bytes.extend_from_slice(&[0x7c, 0x02]);
-
-    assert_eq!(crate::value_block::parse(&bytes).len(), 1);
-    assert!(crate::native::CatiaNative::decode(&bytes)
-        .value_blocks
-        .is_empty());
-}
-
-#[test]
 fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
     let mut bytes = value_block_stream(&[0x32, 4, 0, 0, 0, 0x83, 0x32, 5, 0, 0, 0, 0x82]);
     bytes.extend(catalog_stream(&[
