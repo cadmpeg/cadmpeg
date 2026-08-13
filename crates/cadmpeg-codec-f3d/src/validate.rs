@@ -8160,3 +8160,6 @@ fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
