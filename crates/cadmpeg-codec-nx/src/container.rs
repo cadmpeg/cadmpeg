@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::le::{u32_at as u32_le, u64_at as u64_le};
 use cadmpeg_core::CodecError;
 
@@ -434,7 +434,8 @@ impl Container<'_> {
                 let raw = <[u8; 4]>::try_from(word)
                     .expect("invariant: chunks_exact(4) yields four-byte slices");
                 RmFastLoadObjectId {
-                    value: u32::from_le_bytes(raw),
+                    value: View::u32_le_at(bytes, ids_start + ordinal * 4)
+                        .expect("invariant: chunks_exact(4) yields four-byte slices"),
                     offset: ids_start + ordinal * 4,
                     raw,
                 }
@@ -492,8 +493,7 @@ pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(u
             let count = bounded_len(count as u64, 3, payload.len().saturating_sub(pos))?;
             let mut out = Vec::with_capacity(count);
             for _ in 0..count {
-                let raw_length = payload.get(pos..pos + 2)?;
-                let length = usize::from(u16::from_le_bytes([raw_length[0], raw_length[1]]));
+                let length = usize::from(View::u16_le_at(payload, pos)?);
                 let string_offset = pos + 2;
                 pos = string_offset.checked_add(length)?;
                 let raw = payload.get(string_offset..pos)?;
@@ -513,10 +513,10 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
     let parse_record = |record_id, offset, end| -> Option<ExtrefRecord> {
         let bytes = payload.get(offset..end)?;
         (bytes.get(..4) == Some(&[1, 0, 0, 0]) && bytes.get(6) == Some(&1)).then_some(())?;
-        let declared_count = u16::from_be_bytes(bytes.get(4..6)?.try_into().ok()?);
+        let declared_count = View::u16_be_at(bytes, 4)?;
         let mut id_slots = [0; 4];
         for (slot, value) in id_slots.iter_mut().enumerate() {
-            *value = u32::from_le_bytes(bytes.get(7 + slot * 4..11 + slot * 4)?.try_into().ok()?);
+            *value = View::u32_le_at(bytes, 7 + slot * 4)?;
         }
         (bytes.get(23) == Some(&1)).then_some(())?;
         let count = usize::from(*bytes.get(24)?);
@@ -529,9 +529,7 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
         for handle_index in 0..handle_token_count {
             let token = 25 + handle_index * 5;
             (bytes.get(token) == Some(&0xe0)).then_some(())?;
-            handles.push(u32::from_be_bytes(
-                bytes.get(token + 1..token + 5)?.try_into().ok()?,
-            ));
+            handles.push(View::u32_be_at(bytes, token + 1)?);
         }
         let closing_duplicate = handle_token_count >= 2
             && handles[handle_token_count - 1] == handles[handle_token_count - 2];
@@ -622,16 +620,9 @@ pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32
     let mut at = 0usize;
     while at + 9 <= bytes.len() {
         if bytes[at] == 0xe0 && bytes[at + 5] & 0xf0 == 0xc0 {
-            let handle = u32::from_be_bytes(
-                bytes[at + 1..at + 5]
-                    .try_into()
-                    .expect("four-byte persistent handle"),
-            );
-            let tagged_reference = u32::from_be_bytes(
-                bytes[at + 5..at + 9]
-                    .try_into()
-                    .expect("four-byte tagged reference"),
-            ) & 0x0fff_ffff;
+            let handle = View::u32_be_at(bytes, at + 1).expect("four-byte persistent handle");
+            let tagged_reference =
+                View::u32_be_at(bytes, at + 5).expect("four-byte tagged reference") & 0x0fff_ffff;
             pairs.push((at, handle, tagged_reference));
             at += 9;
         } else {
