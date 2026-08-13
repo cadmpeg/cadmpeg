@@ -28,7 +28,5 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 pub(crate) use crate::test_support::*;
 
-mod writer;
-
 #[path = "integration_tests.rs"]
 mod integration_tests;
