@@ -3,7 +3,11 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 use super::*;
-use cadmpeg_ir::codec::CodecBackend;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use std::io::Cursor;
+use zip::write::SimpleFileOptions;
+
+use crate::test_support::*;
 
 use crate::annotation::tests::transfers_remaining_semantic_annotation_families_and_assets;
 use crate::application_geometry::tests::transfers_application_mesh_and_transformed_point_cloud_payloads;
