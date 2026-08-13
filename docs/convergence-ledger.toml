@@ -1,11 +1,11 @@
 # Convergence ratchet ceilings. Counts may only fall.
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
-measured_at = "47fa5b0ea8f68d174b206d56126a4bc5115aa7d2"
+measured_at = "2efcaf234abd98dcf29267f71235bcd5c6784e20"
 filter = "production .rs under crates/**/src; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items and their brace bodies when the attribute immediately precedes the item"
 
 [ceilings]
-from_endian_bytes = 851
+from_endian_bytes = 847
 le_be_at_outside_core = 0
 codec_error_malformed_format = 1282
 loss_note_struct_literals = 197
