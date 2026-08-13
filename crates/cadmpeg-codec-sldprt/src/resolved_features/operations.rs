@@ -4,6 +4,7 @@ use super::is_class_token;
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
 use std::collections::HashMap;
 
@@ -37,9 +38,7 @@ pub(crate) fn form_code_padding(sw_version: Option<&str>) -> Option<FormCodePadd
 
 pub(super) fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option<u16> {
     let start = name_offset.checked_sub(2)?;
-    Some(u16::from_le_bytes(
-        payload.get(start..name_offset)?.try_into().ok()?,
-    ))
+    View::u16_le_at(payload, start)
 }
 
 pub(super) fn feature_operation_code(
@@ -75,12 +74,7 @@ pub(super) fn feature_operation_code(
                 {
                     return None;
                 }
-                let code = u32::from_le_bytes(
-                    lane.native_payload
-                        .get(code_offset..code_offset + 4)?
-                        .try_into()
-                        .ok()?,
-                );
+                let code = View::u32_le_at(&lane.native_payload, code_offset)?;
                 Some((code_offset, code))
             })
             .collect::<Vec<_>>();
@@ -126,12 +120,7 @@ pub(super) fn feature_operation_code(
             })
         })?
     };
-    Some(u32::from_le_bytes(
-        lane.native_payload
-            .get(code_offset..code_offset + 4)?
-            .try_into()
-            .ok()?,
-    ))
+    View::u32_le_at(&lane.native_payload, code_offset)
 }
 
 pub(super) fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
@@ -280,7 +269,7 @@ pub(super) fn feature_inline_operation_fields(
     {
         return None;
     }
-    Some((u16::from_le_bytes([bytes[4], bytes[5]]), bytes[6]))
+    Some((View::u16_le_at(bytes, 4)?, bytes[6]))
 }
 
 /// Project an inline Boolean operation from a recognized complete family.

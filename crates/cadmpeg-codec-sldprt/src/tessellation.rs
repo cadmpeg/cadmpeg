@@ -2,6 +2,7 @@
 //! `DisplayLists` descriptor tables.
 
 use crate::container::{ContainerScan, Section};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -40,9 +41,7 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         .enumerate()
         .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
         .filter_map(|offset| {
-            let length = usize::from(u16::from_le_bytes(
-                payload.get(offset + 4..offset + 6)?.try_into().ok()?,
-            ));
+            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
             if !(1..=128).contains(&length) {
                 return None;
             }
@@ -141,7 +140,7 @@ pub(crate) fn auxiliary_channels_are_consistent(
     let stored_list_c = c
         .data
         .chunks_exact(4)
-        .map(|bytes| usize::try_from(u32::from_le_bytes(bytes.try_into().ok()?)).ok())
+        .map(|bytes| usize::try_from(View::u32_le_at(bytes, 0)?).ok())
         .collect::<Option<Vec<_>>>();
     let counts = (usize::try_from(b.count).ok(), usize::try_from(d.count).ok());
     let payload_lengths = channels.iter().all(|channel| {
@@ -156,7 +155,7 @@ pub(crate) fn auxiliary_channels_are_consistent(
         && stored_list_c.as_deref() == Some(list_c.as_slice())
         && b.data
             .chunks_exact(4)
-            .all(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte chunk")).is_finite())
+            .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
 
 fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
@@ -191,9 +190,8 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
-                    bytes
-                        .get(at..at + 4)
-                        .map(|v| f32::from_le_bytes([v[0], v[1], v[2], v[3]]) as f64)
+                    View::f32_le_at(bytes, at)
+                        .map(f64::from)
                         .filter(|value| value.is_finite())
                 };
                 vertices.push(Point3::new(
@@ -206,9 +204,8 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
-                    bytes
-                        .get(at..at + 4)
-                        .map(|v| f32::from_le_bytes([v[0], v[1], v[2], v[3]]) as f64)
+                    View::f32_le_at(bytes, at)
+                        .map(f64::from)
                         .filter(|value| value.is_finite())
                 };
                 normals.push(Vector3::new(read(p)?, read(p + 4)?, read(p + 8)?));

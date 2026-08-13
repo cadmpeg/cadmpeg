@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::Exactness;
@@ -1466,23 +1467,26 @@ fn take_u8(bytes: &[u8], cursor: &mut usize) -> Option<u8> {
 }
 
 fn take_u16(bytes: &[u8], cursor: &mut usize) -> Option<u16> {
-    let end = cursor.checked_add(2)?;
-    let value = u16::from_be_bytes(bytes.get(*cursor..end)?.try_into().ok()?);
-    *cursor = end;
+    let mut view = View::over_retained(bytes);
+    view.seek(*cursor)?;
+    let value = view.u16_be()?;
+    *cursor = view.position();
     Some(value)
 }
 
 fn take_u32(bytes: &[u8], cursor: &mut usize) -> Option<u32> {
-    let end = cursor.checked_add(4)?;
-    let value = u32::from_be_bytes(bytes.get(*cursor..end)?.try_into().ok()?);
-    *cursor = end;
+    let mut view = View::over_retained(bytes);
+    view.seek(*cursor)?;
+    let value = view.u32_be()?;
+    *cursor = view.position();
     Some(value)
 }
 
 fn take_u64(bytes: &[u8], cursor: &mut usize) -> Option<u64> {
-    let end = cursor.checked_add(8)?;
-    let value = u64::from_be_bytes(bytes.get(*cursor..end)?.try_into().ok()?);
-    *cursor = end;
+    let mut view = View::over_retained(bytes);
+    view.seek(*cursor)?;
+    let value = view.u64_be()?;
+    *cursor = view.position();
     Some(value)
 }
 

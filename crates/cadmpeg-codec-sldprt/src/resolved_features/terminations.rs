@@ -15,6 +15,7 @@ use super::selections::{
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FeatureDefinition;
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -503,7 +504,7 @@ pub(super) fn compact_combine_operation_at(
     name_offset: usize,
 ) -> Option<&'static str> {
     let name_prefix = payload.get(name_offset..name_offset.checked_add(5)?)?;
-    let name_token = u16::from_le_bytes(name_prefix[..2].try_into().ok()?);
+    let name_token = View::u16_le_at(name_prefix, 0)?;
     if !is_class_token(name_token) || name_prefix[2..] != [0xff, 0xfe, 0xff] {
         return None;
     }
@@ -524,7 +525,7 @@ pub(super) fn compact_combine_operation_at(
     {
         return None;
     }
-    match u32::from_le_bytes(payload.get(operation..operation_end)?.try_into().ok()?) {
+    match View::u32_le_at(payload, operation)? {
         0 => Some("Join"),
         1 => Some("Cut"),
         2 => Some("Intersect"),
@@ -826,10 +827,7 @@ pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<
     {
         return None;
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let count = usize::try_from(View::u32_le_at(payload, marker - 12)?).ok()?;
     if count == 0 {
         return None;
     }
@@ -854,11 +852,9 @@ pub(super) fn compact_body_component_path_at(
     {
         return None;
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| *count != 0)?;
+    let count = usize::try_from(View::u32_le_at(payload, marker - 12)?)
+        .ok()
+        .filter(|count| *count != 0)?;
     compact_body_component_entries_at(payload, marker + 18, count)
 }
 
@@ -1072,11 +1068,7 @@ pub(super) fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usiz
 pub(super) fn compact_extrusion_blind_through_all_second_at(payload: &[u8], offset: usize) -> bool {
     compact_end_spec_identity_at(payload, offset)
         && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
-        && payload
-            .get(offset + 12..offset + 16)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|flag| flag <= 1)
+        && View::u32_le_at(payload, offset + 12).is_some_and(|flag| flag <= 1)
         && payload.get(offset + 16..offset + 22) == Some(&[0, 0, 0, 0, 0, 0])
         && payload.get(offset + 22..offset + 26) == Some(&[1, 0, 0, 0])
         && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
@@ -1088,21 +1080,9 @@ pub(super) fn compact_extrusion_blind_through_all_second_at(payload: &[u8], offs
 fn compact_extrusion_two_direction_header(payload: &[u8], offset: usize, code: u32) -> bool {
     compact_end_spec_identity_at(payload, offset)
         && payload.get(offset + 2..offset + 4) == Some(&[0, 0])
-        && payload
-            .get(offset + 4..offset + 8)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|word| word <= 1)
-        && payload
-            .get(offset + 8..offset + 12)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|word| word <= 1)
-        && payload
-            .get(offset + 12..offset + 16)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|flag| flag <= 1)
+        && View::u32_le_at(payload, offset + 4).is_some_and(|word| word <= 1)
+        && View::u32_le_at(payload, offset + 8).is_some_and(|word| word <= 1)
+        && View::u32_le_at(payload, offset + 12).is_some_and(|flag| flag <= 1)
         && payload.get(offset + 16..offset + 18) == Some(&[0, 0])
         && payload.get(offset + 18..offset + 22) == Some(code.to_le_bytes().as_slice())
         && payload.get(offset + 22..offset + 26) == Some(&[1, 0, 0, 0])
@@ -1301,19 +1281,11 @@ pub(super) fn compact_extrusion_to_face_at(
     // single-face child independently validates the interpretation.
     let legacy_header = payload.get(offset..offset + 2) == Some(&[3, 0])
         && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
-        && payload
-            .get(offset + 12..offset + 16)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|flag| flag <= 1)
+        && View::u32_le_at(payload, offset + 12).is_some_and(|flag| flag <= 1)
         && payload.get(offset + 16..offset + 18) == Some(&[0, 0])
         && payload.get(offset + 18..offset + 22) == Some(&[4, 0, 0, 0]);
     if !(compact_extrusion_end_spec_header(payload, offset, 4) || legacy_header)
-        || payload
-            .get(offset + 22..offset + 26)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_none_or(|flag| flag > 1)
+        || View::u32_le_at(payload, offset + 22).is_none_or(|flag| flag > 1)
         || payload.get(offset + 26..offset + 30) != Some(&[0, 0, 0, 0])
         || payload.get(offset + 30..offset + 33) != Some(&[1, 1, 0])
     {
@@ -1415,26 +1387,24 @@ fn compact_tokenized_face_body_at(
     let Some(body) = payload.get(offset..offset + word_count * 2) else {
         return false;
     };
-    let token_at = |index: usize| u16::from_le_bytes([body[index * 2], body[index * 2 + 1]]);
+    let token_at = |index: usize| View::u16_le_at(body, index * 2);
     (1..=2).contains(&leading_class_tokens)
-        && (0..leading_class_tokens).all(|index| is_class_token(token_at(index)))
-        && token_at(leading_class_tokens) == 2
-        && is_class_token(token_at(leading_class_tokens + 1))
-        && token_at(leading_class_tokens + 2) == 0
-        && is_class_token(token_at(leading_class_tokens + 3))
-        && token_at(leading_class_tokens + 4) == 1
-        && token_at(leading_class_tokens + 5) == 0
-        && is_class_token(token_at(leading_class_tokens + 6))
+        && (0..leading_class_tokens).all(|index| token_at(index).is_some_and(is_class_token))
+        && token_at(leading_class_tokens) == Some(2)
+        && token_at(leading_class_tokens + 1).is_some_and(is_class_token)
+        && token_at(leading_class_tokens + 2) == Some(0)
+        && token_at(leading_class_tokens + 3).is_some_and(is_class_token)
+        && token_at(leading_class_tokens + 4) == Some(1)
+        && token_at(leading_class_tokens + 5) == Some(0)
+        && token_at(leading_class_tokens + 6).is_some_and(is_class_token)
 }
 
 fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
     let Some(body) = payload.get(offset..offset + 11) else {
         return false;
     };
-    let class_token = u16::from_le_bytes([body[0], body[1]]);
-    let component_token = u16::from_le_bytes([body[2], body[3]]);
-    is_class_token(class_token)
-        && is_class_token(component_token)
+    View::u16_le_at(body, 0).is_some_and(is_class_token)
+        && View::u16_le_at(body, 2).is_some_and(is_class_token)
         && body[4..8] == 2u32.to_le_bytes()
         && matches!(body[8], 0 | 0x40)
         && body[9..11] == [0, 0]
@@ -1446,7 +1416,8 @@ fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
 fn compact_end_spec_identity_at(payload: &[u8], offset: usize) -> bool {
     payload
         .get(offset..offset + 2)
-        .is_some_and(|bytes| is_class_token(u16::from_le_bytes([bytes[0], bytes[1]])))
+        .and_then(|bytes| View::u16_le_at(bytes, 0))
+        .is_some_and(is_class_token)
         || offset
             .checked_sub(15)
             .and_then(|start| payload.get(start..offset + 2))
@@ -1457,16 +1428,8 @@ fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -
     compact_end_spec_identity_at(payload, offset)
         && payload.get(offset + 2..offset + 4) == Some(&[0, 0])
         && payload.get(offset + 4..offset + 8) == Some(&1u32.to_le_bytes())
-        && payload
-            .get(offset + 8..offset + 12)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|word| word <= 1)
-        && payload
-            .get(offset + 12..offset + 16)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|flag| flag <= 1)
+        && View::u32_le_at(payload, offset + 8).is_some_and(|word| word <= 1)
+        && View::u32_le_at(payload, offset + 12).is_some_and(|flag| flag <= 1)
         && payload.get(offset + 16..offset + 18) == Some(&[0, 0])
         && payload.get(offset + 18..offset + 22) == Some(code.to_le_bytes().as_slice())
 }
@@ -1485,9 +1448,9 @@ pub(super) fn legacy_single_face_reference_path_at(
     body: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     let header = payload.get(body..body + 19)?;
-    let class_token = u16::from_le_bytes(header[0..2].try_into().ok()?);
-    let component_token = u16::from_le_bytes(header[2..4].try_into().ok()?);
-    let owner = u32::from_le_bytes(header[11..15].try_into().ok()?);
+    let class_token = View::u16_le_at(header, 0)?;
+    let component_token = View::u16_le_at(header, 2)?;
+    let owner = View::u32_le_at(header, 11)?;
     if !is_class_token(class_token)
         || !is_class_token(component_token)
         || header[4..8] != 2u32.to_le_bytes()
@@ -1501,11 +1464,11 @@ pub(super) fn legacy_single_face_reference_path_at(
     let entry_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
         let instance = payload.get(offset..offset + 4)?;
         let signature: [u8; 12] = payload.get(offset + 4..offset + 16)?.try_into().ok()?;
-        (is_class_token(u16::from_le_bytes([instance[0], instance[1]]))
+        (View::u16_le_at(instance, 0).is_some_and(is_class_token)
             && instance[2..4] == [0, 0]
             && signature[0..2] != [0, 0])
         .then(|| FeatureInputComponentPathEntry {
-            instance: Some(u16::from_le_bytes([instance[0], instance[1]])),
+            instance: View::u16_le_at(instance, 0),
             type_signature: signature,
             local_id: None,
         })
@@ -1516,10 +1479,7 @@ pub(super) fn legacy_single_face_reference_path_at(
                 payload
                     .get(offset..offset + zero_count)
                     .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-                    && payload
-                        .get(offset + zero_count..offset + zero_count + 4)
-                        .and_then(|bytes| bytes.try_into().ok())
-                        .map(u32::from_le_bytes)
+                    && View::u32_le_at(payload, offset + zero_count)
                         .is_some_and(|source| source != 0)
             })
     };
@@ -1553,10 +1513,7 @@ pub(super) fn legacy_single_face_reference_path_at(
                     continue;
                 }
                 if slot_bytes == 4
-                    && !payload
-                        .get(end..end + 4)
-                        .and_then(|bytes| bytes.try_into().ok())
-                        .map(u32::from_le_bytes)
+                    && !View::u32_le_at(payload, end)
                         .is_some_and(|slot| (1..=u32::from(u16::MAX)).contains(&slot))
                 {
                     continue;
@@ -1579,7 +1536,7 @@ pub(super) fn legacy_single_face_reference_path_at(
                 let Some(bytes) = payload.get(cursor + 16..cursor + 20) else {
                     continue;
                 };
-                entry.local_id = Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
+                entry.local_id = View::u32_le_at(bytes, 0);
                 cursor + 20
             } else {
                 cursor + 16
@@ -1617,8 +1574,8 @@ pub(super) fn legacy_single_face_reference_path_at(
         if !filler.iter().all(|byte| *byte == 0) && !padded {
             continue;
         }
-        let token = u16::from_le_bytes(prefix[0..2].try_into().ok()?);
-        let count = usize::try_from(u32::from_le_bytes(prefix[10..14].try_into().ok()?)).ok()?;
+        let token = View::u16_le_at(prefix, 0)?;
+        let count = usize::try_from(View::u32_le_at(prefix, 10)?).ok()?;
         if !is_class_token(token)
             || prefix[2..6] != 1u32.to_le_bytes()
             || prefix[6..10] != [0; 4]
@@ -1665,11 +1622,9 @@ pub(super) fn compact_single_face_reference_record_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
-    let count = marker.checked_sub(12).and_then(|offset| {
-        Some(u32::from_le_bytes(
-            payload.get(offset..offset + 4)?.try_into().ok()?,
-        ))
-    })?;
+    let count = marker
+        .checked_sub(12)
+        .and_then(|offset| View::u32_le_at(payload, offset))?;
     let count = usize::try_from(count)
         .ok()
         .filter(|count| (1..=64).contains(count))?;
@@ -1711,9 +1666,7 @@ pub(super) fn compact_single_face_reference_record_at(
                     {
                         return Some((components.clone(), None));
                     }
-                    let source = u32::from_le_bytes(
-                        payload.get(terminal + 20..terminal + 24)?.try_into().ok()?,
-                    );
+                    let source = View::u32_le_at(payload, terminal + 20)?;
                     (payload.get(terminal..terminal + 20)? == [0; 20] && source != 0)
                         .then(|| (components.clone(), Some(source)))
                 })
@@ -1749,11 +1702,9 @@ pub(super) fn compact_termination_reference_path_at(
             return None;
         }
         Some(FeatureInputComponentPathEntry {
-            instance: Some(u16::from_le_bytes(instance[0..2].try_into().ok()?)),
+            instance: Some(View::u16_le_at(instance, 0)?),
             type_signature: payload.get(offset + 4..offset + 16)?.try_into().ok()?,
-            local_id: Some(u32::from_le_bytes(
-                payload.get(offset + 16..offset + 20)?.try_into().ok()?,
-            )),
+            local_id: Some(View::u32_le_at(payload, offset + 16)?),
         })
     };
     let mut cursor = marker + 18;
@@ -1770,7 +1721,7 @@ pub(super) fn compact_termination_reference_path_at(
         let ordinal_gap = payload
             .get(cursor..cursor + 4)
             .and_then(|bytes| {
-                let ordinal = u16::from_le_bytes(bytes[..2].try_into().ok()?);
+                let ordinal = View::u16_le_at(bytes, 0)?;
                 (ordinal != 0 && ordinal & 0x8000 == 0 && bytes[2..4] == [0, 0]).then_some(ordinal)
             })
             .is_some()
@@ -1812,11 +1763,9 @@ pub(super) fn compact_termination_reference_path_at(
 }
 
 fn compact_termination_reference_frame_at(payload: &[u8], marker: usize) -> Option<u32> {
-    let count = marker.checked_sub(12).and_then(|offset| {
-        Some(u32::from_le_bytes(
-            payload.get(offset..offset + 4)?.try_into().ok()?,
-        ))
-    })?;
+    let count = marker
+        .checked_sub(12)
+        .and_then(|offset| View::u32_le_at(payload, offset))?;
     if !(1..=64).contains(&count)
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
         || !payload

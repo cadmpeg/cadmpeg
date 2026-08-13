@@ -12,6 +12,7 @@ use super::sketch_edges::{cross, dot};
 use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, Length};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -21,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
     let class_offset = usize::try_from(class_offset).ok()?;
     let scalar = |offset: usize| {
-        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(payload, offset)?;
         value.is_finite().then_some(value)
     };
     let direction_at = |offset: usize| {
@@ -89,7 +90,7 @@ pub(super) fn declared_line_reference_directions(
         }
         let scalar = |relative: usize| {
             let offset = handle.checked_add(relative)?;
-            let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+            let value = View::f64_le_at(payload, offset)?;
             value.is_finite().then_some(value)
         };
         let direction_at = |relative: usize| {
@@ -108,11 +109,7 @@ pub(super) fn declared_line_reference_directions(
             ))
         };
         let addressed = payload.get(handle + 8..handle + 12) == Some(&[0; 4])
-            && payload
-                .get(handle + 12..handle + 16)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|address| address != 0);
+            && View::u32_le_at(payload, handle + 12).is_some_and(|address| address != 0);
         let compact_long_form = (payload.get(handle + 88..handle + 104) == Some(&[0; 16])
             && payload.get(handle + 104..handle + 112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
             && payload.get(handle + 112..handle + 136) == Some(&[0; 24]))
@@ -180,12 +177,7 @@ pub(super) fn linear_pattern_display_directions(
             if direction_offset.checked_add(24)? > end {
                 return None;
             }
-            let stored_spacing = f64::from_le_bytes(
-                payload
-                    .get(value_offset..value_offset + 8)?
-                    .try_into()
-                    .ok()?,
-            );
+            let stored_spacing = View::f64_le_at(payload, value_offset)?;
             if !stored_spacing.is_finite()
                 || stored_spacing <= 0.0
                 || (stored_spacing - expected).abs() > LENGTH_TOLERANCE_M
@@ -194,12 +186,7 @@ pub(super) fn linear_pattern_display_directions(
             }
             let scalar = |relative: usize| {
                 let scalar_offset = direction_offset.checked_add(relative)?;
-                let value = f64::from_le_bytes(
-                    payload
-                        .get(scalar_offset..scalar_offset + 8)?
-                        .try_into()
-                        .ok()?,
-                );
+                let value = View::f64_le_at(payload, scalar_offset)?;
                 value.is_finite().then_some(value)
             };
             let direction = Vector3::new(scalar(0)?, scalar(8)?, scalar(16)?);
@@ -283,18 +270,14 @@ pub(super) fn compact_line_reference_directions(
         let Some(record) = payload.get(handle..end) else {
             return Vec::new();
         };
-        let Some(address) = record
-            .get(12..16)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-        else {
+        let Some(address) = View::u32_le_at(record, 12) else {
             return Vec::new();
         };
         if record[..8] != HANDLES || record[8..12] != [0; 4] {
             return Vec::new();
         }
         let scalar = |offset: usize| {
-            let value = f64::from_le_bytes(record.get(offset..offset + 8)?.try_into().ok()?);
+            let value = View::f64_le_at(record, offset)?;
             value.is_finite().then_some(value)
         };
         let direction_at = |offset: usize| {
@@ -311,10 +294,10 @@ pub(super) fn compact_line_reference_directions(
         };
         let mut directions = Vec::new();
         let tagged_token = |offset: usize| {
-            record.get(offset..offset + 2).is_some_and(|bytes| {
-                let token = u16::from_le_bytes([bytes[0], bytes[1]]);
-                is_class_token(token)
-            })
+            record
+                .get(offset..offset + 2)
+                .and_then(|bytes| View::u16_le_at(bytes, 0))
+                .is_some_and(is_class_token)
         };
         if address == 0 {
             let unshifted_termination = record.get(88..104) == Some(&[0; 16])
@@ -353,10 +336,7 @@ pub(super) fn compact_line_reference_directions(
                 && record
                     .get(88..96)
                     .and_then(|bytes| {
-                        Some([
-                            u32::from_le_bytes(bytes[..4].try_into().ok()?),
-                            u32::from_le_bytes(bytes[4..].try_into().ok()?),
-                        ])
+                        Some([View::u32_le_at(bytes, 0)?, View::u32_le_at(bytes, 4)?])
                     })
                     .is_some_and(|values| values.into_iter().all(|value| value != 0)));
         if record.get(16..24) == Some(&[0; 8]) && shifted_seven_scalar_trailer {
@@ -415,8 +395,7 @@ pub(super) fn compact_line_reference_directions(
             && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
             && (record.get(112..128) == Some(&[0; 16])
                 || record.get(112..126).is_some_and(|tail| {
-                    let token = u16::from_le_bytes([tail[12], tail[13]]);
-                    tail[..12] == [0; 12] && is_class_token(token)
+                    tail[..12] == [0; 12] && View::u16_le_at(tail, 12).is_some_and(is_class_token)
                 }))
         {
             if let Some(direction) = direction_at(80) {
@@ -474,13 +453,13 @@ pub(super) fn revolution_line_reference_inputs(
 
     let search_end = object_end.min(payload.len());
     let scalar = |offset: usize| {
-        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(payload, offset)?;
         (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
     };
     let source_cell = |offset: usize| {
-        let source = u32::from_le_bytes(payload.get(offset..offset + 4)?.try_into().ok()?);
-        let identity = u32::from_le_bytes(payload.get(offset + 4..offset + 8)?.try_into().ok()?);
-        let token = u16::from_le_bytes(payload.get(offset + 8..offset + 10)?.try_into().ok()?);
+        let source = View::u32_le_at(payload, offset)?;
+        let identity = View::u32_le_at(payload, offset + 4)?;
+        let token = View::u16_le_at(payload, offset + 8)?;
         (profile_sources.contains(&source)
             && identity != 0
             && is_class_token(token)
@@ -520,11 +499,7 @@ pub(super) fn revolution_line_reference_inputs(
             && payload.get(handle_start - 24..handle_start - 20) == Some(&1u32.to_le_bytes())
             && payload.get(handle_start - 20..handle_start - 16) == Some(&[0; 4])
             && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
-            && payload
-                .get(handle_start - 16..handle_start - 12)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|address| address != 0)
+            && View::u32_le_at(payload, handle_start - 16).is_some_and(|address| address != 0)
             && payload.get(handle_start + 8..handle_start + 24) == Some(&[0; 16])
         {
             let source_offset = handle_start - 44;
@@ -572,18 +547,10 @@ pub(super) fn revolution_line_reference_inputs(
             && payload.get(handle_start + 4..handle_start + 8) == Some(HANDLE.as_slice())
             && payload.get(handle_start + 8..handle_start + 12) == Some(HANDLE.as_slice())
             && payload.get(handle_start - 32..handle_start - 28) == Some(&[0; 4])
-            && payload
-                .get(handle_start - 28..handle_start - 24)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|variant| variant != 0)
+            && View::u32_le_at(payload, handle_start - 28).is_some_and(|variant| variant != 0)
             && payload.get(handle_start - 24..handle_start - 20) == Some(&1u32.to_le_bytes())
             && payload.get(handle_start - 20..handle_start - 16) == Some(&[0; 4])
-            && payload
-                .get(handle_start - 16..handle_start - 12)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|address| address != 0)
+            && View::u32_le_at(payload, handle_start - 16).is_some_and(|address| address != 0)
             && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
         {
             let source_offset = handle_start - 48;
@@ -602,11 +569,7 @@ pub(super) fn revolution_line_reference_inputs(
                 let addressed_frame = handles_end + 24;
                 let addressed_end = addressed_frame + 8 * 8;
                 if payload.get(handles_end..handles_end + 4) == Some(&[0; 4])
-                    && payload
-                        .get(handles_end + 4..handles_end + 8)
-                        .and_then(|bytes| bytes.try_into().ok())
-                        .map(u32::from_le_bytes)
-                        .is_some_and(|address| address != 0)
+                    && View::u32_le_at(payload, handles_end + 4).is_some_and(|address| address != 0)
                     && payload.get(handles_end + 8..handles_end + 20) == Some(&[0; 12])
                     && payload.get(handles_end + 20..handles_end + 24) == Some(&[0xff; 4])
                     && next_class_after_zeros(addressed_end, 24).is_some()
@@ -620,18 +583,10 @@ pub(super) fn revolution_line_reference_inputs(
         if handle_start >= object_start + 48
             && payload.get(handle_start + 4..handle_start + 8) == Some(HANDLE.as_slice())
             && payload.get(handle_start - 32..handle_start - 28) == Some(&[0; 4])
-            && payload
-                .get(handle_start - 28..handle_start - 24)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|variant| variant != 0)
+            && View::u32_le_at(payload, handle_start - 28).is_some_and(|variant| variant != 0)
             && payload.get(handle_start - 24..handle_start - 20) == Some(&1u32.to_le_bytes())
             && payload.get(handle_start - 20..handle_start - 16) == Some(&[0; 4])
-            && payload
-                .get(handle_start - 16..handle_start - 12)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|address| address != 0)
+            && View::u32_le_at(payload, handle_start - 16).is_some_and(|address| address != 0)
             && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
         {
             let source_offset = handle_start - 48;
@@ -649,25 +604,13 @@ pub(super) fn revolution_line_reference_inputs(
         }
         if handle_start >= object_start + 44
             && payload.get(handle_start + 4..handle_start + 8) == Some(HANDLE.as_slice())
-            && payload
-                .get(handle_start - 28..handle_start - 24)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|variant| variant != 0)
+            && View::u32_le_at(payload, handle_start - 28).is_some_and(|variant| variant != 0)
             && payload.get(handle_start - 24..handle_start - 20) == Some(&1u32.to_le_bytes())
             && payload.get(handle_start - 20..handle_start - 16) == Some(&[0; 4])
-            && payload
-                .get(handle_start - 16..handle_start - 12)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|address| address != 0)
+            && View::u32_le_at(payload, handle_start - 16).is_some_and(|address| address != 0)
             && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
             && payload.get(handle_start + 8..handle_start + 12) == Some(&[0; 4])
-            && payload
-                .get(handle_start + 12..handle_start + 16)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|address| address != 0)
+            && View::u32_le_at(payload, handle_start + 12).is_some_and(|address| address != 0)
             && payload.get(handle_start + 16..handle_start + 24) == Some(&[0; 8])
             && payload
                 .get(handle_start + 80..handle_start + 88)
@@ -687,11 +630,7 @@ pub(super) fn revolution_line_reference_inputs(
             && payload.get(handle_start - 28..handle_start - 24) == Some(&1u32.to_le_bytes())
             && payload.get(handle_start - 24..handle_start - 20) == Some(&1u32.to_le_bytes())
             && payload.get(handle_start - 20..handle_start - 16) == Some(&[0; 4])
-            && payload
-                .get(handle_start - 16..handle_start - 12)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_some_and(|address| address != 0)
+            && View::u32_le_at(payload, handle_start - 16).is_some_and(|address| address != 0)
             && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
         {
             let source_offset = handle_start - 48;
@@ -699,19 +638,13 @@ pub(super) fn revolution_line_reference_inputs(
                 let two_handles = payload.get(handle_start + 4..handle_start + 8)
                     == Some(HANDLE.as_slice())
                     && payload.get(handle_start + 8..handle_start + 12) == Some(&[0; 4])
-                    && payload
-                        .get(handle_start + 12..handle_start + 16)
-                        .and_then(|bytes| bytes.try_into().ok())
-                        .map(u32::from_le_bytes)
+                    && View::u32_le_at(payload, handle_start + 12)
                         .is_some_and(|address| address != 0);
                 let three_handles = payload.get(handle_start + 4..handle_start + 8)
                     == Some(HANDLE.as_slice())
                     && payload.get(handle_start + 8..handle_start + 12) == Some(HANDLE.as_slice())
                     && payload.get(handle_start + 12..handle_start + 16) == Some(&[0; 4])
-                    && payload
-                        .get(handle_start + 16..handle_start + 20)
-                        .and_then(|bytes| bytes.try_into().ok())
-                        .map(u32::from_le_bytes)
+                    && View::u32_le_at(payload, handle_start + 16)
                         .is_some_and(|address| address != 0)
                     && payload.get(handle_start + 20..handle_start + 24) == Some(&[0; 4]);
                 let layout = if two_handles {
@@ -746,12 +679,7 @@ pub(super) fn revolution_line_reference_inputs(
             {
                 continue;
             }
-            let address = u32::from_le_bytes(
-                payload
-                    .get(handles_end + 4..handles_end + 8)?
-                    .try_into()
-                    .ok()?,
-            );
+            let address = View::u32_le_at(payload, handles_end + 4)?;
             if address == 0 {
                 continue;
             }
@@ -790,11 +718,7 @@ pub(super) fn revolution_line_reference_inputs(
                     let record_end = frame + scalar_count * 8;
                     let Some(next_record) = (record_end..=record_end + 24).find(|offset| {
                         payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)
-                            || payload
-                                .get(*offset..*offset + 2)
-                                .and_then(|bytes| bytes.try_into().ok())
-                                .map(u16::from_le_bytes)
-                                .is_some_and(is_class_token)
+                            || View::u16_le_at(payload, *offset).is_some_and(is_class_token)
                     }) else {
                         continue;
                     };
@@ -872,17 +796,13 @@ pub(super) fn revolution_temporary_axis(
         if payload.get(declaration..declaration + DECLARATION.len()) != Some(DECLARATION)
             || payload.get(declaration + 223..declaration + 231) != Some(HANDLE_PAIR)
             || payload.get(declaration + 231..declaration + 235) != Some(&[0; 4])
-            || payload
-                .get(declaration + 235..declaration + 239)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_none_or(|address| address == 0)
+            || View::u32_le_at(payload, declaration + 235).is_none_or(|address| address == 0)
         {
             return None;
         }
         let scalar = |index: usize| {
             let offset = declaration + 239 + index * 8;
-            let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+            let value = View::f64_le_at(payload, offset)?;
             (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
         };
         let origin = Point3::new(
@@ -1599,11 +1519,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             && lane.native_payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
             && (compact_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some()
                 || wide_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some());
-        let detailed_indexed_curve = lane
-            .native_payload
-            .get(offset + 17..offset + 21)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
+        let detailed_indexed_curve = View::u32_le_at(&lane.native_payload, offset + 17)
             .is_some_and(|code| matches!(code, 0 | 2))
             && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some();
         current_code_two || detailed_indexed_curve

@@ -72,10 +72,7 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
     let Some(header_size) = u32_le(payload, 4) else {
         return false;
     };
-    let Some(bits_per_pixel) = payload
-        .get(18..20)
-        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-    else {
+    let Some(bits_per_pixel) = View::u16_le_at(payload, 18) else {
         return false;
     };
     header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)

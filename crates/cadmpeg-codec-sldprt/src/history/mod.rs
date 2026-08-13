@@ -7,6 +7,7 @@ use crate::classification::{
 };
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -14113,10 +14114,11 @@ fn valid_xml_name(name: &str) -> bool {
 fn xml_text(bytes: &[u8]) -> Option<String> {
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {
-        let units = bytes[2..]
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-            .collect::<Vec<_>>();
+        let mut view = View::over_retained(&bytes[2..]);
+        let mut units = Vec::new();
+        while let Some(unit) = view.u16_le() {
+            units.push(unit);
+        }
         Some(String::from_utf16_lossy(&units))
     } else {
         std::str::from_utf8(bytes).ok().map(str::to_string)
