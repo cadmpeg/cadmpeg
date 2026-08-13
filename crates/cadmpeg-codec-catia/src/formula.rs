@@ -1094,53 +1094,6 @@ fn resolved_or_intrinsic_legacy_type<'a>(
     .then_some((intrinsic_type, false))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{outer_container_in_scope, LegacyModelingScope};
-    use crate::native::CatiaOuterContainerBinding;
-
-    fn binding(stream_name: &str) -> CatiaOuterContainerBinding {
-        CatiaOuterContainerBinding {
-            data_offset: 10,
-            ordinal: 2,
-            class_name: "CATPrtCont".to_string(),
-            base_class: "CATProdCont".to_string(),
-            stream_name: stream_name.to_string(),
-        }
-    }
-
-    #[test]
-    fn legacy_parameter_scope_requires_the_exact_modeling_container() {
-        let part = binding("part");
-        let other_part = binding("other-part");
-
-        assert!(outer_container_in_scope(
-            Some(&part),
-            LegacyModelingScope::Container(&part)
-        ));
-        assert!(!outer_container_in_scope(
-            Some(&other_part),
-            LegacyModelingScope::Container(&part)
-        ));
-        assert!(!outer_container_in_scope(
-            None,
-            LegacyModelingScope::Container(&part)
-        ));
-        assert!(!outer_container_in_scope(
-            Some(&part),
-            LegacyModelingScope::Unresolved
-        ));
-    }
-
-    #[test]
-    fn legacy_parameter_scope_admits_unbound_fragment_runs() {
-        assert!(outer_container_in_scope(
-            None,
-            LegacyModelingScope::Unbounded
-        ));
-    }
-}
-
 struct FormulaParameterCandidate {
     parameter: DesignParameter,
     parameter_type: &'static str,
@@ -3974,3 +3927,6 @@ mod parser_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

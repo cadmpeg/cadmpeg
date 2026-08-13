@@ -1519,3 +1519,6 @@ mod repeated_reference_suffix_tests {
         assert_eq!(repeated_reference_suffix(&payload), None);
     }
 }
+
+#[cfg(test)]
+mod tests;

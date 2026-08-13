@@ -11448,3 +11448,6 @@ impl From<&container::OuterContainerDeclaration> for CatiaOuterContainerBinding 
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
