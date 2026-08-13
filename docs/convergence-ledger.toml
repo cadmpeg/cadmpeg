@@ -1,7 +1,7 @@
 # Convergence ratchet ceilings. Counts may only fall.
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
-measured_at = "e62c324368e62b89d5e0ef439be44493f973b5b9"
+measured_at = "624276eacc19ac4cd2b6eca35701b5d5ed85af5c"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders."
 
 [targets]
@@ -19,5 +19,5 @@ bare_tolerance_literals = 804
 nonliteral_vec_repeat = 152
 crate_root_tests_rs = 12
 path_test_includes = 23
-test_line_debt = 179263
+test_line_debt = 169754
 production_line_debt = 30390
