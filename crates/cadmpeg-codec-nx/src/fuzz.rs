@@ -37,6 +37,16 @@ pub fn intersection(data: &[u8]) {
     let _ = crate::intersection::curves(data, crate::intersection::ChartPointLayout::Xyz3);
 }
 
+/// Exercise NX NURBS curve extraction.
+pub fn nurbs_curves(data: &[u8]) {
+    let _ = crate::nurbs::curves(data);
+}
+
+/// Exercise NX NURBS surface extraction.
+pub fn nurbs_surfaces(data: &[u8]) {
+    let _ = crate::nurbs::surfaces(data);
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -47,6 +57,8 @@ mod tests {
         super::geometry_curves(&[]);
         super::geometry_surfaces(&[]);
         super::intersection(&[]);
+        super::nurbs_curves(&[]);
+        super::nurbs_surfaces(&[]);
     }
 
     #[test]
@@ -61,5 +73,12 @@ mod tests {
     fn intersection_wrapper_accepts_fixture() {
         let stream = crate::test_support::charted_intersection_curve_topology_partition_stream();
         super::intersection(&stream);
+    }
+
+    #[test]
+    fn nurbs_wrappers_accept_fixture() {
+        let stream = crate::test_support::bspline_partition_stream();
+        super::nurbs_curves(&stream);
+        super::nurbs_surfaces(&stream);
     }
 }

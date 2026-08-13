@@ -84,7 +84,7 @@ pub(crate) mod intersection;
 mod jt;
 mod jt_topology;
 pub(crate) mod native;
-pub mod nurbs;
+pub(crate) mod nurbs;
 #[allow(dead_code)] // Object-model parsing is reached through decode and fuzz.
 pub(crate) mod om;
 #[allow(dead_code)] // Object-model token parsing is an internal dependency.
