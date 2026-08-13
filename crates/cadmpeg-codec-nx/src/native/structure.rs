@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_core::decode::View;
+
 use crate::container::Container;
 use crate::native::om::ObjectUuidValue;
 
@@ -221,8 +223,7 @@ fn framed_payload(bytes: &[u8]) -> Option<&[u8]> {
     if bytes.get(..8)? != [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0] {
         return None;
     }
-    let payload_len =
-        usize::try_from(u32::from_be_bytes(bytes.get(8..12)?.try_into().ok()?)).ok()?;
+    let payload_len = usize::try_from(View::u32_be_at(bytes, 8)?).ok()?;
     if payload_len.checked_add(ENVELOPE_LEN)? != bytes.len() {
         return None;
     }

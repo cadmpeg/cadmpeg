@@ -3,6 +3,9 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+
+use cadmpeg_core::decode::View;
+
 use crate::native::segments::segment_om_links;
 
 /// Semantic family declared by a linked OM section's class registry.
@@ -1247,12 +1250,8 @@ pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsse
             let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
             let payload = container.data.get(start..start.checked_add(size)?)?;
             let (byte_order, version, first_ifd_offset) = match payload.get(..8)? {
-                [b'I', b'I', 42, 0, a, b, c, d] => {
-                    ("little_endian", 42, u32::from_le_bytes([*a, *b, *c, *d]))
-                }
-                [b'M', b'M', 0, 42, a, b, c, d] => {
-                    ("big_endian", 42, u32::from_be_bytes([*a, *b, *c, *d]))
-                }
+                [b'I', b'I', 42, 0, ..] => ("little_endian", 42, View::u32_le_at(payload, 4)?),
+                [b'M', b'M', 0, 42, ..] => ("big_endian", 42, View::u32_be_at(payload, 4)?),
                 _ => return None,
             };
             let first_ifd = usize::try_from(first_ifd_offset).ok()?;
