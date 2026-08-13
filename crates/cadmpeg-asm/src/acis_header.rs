@@ -6,7 +6,7 @@
 //! `0x07`-tagged strings, and three `0x06`-tagged tolerance doubles. The SAB
 //! record stream begins immediately after the doubles.
 
-use cadmpeg_core::le::u32_at;
+use cadmpeg_core::decode::View;
 
 use crate::kernel_header::{read_string_region, KernelHeader};
 
@@ -28,10 +28,10 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
     }
     let mut header = KernelHeader {
         width: 4,
-        save_format_version: u32_at(bytes, 15),
-        record_count: u32_at(bytes, 19),
-        entity_count: u32_at(bytes, 23).map(u64::from),
-        flags: u32_at(bytes, 27).map(u64::from),
+        save_format_version: View::u32_le_at(bytes, 15),
+        record_count: View::u32_le_at(bytes, 19),
+        entity_count: View::u32_le_at(bytes, 23).map(u64::from),
+        flags: View::u32_le_at(bytes, 27).map(u64::from),
         product_family: None,
         product_version: None,
         save_date: None,
