@@ -91,8 +91,8 @@ note = "Representation detection requires the fixed big-endian byte count."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-iges/src/layout.rs"
-contains = "flag[73..79]"
-note = "Representation detection validates the six-byte Binary sequence padding."
+contains = "flag[73..79].iter().all(|byte| matches!(byte, b' ' | b'0'))"
+note = "Representation detection validates the six-byte Binary sequence padding as ASCII blanks or zeroes."
 
 [[record]]
 name = "canonical_card"
@@ -249,8 +249,8 @@ note = "Four two-digit decimal subfields: blank status, subordinate-entity switc
 
 [[record.code]]
 path = "crates/cadmpeg-codec-iges/src/directory.rs"
-contains = ".get(..72)"
-note = "The parser takes columns 1-72 as the Directory Entry data area and splits it into eight-column fields."
+contains = "let mut fields = [[b' '; 8]; 9];"
+note = "The parser splits columns 1-72 into nine eight-column Directory Entry fields."
 
 [[record]]
 name = "directory_entry_card_2"
