@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
@@ -1880,21 +1881,21 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(geometry)
 }
 
-fn u32_tokens(bytes: &[u8], mut at: usize, count: usize) -> Option<(Vec<u32>, usize)> {
+fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)> {
+    let mut view = View::over_retained(bytes);
+    view.seek(at)?;
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
-        if *bytes.get(at)? != 0x10 {
+        if view.u8()? != 0x10 {
             return None;
         }
-        let raw: [u8; 4] = bytes.get(at + 1..at + 5)?.try_into().ok()?;
-        let value = u32::from_le_bytes(raw);
+        let value = view.u32_le()?;
         if value == 0 {
             return None;
         }
         values.push(value);
-        at = at.checked_add(5)?;
     }
-    Some((values, at))
+    Some((values, view.position()))
 }
 
 #[cfg(test)]

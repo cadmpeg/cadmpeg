@@ -6,24 +6,28 @@
 //! `point3`, `vector3`, `unit3`, `skip`) that drive the analytic surface
 //! frame readers in `analytic.rs`.
 
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// A cursor over a CATIA record payload, tracking an absolute byte offset.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Cursor<'a> {
-    bytes: &'a [u8],
-    position: usize,
+    view: View<'a>,
 }
 
 impl<'a> Cursor<'a> {
     /// Creates a cursor positioned at `position` within `bytes`.
     pub(crate) fn new_at(bytes: &'a [u8], position: usize) -> Self {
-        Self { bytes, position }
+        let mut view = View::over_retained(bytes);
+        if view.seek(position).is_none() {
+            let _ = view.seek(view.end());
+        }
+        Self { view }
     }
 
     /// Returns the absolute cursor offset.
     pub(crate) fn position(&self) -> usize {
-        self.position
+        self.view.position()
     }
 
     /// Reads the reference token at the cursor, advancing past it.
@@ -33,20 +37,29 @@ impl<'a> Cursor<'a> {
     /// `0x80..=0xff`. The extended dialect (used by `b5`) additionally
     /// recognises `0x30`, `0x28`, and `0x20`. See `wire::object_ref`.
     pub(crate) fn object_ref(&mut self, extended: bool) -> Option<u32> {
-        let lead = *self.bytes.get(self.position)?;
-        let get = |offset: usize| self.bytes.get(self.position + offset).copied();
-        let (value, width) = match lead {
-            0x38 => (u32::from_le_bytes([get(1)?, get(2)?, get(3)?, 0]), 4),
-            0x30 if extended => (u32::from(u16::from_le_bytes([get(1)?, get(2)?])) << 8, 3),
-            0x28 if extended => (u32::from(get(1)?) | (u32::from(get(2)?) << 16), 3),
-            0x20 if extended => (u32::from(get(1)?) << 16, 2),
-            0x18 => (u32::from(u16::from_le_bytes([get(1)?, get(2)?])), 3),
-            0x10 => (u32::from(get(1)?) << 8, 2),
-            0x08 => (u32::from(get(1)?), 2),
-            0x80..=0xff => (u32::from(lead - 0x80), 1),
+        let mut view = self.view;
+        let lead = view.u8()?;
+        let value = match lead {
+            0x38 => {
+                let b0 = view.u8()?;
+                let b1 = view.u8()?;
+                let b2 = view.u8()?;
+                u32::from_le_bytes([b0, b1, b2, 0])
+            }
+            0x30 if extended => u32::from(view.u16_le()?) << 8,
+            0x28 if extended => {
+                let low = view.u8()?;
+                let high = view.u8()?;
+                u32::from(low) | (u32::from(high) << 16)
+            }
+            0x20 if extended => u32::from(view.u8()?) << 16,
+            0x18 => u32::from(view.u16_le()?),
+            0x10 => u32::from(view.u8()?) << 8,
+            0x08 => u32::from(view.u8()?),
+            0x80..=0xff => u32::from(lead - 0x80),
             _ => return None,
         };
-        self.position += width;
+        self.view = view;
         Some(value)
     }
 
@@ -56,29 +69,25 @@ impl<'a> Cursor<'a> {
     /// A nonzero lead with `lead % 4 == 0` encodes a `lead / 4`-byte
     /// little-endian value (width at most four). See `wire::compact_uint`.
     pub(crate) fn compact_uint(&mut self) -> Option<u32> {
-        let lead = *self.bytes.get(self.position)?;
-        if lead % 4 == 1 {
-            self.position += 1;
-            Some(u32::from((lead - 1) / 4))
+        let mut view = self.view;
+        let lead = view.u8()?;
+        let value = if lead % 4 == 1 {
+            u32::from((lead - 1) / 4)
         } else if lead != 0 && lead % 4 == 0 {
             let width = usize::from(lead / 4);
             if width > 4 {
                 return None;
             }
             let mut value = 0u32;
-            for (shift, byte) in self
-                .bytes
-                .get(self.position + 1..self.position + 1 + width)?
-                .iter()
-                .enumerate()
-            {
-                value |= u32::from(*byte) << (8 * shift);
+            for shift in 0..width {
+                value |= u32::from(view.u8()?) << (8 * shift);
             }
-            self.position += width + 1;
-            Some(value)
+            value
         } else {
-            None
-        }
+            return None;
+        };
+        self.view = view;
+        Some(value)
     }
 }
 
@@ -87,21 +96,14 @@ impl<'a> Cursor<'a> {
 /// The analytic surface readers (`analytic.rs`) consume `f64`, `point3`,
 /// `vector3`, `unit3`, and `skip`, backed by the private `f64_raw` helper.
 impl Cursor<'_> {
-    fn take(&mut self, count: usize) -> Option<&[u8]> {
-        let end = self.position.checked_add(count)?;
-        let bytes = self.bytes.get(self.position..end)?;
-        self.position = end;
-        Some(bytes)
-    }
-
     /// Advances past `count` bytes, failing if they run past the end.
     pub(crate) fn skip(&mut self, count: usize) -> Option<()> {
-        self.take(count).map(|_| ())
+        self.view.skip(count)
     }
 
     /// Reads an eight-byte little-endian `f64` without a finiteness check.
     fn f64_raw(&mut self) -> Option<f64> {
-        Some(f64::from_le_bytes(self.take(8)?.try_into().ok()?))
+        self.view.f64_le()
     }
 
     /// Reads a finite eight-byte little-endian `f64`, rejecting NaN/infinity.

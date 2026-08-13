@@ -661,15 +661,17 @@ pub fn standard_lines(
 /// parameters are in a separate bridged record) and for any non-finite or
 /// invalid payload.
 pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeometry> {
-    let p = prefix.pos + 3; // skip `00 33 <kind>`
-    let be = |i: usize| -> Option<f32> {
-        brep.get(p + 4 * i..p + 4 * i + 4)
-            .map(|s| f32::from_be_bytes([s[0], s[1], s[2], s[3]]))
-    };
+    let mut view = View::over_retained(brep);
+    view.seek(prefix.pos + 3)?; // skip `00 33 <kind>`
     match prefix.kind {
         0x35 => {
             // sphere: cx cy cz radius
-            let (cx, cy, cz, r) = (be(0)?, be(1)?, be(2)?, be(3)?);
+            let (cx, cy, cz, r) = (
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+            );
             if !all_finite(&[cx, cy, cz, r]) || r <= 0.0 {
                 return None;
             }
@@ -682,8 +684,15 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
         }
         0x38 => {
             // torus: cx cy cz ax ay signed_major minor; sign(major) carries sign(az).
-            let (cx, cy, cz, ax, ay, major, minor) =
-                (be(0)?, be(1)?, be(2)?, be(3)?, be(4)?, be(5)?, be(6)?);
+            let (cx, cy, cz, ax, ay, major, minor) = (
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+            );
             if !all_finite(&[cx, cy, cz, ax, ay, major, minor]) {
                 return None;
             }
@@ -701,7 +710,14 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
         }
         0x33 => {
             // cylinder: px py pz ax ay radius; sign(radius) carries sign(az).
-            let (px, py, pz, ax, ay, radius) = (be(0)?, be(1)?, be(2)?, be(3)?, be(4)?, be(5)?);
+            let (px, py, pz, ax, ay, radius) = (
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+            );
             if !all_finite(&[px, py, pz, ax, ay, radius]) {
                 return None;
             }
@@ -718,7 +734,14 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
         }
         0x34 => {
             // cone: apex_x apex_y apex_z ax ay semi_angle; radius at apex is 0.
-            let (x, y, z, ax, ay, semi) = (be(0)?, be(1)?, be(2)?, be(3)?, be(4)?, be(5)?);
+            let (x, y, z, ax, ay, semi) = (
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+                view.f32_be()?,
+            );
             if !all_finite(&[x, y, z, ax, ay, semi]) {
                 return None;
             }
