@@ -31,36 +31,6 @@ fn source_record_join_borrows_the_retained_source_image() {
     assert_eq!(retained.as_ptr(), payload_ptr);
 }
 
-fn count_entity51_family(payload: &[u8], flags: u32, disc: u16) -> usize {
-    payload
-        .windows(14)
-        .filter(|window| {
-            window[0..2] == [0x00, 0x51]
-                && u32::from_be_bytes(window[2..6].try_into().unwrap()) == flags
-                && u16::from_be_bytes(window[12..14].try_into().unwrap()) == disc
-        })
-        .count()
-}
-
-fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u8> {
-    let mut f = sldprt_with_body(body);
-    f.extend(make_block(0x40, "SWObjects", &material_payload(name, rgb)));
-    f
-}
-
-fn material_payload(name: &str, rgb: [u8; 3]) -> Vec<u8> {
-    let mut material = b"moVisualProperties_c".to_vec();
-    material.extend_from_slice(&u32::from_le_bytes([rgb[0], rgb[1], rgb[2], 0]).to_le_bytes());
-    material.extend_from_slice(&0u32.to_le_bytes());
-    material.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
-    material.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
-    material.extend_from_slice(&[0xff, 0xfe, 0xff, name.len() as u8]);
-    for unit in name.encode_utf16() {
-        material.extend_from_slice(&unit.to_le_bytes());
-    }
-    material
-}
-
 #[test]
 fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     use cadmpeg_core::decode::ResourceDimension;
