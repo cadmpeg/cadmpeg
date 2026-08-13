@@ -833,3 +833,6 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
         payload + 16,
     ))
 }
+
+#[cfg(test)]
+mod tests;
