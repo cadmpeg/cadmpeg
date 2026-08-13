@@ -64,7 +64,9 @@ pub(crate) mod coverage;
 pub(crate) mod curve;
 pub(crate) mod datum;
 pub(crate) mod decode;
-pub mod feature;
+#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
+#[allow(unused_imports)]
+pub(crate) mod feature;
 pub mod legacy;
 pub(crate) mod placement;
 pub mod primdata;
