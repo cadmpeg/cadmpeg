@@ -2,14 +2,14 @@
 //! Synthetic `.sldprt` byte-fixture tests.
 #![allow(clippy::unwrap_used)]
 
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::LossTaxonomy;
 
-use crate::container::{self, role, MARKER};
+use crate::container::{self, role};
 use crate::test_support::*;
 use crate::SldprtCodec;
 
@@ -234,79 +234,6 @@ fn native_future_version_remains_rejected() {
     ));
 }
 
-/// Nibble-swap a section name into its stored form (the swap is its own inverse,
-/// so the decoder recovers the original).
-fn swap_name(name: &str) -> Vec<u8> {
-    name.bytes().map(|b| b.rotate_left(4)).collect()
-}
-
-fn raw_deflate(data: &[u8]) -> Vec<u8> {
-    use flate2::write::DeflateEncoder;
-    use flate2::Compression;
-    let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
-    enc.write_all(data).unwrap();
-    enc.finish().unwrap()
-}
-
-fn zlib(data: &[u8]) -> Vec<u8> {
-    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder.write_all(data).unwrap();
-    encoder.finish().unwrap()
-}
-
-fn crc32(data: &[u8]) -> u32 {
-    let mut h = crc32fast::Hasher::new();
-    h.update(data);
-    h.finalize()
-}
-
-/// Assemble one CRC-validated block frame carrying `payload`, named `section`.
-fn make_block(type_id: u32, section: &str, payload: &[u8]) -> Vec<u8> {
-    let comp = raw_deflate(payload);
-    let preamble = swap_name(section);
-    let mut b = Vec::new();
-    b.extend_from_slice(&MARKER);
-    b.extend_from_slice(&type_id.to_le_bytes());
-    b.extend_from_slice(&crc32(payload).to_le_bytes());
-    b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
-    b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
-    b.extend_from_slice(&preamble);
-    b.extend_from_slice(&comp);
-    b
-}
-
-/// A cache-cell grid entry: the marker, the `2L / L/2 / L` size triple, a name
-/// length, and the nibble-swapped name.
-fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
-    let swapped = swap_name(name);
-    let mut b = Vec::new();
-    b.extend_from_slice(&MARKER);
-    b.extend_from_slice(&0u32.to_le_bytes()); // +6 type_id
-    b.extend_from_slice(&(logical_len * 2).to_le_bytes()); // +10 2L
-    b.extend_from_slice(&(logical_len / 2).to_le_bytes()); // +14 L/2
-    b.extend_from_slice(&logical_len.to_le_bytes()); // +18 L
-    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes()); // +22 name_len
-    b.extend_from_slice(&swapped);
-    b
-}
-
-/// A tail section-directory entry naming an OPC part.
-fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
-    let swapped = swap_name(name);
-    let mut b = Vec::new();
-    b.extend_from_slice(&MARKER);
-    b.extend_from_slice(&type_id.to_le_bytes()); // +6
-    b.extend_from_slice(&0u32.to_le_bytes()); // +10 zero
-    b.extend_from_slice(&size.to_le_bytes()); // +14 size
-    b.extend_from_slice(&0u32.to_le_bytes()); // +18 zero
-    b.extend_from_slice(&(swapped.len() as u32).to_le_bytes()); // +22 name_len
-    b.extend_from_slice(&[0u8; 14]); // +26 descriptor
-    b.extend_from_slice(&swapped); // +40 name
-    b.extend_from_slice(&[0xe5, 0x4b, 0x57, 0x5b, 0x00, 0x00]); // trailer
-    b
-}
-
 fn count_entity51_family(payload: &[u8], flags: u32, disc: u16) -> usize {
     payload
         .windows(14)
@@ -316,25 +243,6 @@ fn count_entity51_family(payload: &[u8], flags: u32, disc: u16) -> usize {
                 && u16::from_be_bytes(window[12..14].try_into().unwrap()) == disc
         })
         .count()
-}
-
-/// A `.sldprt` whose partition block carries `triangle_body`.
-pub(crate) fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
-    let mut f = outer_header();
-    f.extend_from_slice(&make_block(
-        0x20,
-        "Contents/Config-0-Partition",
-        &parasolid_with_body("partition body", "SCH_SW_33103_11000", body),
-    ));
-    f
-}
-
-fn add_solidworks_version(source: &mut Vec<u8>, version: u32) {
-    source.extend(make_block(
-        0x43,
-        "Contents/SolidWorks",
-        format!(r#"<?xml version="1.0"?><swSolidWorks swVersion="{version}"/>"#).as_bytes(),
-    ));
 }
 
 fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u8> {
@@ -901,106 +809,6 @@ fn sldprt_with_nested_nurbs_sketches(body: &[u8]) -> Vec<u8> {
     file
 }
 
-fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
-    let mut f = sldprt_with_body(body);
-    let mut payload = b"moBBoxCenterData_c".to_vec();
-    payload.extend_from_slice(&1u32.to_le_bytes());
-    for value in [0.01f64, 0.02, -0.03, 0.04] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    payload.extend_from_slice(b"moDefaultRefPlnData_c");
-    for value in [0.001f64, 0.002, 0.003, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    payload.extend_from_slice(b"moTransRefPlaneData_c");
-    payload.extend_from_slice(&[0xff; 8]);
-    for value in [0.01f64, 0.02, 0.03, 0.1, 0.2, 1.0, 0.0, -1.0, 0.5] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    payload.extend_from_slice(b"moPart_c");
-    let mut part = [0u8; 13];
-    part[0..4].copy_from_slice(&42u32.to_le_bytes());
-    part[8..12].copy_from_slice(&2026u32.to_le_bytes());
-    payload.extend_from_slice(&part);
-    payload.extend_from_slice(b"moConfigurationMgr_c");
-    let mut configuration = [0u8; 125];
-    configuration[66..70].copy_from_slice(&17u32.to_le_bytes());
-    configuration[107] = 3;
-    configuration[117..125].copy_from_slice(&132_537_600_000_000_000u64.to_le_bytes());
-    payload.extend_from_slice(&configuration);
-    payload.extend_from_slice(b"moLengthUserUnits_c");
-    payload.extend_from_slice(&[0xff, 0xfe, 0xff, 4, b'I', 0, b'N', 0]);
-    f.extend(make_block(0x43, "SWObjects", &payload));
-    f.extend(make_block(
-        0x44,
-        "Units",
-        br#"<Metadata><Property Name="SW_UnitsLinear" Value="0"/></Metadata>"#,
-    ));
-    f
-}
-
-fn sldprt_with_partition_and_deltas(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
-    let mut f = outer_header();
-    let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", partition);
-    payload.extend(parasolid_with_body(
-        "deltas body",
-        "SCH_SW_33103_11000",
-        deltas,
-    ));
-    f.extend_from_slice(&make_block(0x20, "Contents/Config-0-Partition", &payload));
-    f
-}
-
-fn sldprt_with_colliding_sites() -> Vec<u8> {
-    let mut f = outer_header();
-    f.extend(make_block(
-        0x20,
-        "Contents/Config-0-Partition",
-        &parasolid_with_body(
-            "partition body",
-            "SCH_SW_33103_11000",
-            &owned_triangle(0, 700, 0.0),
-        ),
-    ));
-    f.extend(make_block(
-        0x21,
-        "Contents/Config-1-Partition",
-        &parasolid_with_body(
-            "partition body",
-            "SCH_SW_33103_11000",
-            &owned_triangle(0, 701, 10.0),
-        ),
-    ));
-    f
-}
-
-/// The 8-byte outer header (`file_id`, then big-endian `version == 4`).
-fn outer_header() -> Vec<u8> {
-    let mut b = Vec::new();
-    b.extend_from_slice(&0x0000_0001u32.to_le_bytes());
-    b.extend_from_slice(&0x0000_0004u32.to_be_bytes());
-    b
-}
-
-/// A synthetic `.sldprt`: header, a PNG-preview block, a Parasolid block, a
-/// cache cell, and a tail-directory entry.
-fn synthetic_sldprt() -> Vec<u8> {
-    let mut f = outer_header();
-    f.extend_from_slice(&make_block(
-        0x10,
-        "PreviewPNG",
-        &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
-    ));
-    f.extend_from_slice(&make_block(
-        0x20,
-        "Contents/Config-0-Partition",
-        &parasolid_payload("partition body", "SCH_SW_33103_11000"),
-    ));
-    f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
-    f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
-    f
-}
-
 #[test]
 fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     use cadmpeg_core::decode::ResourceDimension;
@@ -1046,18 +854,6 @@ fn detect_high_on_marker_after_header() {
     assert_eq!(SldprtCodec.detect(&f), Confidence::High);
     assert_eq!(
         SldprtCodec.detect(b"\x00\x01\x02\x03 no marker here"),
-        Confidence::No
-    );
-}
-
-#[test]
-fn compound_detection_distinguishes_solidworks_and_generic_signals() {
-    let file = synthetic_compound_with_storage("ISolidWorksInformation");
-    assert_eq!(SldprtCodec.detect(&file), Confidence::High);
-
-    let generic_compound_document = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
-    assert_eq!(
-        SldprtCodec.detect(&generic_compound_document),
         Confidence::No
     );
 }
@@ -1119,6 +915,18 @@ fn write_compound_directory_entry(
     entry[72..76].copy_from_slice(&NO_STREAM.to_le_bytes());
     entry[76..80].copy_from_slice(&child.to_le_bytes());
     entry[116..120].copy_from_slice(&NO_STREAM.to_le_bytes());
+}
+
+#[test]
+fn compound_detection_distinguishes_solidworks_and_generic_signals() {
+    let file = synthetic_compound_with_storage("ISolidWorksInformation");
+    assert_eq!(SldprtCodec.detect(&file), Confidence::High);
+
+    let generic_compound_document = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+    assert_eq!(
+        SldprtCodec.detect(&generic_compound_document),
+        Confidence::No
+    );
 }
 
 #[test]

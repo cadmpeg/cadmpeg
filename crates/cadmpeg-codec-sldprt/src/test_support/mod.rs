@@ -3,6 +3,8 @@
 
 #![allow(clippy::unwrap_used)]
 
+mod container;
 mod parasolid;
 
+pub(crate) use container::*;
 pub(crate) use parasolid::*;
