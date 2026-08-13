@@ -66,3 +66,6 @@ pub fn materials(scan: &ContainerScan) -> Vec<Material> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests;
