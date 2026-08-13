@@ -482,3 +482,6 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
     }
     findings
 }
+
+#[cfg(test)]
+mod tests;
