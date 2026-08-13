@@ -20,8 +20,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::Annotations;
 
 use crate::variant::Variant;
-
 use crate::CatiaCodec;
+
+pub(crate) use crate::test_support::*;
 
 struct NativeFieldsMut<'a> {
     record: &'a mut cadmpeg_ir::NativeRecord,
@@ -651,38 +652,6 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
 pub(crate) const OUTER_MAGIC: &[u8; 8] = b"V5_CFV2\0";
 
 const DIR_MAGIC: &[u8; 16] = b"CATIA_V5 CB0001\0";
-
-fn be32(v: u32) -> [u8; 4] {
-    v.to_be_bytes()
-}
-
-pub(crate) fn le_f32(v: f32) -> [u8; 4] {
-    v.to_le_bytes()
-}
-
-fn be_f32(v: f32) -> [u8; 4] {
-    v.to_be_bytes()
-}
-
-pub(crate) fn le_f64(v: f64) -> [u8; 8] {
-    v.to_le_bytes()
-}
-
-fn compact_uint_bytes(value: u32) -> Vec<u8> {
-    if value <= 63 {
-        return vec![u8::try_from(value * 4 + 1).expect("single-byte compact integer")];
-    }
-    let width = if u16::try_from(value).is_ok() {
-        2
-    } else if value <= 0x00ff_ffff {
-        3
-    } else {
-        4
-    };
-    let mut bytes = vec![u8::try_from(width * 4).expect("compact integer width")];
-    bytes.extend_from_slice(&value.to_le_bytes()[..width]);
-    bytes
-}
 
 /// A `MainDataStream` physical payload: two FBB spine rows, two empty standard
 /// edge tables, and a counted table of three `05 08 01` vertex records.
