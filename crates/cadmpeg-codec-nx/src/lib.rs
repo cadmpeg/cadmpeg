@@ -71,10 +71,8 @@
 //! crate-internal and reached only through the decode entry point.
 
 pub(crate) mod container;
-#[allow(dead_code)] // Internal orchestration remains behind the codec facade.
 pub(crate) mod decode;
 pub(crate) mod deltas;
-#[allow(dead_code)] // Internal evaluation is reached by selected decode paths.
 pub(crate) mod evaluation;
 mod framing;
 pub(crate) mod geometry;
@@ -84,7 +82,6 @@ mod jt_topology;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod om;
-#[allow(dead_code)] // Object-model token parsing is an internal dependency.
 pub(crate) mod om_tokens;
 pub(crate) mod parasolid;
 pub(crate) mod topology;

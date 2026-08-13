@@ -24,6 +24,13 @@ pub fn deltas(data: &[u8]) {
 
 /// Exercise NX object-model indexed section framing.
 pub fn om(data: &[u8]) {
+    let _ = (
+        crate::om_tokens::ROOT_MARKER,
+        crate::om_tokens::HOST_GLOBALS,
+        crate::om_tokens::CLASS_NAME_PREFIX,
+        crate::om_tokens::NUMBER_PREFIX,
+        crate::om_tokens::unit_for(std::str::from_utf8(data).unwrap_or("")),
+    );
     let _ = crate::om::compact_indices(data);
     for section in crate::om::indexed_sections(data) {
         let _ = section.numeric_expressions();

@@ -121,9 +121,11 @@ pub struct BodyCensusEvidence {
 /// Saved-body census evidence for the profile harness.
 #[doc(hidden)]
 pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvidence {
-    match evaluate_saved_body_census(ir) {
+    let evaluation = evaluate_saved_body_census(ir);
+    let verified = evaluation.is_verified();
+    match evaluation {
         BodyCensusEvaluation::Verified { .. } => BodyCensusEvidence {
-            verified: true,
+            verified,
             reason: None,
             feature: None,
             feature_name: None,
@@ -131,7 +133,7 @@ pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvidence {
             feature_ordinal: None,
         },
         BodyCensusEvaluation::Mismatch { .. } => BodyCensusEvidence {
-            verified: false,
+            verified,
             reason: Some("saved_body_census_mismatch".to_string()),
             feature: None,
             feature_name: None,
@@ -167,7 +169,7 @@ pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvidence {
                 UnsupportedBodyCensusReason::ConfigurationEvaluation => "configuration_evaluation",
             };
             BodyCensusEvidence {
-                verified: false,
+                verified,
                 reason: Some(reason.to_string()),
                 feature: feature.map(|id| id.0),
                 feature_name,
