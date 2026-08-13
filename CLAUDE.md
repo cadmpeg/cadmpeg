@@ -12,6 +12,20 @@ Multi-agent repository etiquette:
 - Use `--no-verify` only with the reason stated in the commit body.
 - In a conflicted merge, restore a file from a merge stage with `scripts/restore-merge-stage.sh`, not with `git checkout` or `git restore`.
 
+Test placement policy:
+
+- Route a test by ownership of the asserted invariant, not by counting function calls. High-level setup, including `Codec::decode`, does not make a test integration by itself.
+- Unit tests live under the production owner: small inline `#[cfg(test)] mod tests { ... }`; `foo.rs` plus `foo/tests.rs` with a final `#[cfg(test)] mod tests;`; or `foo.rs` plus `foo/tests/mod.rs` with semantic children for one large cohesive suite.
+- Semantic test submodules such as `foo/tests/parsing.rs` are allowed. Never use numbered names such as `tests_1.rs`.
+- Integration tests live under `src/integration_tests.rs` or a semantic `integration_tests/` tree. Use them for codec-wide decode, encode, or round-trip; multi-module composition; the crate facade; or cross-module admission, validation, or fidelity work with no single owner. "Unclear" is not integration by default.
+- Test support lives under `src/test_support.rs` or a semantic `test_support/` tree. Single-owner helpers stay with that owner. Shared IR builders use `cadmpeg-test-support`. Do not add a new support crate. Test support is not exempt from size convergence.
+- Golden tests live under `src/golden_tests.rs` or a semantic `golden_tests/` tree. They are excluded from test-line debt. Do not regenerate snapshots during this migration.
+- A crate root may expose only three test-only entry points: `golden_tests`, `integration_tests`, and `test_support`. Unit-test modules are declared by their production owners.
+- Do not split production only because a cohesive test suite is large. Split production only when an independent review finds a real responsibility seam.
+- Test moves preserve behavior. Do not change assertions, expected values, byte literals, tolerances, snapshots, test names, or ignored status.
+- Feature work and test movement use separate commits.
+- Prohibited final-tree forms: `crates/*/src/tests.rs`; `#[path]` that includes a test-only module; numbered test files; one oversized `integration_tests.rs` or `test_support.rs`; and production re-exports that preserve obsolete paths after a module split.
+
 Build and test operations:
 
 - Run several tests in one invocation with filters after the separator: `cargo test -- name_a name_b`. Plain `cargo test name_a name_b` fails with `unexpected argument`. Fast suite: `cargo test-fast`. Regenerate golden snapshots after an intended change: `UPDATE_GOLDEN=1 cargo test-fast golden`, then review the diff.
@@ -33,7 +47,7 @@ Build and test operations:
 - sccache: evaluated, no disk or speed win in this workspace — do not re-add.
 - Bare tolerance literals: when touching a line with bare `1e-6` / `1e-9` / `1e-10` / `1e-12`, hoist to a module-local named constant with intent in the name (`EPS_SAME_POINT`, `EPS_ORTHO`, etc.). Never collapse distinct tolerance values. Orthonormality thresholds are acceptance gates; values differ per codec.
 - Layout-table reader generation is cut. Tables remain the oracle and docs; `cargo test -p cadmpeg --test layout_tables` keeps checking arithmetic and citations. Revisit only as table-driven tests if per-record parse functions appear (Phase 8 decision).
-- Convergence ratchet: `scripts/convergence-ratchet.py` against `docs/convergence-ledger.toml`. Counts may only fall; update the ledger in the same commit as a decrease. A deliberate increase raises the ceiling and records a reason under `[reasons]`. `le_be_at_outside_core` counts qualified `le::*_at` / `be::*_at` and calls through names imported from those modules (`u32_at as u32_le` then `u32_le(...)`); it does not count `View` methods.
+- Convergence ratchet: `scripts/convergence-ratchet.py` against `docs/convergence-ledger.toml`. Counts may only fall; update the ledger in the same commit as a decrease. A deliberate increase raises the ceiling and records a reason under `[reasons]`. Keys include `crate_root_tests_rs`, `path_test_includes`, `test_line_debt`, and `production_line_debt`. `[targets]` stores completion criteria. `[ceilings]` stores current measured debt. Text and JSON output list contributing paths. `le_be_at_outside_core` counts qualified `le::*_at` / `be::*_at` and calls through names imported from those modules (`u32_at as u32_le` then `u32_le(...)`); it does not count `View` methods.
 - Golden fixture floors live in `docs/golden-coverage-floors.toml` and may only rise when fixtures are added; they must never silently fall.
 - A public API break updates `docs/public-api-ledger.toml` in the same commit.
 - `scripts/perf-baseline.sh` is the decode/build timing harness for hot-path changes.
