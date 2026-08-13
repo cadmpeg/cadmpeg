@@ -5,6 +5,7 @@
 use super::*;
 use cadmpeg_ir::codec::CodecBackend;
 
+use crate::application_geometry::tests::transfers_application_mesh_and_transformed_point_cloud_payloads;
 use crate::container::tests::rejects_unsafe_names;
 use crate::design::tests::booleans_patterns::{
     transfers_partdesign_boolean_base_and_group_rules,
@@ -21,11 +22,13 @@ use crate::design::tests::sketches::{
     transfers_bounded_rational_sketch_nurbs, transfers_full_and_bounded_sketch_conics,
     transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults,
 };
+use crate::joint::tests::recovers_assembly_joint_operands_frames_and_state;
 use crate::persistence::tests::{
     legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts,
     schema_three_uses_the_object_envelope_and_defaults_file_version,
     schema_two_uses_the_feature_envelope_and_common_property_grammar,
 };
+use crate::product::tests::recovers_product_prototypes_occurrences_and_placements;
 use crate::writer::tests::{
     write_target_and_source_requirements_are_explicit,
     writer_rejects_unserialized_declaration_and_stale_payload_edits,
