@@ -36,6 +36,10 @@ constants below.
 | SLDPRT export precondition (`writer` input)      | full `validate_neutral`                     | keep-full: refusal depends on non-core Checks (`Counts`, …); `SLDPRT_EXPORT_PRECONDITION_CHECKS` is the documented draft/topology floor |
 | SLDPRT writer postcondition (after bake/prepare) | full `validate_neutral`                     | postcondition on the writer's own transform; not replaced                                                                               |
 
+Codecs not listed run no decode/export admission gate; their documents are
+checked only at the application boundary (`validate_neutral` + fidelity +
+native validators).
+
 ## Application composition
 
 `cadmpeg validate` / convert validation =
