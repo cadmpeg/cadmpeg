@@ -2,7 +2,9 @@
 
 Part 21 is a clear-text exchange grammar. [`docs/layouts/step.md`](../layouts/step.md)
 records the binary literal's fixed nibble rule. The source table is
-[`docs/layouts/step.toml`](../layouts/step.toml).
+[`docs/layouts/step.toml`](../layouts/step.toml). STEP `inspect` runs the
+semantic decode path; the concluded disposition is
+[step-inspect.md](step-inspect.md).
 
 ## 1. Envelope
 

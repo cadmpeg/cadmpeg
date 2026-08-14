@@ -1,9 +1,10 @@
-# Admissibility routes (Phase 5)
+# Admissibility routes
 
 Successful decode is not a valid IR. Decoder and export gates use documented
 subsets of [`Check`](../crates/cadmpeg-ir/src/report.rs); final document
 validation remains `validate_neutral` (+ fidelity + native at the application
-boundary).
+boundary). Accept/reject fixtures are in
+[admissibility-fixtures.md](admissibility-fixtures.md).
 
 ## Shared core
 
