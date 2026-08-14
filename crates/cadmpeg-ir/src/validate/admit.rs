@@ -9,6 +9,26 @@ use crate::annotations::Annotations;
 use crate::document::CadIr;
 use crate::report::{Check, LossNote, ValidationReport};
 
+/// Expand [`DRAFT_CORE_CHECKS`], optionally appending extra [`Check`] variants.
+macro_rules! with_draft_core {
+    ($($extra:expr),* $(,)?) => {
+        &[
+            Check::Identity,
+            Check::ReferentialIntegrity,
+            Check::NativeLinks,
+            Check::LoopClosure,
+            Check::CoedgePairing,
+            Check::ShellTopology,
+            Check::WireTopology,
+            Check::CarrierReachability,
+            Check::ParameterDomain,
+            Check::Bounds,
+            Check::GeometricConsistency,
+            $($extra),*
+        ]
+    };
+}
+
 /// Shared draft/topology core for decoder and export-precondition gates.
 ///
 /// [`Check::Identity`], [`Check::ReferentialIntegrity`], [`Check::NativeLinks`],
@@ -16,38 +36,13 @@ use crate::report::{Check, LossNote, ValidationReport};
 /// [`Check::WireTopology`], [`Check::CarrierReachability`],
 /// [`Check::ParameterDomain`], [`Check::Bounds`], and
 /// [`Check::GeometricConsistency`].
-pub const DRAFT_CORE_CHECKS: &[Check] = &[
-    Check::Identity,
-    Check::ReferentialIntegrity,
-    Check::NativeLinks,
-    Check::LoopClosure,
-    Check::CoedgePairing,
-    Check::ShellTopology,
-    Check::WireTopology,
-    Check::CarrierReachability,
-    Check::ParameterDomain,
-    Check::Bounds,
-    Check::GeometricConsistency,
-];
+pub const DRAFT_CORE_CHECKS: &[Check] = with_draft_core!();
 
 /// Rhino draft-candidate gate: [`DRAFT_CORE_CHECKS`] plus Annotations.
 ///
 /// `ArenaOrder` is excluded — candidates are judged before
 /// [`CadIr::finalize`](crate::CadIr::finalize).
-pub const RHINO_DRAFT_CHECKS: &[Check] = &[
-    Check::Identity,
-    Check::ReferentialIntegrity,
-    Check::NativeLinks,
-    Check::LoopClosure,
-    Check::CoedgePairing,
-    Check::ShellTopology,
-    Check::WireTopology,
-    Check::CarrierReachability,
-    Check::ParameterDomain,
-    Check::Bounds,
-    Check::GeometricConsistency,
-    Check::Annotations,
-];
+pub const RHINO_DRAFT_CHECKS: &[Check] = with_draft_core!(Check::Annotations);
 
 /// Rhino instance-expansion gate: [`DRAFT_CORE_CHECKS`] only.
 ///
