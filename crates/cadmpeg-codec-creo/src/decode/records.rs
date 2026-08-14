@@ -2470,3 +2470,17 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
         })
         .collect()
 }
+
+pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {
+    let record = scan.framing.family_table?;
+    let (pointer_kind, table_entity_id) = match record.pointer {
+        crate::container::FamilyTablePointer::Null => ("null", None),
+        crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
+    };
+    Some(CreoFamilyTableRecord {
+        id: "creo:family_info:driver_table#root",
+        pointer_kind,
+        table_entity_id,
+        offset: record.offset,
+    })
+}
