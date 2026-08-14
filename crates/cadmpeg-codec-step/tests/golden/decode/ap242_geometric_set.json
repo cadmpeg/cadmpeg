@@ -200,9 +200,9 @@
     "losses": [
       {
         "code": {
-          "code": "geometry_not_transferred",
+          "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "shared"
+          "namespace": "step"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"

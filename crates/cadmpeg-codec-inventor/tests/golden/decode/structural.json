@@ -255,9 +255,9 @@
     "losses": [
       {
         "code": {
-          "code": "geometry_not_transferred",
+          "code": "geometry.kernel-carrier-not-transferred",
           "kind": "geometry_not_transferred",
-          "namespace": "shared"
+          "namespace": "inventor"
         },
         "message": "Inventor geometry is not available for this document kind.",
         "severity": "blocking"

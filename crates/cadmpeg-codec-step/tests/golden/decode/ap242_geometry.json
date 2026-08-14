@@ -758,36 +758,36 @@
     "losses": [
       {
         "code": {
-          "code": "decode_diagnostic",
+          "code": "decode.warning",
           "kind": "decode_diagnostic",
-          "namespace": "shared"
+          "namespace": "step"
         },
         "message": "B_SPLINE_SURFACE_WITH_KNOTS V direction #21 has UNKNOWN periodicity; decoded as non-periodic",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "geometry_not_transferred",
+          "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "shared"
+          "namespace": "step"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
       },
       {
         "code": {
-          "code": "record_not_typed",
+          "code": "decode.opaque-record-preserved",
           "kind": "record_not_typed",
-          "namespace": "shared"
+          "namespace": "step"
         },
         "message": "preserved 1 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "record_not_typed",
+          "code": "decode.opaque-record-preserved",
           "kind": "record_not_typed",
-          "namespace": "shared"
+          "namespace": "step"
         },
         "message": "preserved 1 STYLED_ITEM instance(s) as named opaque STEP records",
         "severity": "warning"
