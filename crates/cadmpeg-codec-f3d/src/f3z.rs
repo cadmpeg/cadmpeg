@@ -90,7 +90,6 @@ pub fn decode(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
     make_sibling_ordinals_unique(&mut root.ir_mut().model.occurrences);
-    root.ir_mut().finalize();
     let hash = crate::decode::document_local_sha256(root.ir());
     if let Some(source) = &mut root.ir_mut().source {
         source.attributes.insert(

@@ -815,7 +815,7 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
         let mut result = SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap();
-        translate_model_x(result.ir_mut(), 1.0);
+        translate_model_x(&mut result.ir_mut(), 1.0);
 
         let mut encoded = Vec::new();
         SldprtCodec
@@ -1030,12 +1030,15 @@ pub(crate) fn semantic_writer_rejects_nonfinite_analytic_carriers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Circle { center, .. } =
-        &mut decoded.ir_mut().model.curves[0].geometry
-    else {
-        panic!("closed cylinder edge must use a circle carrier");
-    };
-    center.x = f64::INFINITY;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let cadmpeg_ir::geometry::CurveGeometry::Circle { center, .. } =
+            &mut ir_edit.model.curves[0].geometry
+        else {
+            panic!("closed cylinder edge must use a circle carrier");
+        };
+        center.x = f64::INFINITY;
+    }
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -1212,16 +1215,20 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let CurveGeometry::Nurbs(curve) = &mut decoded.ir_mut().model.curves[0].geometry else {
-        panic!("expected NURBS curve");
+    let (expected_curve, expected_surface) = {
+        let mut ir_edit = decoded.ir_mut();
+        let CurveGeometry::Nurbs(curve) = &mut ir_edit.model.curves[0].geometry else {
+            panic!("expected NURBS curve");
+        };
+        curve.control_points[1].y += 250.0;
+        let expected_curve = curve.clone();
+        let SurfaceGeometry::Nurbs(surface) = &mut ir_edit.model.surfaces[0].geometry else {
+            panic!("expected NURBS surface");
+        };
+        surface.control_points[3].z += 500.0;
+        let expected_surface = surface.clone();
+        (expected_curve, expected_surface)
     };
-    curve.control_points[1].y += 250.0;
-    let expected_curve = curve.clone();
-    let SurfaceGeometry::Nurbs(surface) = &mut decoded.ir_mut().model.surfaces[0].geometry else {
-        panic!("expected NURBS surface");
-    };
-    surface.control_points[3].z += 500.0;
-    let expected_surface = surface.clone();
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1357,7 +1364,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
         )
         .unwrap();
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].kind =
             crate::records::SketchInputKind::Native(9);
     });
@@ -1448,12 +1455,15 @@ fn semantic_writer_applies_neutral_configuration_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let configuration = &mut decoded.ir_mut().model.configurations[0];
-    configuration.name = "Machined".into();
-    configuration.material = Some("Aluminum".into());
-    configuration
-        .properties
-        .insert("Finish".into(), "Anodized".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let configuration = &mut ir_edit.model.configurations[0];
+        configuration.name = "Machined".into();
+        configuration.material = Some("Aluminum".into());
+        configuration
+            .properties
+            .insert("Finish".into(), "Anodized".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1479,7 +1489,7 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
         )
         .unwrap();
     decoded.ir_mut().model.configurations[0].name = "Neutral".into();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].configurations[0].name = "Native".into();
     });
 
@@ -1505,15 +1515,17 @@ fn semantic_writer_applies_neutral_parameter_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let parameter = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Depth")
-        .unwrap();
-    parameter.expression = "20mm".into();
-    parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let parameter = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .unwrap();
+        parameter.expression = "20mm".into();
+        parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1552,11 +1564,14 @@ fn semantic_writer_preserves_dimension_attributes() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let parameter = &mut decoded.ir_mut().model.parameters[0];
-    assert_eq!(parameter.properties["Driven"], "true");
-    assert_eq!(parameter.properties["EquationId"], "D1@Boss");
-    parameter.expression = "20mm".into();
-    parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let parameter = &mut ir_edit.model.parameters[0];
+        assert_eq!(parameter.properties["Driven"], "true");
+        assert_eq!(parameter.properties["EquationId"], "D1@Boss");
+        parameter.expression = "20mm".into();
+        parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1587,12 +1602,15 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let parameter = &mut decoded.ir_mut().model.parameters[0];
-    assert_eq!(parameter.expression, "Width * 2");
-    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(24.0))));
-    assert_eq!(parameter.properties["Value"], "24mm");
-    parameter.expression = "Width * 3".into();
-    parameter.value = Some(ParameterValue::Length(Length(36.0)));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let parameter = &mut ir_edit.model.parameters[0];
+        assert_eq!(parameter.expression, "Width * 2");
+        assert_eq!(parameter.value, Some(ParameterValue::Length(Length(24.0))));
+        assert_eq!(parameter.properties["Value"], "24mm");
+        parameter.expression = "Width * 3".into();
+        parameter.value = Some(ParameterValue::Length(Length(36.0)));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec

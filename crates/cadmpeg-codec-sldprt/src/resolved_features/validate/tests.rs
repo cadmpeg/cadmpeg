@@ -19,7 +19,7 @@ fn native_validation_rejects_duplicate_history_ordinals() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[1].ordinal = 0;
     });
     assert!(crate::validate_native(decoded.ir())
@@ -35,7 +35,7 @@ fn native_validation_rejects_broken_feature_graph() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[1].tree_parent = Some("missing-record".into());
     });
     assert!(crate::validate_native(decoded.ir())
@@ -56,7 +56,7 @@ fn native_validation_rejects_broken_history_root_graph() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         let history = &mut native.feature_histories[0];
         let nested = history
             .features
@@ -133,7 +133,7 @@ fn native_validation_rejects_edited_relation_binding() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].relation_bindings[0].family =
             crate::records::FeatureInputRelationFamily::LineLineDistance;
     });
@@ -164,7 +164,7 @@ fn native_validation_rejects_edited_relation_instance() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].relation_instances[0].parameter_scalar_ref = None;
     });
 

@@ -86,33 +86,35 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let curve = decoded
-        .ir_mut()
-        .model
-        .curves
-        .iter_mut()
-        .find_map(|curve| match &mut curve.geometry {
-            CurveGeometry::Nurbs(nurbs) => Some(nurbs),
-            _ => None,
-        })
-        .unwrap();
-    curve.control_points[1].y = 1_500.0;
-    curve.knots[3..].fill(2.0);
-    let expected_curve = curve.clone();
-    let surface = decoded
-        .ir_mut()
-        .model
-        .surfaces
-        .iter_mut()
-        .find_map(|surface| match &mut surface.geometry {
-            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
-            _ => None,
-        })
-        .unwrap();
-    surface.control_points[3].z = 750.0;
-    surface.u_knots[2..].fill(2.0);
-    surface.v_knots[2..].fill(3.0);
-    let expected_surface = surface.clone();
+    let (expected_curve, expected_surface) = {
+        let mut ir_edit = decoded.ir_mut();
+        let curve = ir_edit
+            .model
+            .curves
+            .iter_mut()
+            .find_map(|curve| match &mut curve.geometry {
+                CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+                _ => None,
+            })
+            .unwrap();
+        curve.control_points[1].y = 1_500.0;
+        curve.knots[3..].fill(2.0);
+        let expected_curve = curve.clone();
+        let surface = ir_edit
+            .model
+            .surfaces
+            .iter_mut()
+            .find_map(|surface| match &mut surface.geometry {
+                SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+                _ => None,
+            })
+            .unwrap();
+        surface.control_points[3].z = 750.0;
+        surface.u_knots[2..].fill(2.0);
+        surface.v_knots[2..].fill(3.0);
+        let expected_surface = surface.clone();
+        (expected_curve, expected_surface)
+    };
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -279,28 +281,29 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let plane = decoded
-        .ir_mut()
-        .model
-        .surfaces
-        .iter_mut()
-        .find(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
-        .unwrap();
-    let SurfaceGeometry::Plane { origin, .. } = &mut plane.geometry else {
-        unreachable!()
-    };
-    origin.x = 25.0;
-    let line = decoded
-        .ir_mut()
-        .model
-        .curves
-        .iter_mut()
-        .find(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
-        .unwrap();
-    let CurveGeometry::Line { origin, .. } = &mut line.geometry else {
-        unreachable!()
-    };
-    origin.y = 12.0;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let plane = ir_edit
+            .model
+            .surfaces
+            .iter_mut()
+            .find(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
+            .unwrap();
+        let SurfaceGeometry::Plane { origin, .. } = &mut plane.geometry else {
+            unreachable!()
+        };
+        origin.x = 25.0;
+        let line = ir_edit
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
+            .unwrap();
+        let CurveGeometry::Line { origin, .. } = &mut line.geometry else {
+            unreachable!()
+        };
+        origin.y = 12.0;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -402,7 +405,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .unwrap();
     let brep_hash = crate::decode::brep_local_sha256(decoded.ir());
     let document_hash = crate::decode::document_local_sha256(decoded.ir());
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "30000mm".into());

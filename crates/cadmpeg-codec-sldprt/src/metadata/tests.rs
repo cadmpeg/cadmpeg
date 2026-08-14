@@ -43,17 +43,19 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let transformed = decoded
-        .ir_mut()
-        .model
-        .attributes
-        .iter_mut()
-        .find(|attribute| attribute.name == "transformed_reference_plane")
-        .unwrap();
-    let AttributeValue::Vector(center) = &mut transformed.values[0] else {
-        panic!("transformed plane center");
-    };
-    center[0] = 25.0;
+    {
+        let mut ir = decoded.ir_mut();
+        let transformed = ir
+            .model
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.name == "transformed_reference_plane")
+            .unwrap();
+        let AttributeValue::Vector(center) = &mut transformed.values[0] else {
+            panic!("transformed plane center");
+        };
+        center[0] = 25.0;
+    }
 
     let mut written = Vec::new();
     SldprtCodec

@@ -34,18 +34,21 @@ fn semantic_writer_round_trips_typed_shell() {
         } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Shell {
-        removed_faces,
-        thickness,
-        outward,
-        ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed shell feature");
-    };
-    *thickness = Some(Length(3.0));
-    *outward = Some(true);
-    *removed_faces = FaceSelection::Native("face:5,face:6".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Shell {
+            removed_faces,
+            thickness,
+            outward,
+            ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed shell feature");
+        };
+        *thickness = Some(Length(3.0));
+        *outward = Some(true);
+        *removed_faces = FaceSelection::Native("face:5,face:6".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -90,17 +93,20 @@ fn semantic_writer_round_trips_typed_thicken() {
         } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Thicken {
-        faces,
-        thickness,
-        side,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed thicken feature");
-    };
-    *faces = FaceSelection::Native("face:5,face:6".into());
-    *thickness = Some(Length(3.0));
-    *side = Some(ThickenSide::Both);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Thicken {
+            faces,
+            thickness,
+            side,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed thicken feature");
+        };
+        *faces = FaceSelection::Native("face:5,face:6".into());
+        *thickness = Some(Length(3.0));
+        *side = Some(ThickenSide::Both);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -157,12 +163,15 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
         Some(ParameterValue::Length(Length(6.0)))
     );
 
-    let FeatureDefinition::Thicken { thickness, .. } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed positional thicken");
-    };
-    *thickness = Some(Length(8.5));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Thicken { thickness, .. } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed positional thicken");
+        };
+        *thickness = Some(Length(8.5));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -240,22 +249,25 @@ fn semantic_writer_round_trips_typed_scale() {
         } if reference == "csys:4"
     ));
 
-    let FeatureDefinition::Scale {
-        bodies,
-        center,
-        factors,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed scale feature");
-    };
-    *bodies = BodySelection::Native("body:2,body:3".into());
-    *center = Some(ScaleCenter::Point(Point3::new(4.0, 5.0, 6.0)));
-    *factors = ScaleFactors {
-        uniform: None,
-        x: Some(1.5),
-        y: Some(2.0),
-        z: Some(2.5),
-    };
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Scale {
+            bodies,
+            center,
+            factors,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed scale feature");
+        };
+        *bodies = BodySelection::Native("body:2,body:3".into());
+        *center = Some(ScaleCenter::Point(Point3::new(4.0, 5.0, 6.0)));
+        *factors = ScaleFactors {
+            uniform: None,
+            x: Some(1.5),
+            y: Some(2.0),
+            z: Some(2.5),
+        };
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -426,12 +438,15 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         }
     ));
 
-    let FeatureDefinition::Extrude { direction, .. } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed extrusion");
-    };
-    *direction = ExtrudeDirection::Explicit(Vector3::new(0.0, 1.0, 0.0));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Extrude { direction, .. } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed extrusion");
+        };
+        *direction = ExtrudeDirection::Explicit(Vector3::new(0.0, 1.0, 0.0));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -540,22 +555,25 @@ fn semantic_writer_round_trips_typed_draft() {
             && (*value - 3f64.to_radians()).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Draft {
-        faces,
-        neutral_plane,
-        pull_direction,
-        angle,
-        outward,
-        ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed draft");
-    };
-    *pull_direction = Some(Vector3::new(0.0, 1.0, 0.0));
-    *angle = Some(Angle(7f64.to_radians()));
-    *outward = Some(true);
-    *faces = FaceSelection::Native("face:4".into());
-    *neutral_plane = FaceSelection::Native("face:5".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Draft {
+            faces,
+            neutral_plane,
+            pull_direction,
+            angle,
+            outward,
+            ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed draft");
+        };
+        *pull_direction = Some(Vector3::new(0.0, 1.0, 0.0));
+        *angle = Some(Angle(7f64.to_radians()));
+        *outward = Some(true);
+        *faces = FaceSelection::Native("face:4".into());
+        *neutral_plane = FaceSelection::Native("face:5".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -614,11 +632,14 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
         } if faces == "face:1,face:2" && neutral_plane == "face:3"
     ));
 
-    let FeatureDefinition::Draft { faces, .. } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed draft");
-    };
-    *faces = FaceSelection::Native("face:4".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Draft { faces, .. } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed draft");
+        };
+        *faces = FaceSelection::Native("face:4".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -688,25 +709,26 @@ fn semantic_writer_preserves_absent_feature_selections() {
         }
     ));
 
-    let FeatureDefinition::Chamfer { groups, .. } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed chamfer");
-    };
-    groups[0].spec = ChamferSpec::Distance {
-        distance: Length(2.5),
-    };
-    let FeatureDefinition::Shell { thickness, .. } =
-        &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("typed shell");
-    };
-    *thickness = Some(Length(1.5));
-    let FeatureDefinition::Draft { angle, .. } = &mut decoded.ir_mut().model.features[2].definition
-    else {
-        panic!("typed draft");
-    };
-    *angle = Some(Angle(5f64.to_radians()));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Chamfer { groups, .. } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed chamfer");
+        };
+        groups[0].spec = ChamferSpec::Distance {
+            distance: Length(2.5),
+        };
+        let FeatureDefinition::Shell { thickness, .. } = &mut ir_edit.model.features[1].definition
+        else {
+            panic!("typed shell");
+        };
+        *thickness = Some(Length(1.5));
+        let FeatureDefinition::Draft { angle, .. } = &mut ir_edit.model.features[2].definition
+        else {
+            panic!("typed draft");
+        };
+        *angle = Some(Angle(5f64.to_radians()));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -751,15 +773,18 @@ fn semantic_writer_round_trips_typed_combine() {
         } if target == "body:1" && tools == "body:2,body:3"
     ));
 
-    let FeatureDefinition::Combine {
-        target, tools, op, ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed combine");
-    };
-    *target = BodySelection::Native("body:4".into());
-    *tools = BodySelection::Native("body:5,body:6".into());
-    *op = BooleanOp::Intersect;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Combine {
+            target, tools, op, ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed combine");
+        };
+        *target = BodySelection::Native("body:4".into());
+        *tools = BodySelection::Native("body:5,body:6".into());
+        *op = BooleanOp::Intersect;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -814,18 +839,21 @@ fn semantic_writer_round_trips_delete_and_keep_body() {
         } if bodies == "body:1"
     ));
 
-    let FeatureDefinition::DeleteBody { bodies, .. } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed delete body");
-    };
-    *bodies = BodySelection::Native("body:4".into());
-    let FeatureDefinition::DeleteBody { bodies, .. } =
-        &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("typed keep body");
-    };
-    *bodies = BodySelection::Native("body:5,body:6".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::DeleteBody { bodies, .. } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed delete body");
+        };
+        *bodies = BodySelection::Native("body:4".into());
+        let FeatureDefinition::DeleteBody { bodies, .. } =
+            &mut ir_edit.model.features[1].definition
+        else {
+            panic!("typed keep body");
+        };
+        *bodies = BodySelection::Native("body:5,body:6".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -900,13 +928,16 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
         }
     ));
 
-    let FeatureDefinition::DeleteBody { bodies, mode } =
-        &mut sparse.ir_mut().model.features[0].definition
-    else {
-        panic!("typed sparse body operation");
-    };
-    *bodies = BodySelection::Native("body:2,body:3".into());
-    *mode = BodyRetentionMode::KeepSelected;
+    {
+        let mut ir_edit = sparse.ir_mut();
+        let FeatureDefinition::DeleteBody { bodies, mode } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed sparse body operation");
+        };
+        *bodies = BodySelection::Native("body:2,body:3".into());
+        *mode = BodyRetentionMode::KeepSelected;
+    }
     let mut resolved_encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -955,13 +986,16 @@ fn semantic_writer_round_trips_typed_delete_face() {
         } if faces == "face:4,face:5"
     ));
 
-    let FeatureDefinition::DeleteFace { faces, heal } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed delete face");
-    };
-    *faces = FaceSelection::Native("face:7".into());
-    *heal = false;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::DeleteFace { faces, heal } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed delete face");
+        };
+        *faces = FaceSelection::Native("face:7".into());
+        *heal = false;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1003,15 +1037,18 @@ fn semantic_writer_round_trips_typed_replace_face() {
         } if targets == "face:4,face:5" && replacements == "face:8"
     ));
 
-    let FeatureDefinition::ReplaceFace {
-        targets,
-        replacements,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed replace face");
-    };
-    *targets = FaceSelection::Native("face:6".into());
-    *replacements = FaceSelection::Native("face:9,face:10".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::ReplaceFace {
+            targets,
+            replacements,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed replace face");
+        };
+        *targets = FaceSelection::Native("face:6".into());
+        *replacements = FaceSelection::Native("face:9,face:10".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1081,34 +1118,35 @@ fn semantic_writer_round_trips_all_move_face_forms() {
         } if (value - 15f64.to_radians()).abs() < 1e-12
     ));
 
-    let FeatureDefinition::MoveFace { faces, motion } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed move face");
-    };
-    *faces = FaceSelection::Native("face:8".into());
-    *motion = FaceMotion::Translate {
-        direction: Vector3::new(0.0, 1.0, 0.0),
-        distance: Length(4.0),
-    };
-    let FeatureDefinition::MoveFace { motion, .. } =
-        &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("typed move face");
-    };
-    *motion = FaceMotion::Rotate {
-        axis_origin: Point3::new(0.0, 0.0, 0.0),
-        axis_dir: Vector3::new(1.0, 0.0, 0.0),
-        angle: Angle(0.5),
-    };
-    let FeatureDefinition::MoveFace { motion, .. } =
-        &mut decoded.ir_mut().model.features[2].definition
-    else {
-        panic!("typed move face");
-    };
-    *motion = FaceMotion::Offset {
-        distance: Length(-1.0),
-    };
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::MoveFace { faces, motion } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed move face");
+        };
+        *faces = FaceSelection::Native("face:8".into());
+        *motion = FaceMotion::Translate {
+            direction: Vector3::new(0.0, 1.0, 0.0),
+            distance: Length(4.0),
+        };
+        let FeatureDefinition::MoveFace { motion, .. } = &mut ir_edit.model.features[1].definition
+        else {
+            panic!("typed move face");
+        };
+        *motion = FaceMotion::Rotate {
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_dir: Vector3::new(1.0, 0.0, 0.0),
+            angle: Angle(0.5),
+        };
+        let FeatureDefinition::MoveFace { motion, .. } = &mut ir_edit.model.features[2].definition
+        else {
+            panic!("typed move face");
+        };
+        *motion = FaceMotion::Offset {
+            distance: Length(-1.0),
+        };
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1154,19 +1192,22 @@ fn semantic_writer_round_trips_typed_dome() {
         } if faces == "face:9" && (*value - 6.35).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Dome {
-        faces,
-        height,
-        elliptical,
-        reverse,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed dome");
-    };
-    *faces = FaceSelection::Native("face:10,face:11".into());
-    *height = Some(Length(8.0));
-    *elliptical = Some(true);
-    *reverse = Some(true);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Dome {
+            faces,
+            height,
+            elliptical,
+            reverse,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed dome");
+        };
+        *faces = FaceSelection::Native("face:10,face:11".into());
+        *height = Some(Length(8.0));
+        *elliptical = Some(true);
+        *reverse = Some(true);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1387,17 +1428,20 @@ fn semantic_writer_round_trips_typed_reference_plane() {
         }
     ));
 
-    let FeatureDefinition::DatumPlane {
-        origin,
-        normal,
-        u_axis,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed reference plane");
-    };
-    *origin = Point3::new(25.4, 0.0, -2.0);
-    *normal = Vector3::new(0.0, 1.0, 0.0);
-    *u_axis = Vector3::new(0.0, 0.0, 1.0);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed reference plane");
+        };
+        *origin = Point3::new(25.4, 0.0, -2.0);
+        *normal = Vector3::new(0.0, 1.0, 0.0);
+        *u_axis = Vector3::new(0.0, 0.0, 1.0);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1462,12 +1506,15 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
         Some(ParameterValue::Length(Length(3.0)))
     );
 
-    let FeatureDefinition::DatumOffsetPlane { distance, .. } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("localized offset plane");
-    };
-    *distance = Length(-4.5);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::DatumOffsetPlane { distance, .. } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("localized offset plane");
+        };
+        *distance = Length(-4.5);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1531,19 +1578,22 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
         }
     ));
 
-    let FeatureDefinition::DatumAxis { origin, direction } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed reference axis");
-    };
-    *origin = Point3::new(-1.0, 0.0, 2.0);
-    *direction = Vector3::new(0.0, 1.0, 0.0);
-    let FeatureDefinition::DatumPoint { position, .. } =
-        &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("typed reference point");
-    };
-    *position = Point3::new(7.0, 8.0, 9.0);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::DatumAxis { origin, direction } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed reference axis");
+        };
+        *origin = Point3::new(-1.0, 0.0, 2.0);
+        *direction = Vector3::new(0.0, 1.0, 0.0);
+        let FeatureDefinition::DatumPoint { position, .. } =
+            &mut ir_edit.model.features[1].definition
+        else {
+            panic!("typed reference point");
+        };
+        *position = Point3::new(7.0, 8.0, 9.0);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec

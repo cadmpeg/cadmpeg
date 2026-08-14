@@ -224,12 +224,14 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let SketchGeometry::Line { start, .. } =
-        &mut decoded.ir_mut().model.sketch_entities[0].geometry
-    else {
-        panic!("line sketch entity");
-    };
-    start.u += 1.0;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let SketchGeometry::Line { start, .. } = &mut ir_edit.model.sketch_entities[0].geometry
+        else {
+            panic!("line sketch entity");
+        };
+        start.u += 1.0;
+    }
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -256,13 +258,16 @@ fn semantic_writer_applies_circle_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let SketchGeometry::Circle { center, radius } =
-        &mut decoded.ir_mut().model.sketch_entities[0].geometry
-    else {
-        panic!("circle sketch entity");
-    };
-    center.u = 250.0;
-    *radius = Length(750.0);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let SketchGeometry::Circle { center, radius } =
+            &mut ir_edit.model.sketch_entities[0].geometry
+        else {
+            panic!("circle sketch entity");
+        };
+        center.u = 250.0;
+        *radius = Length(750.0);
+    }
 
     let mut written = Vec::new();
     SldprtCodec
@@ -291,20 +296,23 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let SketchGeometry::Ellipse {
-        center,
-        major_angle,
-        major_radius,
-        minor_radius,
-        ..
-    } = &mut decoded.ir_mut().model.sketch_entities[0].geometry
-    else {
-        panic!("ellipse sketch entity");
-    };
-    center.v = 125.0;
-    *major_angle = Angle(0.25);
-    *major_radius = Length(1500.0);
-    *minor_radius = Length(500.0);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            ..
+        } = &mut ir_edit.model.sketch_entities[0].geometry
+        else {
+            panic!("ellipse sketch entity");
+        };
+        center.v = 125.0;
+        *major_angle = Angle(0.25);
+        *major_radius = Length(1500.0);
+        *minor_radius = Length(500.0);
+    }
 
     let mut written = Vec::new();
     SldprtCodec
@@ -337,41 +345,43 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let arc = decoded
-        .ir_mut()
-        .model
-        .sketch_entities
-        .iter_mut()
-        .find(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
-        .expect("arc sketch entity");
-    let SketchGeometry::Arc {
-        center,
-        radius,
-        start_angle,
-        end_angle,
-    } = &mut arc.geometry
-    else {
-        unreachable!();
-    };
-    center.u = 100.0;
-    *radius = Length(800.0);
-    *start_angle = Angle(0.25);
-    *end_angle = Angle(1.25);
-    let endpoint_refs = arc.endpoint_refs.clone();
-    let endpoints = [
-        cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 0.25f64.cos(), 800.0 * 0.25f64.sin()),
-        cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 1.25f64.cos(), 800.0 * 1.25f64.sin()),
-    ];
-    for entity in &mut decoded.ir_mut().model.sketch_entities {
-        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
-            continue;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let arc = ir_edit
+            .model
+            .sketch_entities
+            .iter_mut()
+            .find(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
+            .expect("arc sketch entity");
+        let SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } = &mut arc.geometry
+        else {
+            unreachable!();
         };
-        for (reference, target) in endpoint_refs.iter().zip(endpoints) {
-            if entity.endpoint_refs[0] == *reference {
-                *start = target;
-            }
-            if entity.endpoint_refs[1] == *reference {
-                *end = target;
+        center.u = 100.0;
+        *radius = Length(800.0);
+        *start_angle = Angle(0.25);
+        *end_angle = Angle(1.25);
+        let endpoint_refs = arc.endpoint_refs.clone();
+        let endpoints = [
+            cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 0.25f64.cos(), 800.0 * 0.25f64.sin()),
+            cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 1.25f64.cos(), 800.0 * 1.25f64.sin()),
+        ];
+        for entity in &mut ir_edit.model.sketch_entities {
+            let SketchGeometry::Line { start, end } = &mut entity.geometry else {
+                continue;
+            };
+            for (reference, target) in endpoint_refs.iter().zip(endpoints) {
+                if entity.endpoint_refs[0] == *reference {
+                    *start = target;
+                }
+                if entity.endpoint_refs[1] == *reference {
+                    *end = target;
+                }
             }
         }
     }
@@ -516,7 +526,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .unwrap();
     decoded.ir_mut().model.points[0].position.z += 2.0;
     decoded.ir_mut().model.tessellations[0].vertices[0].z = 125.0;
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "20mm".into());

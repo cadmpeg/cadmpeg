@@ -626,18 +626,20 @@ fn encoder_writes_source_less_line_sketches() {
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Rib { .. })));
-    let point = decoded
-        .ir_mut()
-        .model
-        .sketch_entities
-        .iter_mut()
-        .find_map(|entity| match &mut entity.geometry {
-            SketchGeometry::Point { position } => Some(position),
-            _ => None,
-        })
-        .unwrap();
-    point.u = 7.0;
-    point.v = 8.0;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let point = ir_edit
+            .model
+            .sketch_entities
+            .iter_mut()
+            .find_map(|entity| match &mut entity.geometry {
+                SketchGeometry::Point { position } => Some(position),
+                _ => None,
+            })
+            .unwrap();
+        point.u = 7.0;
+        point.v = 8.0;
+    }
     let mut rewritten = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(

@@ -1249,17 +1249,20 @@ fn semantic_writer_round_trips_flex_operations() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let FeatureDefinition::Flex { axis, mode } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed flex feature");
-    };
-    assert_eq!(*axis, Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)));
-    assert!(matches!(
-        mode,
-        FlexMode::Bending { angle }
-            if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
-    ));
-    *mode = FlexMode::Twisting { angle: Angle(0.75) };
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Flex { axis, mode } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed flex feature");
+        };
+        assert_eq!(*axis, Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)));
+        assert!(matches!(
+            mode,
+            FlexMode::Bending { angle }
+                if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+        ));
+        *mode = FlexMode::Twisting { angle: Angle(0.75) };
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1456,37 +1459,38 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
             FeatureContent::Dimension("B".into()),
         ]
     );
-    let neutral_macro = decoded
-        .ir_mut()
-        .model
-        .features
-        .iter_mut()
-        .find(|feature| feature.source_tag.as_deref() == Some("MacroFeature"))
-        .unwrap();
-    assert!(matches!(
-        neutral_macro.source_content.as_slice(),
-        [
-            FeatureSourceContent::Text(prefix),
-            FeatureSourceContent::Parameter(_),
-            FeatureSourceContent::Feature(_),
-            FeatureSourceContent::Text(suffix),
-            FeatureSourceContent::Parameter(_),
-        ] if prefix == "prefix" && suffix == "suffix"
-    ));
-    let FeatureSourceContent::Text(prefix) = &mut neutral_macro.source_content[0] else {
-        unreachable!()
-    };
-    *prefix = "lead & more".into();
-    let neutral_definition = decoded
-        .ir_mut()
-        .model
-        .features
-        .iter_mut()
-        .find(|feature| feature.source_tag.as_deref() == Some("Definition"))
-        .unwrap();
-    assert_eq!(neutral_definition.source_text.as_deref(), Some("a & b < c"));
-    neutral_definition.source_tag = Some("FormulaPayload".into());
-    neutral_definition.source_text = Some("x > 1 & y < 2".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let neutral_macro = ir_edit
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.source_tag.as_deref() == Some("MacroFeature"))
+            .unwrap();
+        assert!(matches!(
+            neutral_macro.source_content.as_slice(),
+            [
+                FeatureSourceContent::Text(prefix),
+                FeatureSourceContent::Parameter(_),
+                FeatureSourceContent::Feature(_),
+                FeatureSourceContent::Text(suffix),
+                FeatureSourceContent::Parameter(_),
+            ] if prefix == "prefix" && suffix == "suffix"
+        ));
+        let FeatureSourceContent::Text(prefix) = &mut neutral_macro.source_content[0] else {
+            unreachable!()
+        };
+        *prefix = "lead & more".into();
+        let neutral_definition = ir_edit
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.source_tag.as_deref() == Some("Definition"))
+            .unwrap();
+        assert_eq!(neutral_definition.source_text.as_deref(), Some("a & b < c"));
+        neutral_definition.source_tag = Some("FormulaPayload".into());
+        neutral_definition.source_text = Some("x > 1 & y < 2".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec

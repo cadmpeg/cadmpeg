@@ -140,7 +140,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         )));
 
     decoded.ir_mut().model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
-    update_f3d_native(decoded.ir_mut(), |native| {
+    update_f3d_native(&mut decoded.ir_mut(), |native| {
         native.tolerant_coedge_parameters[0].parameter_range = [-1.5, 2.25];
     });
     let mut edited = Vec::new();

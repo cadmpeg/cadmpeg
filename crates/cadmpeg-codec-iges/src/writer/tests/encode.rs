@@ -1065,11 +1065,14 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let pcurve = decoded.ir_mut().model.pcurves.first_mut().unwrap();
-    let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
-        panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
-    };
-    control_points[0].u += 0.25;
+    {
+        let mut ir = decoded.ir_mut();
+        let pcurve = ir.model.pcurves.first_mut().unwrap();
+        let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+            panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
+        };
+        control_points[0].u += 0.25;
+    }
 
     let Err(error) = IgesEncoder::default().plan(EncodeInput {
         ir: decoded.ir(),
@@ -1138,26 +1141,28 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let coedge = decoded.ir_mut().model.coedges.first_mut().unwrap();
-    coedge.sense = Sense::Reversed;
-    coedge.pcurves.reverse();
-    let pcurve_ids = coedge
-        .pcurves
-        .iter()
-        .map(|pcurve_use| pcurve_use.pcurve.clone())
-        .collect::<Vec<_>>();
-    for pcurve_id in pcurve_ids {
-        let pcurve = decoded
-            .ir_mut()
-            .model
+    {
+        let mut ir = decoded.ir_mut();
+        let coedge = ir.model.coedges.first_mut().unwrap();
+        coedge.sense = Sense::Reversed;
+        coedge.pcurves.reverse();
+        let pcurve_ids = coedge
             .pcurves
-            .iter_mut()
-            .find(|pcurve| pcurve.id == pcurve_id)
-            .unwrap();
-        let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
-            panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
-        };
-        control_points.reverse();
+            .iter()
+            .map(|pcurve_use| pcurve_use.pcurve.clone())
+            .collect::<Vec<_>>();
+        for pcurve_id in pcurve_ids {
+            let pcurve = ir
+                .model
+                .pcurves
+                .iter_mut()
+                .find(|pcurve| pcurve.id == pcurve_id)
+                .unwrap();
+            let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+                panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
+            };
+            control_points.reverse();
+        }
     }
 
     let plan = IgesEncoder::default()
@@ -1655,15 +1660,17 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .unwrap()
         .faces
         .retain(|face_id| *face_id != moved_face_id);
-    let moved_loop = decoded
-        .ir_mut()
-        .model
-        .loops
-        .iter_mut()
-        .find(|loop_| loop_.id == moved_loop_id)
-        .unwrap();
-    moved_loop.face = target_face_id;
-    moved_loop.boundary_role = LoopBoundaryRole::Inner;
+    {
+        let mut ir = decoded.ir_mut();
+        let moved_loop = ir
+            .model
+            .loops
+            .iter_mut()
+            .find(|loop_| loop_.id == moved_loop_id)
+            .unwrap();
+        moved_loop.face = target_face_id;
+        moved_loop.boundary_role = LoopBoundaryRole::Inner;
+    }
 
     let emitted_loop_ids = decoded
         .ir()

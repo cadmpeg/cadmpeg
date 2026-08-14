@@ -167,7 +167,7 @@ fn decode_transfers_generated_wire_body_topology() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("wire=")));
-    update_f3d_native(result.ir_mut(), |native| {
+    update_f3d_native(&mut result.ir_mut(), |native| {
         native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
     let mut edited = Vec::new();

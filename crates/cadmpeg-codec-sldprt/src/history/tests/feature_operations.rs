@@ -255,17 +255,19 @@ fn decode_dispatches_typed_features_by_xml_family() {
         }
     ));
 
-    let FeatureDefinition::Fillet { groups } = &mut decoded.ir_mut().model.features[2].definition
-    else {
-        panic!("typed custom fillet");
-    };
-    let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
-        panic!("constant fillet");
-    };
-    *radius = Length(2.5);
-    decoded.ir_mut().model.features[2]
-        .source_properties
-        .insert("Algorithm".into(), "FaceBlend".into());
+    {
+        let mut ir = decoded.ir_mut();
+        let FeatureDefinition::Fillet { groups } = &mut ir.model.features[2].definition else {
+            panic!("typed custom fillet");
+        };
+        let RadiusSpec::Constant { radius } = &mut groups[0].radius else {
+            panic!("constant fillet");
+        };
+        *radius = Length(2.5);
+        ir.model.features[2]
+            .source_properties
+            .insert("Algorithm".into(), "FaceBlend".into());
+    }
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)

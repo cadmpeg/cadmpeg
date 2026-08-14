@@ -134,61 +134,66 @@ fn decode_and_validate_compact_delete_body_selection() {
     );
 
     {
-        let delete_feature = decoded
-            .ir_mut()
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
-            .expect("delete-body feature");
-        let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, .. } =
-            &mut delete_feature.definition
-        else {
-            panic!("typed delete-body feature");
-        };
-        *bodies =
-            cadmpeg_ir::features::BodySelection::Native("sldprt:feature-input:body-ids:287".into());
+        {
+            let mut ir_edit = decoded.ir_mut();
+            let delete_feature = ir_edit
+                .model
+                .features
+                .iter_mut()
+                .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
+                .expect("delete-body feature");
+            let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, .. } =
+                &mut delete_feature.definition
+            else {
+                panic!("typed delete-body feature");
+            };
+            *bodies = cadmpeg_ir::features::BodySelection::Native(
+                "sldprt:feature-input:body-ids:287".into(),
+            );
+        }
+        let error = SldprtCodec
+            .write_preserved_with_source_fidelity(
+                decoded.ir(),
+                decoded.source_fidelity(),
+                &mut Vec::new(),
+            )
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("changes a compact body selection"));
     }
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("changes a compact body selection"));
 
     {
-        let delete_feature = decoded
-            .ir_mut()
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
-            .expect("delete-body feature");
-        let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode } =
-            &mut delete_feature.definition
-        else {
-            unreachable!("typed delete-body feature");
-        };
-        *bodies = cadmpeg_ir::features::BodySelection::Local {
-            bodies: vec!["287".into(), "115".into()],
-            native: "sldprt:feature-input:body-ids:287,115".into(),
-        };
-        *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
+        {
+            let mut ir_edit = decoded.ir_mut();
+            let delete_feature = ir_edit
+                .model
+                .features
+                .iter_mut()
+                .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
+                .expect("delete-body feature");
+            let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode } =
+                &mut delete_feature.definition
+            else {
+                unreachable!("typed delete-body feature");
+            };
+            *bodies = cadmpeg_ir::features::BodySelection::Local {
+                bodies: vec!["287".into(), "115".into()],
+                native: "sldprt:feature-input:body-ids:287,115".into(),
+            };
+            *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
+        }
+        let error = SldprtCodec
+            .write_preserved_with_source_fidelity(
+                decoded.ir(),
+                decoded.source_fidelity(),
+                &mut Vec::new(),
+            )
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("changes a compact body retention mode"));
     }
-    let error = SldprtCodec
-        .write_preserved_with_source_fidelity(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("changes a compact body retention mode"));
 
     native.feature_input_lanes[0].body_selections[0]
         .body_state_ids

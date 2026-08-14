@@ -504,23 +504,25 @@ fn decode_extracts_pmi_semantic_dimension() {
         )
         .unwrap();
 
-    let parameter = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "D1")
-        .expect("editable PMI-backed parameter");
-    parameter.expression = "50mm".into();
-    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-        cadmpeg_ir::features::Length(50.0),
-    ));
-    let semantic = parameter.pmi.as_mut().expect("editable PMI semantics");
-    semantic.precision = 4;
-    semantic.display_text = Some("50.000 mm".into());
-    semantic.basic = false;
-    semantic.inspection = true;
-    semantic.reference_only = false;
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "D1")
+            .expect("editable PMI-backed parameter");
+        parameter.expression = "50mm".into();
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(50.0),
+        ));
+        let semantic = parameter.pmi.as_mut().expect("editable PMI semantics");
+        semantic.precision = 4;
+        semantic.display_text = Some("50.000 mm".into());
+        semantic.basic = false;
+        semantic.inspection = true;
+        semantic.reference_only = false;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -700,11 +702,14 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
         .message
         .contains("semantic dimension record(s) are not bound")));
 
-    let parameter = &mut decoded.ir_mut().model.parameters[0];
-    parameter.expression = "50mm".into();
-    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-        cadmpeg_ir::features::Length(50.0),
-    ));
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = &mut ir.model.parameters[0];
+        parameter.expression = "50mm".into();
+        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(50.0),
+        ));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -771,20 +776,22 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let ordinate = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "D1")
-        .expect("ordinate parameter");
-    assert_eq!(ordinate.value, Some(ParameterValue::Length(Length(25.0))));
-    assert_eq!(
-        ordinate.pmi.as_ref().map(|pmi| &pmi.subtype),
-        Some(&PmiDimensionSubtype::Ordinate)
-    );
-    ordinate.expression = "50mm".into();
-    ordinate.value = Some(ParameterValue::Length(Length(50.0)));
+    {
+        let mut ir = decoded.ir_mut();
+        let ordinate = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "D1")
+            .expect("ordinate parameter");
+        assert_eq!(ordinate.value, Some(ParameterValue::Length(Length(25.0))));
+        assert_eq!(
+            ordinate.pmi.as_ref().map(|pmi| &pmi.subtype),
+            Some(&PmiDimensionSubtype::Ordinate)
+        );
+        ordinate.expression = "50mm".into();
+        ordinate.value = Some(ParameterValue::Length(Length(50.0)));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec

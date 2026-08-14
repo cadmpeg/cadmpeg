@@ -51,19 +51,22 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
         }
     ));
 
-    let FeatureDefinition::DatumCoordinateSystem {
-        origin,
-        x_axis,
-        y_axis,
-        z_axis,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed reference coordinate system");
-    };
-    *origin = Point3::new(4.0, 5.0, 6.0);
-    *x_axis = Vector3::new(0.0, 1.0, 0.0);
-    *y_axis = Vector3::new(-1.0, 0.0, 0.0);
-    *z_axis = Vector3::new(0.0, 0.0, 1.0);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::DatumCoordinateSystem {
+            origin,
+            x_axis,
+            y_axis,
+            z_axis,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed reference coordinate system");
+        };
+        *origin = Point3::new(4.0, 5.0, 6.0);
+        *x_axis = Vector3::new(0.0, 1.0, 0.0);
+        *y_axis = Vector3::new(-1.0, 0.0, 0.0);
+        *z_axis = Vector3::new(0.0, 0.0, 1.0);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -136,23 +139,26 @@ fn semantic_writer_round_trips_equation_driven_curve() {
             && (*end - std::f64::consts::TAU).abs() < 1.0e-12
     ));
 
-    let FeatureDefinition::EquationCurve {
-        parameter,
-        x_expression,
-        y_expression,
-        z_expression,
-        start,
-        end,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed equation curve");
-    };
-    *parameter = "u".into();
-    *x_expression = "u".into();
-    *y_expression = "u^2".into();
-    *z_expression = "u^3".into();
-    *start = -2.0;
-    *end = 3.0;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::EquationCurve {
+            parameter,
+            x_expression,
+            y_expression,
+            z_expression,
+            start,
+            end,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed equation curve");
+        };
+        *parameter = "u".into();
+        *x_expression = "u".into();
+        *y_expression = "u^2".into();
+        *z_expression = "u^3".into();
+        *start = -2.0;
+        *end = 3.0;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -222,24 +228,27 @@ fn semantic_writer_round_trips_helix() {
         }
     ));
 
-    let FeatureDefinition::Helix {
-        axis_origin,
-        axis_direction,
-        radius,
-        pitch,
-        revolutions,
-        clockwise,
-        ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed helix");
-    };
-    *axis_origin = Point3::new(4.0, 5.0, 6.0);
-    *axis_direction = Vector3::new(0.0, 1.0, 0.0);
-    *radius = Length(7.0);
-    *pitch = Length(8.0);
-    *revolutions = 9.25;
-    *clockwise = false;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Helix {
+            axis_origin,
+            axis_direction,
+            radius,
+            pitch,
+            revolutions,
+            clockwise,
+            ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed helix");
+        };
+        *axis_origin = Point3::new(4.0, 5.0, 6.0);
+        *axis_direction = Vector3::new(0.0, 1.0, 0.0);
+        *radius = Length(7.0);
+        *pitch = Length(8.0);
+        *revolutions = 9.25;
+        *clockwise = false;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -309,24 +318,27 @@ fn semantic_writer_round_trips_slash_named_helix() {
         }
     ));
 
-    let FeatureDefinition::Helix {
-        axis_origin,
-        axis_direction,
-        radius,
-        pitch,
-        revolutions,
-        clockwise,
-        ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed helix");
-    };
-    *axis_origin = Point3::new(4.0, 5.0, 6.0);
-    *axis_direction = Vector3::new(0.0, 1.0, 0.0);
-    *radius = Length(7.0);
-    *pitch = Length(8.0);
-    *revolutions = 9.25;
-    *clockwise = true;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Helix {
+            axis_origin,
+            axis_direction,
+            radius,
+            pitch,
+            revolutions,
+            clockwise,
+            ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed helix");
+        };
+        *axis_origin = Point3::new(4.0, 5.0, 6.0);
+        *axis_direction = Vector3::new(0.0, 1.0, 0.0);
+        *radius = Length(7.0);
+        *pitch = Length(8.0);
+        *revolutions = 9.25;
+        *clockwise = true;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -384,22 +396,25 @@ fn semantic_writer_round_trips_native_axis_helix() {
     let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
-    let FeatureDefinition::HelixNativeAxis {
-        axial_rise,
-        pitch,
-        revolutions,
-        start_angle,
-        clockwise,
-        ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed native-axis helix");
-    };
-    *axial_rise = Length(4000.0);
-    *pitch = Length(16000.0);
-    *revolutions = 0.5;
-    *start_angle = Angle(std::f64::consts::FRAC_PI_2);
-    *clockwise = true;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::HelixNativeAxis {
+            axial_rise,
+            pitch,
+            revolutions,
+            start_angle,
+            clockwise,
+            ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed native-axis helix");
+        };
+        *axial_rise = Length(4000.0);
+        *pitch = Length(16000.0);
+        *revolutions = 0.5;
+        *start_angle = Angle(std::f64::consts::FRAC_PI_2);
+        *clockwise = true;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -447,42 +462,44 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
-        let description = b"boundary_polyline mesh";
-        let schema = b"SCH_3201255_32001_13006";
-        let mut stream = b"PS\0\0".to_vec();
-        stream.extend((description.len() as u16).to_be_bytes());
-        stream.extend(description);
-        stream.push(schema.len() as u8);
-        stream.extend(schema);
-        stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
-        stream.extend((65u32 * 3).to_be_bytes());
-        stream.extend([0x00, 0x22]);
-        for index in 0..=64 {
-            let t = f64::from(index) / 64.0;
-            let angle = std::f64::consts::FRAC_PI_2 * t;
-            for value in [
-                10.0 + 3.5 * angle.cos(),
-                20.0 - 3.2 * t,
-                30.0 + 3.5 * angle.sin(),
-            ] {
-                stream.extend(value.to_be_bytes());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        update_sldprt_native(&mut ir_edit, |native| {
+            let description = b"boundary_polyline mesh";
+            let schema = b"SCH_3201255_32001_13006";
+            let mut stream = b"PS\0\0".to_vec();
+            stream.extend((description.len() as u16).to_be_bytes());
+            stream.extend(description);
+            stream.push(schema.len() as u8);
+            stream.extend(schema);
+            stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
+            stream.extend((65u32 * 3).to_be_bytes());
+            stream.extend([0x00, 0x22]);
+            for index in 0..=64 {
+                let t = f64::from(index) / 64.0;
+                let angle = std::f64::consts::FRAC_PI_2 * t;
+                for value in [
+                    10.0 + 3.5 * angle.cos(),
+                    20.0 - 3.2 * t,
+                    30.0 + 3.5 * angle.sin(),
+                ] {
+                    stream.extend(value.to_be_bytes());
+                }
             }
-        }
-        native.feature_input_lanes[0].native_payload.extend(stream);
-    });
-    let native = sldprt_native(decoded.ir());
-    crate::resolved_features::holes::project_helix_axes(
-        &mut decoded.ir_mut().model.features,
-        &native.feature_histories,
-        &native.feature_input_lanes,
-    );
-    let FeatureDefinition::Helix { radius, .. } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("embedded helix geometry");
-    };
-    *radius = Length(9.0);
+            native.feature_input_lanes[0].native_payload.extend(stream);
+        });
+        let native = sldprt_native(&ir_edit);
+        crate::resolved_features::holes::project_helix_axes(
+            &mut ir_edit.model.features,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        );
+        let FeatureDefinition::Helix { radius, .. } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("embedded helix geometry");
+        };
+        *radius = Length(9.0);
+    }
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -530,19 +547,22 @@ fn semantic_writer_round_trips_wrap() {
         } if faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face
     ));
 
-    let FeatureDefinition::Wrap {
-        profile,
-        face,
-        mode,
-        depth,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed wrap");
-    };
-    *profile = ProfileRef::Faces(vec![face_id.clone()]);
-    *face = FaceSelection::Faces(vec![face_id.clone()]);
-    *mode = WrapMode::Deboss;
-    *depth = Some(Length(3.5));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Wrap {
+            profile,
+            face,
+            mode,
+            depth,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed wrap");
+        };
+        *profile = ProfileRef::Faces(vec![face_id.clone()]);
+        *face = FaceSelection::Faces(vec![face_id.clone()]);
+        *mode = WrapMode::Deboss;
+        *depth = Some(Length(3.5));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -567,13 +587,15 @@ fn semantic_writer_round_trips_wrap() {
     ));
 
     let mut scribed = regenerated;
-    let FeatureDefinition::Wrap { mode, depth, .. } =
-        &mut scribed.ir_mut().model.features[0].definition
-    else {
-        panic!("typed wrap");
-    };
-    *mode = WrapMode::Scribe;
-    *depth = None;
+    {
+        let mut ir_edit = scribed.ir_mut();
+        let FeatureDefinition::Wrap { mode, depth, .. } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed wrap");
+        };
+        *mode = WrapMode::Scribe;
+        *depth = None;
+    }
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(scribed.ir(), scribed.source_fidelity(), &mut encoded)
@@ -631,23 +653,26 @@ fn semantic_writer_round_trips_move_copy_body() {
             && (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 
-    let FeatureDefinition::MoveBody {
-        bodies,
-        translation,
-        rotation,
-        copies,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed body motion");
-    };
-    *bodies = BodySelection::Bodies(vec![body_id.clone()]);
-    *translation = Vector3::new(-7.0, 8.0, 9.0);
-    *rotation = Some(AxisAngle {
-        origin: Point3::new(10.0, 11.0, 12.0),
-        direction: Vector3::new(0.0, 1.0, 0.0),
-        angle: Angle(0.25),
-    });
-    *copies = 3;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::MoveBody {
+            bodies,
+            translation,
+            rotation,
+            copies,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed body motion");
+        };
+        *bodies = BodySelection::Bodies(vec![body_id.clone()]);
+        *translation = Vector3::new(-7.0, 8.0, 9.0);
+        *rotation = Some(AxisAngle {
+            origin: Point3::new(10.0, 11.0, 12.0),
+            direction: Vector3::new(0.0, 1.0, 0.0),
+            angle: Angle(0.25),
+        });
+        *copies = 3;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -666,14 +691,17 @@ fn semantic_writer_round_trips_move_copy_body() {
     assert_eq!(native.parameters["Rotation"], "0.25rad");
 
     let mut translated = regenerated;
-    let FeatureDefinition::MoveBody {
-        rotation, copies, ..
-    } = &mut translated.ir_mut().model.features[0].definition
-    else {
-        panic!("typed body motion");
-    };
-    *rotation = None;
-    *copies = 0;
+    {
+        let mut ir_edit = translated.ir_mut();
+        let FeatureDefinition::MoveBody {
+            rotation, copies, ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed body motion");
+        };
+        *rotation = None;
+        *copies = 0;
+    }
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -729,13 +757,16 @@ fn semantic_writer_round_trips_offset_surface() {
         } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
-    let FeatureDefinition::OffsetSurface { faces, distance } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed offset surface");
-    };
-    *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *distance = Some(Length(-3.5));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::OffsetSurface { faces, distance } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed offset surface");
+        };
+        *faces = FaceSelection::Faces(vec![face_id.clone()]);
+        *distance = Some(Length(-3.5));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -788,19 +819,22 @@ fn semantic_writer_round_trips_knit_surface() {
         } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
-    let FeatureDefinition::KnitSurface {
-        faces,
-        merge_entities,
-        create_solid,
-        gap_tolerance,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed knit surface");
-    };
-    *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *merge_entities = Some(true);
-    *create_solid = Some(true);
-    *gap_tolerance = None;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::KnitSurface {
+            faces,
+            merge_entities,
+            create_solid,
+            gap_tolerance,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed knit surface");
+        };
+        *faces = FaceSelection::Faces(vec![face_id.clone()]);
+        *merge_entities = Some(true);
+        *create_solid = Some(true);
+        *gap_tolerance = None;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -859,17 +893,20 @@ fn semantic_writer_round_trips_cut_with_surface() {
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
-    let FeatureDefinition::CutWithSurface {
-        targets,
-        tools,
-        reverse,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed surface cut");
-    };
-    *targets = BodySelection::Bodies(vec![body_id.clone()]);
-    *tools = FaceSelection::Faces(vec![face_id.clone()]);
-    *reverse = Some(true);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::CutWithSurface {
+            targets,
+            tools,
+            reverse,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed surface cut");
+        };
+        *targets = BodySelection::Bodies(vec![body_id.clone()]);
+        *tools = FaceSelection::Faces(vec![face_id.clone()]);
+        *reverse = Some(true);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -975,22 +1012,26 @@ fn semantic_writer_round_trips_filled_surface() {
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
-    let FeatureDefinition::FilledSurface {
-        boundary,
-        support_faces,
-        continuity,
-        boundary_continuities,
-        merge_result,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed filled surface");
-    };
-    *boundary =
-        cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![edge_id.clone()]));
-    *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *continuity = Some(SurfaceContinuity::Curvature);
-    boundary_continuities.clear();
-    *merge_result = Some(true);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::FilledSurface {
+            boundary,
+            support_faces,
+            continuity,
+            boundary_continuities,
+            merge_result,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed filled surface");
+        };
+        *boundary = cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
+            edge_id.clone(),
+        ]));
+        *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+        *continuity = Some(SurfaceContinuity::Curvature);
+        boundary_continuities.clear();
+        *merge_result = Some(true);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1047,14 +1088,17 @@ fn semantic_writer_round_trips_trim_surface() {
         } if faces == std::slice::from_ref(&face_id) && native == &face && edges == std::slice::from_ref(&edge_id)
     ));
 
-    let FeatureDefinition::TrimSurface { faces, tool, keep } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed trim surface");
-    };
-    *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *tool = PathRef::Edges(vec![edge_id.clone()]);
-    *keep = TrimRegion::Outside;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::TrimSurface { faces, tool, keep } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed trim surface");
+        };
+        *faces = FaceSelection::Faces(vec![face_id.clone()]);
+        *tool = PathRef::Edges(vec![edge_id.clone()]);
+        *keep = TrimRegion::Outside;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1107,17 +1151,20 @@ fn semantic_writer_round_trips_extend_surface() {
         } if faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
-    let FeatureDefinition::ExtendSurface {
-        faces,
-        distance,
-        method,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed extended surface");
-    };
-    *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *distance = Some(Length(4.5));
-    *method = SurfaceExtension::Linear;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::ExtendSurface {
+            faces,
+            distance,
+            method,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed extended surface");
+        };
+        *faces = FaceSelection::Faces(vec![face_id.clone()]);
+        *distance = Some(Length(4.5));
+        *method = SurfaceExtension::Linear;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1181,20 +1228,23 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
-    let FeatureDefinition::RuledSurface {
-        edges,
-        support_faces,
-        mode,
-        ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed ruled surface");
-    };
-    *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
-    *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *mode = RuledSurfaceMode::Normal {
-        distance: Length(3.0),
-    };
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::RuledSurface {
+            edges,
+            support_faces,
+            mode,
+            ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed ruled surface");
+        };
+        *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
+        *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+        *mode = RuledSurfaceMode::Normal {
+            distance: Length(3.0),
+        };
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1209,14 +1259,17 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     assert_eq!(native.properties["Trim"], "true");
     assert_eq!(native.parameters["Distance"], "3mm");
 
-    let FeatureDefinition::RuledSurface { mode, .. } =
-        &mut regenerated.ir_mut().model.features[0].definition
-    else {
-        panic!("typed ruled surface");
-    };
-    *mode = RuledSurfaceMode::Tangent {
-        distance: Length(4.0),
-    };
+    {
+        let mut ir_edit = regenerated.ir_mut();
+        let FeatureDefinition::RuledSurface { mode, .. } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed ruled surface");
+        };
+        *mode = RuledSurfaceMode::Tangent {
+            distance: Length(4.0),
+        };
+    }
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -1273,21 +1326,24 @@ fn semantic_writer_round_trips_projected_curve() {
         } if edges == std::slice::from_ref(&edge_id) && faces == std::slice::from_ref(&face_id) && native == &face
     ));
 
-    let FeatureDefinition::ProjectedCurve {
-        source,
-        target_faces,
-        direction,
-        bidirectional,
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed projected curve");
-    };
-    *source = PathRef::Edges(vec![edge_id.clone()]);
-    *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
-        cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
-    );
-    *bidirectional = Some(true);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::ProjectedCurve {
+            source,
+            target_faces,
+            direction,
+            bidirectional,
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed projected curve");
+        };
+        *source = PathRef::Edges(vec![edge_id.clone()]);
+        *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
+        *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
+            cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+        );
+        *bidirectional = Some(true);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1346,16 +1402,19 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
             ]
     ));
 
-    let FeatureDefinition::CompositeCurve { segments, closed } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed composite curve");
-    };
-    *segments = vec![
-        PathRef::Edges(vec![second_id.clone()]),
-        PathRef::Edges(vec![first_id.clone()]),
-    ];
-    *closed = true;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::CompositeCurve { segments, closed } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed composite curve");
+        };
+        *segments = vec![
+            PathRef::Edges(vec![second_id.clone()]),
+            PathRef::Edges(vec![first_id.clone()]),
+        ];
+        *closed = true;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1413,22 +1472,25 @@ fn semantic_writer_round_trips_typed_revolution() {
         } if (*value - std::f64::consts::PI).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Revolve { construction, op } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed revolution feature");
-    };
-    let Some(axis) = construction.axis.as_mut() else {
-        panic!("resolved revolution axis");
-    };
-    axis.origin = Point3::new(1.0, 2.0, 3.0);
-    axis.direction = Vector3::new(0.0, 0.0, 1.0);
-    construction.extent = Some(RevolveExtent::OneSided {
-        termination: Termination::Angle {
-            angle: Angle(std::f64::consts::FRAC_PI_2),
-        },
-    });
-    *op = BooleanOp::Cut;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Revolve { construction, op } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed revolution feature");
+        };
+        let Some(axis) = construction.axis.as_mut() else {
+            panic!("resolved revolution axis");
+        };
+        axis.origin = Point3::new(1.0, 2.0, 3.0);
+        axis.direction = Vector3::new(0.0, 0.0, 1.0);
+        construction.extent = Some(RevolveExtent::OneSided {
+            termination: Termination::Angle {
+                angle: Angle(std::f64::consts::FRAC_PI_2),
+            },
+        });
+        *op = BooleanOp::Cut;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1579,15 +1641,18 @@ fn semantic_writer_round_trips_all_revolution_extents() {
             && (second - 60f64.to_radians()).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Revolve { construction, op } =
-        &mut decoded.ir_mut().model.features[3].definition
-    else {
-        panic!("typed revolution");
-    };
-    construction.extent = Some(RevolveExtent::OneSided {
-        termination: Termination::Angle { angle: Angle(0.75) },
-    });
-    *op = BooleanOp::Intersect;
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Revolve { construction, op } =
+            &mut ir_edit.model.features[3].definition
+        else {
+            panic!("typed revolution");
+        };
+        construction.extent = Some(RevolveExtent::OneSided {
+            termination: Termination::Angle { angle: Angle(0.75) },
+        });
+        *op = BooleanOp::Intersect;
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec

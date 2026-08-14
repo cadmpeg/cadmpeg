@@ -112,33 +112,33 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         .iter()
         .all(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[0].id)));
 
-    let radius = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Radius")
-        .unwrap();
-    radius.expression = "R2".into();
-    radius.value = Some(ParameterValue::Length(Length(2.0)));
-    let modified_diameter = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "ModifiedDiameter")
-        .unwrap();
-    modified_diameter.expression = "<MOD-DIAM>4".into();
-    modified_diameter.value = Some(ParameterValue::Length(Length(4.0)));
-    let display_angle = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "DisplayAngle")
-        .unwrap();
-    display_angle.expression = format!("30{}", '\u{00b0}');
-    display_angle.value = Some(ParameterValue::Angle(Angle(30.0_f64.to_radians())));
+    {
+        let mut ir = decoded.ir_mut();
+        let radius = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Radius")
+            .unwrap();
+        radius.expression = "R2".into();
+        radius.value = Some(ParameterValue::Length(Length(2.0)));
+        let modified_diameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "ModifiedDiameter")
+            .unwrap();
+        modified_diameter.expression = "<MOD-DIAM>4".into();
+        modified_diameter.value = Some(ParameterValue::Length(Length(4.0)));
+        let display_angle = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "DisplayAngle")
+            .unwrap();
+        display_angle.expression = format!("30{}", '\u{00b0}');
+        display_angle.value = Some(ParameterValue::Angle(Angle(30.0_f64.to_radians())));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -493,30 +493,32 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .iter()
         .position(|feature| feature.name.as_deref() == Some("Equation boss"))
         .expect("extrusion");
-    decoded.ir_mut().model.features[extrusion].name = Some("Renamed equation boss".into());
-    let FeatureDefinition::Extrude { extent, .. } =
-        &mut decoded.ir_mut().model.features[extrusion].definition
-    else {
-        panic!("typed extrusion");
-    };
-    *extent = ExtrudeExtent::OneSided {
-        side: ExtrudeSide {
-            termination: Termination::Blind {
-                length: Length(12.0),
+    {
+        let mut ir = decoded.ir_mut();
+        ir.model.features[extrusion].name = Some("Renamed equation boss".into());
+        let FeatureDefinition::Extrude { extent, .. } =
+            &mut ir.model.features[extrusion].definition
+        else {
+            panic!("typed extrusion");
+        };
+        *extent = ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(12.0),
+                },
+                draft: None,
+                offset: None,
             },
-            draft: None,
-            offset: None,
-        },
-    };
-    let depth = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Depth")
-        .expect("depth parameter");
-    depth.expression = "Width * 3".into();
-    depth.value = Some(ParameterValue::Length(Length(12.0)));
+        };
+        let depth = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .expect("depth parameter");
+        depth.expression = "Width * 3".into();
+        depth.value = Some(ParameterValue::Length(Length(12.0)));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec

@@ -373,7 +373,7 @@ fn an_edited_depth_survives_the_semantic_write_path() {
                         });
                     let mut expected = edited.clone();
                     let moved = depths(&mut expected);
-                    let returned = depths(written.ir_mut());
+                    let returned = depths(&mut written.ir_mut());
                     assert_eq!(
                         returned.len(),
                         moved.len(),

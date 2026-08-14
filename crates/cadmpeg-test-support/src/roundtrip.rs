@@ -245,7 +245,7 @@ where
     )
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
     let baseline = decoded.ir().clone();
-    if !mutate(decoded.ir_mut()) {
+    if !mutate(&mut decoded.ir_mut()) {
         return false;
     }
     assert!(

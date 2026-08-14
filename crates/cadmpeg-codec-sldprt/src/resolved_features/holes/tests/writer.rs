@@ -38,16 +38,19 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         } if placements.is_empty()
     ));
 
-    let FeatureDefinition::Hole {
-        diameter, extent, ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed hole feature");
-    };
-    *diameter = Some(Length(8.0));
-    *extent = Some(Termination::Blind {
-        length: Length(16.0),
-    });
+    {
+        let mut ir = decoded.ir_mut();
+        let FeatureDefinition::Hole {
+            diameter, extent, ..
+        } = &mut ir.model.features[0].definition
+        else {
+            panic!("typed hole feature");
+        };
+        *diameter = Some(Length(8.0));
+        *extent = Some(Termination::Blind {
+            length: Length(16.0),
+        });
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -180,30 +183,33 @@ fn semantic_writer_round_trips_hole_placement() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let FeatureDefinition::Hole {
-        face,
-        placements,
-        extent,
-        ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed hole feature");
-    };
-    assert_eq!(face, &Some(FaceSelection::Native("face:12".into())));
-    assert_eq!(
-        placements,
-        &[HolePlacement::Directed {
-            position: Point3::new(1.0, 2.0, 3.0),
-            direction: Vector3::new(0.0, 0.0, -1.0),
-        }]
-    );
+    {
+        let mut ir = decoded.ir_mut();
+        let FeatureDefinition::Hole {
+            face,
+            placements,
+            extent,
+            ..
+        } = &mut ir.model.features[0].definition
+        else {
+            panic!("typed hole feature");
+        };
+        assert_eq!(face, &Some(FaceSelection::Native("face:12".into())));
+        assert_eq!(
+            placements,
+            &[HolePlacement::Directed {
+                position: Point3::new(1.0, 2.0, 3.0),
+                direction: Vector3::new(0.0, 0.0, -1.0),
+            }]
+        );
 
-    *face = Some(FaceSelection::Native("face:13".into()));
-    *placements = vec![HolePlacement::Directed {
-        position: Point3::new(4.0, 5.0, 6.0),
-        direction: Vector3::new(0.0, 1.0, 0.0),
-    }];
-    *extent = Some(Termination::ThroughAll);
+        *face = Some(FaceSelection::Native("face:13".into()));
+        *placements = vec![HolePlacement::Directed {
+            position: Point3::new(4.0, 5.0, 6.0),
+            direction: Vector3::new(0.0, 1.0, 0.0),
+        }];
+        *extent = Some(Termination::ThroughAll);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -274,28 +280,29 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         } if (*value - 82f64.to_radians()).abs() < 1e-12
     ));
 
-    let FeatureDefinition::Hole { kind, extent, .. } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("counterbore hole");
-    };
-    *kind = HoleKind::Counterbore {
-        diameter: Length(12.0),
-        depth: Length(5.0),
-    };
-    *extent = Some(Termination::ThroughAll);
-    let FeatureDefinition::Hole { kind, extent, .. } =
-        &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("countersink hole");
-    };
-    *kind = HoleKind::Countersink {
-        diameter: Length(11.0),
-        angle: Angle(90f64.to_radians()),
-    };
-    *extent = Some(Termination::Blind {
-        length: Length(25.0),
-    });
+    {
+        let mut ir = decoded.ir_mut();
+        let FeatureDefinition::Hole { kind, extent, .. } = &mut ir.model.features[0].definition
+        else {
+            panic!("counterbore hole");
+        };
+        *kind = HoleKind::Counterbore {
+            diameter: Length(12.0),
+            depth: Length(5.0),
+        };
+        *extent = Some(Termination::ThroughAll);
+        let FeatureDefinition::Hole { kind, extent, .. } = &mut ir.model.features[1].definition
+        else {
+            panic!("countersink hole");
+        };
+        *kind = HoleKind::Countersink {
+            diameter: Length(11.0),
+            angle: Angle(90f64.to_radians()),
+        };
+        *extent = Some(Termination::Blind {
+            length: Length(25.0),
+        });
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec

@@ -110,7 +110,7 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].local_id = Some(7);
     });
     assert!(crate::validate_native(decoded.ir())
@@ -133,7 +133,7 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].object_index = Some(77);
     });
     assert!(crate::validate_native(decoded.ir())
@@ -161,7 +161,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
     });
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
@@ -192,7 +192,7 @@ fn native_validation_rejects_duplicate_sketch_marker_offsets() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         let offset = native.feature_input_lanes[0].sketch_entities[0].offset;
         native.feature_input_lanes[0].sketch_entities[1].offset = offset;
     });
@@ -212,7 +212,7 @@ fn native_validation_requires_complete_ordered_sketch_markers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
         native.feature_input_lanes[0].sketch_entities[1].ordinal = 4;
     });

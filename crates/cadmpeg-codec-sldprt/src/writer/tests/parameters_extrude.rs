@@ -93,15 +93,17 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
     parameter_order.sort_unstable();
     assert_eq!(parameter_order, vec![(0, "Input"), (1, "Result")]);
 
-    let result = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Result")
-        .unwrap();
-    result.expression = "Input + 2".into();
-    result.value = Some(ParameterValue::Integer(4));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let result = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Result")
+            .unwrap();
+        result.expression = "Input + 2".into();
+        result.value = Some(ParameterValue::Integer(4));
+    }
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(decoded.ir(), decoded.source_fidelity(), &mut encoded)
@@ -160,14 +162,16 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         .unwrap()
         .id
         .clone();
-    let result = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Result")
-        .unwrap();
-    assert_eq!(result.dependencies, vec![sketch1_parameter.clone()]);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let result = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Result")
+            .unwrap();
+        assert_eq!(result.dependencies, vec![sketch1_parameter.clone()]);
+    }
 
     decoded
         .ir_mut()
@@ -206,14 +210,16 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let width = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Width")
-        .unwrap();
-    width.properties.insert("EquationId".into(), "D2".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let width = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Width")
+            .unwrap();
+        width.properties.insert("EquationId".into(), "D2".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -287,22 +293,23 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let sketch = decoded
-        .ir_mut()
-        .model
-        .features
-        .iter_mut()
-        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
-        .unwrap();
-    sketch.name = Some("Profile".into());
-    decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Width")
-        .unwrap()
-        .name = "Gauge".into();
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let sketch = ir_edit
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+            .unwrap();
+        sketch.name = Some("Profile".into());
+        ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Width")
+            .unwrap()
+            .name = "Gauge".into();
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -358,15 +365,17 @@ fn semantic_writer_preserves_empty_dimensions() {
         .unwrap();
     assert_eq!(empty.expression, "");
     assert_eq!(empty.value, None);
-    let depth = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Depth")
-        .unwrap();
-    depth.expression = "20mm".into();
-    depth.value = Some(ParameterValue::Length(Length(20.0)));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let depth = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .unwrap();
+        depth.expression = "20mm".into();
+        depth.value = Some(ParameterValue::Length(Length(20.0)));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -393,9 +402,12 @@ fn semantic_writer_preserves_keywords_attributes() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let parameter = &mut decoded.ir_mut().model.parameters[0];
-    parameter.expression = "20mm".into();
-    parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let parameter = &mut ir_edit.model.parameters[0];
+        parameter.expression = "20mm".into();
+        parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -424,15 +436,17 @@ fn semantic_writer_preserves_keywords_child_order() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let depth = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Depth")
-        .unwrap();
-    depth.expression = "20mm".into();
-    depth.value = Some(ParameterValue::Length(Length(20.0)));
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let depth = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .unwrap();
+        depth.expression = "20mm".into();
+        depth.value = Some(ParameterValue::Length(Length(20.0)));
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -565,20 +579,22 @@ fn semantic_writer_rejects_conflicting_parameter_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let parameter = decoded
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Depth")
-        .unwrap();
-    parameter.expression = "20mm".into();
-    parameter.value = Some(ParameterValue::Length(Length(20.0)));
-    update_sldprt_native(decoded.ir_mut(), |native| {
-        native.feature_histories[0].features[0]
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let parameter = ir_edit
+            .model
             .parameters
-            .insert("Depth".into(), "30mm".into());
-    });
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .unwrap();
+        parameter.expression = "20mm".into();
+        parameter.value = Some(ParameterValue::Length(Length(20.0)));
+        update_sldprt_native(&mut ir_edit, |native| {
+            native.feature_histories[0].features[0]
+                .parameters
+                .insert("Depth".into(), "30mm".into());
+        });
+    }
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -606,7 +622,7 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
     decoded.ir_mut().model.parameters[0]
         .properties
         .insert("Driven".into(), "neutral".into());
-    update_sldprt_native(decoded.ir_mut(), |native| {
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .dimension_properties
             .get_mut("Depth")
@@ -708,36 +724,39 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         Some(ParameterValue::Length(Length(4.0)))
     );
 
-    let FeatureDefinition::Extrude {
-        extent:
-            ExtrudeExtent::OneSided {
-                side:
-                    ExtrudeSide {
-                        termination: Termination::Blind { length },
-                        ..
-                    },
-            },
-        ..
-    } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed positional boss extrusion");
-    };
-    *length = Length(250.0);
-    let FeatureDefinition::Extrude {
-        extent:
-            ExtrudeExtent::OneSided {
-                side:
-                    ExtrudeSide {
-                        termination: Termination::Blind { length },
-                        ..
-                    },
-            },
-        ..
-    } = &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("typed positional cut extrusion");
-    };
-    *length = Length(4.5);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Extrude {
+            extent:
+                ExtrudeExtent::OneSided {
+                    side:
+                        ExtrudeSide {
+                            termination: Termination::Blind { length },
+                            ..
+                        },
+                },
+            ..
+        } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed positional boss extrusion");
+        };
+        *length = Length(250.0);
+        let FeatureDefinition::Extrude {
+            extent:
+                ExtrudeExtent::OneSided {
+                    side:
+                        ExtrudeSide {
+                            termination: Termination::Blind { length },
+                            ..
+                        },
+                },
+            ..
+        } = &mut ir_edit.model.features[1].definition
+        else {
+            panic!("typed positional cut extrusion");
+        };
+        *length = Length(4.5);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -981,47 +1000,50 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         }
     ));
 
-    let FeatureDefinition::Extrude {
-        direction,
-        extent,
-        op,
-        ..
-    } = &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("typed extrusion");
-    };
-    *direction = cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(1.0, 0.0, 0.0));
-    *extent = ExtrudeExtent::TwoSided {
-        first: ExtrudeSide {
-            termination: Termination::Blind {
-                length: Length(8.0),
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Extrude {
+            direction,
+            extent,
+            op,
+            ..
+        } = &mut ir_edit.model.features[1].definition
+        else {
+            panic!("typed extrusion");
+        };
+        *direction = cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(1.0, 0.0, 0.0));
+        *extent = ExtrudeExtent::TwoSided {
+            first: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(8.0),
+                },
+                draft: Some(Angle(0.1)),
+                offset: None,
             },
-            draft: Some(Angle(0.1)),
-            offset: None,
-        },
-        second: ExtrudeSide {
-            termination: Termination::Blind {
-                length: Length(9.0),
+            second: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(9.0),
+                },
+                draft: None,
+                offset: None,
             },
-            draft: None,
-            offset: None,
-        },
-    };
-    *op = BooleanOp::Intersect;
-    let FeatureDefinition::Extrude {
-        direction, extent, ..
-    } = &mut decoded.ir_mut().model.features[3].definition
-    else {
-        panic!("typed extrusion");
-    };
-    *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal;
-    *extent = ExtrudeExtent::OneSided {
-        side: ExtrudeSide {
-            termination: Termination::ThroughAll,
-            draft: None,
-            offset: None,
-        },
-    };
+        };
+        *op = BooleanOp::Intersect;
+        let FeatureDefinition::Extrude {
+            direction, extent, ..
+        } = &mut ir_edit.model.features[3].definition
+        else {
+            panic!("typed extrusion");
+        };
+        *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal;
+        *extent = ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::ThroughAll,
+                draft: None,
+                offset: None,
+            },
+        };
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1058,34 +1080,36 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let FeatureDefinition::Extrude { extent, .. } =
-        &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("typed extrusion");
-    };
-    assert_eq!(
-        extent,
-        &ExtrudeExtent::OneSided {
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Extrude { extent, .. } = &mut ir_edit.model.features[1].definition
+        else {
+            panic!("typed extrusion");
+        };
+        assert_eq!(
+            extent,
+            &ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native("face:12".into()),
+                        offset: None,
+                    },
+                    draft: None,
+                    offset: None,
+                }
+            }
+        );
+        *extent = ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: Termination::ToFace {
-                    face: FaceSelection::Native("face:12".into()),
+                    face: FaceSelection::Native("face:13".into()),
                     offset: None,
                 },
                 draft: None,
                 offset: None,
-            }
-        }
-    );
-    *extent = ExtrudeExtent::OneSided {
-        side: ExtrudeSide {
-            termination: Termination::ToFace {
-                face: FaceSelection::Native("face:13".into()),
-                offset: None,
             },
-            draft: None,
-            offset: None,
-        },
-    };
+        };
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1215,15 +1239,18 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
         }] if selection == "edge:1,edge:2")
     ));
 
-    let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed fillet feature");
-    };
-    groups[0].radius = cadmpeg_ir::features::RadiusSpec::Constant {
-        radius: cadmpeg_ir::features::Length(3.5),
-    };
-    groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
+            &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed fillet feature");
+        };
+        groups[0].radius = cadmpeg_ir::features::RadiusSpec::Constant {
+            radius: cadmpeg_ir::features::Length(3.5),
+        };
+        groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1309,23 +1336,24 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         Some(ParameterValue::Length(Length(0.3)))
     );
 
-    let FeatureDefinition::Fillet { groups, .. } =
-        &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("typed positional fillet");
-    };
-    groups[0].radius = RadiusSpec::Constant {
-        radius: Length(2.5),
-    };
-    let FeatureDefinition::Chamfer { groups, .. } =
-        &mut decoded.ir_mut().model.features[1].definition
-    else {
-        panic!("typed positional chamfer");
-    };
-    groups[0].spec = ChamferSpec::DistanceAngle {
-        distance: Length(0.6),
-        angle: Angle(30.0_f64.to_radians()),
-    };
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Fillet { groups, .. } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("typed positional fillet");
+        };
+        groups[0].radius = RadiusSpec::Constant {
+            radius: Length(2.5),
+        };
+        let FeatureDefinition::Chamfer { groups, .. } = &mut ir_edit.model.features[1].definition
+        else {
+            panic!("typed positional chamfer");
+        };
+        groups[0].spec = ChamferSpec::DistanceAngle {
+            distance: Length(0.6),
+            angle: Angle(30.0_f64.to_radians()),
+        };
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1396,15 +1424,17 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             VariableRadius { parameter: 1.0, radius: Length(3.0) },
         ])
     ));
-    let FeatureDefinition::Fillet { groups } = &mut decoded.ir_mut().model.features[0].definition
-    else {
-        panic!("variable fillet");
-    };
-    let RadiusSpec::Variable { points } = &mut groups[0].radius else {
-        panic!("variable fillet radius")
-    };
-    points[1].parameter = 0.4;
-    points[1].radius = Length(5.0);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let FeatureDefinition::Fillet { groups } = &mut ir_edit.model.features[0].definition else {
+            panic!("variable fillet");
+        };
+        let RadiusSpec::Variable { points } = &mut groups[0].radius else {
+            panic!("variable fillet radius")
+        };
+        points[1].parameter = 0.4;
+        points[1].radius = Length(5.0);
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -1423,14 +1453,16 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         "5mm"
     );
 
-    let FeatureDefinition::Fillet { groups, .. } =
-        &mut regenerated.ir_mut().model.features[0].definition
-    else {
-        panic!("variable fillet after regeneration");
-    };
-    groups[0].radius = RadiusSpec::Constant {
-        radius: Length(6.0),
-    };
+    {
+        let mut ir_edit = regenerated.ir_mut();
+        let FeatureDefinition::Fillet { groups, .. } = &mut ir_edit.model.features[0].definition
+        else {
+            panic!("variable fillet after regeneration");
+        };
+        groups[0].radius = RadiusSpec::Constant {
+            radius: Length(6.0),
+        };
+    }
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(

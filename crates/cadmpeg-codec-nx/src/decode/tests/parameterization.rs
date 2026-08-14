@@ -994,13 +994,16 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir_mut().model.procedural_curves[0].definition
-    else {
-        panic!("typed intersection");
-    };
-    for side in &mut context.sides {
-        side.pcurve = None;
+    {
+        let mut ir = result.ir_mut();
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+            &mut ir.model.procedural_curves[0].definition
+        else {
+            panic!("typed intersection");
+        };
+        for side in &mut context.sides {
+            side.pcurve = None;
+        }
     }
     let pending = vec![(
         procedural_id,
@@ -1016,7 +1019,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         ],
     )];
 
-    crate::decode::complete_ext11_support_uv(result.ir_mut(), &pending);
+    crate::decode::complete_ext11_support_uv(&mut result.ir_mut(), &pending);
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition
@@ -1035,13 +1038,16 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
-    let ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir_mut().model.procedural_curves[0].definition
-    else {
-        panic!("typed intersection");
-    };
-    for side in &mut context.sides {
-        side.pcurve = None;
+    {
+        let mut ir = result.ir_mut();
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &mut ir.model.procedural_curves[0].definition
+        else {
+            panic!("typed intersection");
+        };
+        for side in &mut context.sides {
+            side.pcurve = None;
+        }
     }
     let pending = vec![(
         procedural_id,
@@ -1054,7 +1060,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         [None, None],
     )];
 
-    crate::decode::complete_support_uv(result.ir_mut(), &pending);
+    crate::decode::complete_support_uv(&mut result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition
@@ -1182,14 +1188,17 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     context.sides[0].pcurve = None;
     context.sides[1].surface = None;
     context.sides[1].pcurve = None;
-    result.ir_mut().model.procedural_curves.insert(0, dependent);
-    let ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir_mut().model.procedural_curves[1].definition
-    else {
-        unreachable!()
-    };
-    for side in &mut context.sides {
-        side.pcurve = None;
+    {
+        let mut ir = result.ir_mut();
+        ir.model.procedural_curves.insert(0, dependent);
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &mut ir.model.procedural_curves[1].definition
+        else {
+            unreachable!()
+        };
+        for side in &mut context.sides {
+            side.pcurve = None;
+        }
     }
     let pending = vec![
         (dependent_id, points, parameters.clone(), 0.01, [None, None]),
@@ -1205,7 +1214,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         ),
     ];
 
-    crate::decode::complete_support_uv(result.ir_mut(), &pending);
+    crate::decode::complete_support_uv(&mut result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition
@@ -1223,19 +1232,22 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
-    let ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir_mut().model.procedural_curves[0].definition
-    else {
-        panic!("typed intersection");
-    };
-    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_mut()
-    else {
-        panic!("NURBS support lane");
-    };
-    control_points[1] = Point2::new(
-        crate::decode::MISSING_TOLERANCE,
-        crate::decode::MISSING_TOLERANCE,
-    );
+    {
+        let mut ir = result.ir_mut();
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &mut ir.model.procedural_curves[0].definition
+        else {
+            panic!("typed intersection");
+        };
+        let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_mut()
+        else {
+            panic!("NURBS support lane");
+        };
+        control_points[1] = Point2::new(
+            crate::decode::MISSING_TOLERANCE,
+            crate::decode::MISSING_TOLERANCE,
+        );
+    }
     let pending = vec![(
         procedural_id,
         vec![
@@ -1247,7 +1259,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         [None, None],
     )];
 
-    crate::decode::complete_support_uv(result.ir_mut(), &pending);
+    crate::decode::complete_support_uv(&mut result.ir_mut(), &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition
@@ -1273,17 +1285,20 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir().model.procedural_curves[0].id.clone();
-    let ProceduralCurveDefinition::Intersection { context, .. } =
-        &mut result.ir_mut().model.procedural_curves[0].definition
-    else {
-        panic!("typed intersection");
-    };
-    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_mut()
-    else {
-        panic!("NURBS support lane");
-    };
-    for point in control_points {
-        point.u += 100.0;
+    {
+        let mut ir = result.ir_mut();
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &mut ir.model.procedural_curves[0].definition
+        else {
+            panic!("typed intersection");
+        };
+        let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_mut()
+        else {
+            panic!("NURBS support lane");
+        };
+        for point in control_points {
+            point.u += 100.0;
+        }
     }
     let pending = vec![(
         procedural_id,
@@ -1296,8 +1311,8 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
         [None, None],
     )];
 
-    crate::decode::invalidate_inconsistent_support_uv(result.ir_mut(), &pending);
-    crate::decode::complete_support_uv(result.ir_mut(), &pending);
+    crate::decode::invalidate_inconsistent_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::complete_support_uv(&mut result.ir_mut(), &pending);
 
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
