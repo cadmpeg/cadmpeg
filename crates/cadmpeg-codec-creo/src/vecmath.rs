@@ -28,8 +28,16 @@ pub(crate) fn normalize(vector: [f64; 3]) -> Option<[f64; 3]> {
 pub(crate) fn normalize_with_length(vector: [f64; 3]) -> Option<([f64; 3], f64)> {
     let vector = Vector3::from(vector);
     let magnitude = vector.norm();
-    (magnitude.is_finite() && magnitude > EPS_NEAR_ZERO)
-        .then(|| (<[f64; 3]>::from(vector.scale(magnitude.recip())), magnitude))
+    (magnitude.is_finite() && magnitude > EPS_NEAR_ZERO).then(|| {
+        (
+            [
+                vector.x / magnitude,
+                vector.y / magnitude,
+                vector.z / magnitude,
+            ],
+            magnitude,
+        )
+    })
 }
 
 pub(crate) use normalize as normalized;
