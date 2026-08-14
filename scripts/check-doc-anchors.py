@@ -40,6 +40,19 @@ def normalize(line: str) -> str:
     return line[2:].strip() if line.startswith("- ") else line
 
 
+def collapse_ws(text: str) -> str:
+    """Collapse table-column padding so a citation need not copy the cell width."""
+    return " ".join(text.split())
+
+
+def phrase_key(text: str) -> str:
+    """Keep code-block spacing; collapse only markdown table rows."""
+    stripped = text.strip()
+    if stripped.startswith("|"):
+        return collapse_ws(stripped)
+    return stripped
+
+
 def section_bodies(lines: list[str]) -> dict[str, list[str]]:
     """Map each numbered section to the normalized lines it owns."""
     starts: list[tuple[int, str]] = []
@@ -57,7 +70,8 @@ def section_bodies(lines: list[str]) -> dict[str, list[str]]:
 def count_matches(body: list[str], name: str | None, phrase: str | None) -> int:
     """Count paragraphs a reference selects: a named record or a phrase start."""
     if phrase is not None:
-        return sum(1 for line in body if line.startswith(phrase))
+        needle = phrase_key(phrase)
+        return sum(1 for line in body if phrase_key(line).startswith(needle))
     return sum(
         1
         for line in body
