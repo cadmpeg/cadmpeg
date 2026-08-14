@@ -5,8 +5,7 @@ use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
@@ -3018,7 +3017,7 @@ fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Resu
         )));
     }
     if curve.knots.iter().any(|v| !v.is_finite())
-        || curve.knots.windows(2).any(|v| v[0] > v[1])
+        || !knots_nondecreasing(&curve.knots)
         || curve
             .control_points
             .iter()

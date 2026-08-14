@@ -8,7 +8,9 @@ use crate::native::SldprtNative;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
+};
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
 use cadmpeg_ir::Annotations;
 
@@ -3069,14 +3071,8 @@ fn write_nurbs_surface(
         .iter()
         .chain(&nurbs.v_knots)
         .all(|value| value.is_finite())
-        || !nurbs
-            .u_knots
-            .windows(2)
-            .all(|window| window[0] <= window[1])
-        || !nurbs
-            .v_knots
-            .windows(2)
-            .all(|window| window[0] <= window[1])
+        || !knots_nondecreasing(&nurbs.u_knots)
+        || !knots_nondecreasing(&nurbs.v_knots)
     {
         return Err(CodecError::Malformed(
             "NURBS surface knot vectors must be finite and nondecreasing".into(),
@@ -3394,9 +3390,7 @@ fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecEr
     let preamble: Vec<_> = section.bytes().map(|byte| byte.rotate_left(4)).collect();
     let mut out = MARKER.to_vec();
     out.extend_from_slice(&type_id.to_le_bytes());
-    let mut crc = crc32fast::Hasher::new();
-    crc.update(payload);
-    out.extend_from_slice(&crc.finalize().to_le_bytes());
+    out.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
     out.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
     out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     out.extend_from_slice(&(preamble.len() as u32).to_le_bytes());

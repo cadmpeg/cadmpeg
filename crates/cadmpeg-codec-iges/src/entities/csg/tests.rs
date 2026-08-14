@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -408,8 +409,7 @@ fn decode_validates_selected_component_parameter_pointer() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed))
+            .filter(|loss| loss.code == IgesLossCode::PointerUnresolved.kind())
             .count(),
         4
     );
@@ -418,8 +418,7 @@ fn decode_validates_selected_component_parameter_pointer() {
         .losses
         .iter()
         .find(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+            loss.code == IgesLossCode::PointerUnresolved.kind()
                 && loss.message.contains("D7 Parameter pointer 2")
         })
         .unwrap();

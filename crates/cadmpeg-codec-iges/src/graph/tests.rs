@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -79,10 +80,7 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
         .report()
         .losses
         .iter()
-        .filter(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
-        })
+        .filter(|loss| loss.code == IgesLossCode::PointerUnresolved.kind())
         .collect::<Vec<_>>();
     assert_eq!(cycle_losses.len(), 2);
     assert!(cycle_losses

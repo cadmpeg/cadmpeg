@@ -48,16 +48,12 @@ fn scale_point(v: &[f64]) -> Point3 {
 }
 
 fn norm3(v: &[f64]) -> f64 {
-    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+    Vector3::from([v[0], v[1], v[2]]).norm()
 }
 
 fn unit(v: &[f64]) -> Vector3 {
-    let n = norm3(v);
-    if n > f64::EPSILON {
-        Vector3::new(v[0] / n, v[1] / n, v[2] / n)
-    } else {
-        Vector3::new(v[0], v[1], v[2])
-    }
+    let original = Vector3::from([v[0], v[1], v[2]]);
+    original.unit().unwrap_or(original)
 }
 
 // ---- compact analytic carriers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)) -----------------------------------
@@ -350,11 +346,8 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
 }
 
 fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    unit(&[
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    ])
+    let c = a.cross(b);
+    c.unit().unwrap_or(c)
 }
 
 fn surface_frame(tag: u8, v: &[f64]) -> Option<(Point3, Vector3, Vector3)> {

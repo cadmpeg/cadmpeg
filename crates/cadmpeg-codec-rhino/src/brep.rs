@@ -10,7 +10,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader,
     ChecksumStatus, Chunk,
 };
-use crate::curves::{error, unsupported, GeometryError};
+use crate::curves::{error, GeometryError};
 use crate::objects::parse_class_wrapper;
 use crate::settings::{bbox, interval, BoundingBox, Interval, Point3};
 use crate::wire::Uuid;
@@ -507,10 +507,16 @@ pub(crate) fn parse(
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 3 {
-        return Err(unsupported(version_offset, "unsupported ON_Brep major"));
+        return Err(GeometryError::unsupported(
+            version_offset,
+            "unsupported ON_Brep major",
+        ));
     }
     if version & 0x0f > 3 {
-        return Err(unsupported(version_offset, "unsupported ON_Brep minor"));
+        return Err(GeometryError::unsupported(
+            version_offset,
+            "unsupported ON_Brep minor",
+        ));
     }
     let minor = version & 0x0f;
     let mut warnings = Vec::new();
@@ -647,7 +653,7 @@ fn read_children(
     let version_offset = child_reader.position();
     let version = child_reader.u8()?;
     if version >> 4 != 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported Brep polymorphic-array version",
         ));
@@ -868,7 +874,7 @@ fn read_faces(
     let mut child = body_reader(bytes, &chunk)?;
     let version = child.u8()?;
     if version >> 4 != 1 || version & 0x0f > 2 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             child.position() - 1,
             "unsupported Brep face-array version",
         ));
@@ -1002,7 +1008,7 @@ fn read_regions(
     let mut outer = body_reader(bytes, &chunk)?;
     let parsed = (|| {
         if outer.i32()? != 1 || outer.i32()? < 0 {
-            return Err(unsupported(
+            return Err(GeometryError::unsupported(
                 outer.position() - 8,
                 "unsupported Brep region wrapper",
             ));
@@ -1016,7 +1022,7 @@ fn read_regions(
         let nested_chunk = anonymous_chunk(bytes, &mut outer, archive)?;
         let mut topology = body_reader(bytes, &nested_chunk)?;
         if topology.i32()? != 1 || topology.i32()? != 0 {
-            return Err(unsupported(
+            return Err(GeometryError::unsupported(
                 topology.position() - 8,
                 "unsupported Brep region-topology version",
             ));
@@ -1151,7 +1157,10 @@ fn region_element(
         let major = child.i32()?;
         let minor = child.i32()?;
         if major != 1 || minor != 0 {
-            return Err(unsupported(start, "unsupported raw region element version"));
+            return Err(GeometryError::unsupported(
+                start,
+                "unsupported raw region element version",
+            ));
         }
         Ok((child.position()..chunk.body.end, start..chunk.next_offset))
     } else {
@@ -1275,7 +1284,7 @@ fn raw_array_start(
 ) -> Result<usize, GeometryError> {
     let version = reader.u8()?;
     if version >> 4 != 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             &format!("unsupported {label} array version"),
         ));
@@ -1297,7 +1306,7 @@ fn anonymous_array_start(reader: &mut BoundedReader<'_>) -> Result<usize, Geomet
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 8,
             "unsupported region array version",
         ));

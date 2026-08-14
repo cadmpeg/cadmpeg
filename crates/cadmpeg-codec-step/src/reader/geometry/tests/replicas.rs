@@ -26,6 +26,7 @@ use cadmpeg_ir::CadIr;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+use crate::export::is_rigid_transform;
 use crate::ids::StepIdentity;
 use crate::test_support::{decode_inline, export};
 use crate::{
@@ -34,7 +35,7 @@ use crate::{
 
 #[test]
 fn rigid_transform_rejects_reflections() {
-    assert!(!crate::is_rigid_transform(&[
+    assert!(!is_rigid_transform(&[
         [-1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],

@@ -18,7 +18,7 @@ use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::curves::{error, unsupported, GeometryError};
+use crate::curves::{error, GeometryError};
 use crate::wire::Uuid;
 
 /// Decode context and root view used for mesh expansion.
@@ -203,19 +203,19 @@ pub(crate) fn decode(
     let major = version >> 4;
     let minor = version & 0x0f;
     if major == 2 || major == 0 || major > 3 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             "unsupported ON_Mesh major",
         ));
     }
     if minor > 8 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             "unsupported ON_Mesh minor",
         ));
     }
     if major == 3 && archive == ArchiveVersion::V5 && minor > 5 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             "mesh minor is newer than the V5 writer band",
         ));
@@ -798,7 +798,7 @@ fn read_ngons(
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported ngon version",
         ));
@@ -841,7 +841,7 @@ fn read_mapping_tag(
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor > 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported mapping-tag version",
         ));
@@ -894,7 +894,7 @@ fn read_double_chunk<'a>(
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor > 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported double-vertex version",
         ));

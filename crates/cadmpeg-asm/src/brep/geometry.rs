@@ -927,8 +927,7 @@ pub(crate) fn rational_four_arc_circle(
     for span in &quadratic_points {
         let radial = point_vector(first_center, span[0]);
         let next = point_vector(first_center, span[2]);
-        if (radial.norm() - radius).abs() > tolerance
-            || radial.dot(next).abs() > tolerance * radius
+        if (radial.norm() - radius).abs() > tolerance || radial.dot(next).abs() > tolerance * radius
         {
             return None;
         }

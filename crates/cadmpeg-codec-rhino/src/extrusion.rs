@@ -7,9 +7,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
-use crate::curves::{
-    decode_embedded_curve_2d, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
-};
+use crate::curves::{decode_embedded_curve_2d, error, exact_nurbs, DecodedCurve, GeometryError};
 use crate::objects::parse_class_wrapper;
 use crate::settings::{interval, point, vector};
 use crate::wire::Uuid;
@@ -99,7 +97,7 @@ pub(crate) fn decode(
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || !(0..=3).contains(&minor) {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported extrusion anonymous version",
         ));
@@ -626,7 +624,10 @@ fn require_anonymous_version(
 ) -> Result<(), GeometryError> {
     let offset = reader.position();
     if reader.i32()? != major || reader.i32()? != minor {
-        return Err(unsupported(offset, &format!("unsupported {name} version")));
+        return Err(GeometryError::unsupported(
+            offset,
+            &format!("unsupported {name} version"),
+        ));
     }
     Ok(())
 }

@@ -3,9 +3,12 @@
 
 #![allow(unused_imports)]
 
+use crate::native;
+use crate::product::product_cycle_nodes;
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
+use std::collections::HashSet;
 use std::io::Cursor;
 
 #[test]
@@ -494,4 +497,51 @@ fn rejects_conflicting_xlink_subelement_carriers() {
         cadmpeg_core::CodecError::Malformed(message)
             if message.contains("both sub and count carriers")
     ));
+}
+
+fn node(object: &str, members: &[&str]) -> native::ProductNodeRecord {
+    native::ProductNodeRecord {
+        id: format!("product:{object}"),
+        object: object.into(),
+        kind: "group".into(),
+        members: members.iter().map(|member| (*member).into()).collect(),
+        prototype: None,
+        external_document: None,
+        external_document_attribute: None,
+        local_transform: None,
+        placement_property: None,
+        element_count: None,
+        link_transform: None,
+        element_transforms: Vec::new(),
+        element_scales: Vec::new(),
+        linked_subelements: Vec::new(),
+        claim_child: None,
+        copy_on_change: None,
+        copy_on_change_source: None,
+        copy_on_change_group: None,
+        copy_on_change_touched: None,
+        scale: None,
+        element_visibility: Vec::new(),
+        element_objects: Vec::new(),
+    }
+}
+
+#[test]
+fn reconvergent_product_graph_is_not_a_cycle() {
+    let records = [node("A", &["C", "B"]), node("B", &["C"]), node("C", &[])];
+    let nodes = records
+        .iter()
+        .map(|record| (record.object.as_str(), record))
+        .collect();
+    assert!(product_cycle_nodes(&nodes).is_empty());
+}
+
+#[test]
+fn product_cycle_marks_only_the_strongly_connected_component() {
+    let records = [node("A", &["B"]), node("B", &["C"]), node("C", &["B"])];
+    let nodes = records
+        .iter()
+        .map(|record| (record.object.as_str(), record))
+        .collect();
+    assert_eq!(product_cycle_nodes(&nodes), HashSet::from(["B", "C"]));
 }

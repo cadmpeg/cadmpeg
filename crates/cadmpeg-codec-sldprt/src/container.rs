@@ -8,9 +8,10 @@
 //! section names, and extracts embedded Parasolid streams.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Read;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
+use cadmpeg_container::compression::{inflate_bounded_probe, inflate_deflate, inflate_zlib_member};
+use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
@@ -83,14 +84,7 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
 pub fn parasolid_offset(payload: &[u8]) -> Option<usize> {
     const SIG: &[u8] = &[b'P', b'S', 0x00, 0x00];
     let window = payload.len().min(64);
-    payload[..window].windows(SIG.len()).position(|w| w == SIG)
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return false;
-    }
-    haystack.windows(needle.len()).any(|w| w == needle)
+    find(&payload[..window], SIG)
 }
 
 /// Decode a nibble-swapped section name.
@@ -319,26 +313,47 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
             compound_streams,
         };
     }
-    let version = {
-        let mut view = View::over_retained(bytes);
-        view.seek(outer_hdr::VERSION)
-            .and_then(|()| view.u32_be())
-            .unwrap_or(0)
+    let version = native_version(bytes);
+    let (blocks, directory, cache_cells) = match walk_native_markers(bytes, |off| {
+        Ok::<_, std::convert::Infallible>(try_block(bytes, off))
+    }) {
+        Ok(frames) => frames,
+        Err(never) => match never {},
     };
 
+    ContainerScan {
+        source_image: bytes,
+        version,
+        blocks,
+        directory,
+        cache_cells,
+        compound_streams: Vec::new(),
+    }
+}
+
+fn native_version(bytes: &[u8]) -> u32 {
+    let mut view = View::over_retained(bytes);
+    view.seek(outer_hdr::VERSION)
+        .and_then(|()| view.u32_be())
+        .unwrap_or(0)
+}
+
+/// Every marker hit is tried as a block first (the CRC gate is effectively
+/// false-positive-free), then as a cache cell, then as a directory entry.
+fn walk_native_markers<E>(
+    bytes: &[u8],
+    mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, E>,
+) -> Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), E> {
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
-
     let mut i = outer_hdr::LEN;
-    // Every marker hit is tried as a block first (the CRC gate is effectively
-    // false-positive-free), then as a cache cell, then as a directory entry.
     while i + MARKER.len() <= bytes.len() {
         if bytes[i..i + MARKER.len()] != MARKER {
             i += 1;
             continue;
         }
-        if let Some(block) = try_block(bytes, i) {
+        if let Some(block) = try_one_block(i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + block.comp_sz as usize;
             blocks.push(block.into_block());
             continue;
@@ -350,15 +365,7 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
         }
         i += 1;
     }
-
-    ContainerScan {
-        source_image: bytes,
-        version,
-        blocks,
-        directory,
-        cache_cells,
-        compound_streams: Vec::new(),
-    }
+    Ok((blocks, directory, cache_cells))
 }
 
 fn compound_stream(
@@ -385,22 +392,36 @@ fn compound_stream(
     }
 }
 
-/// Scans an in-memory image while routing CFB expansion through the decode budget.
+/// Scans an in-memory image while routing inflate through the decode budget.
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
-    if !root.window().starts_with(&COMPOUND_FILE_MAGIC) {
-        return Ok(scan_bytes(root.window()));
+    if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
+        let compound_streams = compound_streams(ctx, root)?;
+        return Ok(ContainerScan {
+            source_image: root.window(),
+            version: 0,
+            blocks: Vec::new(),
+            directory: Vec::new(),
+            cache_cells: Vec::new(),
+            compound_streams,
+        });
     }
-    let compound_streams = compound_streams(ctx, root)?;
+    let bytes = root.window();
+    let version = native_version(bytes);
+    let (blocks, directory, cache_cells) =
+        walk_native_markers(bytes, |off| try_block_budgeted(ctx, root, off))?;
     Ok(ContainerScan {
-        source_image: root.window(),
-        version: 0,
-        blocks: Vec::new(),
-        directory: Vec::new(),
-        cache_cells: Vec::new(),
-        compound_streams,
+        source_image: bytes,
+        version,
+        blocks,
+        directory,
+        cache_cells,
+        compound_streams: Vec::new(),
     })
 }
 
+/// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
+/// extract stay codec-local because they are SolidWorks payload semantics, not
+/// CFB.
 fn compound_streams<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -456,34 +477,22 @@ fn decode_wrapped_payload_budgeted<'a>(
     let Some(member_end) = zlb_hdr::LEN.checked_add(compressed_size) else {
         return Ok(None);
     };
-    let Some(member) = payload.get(zlb_hdr::LEN..member_end) else {
+    if payload.get(zlb_hdr::LEN..member_end).is_none() {
+        return Ok(None);
+    }
+    let Some(member) = source.child(source.start() + zlb_hdr::LEN, source.start() + member_end)
+    else {
         return Ok(None);
     };
-    let mut decoder = flate2::read::ZlibDecoder::new(member);
-    let mut writer = ctx.begin_expand(source, ExpandSpec::Exact(uncompressed_size))?;
-    let mut chunk = [0_u8; 16 * 1024];
-    loop {
-        let Ok(read) = decoder.read(&mut chunk) else {
-            return Ok(None);
+    let (decoded, consumed) =
+        match inflate_zlib_member(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
+            Ok(result) => result,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => return Ok(None),
         };
-        if read == 0 {
-            break;
-        }
-        if let Err(error) = writer.write(&chunk[..read]) {
-            return match error {
-                CodecError::ResourceLimit(_) => Err(error),
-                _ => Ok(None),
-            };
-        }
-    }
-    if decoder.total_in() as usize != compressed_size {
+    if consumed != compressed_size {
         return Ok(None);
     }
-    let decoded = match writer.finalize() {
-        Ok(decoded) => decoded,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
-    };
     ctx.copy_retained(
         decoded.window(),
         "retain decoded SolidWorks CFB stream",
@@ -524,7 +533,15 @@ impl RawBlock {
     }
 }
 
-fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
+struct BlockFrame {
+    type_id: u32,
+    crc: u32,
+    comp_sz: u32,
+    uncomp_sz: u32,
+    pre_sz: u32,
+}
+
+fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usize)> {
     let type_id = View::u32_le_at(bytes, off + block_hdr::TYPE_ID)?;
     let crc = View::u32_le_at(bytes, off + block_hdr::CRC32)?;
     let comp_sz = View::u32_le_at(bytes, off + block_hdr::COMP_SZ)?;
@@ -538,16 +555,35 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
         return None;
     }
     let payload_start = off + block_hdr::LEN + pre;
-    let payload = bytes.get(payload_start..payload_start + comp)?;
+    let payload_end = payload_start.checked_add(comp)?;
+    let _ = bytes.get(payload_start..payload_end)?;
+    Some((
+        BlockFrame {
+            type_id,
+            crc,
+            comp_sz,
+            uncomp_sz,
+            pre_sz,
+        },
+        payload_start,
+        payload_end,
+    ))
+}
 
-    let inflated = raw_inflate(payload, uncomp)?;
-    if inflated.len() != uncomp {
+fn block_from_inflated(
+    bytes: &[u8],
+    off: usize,
+    frame: BlockFrame,
+    inflated: Vec<u8>,
+) -> Option<RawBlock> {
+    if inflated.len() != frame.uncomp_sz as usize {
         return None;
     }
-    if crc32(&inflated) != crc {
+    if crc32fast::hash(&inflated) != frame.crc {
         return None;
     }
 
+    let payload_start = off + block_hdr::LEN + frame.pre_sz as usize;
     let preamble = bytes
         .get(off + block_hdr::LEN..payload_start)
         .unwrap_or(&[]);
@@ -570,10 +606,10 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
 
     Some(RawBlock {
         offset: off,
-        type_id,
-        comp_sz,
-        uncomp_sz,
-        preamble_len: pre,
+        type_id: frame.type_id,
+        comp_sz: frame.comp_sz,
+        uncomp_sz: frame.uncomp_sz,
+        preamble_len: frame.pre_sz as usize,
         section,
         family,
         payload: inflated,
@@ -583,31 +619,41 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     })
 }
 
-/// Raw-DEFLATE (`wbits = -15`) inflate to at most `hint` bytes; `None` on any
-/// decompression error (the CRC/round-trip gate rejects the marker hit).
-fn raw_inflate(data: &[u8], hint: usize) -> Option<Vec<u8>> {
-    use flate2::read::DeflateDecoder;
-    let mut out = Vec::new();
-    out.try_reserve(hint.min(1 << 20)).ok()?;
-    let mut dec = DeflateDecoder::new(data);
-    let mut chunk = [0_u8; 8192];
-    loop {
-        let read = dec.read(&mut chunk).ok()?;
-        if read == 0 {
-            return Some(out);
-        }
-        if read > hint.saturating_sub(out.len()) {
-            return None;
-        }
-        out.try_reserve(read).ok()?;
-        out.extend_from_slice(&chunk[..read]);
-    }
+fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
+    let (frame, payload_start, payload_end) = read_block_frame(bytes, off)?;
+    let payload = bytes.get(payload_start..payload_end)?;
+    let inflated = inflate_bounded_probe(payload, frame.uncomp_sz as usize)?;
+    block_from_inflated(bytes, off, frame, inflated)
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut h = crc32fast::Hasher::new();
-    h.update(bytes);
-    h.finalize()
+fn try_block_budgeted<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    off: usize,
+) -> Result<Option<RawBlock>, CodecError> {
+    let bytes = root.window();
+    let Some((frame, payload_start, payload_end)) = read_block_frame(bytes, off) else {
+        return Ok(None);
+    };
+    let Some(abs_start) = root.start().checked_add(payload_start) else {
+        return Ok(None);
+    };
+    let Some(abs_end) = root.start().checked_add(payload_end) else {
+        return Ok(None);
+    };
+    let Some(payload_view) = root.child(abs_start, abs_end) else {
+        return Ok(None);
+    };
+    let inflated = match inflate_deflate(
+        ctx,
+        payload_view,
+        ExpandSpec::Exact(u64::from(frame.uncomp_sz)),
+    ) {
+        Ok(view) => view.window().to_vec(),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    Ok(block_from_inflated(bytes, off, frame, inflated))
 }
 
 /// Test a marker hit against the cache-cell relational invariant

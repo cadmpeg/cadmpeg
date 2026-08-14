@@ -1,0 +1,545 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Stable loss vocabulary for Fusion `.f3d` decoding and writing.
+//!
+//! Every fallback, approximation, and drop the codec reports carries a stable
+//! machine-readable code from [`F3dLossCode`]. Codes are the gating surface:
+//! harness oracles and downstream tooling key on them, never on the
+//! human-readable message text, so a reworded message is not a contract change
+//! and a new drop path without a code does not compile.
+//!
+//! [`F3dLossCode::note`] is the single practical construction path for a
+//! [`LossNote`] in this crate: it fixes the loss category and severity from
+//! the code so the two cannot drift apart across sites, and it leaves only
+//! the per-instance message to the caller. Local codes appear on
+//! [`LossNote::code`] under the `f3d` namespace.
+
+use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+
+/// A stable, machine-readable identifier for one Fusion `.f3d` transfer loss.
+///
+/// Variants are grouped by the record family whose transfer degraded. The
+/// string form (via [`F3dLossCode::code`]) is the stable contract.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum F3dLossCode {
+    /// Payload-bearing Design dimension companions have no typed locus frame.
+    DimensionCompanionUntyped,
+    /// Design configuration JSON members have no assigned neutral semantics.
+    ConfigurationMemberUnassigned,
+    /// Design configuration rules have no unambiguous activation target.
+    ConfigurationRuleUnbound,
+    /// Design configuration parameter overrides have no parameter identity.
+    ConfigurationParameterOverrideUnbound,
+    /// Design configuration feature suppressions have no feature identity.
+    ConfigurationFeatureSuppressionUnbound,
+    /// Non-root ACT component links stay source-only; product role is unresolved.
+    ActComponentLinkUnresolved,
+    /// ASM history binding work exceeded the decoder safety budget.
+    HistoryBindingBudgetExceeded,
+    /// An ASM history span stays opaque because record framing failed.
+    HistoryRecordFramingFailed,
+    /// Design body-map pairs do not resolve to a body in the named BREP blob.
+    DesignBodyBindingUnresolved,
+    /// Reference-image timeline objects retain native Canvas records.
+    ReferenceImageNativeRetained,
+    /// Decal timeline objects retain native image and mapping records.
+    DecalNativeRetained,
+    /// Source parametric edge references marked lost have no independent proof.
+    EdgeReferenceLostUnrepaired,
+    /// Feature scopes have no complete neutral feature definition.
+    FeatureDefinitionIncomplete,
+    /// Decoded feature scopes have no neutral construction-history feature.
+    FeatureScopeUnprojected,
+    /// Decoded Design parameters have no neutral parameter.
+    ParameterUnprojected,
+    /// Design parameter owner bindings have no recognized feature scope.
+    ParameterOwnerUnrecognized,
+    /// Design parameters retain unit tokens without a settled quantity kind.
+    ParameterUnitUntyped,
+    /// Parameter expression symbols name same-stream parameters without an edge.
+    ParameterExpressionUnbound,
+    /// Feature history-state dependency links were not projected.
+    HistoryDependencyUnprojected,
+    /// Feature history-state dependency links have multiple source scopes.
+    HistoryDependencyAmbiguous,
+    /// Sketch relations retain native operands; no unique neutral relation.
+    SketchRelationNativeRetained,
+    /// Sketch dimensions retain native operands; no unique neutral dimension.
+    SketchDimensionNativeRetained,
+    /// Decoded Sketch placements have no neutral sketch.
+    SketchPlacementUnprojected,
+    /// Decoded sketch points have no neutral sketch entity.
+    SketchPointUnprojected,
+    /// Decoded sketch curves have no neutral sketch entity.
+    SketchCurveUnprojected,
+    /// Decoded sketch surfaces have no neutral spatial sketch entity.
+    SketchSurfaceUnprojected,
+    /// Decoded sketch text records have no neutral sketch entity.
+    SketchTextUnprojected,
+    /// Decoded sketch relations have no neutral constraint.
+    SketchRelationUnprojected,
+    /// Design dimension parameters have no parameter-backed sketch constraint.
+    DimensionUnprojected,
+    /// Feature profile selections retain native identities; no unique profile.
+    FeatureProfileSelectionNative,
+    /// Feature path selections retain native identities; no unique path.
+    FeaturePathSelectionNative,
+    /// Feature face selections retain native candidates; no unique face.
+    FeatureFaceSelectionNative,
+    /// Feature body selections retain native identities; no unique body.
+    FeatureBodySelectionNative,
+    /// Feature face operands stay unresolved inside historical selections.
+    FeatureFaceOperandUnresolved,
+    /// Edge-treatment selections retain native recipes; no historical edge.
+    FeatureEdgeSelectionNative,
+    /// Edge-treatment operands stay unresolved inside historical selections.
+    FeatureEdgeOperandUnresolved,
+    /// Edge-treatment selections are unresolved because source edges were lost.
+    FeatureEdgeSelectionLost,
+    /// Design-referenced BREP blobs could not be decoded.
+    BrepBlobUndecoded,
+    /// A mesh geometry container decoded without a complete Design body join.
+    MeshContainerUnjoined,
+    /// A mesh geometry container was not decoded.
+    MeshContainerUndecoded,
+    /// A Design mesh body names a container that did not uniquely join.
+    MeshContainerMissing,
+    /// Mesh attribute channels have no settled stored-element layout.
+    MeshAttributeNotTransferred,
+    /// The external-reference table was present but not decoded.
+    XrefTableUndecoded,
+    /// Mesh body geometry stores vertex coordinates at f32 precision.
+    MeshVertexPrecisionReduced,
+    /// A bodyless design's sketches or reference images are its complete carrier.
+    BodylessDesignCarrier,
+    /// An assembly document's geometry lives in external references.
+    AssemblyComponentsExternal,
+    /// Spline surface records were decoded into NURBS carriers from cache.
+    NurbsSurfaceCarrier,
+    /// Procedural curve records were decoded into NURBS carriers from cache.
+    NurbsCurveCarrier,
+    /// Faces were omitted because their required surface reference was dangling.
+    FaceSurfaceReferenceDangling,
+    /// Faces rest on spline or procedural surfaces whose shape was not decoded.
+    SurfaceShapeNotDecoded,
+    /// Faces use zero-payload mesh_surface sentinels; exact surfaces are absent.
+    MeshSurfaceSentinel,
+    /// Edges reference a procedural 3D curve with no decodable B-spline cache.
+    ProceduralCurveUndecoded,
+    /// Coedges carry a UV pcurve reference with no decodable 2D carrier.
+    PcurveUndecoded,
+    /// Rolling-ball blend definitions resolved only one of two native supports.
+    BlendSupportPartial,
+    /// Solved-record application or refinement records were not transferred.
+    SolvedRecordUntyped,
+    /// Materials and appearances were not transferred.
+    MaterialNotTransferred,
+    /// ASM BREP geometry was not transferred from the container.
+    GeometryNotTransferred,
+    /// B-rep topology graph was not built from the container.
+    TopologyNotTransferred,
+    /// No ASM BREP stream was found or selected as the document geometry stream.
+    MissingGeometryStream,
+    /// An XREF path cycles through a member already on the resolution stack.
+    XrefCycle,
+    /// An XREF member is not present in the archive.
+    XrefMemberMissing,
+    /// An XREF member failed to decode.
+    XrefMemberUndecoded,
+    /// An XREF component's units differ from the containing document.
+    XrefUnitsMismatch,
+    /// T-spline records were retained without typed semantics.
+    TsplineRecordUntyped,
+    /// A T-spline control cage was not decoded.
+    TsplineCageUndecoded,
+    /// Preserved source image required for a byte-exact write was unavailable.
+    SourcePreservedImageUnavailable,
+}
+
+impl F3dLossCode {
+    /// Every code, in declaration order.
+    pub const ALL: &'static [F3dLossCode] = &[
+        Self::DimensionCompanionUntyped,
+        Self::ConfigurationMemberUnassigned,
+        Self::ConfigurationRuleUnbound,
+        Self::ConfigurationParameterOverrideUnbound,
+        Self::ConfigurationFeatureSuppressionUnbound,
+        Self::ActComponentLinkUnresolved,
+        Self::HistoryBindingBudgetExceeded,
+        Self::HistoryRecordFramingFailed,
+        Self::DesignBodyBindingUnresolved,
+        Self::ReferenceImageNativeRetained,
+        Self::DecalNativeRetained,
+        Self::EdgeReferenceLostUnrepaired,
+        Self::FeatureDefinitionIncomplete,
+        Self::FeatureScopeUnprojected,
+        Self::ParameterUnprojected,
+        Self::ParameterOwnerUnrecognized,
+        Self::ParameterUnitUntyped,
+        Self::ParameterExpressionUnbound,
+        Self::HistoryDependencyUnprojected,
+        Self::HistoryDependencyAmbiguous,
+        Self::SketchRelationNativeRetained,
+        Self::SketchDimensionNativeRetained,
+        Self::SketchPlacementUnprojected,
+        Self::SketchPointUnprojected,
+        Self::SketchCurveUnprojected,
+        Self::SketchSurfaceUnprojected,
+        Self::SketchTextUnprojected,
+        Self::SketchRelationUnprojected,
+        Self::DimensionUnprojected,
+        Self::FeatureProfileSelectionNative,
+        Self::FeaturePathSelectionNative,
+        Self::FeatureFaceSelectionNative,
+        Self::FeatureBodySelectionNative,
+        Self::FeatureFaceOperandUnresolved,
+        Self::FeatureEdgeSelectionNative,
+        Self::FeatureEdgeOperandUnresolved,
+        Self::FeatureEdgeSelectionLost,
+        Self::BrepBlobUndecoded,
+        Self::MeshContainerUnjoined,
+        Self::MeshContainerUndecoded,
+        Self::MeshContainerMissing,
+        Self::MeshAttributeNotTransferred,
+        Self::XrefTableUndecoded,
+        Self::MeshVertexPrecisionReduced,
+        Self::BodylessDesignCarrier,
+        Self::AssemblyComponentsExternal,
+        Self::NurbsSurfaceCarrier,
+        Self::NurbsCurveCarrier,
+        Self::FaceSurfaceReferenceDangling,
+        Self::SurfaceShapeNotDecoded,
+        Self::MeshSurfaceSentinel,
+        Self::ProceduralCurveUndecoded,
+        Self::PcurveUndecoded,
+        Self::BlendSupportPartial,
+        Self::SolvedRecordUntyped,
+        Self::MaterialNotTransferred,
+        Self::GeometryNotTransferred,
+        Self::TopologyNotTransferred,
+        Self::MissingGeometryStream,
+        Self::XrefCycle,
+        Self::XrefMemberMissing,
+        Self::XrefMemberUndecoded,
+        Self::XrefUnitsMismatch,
+        Self::TsplineRecordUntyped,
+        Self::TsplineCageUndecoded,
+        Self::SourcePreservedImageUnavailable,
+    ];
+
+    /// The stable string identifier. This is the gating contract.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::DimensionCompanionUntyped => "dimension.companion-untyped",
+            Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
+            Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
+            Self::ConfigurationParameterOverrideUnbound => {
+                "configuration.parameter-override-unbound"
+            }
+            Self::ConfigurationFeatureSuppressionUnbound => {
+                "configuration.feature-suppression-unbound"
+            }
+            Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
+            Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
+            Self::HistoryRecordFramingFailed => "history.record-framing-failed",
+            Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
+            Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
+            Self::DecalNativeRetained => "appearance.decal-native",
+            Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
+            Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::FeatureScopeUnprojected => "feature.scope-unprojected",
+            Self::ParameterUnprojected => "parameter.unprojected",
+            Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
+            Self::ParameterUnitUntyped => "parameter.unit-untyped",
+            Self::ParameterExpressionUnbound => "parameter.expression-unbound",
+            Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
+            Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
+            Self::SketchRelationNativeRetained => "sketch.relation-native",
+            Self::SketchDimensionNativeRetained => "sketch.dimension-native",
+            Self::SketchPlacementUnprojected => "sketch.placement-unprojected",
+            Self::SketchPointUnprojected => "sketch.point-unprojected",
+            Self::SketchCurveUnprojected => "sketch.curve-unprojected",
+            Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
+            Self::SketchTextUnprojected => "sketch.text-unprojected",
+            Self::SketchRelationUnprojected => "sketch.relation-unprojected",
+            Self::DimensionUnprojected => "dimension.unprojected",
+            Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
+            Self::FeaturePathSelectionNative => "feature.path-selection-native",
+            Self::FeatureFaceSelectionNative => "feature.face-selection-native",
+            Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
+            Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
+            Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
+            Self::FeatureEdgeSelectionLost => "feature.edge-selection-lost",
+            Self::BrepBlobUndecoded => "geometry.brep-blob-undecoded",
+            Self::MeshContainerUnjoined => "mesh.container-unjoined",
+            Self::MeshContainerUndecoded => "mesh.container-undecoded",
+            Self::MeshContainerMissing => "mesh.container-missing",
+            Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
+            Self::XrefTableUndecoded => "xref.table-undecoded",
+            Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
+            Self::BodylessDesignCarrier => "design.bodyless-carrier",
+            Self::AssemblyComponentsExternal => "assembly.components-external",
+            Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
+            Self::NurbsCurveCarrier => "geometry.nurbs-curve-carrier",
+            Self::FaceSurfaceReferenceDangling => "geometry.face-surface-dangling",
+            Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
+            Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
+            Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
+            Self::PcurveUndecoded => "geometry.pcurve-undecoded",
+            Self::BlendSupportPartial => "geometry.blend-support-partial",
+            Self::SolvedRecordUntyped => "geometry.solved-record-untyped",
+            Self::MaterialNotTransferred => "material.not-transferred",
+            Self::GeometryNotTransferred => "geometry.not-transferred",
+            Self::TopologyNotTransferred => "topology.not-transferred",
+            Self::MissingGeometryStream => "container.missing-geometry-stream",
+            Self::XrefCycle => "xref.cycle",
+            Self::XrefMemberMissing => "xref.member-missing",
+            Self::XrefMemberUndecoded => "xref.member-undecoded",
+            Self::XrefUnitsMismatch => "xref.units-mismatch",
+            Self::TsplineRecordUntyped => "tspline.record-untyped",
+            Self::TsplineCageUndecoded => "tspline.cage-undecoded",
+            Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
+        }
+    }
+
+    /// The severity of this loss.
+    #[must_use]
+    pub const fn severity(self) -> Severity {
+        match self {
+            Self::BodylessDesignCarrier
+            | Self::AssemblyComponentsExternal
+            | Self::NurbsSurfaceCarrier
+            | Self::NurbsCurveCarrier
+            | Self::MeshSurfaceSentinel => Severity::Info,
+            Self::HistoryBindingBudgetExceeded
+            | Self::HistoryRecordFramingFailed
+            | Self::MeshContainerUndecoded
+            | Self::MissingGeometryStream
+            | Self::XrefCycle
+            | Self::XrefMemberMissing
+            | Self::XrefMemberUndecoded
+            | Self::XrefUnitsMismatch
+            | Self::TsplineCageUndecoded => Severity::Error,
+            Self::GeometryNotTransferred
+            | Self::TopologyNotTransferred
+            | Self::SourcePreservedImageUnavailable => Severity::Blocking,
+            _ => Severity::Warning,
+        }
+    }
+
+    /// The shared cross-codec category this loss reports under.
+    const fn shared_taxonomy(self) -> LossTaxonomy {
+        match self {
+            Self::DimensionCompanionUntyped
+            | Self::HistoryRecordFramingFailed
+            | Self::SolvedRecordUntyped
+            | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
+            Self::ConfigurationMemberUnassigned
+            | Self::ConfigurationRuleUnbound
+            | Self::ConfigurationParameterOverrideUnbound
+            | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
+            Self::ActComponentLinkUnresolved
+            | Self::AssemblyComponentsExternal
+            | Self::XrefCycle
+            | Self::XrefMemberMissing
+            | Self::XrefMemberUndecoded
+            | Self::XrefUnitsMismatch => LossTaxonomy::AssemblyComponentsExternal,
+            Self::HistoryBindingBudgetExceeded
+            | Self::FeatureDefinitionIncomplete
+            | Self::FeatureScopeUnprojected
+            | Self::ParameterUnprojected
+            | Self::ParameterOwnerUnrecognized
+            | Self::ParameterUnitUntyped
+            | Self::ParameterExpressionUnbound
+            | Self::HistoryDependencyUnprojected
+            | Self::HistoryDependencyAmbiguous
+            | Self::SketchRelationNativeRetained
+            | Self::SketchDimensionNativeRetained
+            | Self::SketchPlacementUnprojected
+            | Self::SketchPointUnprojected
+            | Self::SketchCurveUnprojected
+            | Self::SketchSurfaceUnprojected
+            | Self::SketchTextUnprojected
+            | Self::SketchRelationUnprojected
+            | Self::DimensionUnprojected
+            | Self::FeatureProfileSelectionNative
+            | Self::FeaturePathSelectionNative
+            | Self::FeatureFaceSelectionNative
+            | Self::FeatureBodySelectionNative
+            | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureEdgeSelectionNative
+            | Self::FeatureEdgeOperandUnresolved
+            | Self::FeatureEdgeSelectionLost => LossTaxonomy::FeatureHistoryRetained,
+            Self::DesignBodyBindingUnresolved
+            | Self::FaceSurfaceReferenceDangling
+            | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
+            Self::ReferenceImageNativeRetained
+            | Self::DecalNativeRetained
+            | Self::EdgeReferenceLostUnrepaired
+            | Self::MeshAttributeNotTransferred => LossTaxonomy::AttributesNotTransferred,
+            Self::BrepBlobUndecoded
+            | Self::SurfaceShapeNotDecoded
+            | Self::GeometryNotTransferred
+            | Self::TsplineCageUndecoded => LossTaxonomy::GeometryNotTransferred,
+            Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
+                LossTaxonomy::AssetNotTransferred
+            }
+            Self::MeshContainerUndecoded => LossTaxonomy::DecodeDiagnostic,
+            Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
+            Self::BodylessDesignCarrier
+            | Self::NurbsSurfaceCarrier
+            | Self::NurbsCurveCarrier
+            | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
+            Self::ProceduralCurveUndecoded | Self::BlendSupportPartial => {
+                LossTaxonomy::ProceduralReduced
+            }
+            Self::MaterialNotTransferred => LossTaxonomy::MaterialNotTransferred,
+            Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
+            Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
+            Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
+        }
+    }
+
+    /// Strict floor pinned from this local code (independent of taxonomy remap).
+    ///
+    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
+    /// silently change rejection; list only intentional overrides here.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::GeometryNotTransferred
+            | Self::TopologyNotTransferred
+            | Self::MissingGeometryStream => Some(Severity::Warning),
+            other => other.shared_taxonomy().strict_floor(),
+        }
+    }
+
+    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    #[must_use]
+    pub fn kind(self) -> LossKind {
+        LossKind::namespaced("f3d", self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
+    }
+
+    /// Build a [`LossNote`] for this code with the given per-instance message.
+    ///
+    /// The structured code is `f3d/<local>`. Severity and strict floor come
+    /// from the local code.
+    #[must_use]
+    pub fn note(self, message: impl Into<String>) -> LossNote {
+        LossNote::new(self.kind(), message).with_severity(self.severity())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::F3dLossCode;
+    use std::collections::BTreeSet;
+
+    /// Value-level golden: the stable string form of every code, pinned.
+    #[test]
+    fn code_strings_are_pinned() {
+        let codes: Vec<&str> = F3dLossCode::ALL.iter().map(|c| c.code()).collect();
+        assert_eq!(
+            codes,
+            [
+                "dimension.companion-untyped",
+                "configuration.member-unassigned",
+                "configuration.rule-unbound",
+                "configuration.parameter-override-unbound",
+                "configuration.feature-suppression-unbound",
+                "assembly.act-component-link-unresolved",
+                "history.binding-budget-exceeded",
+                "history.record-framing-failed",
+                "design.body-binding-unresolved",
+                "appearance.reference-image-native",
+                "appearance.decal-native",
+                "feature.edge-reference-lost",
+                "feature.definition-incomplete",
+                "feature.scope-unprojected",
+                "parameter.unprojected",
+                "parameter.owner-unrecognized",
+                "parameter.unit-untyped",
+                "parameter.expression-unbound",
+                "history.dependency-unprojected",
+                "history.dependency-ambiguous",
+                "sketch.relation-native",
+                "sketch.dimension-native",
+                "sketch.placement-unprojected",
+                "sketch.point-unprojected",
+                "sketch.curve-unprojected",
+                "sketch.surface-unprojected",
+                "sketch.text-unprojected",
+                "sketch.relation-unprojected",
+                "dimension.unprojected",
+                "feature.profile-selection-native",
+                "feature.path-selection-native",
+                "feature.face-selection-native",
+                "feature.body-selection-native",
+                "feature.face-operand-unresolved",
+                "feature.edge-selection-native",
+                "feature.edge-operand-unresolved",
+                "feature.edge-selection-lost",
+                "geometry.brep-blob-undecoded",
+                "mesh.container-unjoined",
+                "mesh.container-undecoded",
+                "mesh.container-missing",
+                "mesh.attribute-not-transferred",
+                "xref.table-undecoded",
+                "mesh.vertex-precision-reduced",
+                "design.bodyless-carrier",
+                "assembly.components-external",
+                "geometry.nurbs-surface-carrier",
+                "geometry.nurbs-curve-carrier",
+                "geometry.face-surface-dangling",
+                "geometry.surface-shape-not-decoded",
+                "geometry.mesh-surface-sentinel",
+                "geometry.procedural-curve-undecoded",
+                "geometry.pcurve-undecoded",
+                "geometry.blend-support-partial",
+                "geometry.solved-record-untyped",
+                "material.not-transferred",
+                "geometry.not-transferred",
+                "topology.not-transferred",
+                "container.missing-geometry-stream",
+                "xref.cycle",
+                "xref.member-missing",
+                "xref.member-undecoded",
+                "xref.units-mismatch",
+                "tspline.record-untyped",
+                "tspline.cage-undecoded",
+                "source.preserved-image-unavailable",
+            ]
+        );
+    }
+
+    /// Codes are unique and use the stable `family.detail` kebab shape.
+    #[test]
+    fn codes_are_unique_and_well_formed() {
+        let mut seen = BTreeSet::new();
+        for code in F3dLossCode::ALL {
+            let text = code.code();
+            assert!(seen.insert(text), "duplicate code {text}");
+            let (family, detail) = text.split_once('.').expect("family.detail shape");
+            assert!(!family.is_empty() && !detail.is_empty());
+            assert!(
+                text.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'),
+                "code {text} is not lowercase kebab"
+            );
+        }
+    }
+
+    /// The note builder fixes severity from the codec-specific code.
+    #[test]
+    fn note_takes_severity_from_the_code() {
+        for code in F3dLossCode::ALL {
+            let note = code.note("x");
+            assert_eq!(note.severity, code.severity());
+            assert_eq!(note.message, "x");
+            assert!(note.provenance.is_none());
+        }
+    }
+}

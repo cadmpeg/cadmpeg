@@ -549,11 +549,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                                 // neither position is required to be the
                                 // longer one. The IR ellipse is canonicalized
                                 // around its semi-major direction.
-                                (
-                                    axis.cross(reference_direction),
-                                    second_radius,
-                                    first_radius,
-                                )
+                                (axis.cross(reference_direction), second_radius, first_radius)
                             };
                         CurveGeometry::Ellipse {
                             center,

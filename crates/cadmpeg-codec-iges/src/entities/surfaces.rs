@@ -7,8 +7,8 @@ use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve, NurbsSurface,
-    ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
+    derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
+    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
@@ -18,6 +18,11 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SURFACE_POLES: usize = 1_000_000;
+
+fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let length = vector.norm();
+    (length.is_finite() && length > 0.0).then(|| vector.scale(1.0 / length))
+}
 
 fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
     let column = |index| {
@@ -194,9 +199,7 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
         parameters[0],
         parameters[1],
     )?;
-    let v = partials.du.cross(partials.dv);
-    let n = v.norm();
-    (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+    unit_vector(partials.du.cross(partials.dv))
 }
 
 fn indicator_orientation(
@@ -303,10 +306,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "plane normal is degenerate"));
             continue;
         }
-        let Some(local_normal_unit) = {
-            let n = local_normal.norm();
-            (n.is_finite() && n > 0.0).then(|| local_normal.scale(1.0 / n))
-        } else {
+        let Some(local_normal_unit) = unit_vector(local_normal) else {
             losses.push(entity_loss(entry, "plane normal cannot be normalized"));
             continue;
         };
@@ -332,33 +332,21 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(u_axis) = {
-            let v = transform.vector(local_u);
-            let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-        } else {
+        let Some(u_axis) = unit_vector(transform.vector(local_u)) else {
             losses.push(entity_loss(
                 entry,
                 "plane placement collapses its u direction",
             ));
             continue;
         };
-        let Some(v_axis) = {
-            let v = transform.vector(local_v);
-            let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-        } else {
+        let Some(v_axis) = unit_vector(transform.vector(local_v)) else {
             losses.push(entity_loss(
                 entry,
                 "plane placement collapses its v direction",
             ));
             continue;
         };
-        let Some(normal) = {
-            let v = u_axis.cross(v_axis);
-            let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-        } else {
+        let Some(normal) = unit_vector(u_axis.cross(v_axis)) else {
             losses.push(entity_loss(entry, "plane placement collapses its normal"));
             continue;
         };
@@ -772,11 +760,7 @@ pub(super) fn project(
                 source_object: Some(source_object(entry)),
             });
             procedural_axis_origin = transform.point(axis_origin);
-            let Some(direction) = {
-                let v = transform.vector(axis_direction);
-                let n = v.norm();
-                (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-            } else {
+            let Some(direction) = unit_vector(transform.vector(axis_direction)) else {
                 losses.push(entity_loss(
                     entry,
                     "placement collapses the revolution axis",
@@ -1107,11 +1091,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
             continue;
         }
-        let indicator = {
-            let n = indicator.norm();
-            (n.is_finite() && n > 0.0).then(|| indicator.scale(1.0 / n))
-        }
-        .expect("validated nonzero finite offset indicator");
+        let indicator = unit_vector(indicator).expect("validated nonzero finite offset indicator");
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)

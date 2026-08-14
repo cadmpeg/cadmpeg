@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -225,10 +226,10 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     assert_eq!(plan.write_path(), WritePath::Synthesized);
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report.losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted)
-    }));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::PassthroughRecordOmitted.kind() }));
     let round_trip = IgesCodec
         .decode(
             &mut Cursor::new(written.as_slice()),
@@ -517,7 +518,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
     let report = plan.write_to(&mut written).unwrap();
     assert!(
         report.losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ProceduralReduced)
+            loss.code == IgesLossCode::ProceduralReduced.kind()
                 && loss.message.contains("1 procedural surface definition(s)")
                 && loss.message.contains("2 procedural curve definition(s)")
         }),
@@ -1207,8 +1208,10 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
         .unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report.losses.iter().any(|loss| loss.code
-        == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted)));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::PassthroughRecordOmitted.kind()));
     assert_eq!(
         report.census.counts.get("186_manifold_solid_brep"),
         Some(&1)

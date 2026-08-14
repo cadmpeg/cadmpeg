@@ -17,23 +17,18 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
+use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
+use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
 /// A report carrying the BREP-less geometry losses that `build_container_report`
 /// states before the design segment is classified.
 fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
-    let loss = |code: LossCode, severity| cadmpeg_ir::report::LossNote {
-        code,
-        severity,
-        message: "stated before classification".to_owned(),
-        provenance: None,
-    };
     cadmpeg_ir::report::DecodeReport {
         format: "f3d".to_owned(),
         container_only: false,
@@ -41,18 +36,9 @@ fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
         coverage: std::collections::BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses: vec![
-            loss(
-                LossCode::shared(LossTaxonomy::GeometryNotTransferred),
-                Severity::Blocking,
-            ),
-            loss(
-                LossCode::shared(LossTaxonomy::TopologyNotTransferred),
-                Severity::Blocking,
-            ),
-            loss(
-                LossCode::shared(LossTaxonomy::MissingGeometryStream),
-                Severity::Error,
-            ),
+            F3dLossCode::GeometryNotTransferred.note("stated before classification"),
+            F3dLossCode::TopologyNotTransferred.note("stated before classification"),
+            F3dLossCode::MissingGeometryStream.note("stated before classification"),
         ],
         notes: Vec::new(),
     }

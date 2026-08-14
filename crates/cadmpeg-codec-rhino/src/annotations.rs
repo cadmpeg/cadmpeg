@@ -78,13 +78,6 @@ struct TextDotRecord {
     links: Vec<String>,
 }
 
-fn structural(offset: usize, message: impl Into<String>) -> FramingError {
-    FramingError::Structural {
-        offset,
-        message: message.into(),
-    }
-}
-
 fn anonymous(
     data: &[u8],
     range: std::ops::Range<usize>,
@@ -93,11 +86,14 @@ fn anonymous(
 ) -> Result<BoundedReader<'_>, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
-        return Err(structural(range.start, "annotation wrapper is invalid"));
+        return Err(FramingError::structural(
+            range.start,
+            "annotation wrapper is invalid",
+        ));
     }
     let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     if reader.i32()? != 1 || reader.i32()? != expected_minor {
-        return Err(structural(
+        return Err(FramingError::structural(
             chunk.body.start,
             "annotation wrapper version is unsupported",
         ));
@@ -107,11 +103,12 @@ fn anonymous(
 
 fn scaled_plane(mut plane: Plane, scale: f64, offset: usize) -> Result<Plane, FramingError> {
     for coordinate in &mut plane.origin.0 {
-        *coordinate = scaled_coordinate(*coordinate, scale)
-            .ok_or_else(|| structural(offset, "scaled annotation plane is invalid"))?;
+        *coordinate = scaled_coordinate(*coordinate, scale).ok_or_else(|| {
+            FramingError::structural(offset, "scaled annotation plane is invalid")
+        })?;
     }
     plane.equation[3] = scaled_coordinate(plane.equation[3], scale)
-        .ok_or_else(|| structural(offset, "scaled annotation equation is invalid"))?;
+        .ok_or_else(|| FramingError::structural(offset, "scaled annotation equation is invalid"))?;
     Ok(plane)
 }
 
@@ -126,7 +123,9 @@ fn decode_annotation(
     let mut annotation = crate::dimensions::annotation(data, &mut outer, archive)?;
     annotation.plane = scaled_plane(annotation.plane, scale, range.start)?;
     annotation.text_rectangle_width = scaled_coordinate(annotation.text_rectangle_width, scale)
-        .ok_or_else(|| structural(range.start, "scaled text rectangle width is invalid"))?;
+        .ok_or_else(|| {
+            FramingError::structural(range.start, "scaled text rectangle width is invalid")
+        })?;
     let mut points = Vec::new();
     if leader {
         let count = outer.i32()?;
@@ -140,23 +139,26 @@ fn decode_annotation(
         for _ in 0..bytes / 16 {
             let point = [outer.f64()?, outer.f64()?];
             if !point.iter().all(|value| value.is_finite()) {
-                return Err(structural(
+                return Err(FramingError::structural(
                     outer.position() - 16,
                     "leader point is not finite",
                 ));
             }
             points.push([
                 scaled_coordinate(point[0], scale).ok_or_else(|| {
-                    structural(outer.position() - 16, "scaled leader point is invalid")
+                    FramingError::structural(
+                        outer.position() - 16,
+                        "scaled leader point is invalid",
+                    )
                 })?,
                 scaled_coordinate(point[1], scale).ok_or_else(|| {
-                    structural(outer.position() - 8, "scaled leader point is invalid")
+                    FramingError::structural(outer.position() - 8, "scaled leader point is invalid")
                 })?,
             ]);
         }
     }
     if outer.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             outer.position(),
             "annotation has trailing bytes",
         ));
@@ -172,21 +174,21 @@ fn decode_legacy_annotation(
 ) -> Result<crate::dimensions::LegacyAnnotation, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
-        return Err(structural(
+        return Err(FramingError::structural(
             range.start,
             "legacy annotation wrapper is invalid",
         ));
     }
     let mut outer = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     if outer.i32()? != 1 || outer.i32()? != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             chunk.body.start,
             "legacy annotation wrapper version is unsupported",
         ));
     }
     let value = crate::dimensions::legacy_annotation(data, &mut outer, scale, archive)?;
     if outer.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             outer.position(),
             "legacy annotation has trailing bytes",
         ));
@@ -202,12 +204,16 @@ fn decode_dot(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 || packed & 0x0f > 1 {
-        return Err(structural(range.start, "text-dot version is unsupported"));
+        return Err(FramingError::structural(
+            range.start,
+            "text-dot version is unsupported",
+        ));
     }
     let mut center = [reader.f64()?, reader.f64()?, reader.f64()?];
     for value in &mut center {
-        *value = scaled_coordinate(*value, scale)
-            .ok_or_else(|| structural(range.start, "scaled text-dot center is invalid"))?;
+        *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+            FramingError::structural(range.start, "scaled text-dot center is invalid")
+        })?;
     }
     let height_points = reader.i32()?;
     let primary_text = utf16(&mut reader)?;
@@ -219,7 +225,10 @@ fn decode_dot(
         String::new()
     };
     if reader.remaining() != 0 {
-        return Err(structural(reader.position(), "text dot has trailing bytes"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "text dot has trailing bytes",
+        ));
     }
     Ok(TextDotRecord {
         id: String::new(),

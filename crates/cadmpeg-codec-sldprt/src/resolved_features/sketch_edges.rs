@@ -140,8 +140,8 @@ pub(super) fn project_edge(
             ..
         }) => {
             let center = project_point(*center, origin, u_axis, v_axis);
-            let major_u = dot(*major_direction, u_axis);
-            let major_v = dot(*major_direction, v_axis);
+            let major_u = major_direction.dot(u_axis);
+            let major_v = major_direction.dot(v_axis);
             let major_angle = major_v.atan2(major_u);
             if !ellipse_contains_point(
                 center,
@@ -258,19 +258,12 @@ pub(super) fn project_point(
     v_axis: Vector3,
 ) -> Point2 {
     let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-    Point2::new(dot(delta, u_axis), dot(delta, v_axis))
+    Point2::new(delta.dot(u_axis), delta.dot(v_axis))
 }
 
+#[cfg(test)]
 pub(super) fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-pub(super) fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
+    left.dot(right)
 }
 
 #[cfg(test)]

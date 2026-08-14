@@ -6,7 +6,7 @@ use std::ops::Range;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 
 use crate::cage::Cage;
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
 use crate::settings::{interval, point, vector, xform};
@@ -56,13 +56,6 @@ pub(crate) struct Morph {
     pub(crate) preserve_structure: bool,
 }
 
-fn malformed(offset: usize, message: impl Into<String>) -> GeometryError {
-    GeometryError::Malformed(FramingError::Structural {
-        offset,
-        message: message.into(),
-    })
-}
-
 fn anonymous<'a>(
     data: &'a [u8],
     offset: usize,
@@ -72,7 +65,10 @@ fn anonymous<'a>(
 ) -> Result<(BoundedReader<'a>, usize, i32, i32), GeometryError> {
     let chunk = chunk_at(data, offset, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(malformed(offset, format!("{family} is not anonymous")));
+        return Err(GeometryError::malformed(
+            offset,
+            format!("{family} is not anonymous"),
+        ));
     }
     let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
@@ -88,7 +84,8 @@ fn count(
     let offset = reader.position();
     let value = reader.i32()?;
     checked_count_bytes(value, element_size, reader.remaining(), cap, offset)?;
-    usize::try_from(value).map_err(|_| malformed(offset, "morph-control count overflows"))
+    usize::try_from(value)
+        .map_err(|_| GeometryError::malformed(offset, "morph-control count overflows"))
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, GeometryError> {
@@ -119,7 +116,7 @@ fn captive_ids(
         values.push(uuid(&mut ids)?);
     }
     if ids.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             ids.position(),
             "captive UUID list has trailing bytes",
         ));
@@ -135,18 +132,21 @@ fn scale_point(
 ) -> Result<[f64; 3], GeometryError> {
     let mut result = [0.0; 3];
     for (target, coordinate) in result.iter_mut().zip(value.0) {
-        *target = scaled_coordinate(coordinate, scale)
-            .ok_or_else(|| malformed(offset, "scaled morph-control coordinate is invalid"))?;
+        *target = scaled_coordinate(coordinate, scale).ok_or_else(|| {
+            GeometryError::malformed(offset, "scaled morph-control coordinate is invalid")
+        })?;
     }
     Ok(result)
 }
 
 fn scale_interval(value: [f64; 2], scale: f64, offset: usize) -> Result<[f64; 2], GeometryError> {
     Ok([
-        scaled_coordinate(value[0], scale)
-            .ok_or_else(|| malformed(offset, "scaled localizer interval is invalid"))?,
-        scaled_coordinate(value[1], scale)
-            .ok_or_else(|| malformed(offset + 8, "scaled localizer interval is invalid"))?,
+        scaled_coordinate(value[0], scale).ok_or_else(|| {
+            GeometryError::malformed(offset, "scaled localizer interval is invalid")
+        })?,
+        scaled_coordinate(value[1], scale).ok_or_else(|| {
+            GeometryError::malformed(offset + 8, "scaled localizer interval is invalid")
+        })?,
     ])
 }
 
@@ -174,7 +174,7 @@ fn optional_curve(
         .then(|| crate::surfaces::read_nurbs_curve(&mut child, scale))
         .transpose()?;
     if child.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             child.position(),
             "localizer curve has trailing bytes",
         ));
@@ -207,7 +207,7 @@ fn optional_surface(
         .then(|| crate::surfaces::read_nurbs_surface(&mut child, scale))
         .transpose()?;
     if child.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             child.position(),
             "localizer surface has trailing bytes",
         ));
@@ -242,7 +242,10 @@ fn localizer(
     let curve = optional_curve(data, &mut value, scale, archive)?;
     let surface = optional_surface(data, &mut value, scale, archive)?;
     if value.remaining() != 0 {
-        return Err(malformed(value.position(), "localizer has trailing bytes"));
+        return Err(GeometryError::malformed(
+            value.position(),
+            "localizer has trailing bytes",
+        ));
     }
     reader.skip(next - reader.position())?;
     Ok(Localizer {
@@ -294,7 +297,10 @@ pub(crate) fn decode(
     let (mut outer, next, major, minor) =
         anonymous(data, range.start, range.end, archive, "morph control")?;
     if next != range.end {
-        return Err(malformed(range.start, "morph-control framing is invalid"));
+        return Err(GeometryError::malformed(
+            range.start,
+            "morph-control framing is invalid",
+        ));
     }
     if !matches!(major, 1 | 2)
         || (major == 1 && minor != 0)
@@ -312,11 +318,14 @@ pub(crate) fn decode(
         for index in [3, 7, 11] {
             start_transform[index] =
                 scaled_coordinate(start_transform[index], scale).ok_or_else(|| {
-                    malformed(outer.position() - 128, "scaled cage transform is invalid")
+                    GeometryError::malformed(
+                        outer.position() - 128,
+                        "scaled cage transform is invalid",
+                    )
                 })?;
         }
         if outer.remaining() != 0 {
-            return Err(malformed(
+            return Err(GeometryError::malformed(
                 outer.position(),
                 "legacy morph control has trailing bytes",
             ));
@@ -337,7 +346,7 @@ pub(crate) fn decode(
 
     let variant = outer.i32()?;
     if !(1..=3).contains(&variant) {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             outer.position() - 4,
             "invalid morph-control variant",
         ));
@@ -357,12 +366,12 @@ pub(crate) fn decode(
     if let Some(transform) = &mut start_transform {
         for index in [3, 7, 11] {
             transform[index] = scaled_coordinate(transform[index], scale).ok_or_else(|| {
-                malformed(start.position() - 128, "scaled cage transform is invalid")
+                GeometryError::malformed(start.position() - 128, "scaled cage transform is invalid")
             })?;
         }
     }
     if start.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             start.position(),
             "morph start control has trailing bytes",
         ));
@@ -386,7 +395,7 @@ pub(crate) fn decode(
         _ => unreachable!("validated morph variant"),
     };
     if end.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             end.position(),
             "morph end control has trailing bytes",
         ));
@@ -413,7 +422,7 @@ pub(crate) fn decode(
         localizers.push(localizer(data, &mut list, scale, archive)?);
     }
     if list.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             list.position(),
             "morph localizer list has trailing bytes",
         ));
@@ -422,13 +431,15 @@ pub(crate) fn decode(
     let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
         let tolerance = scaled_coordinate(outer.f64()?, scale)
             .filter(|value| *value >= 0.0)
-            .ok_or_else(|| malformed(outer.position() - 8, "invalid morph tolerance"))?;
+            .ok_or_else(|| {
+                GeometryError::malformed(outer.position() - 8, "invalid morph tolerance")
+            })?;
         (tolerance, outer.bool()?, outer.bool()?)
     } else {
         (0.0, false, false)
     };
     if outer.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             outer.position(),
             "morph control has trailing bytes",
         ));

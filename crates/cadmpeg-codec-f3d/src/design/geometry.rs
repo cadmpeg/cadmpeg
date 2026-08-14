@@ -4,6 +4,7 @@
 use crate::design::profile_select::historical_face_points;
 use crate::records::{DesignExtrudeSelectionMember, SketchRelationOperand};
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
+use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -1856,7 +1857,7 @@ fn nurbs_speed_bound(
         }
     };
     if knots.iter().any(|value| !value.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(knots)
         || control_points.iter().zip(weights).any(|(point, weight)| {
             !point.u.is_finite() || !point.v.is_finite() || !weight.is_finite() || *weight <= 0.0
         })

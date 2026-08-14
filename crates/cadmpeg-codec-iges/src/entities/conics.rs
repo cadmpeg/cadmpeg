@@ -155,19 +155,19 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some((basis_x, scale_x)) = {
+        let Some((basis_x, scale_x)) = ({
             let v = transform.vector(Vector3::new(1.0, 0.0, 0.0));
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
-        } else {
+        }) else {
             losses.push(entity_loss(entry, "conic placement collapses the x axis"));
             continue;
         };
-        let Some((basis_y, scale_y)) = {
+        let Some((basis_y, scale_y)) = ({
             let v = transform.vector(Vector3::new(0.0, 1.0, 0.0));
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
-        } else {
+        }) else {
             losses.push(entity_loss(entry, "conic placement collapses the y axis"));
             continue;
         };
@@ -178,11 +178,11 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some((mut axis, _)) = {
+        let Some((mut axis, _)) = ({
             let v = basis_x.cross(basis_y);
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
-        } else {
+        }) else {
             losses.push(entity_loss(entry, "conic placement collapses its plane"));
             continue;
         };

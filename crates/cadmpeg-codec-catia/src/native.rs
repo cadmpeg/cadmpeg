@@ -10,6 +10,7 @@ use std::mem::size_of;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::geometry::{knots_nondecreasing, knots_strictly_increasing};
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
 
 use crate::catalog;
@@ -7523,7 +7524,7 @@ fn validate_consolidated_pcurves(
             || pcurve.points.len() != count
             || pcurve.first_derivatives.len() != count
             || pcurve.second_derivatives.len() != count
-            || pcurve.knots.windows(2).any(|pair| pair[0] >= pair[1])
+            || !knots_strictly_increasing(&pcurve.knots)
             || pcurve.range[0] >= pcurve.range[1]
             || pcurve
                 .knots
@@ -8422,7 +8423,7 @@ fn validate_zero_entity_support_runs(
                                 && control_points.len() == expected_controls
                                 && knots.len() == expected_controls + expected_degree as usize + 1
                                 && knots.iter().all(|knot| knot.is_finite())
-                                && knots.windows(2).all(|pair| pair[0] <= pair[1])
+                                && knots_nondecreasing(knots)
                                 && knots[..=expected_degree as usize]
                                     .iter()
                                     .all(|knot| *knot == knots[0])
@@ -8582,7 +8583,7 @@ fn validate_zero_entity_model_curve(
             curve.control_points.len() > degree
                 && curve.knots.len() == curve.control_points.len() + degree + 1
                 && curve.knots.iter().all(|knot| knot.is_finite())
-                && curve.knots.windows(2).all(|pair| pair[0] <= pair[1])
+                && knots_nondecreasing(&curve.knots)
                 && curve.control_points.iter().all(finite_point)
                 && curve.weights.as_ref().is_none_or(|weights| {
                     weights.len() == curve.control_points.len()

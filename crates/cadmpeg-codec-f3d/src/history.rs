@@ -2785,7 +2785,9 @@ fn parallel_directions(left: cadmpeg_ir::math::Vector3, right: cadmpeg_ir::math:
     {
         return false;
     }
-    let dot = left.scale(1.0 / left_length).dot(right.scale(1.0 / right_length));
+    let dot = left
+        .scale(1.0 / left_length)
+        .dot(right.scale(1.0 / right_length));
     dot.is_finite() && (dot.abs() - 1.0).abs() <= 1.0e-7
 }
 

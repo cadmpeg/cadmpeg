@@ -122,6 +122,19 @@ pub(crate) enum GeometryError {
     Malformed(FramingError),
 }
 
+impl GeometryError {
+    pub(crate) fn malformed(offset: usize, message: impl Into<String>) -> Self {
+        Self::Malformed(FramingError::structural(offset, message))
+    }
+
+    pub(crate) fn unsupported(offset: usize, message: impl Into<String>) -> Self {
+        Self::UnsupportedVersion {
+            offset,
+            message: message.into(),
+        }
+    }
+}
+
 impl std::fmt::Display for GeometryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -267,12 +280,15 @@ pub(crate) fn decode_inner(
     depth: usize,
 ) -> Result<DecodedGeometry, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(malformed(range.start, "curve recursion limit exceeded"));
+        return Err(GeometryError::malformed(
+            range.start,
+            "curve recursion limit exceeded",
+        ));
     }
     if class_uuid == CURVE_ON_SURFACE {
         let construction = crate::curve_on_surface::decode(data, range, scale, archive, depth + 1)?;
         let Some(mut curve) = construction.model_curve else {
-            return Err(unsupported(
+            return Err(GeometryError::unsupported(
                 construction.source_range.start,
                 "curve-on-surface has no stored model-space carrier",
             ));
@@ -343,10 +359,15 @@ pub(crate) fn decode_inner(
                 warnings: Vec::new(),
             },
         },
-        _ => return Err(unsupported(range.start, "unsupported Rhino geometry class")),
+        _ => {
+            return Err(GeometryError::unsupported(
+                range.start,
+                "unsupported Rhino geometry class",
+            ))
+        }
     };
     if reader.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "geometry payload has trailing bytes",
         ));
@@ -363,7 +384,7 @@ pub(crate) fn decode_embedded_curve(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "curve recursion limit exceeded",
         ));
@@ -388,7 +409,7 @@ pub(crate) fn decode_embedded_curve(
             | NURBS_CURVE_TL
             | NURBS_CURVE_LEGACY
     ) {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             start,
             "embedded surface child is not a supported curve",
         ));
@@ -402,7 +423,10 @@ pub(crate) fn decode_embedded_curve(
         depth,
     )?;
     let DecodedGeometry::Curve { mut curve } = decoded else {
-        return Err(malformed(start, "embedded surface child is not a curve"));
+        return Err(GeometryError::malformed(
+            start,
+            "embedded surface child is not a curve",
+        ));
     };
     curve.warnings.splice(0..0, wrapper_warnings);
     Ok(curve)
@@ -417,7 +441,7 @@ pub(crate) fn decode_embedded_curve_2d(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "plane-space curve recursion limit exceeded",
         ));
@@ -434,7 +458,7 @@ pub(crate) fn decode_embedded_curve_2d(
     reader.skip(wrapper.next_offset - start)?;
     if !curve_class(class.class_uuid) || matches!(class.class_uuid, CURVE_PROXY | CURVE_ON_SURFACE)
     {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             start,
             "embedded plane-space object is not a supported curve",
         ));
@@ -447,7 +471,7 @@ pub(crate) fn decode_embedded_curve_2d(
         depth,
     )?;
     let DecodedGeometry::Curve { mut curve } = decoded else {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             start,
             "embedded plane-space object is not a curve",
         ));
@@ -471,33 +495,45 @@ fn scale_decoded_curve(
     match &mut curve.geometry {
         CurveGeometry::Nurbs(nurbs) => {
             for point in &mut nurbs.control_points {
-                *point = scale_ir_point(*point, scale)
-                    .ok_or_else(|| malformed(offset, "scaled plane-space curve is invalid"))?;
+                *point = scale_ir_point(*point, scale).ok_or_else(|| {
+                    GeometryError::malformed(offset, "scaled plane-space curve is invalid")
+                })?;
             }
         }
         CurveGeometry::Circle { center, radius, .. } => {
-            *center = scale_ir_point(*center, scale)
-                .ok_or_else(|| malformed(offset, "scaled plane-space circle is invalid"))?;
+            *center = scale_ir_point(*center, scale).ok_or_else(|| {
+                GeometryError::malformed(offset, "scaled plane-space circle is invalid")
+            })?;
             *radius *= scale;
             if !radius.is_finite() || *radius <= 0.0 {
-                return Err(malformed(
+                return Err(GeometryError::malformed(
                     offset,
                     "scaled plane-space circle radius is invalid",
                 ));
             }
         }
         CurveGeometry::Line { origin, .. } => {
-            *origin = scale_ir_point(*origin, scale)
-                .ok_or_else(|| malformed(offset, "scaled plane-space line is invalid"))?;
+            *origin = scale_ir_point(*origin, scale).ok_or_else(|| {
+                GeometryError::malformed(offset, "scaled plane-space line is invalid")
+            })?;
         }
         CurveGeometry::Degenerate { point } => {
-            *point = scale_ir_point(*point, scale)
-                .ok_or_else(|| malformed(offset, "scaled plane-space point is invalid"))?;
+            *point = scale_ir_point(*point, scale).ok_or_else(|| {
+                GeometryError::malformed(offset, "scaled plane-space point is invalid")
+            })?;
         }
         CurveGeometry::Unknown { .. } => {
-            return Err(malformed(offset, "plane-space curve has unknown geometry"));
+            return Err(GeometryError::malformed(
+                offset,
+                "plane-space curve has unknown geometry",
+            ));
         }
-        _ => return Err(malformed(offset, "unsupported plane-space analytic curve")),
+        _ => {
+            return Err(GeometryError::malformed(
+                offset,
+                "unsupported plane-space analytic curve",
+            ))
+        }
     }
     Ok(())
 }
@@ -887,7 +923,10 @@ pub(crate) fn decode_inner_2d(
     depth: usize,
 ) -> Result<DecodedGeometry, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(malformed(range.start, "C2 curve recursion limit exceeded"));
+        return Err(GeometryError::malformed(
+            range.start,
+            "C2 curve recursion limit exceeded",
+        ));
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
@@ -926,10 +965,15 @@ pub(crate) fn decode_inner_2d(
             let curve = read_polycurve_2d(data, &mut reader, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
-        _ => return Err(unsupported(range.start, "unsupported Rhino C2 curve class")),
+        _ => {
+            return Err(GeometryError::unsupported(
+                range.start,
+                "unsupported Rhino C2 curve class",
+            ))
+        }
     };
     if reader.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "C2 curve payload has trailing bytes",
         ));
@@ -945,21 +989,24 @@ fn read_polycurve_2d(
 ) -> Result<DecodedCurve, GeometryError> {
     let version = reader.u8()?;
     if version >> 4 != 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             "unsupported C2 polycurve payload version",
         ));
     }
     let segment_count = count(reader, 1)?;
     if segment_count == 0 {
-        return Err(malformed(reader.position(), "C2 polycurve has no segments"));
+        return Err(GeometryError::malformed(
+            reader.position(),
+            "C2 polycurve has no segments",
+        ));
     }
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
     let parameter_count = count(reader, 8)?;
     if parameter_count != segment_count + 1 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "C2 polycurve parameter count mismatch",
         ));
@@ -989,7 +1036,10 @@ fn read_polycurve_2d(
             depth + 1,
         )?;
         let DecodedGeometry::Curve { mut curve } = child else {
-            return Err(malformed(start, "C2 polycurve child is not a curve"));
+            return Err(GeometryError::malformed(
+                start,
+                "C2 polycurve child is not a curve",
+            ));
         };
         curve.warnings.splice(0..0, wrapper_warnings);
         children.push(curve);
@@ -1274,21 +1324,24 @@ fn read_polycurve(
 ) -> Result<DecodedCurve, GeometryError> {
     let version = reader.u8()?;
     if version >> 4 != 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             "unsupported polycurve payload version",
         ));
     }
     let segment_count = count(reader, 1)?;
     if segment_count == 0 {
-        return Err(malformed(reader.position(), "polycurve has no segments"));
+        return Err(GeometryError::malformed(
+            reader.position(),
+            "polycurve has no segments",
+        ));
     }
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
     let parameter_count = count(reader, 8)?;
     if parameter_count != segment_count + 1 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "polycurve parameter count mismatch",
         ));
@@ -1311,7 +1364,10 @@ fn read_polycurve(
         )?;
         reader.skip(wrapper.next_offset - start)?;
         if !supported_class(class.class_uuid) || matches!(class.class_uuid, POINT | POINT_CLOUD) {
-            return Err(malformed(start, "polycurve child is not a curve"));
+            return Err(GeometryError::malformed(
+                start,
+                "polycurve child is not a curve",
+            ));
         }
         let child = decode_inner(
             data,
@@ -1322,13 +1378,16 @@ fn read_polycurve(
             depth + 1,
         )?;
         let DecodedGeometry::Curve { mut curve } = child else {
-            return Err(malformed(start, "polycurve child is not a curve"));
+            return Err(GeometryError::malformed(
+                start,
+                "polycurve child is not a curve",
+            ));
         };
         curve.warnings.splice(0..0, wrapper_warnings);
         children.push(curve);
     }
     if children.len() != segment_count {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "polycurve child count changed",
         ));
@@ -1350,7 +1409,7 @@ fn push_polycurve_parameter(
     label: &str,
 ) -> Result<(), GeometryError> {
     if !value.is_finite() || parameters.last().is_some_and(|previous| value <= *previous) {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             offset,
             &format!("{label} parameters are invalid"),
         ));
@@ -1487,7 +1546,7 @@ fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
     if version >> 4 == 1 {
         Ok(())
     } else {
-        Err(unsupported(
+        Err(GeometryError::unsupported(
             offset,
             "unsupported simple-geometry payload version",
         ))
@@ -1523,25 +1582,7 @@ fn close_native_point(
 }
 
 pub(crate) fn error(offset: usize, message: &str) -> GeometryError {
-    GeometryError::Malformed(framing_error(offset, message))
-}
-
-fn framing_error(offset: usize, message: &str) -> FramingError {
-    FramingError::Structural {
-        offset,
-        message: message.to_string(),
-    }
-}
-
-fn malformed(offset: usize, message: &str) -> GeometryError {
-    error(offset, message)
-}
-
-pub(crate) fn unsupported(offset: usize, message: &str) -> GeometryError {
-    GeometryError::UnsupportedVersion {
-        offset,
-        message: message.to_string(),
-    }
+    GeometryError::malformed(offset, message)
 }
 
 #[cfg(test)]

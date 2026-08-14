@@ -2,9 +2,9 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::report::{LossKind, LossTaxonomy};
 
 use super::*;
+use crate::loss::InventorLossCode;
 use crate::test_support::{fixture, primary_envelope_fixture};
 use crate::InventorCodec;
 
@@ -85,7 +85,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred)));
+        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
     let native_findings = crate::validate_native(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     assert!(native_findings[0]
@@ -115,7 +115,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .iter()
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>(),
-        [LossKind::shared(LossTaxonomy::ContainerOnly)]
+        [InventorLossCode::ContainerOnlyDecode.kind()]
     );
     let namespace = container_only
         .ir()
@@ -152,7 +152,7 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred)));
+        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
 
     let native = decoded
         .ir()

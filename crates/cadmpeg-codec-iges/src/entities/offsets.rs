@@ -154,11 +154,11 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset plane normal is not numeric"));
             continue;
         };
-        let Some(normal) = {
+        let Some(normal) = ({
             let v = Vector3::new(x, y, z);
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-        } else {
+        }) else {
             losses.push(entity_loss(
                 entry,
                 "offset plane normal is zero or non-finite",

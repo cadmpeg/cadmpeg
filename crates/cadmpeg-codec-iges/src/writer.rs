@@ -5,6 +5,7 @@
 //! source image byte for byte. Otherwise the semantic writer emits the current
 //! supported neutral profile and refuses unsupported models or native records.
 
+use crate::loss::IgesLossCode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
@@ -16,8 +17,7 @@ use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{
-    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossKind, LossNote, LossTaxonomy,
-    Severity, WritePath,
+    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote, WritePath,
 };
 use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Sense};
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -72,11 +72,9 @@ pub(crate) fn plan(
     let mut losses = Vec::new();
     if source_expected && !source_available {
         losses.push(
-            LossNote::new(
-                LossKind::shared(LossTaxonomy::PreservedSourceUnavailable),
+            IgesLossCode::PreservedSourceUnavailable.note(
                 "preserved IGES source image is unavailable; semantic regeneration is required",
-            )
-            .with_severity(Severity::Blocking),
+            ),
         );
     }
     let synthesis = synthesize(input.ir, options.version)?;
@@ -432,15 +430,9 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
     if surface_count == 0 && curve_count == 0 {
         return Ok(Vec::new());
     }
-    Ok(vec![
-        LossNote::new(
-            LossKind::shared(LossTaxonomy::ProceduralReduced),
-            format!(
-                "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
-            ),
-        )
-        .with_severity(Severity::Info),
-    ])
+    Ok(vec![IgesLossCode::ProceduralReduced.note(format!(
+        "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
+    ))])
 }
 
 fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
@@ -3556,13 +3548,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             }
             _ => continue,
         };
-        losses.push(
-            LossNote::new(
-                LossKind::shared(LossTaxonomy::PassthroughRecordOmitted),
-                message,
-            )
-            .with_severity(Severity::Warning),
-        );
+        losses.push(IgesLossCode::PassthroughRecordOmitted.note(message));
     }
     Ok(losses)
 }

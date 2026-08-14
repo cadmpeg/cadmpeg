@@ -490,13 +490,9 @@ impl<'a> Cursor<'a> {
             .checked_mul(2)
             .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} length overflows")))?;
         ctx.charge_retained(len as u64, "retain Inventor assembly string", None)?;
-        let mut view = View::over_retained(self.take(len, field)?);
-        let mut units = Vec::with_capacity(count);
-        for _ in 0..count {
-            units.push(view.req_u16_le().map_err(|error| error.during(field))?);
-        }
-        String::from_utf16(&units)
-            .map_err(|_| CodecError::Malformed(format!("Inventor {field} is not UTF-16")))
+        self.source
+            .utf16_le(count)
+            .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} is not UTF-16")))
     }
 
     fn transform(&mut self) -> Result<CompactTransform, CodecError> {

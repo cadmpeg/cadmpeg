@@ -2807,10 +2807,7 @@ fn extrusion_definition(
         });
         let direction_mode = integer_property(properties, "DirMode").unwrap_or(0);
         let (mut direction, direction_source) = match direction_mode {
-            0 => (
-                raw_direction?.unit()?,
-                ExtrusionDirectionSource::Custom,
-            ),
+            0 => (raw_direction?.unit()?, ExtrusionDirectionSource::Custom),
             1 => {
                 let reference = property(properties, "DirLink")?;
                 if reference.links.len() != 1 {
@@ -2833,10 +2830,7 @@ fn extrusion_definition(
                         .or(profile_normal),
                     _ => profile_normal,
                 }?;
-                (
-                    normal.unit()?,
-                    ExtrusionDirectionSource::ProfileNormal,
-                )
+                (normal.unit()?, ExtrusionDirectionSource::ProfileNormal)
             }
             _ => return None,
         };

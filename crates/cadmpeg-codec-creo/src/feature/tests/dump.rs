@@ -10,6 +10,7 @@ use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
+use crate::loss::CreoLossCode;
 use crate::surface::TorusRadius2Encoding;
 use crate::test_support::*;
 use crate::CreoCodec;
@@ -753,10 +754,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
         2
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::report::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
-            )
+        loss.code == CreoLossCode::SectionDimensionValueUnresolved.kind()
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
@@ -884,16 +882,22 @@ fn decode_reports_missing_declared_constraint_table_rows() {
         coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
         1
     );
-    for message in [
-        "1 declared section relation row(s) did not decode",
-        "1 declared section incidence row(s) did not decode",
-        "1 declared section relation-incidence join row(s) did not decode",
+    for (code, message) in [
+        (
+            CreoLossCode::SectionRelationMissing,
+            "1 declared section relation row(s) did not decode",
+        ),
+        (
+            CreoLossCode::SectionIncidenceMissing,
+            "1 declared section incidence row(s) did not decode",
+        ),
+        (
+            CreoLossCode::SectionRelationJoinMissing,
+            "1 declared section relation-incidence join row(s) did not decode",
+        ),
     ] {
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code
-                == cadmpeg_ir::report::LossKind::shared(
-                    cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
-                )
+            loss.code == code.kind()
                 && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
                 && loss.severity == cadmpeg_ir::Severity::Warning
                 && loss.message.contains(message)
@@ -918,10 +922,7 @@ fn decode_reports_malformed_relation_table_allocation_count() {
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::report::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
-            )
+        loss.code == CreoLossCode::SectionRelationTableMalformed.kind()
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss

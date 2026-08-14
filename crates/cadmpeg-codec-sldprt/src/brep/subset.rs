@@ -12,14 +12,6 @@ const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
 
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
 fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Option<Point3> {
     let degree = usize::try_from(curve.degree).ok()?;
     let last_control = curve.control_points.len().checked_sub(1)?;
@@ -89,7 +81,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             ref_direction,
             radius,
         } => {
-            let tangent = cross(*axis, *ref_direction);
+            let tangent = axis.cross(*ref_direction);
             Some(Point3::new(
                 center.x
                     + radius * (parameter.cos() * ref_direction.x + parameter.sin() * tangent.x),
@@ -106,7 +98,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             major_radius,
             minor_radius,
         } => {
-            let minor_direction = cross(*axis, *major_direction);
+            let minor_direction = axis.cross(*major_direction);
             Some(Point3::new(
                 center.x
                     + major_radius * parameter.cos() * major_direction.x

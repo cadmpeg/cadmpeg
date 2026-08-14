@@ -1263,21 +1263,19 @@ pub(super) fn offset_plane_reference_frame_matches(
 ) -> bool {
     let (reference_origin, reference_normal, _) = reference;
     let (offset_origin, offset_normal, _) = offset;
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     let delta = Vector3::new(
         offset_origin.x - reference_origin.x,
         offset_origin.y - reference_origin.y,
         offset_origin.z - reference_origin.z,
     );
-    let axial = dot(delta, reference_normal);
+    let axial = delta.dot(reference_normal);
     let tangential = Vector3::new(
         delta.x - axial * reference_normal.x,
         delta.y - axial * reference_normal.y,
         delta.z - axial * reference_normal.z,
     );
-    let tangential_length = dot(tangential, tangential).sqrt();
-    (dot(reference_normal, offset_normal).abs() - 1.0).abs() <= 1.0e-9
+    let tangential_length = tangential.norm();
+    (reference_normal.dot(offset_normal).abs() - 1.0).abs() <= 1.0e-9
         && tangential_length <= 1.0e-8
         && (axial.abs() - distance.abs()).abs() <= 1.0e-8
 }
@@ -1753,18 +1751,9 @@ pub(super) fn complete_reference_axis_triad(
             )
         })
     };
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let cross = |left: Vector3, right: Vector3| {
-        Vector3::new(
-            left.y * right.z - left.z * right.y,
-            left.z * right.x - left.x * right.z,
-            left.x * right.y - left.y * right.x,
-        )
-    };
     let first_direction = normalize(*first_direction)?;
     let second_direction = normalize(*second_direction)?;
-    if dot(first_direction, second_direction).abs() > ANGULAR_TOLERANCE {
+    if first_direction.dot(second_direction).abs() > ANGULAR_TOLERANCE {
         return None;
     }
     let displacement = Vector3::new(
@@ -1772,15 +1761,17 @@ pub(super) fn complete_reference_axis_triad(
         second_origin.y - first_origin.y,
         second_origin.z - first_origin.z,
     );
+    let first_along = displacement.dot(first_direction);
     let first_point = Point3::new(
-        first_origin.x + first_direction.x * dot(displacement, first_direction),
-        first_origin.y + first_direction.y * dot(displacement, first_direction),
-        first_origin.z + first_direction.z * dot(displacement, first_direction),
+        first_origin.x + first_direction.x * first_along,
+        first_origin.y + first_direction.y * first_along,
+        first_origin.z + first_direction.z * first_along,
     );
+    let second_along = displacement.dot(second_direction);
     let second_point = Point3::new(
-        second_origin.x - second_direction.x * dot(displacement, second_direction),
-        second_origin.y - second_direction.y * dot(displacement, second_direction),
-        second_origin.z - second_direction.z * dot(displacement, second_direction),
+        second_origin.x - second_direction.x * second_along,
+        second_origin.y - second_direction.y * second_along,
+        second_origin.z - second_direction.z * second_along,
     );
     let separation = Vector3::new(
         first_point.x - second_point.x,
@@ -1808,9 +1799,9 @@ pub(super) fn complete_reference_axis_triad(
     );
     let directions = frames.map(|frame| frame.and_then(|(_, direction)| normalize(direction)));
     let direction = match missing {
-        0 => cross(directions[2]?, directions[1]?),
-        1 => cross(directions[0]?, directions[2]?),
-        2 => cross(directions[1]?, directions[0]?),
+        0 => directions[2]?.cross(directions[1]?),
+        1 => directions[0]?.cross(directions[2]?),
+        2 => directions[1]?.cross(directions[0]?),
         _ => return None,
     };
     Some((missing, (origin, normalize(direction)?)))
@@ -1970,17 +1961,8 @@ pub(super) fn plane_intersection_axis_frame(
 ) -> Option<(Point3, Vector3)> {
     let (first_origin, first_normal, _) = first;
     let (second_origin, second_normal, _) = second;
-    let cross = |left: Vector3, right: Vector3| {
-        Vector3::new(
-            left.y * right.z - left.z * right.y,
-            left.z * right.x - left.x * right.z,
-            left.x * right.y - left.y * right.x,
-        )
-    };
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let direction = cross(first_normal, second_normal);
-    let squared_length = dot(direction, direction);
+    let direction = first_normal.cross(second_normal);
+    let squared_length = direction.dot(direction);
     if !squared_length.is_finite() || squared_length <= 1.0e-18 {
         return None;
     }
@@ -1990,8 +1972,8 @@ pub(super) fn plane_intersection_axis_frame(
     let second_distance = second_normal.x * second_origin.x
         + second_normal.y * second_origin.y
         + second_normal.z * second_origin.z;
-    let first_term = cross(second_normal, direction);
-    let second_term = cross(direction, first_normal);
+    let first_term = second_normal.cross(direction);
+    let second_term = direction.cross(first_normal);
     let origin = Point3::new(
         (first_distance * first_term.x + second_distance * second_term.x) / squared_length,
         (first_distance * first_term.y + second_distance * second_term.y) / squared_length,
@@ -2299,16 +2281,12 @@ pub(super) fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vecto
         scalar(fixed_plane::V_AXIS + 8)?,
         scalar(fixed_plane::V_AXIS + 16)?,
     );
-    let norm =
-        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     ([normal, u_axis, v_axis]
         .into_iter()
-        .all(|vector| (norm(vector) - 1.0).abs() <= 1.0e-9)
-        && dot(normal, u_axis).abs() <= 1.0e-9
-        && dot(normal, v_axis).abs() <= 1.0e-9
-        && dot(u_axis, v_axis).abs() <= 1.0e-9)
+        .all(|vector| (vector.norm() - 1.0).abs() <= 1.0e-9)
+        && normal.dot(u_axis).abs() <= 1.0e-9
+        && normal.dot(v_axis).abs() <= 1.0e-9
+        && u_axis.dot(v_axis).abs() <= 1.0e-9)
         .then_some((origin, normal, u_axis))
 }
 
@@ -2494,10 +2472,6 @@ pub(super) fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Ve
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
-    let norm =
-        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     let fixed_ranges = payload
         .windows(fixed_plane::LEN)
         .enumerate()
@@ -2531,10 +2505,10 @@ pub(super) fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Ve
                 || scalar(bytes, 8)?.to_bits() != normal.y.to_bits()
                 || [u_axis, normal, v_axis]
                     .into_iter()
-                    .any(|vector| (norm(vector) - 1.0).abs() > 1.0e-9)
-                || dot(u_axis, normal).abs() > 1.0e-9
-                || dot(u_axis, v_axis).abs() > 1.0e-9
-                || dot(normal, v_axis).abs() > 1.0e-9
+                    .any(|vector| (vector.norm() - 1.0).abs() > 1.0e-9)
+                || u_axis.dot(normal).abs() > 1.0e-9
+                || u_axis.dot(v_axis).abs() > 1.0e-9
+                || normal.dot(v_axis).abs() > 1.0e-9
             {
                 return None;
             }
@@ -2584,17 +2558,6 @@ fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, Refere
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
-    let norm =
-        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let cross = |left: Vector3, right: Vector3| {
-        Vector3::new(
-            left.y * right.z - left.z * right.y,
-            left.z * right.x - left.x * right.z,
-            left.x * right.y - left.y * right.x,
-        )
-    };
     payload
         .windows(matrix_plane::LEN)
         .enumerate()
@@ -2634,12 +2597,12 @@ fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, Refere
             let matrix_normal = Vector3::new(rows[0].z, rows[1].z, rows[2].z);
             if [normal, u_axis, v_axis, matrix_normal]
                 .into_iter()
-                .any(|vector| (norm(vector) - 1.0).abs() > 1.0e-9)
-                || dot(u_axis, v_axis).abs() > 1.0e-9
-                || dot(u_axis, matrix_normal).abs() > 1.0e-9
-                || dot(v_axis, matrix_normal).abs() > 1.0e-9
-                || dot(normal, matrix_normal) < 1.0 - 1.0e-9
-                || dot(cross(u_axis, v_axis), matrix_normal) < 1.0 - 1.0e-9
+                .any(|vector| (vector.norm() - 1.0).abs() > 1.0e-9)
+                || u_axis.dot(v_axis).abs() > 1.0e-9
+                || u_axis.dot(matrix_normal).abs() > 1.0e-9
+                || v_axis.dot(matrix_normal).abs() > 1.0e-9
+                || normal.dot(matrix_normal) < 1.0 - 1.0e-9
+                || u_axis.cross(v_axis).dot(matrix_normal) < 1.0 - 1.0e-9
             {
                 return None;
             }
@@ -2695,15 +2658,6 @@ pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let cross = |left: Vector3, right: Vector3| {
-        Vector3::new(
-            left.y * right.z - left.z * right.y,
-            left.z * right.x - left.x * right.z,
-            left.x * right.y - left.y * right.x,
-        )
-    };
     let mut frames = payload
         .windows(COMPACT_REFERENCE_PLANE_FRAME_LEN)
         .filter(|bytes| bytes[64] == 0 && bytes[81] == 0)
@@ -2732,7 +2686,7 @@ pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
             let Some(v_xy) = scalar(bytes, 65).zip(scalar(bytes, 73)) else {
                 return Vec::new();
             };
-            if (dot(u_axis, u_axis) - 1.0).abs() > 1.0e-9 {
+            if (u_axis.dot(u_axis) - 1.0).abs() > 1.0e-9 {
                 return Vec::new();
             }
             let remaining = 1.0 - v_xy.0 * v_xy.0 - v_xy.1 * v_xy.1;
@@ -2744,9 +2698,9 @@ pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
                 .into_iter()
                 .filter_map(|v_z| {
                     let v_axis = Vector3::new(v_xy.0, v_xy.1, v_z);
-                    let normal = cross(u_axis, v_axis);
-                    (dot(u_axis, v_axis).abs() <= 1.0e-9
-                        && (dot(normal, normal) - 1.0).abs() <= 1.0e-9
+                    let normal = u_axis.cross(v_axis);
+                    (u_axis.dot(v_axis).abs() <= 1.0e-9
+                        && (normal.dot(normal) - 1.0).abs() <= 1.0e-9
                         && (normal.x - normal_xy.0).abs() <= 1.0e-9
                         && (normal.y - normal_xy.1).abs() <= 1.0e-9)
                         .then_some((origin, normal, u_axis))

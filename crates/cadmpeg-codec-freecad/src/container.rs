@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded `FCStd` archive scanning and physical byte accounting.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Component, Path};
 
 use cadmpeg_container::ArchiveSnapshot;
@@ -9,7 +9,12 @@ use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 
-use crate::native::{ArchiveSpan, DocumentFacts};
+use crate::brep::ShapePayloadRecord;
+use crate::gui;
+use crate::native::{
+    ArchiveSpan, ByteCoverageRecord, DocumentFacts, ElementMapRecord, EntryRecord, LogicalSpan,
+    PropertyFamily, PropertyRecord, StringTableRecord,
+};
 
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
@@ -238,6 +243,190 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
         document_kind,
         domains,
     })
+}
+
+pub(crate) fn logical_ledger(
+    entries: &[EntryRecord],
+    properties: &[PropertyRecord],
+    gui: &gui::Graph,
+    shape_payloads: &[ShapePayloadRecord],
+    string_tables: &[StringTableRecord],
+    element_maps: &[ElementMapRecord],
+) -> Result<Vec<LogicalSpan>, CodecError> {
+    let typed_entries = shape_payloads
+        .iter()
+        .map(|payload| payload.entry.as_str())
+        .chain(
+            string_tables
+                .iter()
+                .filter_map(|table| table.source_entry.as_deref()),
+        )
+        .chain(
+            element_maps
+                .iter()
+                .filter_map(|map| map.source_entry.as_deref()),
+        )
+        .collect::<HashSet<_>>();
+    let mut output = Vec::new();
+    for entry in entries {
+        if typed_entries.contains(entry.id.as_str()) || typed_entries.contains(entry.name.as_str())
+        {
+            push_logical_span(
+                &mut output,
+                entry,
+                0,
+                entry.byte_len,
+                "typed",
+                Some(entry.id.clone()),
+            );
+        } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
+            let mut ranges = if entry.name == "Document.xml" {
+                properties
+                    .iter()
+                    .map(|property| {
+                        (
+                            property.byte_start,
+                            property.byte_end,
+                            if property.family == PropertyFamily::Unknown {
+                                "named_opaque"
+                            } else {
+                                "typed"
+                            },
+                            property.id.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                gui.properties
+                    .iter()
+                    .map(|property| {
+                        (
+                            property.byte_start,
+                            property.byte_end,
+                            "typed",
+                            property.id.clone(),
+                        )
+                    })
+                    .chain(gui.documents.iter().flat_map(|document| {
+                        document.states.iter().map(|state| {
+                            (state.byte_start, state.byte_end, "typed", state.id.clone())
+                        })
+                    }))
+                    .collect::<Vec<_>>()
+            };
+            ranges.sort_by_key(|range| range.0);
+            let mut cursor = 0_u64;
+            for (start, end, classification, owner) in ranges {
+                if start < cursor || end < start || end > entry.byte_len {
+                    return Err(CodecError::Malformed(format!(
+                        "overlapping or invalid {} record spans",
+                        entry.name
+                    )));
+                }
+                push_logical_span(&mut output, entry, cursor, start, "structural", None);
+                push_logical_span(&mut output, entry, start, end, classification, Some(owner));
+                cursor = end;
+            }
+            push_logical_span(
+                &mut output,
+                entry,
+                cursor,
+                entry.byte_len,
+                "structural",
+                None,
+            );
+        } else {
+            push_logical_span(
+                &mut output,
+                entry,
+                0,
+                entry.byte_len,
+                "named_opaque",
+                Some(entry.id.clone()),
+            );
+        }
+    }
+    Ok(output)
+}
+
+pub(crate) fn byte_coverage(
+    physical: &[ArchiveSpan],
+    entries: &[EntryRecord],
+    logical: &[LogicalSpan],
+    physical_byte_len: u64,
+) -> ByteCoverageRecord {
+    let mut classification_bytes = BTreeMap::new();
+    let mut named_opaque_entries = BTreeSet::new();
+    for span in logical {
+        *classification_bytes
+            .entry(span.classification.clone())
+            .or_insert(0) += span.end.saturating_sub(span.start);
+        if span.classification == "named_opaque" {
+            named_opaque_entries.insert(span.entry.clone());
+        }
+    }
+    let mut ordered_physical = physical.iter().collect::<Vec<_>>();
+    ordered_physical.sort_by_key(|span| span.start);
+    let physical_exact = ordered_physical.first().is_some_and(|span| span.start == 0)
+        && ordered_physical.iter().all(|span| span.start < span.end)
+        && ordered_physical
+            .windows(2)
+            .all(|pair| pair[0].end == pair[1].start)
+        && ordered_physical
+            .last()
+            .is_some_and(|span| span.end == physical_byte_len);
+    let logical_exact = logical.iter().all(|span| {
+        entries.iter().any(|entry| entry.name == span.entry)
+            && span.start < span.end
+            && matches!(
+                span.classification.as_str(),
+                "structural" | "typed" | "named_opaque"
+            )
+    }) && entries.iter().all(|entry| {
+        let mut spans = logical
+            .iter()
+            .filter(|span| span.entry == entry.name)
+            .collect::<Vec<_>>();
+        spans.sort_by_key(|span| span.start);
+        if entry.byte_len == 0 {
+            spans.is_empty()
+        } else {
+            spans.first().is_some_and(|span| span.start == 0)
+                && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
+                && spans.last().is_some_and(|span| span.end == entry.byte_len)
+        }
+    });
+    ByteCoverageRecord {
+        id: crate::native::native_id("byte-coverage", "0"),
+        physical_byte_len,
+        physical_span_count: physical.len(),
+        logical_entry_count: entries.len(),
+        logical_byte_len: entries.iter().map(|entry| entry.byte_len).sum(),
+        logical_span_count: logical.len(),
+        classification_bytes,
+        named_opaque_entries: named_opaque_entries.into_iter().collect(),
+        exact: physical_exact && logical_exact,
+    }
+}
+
+fn push_logical_span(
+    output: &mut Vec<LogicalSpan>,
+    entry: &EntryRecord,
+    start: u64,
+    end: u64,
+    classification: &str,
+    owner: Option<String>,
+) {
+    if start < end {
+        output.push(LogicalSpan {
+            id: crate::native::native_id("logical-span", output.len().to_string()),
+            entry: entry.name.clone(),
+            start,
+            end,
+            classification: classification.into(),
+            owner,
+        });
+    }
 }
 
 #[cfg(test)]

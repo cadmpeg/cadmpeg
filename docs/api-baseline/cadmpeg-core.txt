@@ -657,6 +657,7 @@ pub fn cadmpeg_core::decode::View<'a>::skip(&mut self, usize) -> core::option::O
 pub fn cadmpeg_core::decode::View<'a>::start(self) -> usize
 pub fn cadmpeg_core::decode::View<'a>::take(&mut self, usize) -> core::option::Option<&'a [u8]>
 pub fn cadmpeg_core::decode::View<'a>::u8(&mut self) -> core::option::Option<u8>
+pub fn cadmpeg_core::decode::View<'a>::utf16_le(&mut self, usize) -> core::option::Option<alloc::string::String>
 pub fn cadmpeg_core::decode::View<'a>::utf16le_at(&[u8], usize, usize) -> core::option::Option<(alloc::string::String, usize)>
 pub fn cadmpeg_core::decode::View<'a>::window(self) -> &'a [u8]
 impl<'a> core::clone::Clone for cadmpeg_core::decode::View<'a>

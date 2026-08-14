@@ -4,12 +4,13 @@
 use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
 use crate::global::{Global, RealPrecision};
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -359,17 +360,14 @@ pub(crate) struct Projection {
 }
 
 pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
-    LossNote {
-        code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
-        severity: Severity::Warning,
-        message: format!(
+    IgesLossCode::EntityNotProjected
+        .note(format!(
             "IGES entity type {} form {} was not projected: {}",
             entry.entity_type,
             entry.form,
             message.into()
-        ),
-        provenance: Some(entry.loss_provenance()),
-    }
+        ))
+        .with_provenance(entry.loss_provenance())
 }
 
 pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
@@ -522,18 +520,18 @@ pub(crate) fn project_geometry(
         let end_delta = end.vector_from(center);
         let radius = start_delta.norm();
         let end_radius = end_delta.norm();
-        let Some(ref_direction) = {
+        let Some(ref_direction) = ({
             let n = start_delta.norm();
             (n.is_finite() && n > 0.0).then(|| start_delta.scale(1.0 / n))
-        } else {
+        }) else {
             losses.push(entity_loss(entry, "arc start point equals its center"));
             continue;
         };
-        let Some(axis) = {
+        let Some(axis) = ({
             let v = basis_x.cross(basis_y);
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-        } else {
+        }) else {
             losses.push(entity_loss(entry, "arc placement collapses its plane"));
             continue;
         };
@@ -547,10 +545,10 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let Some(end_direction) = {
+        let Some(end_direction) = ({
             let n = end_delta.norm();
             (n.is_finite() && n > 0.0).then(|| end_delta.scale(1.0 / n))
-        } else {
+        }) else {
             losses.push(entity_loss(entry, "arc terminate point equals its center"));
             continue;
         };

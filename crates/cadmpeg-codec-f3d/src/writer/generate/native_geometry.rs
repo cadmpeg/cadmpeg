@@ -4401,7 +4401,6 @@ fn native_conic_interval_curve(
         ));
     }
     let minor_direction = minor_direction.scale(1.0 / minor_norm);
-    );
     let delta = parameter_range[1] - parameter_range[0];
     let spans = (delta / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
     let step = delta / spans as f64;

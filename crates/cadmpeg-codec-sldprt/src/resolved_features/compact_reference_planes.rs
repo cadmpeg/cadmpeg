@@ -155,16 +155,12 @@ fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
         Vector3::new(scalar(39)?, scalar(47)?, scalar(55)?),
         Vector3::new(scalar(63)?, scalar(71)?, scalar(79)?),
     ];
-    let norm =
-        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     (basis
         .iter()
-        .all(|vector| (norm(*vector) - 1.0).abs() <= 1.0e-9)
-        && dot(basis[0], basis[1]).abs() <= 1.0e-9
-        && dot(basis[0], basis[2]).abs() <= 1.0e-9
-        && dot(basis[1], basis[2]).abs() <= 1.0e-9)
+        .all(|vector| (vector.norm() - 1.0).abs() <= 1.0e-9)
+        && basis[0].dot(basis[1]).abs() <= 1.0e-9
+        && basis[0].dot(basis[2]).abs() <= 1.0e-9
+        && basis[1].dot(basis[2]).abs() <= 1.0e-9)
         .then_some(source)
 }
 
@@ -209,15 +205,6 @@ pub(super) fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, V
     const RECORD_LEN: usize = 138;
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let cross = |left: Vector3, right: Vector3| {
-        Vector3::new(
-            left.y * right.z - left.z * right.y,
-            left.z * right.x - left.x * right.z,
-            left.x * right.y - left.y * right.x,
-        )
-    };
     let mut frames = payload
         .windows(RECORD_LEN)
         .filter_map(|bytes| {
@@ -230,13 +217,13 @@ pub(super) fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, V
             let u_axis = Vector3::new(scalar(0)?, scalar(1)?, scalar(2)?);
             let v_axis = Vector3::new(scalar(3)?, scalar(4)?, scalar(5)?);
             let normal = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
-            let expected_normal = cross(u_axis, v_axis);
+            let expected_normal = u_axis.cross(v_axis);
             if source == 0
                 || bytes.get(8..14) != Some(&[0; 6])
                 || bytes.get(14) != Some(&1)
-                || (dot(u_axis, u_axis) - 1.0).abs() > 1.0e-9
-                || (dot(v_axis, v_axis) - 1.0).abs() > 1.0e-9
-                || (dot(normal, normal) - 1.0).abs() > 1.0e-9
+                || (u_axis.dot(u_axis) - 1.0).abs() > 1.0e-9
+                || (v_axis.dot(v_axis) - 1.0).abs() > 1.0e-9
+                || (normal.dot(normal) - 1.0).abs() > 1.0e-9
                 || (expected_normal.x - normal.x).abs() > 1.0e-9
                 || (expected_normal.y - normal.y).abs() > 1.0e-9
                 || (expected_normal.z - normal.z).abs() > 1.0e-9

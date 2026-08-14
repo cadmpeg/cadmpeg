@@ -1355,9 +1355,8 @@ fn parse_directory(
             {
                 return malformed("invalid CFB directory name length or terminator");
             }
-            let (name, _) = View::utf16le_at(raw, 0, (name_len - 2) / 2).ok_or_else(|| {
-                CodecError::Malformed("invalid UTF-16 CFB directory name".into())
-            })?;
+            let (name, _) = View::utf16le_at(raw, 0, (name_len - 2) / 2)
+                .ok_or_else(|| CodecError::Malformed("invalid UTF-16 CFB directory name".into()))?;
             if name
                 .chars()
                 .any(|character| matches!(character, '/' | '\\' | ':' | '!'))

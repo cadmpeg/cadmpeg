@@ -1574,11 +1574,9 @@ fn resolved_selection_member_points(
     };
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let v_axis = normal.cross(u_axis);
-    Some(vec![
-        origin
-            .translated(u_axis, position.u)
-            .translated(v_axis, position.v),
-    ])
+    Some(vec![origin
+        .translated(u_axis, position.u)
+        .translated(v_axis, position.v)])
 }
 
 pub(crate) fn ordered_unique_profile_selections(

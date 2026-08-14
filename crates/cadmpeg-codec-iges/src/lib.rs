@@ -13,6 +13,7 @@ mod global;
 mod graph;
 /// Byte-offset constants generated from `docs/layouts/iges.toml`.
 pub(crate) mod layout;
+mod loss;
 mod native;
 mod parameter;
 mod profile;

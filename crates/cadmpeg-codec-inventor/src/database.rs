@@ -360,16 +360,12 @@ impl<'a> Cursor<'a> {
 
     fn utf16(&mut self, field: &'static str, maximum: usize) -> Result<String, CodecError> {
         let count = self.count(field, maximum)?;
-        let byte_len = count.checked_mul(2).ok_or_else(|| {
+        count.checked_mul(2).ok_or_else(|| {
             CodecError::Malformed(format!("{} {field} length overflows", self.scope))
         })?;
-        let mut view = View::over_retained(self.take(byte_len, field)?);
-        let mut units = Vec::with_capacity(count);
-        for _ in 0..count {
-            units.push(view.req_u16_le().map_err(|error| error.during(field))?);
-        }
-        String::from_utf16(&units)
-            .map_err(|_| CodecError::Malformed(format!("{} {field} is not UTF-16", self.scope)))
+        self.source
+            .utf16_le(count)
+            .ok_or_else(|| CodecError::Malformed(format!("{} {field} is not UTF-16", self.scope)))
     }
 
     fn id_list(

@@ -46,7 +46,6 @@ pub(crate) mod wire;
 mod writer;
 
 #[doc(hidden)]
-#[path = "fuzzing.rs"]
 pub mod fuzz;
 
 const MAGIC: &[u8] = chunks::MAGIC;

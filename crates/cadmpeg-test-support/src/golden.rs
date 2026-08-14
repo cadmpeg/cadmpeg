@@ -260,6 +260,7 @@ impl Harness {
         );
     }
 
+    #[allow(clippy::unused_self)] // pair with `finish_check`; paths unused here
     fn finish_determinism(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
         for (name, bytes) in inputs {
             for branch in branches {

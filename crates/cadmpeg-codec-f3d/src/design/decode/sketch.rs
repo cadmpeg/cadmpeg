@@ -16,8 +16,10 @@ use crate::records::{
     SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
     DESIGN_MODULE_SKETCH,
 };
+use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
 use std::collections::HashMap;
@@ -646,8 +648,7 @@ pub fn decode_persistent_references(
             ),
         ] {
             let mut cursor = 0;
-            while let Some(relative) = bytes[cursor..].windows(name.len()).position(|w| w == name) {
-                let offset = cursor + relative;
+            while let Some(offset) = find_from(bytes, name, cursor) {
                 cursor = offset + name.len();
                 let compact_type_offset = offset + name.len();
                 let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
@@ -2818,8 +2819,8 @@ pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface
         || coordinates.iter().any(|value| !value.is_finite())
         || u_knots.iter().any(|value| !value.is_finite())
         || v_knots.iter().any(|value| !value.is_finite())
-        || u_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || v_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&u_knots)
+        || !knots_nondecreasing(&v_knots)
     {
         return None;
     }

@@ -6,12 +6,13 @@ use std::fmt::Write as _;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
+use cadmpeg_ir::report::LossNote;
 
 use crate::ids::StepIdentity;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
+use crate::loss::StepLossCode;
 
 const DRAWING_ENTITIES: &[&str] = &[
     "DRAWING_DEFINITION",
@@ -57,12 +58,9 @@ pub(super) fn decode(
             let valid = required_parameter_count(name)
                 .is_none_or(|count| source_parameters(&exchange.records[id], name).len() >= count);
             if !valid {
-                losses.push(LossNote::new(
-                    LossKind::shared(LossTaxonomy::RecordNotTyped),
-                    format!(
+                losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
                         "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-                    ),
-                ));
+                    )));
             }
             valid
         })
@@ -267,12 +265,9 @@ fn add_reference_fields(
         collect_references(value, &mut references);
         for target_id in references {
             let Some(target) = target_context.target(target_id) else {
-                losses.push(LossNote::new(
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-                    format!(
+                losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
-                    ),
-                ));
+                    )));
                 continue;
             };
             relationships.entry(role.into()).or_default().push(target);
@@ -309,12 +304,9 @@ fn add_sheet_revision_usages(
                     .or_default()
                     .push(target);
             } else {
-                losses.push(LossNote::new(
-                    LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
-                    format!(
+                losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
-                    ),
-                ));
+                    )));
             }
             if let Some(sequence) = sequence.and_then(|value| {
                 value_text(
@@ -338,12 +330,9 @@ fn add_sheet_revision_usages(
                     .or_default()
                     .push(target);
             } else {
-                losses.push(LossNote::new(
-                    LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
-                    format!(
+                losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
-                    ),
-                ));
+                    )));
             }
         }
     }
@@ -374,12 +363,9 @@ fn add_draughting_model_associations(
                 .or_default()
                 .push(definition);
         } else if parameters.get(2).and_then(value_reference).is_some() {
-            losses.push(LossNote::new(
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-                    format!(
+            losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(format!(
                         "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
-                ),
-            ));
+                )));
         }
         let Some(items) = parameters.get(4) else {
             continue;
@@ -394,12 +380,9 @@ fn add_draughting_model_associations(
                     .or_default()
                     .push(item);
             } else {
-                losses.push(LossNote::new(
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-                    format!(
+                losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(format!(
                         "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
-                    ),
-                ));
+                    )));
             }
         }
     }
@@ -484,7 +467,7 @@ fn value_text(
             losses,
             record_id,
             field,
-            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+            StepLossCode::MetadataStringInvalid,
         ),
         Value::Binary(value) => Some(format!(
             "binary:{}:{}",

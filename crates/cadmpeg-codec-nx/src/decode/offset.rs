@@ -12,7 +12,8 @@ use cadmpeg_ir::eval::{
     nurbs_surface_partials, surface_partials,
 };
 use cadmpeg_ir::geometry::{
-    IntcurveSupportSide, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+    knots_nondecreasing, IntcurveSupportSide, NurbsSurface, PcurveGeometry,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -246,8 +247,8 @@ impl HomogeneousSurfaceNet {
                 .iter()
                 .chain(&surface.v_knots)
                 .any(|knot| !knot.is_finite())
-            || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
-            || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+            || !knots_nondecreasing(&surface.u_knots)
+            || !knots_nondecreasing(&surface.v_knots)
             || surface
                 .control_points
                 .iter()

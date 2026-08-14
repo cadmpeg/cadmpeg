@@ -15,8 +15,9 @@ use cadmpeg_ir::eval::{
     nurbs_surface_parameter_within_tolerance, nurbs_surface_point, surface_point,
 };
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
+    knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry,
+    Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry, SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
@@ -3305,7 +3306,7 @@ fn intersection_support_pcurve(
         || chart.control_points.len() < 2
         || chart.knots.len() != chart.control_points.len() + 2
         || chart.knots.iter().any(|knot| !knot.is_finite())
-        || chart.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&chart.knots)
         || !support_data.fit_tolerance_mm.is_finite()
         || support_data.fit_tolerance_mm <= 0.0
     {

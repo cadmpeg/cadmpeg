@@ -245,10 +245,10 @@ impl CodecBackend for SldprtCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window());
+        let scan = container::scan(ctx, root)?;
         Ok(container::summarize(&scan))
     }
 
@@ -291,9 +291,10 @@ impl Encoder for SldprtCodec {
             (false, false) => FidelityResolution::NotProvided,
         };
         if matches!(report.fidelity, FidelityResolution::Degraded { .. }) {
-            report.losses.push(SldprtLossCode::SourcePreservedImageUnavailable.note(
-                "preserved SLDPRT source image is unavailable; regenerated from IR",
-            ));
+            report.losses.push(
+                SldprtLossCode::SourcePreservedImageUnavailable
+                    .note("preserved SLDPRT source image is unavailable; regenerated from IR"),
+            );
         }
         Ok(ExportPlan::buffered(report, bytes))
     }

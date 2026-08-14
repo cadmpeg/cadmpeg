@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
-    ProceduralCurve, ProceduralCurveDefinition, SurfaceCurveFamily,
+    knots_nondecreasing, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::topology::Edge;
@@ -67,8 +67,7 @@ pub(super) fn curve_cache_has_ordered_knots(geometry: &CurveGeometry) -> bool {
     let CurveGeometry::Nurbs(curve) = geometry else {
         return true;
     };
-    curve.knots.iter().all(|knot| knot.is_finite())
-        && curve.knots.windows(2).all(|pair| pair[0] <= pair[1])
+    curve.knots.iter().all(|knot| knot.is_finite()) && knots_nondecreasing(&curve.knots)
 }
 
 pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {

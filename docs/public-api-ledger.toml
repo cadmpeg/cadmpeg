@@ -418,3 +418,10 @@ crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::View::utf16le_at"
 reason = "re-home le::utf16le_at onto View before deleting cadmpeg_core::{le,be,read}"
+
+[[change]]
+commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::View::utf16_le"
+reason = "sequential UTF-16LE reader paired with View::utf16le_at"

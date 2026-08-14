@@ -12,11 +12,11 @@ mod design;
 mod external_reference;
 mod feature;
 #[doc(hidden)]
-#[path = "fuzzing.rs"]
 pub mod fuzz;
 mod kernel;
 /// Byte-offset constants generated from `docs/layouts/inventor.toml`.
 pub(crate) mod layout;
+mod loss;
 mod materials;
 mod native;
 mod pmdc;

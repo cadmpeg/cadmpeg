@@ -67,6 +67,7 @@ pub(crate) mod feature;
 /// Byte-offset constants generated from `docs/layouts/creo.toml`.
 pub(crate) mod layout;
 pub(crate) mod legacy;
+pub(crate) mod loss;
 pub(crate) mod placement;
 pub(crate) mod primdata;
 pub(crate) mod psb;

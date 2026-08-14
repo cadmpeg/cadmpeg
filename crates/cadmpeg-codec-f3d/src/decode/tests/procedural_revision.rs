@@ -17,11 +17,11 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
 use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
+use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -1227,8 +1227,11 @@ fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
         result.ir().model.procedural_surfaces[0].definition,
         ProceduralSurfaceDefinition::Extrusion { .. }
     ));
-    assert!(!result.report().losses.iter().any(|loss| loss.code
-        == cadmpeg_ir::report::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == F3dLossCode::SurfaceShapeNotDecoded.kind() }));
 }
 
 #[test]

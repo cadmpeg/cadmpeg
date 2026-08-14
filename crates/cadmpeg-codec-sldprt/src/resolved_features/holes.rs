@@ -9,7 +9,6 @@ use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
-use super::sketch_edges::{cross, dot};
 use super::transforms::{quantize, sketch_frame_marker_transform};
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
@@ -101,14 +100,12 @@ pub(crate) fn project_helix_axes(
         let Some(last_point) = points.last() else {
             continue;
         };
-        let signed_rise = dot(
-            Vector3::new(
-                last_point.x - points[0].x,
-                last_point.y - points[0].y,
-                last_point.z - points[0].z,
-            ),
-            axis_direction,
-        );
+        let signed_rise = Vector3::new(
+            last_point.x - points[0].x,
+            last_point.y - points[0].y,
+            last_point.z - points[0].z,
+        )
+        .dot(axis_direction);
         model_feature.definition = FeatureDefinition::Helix {
             axis_origin,
             axis_direction,
@@ -1411,7 +1408,7 @@ pub(crate) fn project_hole_position_sketches(
             continue;
         }
         let marker_transform = sketch_frame_marker_transform(sketch, QUANTUM);
-        let v_axis = cross(normal, u_axis);
+        let v_axis = normal.cross(u_axis);
         let mut resolved = Vec::with_capacity(authored_markers.len());
         for marker in &authored_markers {
             let mut entities = sketch_entities.iter().filter(|entity| {
@@ -1646,7 +1643,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     .collect::<Vec<_>>();
                 support_axes
                     .sort_by_key(|axis| [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]);
-                support_axes.dedup_by(|left, right| dot(*left, *right) >= 1.0 - 1.0e-9);
+                support_axes.dedup_by(|left, right| left.dot(*right) >= 1.0 - 1.0e-9);
                 if let [axis] = support_axes.as_slice() {
                     axes.push((point, *axis));
                 }
@@ -1722,7 +1719,7 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
     let candidate = points
         .iter()
         .skip(1)
-        .map(|point| cross(first, displacement(*point)))
+        .map(|point| first.cross(displacement(*point)))
         .max_by(|left, right| left.norm().total_cmp(&right.norm()))?;
     let norm = candidate.norm();
     if norm <= extent * extent * 1.0e-10 {
@@ -1730,14 +1727,12 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
     }
     let normal = Vector3::new(candidate.x / norm, candidate.y / norm, candidate.z / norm);
     if points.iter().any(|point| {
-        dot(
-            Vector3::new(
-                point.x - points[0].x,
-                point.y - points[0].y,
-                point.z - points[0].z,
-            ),
-            normal,
+        Vector3::new(
+            point.x - points[0].x,
+            point.y - points[0].y,
+            point.z - points[0].z,
         )
+        .dot(normal)
         .abs()
             > extent * 1.0e-8
     }) {
@@ -1843,7 +1838,7 @@ pub(crate) fn project_generated_hole_axes(
                     continue;
                 }
                 let axis = canonical_axis(axis);
-                let station = dot(Vector3::new(origin.x, origin.y, origin.z), axis);
+                let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
                 let closest = Point3::new(
                     origin.x - station * axis.x,
                     origin.y - station * axis.y,
@@ -2354,7 +2349,7 @@ fn partition_seeded_hole_axes(
     if candidate_keys.len() != candidates.len() {
         return;
     }
-    let mut seed_directions = Vec::with_capacity(siblings.len());
+    let mut seed_directions: Vec<Vector3> = Vec::with_capacity(siblings.len());
     for &sibling in siblings {
         let FeatureDefinition::Hole { placements, .. } = &features[sibling].definition else {
             return;
@@ -2366,13 +2361,13 @@ fn partition_seeded_hole_axes(
         let Some(direction) = axes.next() else {
             return;
         };
-        if axes.any(|axis| dot(axis, direction) < 1.0 - 1.0e-9)
+        if axes.any(|axis| axis.dot(direction) < 1.0 - 1.0e-9)
             || placements.iter().any(|placement| {
                 hole_axis_key(placement).is_none_or(|key| !candidate_keys.contains(&key))
             })
             || seed_directions
                 .iter()
-                .any(|candidate| dot(*candidate, direction) >= 1.0 - 1.0e-9)
+                .any(|candidate| candidate.dot(direction) >= 1.0 - 1.0e-9)
         {
             return;
         }
@@ -2388,7 +2383,7 @@ fn partition_seeded_hole_axes(
         let matches = seed_directions
             .iter()
             .enumerate()
-            .filter(|(_, seed)| dot(**seed, direction) >= 1.0 - 1.0e-9)
+            .filter(|(_, seed)| seed.dot(direction) >= 1.0 - 1.0e-9)
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         let [partition] = matches.as_slice() else {
@@ -2506,7 +2501,7 @@ fn hole_axis_key(placement: &HolePlacement) -> Option<[i64; 6]> {
         return None;
     };
     let axis = canonical_axis(*axis);
-    let station = dot(Vector3::new(origin.x, origin.y, origin.z), axis);
+    let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
     let closest = Point3::new(
         origin.x - station * axis.x,
         origin.y - station * axis.y,
@@ -2536,13 +2531,13 @@ fn cylindrical_support_normal(surface: &Surface, point: Point3) -> Option<Vector
         return None;
     }
     let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-    let along = dot(delta, axis);
+    let along = delta.dot(axis);
     let radial = Vector3::new(
         delta.x - along * axis.x,
         delta.y - along * axis.y,
         delta.z - along * axis.z,
     );
-    let radial_length = dot(radial, radial).sqrt();
+    let radial_length = radial.norm();
     let tolerance = (radius * 1.0e-9).max(1.0e-9);
     ((radial_length - radius).abs() <= tolerance).then(|| {
         Vector3::new(
@@ -2769,15 +2764,13 @@ pub(crate) fn project_hole_axes(
         if hole_diameter_counts.get(&diameter.to_bits()) == Some(&1) {
             if let Some(frame) = frames.next() {
                 let same_frame = |candidate: (Point3, Vector3, Vector3)| {
-                    dot(frame.1, candidate.1).abs() >= 1.0 - 1.0e-9
-                        && dot(
-                            Vector3::new(
-                                candidate.0.x - frame.0.x,
-                                candidate.0.y - frame.0.y,
-                                candidate.0.z - frame.0.z,
-                            ),
-                            frame.1,
+                    frame.1.dot(candidate.1).abs() >= 1.0 - 1.0e-9
+                        && Vector3::new(
+                            candidate.0.x - frame.0.x,
+                            candidate.0.y - frame.0.y,
+                            candidate.0.z - frame.0.z,
                         )
+                        .dot(frame.1)
                         .abs()
                             <= 1.0e-8
                 };
@@ -2901,16 +2894,14 @@ fn plane_owned_bore_placements(
     let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
     let mut placements = cylindrical_bore_axes(radius, topology)
         .into_iter()
-        .filter(|(_, axis)| dot(*axis, plane_normal).abs() >= 1.0 - 1.0e-9)
+        .filter(|(_, axis)| axis.dot(plane_normal).abs() >= 1.0 - 1.0e-9)
         .map(|(origin, axis)| {
-            let station = dot(
-                Vector3::new(
-                    plane_origin.x - origin.x,
-                    plane_origin.y - origin.y,
-                    plane_origin.z - origin.z,
-                ),
-                axis,
-            );
+            let station = Vector3::new(
+                plane_origin.x - origin.x,
+                plane_origin.y - origin.y,
+                plane_origin.z - origin.z,
+            )
+            .dot(axis);
             HolePlacement::Axis {
                 origin: Point3::new(
                     origin.x + station * axis.x,
@@ -2971,7 +2962,7 @@ fn carrier_placements(
         .into_iter()
         .map(|(origin, axis)| {
             let axis = canonical_axis(axis);
-            let station = dot(Vector3::new(origin.x, origin.y, origin.z), axis);
+            let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
             let closest = Point3::new(
                 origin.x - station * axis.x,
                 origin.y - station * axis.y,
@@ -3066,14 +3057,12 @@ fn cylindrical_bore_face_spans(
                 .filter_map(|vertex_id| vertices.get(vertex_id))
                 .filter_map(|vertex| points.get(&vertex.point))
                 .map(|point| {
-                    dot(
-                        Vector3::new(
-                            point.position.x - origin.x,
-                            point.position.y - origin.y,
-                            point.position.z - origin.z,
-                        ),
-                        axis,
+                    Vector3::new(
+                        point.position.x - origin.x,
+                        point.position.y - origin.y,
+                        point.position.z - origin.z,
                     )
+                    .dot(axis)
                 });
             let first = stations.next()?;
             let (minimum, maximum) = stations
@@ -3131,7 +3120,7 @@ pub(crate) fn project_topological_hole_constructions(
                     if !reversed {
                         return None;
                     }
-                    let parallel = dot(*axis, *placement_axis).abs() >= 1.0 - 1.0e-9;
+                    let parallel = axis.dot(*placement_axis).abs() >= 1.0 - 1.0e-9;
                     let distance = point_axis_distance_squared(*placement_origin, *origin, *axis);
                     (parallel && distance <= 1.0e-12).then_some((*radius, *span))
                 })
@@ -3243,7 +3232,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         let canonical = canonical_axis(axes[0].1);
         if !axes
             .iter()
-            .all(|(_, axis)| dot(canonical_axis(*axis), canonical) >= 1.0 - 1.0e-9)
+            .all(|(_, axis)| canonical_axis(*axis).dot(canonical) >= 1.0 - 1.0e-9)
         {
             continue;
         }
@@ -3254,17 +3243,11 @@ pub(crate) fn project_bore_backed_position_sketches(
                     origin,
                     normal,
                     u_axis,
-                } if dot(normal, canonical).abs() >= 1.0 - 1.0e-9
+                } if normal.dot(canonical).abs() >= 1.0 - 1.0e-9
                     && axes.iter().all(|(point, _)| {
-                        dot(
-                            Vector3::new(
-                                point.x - origin.x,
-                                point.y - origin.y,
-                                point.z - origin.z,
-                            ),
-                            normal,
-                        )
-                        .abs()
+                        Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
+                            .dot(normal)
+                            .abs()
                             <= 1.0e-8
                     }) =>
                 {
@@ -3301,7 +3284,7 @@ pub(crate) fn project_bore_backed_position_sketches(
             "sldprt:model:sketch#bore:{lane_key}:{}",
             position.ordinal
         ));
-        let v_axis = cross(*normal, *u_axis);
+        let v_axis = normal.cross(*u_axis);
         let projected_entities = axes
             .iter()
             .enumerate()
@@ -3316,7 +3299,7 @@ pub(crate) fn project_bore_backed_position_sketches(
                     geometry_ref: None,
                     endpoint_refs: Vec::new(),
                     geometry: SketchGeometry::Point {
-                        position: Point2::new(dot(delta, *u_axis), dot(delta, v_axis)),
+                        position: Point2::new(delta.dot(*u_axis), delta.dot(v_axis)),
                     },
                 }
             })
@@ -3460,7 +3443,7 @@ fn match_marker_loci_to_bore_axes(
             continue;
         }
         let canonical = canonical_axis(axis);
-        let closest_distance = dot(Vector3::new(origin.x, origin.y, origin.z), canonical);
+        let closest_distance = Vector3::new(origin.x, origin.y, origin.z).dot(canonical);
         let closest = Point3::new(
             origin.x - closest_distance * canonical.x,
             origin.y - closest_distance * canonical.y,
@@ -3497,7 +3480,7 @@ fn match_marker_loci_to_bore_axes(
                 let (origin, axis) = match direction {
                     Some(expected) => surfaces
                         .iter()
-                        .filter(|(_, axis)| dot(expected, *axis) >= 1.0 - 1.0e-9)
+                        .filter(|(_, axis)| expected.dot(*axis) >= 1.0 - 1.0e-9)
                         .min_by(compare_origins)?,
                     None => surfaces.iter().min_by(compare_origins)?,
                 };
@@ -3605,7 +3588,7 @@ fn congruent_bore_axis_subsets(
                         candidate_loci[candidate_index].y - candidate_loci[previous_candidate].y,
                         candidate_loci[candidate_index].z - candidate_loci[previous_candidate].z,
                     );
-                    same_dimension_length(marker_distance, dot(delta, delta).sqrt())
+                    same_dimension_length(marker_distance, delta.norm())
                 });
         if valid {
             assigned.push(candidate_index);
@@ -3685,7 +3668,7 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
             scalar(3)? * NATIVE_TO_IR,
         );
         let direction = Vector3::new(scalar(4)?, scalar(5)?, scalar(6)?);
-        let norm = dot(direction, direction).sqrt();
+        let norm = direction.norm();
         let record_end = declaration + 355;
         let next_record = (record_end..=record_end + 24).find(|offset| {
             payload.get(record_end..*offset).is_some_and(|padding| {
@@ -3896,7 +3879,7 @@ fn constrained_bore_axes(
     relations: &[(FeatureInputRelationFamily, u16, u16, f64)],
 ) -> Option<Vec<HolePlacement>> {
     const QUANTUM: f64 = 1.0e-8;
-    let v_axis = cross(normal, u_axis);
+    let v_axis = normal.cross(u_axis);
     let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
     let mut axes = surfaces
         .iter()
@@ -3907,7 +3890,7 @@ fn constrained_bore_axes(
                 radius: candidate_radius,
                 ..
             } if (candidate_radius - radius).abs() <= radius_tolerance
-                && dot(axis, normal).abs() >= 1.0 - 1.0e-9 =>
+                && axis.dot(normal).abs() >= 1.0 - 1.0e-9 =>
             {
                 let delta = Vector3::new(
                     candidate.x - origin.x,
@@ -3915,7 +3898,7 @@ fn constrained_bore_axes(
                     candidate.z - origin.z,
                 );
                 Some(quantize(
-                    Point2::new(dot(delta, u_axis), dot(delta, v_axis)),
+                    Point2::new(delta.dot(u_axis), delta.dot(v_axis)),
                     QUANTUM,
                 ))
             }

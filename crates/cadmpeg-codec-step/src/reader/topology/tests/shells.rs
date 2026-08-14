@@ -26,6 +26,7 @@ use cadmpeg_ir::CadIr;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+use crate::export::Builder;
 use crate::ids::StepIdentity;
 use crate::test_support::{decode_inline, export};
 use crate::{
@@ -518,7 +519,7 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
     region.id.0 = "zzzz:test:region#second".into();
     ir.model.bodies[0].regions.push(region.id.clone());
     ir.model.regions.push(region);
-    let mut builder = crate::Builder::new(&ir, StepSchema::Ap242Edition3);
+    let mut builder = Builder::new(&ir, StepSchema::Ap242Edition3);
     builder.build();
     assert_eq!(builder.body_item_refs[body.as_str()].len(), 2);
 }

@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::parse_class_wrapper;
 use crate::surfaces::DecodedSurface;
@@ -20,13 +20,6 @@ pub(crate) struct CurveOnSurface {
     pub(crate) model_curve: Option<DecodedCurve>,
     pub(crate) surface: DecodedSurface,
     pub(crate) warnings: Vec<String>,
-}
-
-fn malformed(offset: usize, message: impl Into<String>) -> GeometryError {
-    GeometryError::Malformed(FramingError::Structural {
-        offset,
-        message: message.into(),
-    })
 }
 
 fn class(
@@ -58,7 +51,7 @@ pub(crate) fn decode(
         curve: parameter_curve,
     } = decoded
     else {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             range.start,
             "curve-on-surface C2 object is not a curve",
         ));
@@ -67,7 +60,7 @@ pub(crate) fn decode(
         0 => false,
         1 => true,
         _ => {
-            return Err(malformed(
+            return Err(GeometryError::malformed(
                 reader.position() - 4,
                 "invalid curve-on-surface C3 presence",
             ))
@@ -76,7 +69,7 @@ pub(crate) fn decode(
     let model_curve = if has_model_curve {
         let c3 = class(data, &mut reader, archive, &mut warnings)?;
         if c3.class_uuid == CLASS {
-            return Err(malformed(
+            return Err(GeometryError::malformed(
                 reader.position(),
                 "nested curve-on-surface C3 carrier is invalid",
             ));
@@ -90,7 +83,7 @@ pub(crate) fn decode(
             depth,
         )?;
         let DecodedGeometry::Curve { curve } = decoded else {
-            return Err(malformed(
+            return Err(GeometryError::malformed(
                 reader.position(),
                 "curve-on-surface C3 object is not a curve",
             ));
@@ -101,7 +94,7 @@ pub(crate) fn decode(
     };
     let support = class(data, &mut reader, archive, &mut warnings)?;
     if !crate::curves::surface_class(support.class_uuid) {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "curve-on-surface support is not a surface",
         ));
@@ -115,7 +108,7 @@ pub(crate) fn decode(
         depth,
     )?;
     if reader.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             reader.position(),
             "curve-on-surface has trailing bytes",
         ));

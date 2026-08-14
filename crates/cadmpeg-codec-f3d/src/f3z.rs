@@ -15,10 +15,11 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::{Native, NativeRecord};
 
 use crate::container::ContainerScan;
+use crate::loss::F3dLossCode;
 use crate::records::XrefReference;
 use crate::xref::{self, XrefTable};
 
@@ -164,56 +165,48 @@ fn merge_references(
             |design| design.display_name.clone(),
         );
         if stack.contains(&reference.relative_path) {
-            parent.report_mut().losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
-                severity: Severity::Error,
-                message: format!(
+            parent
+                .report_mut()
+                .losses
+                .push(F3dLossCode::XrefCycle.note(format!(
                     "xref {label}: reference cycle through {}; the occurrence was not resolved",
                     reference.relative_path
-                ),
-                provenance: None,
-            });
+                )));
             continue;
         }
         let Some(member_view) = scan.entry_view(&reference.relative_path) else {
-            parent.report_mut().losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
-                severity: Severity::Error,
-                message: format!(
+            parent
+                .report_mut()
+                .losses
+                .push(F3dLossCode::XrefMemberMissing.note(format!(
                     "xref {label}: member {} is not present in the archive; the occurrence was \
-                     not resolved",
+                 not resolved",
                     reference.relative_path
-                ),
-                provenance: None,
-            });
+                )));
             continue;
         };
         let mut component = match crate::decode::decode(ctx, member_view) {
             Ok(component) => component,
             Err(error) => {
-                parent.report_mut().losses.push(LossNote {
-                    code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
-                    severity: Severity::Error,
-                    message: format!(
+                parent
+                    .report_mut()
+                    .losses
+                    .push(F3dLossCode::XrefMemberUndecoded.note(format!(
                         "xref {label}: member {} failed to decode ({error}); the occurrence was \
-                         not resolved",
+                     not resolved",
                         reference.relative_path
-                    ),
-                    provenance: None,
-                });
+                    )));
                 continue;
             }
         };
         if component.ir().units != parent.ir().units {
-            parent.report_mut().losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
-                severity: Severity::Error,
-                message: format!(
+            parent
+                .report_mut()
+                .losses
+                .push(F3dLossCode::XrefUnitsMismatch.note(format!(
                     "xref {label}: component units differ from the containing document; the \
-                     occurrence was not merged"
-                ),
-                provenance: None,
-            });
+                 occurrence was not merged"
+                )));
             continue;
         }
         let child_table = xref_table_from_ir(component.ir())?;

@@ -8,9 +8,7 @@ use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
-use crate::curves::{
-    decode_embedded_curve, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
-};
+use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
 use crate::settings::{
     bbox, interval, plane, point, vector as native_vector, Plane, Point3 as NativePoint3,
 };
@@ -122,7 +120,10 @@ pub(crate) fn decode(
     } else if class == SUM_SURFACE {
         read_sum(data, &mut reader, scale, archive, depth)?
     } else {
-        return Err(unsupported(range.start, "unsupported Rhino surface class"));
+        return Err(GeometryError::unsupported(
+            range.start,
+            "unsupported Rhino surface class",
+        ));
     };
     if reader.remaining() != 0 {
         return Err(error(
@@ -149,7 +150,7 @@ fn read_clipping_plane_surface(
     }
     let mut payload = BoundedReader::new(data, outer.body.start, outer.body.end)?;
     if payload.i32()? != 1 || payload.i32()? != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             outer.body.start,
             "unsupported clipping-plane surface version",
         ));
@@ -196,14 +197,14 @@ fn read_clipping_plane(
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     if payload.i32()? != 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping-plane major version",
         ));
     }
     let minor = payload.i32()?;
     if !(0..=5).contains(&minor) {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping-plane minor version",
         ));
@@ -252,7 +253,7 @@ fn read_uuid_list(
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     if payload.i32()? != 1 || payload.i32()? != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping viewport-list version",
         ));
@@ -309,7 +310,7 @@ fn read_revolution(
     let version = reader.u8()?;
     let major = version >> 4;
     if !(major == 1 || major == 2) || version & 0x0f != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported revolution-surface version",
         ));
@@ -395,7 +396,7 @@ fn read_sum(
 ) -> Result<DecodedSurface, GeometryError> {
     let version_offset = reader.position();
     if reader.u8()? != 0x10 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported sum-surface version",
         ));
@@ -714,13 +715,13 @@ fn read_nurbs_curve_inner(
     let major = version >> 4;
     let minor = version & 0x0f;
     if major != 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS curve version",
         ));
     }
     if minor > 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS curve minor version",
         ));
@@ -814,7 +815,7 @@ pub(crate) fn read_nurbs_surface(
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 1 || version & 0x0f != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS surface version",
         ));
@@ -885,7 +886,7 @@ fn read_plane_surface(
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 != 1 || version & 0x0f > 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             version_offset,
             "unsupported plane-surface version",
         ));

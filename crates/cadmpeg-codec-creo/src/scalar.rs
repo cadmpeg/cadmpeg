@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 
 use crate::psb::{compact_int, short_form_float};
@@ -37,11 +38,7 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
     const LABEL: &[u8] = b"double_xar\0";
     let mut tables = Vec::new();
     let mut search = 0;
-    while let Some(relative) = data
-        .get(search..)
-        .and_then(|tail| tail.windows(LABEL.len()).position(|window| window == LABEL))
-    {
-        let offset = search + relative;
+    while let Some(offset) = find_from(data, LABEL, search) {
         let count_offset = offset + LABEL.len();
         if data.get(count_offset) != Some(&0xf8) {
             search = count_offset;

@@ -87,6 +87,7 @@ mod bytes;
 pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod design;
+mod error;
 #[allow(dead_code)] // Multi-document helpers remain behind the codec facade.
 pub(crate) mod f3z;
 pub(crate) mod history;
@@ -94,6 +95,7 @@ mod history_records;
 mod ids;
 /// Byte-offset constants generated from `docs/layouts/f3d.toml`.
 pub(crate) mod layout;
+pub(crate) mod loss;
 mod manifest;
 pub(crate) mod materials;
 mod metastream;
@@ -108,6 +110,7 @@ mod writer;
 pub(crate) mod xref;
 mod zip_write;
 
+use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
@@ -116,6 +119,8 @@ use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
 use std::io::Write;
+
+use crate::loss::F3dLossCode;
 
 /// Validate the typed Fusion-native namespace.
 pub fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::Finding> {
@@ -192,7 +197,7 @@ impl CodecBackend for F3dCodec {
         if container::DETECT_MARKERS
             .iter()
             .chain(container::F3Z_DETECT_MARKERS)
-            .any(|m| contains_subslice(prefix, m))
+            .any(|m| contains(prefix, m))
         {
             Confidence::High
         } else {
@@ -253,13 +258,9 @@ impl Encoder for F3dCodec {
             (false, false) => FidelityResolution::NotProvided,
         };
         let losses = matches!(fidelity, FidelityResolution::Degraded { .. })
-            .then(|| cadmpeg_ir::LossNote {
-                code: cadmpeg_ir::LossKind::shared(
-                    cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable,
-                ),
-                severity: cadmpeg_ir::Severity::Blocking,
-                message: "preserved F3D source image is unavailable; regenerated from IR".into(),
-                provenance: None,
+            .then(|| {
+                F3dLossCode::SourcePreservedImageUnavailable
+                    .note("preserved F3D source image is unavailable; regenerated from IR")
             })
             .into_iter()
             .collect();
@@ -279,13 +280,6 @@ impl Encoder for F3dCodec {
         };
         Ok(ExportPlan::buffered(report, bytes))
     }
-}
-
-fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return false;
-    }
-    haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 #[cfg(test)]

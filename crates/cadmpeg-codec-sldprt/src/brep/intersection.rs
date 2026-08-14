@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 
+use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -234,7 +235,7 @@ fn term_records(bytes: &[u8]) -> HashMap<u16, Vec<[f64; 3]>> {
     for body in record_bodies(bytes, 0x29) {
         term_at(bytes, body, &mut out);
     }
-    for label in find_bytes(bytes, b"term_use") {
+    for label in find_iter(bytes, b"term_use").collect::<Vec<_>>() {
         let tail = label + b"term_use".len();
         if bytes.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             term_at(bytes, tail + INLINE_TERM_TAIL.len(), &mut out);
@@ -273,7 +274,7 @@ fn uv_records(bytes: &[u8]) -> HashMap<u16, Vec<UvRecord>> {
             out.entry(attr).or_default().push(shape);
         }
     }
-    for label in find_bytes(bytes, b"values") {
+    for label in find_iter(bytes, b"values").collect::<Vec<_>>() {
         let tail = label + b"values".len();
         if bytes.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             if let Some((attr, shape)) = uv_at(bytes, tail + INLINE_UV_TAIL.len()) {
@@ -486,16 +487,6 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
         });
     }
     out
-}
-
-/// Offsets of every occurrence of `needle`.
-fn find_bytes(bytes: &[u8], needle: &[u8]) -> Vec<usize> {
-    if needle.is_empty() || bytes.len() < needle.len() {
-        return Vec::new();
-    }
-    (0..=bytes.len() - needle.len())
-        .filter(|&at| &bytes[at..at + needle.len()] == needle)
-        .collect()
 }
 
 #[cfg(test)]

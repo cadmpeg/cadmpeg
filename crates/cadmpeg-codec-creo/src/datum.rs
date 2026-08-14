@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard model-space datum planes stored in `ActDatums`.
 
+use cadmpeg_core::bytes::find_from as find;
+
 use crate::scalar;
 use crate::surface::{SurfaceKind, SurfaceRow};
 
@@ -140,13 +142,6 @@ pub fn named_plane(payload: &[u8]) -> Option<DatumPlane> {
         ],
         offset_in_payload: outline,
     })
-}
-
-fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    data.get(from..)?
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|relative| from + relative)
 }
 
 /// Decode one named-outline slot token at `offset`, given the number of slots

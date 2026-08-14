@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stable loss vocabulary for FreeCAD `.fcstd` decoding and writing.
+//! Stable loss vocabulary for `FreeCAD` `.fcstd` decoding and writing.
 //!
 //! Every fallback, approximation, and drop the codec reports carries a
 //! stable machine-readable code from [`FreecadLossCode`]. Codes are the gating
@@ -31,6 +31,7 @@ pub enum FreecadLossCode {
 
 impl FreecadLossCode {
     /// Every code, in declaration order.
+    #[cfg(test)]
     pub const ALL: &'static [FreecadLossCode] = &[
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
@@ -60,7 +61,9 @@ impl FreecadLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::FeatureNativeKindRetained => LossTaxonomy::FeatureHistoryRetained,
-            Self::SketchNativeGeometry | Self::SketchNativeConstraint => LossTaxonomy::RecordNotTyped,
+            Self::SketchNativeGeometry | Self::SketchNativeConstraint => {
+                LossTaxonomy::RecordNotTyped
+            }
         }
     }
 
@@ -91,8 +94,9 @@ impl FreecadLossCode {
 
 #[cfg(test)]
 mod tests {
-    use super::FreecadLossCode;
     use std::collections::BTreeSet;
+
+    use super::FreecadLossCode;
 
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]

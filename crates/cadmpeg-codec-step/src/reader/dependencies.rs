@@ -3,12 +3,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
+use cadmpeg_ir::report::LossNote;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
 use super::StageOutcome;
+use crate::loss::StepLossCode;
 
 pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
     let mut losses = Vec::new();
@@ -29,7 +30,7 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
                                 &mut losses,
                                 id,
                                 "document identifier",
-                                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                                StepLossCode::MetadataStringInvalid,
                             )
                         })
                         .unwrap_or_default(),
@@ -42,7 +43,7 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
                                 &mut losses,
                                 id,
                                 "document name",
-                                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                                StepLossCode::MetadataStringInvalid,
                             )
                         })
                         .unwrap_or_default(),
@@ -85,7 +86,7 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
                         &mut losses,
                         id,
                         "document reference source",
-                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                        StepLossCode::MetadataStringInvalid,
                     )
                 })
                 .unwrap_or_default();
@@ -147,7 +148,7 @@ fn source_text(
             losses,
             record_id,
             field,
-            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+            StepLossCode::MetadataStringInvalid,
         ),
         Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field),
         _ => None,

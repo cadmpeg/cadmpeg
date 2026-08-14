@@ -10,13 +10,14 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::sketches::SketchGeometry;
 
 use crate::container::{self, role, ContainerScan};
+use crate::loss::CreoLossCode;
 
 use super::super::analytic::is_axis_aligned;
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
     push_carrier_transfer_notes, push_legacy_value_losses, push_structural_layer_notes,
 };
-use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::DecodeReport;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
     let model = &ir.model;
@@ -92,12 +93,10 @@ pub(in super::super) fn build_report(
     let mut losses = Vec::new();
 
     if container_only {
-        losses.push(LossNote {
-            code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::ContainerOnly),
-            severity: Severity::Info,
-            message: "Container-only decode requested; entity transfer was skipped.".to_string(),
-            provenance: None,
-        });
+        losses.push(
+            CreoLossCode::ContainerOnlyDecode
+                .note("Container-only decode requested; entity transfer was skipped."),
+        );
     }
 
     // The namespace census: what is byte-backed and readable.
@@ -111,60 +110,50 @@ pub(in super::super) fn build_report(
         .census
         .crv_array_count
         .map_or_else(|| "n/a".to_string(), |c| c.to_string());
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::CarrierSummary),
-        severity: Severity::Info,
-        message: format!(
-            "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
-             census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
-             prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
-             Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
-             plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional \
-             surface-of-extrusion planes, \
-             topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a \
-             resolved axis-normal cap plane, four-entry two-cap and blind \
-             circular-sweep cylinders, \
-             four-entry simple-hole cylinders with complete cap outlines, radius-anchored \
-             class-911 counterbore and bore patches, and compact simple-hole cylinders with \
-             complete positional carriers, complementary split-outline cylinders \
-             bound to an axis-normal plane, complete positional cylinder bodies, \
-             complete support-apex and planar-envelope positional cones, and complete \
-             local-system positional tori transfer as carriers; \
-             other parameter bodies remain structural records.",
-            scan.framing.sections.len(),
-            scan.framing.layout.token(),
-            scan.surfaces.rows.len(),
-            scan.curves.prototypes.len(),
-            scan.curves.topology_rows.len(),
-            scan.topology.loops.len(),
-        ),
-        provenance: None,
-    });
+    losses.push(CreoLossCode::ContainerCensus.note(format!(
+        "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
+         census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
+         prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
+         Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
+         plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional \
+         surface-of-extrusion planes, \
+         topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a \
+         resolved axis-normal cap plane, four-entry two-cap and blind \
+         circular-sweep cylinders, \
+         four-entry simple-hole cylinders with complete cap outlines, radius-anchored \
+         class-911 counterbore and bore patches, and compact simple-hole cylinders with \
+         complete positional carriers, complementary split-outline cylinders \
+         bound to an axis-normal plane, complete positional cylinder bodies, \
+         complete support-apex and planar-envelope positional cones, and complete \
+         local-system positional tori transfer as carriers; \
+         other parameter bodies remain structural records.",
+        scan.framing.sections.len(),
+        scan.framing.layout.token(),
+        scan.surfaces.rows.len(),
+        scan.curves.prototypes.len(),
+        scan.curves.topology_rows.len(),
+        scan.topology.loops.len(),
+    )));
 
     push_legacy_value_losses(&mut losses, &coverage);
 
     // The core prototype-vs-instance limitation.
-    losses.push(LossNote {
-        code: cadmpeg_ir::report::LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-        severity: Severity::Blocking,
-        message: format!(
-            "General model B-rep transfer remains incomplete. Native face components transfer \
-             when every boundary edge has solved vertex orbits, face orientation is unique, and \
-             every loop is complete; a multi-loop planar face additionally requires one strict \
-             containment outer boundary. Selected \
-             cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
-             a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
-             square cap outline establishes the complete axis placement and radius, or a compact \
-             class-911 table owns a complete positional cylinder carrier, a class-911 \
-             counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature \
-             patches have complementary square outline bounds on one axis-normal plane. Later positional \
-             instances do not inherit prototype placement or scalar \
-             defaults; they require their per-instance parameter bodies \
-             ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
-             records."
-        ),
-        provenance: None,
-    });
+    losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
+        "General model B-rep transfer remains incomplete. Native face components transfer \
+         when every boundary edge has solved vertex orbits, face orientation is unique, and \
+         every loop is complete; a multi-loop planar face additionally requires one strict \
+         containment outer boundary. Selected \
+         cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
+         a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
+         square cap outline establishes the complete axis placement and radius, or a compact \
+         class-911 table owns a complete positional cylinder carrier, a class-911 \
+         counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature \
+         patches have complementary square outline bounds on one axis-normal plane. Later positional \
+         instances do not inherit prototype placement or scalar \
+         defaults; they require their per-instance parameter bodies \
+         ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
+         records."
+    )));
 
     push_carrier_transfer_notes(
         &mut losses,

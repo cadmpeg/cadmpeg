@@ -177,9 +177,7 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
 
 pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match geometry {
-        CurveGeometry::Line { origin, direction } => {
-            Some(origin.translated(*direction, parameter))
-        }
+        CurveGeometry::Line { origin, direction } => Some(origin.translated(*direction, parameter)),
         CurveGeometry::Circle {
             center,
             axis,

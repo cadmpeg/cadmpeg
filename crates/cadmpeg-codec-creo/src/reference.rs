@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model-space reference entities from `MdlRefInfo`.
 
+use cadmpeg_core::bytes::find_in;
+
 use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
 
@@ -272,14 +274,6 @@ fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f6
         candidate = Some(values);
     }
     candidate
-}
-
-fn find_in(data: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
-    (start <= end && end <= data.len()).then_some(())?;
-    data[start..end]
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|relative| start + relative)
 }
 
 const CONIC_FIELD_HEADERS: [&[u8]; 10] = [
