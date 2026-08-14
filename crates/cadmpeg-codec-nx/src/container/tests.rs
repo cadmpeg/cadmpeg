@@ -164,6 +164,22 @@ fn container_reads_rmfastload_table_from_product_boundary_without_range_floor() 
 }
 
 #[test]
+fn fuzz_oom_splmsstr_header_is_rejected_without_count_allocation() {
+    // libFuzzer artifact: SPLMSSTR + HEADER with a footer offset past EOF and a
+    // directory count that would request >2 GiB if taken as a Vec capacity.
+    let bytes: &[u8] = &[
+        0x53, 0x50, 0x4c, 0x4d, 0x53, 0x53, 0x54, 0x52, 0x26, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0x0a, 0x00, 0x06, 0x00, 0xff, 0xff, 0x90, 0xff, 0x48, 0x45, 0x41, 0x44, 0x45,
+        0x52, 0x20, 0x00, 0x00, 0x6f, 0x2f, 0xf9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x04, 0x00, 0x04,
+    ];
+    assert!(container::scan_bytes(bytes.to_vec()).is_err());
+    let _ = NxCodec.detect(bytes);
+    let _ = NxCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
+    let _ = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
+}
+
+#[test]
 fn container_bounds_rmfastload_table_at_its_first_product_record() {
     let mut payload = b"UGS::Solid::Topol".to_vec();
     append_rmfastload_table(&mut payload, [1, 2, 3]);

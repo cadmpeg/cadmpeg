@@ -307,3 +307,11 @@ fn every_decode_path_populates_v1_annotations() {
         &container_only.source_fidelity().annotations,
     );
 }
+
+#[test]
+fn fuzz_crash_container_bytes_do_not_panic() {
+    let bytes: &[u8] = include_bytes!("test_support/fuzz_catia_container_crash.bin");
+    let _ = CatiaCodec.detect(bytes);
+    let _ = CatiaCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
+    let _ = CatiaCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
+}

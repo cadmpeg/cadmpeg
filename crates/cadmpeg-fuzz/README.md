@@ -39,9 +39,26 @@ cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz \
   f3d_container crates/cadmpeg-fuzz/artifacts/f3d_container/<artifact>
 ```
 
-Reduce and classify crash artifacts before promoting them into `seeds/`. Seed
-files should be small inputs that reach a distinct parser state. Keep each seed
-in the directory named for its target.
+Reduce and classify crash artifacts before promoting them into `seeds/` or a
+codec unit test. Seed files should be small inputs that reach a distinct parser
+state. Keep each seed in the directory named for its target.
+
+A reduced `crash-*` or `oom-*` input becomes a regression only when a codec
+unit test feeds those bytes through the same public entry the harness used
+(`detect` / `inspect` / `decode`, or the `::fuzz` wrapper). The artifact
+directory stays gitignored; the unit test is the gate.
+
+Container and end-to-end harnesses use `DecodeOptions::default()` (desktop
+salvage ceilings). A declared-count allocation that exceeds remaining input is
+a parser bug under that profile. The nightly smoke job passes
+`-rss_limit_mb=2048`; an OOM on a tens-of-bytes input is not a policy-legal
+result.
+
+Checked-in dictionaries live under `dictionaries/`. `cargo-fuzz` does not load
+them by itself. Pass `-dict=crates/cadmpeg-fuzz/dictionaries/<target>.dict`
+after `--` when a target-specific file exists, or the format-prefix file
+(`step.dict`, `iges.dict`, `sat.dict`) for the text formats. The nightly smoke
+job does this.
 
 ## Targets
 
@@ -118,7 +135,7 @@ IR and STEP:
   degenerate geometry present in the document.
 - `decode_pipeline_mutated` uses the first byte to mutate the remaining
   container bytes, then runs F3D, Inventor, FreeCAD, SolidWorks, CATIA, Creo,
-  NX, and Rhino detection, inspection, and decoding.
+  NX, Rhino, IGES, SAT, and STEP detection, inspection, and decoding.
 
 Every harness treats a panic, abort, sanitizer finding, or libFuzzer timeout as
 a failure. Parse and validation errors are expected results for malformed
@@ -145,7 +162,9 @@ cargo +nightly run --bin generate_iges_seeds
 
 `generate_all_seeds` writes container and IR seeds, then derives deterministic
 truncation, byte-flip, and oversized-length mutants. `generate_submodule_seeds`
-writes focused parser inputs. `generate_iges_seeds` writes valid IGES 5.3 point
+writes focused parser inputs, including CATIA catalog/graph/topology, Creo
+datum/scalar, NX OM/deltas/intersection/topology, and Rhino
+cage/hatch/polyedge. `generate_iges_seeds` writes valid IGES 5.3 point
 and trimmed-sheet seeds for `iges_container`. `generate_all_seeds` writes
 version-selecting IR seeds for `iges_writer`.
 
@@ -176,4 +195,7 @@ libFuzzer can mutate them into malformed cases.
 
 `cargo fuzz list --fuzz-dir crates/cadmpeg-fuzz` also prints the seed
 generator binaries because this package declares them as bins. They are Cargo
-utilities, not fuzz targets.
+utilities, not fuzz targets. The nightly smoke job skips bins that have no
+matching `fuzz_targets/<name>.rs` file, continues after a failing target, loads
+a dictionary when one exists, and caches `corpus/` between runs (capped at
+1 GiB).

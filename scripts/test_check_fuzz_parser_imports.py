@@ -60,6 +60,27 @@ class ScanSource(unittest.TestCase):
             ["cadmpeg_codec_creo::scalar"],
         )
 
+    def test_catia_catalog_is_banned(self) -> None:
+        self.assertEqual(
+            checker.scan_source("use cadmpeg_codec_catia::catalog::parse;"),
+            ["cadmpeg_codec_catia::catalog"],
+        )
+
+    def test_sldprt_parasolid_is_banned(self) -> None:
+        self.assertEqual(
+            checker.scan_source("use cadmpeg_codec_sldprt::parasolid::extract_streams;"),
+            ["cadmpeg_codec_sldprt::parasolid"],
+        )
+
+    def test_doc_comment_paths_are_ignored(self) -> None:
+        self.assertEqual(
+            checker.scan_source(
+                "//! Feeds bytes through `cadmpeg_codec_sldprt::container::scan_bytes`.\n"
+                "use cadmpeg_codec_sldprt::fuzz::container;\n"
+            ),
+            [],
+        )
+
 
 class CheckTree(unittest.TestCase):
     def test_missing_directory(self) -> None:
@@ -92,10 +113,22 @@ class CheckTree(unittest.TestCase):
             {
                 "nx_container.rs": "use cadmpeg_codec_nx::container;\n",
                 "creo_container.rs": "use cadmpeg_codec_creo::container::scan_bytes;\n",
+                "catia_container.rs": "use cadmpeg_codec_catia::container;\n",
                 "nx_om.rs": "use cadmpeg_codec_nx::fuzz;\n",
             }
         )
         self.assertEqual(checker.check(root), [])
+
+    def test_reports_catia_parser_imports(self) -> None:
+        root = _tree(
+            {
+                "catia_catalog.rs": "use cadmpeg_codec_catia::catalog;\n",
+            }
+        )
+        failures = checker.check(root)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("catia_catalog.rs", failures[0])
+        self.assertIn("cadmpeg_codec_catia::catalog", failures[0])
 
     def test_ignores_unrelated_targets(self) -> None:
         root = _tree(
