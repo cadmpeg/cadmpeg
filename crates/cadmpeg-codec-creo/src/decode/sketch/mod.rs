@@ -595,40 +595,6 @@ pub(super) fn saved_section_entity_geometry(
     }
 }
 
-#[cfg(test)]
-mod saved_conic_geometry_tests {
-    use super::*;
-
-    #[test]
-    fn coincident_endpoint_conic_materializes_as_a_full_ellipse() {
-        let entity = crate::feature::FeatureSavedEntity::Conic(crate::feature::FeatureSavedConic {
-            entity_id: 2,
-            endpoints: [[Some(0.0), Some(1.0), Some(0.0)]; 2],
-            parameters: [Some(0.0), None],
-            coefficients: [Some(35.0), Some(27.0)],
-            local_system: Some([
-                0.8, -0.6, 0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 1.0, 128.0, 75.0, 0.0,
-            ]),
-            body: Vec::new(),
-            offset: 40,
-        });
-
-        let Some((
-            2,
-            SketchGeometry::Ellipse {
-                start_angle,
-                end_angle,
-                ..
-            },
-            40,
-        )) = saved_section_entity_geometry(&entity)
-        else {
-            panic!("full ellipse");
-        };
-        assert_eq!((start_angle, end_angle), (None, None));
-    }
-}
-
 pub(super) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
     matches!(geometry, SketchGeometry::Circle { .. })
         || matches!(
@@ -5024,3 +4990,6 @@ pub(super) fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
         .fold(0.0_f64, |norm, value| norm.hypot(*value));
     (magnitude.is_finite() && magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
 }
+
+#[cfg(test)]
+mod tests;
