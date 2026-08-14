@@ -20,6 +20,8 @@ use super::intersection_candidates::{
 };
 use super::intersections::carrier_intersection_curve;
 
+const EPS_ON_CURVE: f64 = 1e-7;
+
 pub(in super::super) fn multi_component_intersection_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
@@ -76,7 +78,7 @@ pub(in super::super) fn curve_contains_points(
                 let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
                 let residual = cross(relative, direction);
                 let scale = dot(relative, relative).sqrt().max(1.0);
-                dot(residual, residual).sqrt() <= 1e-7 * scale
+                dot(residual, residual).sqrt() <= EPS_ON_CURVE * scale
             })
         }
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
@@ -95,9 +97,9 @@ pub(in super::super) fn curve_contains_points(
                 let scale = radii.into_iter().fold(1.0, f64::max);
                 let x = dot(relative, x_axis) / radii[0];
                 let y = dot(relative, y_axis) / radii[1];
-                dot(relative, normal).abs() <= 1e-7 * scale
+                dot(relative, normal).abs() <= EPS_ON_CURVE * scale
                     && x.mul_add(x, y * y).is_finite()
-                    && (x.mul_add(x, y * y) - 1.0).abs() <= 1e-7
+                    && (x.mul_add(x, y * y) - 1.0).abs() <= EPS_ON_CURVE
             })
         }
         CurveGeometry::Parabola { .. } | CurveGeometry::Hyperbola { .. } => points

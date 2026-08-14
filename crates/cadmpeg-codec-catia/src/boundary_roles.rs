@@ -5,6 +5,8 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::LoopBoundaryRole;
 
+const EPS_PLANE_AXES_ORTHO: f64 = 1e-8;
+
 fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
     let mut inside = false;
     for (left, right) in polygon
@@ -158,7 +160,7 @@ pub(crate) fn classify_planar_boundary_roles(
     let Some(u_axis) = u_axis.unit() else {
         return unspecified();
     };
-    if normal.dot(u_axis).abs() > 1e-8 {
+    if normal.dot(u_axis).abs() > EPS_PLANE_AXES_ORTHO {
         return unspecified();
     }
     let Some(v_axis) = normal.cross(u_axis).unit() else {

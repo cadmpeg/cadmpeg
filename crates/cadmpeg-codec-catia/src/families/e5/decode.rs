@@ -31,6 +31,7 @@ use crate::families::FamilyOutput;
 use crate::solve::UnionFind;
 
 const E5_ENDPOINT_MATCH_TOLERANCE: f64 = 2e-3;
+const EPS_AXIS_ALIGN: f64 = 1e-8;
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
@@ -502,7 +503,8 @@ pub(crate) fn solve_e5_plane_frame(
         if !candidates
             .iter()
             .any(|(existing_normal, existing_u): &(Vector3, Vector3)| {
-                existing_normal.dot(normal) > 1.0 - 1e-8 && existing_u.dot(u_axis) > 1.0 - 1e-8
+                existing_normal.dot(normal) > 1.0 - EPS_AXIS_ALIGN
+                    && existing_u.dot(u_axis) > 1.0 - EPS_AXIS_ALIGN
             })
         {
             candidates.push((normal, u_axis));
@@ -521,7 +523,8 @@ pub(crate) fn solve_e5_plane_frame(
         };
         if !canonical.iter().any(
             |(existing_normal, existing_u, _): &(Vector3, Vector3, [f64; 2])| {
-                existing_normal.dot(normal) > 1.0 - 1e-8 && existing_u.dot(u_axis) > 1.0 - 1e-8
+                existing_normal.dot(normal) > 1.0 - EPS_AXIS_ALIGN
+                    && existing_u.dot(u_axis) > 1.0 - EPS_AXIS_ALIGN
             },
         ) {
             canonical.push((normal, u_axis, uv_scale));

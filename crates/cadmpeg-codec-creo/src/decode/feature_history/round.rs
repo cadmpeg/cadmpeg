@@ -16,6 +16,8 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_CYLINDER_FIT: f64 = 1e-8;
+
 pub(in super::super) fn parallel_support_radius(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
 ) -> Option<f64> {
@@ -130,7 +132,7 @@ pub(in super::super) fn slot_fillet_cylinder(
                     std::array::from_fn(|index| origin[index] - plane.origin[index]),
                 )
                 .abs();
-                (distance - radius).abs() <= 1e-8 * scale
+                (distance - radius).abs() <= EPS_CYLINDER_FIT * scale
             });
             if tangent_to_all {
                 candidates.push(CylinderEquation {
@@ -156,7 +158,7 @@ pub(in super::super) fn slot_fillet_cylinder(
                     cross(origin_delta, first.axis),
                 )
                 .sqrt()
-                    <= 1e-8 * scale
+                    <= EPS_CYLINDER_FIT * scale
         })
         .then_some(first)
 }

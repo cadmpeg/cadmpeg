@@ -16,6 +16,8 @@ use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+const EPS_SENSE_ALIGN: f64 = 1e-8;
+
 pub(in super::super) fn add_extrusion_pcurve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -304,7 +306,7 @@ pub(in super::super) fn revolution_face_sense(
     ];
     let carrier_normal = normalized(cross(du, dv))?;
     let alignment = dot(carrier_normal, outward);
-    (alignment.abs() > 1e-8).then_some(())?;
+    (alignment.abs() > EPS_SENSE_ALIGN).then_some(())?;
     Some(if alignment.is_sign_positive() {
         Sense::Forward
     } else {

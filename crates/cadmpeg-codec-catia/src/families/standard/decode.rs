@@ -39,6 +39,9 @@ use crate::solve::{mesh_quotient, missing_edge};
 use crate::variant::Variant;
 use crate::wire::records::ConsolidatedRecord;
 
+const EPS_PARAM_RESOLUTION_SPAN: f64 = 1e-7;
+const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
+
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -2867,8 +2870,9 @@ fn standard_limit_curve_point_parameter(
         .sum::<f64>();
     let parameter_tolerance = (4.0 * tolerance * parameter_span
         / control_polygon_length.max(tolerance))
-    .max(1e-9 * parameter_span.max(1.0));
-    let parameter_resolution = 0.05 * parameter_tolerance.min(1e-7 * parameter_span.max(1.0));
+    .max(EPS_PARAM_TOLERANCE_SPAN * parameter_span.max(1.0));
+    let parameter_resolution =
+        0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span.max(1.0));
     let mut parameters = Vec::new();
     for span in 0..span_count {
         collect_bezier_point_parameters(
