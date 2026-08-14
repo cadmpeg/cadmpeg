@@ -1,8 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry decode, active-body selection, and inactive-topology prune.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::emit::{
+    annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
+    retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream,
+};
+use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
+use super::report::build_geometry_report;
+use super::support_uv::{
+    assign_ext11_support_uv, attach_completed_intersection_pcurves, complete_ext11_support_uv,
+    complete_parameterization_equivalent_support_uv, complete_support_uv,
+    invalidate_inconsistent_support_uv, linear_knots, validate_serialized_support_uv,
+};
+use super::{report_untransferred_streams, Counts, Scan};
+use crate::geometry;
+use crate::parasolid::StreamKind;
+use crate::topology::{Graph, Node};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
+    NurbsCurve, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{
+    BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
+    ShellId, SurfaceId, UnknownId, VertexId,
+};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn ordered_point_candidates<'a>(
     stream: &[u8],

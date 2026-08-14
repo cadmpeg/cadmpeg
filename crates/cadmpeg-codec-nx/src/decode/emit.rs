@@ -1,8 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Topology emission, unresolved carriers, and source metadata.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::offset::point_distance;
+use super::pcurves::{
+    attach_tolerant_edge_intersections, complete_exact_boundary_intersection_pcurves,
+    complete_intersection_pcurves_from_coedge_incidence,
+    complete_intersection_pcurves_from_opposite_charts,
+    complete_intersection_supports_from_edge_incidence,
+    complete_tolerant_intersection_pcurves_from_serialized_branches, ordered_parameter_range,
+    pcurve_matches_edge, pcurve_matches_edge_range_with_index, pcurve_parameter_range,
+};
+use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
+use crate::parasolid::{Stream, StreamKind};
+use crate::topology::{Graph, Node};
+use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::eval::curve_point;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, ProceduralCurve,
+    ProceduralCurveDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
+};
+use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+};
+use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_topology(

@@ -1,8 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Intersection pcurve completion, edge incidence, and boundary transfer.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::blend::{
+    blend_boundary_parameter_from_support_pcurve, blend_surface_definition,
+    blend_surface_parameters_for_fit_with_grid, blend_surface_point_inner_with_index,
+    closest_spine_parameter, decoded_surface_point, decoded_surface_point_inner, model_curve_point,
+    model_curve_tangent, BlendParameterGrid, BoundaryInverseTarget,
+};
+use super::offset::{
+    lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index, point_distance,
+    surface_parameter_domain, surface_parameter_periods,
+};
+use super::support_uv::{
+    blend_spine_cache_fit_tolerance, linear_knots, parameterization_equivalent_surfaces,
+    pcurve_requires_completion,
+};
+use crate::native::vector::{dot_vector, unit_vector};
+use crate::topology::{Graph, Node};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::{
+    analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
+    model_surface_partials_by_id, nurbs_curve_speed_bound, nurbs_surface_isocurve,
+    nurbs_surface_parameter_within_tolerance, pcurve_tangent, pcurve_uv, surface_second_partials,
+};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+    SurfaceGeometry, SurfaceParameterAxis, TolerantIntersectionParameterization,
+};
+use cadmpeg_ir::ids::{
+    CoedgeId, CurveId, EdgeId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::AnnotationBuilder;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn pcurve_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     let PcurveGeometry::Nurbs { knots, .. } = geometry else {
