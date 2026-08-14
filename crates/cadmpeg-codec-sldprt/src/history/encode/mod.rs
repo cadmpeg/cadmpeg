@@ -17,8 +17,12 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureTreeNodeRole};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-pub(super) type NeutralFeatureEncoding =
-    (String, BTreeMap<String, String>, BTreeMap<String, String>);
+/// Native XML kind plus parameter and property maps for a written feature.
+pub(super) struct NeutralFeatureEncoding {
+    pub(super) kind: String,
+    pub(super) parameters: BTreeMap<String, String>,
+    pub(super) properties: BTreeMap<String, String>,
+}
 
 pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
     pub(super) feature: &'context cadmpeg_ir::features::Feature,

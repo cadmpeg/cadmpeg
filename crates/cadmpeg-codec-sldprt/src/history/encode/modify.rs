@@ -2,8 +2,7 @@
 //! Fillet, chamfer, combine, face/body edit, dome, flex, and scale write encoders.
 
 use super::super::{
-    body_retention_mode, feature_family, feature_input_class, format_angle_rad, format_length_mm,
-    indexed_name, is_chamfer, is_fillet, parse_bounded_angle_rad,
+    body_retention_mode, format_angle_rad, format_length_mm, indexed_name, parse_bounded_angle_rad,
 };
 use super::format::{format_angle_like, format_length_like, format_point3_mm, format_vector3};
 use super::support::{
@@ -12,6 +11,7 @@ use super::support::{
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
+use crate::history::classify::{feature_family, feature_input_class, is_chamfer, is_fillet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferGroup, ChamferSpec,
@@ -143,11 +143,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     existing.map_or("", |record| record.id.as_str()),
                 );
             }
-            (
-                existing.map_or_else(|| "Fillet".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Fillet".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -320,11 +320,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     existing.map_or("", |record| record.id.as_str()),
                 );
             }
-            (
-                existing.map_or_else(|| "Chamfer".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Chamfer".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -372,13 +372,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
-            (
-                existing.map_or_else(|| "Combine".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Combine".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -410,13 +410,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(reverse) = reverse {
                 properties.insert("Reverse".into(), reverse.to_string());
             }
-            (
-                existing.map_or_else(|| "CutWithSurface".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing
+                    .map_or_else(|| "CutWithSurface".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -471,8 +472,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert("Mode".into(), "Keep".into());
                 }
             }
-            (
-                existing.map_or_else(
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(
                     || match mode {
                         BodyRetentionMode::Unresolved => "Feature".into(),
                         BodyRetentionMode::DeleteSelected => "DeleteBody".into(),
@@ -480,11 +481,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     },
                     |record| record.kind.clone(),
                 ),
-                existing
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -508,13 +509,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert("Faces".into(), faces.expect("checked above"));
             properties.insert("Heal".into(), heal.to_string());
-            (
-                existing.map_or_else(|| "DeleteFace".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "DeleteFace".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -543,13 +544,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 "ReplacementFaces".into(),
                 replacements.expect("checked above"),
             );
-            (
-                existing.map_or_else(|| "ReplaceFace".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "ReplaceFace".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -611,11 +612,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert("Angle".into(), format_angle_rad(angle.0));
                 }
             }
-            (
-                existing.map_or_else(|| "MoveFace".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "MoveFace".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -678,11 +679,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.remove("Rotation");
                 }
             }
-            (
-                existing.map_or_else(|| "MoveBody".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "MoveBody".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -736,11 +737,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(reverse) = reverse {
                 properties.insert("Reverse".into(), reverse.to_string());
             }
-            (
-                existing.map_or_else(|| "Dome".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Dome".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -827,11 +828,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert("Distance".into(), format_length_mm(distance.0));
                 }
             }
-            (
-                existing.map_or_else(|| "Flex".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Flex".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -926,11 +927,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 None => {}
             }
-            (
-                existing.map_or_else(|| "Scale".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Scale".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 }

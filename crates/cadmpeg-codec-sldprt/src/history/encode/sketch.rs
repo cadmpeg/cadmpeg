@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch, spatial-sketch, sketch-block, and wrap write encoders.
 
-use super::super::{feature_input_class, format_length_mm, sketch_block_placement};
+use super::super::{format_length_mm, sketch_block_placement};
 use super::support::{face_selection_value, profile_source, require_same_family};
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
+use crate::history::classify::feature_input_class;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FaceSelection, FeatureId, Length, ProfileRef, WrapMode};
 
@@ -38,11 +39,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            (
-                record.kind.clone(),
-                record.parameters.clone(),
-                record.properties.clone(),
-            )
+            NeutralFeatureEncoding {
+                kind: record.kind.clone(),
+                parameters: record.parameters.clone(),
+                properties: record.properties.clone(),
+            }
         })
     }
 
@@ -77,11 +78,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            (
-                record.kind.clone(),
-                record.parameters.clone(),
-                record.properties.clone(),
-            )
+            NeutralFeatureEncoding {
+                kind: record.kind.clone(),
+                parameters: record.parameters.clone(),
+                properties: record.properties.clone(),
+            }
         })
     }
 
@@ -149,11 +150,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 .into(),
             );
-            (
-                existing.map_or_else(|| "Wrap".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Wrap".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -162,13 +163,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             require_same_family(existing, &feature.id, &["Sketch"])?;
-            (
-                existing.map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Sketch".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
-                feature.source_properties.clone(),
-            )
+                properties: feature.source_properties.clone(),
+            }
         })
     }
 
@@ -177,13 +178,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             require_same_family(existing, &feature.id, &["Sketch"])?;
-            (
-                "3DSketch".into(),
-                existing
+            NeutralFeatureEncoding {
+                kind: "3DSketch".into(),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
-                feature.source_properties.clone(),
-            )
+                properties: feature.source_properties.clone(),
+            }
         })
     }
 }

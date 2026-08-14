@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-plane, axis, point, and coordinate-system write encoders.
 
-use super::super::{is_offset_plane, valid_coordinate_frame, valid_direction, valid_plane_frame};
+use super::super::{valid_coordinate_frame, valid_direction, valid_plane_frame};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::require_same_family;
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
+use crate::history::classify::is_offset_plane;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DatumPlaneReference, Length, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -37,11 +38,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            (
-                record.kind.clone(),
-                record.parameters.clone(),
-                feature.source_properties.clone(),
-            )
+            NeutralFeatureEncoding {
+                kind: record.kind.clone(),
+                parameters: record.parameters.clone(),
+                properties: feature.source_properties.clone(),
+            }
         })
     }
 
@@ -84,13 +85,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert("Origin".into(), format_point3_mm(*origin));
             properties.insert("Normal".into(), format_vector3(*normal));
             properties.insert("UAxis".into(), format_vector3(*u_axis));
-            (
-                existing.map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing
+                    .map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -162,11 +164,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         .map(String::as_str),
                 ),
             );
-            (
-                existing.map_or_else(|| "Plane".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Plane".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -197,13 +199,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert("Origin".into(), format_point3_mm(*origin));
             properties.insert("Direction".into(), format_vector3(*direction));
-            (
-                existing.map_or_else(|| "ReferenceAxis".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "ReferenceAxis".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -226,13 +228,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             require_same_family(existing, &feature.id, &["ReferencePoint"])?;
             let mut properties = feature.source_properties.clone();
             properties.insert("Position".into(), format_point3_mm(*position));
-            (
-                existing.map_or_else(|| "ReferencePoint".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing
+                    .map_or_else(|| "ReferencePoint".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -262,13 +265,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert("XAxis".into(), format_vector3(*x_axis));
             properties.insert("YAxis".into(), format_vector3(*y_axis));
             properties.insert("ZAxis".into(), format_vector3(*z_axis));
-            (
-                existing.map_or_else(|| "CoordinateSystem".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing
+                    .map_or_else(|| "CoordinateSystem".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 }

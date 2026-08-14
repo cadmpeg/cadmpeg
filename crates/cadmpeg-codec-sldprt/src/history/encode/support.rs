@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Write-only helpers for native feature-record encoding.
 
-use super::super::feature_family;
 use crate::classification::{classify, FeatureClass};
+use crate::history::classify::feature_family;
 use crate::records::Feature;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{

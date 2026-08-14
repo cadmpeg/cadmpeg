@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude and hole write encoders.
 
-use super::super::{extrude_feature_op, format_angle_rad, format_length_mm, is_extrude};
+use super::super::{format_angle_rad, format_length_mm};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
     face_selection_value, profile_source, require_direction, resolved_boolean_op,
@@ -9,6 +9,7 @@ use super::support::{
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
+use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource,
@@ -304,7 +305,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 },
                 |record| record.kind.clone(),
             );
-            (kind, parameters, properties)
+            NeutralFeatureEncoding {
+                kind,
+                parameters,
+                properties,
+            }
         })
     }
 
@@ -550,11 +555,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )))
                 }
             }
-            (
-                existing.map_or_else(|| "Hole".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Hole".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 }

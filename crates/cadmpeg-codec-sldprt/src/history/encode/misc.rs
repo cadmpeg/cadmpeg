@@ -48,16 +48,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            (
-                existing.map_or_else(
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(
                     || feature_tree_node_kind(*role).into(),
                     |record| record.kind.clone(),
                 ),
-                existing
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
-                feature.source_properties.clone(),
-            )
+                properties: feature.source_properties.clone(),
+            }
         })
     }
 
@@ -114,7 +114,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            (record.kind.clone(), parameters, properties)
+            NeutralFeatureEncoding {
+                kind: record.kind.clone(),
+                parameters,
+                properties,
+            }
         })
     }
 
@@ -127,19 +131,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let mut merged = feature.source_properties.clone();
         merged.extend(properties.clone());
-        (kind.clone(), parameters.clone(), merged)
+        NeutralFeatureEncoding {
+            kind: kind.clone(),
+            parameters: parameters.clone(),
+            properties: merged,
+        }
     }
 
     pub(super) fn encode_stored_geometry(&self) -> NeutralFeatureEncoding {
         let feature = self.feature;
         let existing = self.existing;
-        (
-            existing.map_or_else(|| "Feature".into(), |record| record.kind.clone()),
-            existing
+        NeutralFeatureEncoding {
+            kind: existing.map_or_else(|| "Feature".into(), |record| record.kind.clone()),
+            parameters: existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default(),
-            feature.source_properties.clone(),
-        )
+            properties: feature.source_properties.clone(),
+        }
     }
 
     pub(super) fn encode_derived_geometry(&self) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -203,16 +211,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert("ZEquation".into(), z_expression.clone());
             properties.insert("Start".into(), start.to_string());
             properties.insert("End".into(), end.to_string());
-            (
-                existing.map_or_else(
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(
                     || "EquationDrivenCurve".into(),
                     |record| record.kind.clone(),
                 ),
-                existing
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -266,13 +274,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
             }
-            (
-                existing.map_or_else(|| "ProjectedCurve".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing
+                    .map_or_else(|| "ProjectedCurve".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -307,13 +316,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert("Segments".into(), segments.join(";"));
             properties.insert("Closed".into(), closed.to_string());
-            (
-                existing.map_or_else(|| "CompositeCurve".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing
+                    .map_or_else(|| "CompositeCurve".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 
@@ -376,11 +386,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
             properties.insert("AxisDirection".into(), format_vector3(*axis_direction));
             properties.insert("Clockwise".into(), clockwise.to_string());
-            (
-                existing.map_or_else(|| "Helix".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Helix".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -444,7 +454,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if properties.contains_key("Clockwise") || *clockwise {
                 properties.insert("Clockwise".into(), clockwise.to_string());
             }
-            (record.kind.clone(), parameters, properties)
+            NeutralFeatureEncoding {
+                kind: record.kind.clone(),
+                parameters,
+                properties,
+            }
         })
     }
 
