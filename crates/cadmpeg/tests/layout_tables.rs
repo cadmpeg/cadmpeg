@@ -256,10 +256,12 @@ where
 
 /// True when `path` names a test module rather than a parser.
 fn is_test_source_path(path: &str) -> bool {
-    Path::new(path).components().any(|component| match component {
-        Component::Normal(name) => name == "tests",
-        _ => false,
-    })
+    Path::new(path)
+        .components()
+        .any(|component| match component {
+            Component::Normal(name) => name == "tests",
+            _ => false,
+        })
 }
 
 /// A token tag that can be emitted as a Rust constant.
@@ -352,9 +354,7 @@ fn rust_hex(value: u64, digits: usize) -> String {
 }
 
 fn rust_byte_array(bytes: &[u8]) -> String {
-    let ascii_ok = bytes
-        .iter()
-        .all(|&b| b == 0 || (0x20..=0x7e).contains(&b));
+    let ascii_ok = bytes.iter().all(|&b| b == 0 || (0x20..=0x7e).contains(&b));
     let has_letter = bytes.iter().any(|&b| b.is_ascii_alphabetic());
     if ascii_ok && has_letter {
         let mut out = String::from("*b\"");
@@ -384,11 +384,7 @@ fn rust_token_ty(value: &TokenConst) -> String {
 }
 
 /// Decode a field `value` against its declared type. `width` is the byte width.
-fn decode_field_value(
-    raw: &toml::Value,
-    ty: &str,
-    width: Option<u64>,
-) -> Result<String, String> {
+fn decode_field_value(raw: &toml::Value, ty: &str, width: Option<u64>) -> Result<String, String> {
     let element = ty.split_once('[').map_or(ty, |(head, _)| head);
     if matches!(
         element,
@@ -955,10 +951,7 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
             if is_test_source_path(&check.path) {
                 push(
                     &mut errors,
-                    format!(
-                        "{at}: code check path `{}` names a test file",
-                        check.path
-                    ),
+                    format!("{at}: code check path `{}` names a test file", check.path),
                 );
             }
             let path = ctx.root.join(&check.path);
@@ -1572,10 +1565,8 @@ fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
                             "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
                             field.name, field.ty, record.section
                         );
-                        let _ = writeln!(
-                            fields_out,
-                            "    pub(crate) const {value_name}: {binding};"
-                        );
+                        let _ =
+                            writeln!(fields_out, "    pub(crate) const {value_name}: {binding};");
                     }
                     Err(message) => errors.push(format!("{at}: {message}")),
                 }

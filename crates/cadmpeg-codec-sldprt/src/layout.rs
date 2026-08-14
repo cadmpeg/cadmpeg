@@ -143,7 +143,10 @@ pub(crate) mod zlb_wrapper_header {
     /// Offset of `magic` (`bytes[16]`). Spec §1.
     pub(crate) const MAGIC: usize = 0;
     /// Stated value of `magic` (`bytes[16]`). Spec §1.
-    pub(crate) const MAGIC_VALUE: [u8; 16] = [0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99];
+    pub(crate) const MAGIC_VALUE: [u8; 16] = [
+        0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef,
+        0x99,
+    ];
     /// Offset of `uncompressed_size` (`u32`, little-endian). Spec §1.
     pub(crate) const UNCOMPRESSED_SIZE: usize = 16;
     /// Offset of `zlib_member_size` (`u32`, little-endian). Spec §1.
@@ -1697,7 +1700,9 @@ pub(crate) mod display_lists_scene_source_binding {
     /// Offset of `marker` (`bytes[12]`). Spec §8.
     pub(crate) const MARKER: usize = 0;
     /// Stated value of `marker` (`bytes[12]`). Spec §8.
-    pub(crate) const MARKER_VALUE: [u8; 12] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00];
+    pub(crate) const MARKER_VALUE: [u8; 12] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00,
+    ];
     /// Offset of `source_id` (`u32`, little-endian). Spec §8.
     pub(crate) const SOURCE_ID: usize = 12;
 }
