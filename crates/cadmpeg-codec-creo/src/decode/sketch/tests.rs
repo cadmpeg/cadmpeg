@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::sketches::SketchGeometry;
+
 use super::*;
 
 #[test]
