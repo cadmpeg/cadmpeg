@@ -1,8 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Certified offset-cache fit and offset-surface parameter inversion.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::blend::{blend_surface_parameters_for_fit_with_grid, BlendParameterGrid};
+use super::support_uv::{linear_knots, missing_support_parameter};
+use crate::native::vector::{cross_vector, dot_vector, unit_vector};
+use crate::topology::{Graph, Node};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::{
+    analytic_surface_parameters, model_surface_partials_by_id, model_surface_point_by_id,
+    nurbs_surface_closest_parameter, nurbs_surface_parameter_within_tolerance,
+    nurbs_surface_partials, surface_partials,
+};
+use cadmpeg_ir::geometry::{
+    IntcurveSupportSide, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn saved_offset_carriers(
     ir: &CadIr,

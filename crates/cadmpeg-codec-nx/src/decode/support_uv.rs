@@ -1,8 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 //! EXT11 support-UV assignment, completion, and equivalent-parameter transfer.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::blend::{
+    blend_boundary_parameter_from_support_pcurve, blend_surface_definition,
+    blend_surface_parameter_grid_with_index, blend_surface_parameters_for_fit_with_grid,
+    blend_surface_parameters_from_grid_for_fit, decoded_surface_point_inner, BlendParameterGrid,
+    BoundaryInverseTarget,
+};
+use super::offset::{
+    continue_surface_intersection_parameters_with_seeds,
+    offset_surface_parameters_with_tolerance_with_index, point_distance, surface_parameters,
+};
+use super::pcurves::pcurve_matches_edge;
+use super::MISSING_TOLERANCE;
+use crate::topology::Graph;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::{
+    analytic_surface_parameters, nurbs_surface_parameter_within_tolerance, pcurve_uv,
+};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::AnnotationBuilder;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
     let mut knots = Vec::with_capacity(parameters.len() + 2);

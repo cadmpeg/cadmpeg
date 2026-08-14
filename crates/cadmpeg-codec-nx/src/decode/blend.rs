@@ -1,8 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Blend-surface evaluation, spine inversion, and closest-pcurve search.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::offset::{
+    least_squares_step, offset_surface_parameters_with_tolerance_with_index,
+    parameter_derivative_step, point_distance,
+};
+use super::support_uv::{parameterization_equivalent_surfaces, procedural_surface_for_carrier};
+use crate::native::vector::{cross_vector, dot_vector, unit_vector};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::{
+    analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
+    model_surface_partials_by_id, model_surface_point_by_id,
+    nurbs_surface_parameter_within_tolerance, pcurve_tangent, pcurve_uv,
+};
+use cadmpeg_ir::geometry::{
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, PcurveGeometry,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 pub(crate) fn decoded_surface_point(
     ir: &CadIr,
