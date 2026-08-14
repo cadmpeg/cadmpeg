@@ -8,8 +8,8 @@ use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
-    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
-    ProceduralCurve, ProceduralCurveDefinition,
+    knots_nondecreasing, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+    NurbsCurve, ProceduralCurve, ProceduralCurveDefinition,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
 use cadmpeg_ir::math::Point3;
@@ -159,7 +159,7 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
             .as_ref()
             .is_some_and(|weights| weights.len() != control_count)
         || curve.knots.iter().any(|knot| !knot.is_finite())
-        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&curve.knots)
     {
         return None;
     }

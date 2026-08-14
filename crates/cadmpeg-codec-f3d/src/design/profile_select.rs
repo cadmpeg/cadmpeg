@@ -1127,11 +1127,7 @@ fn spatial_polyline_profile_containing_points(
     for (index, profile) in sketch.profiles.iter().enumerate() {
         let offsets = points
             .iter()
-            .map(|point| {
-                (point.x - profile.origin.x) * profile.normal.x
-                    + (point.y - profile.origin.y) * profile.normal.y
-                    + (point.z - profile.origin.z) * profile.normal.z
-            })
+            .map(|point| point.vector_from(profile.origin).dot(profile.normal))
             .collect::<Vec<_>>();
         if !offsets.first().is_some_and(|first| {
             offsets
@@ -1140,23 +1136,10 @@ fn spatial_polyline_profile_containing_points(
         }) {
             continue;
         }
-        let v_axis = Vector3::new(
-            profile.normal.y * profile.u_axis.z - profile.normal.z * profile.u_axis.y,
-            profile.normal.z * profile.u_axis.x - profile.normal.x * profile.u_axis.z,
-            profile.normal.x * profile.u_axis.y - profile.normal.y * profile.u_axis.x,
-        );
+        let v_axis = profile.normal.cross(profile.u_axis);
         let project = |point: Point3| {
-            let offset = Vector3::new(
-                point.x - profile.origin.x,
-                point.y - profile.origin.y,
-                point.z - profile.origin.z,
-            );
-            Point2::new(
-                offset.x * profile.u_axis.x
-                    + offset.y * profile.u_axis.y
-                    + offset.z * profile.u_axis.z,
-                offset.x * v_axis.x + offset.y * v_axis.y + offset.z * v_axis.z,
-            )
+            let offset = point.vector_from(profile.origin);
+            Point2::new(offset.dot(profile.u_axis), offset.dot(v_axis))
         };
         let polygon = profile
             .boundary
@@ -1590,16 +1573,12 @@ fn resolved_selection_member_points(
         return None;
     };
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
-    let v_axis = Vector3::new(
-        normal.y * u_axis.z - normal.z * u_axis.y,
-        normal.z * u_axis.x - normal.x * u_axis.z,
-        normal.x * u_axis.y - normal.y * u_axis.x,
-    );
-    Some(vec![Point3::new(
-        origin.x + position.u * u_axis.x + position.v * v_axis.x,
-        origin.y + position.u * u_axis.y + position.v * v_axis.y,
-        origin.z + position.u * u_axis.z + position.v * v_axis.z,
-    )])
+    let v_axis = normal.cross(u_axis);
+    Some(vec![
+        origin
+            .translated(u_axis, position.u)
+            .translated(v_axis, position.v),
+    ])
 }
 
 pub(crate) fn ordered_unique_profile_selections(

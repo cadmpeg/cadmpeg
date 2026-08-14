@@ -50,12 +50,14 @@ pub(crate) fn valid_edited_nurbs_direction(
         && after_knots.windows(2).all(|pair| pair[0] <= pair[1])
 }
 
+const EPS_ORTHONORMAL: f64 = 1e-9;
+
 pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
     finite_vector(first)
         && finite_vector(second)
-        && (first.norm() - 1.0).abs() <= 1e-9
-        && (second.norm() - 1.0).abs() <= 1e-9
-        && (first.x * second.x + first.y * second.y + first.z * second.z).abs() <= 1e-9
+        && (first.norm() - 1.0).abs() <= EPS_ORTHONORMAL
+        && (second.norm() - 1.0).abs() <= EPS_ORTHONORMAL
+        && first.dot(second).abs() <= EPS_ORTHONORMAL
 }
 
 /// The per-entity BREP edit maps that the geometry patchers apply as a unit.

@@ -25,6 +25,7 @@ mod gui;
 mod joint;
 /// Byte-offset constants generated from `docs/layouts/freecad.toml`.
 pub(crate) mod layout;
+mod loss;
 mod mutation;
 mod native;
 mod persistence;
@@ -35,6 +36,7 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
@@ -48,8 +50,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::units::Units;
+use crate::loss::FreecadLossCode;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::FidelityResolution;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
@@ -1518,38 +1521,36 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             else {
                 return None;
             };
-            Some(LossNote {
-                code: cadmpeg_ir::LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-                severity: Severity::Blocking,
-                message: format!(
-                    "FCStd design operation {kind} is retained natively but has no neutral semantics"
-                ),
-                provenance: Some(cadmpeg_ir::SourceProvenance {
-                    format: "fcstd".into(),
-                    stream: "Document.xml".into(),
-                    offset: 0,
-                    tag: feature.native_ref.clone(),
-                }),
-            })
+            Some(
+                FreecadLossCode::FeatureNativeKindRetained
+                    .note(format!(
+                        "FCStd design operation {kind} is retained natively but has no neutral semantics"
+                    ))
+                    .with_provenance(cadmpeg_ir::SourceProvenance {
+                        format: "fcstd".into(),
+                        stream: "Document.xml".into(),
+                        offset: 0,
+                        tag: feature.native_ref.clone(),
+                    }),
+            )
         })
         .collect::<Vec<_>>();
     losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
         let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
             return None;
         };
-        Some(LossNote {
-            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
-            severity: Severity::Blocking,
-            message: format!(
-                "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
-            ),
-            provenance: Some(cadmpeg_ir::SourceProvenance {
-                format: "fcstd".into(),
-                stream: "Document.xml".into(),
-                offset: 0,
-                tag: entity.native_ref.clone(),
-            }),
-        })
+        Some(
+            FreecadLossCode::SketchNativeGeometry
+                .note(format!(
+                    "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
+                ))
+                .with_provenance(cadmpeg_ir::SourceProvenance {
+                    format: "fcstd".into(),
+                    stream: "Document.xml".into(),
+                    offset: 0,
+                    tag: entity.native_ref.clone(),
+                }),
+        )
     }));
     losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
         let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
@@ -1557,19 +1558,18 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
         else {
             return None;
         };
-        Some(LossNote {
-            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
-            severity: Severity::Blocking,
-            message: format!(
-                "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
-            ),
-            provenance: Some(cadmpeg_ir::SourceProvenance {
-                format: "fcstd".into(),
-                stream: "Document.xml".into(),
-                offset: 0,
-                tag: constraint.native_ref.clone(),
-            }),
-        })
+        Some(
+            FreecadLossCode::SketchNativeConstraint
+                .note(format!(
+                    "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
+                ))
+                .with_provenance(cadmpeg_ir::SourceProvenance {
+                    format: "fcstd".into(),
+                    stream: "Document.xml".into(),
+                    offset: 0,
+                    tag: constraint.native_ref.clone(),
+                }),
+        )
     }));
     losses
 }
@@ -2164,12 +2164,6 @@ fn push_logical_span(
             owner,
         });
     }
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
 }
 
 #[cfg(test)]

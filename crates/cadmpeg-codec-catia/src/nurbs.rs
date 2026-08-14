@@ -6,7 +6,8 @@
 //! interval canonicalization, and exact circular-helix fitting.
 
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
+    ProceduralCurveDefinition,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -40,7 +41,7 @@ fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
         && nurbs.control_points.len() > degree
         && nurbs.knots.len() == expected_knot_count
         && nurbs.knots.iter().copied().all(f64::is_finite)
-        && nurbs.knots.windows(2).all(|pair| pair[0] <= pair[1])
+        && knots_nondecreasing(&nurbs.knots)
         && nurbs.control_points.iter().copied().all(finite_point3)
         && nurbs.weights.as_ref().is_none_or(|weights| {
             weights.len() == nurbs.control_points.len()
@@ -71,7 +72,7 @@ fn valid_pcurve_nurbs(
         && control_points.len() > degree
         && knots.len() == expected_knot_count
         && knots.iter().copied().all(f64::is_finite)
-        && knots.windows(2).all(|pair| pair[0] <= pair[1])
+        && knots_nondecreasing(knots)
         && control_points.iter().copied().all(finite_point2)
         && weights.is_none_or(|weights| {
             weights.len() == control_points.len()
@@ -509,7 +510,7 @@ pub(crate) fn circular_helix_cache(
     };
     if !fit_tolerance.is_finite()
         || !valid_nurbs_curve(&curve)
-        || !curve.knots.windows(2).all(|pair| pair[0] <= pair[1])
+        || !knots_nondecreasing(&curve.knots)
     {
         return None;
     }
@@ -657,8 +658,8 @@ pub(crate) fn nurbs_surface_isocurve(
     let v_degree = usize::try_from(surface.v_degree).ok()?;
     if surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
         || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
-        || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&surface.u_knots)
+        || !knots_nondecreasing(&surface.v_knots)
     {
         return None;
     }
@@ -746,7 +747,7 @@ fn nurbs_basis_values(
     }
     if !parameter.is_finite()
         || !knots.iter().copied().all(f64::is_finite)
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(knots)
     {
         return None;
     }

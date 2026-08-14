@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared golden-snapshot harness for the codec crates.
 //!
-//! Every codec that pins snapshots does the same six things: enumerate frozen
-//! fixture inputs, run each input through one or more branches, serialize the
+//! Every codec that pins snapshots does the same six things: enumerate
+//! inputs, run each input through one or more branches, serialize the
 //! result as stable pretty JSON, compare it against a committed golden, report
 //! every difference at once, and refuse to pass when a branch has no inputs.
-//! Only the codec type, the fixture extension, and the regeneration hint differ,
-//! so the harness lives here once and each crate supplies those three values
-//! plus its branch functions.
+//! Frozen-file codecs call [`Harness::check`]; codecs that build inputs in
+//! code call [`Harness::check_inputs`]. Only the codec type, the fixture
+//! extension (file-backed codecs), and the regeneration hint differ.
 //!
-//! Fixture inputs are frozen. A snapshot test can only tell a decoder change
-//! apart from an input change while the inputs hold still, so this harness
-//! never writes them; `UPDATE_GOLDEN=1` rewrites golden outputs and nothing
-//! else.
+//! File-backed fixture inputs are frozen. A snapshot test can only tell a
+//! decoder change apart from an input change while the inputs hold still, so
+//! this harness never writes them; `UPDATE_GOLDEN=1` rewrites golden outputs
+//! and nothing else.
 //!
 //! `GOLDEN_STRICT=1` compares golden text byte-exactly instead of through
 //! [`snapshots_agree`]; use it on one machine to confirm a change is exactly
@@ -66,6 +66,10 @@ use cadmpeg_ir::compare::{is_local_digest_attribute, values_agree};
 /// produces the text pinned there.
 pub struct Branch {
     /// Subdirectory name under `tests/golden`, also used in failure messages.
+    ///
+    /// Empty writes `{name}.json` directly under `tests/golden` (flat
+    /// snapshot directory). Failure text then says `snapshot` rather than
+    /// an empty kind.
     pub kind: &'static str,
     /// Serializes one fixture's bytes as the snapshot text.
     pub snapshot: fn(&[u8]) -> String,
@@ -184,19 +188,32 @@ impl Harness {
     /// Panics listing every drifted, unreadable, and input-less golden at once
     /// rather than stopping at the first.
     pub fn check(&self, branches: &[Branch]) {
-        let update = std::env::var_os("UPDATE_GOLDEN").is_some();
-        let fixtures = self.fixtures();
-        let mut failures: Vec<String> = Vec::new();
-        for branch in branches {
-            failures.extend(self.check_branch(branch, &fixtures, update));
-        }
+        self.finish_check(&self.fixture_inputs(), branches, true);
+    }
+
+    /// Compares every branch for every caller-built input.
+    ///
+    /// Use this when fixtures are constructed in code rather than read from
+    /// `tests/golden/fixtures`. `UPDATE_GOLDEN` rewrites golden outputs only.
+    ///
+    /// A [`Branch`] whose [`kind`](Branch::kind) is empty writes `{name}.json`
+    /// directly under `tests/golden`. Otherwise `{name}.json` lives under
+    /// `tests/golden/{kind}/`.
+    ///
+    /// JSON files in those directories whose stems are not in `inputs` fail as
+    /// orphans. An empty `inputs` slice panics so the check cannot pass
+    /// vacuously.
+    ///
+    /// # Panics
+    ///
+    /// Panics listing every drifted, unreadable, and input-less golden at once
+    /// rather than stopping at the first. Panics when `inputs` is empty.
+    pub fn check_inputs(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
         assert!(
-            failures.is_empty(),
-            "{} golden(s) drifted; if the change is intended regenerate with `{}` and review the diff:\n\n{}",
-            failures.len(),
-            self.regenerate,
-            failures.join("\n\n")
+            !inputs.is_empty(),
+            "no in-memory golden inputs; the harness would pass vacuously"
         );
+        self.finish_check(inputs, branches, false);
     }
 
     /// Asserts that each branch produces identical text for two runs over the
@@ -210,16 +227,49 @@ impl Harness {
     ///
     /// Panics on the first branch whose two runs disagree.
     pub fn check_determinism(&self, branches: &[Branch]) {
-        for name in self.fixtures() {
-            let bytes = self.fixture_bytes(&name);
+        self.finish_determinism(&self.fixture_inputs(), branches);
+    }
+
+    /// Byte-exact determinism check over caller-built inputs.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `inputs` is empty, or on the first branch whose two runs
+    /// disagree.
+    pub fn check_determinism_inputs(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
+        assert!(
+            !inputs.is_empty(),
+            "no in-memory golden inputs; the harness would pass vacuously"
+        );
+        self.finish_determinism(inputs, branches);
+    }
+
+    fn finish_check(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch], from_files: bool) {
+        let update = std::env::var_os("UPDATE_GOLDEN").is_some();
+        let names: Vec<String> = inputs.iter().map(|(name, _)| name.clone()).collect();
+        let mut failures: Vec<String> = Vec::new();
+        for branch in branches {
+            failures.extend(self.compare_branch(branch, inputs, &names, update, from_files));
+        }
+        assert!(
+            failures.is_empty(),
+            "{} golden(s) drifted; if the change is intended regenerate with `{}` and review the diff:\n\n{}",
+            failures.len(),
+            self.regenerate,
+            failures.join("\n\n")
+        );
+    }
+
+    fn finish_determinism(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
+        for (name, bytes) in inputs {
             for branch in branches {
-                let first = (branch.snapshot)(&bytes);
-                let second = (branch.snapshot)(&bytes);
+                let first = (branch.snapshot)(bytes);
+                let second = (branch.snapshot)(bytes);
                 if first != second {
                     let (line, one, two) = first_line_diff(&first, &second);
                     panic!(
                         "fixture `{name}`: nondeterministic {} at line {line}\n    run 1: {one}\n    run 2: {two}",
-                        branch.kind
+                        branch_label(branch.kind)
                     );
                 }
             }
@@ -227,14 +277,20 @@ impl Harness {
     }
 
     /// Compares one branch, returning one failure per drifted or unreadable
-    /// golden plus one per golden with no fixture behind it.
-    fn check_branch(&self, branch: &Branch, fixtures: &[String], update: bool) -> Vec<String> {
+    /// golden plus one per golden with no input behind it.
+    fn compare_branch(
+        &self,
+        branch: &Branch,
+        inputs: &[(String, Vec<u8>)],
+        names: &[String],
+        update: bool,
+        from_files: bool,
+    ) -> Vec<String> {
         let dir = self.golden_dir.join(branch.kind);
-        let kind = branch.kind;
+        let kind = branch_label(branch.kind);
         let mut failures: Vec<String> = Vec::new();
-        for name in fixtures {
-            let bytes = self.fixture_bytes(name);
-            let actual = (branch.snapshot)(&bytes);
+        for (name, bytes) in inputs {
+            let actual = (branch.snapshot)(bytes);
             let path = dir.join(format!("{name}.json"));
             if update {
                 std::fs::write(&path, actual.as_bytes())
@@ -259,15 +315,31 @@ impl Harness {
         }
         for orphan in stems(&dir, "json")
             .iter()
-            .filter(|name| !fixtures.contains(name))
+            .filter(|name| !names.contains(name))
         {
-            failures.push(format!(
-                "golden `{orphan}.json` under {} has no `{orphan}.{}` fixture; delete the golden or restore the input",
-                dir.display(),
-                self.fixture_extension
-            ));
+            failures.push(if from_files {
+                format!(
+                    "golden `{orphan}.json` under {} has no `{orphan}.{}` fixture; delete the golden or restore the input",
+                    dir.display(),
+                    self.fixture_extension
+                )
+            } else {
+                format!(
+                    "golden `{orphan}.json` under {} has no input `{orphan}`; delete the golden or restore the input",
+                    dir.display()
+                )
+            });
         }
         failures
+    }
+}
+
+/// Failure-message label for [`Branch::kind`]. Empty kind is a flat snapshot.
+fn branch_label(kind: &str) -> &str {
+    if kind.is_empty() {
+        "snapshot"
+    } else {
+        kind
     }
 }
 

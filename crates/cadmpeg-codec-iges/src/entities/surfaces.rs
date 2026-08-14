@@ -7,8 +7,9 @@ use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface,
-    ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface, SurfaceGeometry,
+    derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve, NurbsSurface,
+    ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -193,7 +194,9 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
         parameters[0],
         parameters[1],
     )?;
-    normalized(cross(partials.du, partials.dv))
+    let v = partials.du.cross(partials.dv);
+    let n = v.norm();
+    (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
 }
 
 fn indicator_orientation(
@@ -218,7 +221,7 @@ fn indicator_orientation(
     };
     if contains(normal) {
         Some(1.0)
-    } else if contains(scale(normal, -1.0)) {
+    } else if contains(normal.scale(-1.0)) {
         Some(-1.0)
     } else {
         None
@@ -300,12 +303,15 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "plane normal is degenerate"));
             continue;
         }
-        let Some(local_normal_unit) = normalized(local_normal) else {
+        let Some(local_normal_unit) = {
+            let n = local_normal.norm();
+            (n.is_finite() && n > 0.0).then(|| local_normal.scale(1.0 / n))
+        } else {
             losses.push(entity_loss(entry, "plane normal cannot be normalized"));
             continue;
         };
         let local_u = derive_reference_direction(local_normal_unit);
-        let local_v = cross(local_normal_unit, local_u);
+        let local_v = local_normal_unit.cross(local_u);
         let local_origin = Point3::new(
             a * d / normal_squared * factor,
             b * d / normal_squared * factor,
@@ -326,21 +332,33 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(u_axis) = normalized(transform.vector(local_u)) else {
+        let Some(u_axis) = {
+            let v = transform.vector(local_u);
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+        } else {
             losses.push(entity_loss(
                 entry,
                 "plane placement collapses its u direction",
             ));
             continue;
         };
-        let Some(v_axis) = normalized(transform.vector(local_v)) else {
+        let Some(v_axis) = {
+            let v = transform.vector(local_v);
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+        } else {
             losses.push(entity_loss(
                 entry,
                 "plane placement collapses its v direction",
             ));
             continue;
         };
-        let Some(normal) = normalized(cross(u_axis, v_axis)) else {
+        let Some(normal) = {
+            let v = u_axis.cross(v_axis);
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+        } else {
             losses.push(entity_loss(entry, "plane placement collapses its normal"));
             continue;
         };
@@ -536,7 +554,7 @@ pub(super) fn project(
             continue;
         };
         let target = Point3::new(x * factor, y * factor, z * factor);
-        let direction = Vector3::new(target.x - start.x, target.y - start.y, target.z - start.z);
+        let direction = target.vector_from(start);
         if !direction.norm().is_finite() || direction.norm() <= 0.0 {
             losses.push(entity_loss(entry, "generatrix is zero or non-finite"));
             continue;
@@ -544,16 +562,7 @@ pub(super) fn project(
         let control_points = directrix
             .control_points
             .iter()
-            .flat_map(|point| {
-                [
-                    *point,
-                    Point3::new(
-                        point.x + direction.x,
-                        point.y + direction.y,
-                        point.z + direction.z,
-                    ),
-                ]
-            })
+            .flat_map(|point| [*point, point.translated(direction, 1.0)])
             .collect::<Vec<_>>();
         let Ok(u_count) = u32::try_from(directrix.control_points.len()) else {
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
@@ -705,20 +714,9 @@ pub(super) fn project(
         let mut control_points = Vec::with_capacity(surface_pole_count);
         let mut weights = Vec::with_capacity(control_points.capacity());
         for (u_index, point) in generatrix.control_points.iter().enumerate() {
-            let delta = Vector3::new(
-                point.x - axis_origin.x,
-                point.y - axis_origin.y,
-                point.z - axis_origin.z,
-            );
-            let axis_point = add_point_vector(
-                axis_origin,
-                scale(axis_direction, dot(delta, axis_direction)),
-            );
-            let radial = Vector3::new(
-                point.x - axis_point.x,
-                point.y - axis_point.y,
-                point.z - axis_point.z,
-            );
+            let delta = point.vector_from(axis_origin);
+            let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
+            let radial = point.vector_from(axis_point);
             let u_weight = generatrix
                 .weights
                 .as_ref()
@@ -727,8 +725,8 @@ pub(super) fn project(
                 .unwrap_or(1.0);
             for (angle, angular_weight) in &angular_controls {
                 let rotated = rotate(radial, axis_direction, *angle);
-                let radial_control = scale(rotated, 1.0 / angular_weight);
-                control_points.push(transform.point(add_point_vector(axis_point, radial_control)));
+                let radial_control = rotated.scale(1.0 / angular_weight);
+                control_points.push(transform.point(axis_point.translated(radial_control, 1.0)));
                 weights.push(u_weight * angular_weight);
             }
         }
@@ -774,14 +772,18 @@ pub(super) fn project(
                 source_object: Some(source_object(entry)),
             });
             procedural_axis_origin = transform.point(axis_origin);
-            let Some(direction) = normalized(transform.vector(axis_direction)) else {
+            let Some(direction) = {
+                let v = transform.vector(axis_direction);
+                let n = v.norm();
+                (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+            } else {
                 losses.push(entity_loss(
                     entry,
                     "placement collapses the revolution axis",
                 ));
                 continue;
             };
-            procedural_axis_direction = scale(direction, orientation);
+            procedural_axis_direction = direction.scale(orientation);
             true
         } else {
             false
@@ -936,9 +938,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        if u_knots.windows(2).any(|pair| pair[0] > pair[1])
-            || v_knots.windows(2).any(|pair| pair[0] > pair[1])
-        {
+        if !knots_nondecreasing(&u_knots) || !knots_nondecreasing(&v_knots) {
             losses.push(entity_loss(entry, "surface knot vector is decreasing"));
             continue;
         }
@@ -1107,7 +1107,11 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
             continue;
         }
-        let indicator = normalized(indicator).expect("validated nonzero finite offset indicator");
+        let indicator = {
+            let n = indicator.norm();
+            (n.is_finite() && n > 0.0).then(|| indicator.scale(1.0 / n))
+        }
+        .expect("validated nonzero finite offset indicator");
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)

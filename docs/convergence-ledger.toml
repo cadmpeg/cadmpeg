@@ -7,7 +7,6 @@ filter = "legacy metrics: production .rs under crates/**/src via is_production_r
 
 [kinds]
 from_endian_bytes = "pressure"
-le_be_at_outside_core = "pressure"
 codec_error_malformed_format = "convergence"
 loss_note_struct_literals = "convergence"
 bare_tolerance_literals = "convergence"
@@ -29,7 +28,6 @@ production_line_debt = 0
 
 [ceilings]
 from_endian_bytes = 113
-le_be_at_outside_core = 0
 codec_error_malformed_format = 1266
 loss_note_struct_literals = 197
 bare_tolerance_literals = 741

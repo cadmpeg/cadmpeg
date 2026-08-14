@@ -14,7 +14,6 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
-use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
@@ -771,41 +770,13 @@ fn inflate<'a>(
     source: View<'_>,
     expected: usize,
 ) -> Result<(View<'a>, usize), GeometryError> {
-    let input = source.window();
     let base = source.start();
-    let mut writer = expand
-        .ctx
-        .begin_expand(source, ExpandSpec::Exact(expected as u64))
-        .map_err(|refusal| expansion_refused(base, &refusal))?;
-    let mut decoder = Decompress::new(true);
-    let mut source_offset = 0;
-    let mut buffer = [0_u8; 8192];
-    loop {
-        let before_in = decoder.total_in();
-        let before_out = decoder.total_out();
-        let status = decoder
-            .decompress(&input[source_offset..], &mut buffer, FlushDecompress::None)
-            .map_err(|_| error(base + source_offset, "malformed zlib buffer"))?;
-        let consumed = (decoder.total_in() - before_in) as usize;
-        source_offset = source_offset
-            .checked_add(consumed)
-            .ok_or_else(|| error(base, "zlib input overflow"))?;
-        let produced = (decoder.total_out() - before_out) as usize;
-        // The writer charges before retaining and rejects output past the
-        // declared size; a refusal fuses the context.
-        writer
-            .write(&buffer[..produced])
-            .map_err(|refusal| expansion_refused(base, &refusal))?;
-        if status == Status::StreamEnd {
-            let view = writer
-                .finalize()
-                .map_err(|refusal| expansion_refused(base, &refusal))?;
-            return Ok((view, source_offset));
-        }
-        if consumed == 0 && produced == 0 {
-            return Err(error(base, "truncated zlib buffer"));
-        }
-    }
+    cadmpeg_container::compression::inflate_zlib_member(
+        expand.ctx(),
+        source,
+        ExpandSpec::Exact(expected as u64),
+    )
+    .map_err(|refusal| expansion_refused(base, &refusal))
 }
 
 fn read_ngons(

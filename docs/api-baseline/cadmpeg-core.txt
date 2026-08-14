@@ -1,25 +1,5 @@
 # generated at 410399168
 pub mod cadmpeg_core
-pub mod cadmpeg_core::be
-pub fn cadmpeg_core::be::f32_at(&[u8], usize) -> core::option::Option<f32>
-pub fn cadmpeg_core::be::f64_at(&[u8], usize) -> core::option::Option<f64>
-pub fn cadmpeg_core::be::f64s_at(&[u8], usize, usize) -> core::option::Option<alloc::vec::Vec<f64>>
-pub fn cadmpeg_core::be::i16_at(&[u8], usize) -> core::option::Option<i16>
-pub fn cadmpeg_core::be::i32_at(&[u8], usize) -> core::option::Option<i32>
-pub fn cadmpeg_core::be::i64_at(&[u8], usize) -> core::option::Option<i64>
-pub fn cadmpeg_core::be::take_f32(&[u8], &mut usize) -> core::option::Option<f32>
-pub fn cadmpeg_core::be::take_f64(&[u8], &mut usize) -> core::option::Option<f64>
-pub fn cadmpeg_core::be::take_f64s(&[u8], &mut usize, usize) -> core::option::Option<alloc::vec::Vec<f64>>
-pub fn cadmpeg_core::be::take_i16(&[u8], &mut usize) -> core::option::Option<i16>
-pub fn cadmpeg_core::be::take_i32(&[u8], &mut usize) -> core::option::Option<i32>
-pub fn cadmpeg_core::be::take_i64(&[u8], &mut usize) -> core::option::Option<i64>
-pub fn cadmpeg_core::be::take_u16(&[u8], &mut usize) -> core::option::Option<u16>
-pub fn cadmpeg_core::be::take_u32(&[u8], &mut usize) -> core::option::Option<u32>
-pub fn cadmpeg_core::be::take_u64(&[u8], &mut usize) -> core::option::Option<u64>
-pub fn cadmpeg_core::be::u16_at(&[u8], usize) -> core::option::Option<u16>
-pub fn cadmpeg_core::be::u32_at(&[u8], usize) -> core::option::Option<u32>
-pub fn cadmpeg_core::be::u64_at(&[u8], usize) -> core::option::Option<u64>
-pub fn cadmpeg_core::be::vec3_at(&[u8], usize) -> core::option::Option<[f64; 3]>
 pub mod cadmpeg_core::container
 pub struct cadmpeg_core::container::ContainerEntry
 pub cadmpeg_core::container::ContainerEntry::attributes: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
@@ -677,6 +657,7 @@ pub fn cadmpeg_core::decode::View<'a>::skip(&mut self, usize) -> core::option::O
 pub fn cadmpeg_core::decode::View<'a>::start(self) -> usize
 pub fn cadmpeg_core::decode::View<'a>::take(&mut self, usize) -> core::option::Option<&'a [u8]>
 pub fn cadmpeg_core::decode::View<'a>::u8(&mut self) -> core::option::Option<u8>
+pub fn cadmpeg_core::decode::View<'a>::utf16le_at(&[u8], usize, usize) -> core::option::Option<(alloc::string::String, usize)>
 pub fn cadmpeg_core::decode::View<'a>::window(self) -> &'a [u8]
 impl<'a> core::clone::Clone for cadmpeg_core::decode::View<'a>
 pub fn cadmpeg_core::decode::View<'a>::clone(&self) -> cadmpeg_core::decode::View<'a>
@@ -749,34 +730,6 @@ impl !core::panic::unwind_safe::UnwindSafe for cadmpeg_core::error::CodecError
 pub mod cadmpeg_core::io
 pub trait cadmpeg_core::io::ReadSeek: alloc::io::read::Read + core::io::seek::Seek
 impl<T: alloc::io::read::Read + core::io::seek::Seek> cadmpeg_core::io::ReadSeek for T
-pub mod cadmpeg_core::le
-pub fn cadmpeg_core::le::f32_at(&[u8], usize) -> core::option::Option<f32>
-pub fn cadmpeg_core::le::f64_at(&[u8], usize) -> core::option::Option<f64>
-pub fn cadmpeg_core::le::f64s_at(&[u8], usize, usize) -> core::option::Option<alloc::vec::Vec<f64>>
-pub fn cadmpeg_core::le::i16_at(&[u8], usize) -> core::option::Option<i16>
-pub fn cadmpeg_core::le::i32_at(&[u8], usize) -> core::option::Option<i32>
-pub fn cadmpeg_core::le::i64_at(&[u8], usize) -> core::option::Option<i64>
-pub fn cadmpeg_core::le::int_at(&[u8], usize, usize) -> core::option::Option<i64>
-pub fn cadmpeg_core::le::lp_u32_bytes_at(&[u8], usize) -> core::option::Option<(&[u8], usize)>
-pub fn cadmpeg_core::le::take_f32(&[u8], &mut usize) -> core::option::Option<f32>
-pub fn cadmpeg_core::le::take_f64(&[u8], &mut usize) -> core::option::Option<f64>
-pub fn cadmpeg_core::le::take_f64s(&[u8], &mut usize, usize) -> core::option::Option<alloc::vec::Vec<f64>>
-pub fn cadmpeg_core::le::take_i16(&[u8], &mut usize) -> core::option::Option<i16>
-pub fn cadmpeg_core::le::take_i32(&[u8], &mut usize) -> core::option::Option<i32>
-pub fn cadmpeg_core::le::take_i64(&[u8], &mut usize) -> core::option::Option<i64>
-pub fn cadmpeg_core::le::take_int(&[u8], &mut usize, usize) -> core::option::Option<i64>
-pub fn cadmpeg_core::le::take_lp_u32_bytes<'a>(&'a [u8], &mut usize) -> core::option::Option<&'a [u8]>
-pub fn cadmpeg_core::le::take_u16(&[u8], &mut usize) -> core::option::Option<u16>
-pub fn cadmpeg_core::le::take_u32(&[u8], &mut usize) -> core::option::Option<u32>
-pub fn cadmpeg_core::le::take_u64(&[u8], &mut usize) -> core::option::Option<u64>
-pub fn cadmpeg_core::le::u16_at(&[u8], usize) -> core::option::Option<u16>
-pub fn cadmpeg_core::le::u32_at(&[u8], usize) -> core::option::Option<u32>
-pub fn cadmpeg_core::le::u64_at(&[u8], usize) -> core::option::Option<u64>
-pub fn cadmpeg_core::le::utf16le_at(&[u8], usize, usize) -> core::option::Option<(alloc::string::String, usize)>
-pub fn cadmpeg_core::le::vec3_at(&[u8], usize) -> core::option::Option<[f64; 3]>
-pub mod cadmpeg_core::read
-pub fn cadmpeg_core::read::bytes_at(&[u8], usize, usize) -> core::option::Option<&[u8]>
-pub fn cadmpeg_core::read::take<'a>(&'a [u8], &mut usize, usize) -> core::option::Option<&'a [u8]>
 #[non_exhaustive] pub enum cadmpeg_core::CodecError
 pub cadmpeg_core::CodecError::Io(core::io::error::Error)
 pub cadmpeg_core::CodecError::Malformed(alloc::string::String)

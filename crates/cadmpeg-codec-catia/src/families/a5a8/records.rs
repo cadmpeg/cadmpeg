@@ -11,8 +11,8 @@ use crate::wire::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
-    RollingBallJetSite, SurfaceGeometry,
+    knots_strictly_increasing, NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition,
+    RollingBallJetDerivative, RollingBallJetSite, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::ops::Range;

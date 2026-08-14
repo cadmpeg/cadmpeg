@@ -9,7 +9,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::{PointId, VertexId};
@@ -2821,7 +2822,7 @@ fn reverse_nurbs(
         || range[0] < domain[0]
         || range[1] > domain[1]
         || nurbs.knots.iter().any(|value| !value.is_finite())
-        || nurbs.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&nurbs.knots)
     {
         return Err(CodecError::Malformed(
             "IGES reversed NURBS domain or parameter range is invalid".into(),
@@ -3877,8 +3878,8 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         || nurbs.v_knots.len() != v_knot_count
         || nurbs.u_knots.iter().any(|value| !value.is_finite())
         || nurbs.v_knots.iter().any(|value| !value.is_finite())
-        || nurbs.u_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || nurbs.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&nurbs.u_knots)
+        || !knots_nondecreasing(&nurbs.v_knots)
         || nurbs.control_points.iter().any(|point| {
             [point.x, point.y, point.z]
                 .iter()
@@ -4354,7 +4355,7 @@ fn encode_nurbs(
         || range[0] > range[1]
         || range.iter().any(|value| !value.is_finite())
         || nurbs.knots.iter().any(|value| !value.is_finite())
-        || nurbs.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&nurbs.knots)
     {
         return Err(CodecError::Malformed(
             "IGES NURBS degree, knot vector, or parameter range is invalid".into(),

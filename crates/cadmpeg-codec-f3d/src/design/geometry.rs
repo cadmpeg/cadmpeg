@@ -2572,18 +2572,9 @@ pub(crate) fn project_to_sketch(
     point: Point3,
 ) -> Option<Point2> {
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
-    let x = point.x - origin.x;
-    let y = point.y - origin.y;
-    let z = point.z - origin.z;
-    let v_axis = Vector3::new(
-        normal.y * u_axis.z - normal.z * u_axis.y,
-        normal.z * u_axis.x - normal.x * u_axis.z,
-        normal.x * u_axis.y - normal.y * u_axis.x,
-    );
-    Some(Point2::new(
-        x * u_axis.x + y * u_axis.y + z * u_axis.z,
-        x * v_axis.x + y * v_axis.y + z * v_axis.z,
-    ))
+    let offset = point.vector_from(origin);
+    let v_axis = normal.cross(u_axis);
+    Some(Point2::new(offset.dot(u_axis), offset.dot(v_axis)))
 }
 
 pub(crate) fn point_on_sketch_entity(

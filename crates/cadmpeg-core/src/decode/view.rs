@@ -183,6 +183,27 @@ impl<'a> View<'a> {
         Some(values)
     }
 
+    /// Decodes `count` UTF-16LE code units from the current position.
+    ///
+    /// Strict `from_utf16`; unpaired surrogates and a truncated window yield
+    /// `None`. Does not advance on failure.
+    pub fn utf16_le(&mut self, count: usize) -> Option<String> {
+        let units = self.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
+        String::from_utf16(&units).ok()
+    }
+
+    /// Decodes `count` UTF-16LE code units at `offset` and returns the string
+    /// and end offset.
+    ///
+    /// Sequential readers should keep a live `View` and call [`View::utf16_le`]
+    /// instead.
+    pub fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(String, usize)> {
+        let mut view = View::over_retained(bytes);
+        view.seek(offset)?;
+        let units = view.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
+        Some((String::from_utf16(&units).ok()?, view.position()))
+    }
+
     /// Builds an unexpected-eof error from the view's current state.
     fn eof(self, needed: u64) -> ParseError {
         ParseError {
@@ -323,5 +344,17 @@ mod tests {
         assert_eq!(view.u16_be(), Some(0x0304));
         assert_eq!(view.i16_be(), Some(-5));
         assert_eq!(view.f32_le(), Some(1.5));
+    }
+
+    #[test]
+    fn utf16le_matches_le_helper() {
+        assert_eq!(
+            View::utf16le_at(b"A\0B\0", 0, 2),
+            Some(("AB".to_string(), 4))
+        );
+        assert_eq!(View::utf16le_at(b"A\0B\0", 0, 3), None);
+        let mut view = View::over_space(b"A\0B\0", SpaceId::ROOT);
+        assert_eq!(view.utf16_le(2), Some("AB".to_string()));
+        assert_eq!(view.position(), 4);
     }
 }

@@ -17,8 +17,8 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
@@ -286,8 +286,8 @@ fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezier
             .iter()
             .chain(&surface.v_knots)
             .any(|knot| !knot.is_finite())
-        || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&surface.u_knots)
+        || !knots_nondecreasing(&surface.v_knots)
         || surface.control_points.iter().any(|control| {
             !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
         })
@@ -1505,7 +1505,7 @@ fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'_, [f64]>> {
                 || *weight <= 0.0
         })
         || curve.knots.iter().any(|knot| !knot.is_finite())
-        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&curve.knots)
     {
         return None;
     }
@@ -1979,7 +1979,7 @@ pub fn nurbs_pcurve_contains_point(
     if control_points.iter().zip(weights).any(|(control, weight)| {
         !control.u.is_finite() || !control.v.is_finite() || !weight.is_finite() || *weight <= 0.0
     }) || knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(knots)
     {
         return None;
     }

@@ -1378,29 +1378,20 @@ pub(crate) fn face_coincident_with_sketch(
 }
 
 fn parallel_vectors(left: Vector3, right: Vector3, tolerance: f64) -> bool {
-    let cross = Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    );
-    let left_length = (left.x * left.x + left.y * left.y + left.z * left.z).sqrt();
-    let right_length = (right.x * right.x + right.y * right.y + right.z * right.z).sqrt();
-    let cross_length = (cross.x * cross.x + cross.y * cross.y + cross.z * cross.z).sqrt();
+    let left_length = left.norm();
+    let right_length = right.norm();
+    let cross_length = left.cross(right).norm();
     left_length > 0.0
         && right_length > 0.0
         && cross_length <= tolerance * left_length * right_length
 }
 
 fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
-    let normal_length = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+    let normal_length = normal.norm();
     if normal_length == 0.0 {
         return f64::INFINITY;
     }
-    ((point.x - origin.x) * normal.x
-        + (point.y - origin.y) * normal.y
-        + (point.z - origin.z) * normal.z)
-        .abs()
-        / normal_length
+    point.vector_from(origin).dot(normal).abs() / normal_length
 }
 
 pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {

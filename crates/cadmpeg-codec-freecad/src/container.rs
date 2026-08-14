@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path};
 
 use cadmpeg_container::ArchiveSnapshot;
+use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 
@@ -47,12 +48,6 @@ pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
         _ => return false,
     };
     contains(&document, b"<Document") && contains(&document, b"SchemaVersion")
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
 }
 
 /// Fully scanned container used by inspection and decode.

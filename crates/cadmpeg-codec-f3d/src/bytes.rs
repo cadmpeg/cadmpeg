@@ -42,10 +42,7 @@ pub(crate) fn take_lp_u32_bytes<'a>(bytes: &'a [u8], position: &mut usize) -> Op
 
 /// Decode `count` UTF-16LE code units at `offset` and return the end offset.
 pub(crate) fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(String, usize)> {
-    let mut view = View::over_retained(bytes);
-    view.seek(offset)?;
-    let units = view.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
-    Some((String::from_utf16(&units).ok()?, view.position()))
+    View::utf16le_at(bytes, offset, count)
 }
 
 /// Read consecutive little-endian `f64` values at `offset`.

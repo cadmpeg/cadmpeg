@@ -390,3 +390,31 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::DecodeResult::{ir_mut,source_fidelity_mut}"
 reason = "edit guards restore canonical order before a mutated result can be read"
+
+[[change]]
+commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::le"
+reason = "View migration complete; zero consumers outside the crate"
+
+[[change]]
+commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::be"
+reason = "View migration complete; zero consumers outside the crate"
+
+[[change]]
+commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::read"
+reason = "View migration complete; zero consumers outside the crate"
+
+[[change]]
+commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::View::utf16le_at"
+reason = "re-home le::utf16le_at onto View before deleting cadmpeg_core::{le,be,read}"

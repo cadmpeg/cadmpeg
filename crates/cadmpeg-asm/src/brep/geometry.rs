@@ -9,7 +9,7 @@ use crate::nurbs::proc_surface::{
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
@@ -732,8 +732,7 @@ fn analytic_rolling_ball_surface(
     let radial_offset = center_offset - cylinder_axis.scale(axial_offset);
     if 1.0 - axis.dot(plane_normal).abs() > 1.0e-10
         || 1.0 - axis.dot(cylinder_axis).abs() > 1.0e-10
-        || (point_vector(*plane_origin, center).dot(plane_normal).abs() - radius).abs()
-            > tolerance
+        || (point_vector(*plane_origin, center).dot(plane_normal).abs() - radius).abs() > tolerance
         || radial_offset.norm() > tolerance
         || ((major_radius - cylinder_radius.abs()).abs() - radius).abs() > tolerance
     {
@@ -754,7 +753,7 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
         || curve.control_points.len() <= curve.degree as usize
         || curve.knots.len() != curve.control_points.len() + curve.degree as usize + 1
         || curve.knots.iter().any(|knot| !knot.is_finite())
-        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&curve.knots)
         || curve
             .control_points
             .iter()

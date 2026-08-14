@@ -8,6 +8,7 @@
 mod card;
 mod directory;
 mod entities;
+mod error;
 mod global;
 mod graph;
 /// Byte-offset constants generated from `docs/layouts/iges.toml`.

@@ -6,7 +6,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{Global, RealPrecision};
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{LossNote, LossTaxonomy, Severity};
@@ -849,7 +849,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "knot vector is truncated or non-finite"));
             continue;
         };
-        if knots.windows(2).any(|pair| pair[0] > pair[1]) {
+        if !knots_nondecreasing(&knots) {
             losses.push(entity_loss(entry, "knot vector is decreasing"));
             continue;
         }

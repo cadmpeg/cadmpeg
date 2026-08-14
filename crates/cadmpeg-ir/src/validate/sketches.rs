@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)]
 
 use super::*;
+use crate::geometry::knots_nondecreasing;
 use crate::sketches::{
     SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus,
     SpatialSketchConstraintDefinition as SpatialConstraint, SpatialSketchGeometry,
@@ -536,7 +537,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     || control_points.len() <= *degree as usize
                     || expected != Some(knots.len())
                     || knots.iter().any(|value| !value.is_finite())
-                    || knots.windows(2).any(|pair| pair[0] > pair[1])
+                    || !knots_nondecreasing(knots)
                     || control_points.iter().any(|point| !finite2(*point))
                     || weights.as_ref().is_some_and(|weights| {
                         weights.len() != control_points.len()
@@ -768,7 +769,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     || control_points.len() <= *degree as usize
                     || expected != Some(knots.len())
                     || knots.iter().any(|value| !value.is_finite())
-                    || knots.windows(2).any(|pair| pair[0] > pair[1])
+                    || !knots_nondecreasing(knots)
                     || control_points.iter().any(|point| !finite3(*point))
                     || weights.as_ref().is_some_and(|weights| {
                         weights.len() != control_points.len()
@@ -807,8 +808,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     || expected_v_knots != Some(v_knots.len())
                     || u_knots.iter().any(|value| !value.is_finite())
                     || v_knots.iter().any(|value| !value.is_finite())
-                    || u_knots.windows(2).any(|pair| pair[0] > pair[1])
-                    || v_knots.windows(2).any(|pair| pair[0] > pair[1])
+                    || !knots_nondecreasing(u_knots)
+                    || !knots_nondecreasing(v_knots)
                     || control_points
                         .iter()
                         .flatten()
