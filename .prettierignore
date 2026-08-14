@@ -4,7 +4,6 @@
 crates/cadmpeg-fuzz/seeds/
 crates/cadmpeg-fuzz/corpus/
 crates/cadmpeg-fuzz/artifacts/
-seeds/
 
 # Golden snapshot trees are byte-compared by tests. A formatter rewrite is
 # corruption, not style: every file under a golden directory must keep the

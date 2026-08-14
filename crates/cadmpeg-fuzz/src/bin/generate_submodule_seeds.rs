@@ -3,7 +3,8 @@
 
 use std::fs;
 use std::io::Write as _;
-use std::path::Path;
+
+include!("../seed_paths.rs");
 
 fn main() {
     generate_acis_header_seed();
@@ -35,8 +36,8 @@ fn generate_acis_header_seed() {
 }
 
 fn write_seed(dir: &str, name: &str, data: &[u8]) {
-    let path = Path::new(dir);
-    fs::create_dir_all(path).expect("required invariant");
+    let path = seed_dir(dir);
+    fs::create_dir_all(&path).expect("required invariant");
     fs::write(path.join(name), data).expect("required invariant");
     println!("  {}/{} ({} bytes)", dir, name, data.len());
 }

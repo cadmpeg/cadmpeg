@@ -306,8 +306,8 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
         directory[extent + 12..extent + 16].copy_from_slice(&(index as u32).to_be_bytes());
     }
 
-    let parsed = parse_directory_region(&directory, 0, 0, directory.len())
-        .expect("bounded extent roster");
+    let parsed =
+        parse_directory_region(&directory, 0, 0, directory.len()).expect("bounded extent roster");
     let descriptor = parsed
         .descriptors
         .iter()
