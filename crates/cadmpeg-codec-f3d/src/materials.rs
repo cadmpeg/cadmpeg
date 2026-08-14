@@ -20,6 +20,9 @@ use cadmpeg_ir::appearance::{
 };
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::topology::Color;
+use cadmpeg_protein::{
+    CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
+};
 
 use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
 use crate::container::{role, ContainerScan};
@@ -27,9 +30,6 @@ use crate::design::presentation::{
     visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
     MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
 };
-
-const PAGE_SIZE: usize = 0x88;
-const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
 /// the null GUID names neither.
@@ -172,22 +172,22 @@ fn page_logical(logical: &[u8]) -> Result<Vec<u8>, CodecError> {
     let first = logical.len().min(PAGE_SIZE - 4);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&logical[..first]);
-    bytes.resize(16 + PAGE_SIZE, 0);
+    bytes.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
     let mut rest = &logical[first..];
     while rest.len() > PAGE_SIZE - 8 {
         bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(b"\x80\x00\x00\x00");
+        bytes.extend_from_slice(CONTINUATION_MARKER);
         bytes.extend_from_slice(&rest[..PAGE_SIZE - 8]);
         rest = &rest[PAGE_SIZE - 8..];
     }
     if !rest.is_empty() {
-        bytes.extend_from_slice(&[0xff; 4]);
+        bytes.extend_from_slice(TERMINAL_MARKER);
         let length = u16::try_from(rest.len())
             .map_err(|_| CodecError::Malformed("Protein tail page exceeds u16::MAX".into()))?;
         bytes.extend_from_slice(&length.to_le_bytes());
         bytes.extend_from_slice(&0u16.to_le_bytes());
         bytes.extend_from_slice(rest);
-        let end = 16 + (bytes.len() - 16).next_multiple_of(PAGE_SIZE);
+        let end = STREAM_HEADER_LEN + (bytes.len() - STREAM_HEADER_LEN).next_multiple_of(PAGE_SIZE);
         bytes.resize(end, 0);
     }
     Ok(bytes)
@@ -420,19 +420,24 @@ fn patch_logical_f64(
 
 fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
     let mut logical_start = 0usize;
-    for (index, page) in bytes.get(16..)?.chunks_exact(PAGE_SIZE).enumerate() {
+    for (index, page) in bytes
+        .get(STREAM_HEADER_LEN..)?
+        .chunks_exact(PAGE_SIZE)
+        .enumerate()
+    {
         let (physical_in_page, length) = if page.get(4..8) == Some(RECORD_MARKER) {
             (4, PAGE_SIZE - 4)
-        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00") {
+        } else if page.get(4..8) == Some(CONTINUATION_MARKER) {
             (8, PAGE_SIZE - 8)
-        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff") {
+        } else if page.get(0..4) == Some(TERMINAL_MARKER) {
             (8, View::u16_le_at(page, 4)? as usize)
         } else {
             return None;
         };
         if logical_offset < logical_start + length {
             return Some(
-                16 + index * PAGE_SIZE + physical_in_page + logical_offset - logical_start,
+                STREAM_HEADER_LEN + index * PAGE_SIZE + physical_in_page + logical_offset
+                    - logical_start,
             );
         }
         logical_start += length;

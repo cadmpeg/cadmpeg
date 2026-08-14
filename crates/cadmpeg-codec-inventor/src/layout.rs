@@ -343,6 +343,10 @@ pub(crate) mod kernel_carrier_header {
 /// Byte offsets for the `protein_header` record.
 ///
 /// Spec §7. Record length 4 B.
+///
+/// ```text
+/// Inventor compound-stream envelope around a Protein ZIP. The Protein page format is tabulated in `docs/layouts/protein.toml`.
+/// ```
 pub(crate) mod protein_header {
     /// Record length in bytes. Spec §7.
     pub(crate) const LEN: usize = 4;

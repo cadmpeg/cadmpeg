@@ -63,7 +63,7 @@ Root streams that contain an OLE Property Set self-identify through their byte-o
 
 The root `Protein` stream starts with a u32 payload length. Zero length is the complete four-byte empty form. A nonzero length equals the exact remaining byte count, and the remaining bytes are one ZIP archive. ZIP entry names are unique and do not contain absolute, parent, current-directory, empty, NUL, or backslash path components.
 
-`InstanceProperties.bin` uses a 16-byte header followed by 136-byte pages. Page bytes 4 through 7 equal `80 00 01 00` for a record start or `80 00 00 00` for a continuation. A terminal page starts with `ff ff ff ff`; its u16 at offset 4 gives the used payload bytes at offset 8. Packaged XML schemas select the typed property order and carriers. Asset definitions form a catalog. A topology assignment requires a separate typed assignment record.
+The ZIP package, `InstanceProperties.bin` page framing, schemas, and typed property records are specified in [`protein.md`](protein.md). Asset definitions form a catalog. A topology assignment requires a separate typed assignment record.
 
 ## 8. External references
 

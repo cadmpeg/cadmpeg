@@ -8,10 +8,20 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
-const PAGE_SIZE: usize = 0x88;
-const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
-const CONTINUATION_MARKER: &[u8] = b"\x80\x00\x00\x00";
-const TERMINAL_MARKER: &[u8] = b"\xff\xff\xff\xff";
+/// Byte-offset constants generated from `docs/layouts/protein.toml`.
+pub(crate) mod layout;
+use layout::{continuation_page, instance_stream_header, record_start_page, terminal_page};
+
+/// Instance-stream header length in bytes.
+pub const STREAM_HEADER_LEN: usize = layout::instance_stream_header::LEN;
+/// Instance-page length in bytes (`0x88`).
+pub const PAGE_SIZE: usize = layout::record_start_page::LEN;
+/// Record-start marker at page bytes 4..8.
+pub const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
+/// Continuation marker at page bytes 4..8.
+pub const CONTINUATION_MARKER: &[u8] = b"\x80\x00\x00\x00";
+/// Terminal marker at page bytes 0..4.
+pub const TERMINAL_MARKER: &[u8] = b"\xff\xff\xff\xff";
 const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 
 fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> Option<String> {
@@ -223,23 +233,24 @@ pub fn decode_detailed(protein: &[u8], instance: &[u8]) -> Result<DecodeOutcome,
 
 /// Split a paged `InstanceProperties` stream into logical records.
 ///
-/// The stream is a 16-byte header followed by fixed [`PAGE_SIZE`] pages. A page
-/// whose bytes 4..8 hold [`RECORD_MARKER`] opens a record, [`CONTINUATION_MARKER`]
-/// extends it, and a page opening with [`TERMINAL_MARKER`] closes it and carries
-/// the used byte count as a `u16` at offset 4. Every record is returned with the
-/// opening marker restored so record offsets match the on-page layout.
+/// The stream is a [`STREAM_HEADER_LEN`]-byte header followed by fixed
+/// [`PAGE_SIZE`] pages. A page whose bytes 4..8 hold [`RECORD_MARKER`] opens a
+/// record, [`CONTINUATION_MARKER`] extends it, and a page opening with
+/// [`TERMINAL_MARKER`] closes it and carries the used byte count as a `u16` at
+/// offset 4. Every record is returned with the opening marker restored so
+/// record offsets match the on-page layout.
 pub fn record_frames(bytes: &[u8]) -> Option<Vec<RecordFrame>> {
-    if bytes.len() < 16 + PAGE_SIZE
-        || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
-        || !(bytes.len() - 16).is_multiple_of(PAGE_SIZE)
+    if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE
+        || View::u32_le_at(bytes, instance_stream_header::DECLARED_SIZE)? as usize != PAGE_SIZE
+        || !(bytes.len() - STREAM_HEADER_LEN).is_multiple_of(PAGE_SIZE)
     {
         return None;
     }
     let mut records = Vec::new();
     let mut current: Option<RecordFrame> = None;
     let mut logical_offset = 0usize;
-    for page in bytes[16..].chunks_exact(PAGE_SIZE) {
-        if page.get(4..8) == Some(RECORD_MARKER) {
+    for page in bytes[STREAM_HEADER_LEN..].chunks_exact(PAGE_SIZE) {
+        if page.get(record_start_page::MARKER..record_start_page::BODY) == Some(RECORD_MARKER) {
             if let Some(record) = current.take() {
                 logical_offset = logical_offset.checked_add(record.bytes.len())?;
                 records.push(record);
@@ -248,14 +259,23 @@ pub fn record_frames(bytes: &[u8]) -> Option<Vec<RecordFrame>> {
                 logical_offset,
                 bytes: RECORD_MARKER.to_vec(),
             };
-            frame.bytes.extend_from_slice(&page[8..]);
+            frame
+                .bytes
+                .extend_from_slice(&page[record_start_page::BODY..]);
             current = Some(frame);
-        } else if page.get(4..8) == Some(CONTINUATION_MARKER) {
-            current.as_mut()?.bytes.extend_from_slice(&page[8..]);
-        } else if page.get(0..4) == Some(TERMINAL_MARKER) {
-            let used = u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize;
+        } else if page.get(continuation_page::MARKER..continuation_page::BODY)
+            == Some(CONTINUATION_MARKER)
+        {
+            current
+                .as_mut()?
+                .bytes
+                .extend_from_slice(&page[continuation_page::BODY..]);
+        } else if page.get(terminal_page::MARKER..terminal_page::USED) == Some(TERMINAL_MARKER) {
+            let used = View::u16_le_at(page, terminal_page::USED)? as usize;
             let mut frame = current.take()?;
-            frame.bytes.extend_from_slice(page.get(8..8 + used)?);
+            frame
+                .bytes
+                .extend_from_slice(page.get(terminal_page::BODY..terminal_page::BODY + used)?);
             logical_offset = logical_offset.checked_add(frame.bytes.len())?;
             records.push(frame);
         } else {
@@ -967,7 +987,7 @@ mod tests {
     fn paged_stream(records: &[&[u8]]) -> Vec<u8> {
         const BODY: usize = PAGE_SIZE - 8;
         let mut out = (PAGE_SIZE as u32).to_le_bytes().to_vec();
-        out.resize(16, 0);
+        out.resize(STREAM_HEADER_LEN, 0);
         let mut page = |header: [u8; 8], body: &[u8]| {
             out.extend_from_slice(&header);
             out.extend_from_slice(body);

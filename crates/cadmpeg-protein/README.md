@@ -68,14 +68,15 @@ malformed.
 
 The `instance` argument has a 16-byte stream header followed by fixed 136-byte
 pages. The first header word is the page size (`0x88`); the remaining header
-bytes are retained only by the caller. Each page has a 128-byte body after its
+bytes are retained only by the caller. The numbers are tabulated in
+[`docs/layouts/protein.md`][protein-layout]. Each page has a 128-byte body after its
 8-byte page header:
 
-| Page | Marker | Contribution |
-| --- | --- | --- |
-| Record start | `80 00 01 00` at bytes 4..8 | Opens a logical record and contributes the complete body at bytes 8..136. |
-| Continuation | `80 00 00 00` at bytes 4..8 | Extends the current record with its complete body. |
-| Terminal | `ff ff ff ff` at bytes 0..4 | Closes the current record; bytes 8..`8 + used` contribute, where `used` is the little-endian `u16` at bytes 4..6. |
+| Page         | Marker                      | Contribution                                                                                                      |
+| ------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Record start | `80 00 01 00` at bytes 4..8 | Opens a logical record and contributes the complete body at bytes 8..136.                                         |
+| Continuation | `80 00 00 00` at bytes 4..8 | Extends the current record with its complete body.                                                                |
+| Terminal     | `ff ff ff ff` at bytes 0..4 | Closes the current record; bytes 8..`8 + used` contribute, where `used` is the little-endian `u16` at bytes 4..6. |
 
 A new start page, continuation page, or terminal page without the required
 current-record state is invalid. A stream ending with an open record is
@@ -100,17 +101,17 @@ two default-equivalent texture slots it represents.
 
 Supported schema carriers map to [`PropertyValue`][property-value] as follows:
 
-| Schema carrier | Serialized value | Public value |
-| --- | --- | --- |
-| `Boolean` | one byte | `Boolean(bool)` |
-| `Integer`, `Choice` | little-endian `u32` | `Integer(u32)` |
-| `Float` | little-endian `f64` | `Float(f64)` |
-| unit-bearing `Float` | a unit `u32`, then an `f64` | `Float(f64)`; the unit tag is consumed but not exposed |
-| `Distance` | a unit `u32`, then an `f64` | `Distance { unit, value }` |
-| `String`, `Uuid`, `URL` | length-prefixed UTF-8 | `String(String)` |
-| `Color` | four little-endian `f64` channels | `Color([r, g, b, a])` |
-| `Reference` | no value bytes | `Reference` |
-| `TextureURI` | kind `0` counted paths or kind `1` one path | `TextureUri(Vec<String>)` |
+| Schema carrier          | Serialized value                            | Public value                                           |
+| ----------------------- | ------------------------------------------- | ------------------------------------------------------ |
+| `Boolean`               | one byte                                    | `Boolean(bool)`                                        |
+| `Integer`, `Choice`     | little-endian `u32`                         | `Integer(u32)`                                         |
+| `Float`                 | little-endian `f64`                         | `Float(f64)`                                           |
+| unit-bearing `Float`    | a unit `u32`, then an `f64`                 | `Float(f64)`; the unit tag is consumed but not exposed |
+| `Distance`              | a unit `u32`, then an `f64`                 | `Distance { unit, value }`                             |
+| `String`, `Uuid`, `URL` | length-prefixed UTF-8                       | `String(String)`                                       |
+| `Color`                 | four little-endian `f64` channels           | `Color([r, g, b, a])`                                  |
+| `Reference`             | no value bytes                              | `Reference`                                            |
+| `TextureURI`            | kind `0` counted paths or kind `1` one path | `TextureUri(Vec<String>)`                              |
 
 Properties declared with `allowmultiplevalues="true"`, except `TextureURI`,
 start with a `u32` value count and become `Multiple(Vec<PropertyValue>)`.
@@ -146,6 +147,7 @@ The crate has no writer and does not reassemble or patch a Protein archive.
 ## Documentation
 
 - [API documentation][docs]
+- [Protein format specification][protein-spec]
 - [F3D format notes][f3d]
 - [Inventor format notes][inventor]
 - [Format support][support]
@@ -169,6 +171,8 @@ any CAD vendor. See the [clean-room and legal policy][legal].
 [has-schemas]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/fn.has_schemas.html
 [inventor]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/inventor.md
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
+[protein-layout]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/layouts/protein.md
+[protein-spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/protein.md
 [property-value]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/enum.PropertyValue.html
 [rejected-record]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/struct.RejectedRecord.html
 [repo]: https://github.com/cadmpeg/cadmpeg

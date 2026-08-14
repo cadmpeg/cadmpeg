@@ -39,7 +39,8 @@ use serde::Deserialize;
 
 /// Every format directory the workspace ships a codec or spec for.
 const EXPECTED_FORMATS: &[&str] = &[
-    "asm", "catia", "creo", "f3d", "freecad", "iges", "inventor", "nx", "rhino", "sldprt", "step",
+    "asm", "catia", "creo", "f3d", "freecad", "iges", "inventor", "nx", "protein", "rhino",
+    "sldprt", "step",
 ];
 
 // ---------------------------------------------------------------------------
@@ -1092,6 +1093,7 @@ const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
     ("iges", "crates/cadmpeg-codec-iges/src/layout.rs"),
     ("inventor", "crates/cadmpeg-codec-inventor/src/layout.rs"),
     ("nx", "crates/cadmpeg-codec-nx/src/layout.rs"),
+    ("protein", "crates/cadmpeg-protein/src/layout.rs"),
     ("rhino", "crates/cadmpeg-codec-rhino/src/layout.rs"),
     ("sldprt", "crates/cadmpeg-codec-sldprt/src/layout.rs"),
 ];

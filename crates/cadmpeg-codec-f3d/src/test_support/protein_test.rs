@@ -2,13 +2,17 @@
 //! Synthetic Protein instance-property payloads.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_protein::{
+    CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
+};
+
 pub(crate) fn generated_instance_properties_for(guid: &str) -> Vec<u8> {
     fn lp(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
     }
 
-    let mut logical = b"\x80\x00\x01\x00".to_vec();
+    let mut logical = RECORD_MARKER.to_vec();
     lp(&mut logical, "GenericSchema");
     lp(&mut logical, guid);
     lp(&mut logical, "Prism-001");
@@ -33,7 +37,7 @@ pub(crate) fn generated_prism_instance_properties(schema: &str, guid: &str) -> V
         out.extend_from_slice(value.as_bytes());
     }
 
-    let mut logical = b"\x80\x00\x01\x00".to_vec();
+    let mut logical = RECORD_MARKER.to_vec();
     lp(&mut logical, schema);
     lp(&mut logical, guid);
     lp(&mut logical, "Prism-001");
@@ -64,27 +68,28 @@ pub(crate) fn generated_prism_instance_properties(schema: &str, guid: &str) -> V
 
 pub(crate) fn paged_instance_properties(logical: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&(0x88u32).to_le_bytes());
+    bytes.extend_from_slice(&(PAGE_SIZE as u32).to_le_bytes());
     bytes.extend_from_slice(&[0xff; 8]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
 
-    let first = logical.len().min(132);
+    let first = logical.len().min(PAGE_SIZE - 4);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&logical[..first]);
-    bytes.resize(16 + 136, 0);
+    bytes.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
     let mut rest = &logical[first..];
-    while rest.len() > 128 {
+    while rest.len() > PAGE_SIZE - 8 {
         bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(b"\x80\x00\x00\x00");
-        bytes.extend_from_slice(&rest[..128]);
-        rest = &rest[128..];
+        bytes.extend_from_slice(CONTINUATION_MARKER);
+        bytes.extend_from_slice(&rest[..PAGE_SIZE - 8]);
+        rest = &rest[PAGE_SIZE - 8..];
     }
     if !rest.is_empty() {
-        bytes.extend_from_slice(&[0xff; 4]);
+        bytes.extend_from_slice(TERMINAL_MARKER);
         bytes.extend_from_slice(&(rest.len() as u16).to_le_bytes());
         bytes.extend_from_slice(&0u16.to_le_bytes());
         bytes.extend_from_slice(rest);
-        let page_end = 16 + (bytes.len() - 16).next_multiple_of(136);
+        let page_end =
+            STREAM_HEADER_LEN + (bytes.len() - STREAM_HEADER_LEN).next_multiple_of(PAGE_SIZE);
         bytes.resize(page_end, 0);
     }
     bytes
@@ -100,7 +105,7 @@ pub(crate) fn generated_definition_catalog_for(schema: &str) -> Vec<u8> {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
     }
-    let mut out = b"\x80\x00\x01\x00".to_vec();
+    let mut out = RECORD_MARKER.to_vec();
     for value in [schema, "Prism-001", "Default", "Plastic/Thermoplastic"] {
         lp(&mut out, value);
     }

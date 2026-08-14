@@ -1,0 +1,185 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for Autodesk Protein asset packages.
+# Every row cites a section of docs/formats/protein.md and a phrase inside it.
+schema = 1
+format = "protein"
+spec = "docs/formats/protein.md"
+endianness = "little"
+note = """
+Covers the 16-byte instance-stream header (§2) and the three 136-byte page
+kinds (§3). Schema XML, ZIP members, and the schema-driven property value
+block are listed under "Not tabulated". The Inventor compound-stream
+`protein_header` envelope is tabulated in `docs/layouts/inventor.toml`.
+"""
+
+# --- §3 Page markers -------------------------------------------------------
+
+[[token]]
+tag = "80 00 01 00"
+name = "record_start"
+payload_bytes = 128
+note = "Opens a logical record; the 128-byte body at bytes 8..136 contributes in full."
+section = "3"
+anchor = "Record start | `80 00 01 00` at bytes 4..8"
+
+[[token]]
+tag = "80 00 00 00"
+name = "continuation"
+payload_bytes = 128
+note = "Extends the current record with its complete 128-byte body."
+section = "3"
+anchor = "Continuation | `80 00 00 00` at bytes 4..8"
+
+[[token]]
+tag = "ff ff ff ff"
+name = "terminal"
+note = "Closes the current record; only `used` body bytes contribute."
+section = "3"
+anchor = "Terminal | `ff ff ff ff` at bytes 0..4"
+
+# --- §2 Stream header ------------------------------------------------------
+
+[[record]]
+name = "instance_stream_header"
+kind = "byte"
+section = "2"
+anchor = "`InstanceProperties.bin` and `DefinitionIteratorProperties.bin` start with a 16-byte stream header"
+size = 16
+
+[[record.field]]
+name = "declared_size"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The first header word is the little-endian u32 page size and equals `0x88`"
+
+[[record.gap]]
+offset = 4
+size = 12
+note = "The remaining twelve header bytes are retained; the specification states no field in that region."
+
+[[record.code]]
+path = "crates/cadmpeg-protein/src/lib.rs"
+contains = "pub const STREAM_HEADER_LEN: usize = layout::instance_stream_header::LEN;"
+note = "The decoder uses the generated header length."
+
+# --- §3 Pages --------------------------------------------------------------
+
+[[record]]
+name = "record_start_page"
+kind = "byte"
+section = "3"
+anchor = "Each page is 136 bytes"
+size = 136
+
+[[record.field]]
+name = "marker"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "`80 00 01 00` at bytes 4..8"
+
+[[record.field]]
+name = "body"
+offset = 8
+type = "bytes[128]"
+source = "spec"
+anchor = "Bytes 8 through 135 are the 128-byte page body"
+
+[[record.gap]]
+offset = 0
+size = 4
+note = "Bytes 0 through 3 are a prefix; the specification states no field there."
+
+[[record.code]]
+path = "crates/cadmpeg-protein/src/lib.rs"
+contains = "pub const PAGE_SIZE: usize = layout::record_start_page::LEN;"
+note = "The decoder's page size is the generated record length."
+
+[[record.code]]
+path = "crates/cadmpeg-protein/src/lib.rs"
+contains = "pub const RECORD_MARKER: &[u8] = b\"\\x80\\x00\\x01\\x00\";"
+note = "The decoder's record-start marker matches offset 4."
+
+[[record]]
+name = "continuation_page"
+kind = "byte"
+section = "3"
+anchor = "Each page is 136 bytes"
+size = 136
+
+[[record.field]]
+name = "marker"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "`80 00 00 00` at bytes 4..8"
+
+[[record.field]]
+name = "body"
+offset = 8
+type = "bytes[128]"
+source = "spec"
+anchor = "Bytes 8 through 135 are the 128-byte page body"
+
+[[record.gap]]
+offset = 0
+size = 4
+note = "Bytes 0 through 3 are a prefix; the specification states no field there."
+
+[[record.code]]
+path = "crates/cadmpeg-protein/src/lib.rs"
+contains = "pub const CONTINUATION_MARKER: &[u8] = b\"\\x80\\x00\\x00\\x00\";"
+note = "The decoder's continuation marker matches offset 4."
+
+[[record]]
+name = "terminal_page"
+kind = "byte"
+section = "3"
+anchor = "Each page is 136 bytes"
+size = 136
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff` at bytes 0..4"
+
+[[record.field]]
+name = "used"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "the used payload length as a little-endian u16 at offset 4"
+
+[[record.field]]
+name = "body"
+offset = 8
+type = "bytes[128]"
+source = "spec"
+anchor = "Bytes 8 through 135 are the 128-byte page body"
+
+[[record.gap]]
+offset = 6
+size = 2
+note = "Bytes 6 through 7 are a suffix; the specification states no field there."
+
+[[record.code]]
+path = "crates/cadmpeg-protein/src/lib.rs"
+contains = "pub const TERMINAL_MARKER: &[u8] = b\"\\xff\\xff\\xff\\xff\";"
+note = "The decoder's terminal marker matches offset 0."
+
+# --- Not tabulated ---------------------------------------------------------
+
+[[not_applicable]]
+area = "Package ZIP and schema XML"
+reason = "Text grammar. Schema entries are named ZIP members; UID, Base, and property declarations are XML attributes with no fixed byte offsets."
+section = "1"
+anchor = "Schema XML, ZIP entry order, and schema inheritance are a text grammar"
+
+[[not_applicable]]
+area = "Logical-record value block"
+reason = "Schema-driven variable-length carriers and connection blocks. Field position depends on the inherited property set."
+section = "4"
+anchor = "Property order, carriers, connection blocks, and omitted inherited members are schema-driven"
