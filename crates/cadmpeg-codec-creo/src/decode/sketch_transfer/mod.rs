@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch constraint emission and sketch arena transfer.
 
-// Re-exports are consumed by `use sketch_transfer::*` in decode.rs and its tests.
+// Barrel re-exports are consumed by sibling modules and decode tests.
 #![allow(unused_imports)]
-
-use super::{SketchCoordinateAxis, SketchEntity, SketchLocus, SketchNativeOperand};
 
 mod constraints;
 mod entities;

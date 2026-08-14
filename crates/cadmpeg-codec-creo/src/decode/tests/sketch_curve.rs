@@ -1,8 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: sketch curve.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::{extruded_segment_surface, placed_section_curve_geometry};
+use crate::decode::feature_history::{
+    evaluated_sweep_body_kind, evaluated_sweep_output_bodies, feature_dimension_display,
+    feature_dimension_parameter_id, feature_dimension_parameter_layout,
+    feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
+};
+use crate::decode::sketch::{resolved_section_radii, section_circle_geometry};
+use crate::decode::sketch_transfer::{
+    section_segment_radius_constraints, section_segment_verhor_definition, section_skamp_active,
+};
+use crate::decode::sweep::{placed_section_geometry_curve, placed_sketch_curve_ref};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{DimensionDisplay, Length, ParameterId};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::topology::{Body, BodyKind};
+use cadmpeg_ir::units::Units;
+use std::collections::BTreeMap;
 
 #[test]
 fn sketch_curve_references_require_a_materialized_curve() {

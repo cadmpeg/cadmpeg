@@ -1,8 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: generated nurbs.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::section_axis_line_carrier;
+use crate::decode::feature_history::{
+    agreed_feature_affected_ids, agreed_feature_geometry_ids, agreed_feature_replay_edge_ids,
+    agreed_feature_replay_geometry_ids,
+};
+use crate::decode::sketch::{
+    intersect_section_line_arc, intersect_section_lines, intersect_tangent_section_arcs,
+    resolved_section_coordinates, resolved_section_points, resolved_section_radii,
+    resolved_section_scalar_values, section_axis_reference_line_geometry, section_line_geometry,
+    section_point_geometry,
+};
+use crate::decode::sketch_transfer::{
+    current_feature_operation, current_feature_recipe, current_feature_recipe_parent,
+    first_material_feature_by_definition_order, reconcile_constraint_entity_references,
+    reconcile_constraint_parameter_reference, resolved_feature_schema_class_from_classes,
+    row_feature_schema_classes, unique_feature_revolution_extent_kind,
+};
+use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation_span};
+use crate::decode::uniqueness::{
+    unique_feature_section_transform, unique_owned_feature_definition,
+};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{Angle, ExtrudeExtent, ExtrudeSide, Length, ParameterId, Termination};
+use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
+};
+use cadmpeg_ir::units::Units;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn generated_nurbs_translations_define_a_blind_extrusion() {

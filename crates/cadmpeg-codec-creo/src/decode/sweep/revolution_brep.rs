@@ -3,12 +3,13 @@
 
 use super::super::feature_history::revolution_axis_for_transfer;
 use super::super::sketch::section_point_in_model;
+use super::super::sketch_ids::model_sketch_id;
 use super::super::sketch_transfer::{
     current_additive_feature_recipe, feature_is_first_material_operation,
     feature_revolution_extent, unique_feature_revolution_extent_kind,
 };
-use super::super::{
-    model_sketch_id, unique_feature_definition_for_transform, unique_feature_section_transform,
+use super::super::uniqueness::{
+    unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::pcurves::{
     add_extrusion_pcurve, revolution_face_sense, revolution_profile_boundary_pcurve,

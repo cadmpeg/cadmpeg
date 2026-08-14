@@ -9,7 +9,7 @@ use super::super::sketch::{
     resolved_section_points, section_line_fixed_coordinate, section_segment_rows,
     section_type5_radius_arc, unique_section_skamp_segment,
 };
-use super::super::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
+use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
     opaque_section_segment_identity_suffix, section_entity_external_ids, section_point_locus,
     section_segment_identity_suffix, section_skamp_active, section_skamp_locus,

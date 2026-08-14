@@ -1,10 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature dimension parameters, relation tables, and transfer.
 
-// Glob import is required: `decode.rs` imports `Write as _`, which a named
-// path cannot mention, and `write!` on `String` needs that trait in scope.
-#[allow(clippy::wildcard_imports)]
-use super::super::*;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
+
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Angle, DesignParameter, DimensionDisplay, FeatureSourceContent, Length, ParameterId,
+    ParameterValue,
+};
+use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
+
+use crate::container::ContainerScan;
+
+use super::super::native::annotate;
+use super::super::sketch_ids::{
+    feature_sketch_record_id_in_scan, model_sketch_id, section_owner_feature_id,
+    sketch_identity_scope,
+};
 
 pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,

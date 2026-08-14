@@ -7,7 +7,7 @@ use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchId};
 
-use super::super::sketch_entity_id;
+use super::super::sketch_ids::sketch_entity_id;
 use super::super::sketch_transfer::{
     section_saved_entity, semantic_saved_section_entities, unique_saved_section_internal_ids,
 };

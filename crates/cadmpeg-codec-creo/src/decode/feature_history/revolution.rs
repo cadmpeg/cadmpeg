@@ -1,21 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved revolution and extrusion surface and vertex-orbit transfer.
 
-use super::super::{
-    annotate, complete_section_segment_rows, connected_sketch_profile_vertices,
-    extruded_section_line, feature_recipe, feature_revolution_extent, model_sketch_id,
-    resolved_section_points, resolved_section_segment_geometry, revolved_nurbs_surface,
-    revolved_section_circle, revolved_section_surface, saved_section_entity_geometry,
-    semantic_saved_section_entities, trim_segment_id, unique_feature_definition_for_transform,
-    unique_feature_revolution_extent_kind, unique_feature_section_transform, AnnotationBuilder,
-    CadIr, ContainerScan, Curve, CurveGeometry, CurveId, Exactness, ProceduralSurface,
-    ProceduralSurfaceDefinition, ProceduralSurfaceId, SketchId, SourceObjectAssociation, Surface,
-    SurfaceGeometry, SurfaceId,
+use super::super::native::annotate;
+use super::super::sketch::{
+    complete_section_segment_rows, resolved_section_points, resolved_section_segment_geometry,
+    saved_section_entity_geometry, trim_segment_id,
+};
+use super::super::sketch_ids::model_sketch_id;
+use super::super::sketch_transfer::{
+    feature_recipe, feature_revolution_extent, semantic_saved_section_entities,
+    unique_feature_revolution_extent_kind,
+};
+use super::super::sweep::{
+    connected_sketch_profile_vertices, extruded_section_line, revolved_nurbs_surface,
+    revolved_section_circle, revolved_section_surface,
+};
+use super::super::uniqueness::{
+    unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::{
     feature_allows_linear_extrusion, ordered_analytic_surface_id_for_feature,
     ordered_family_surface_bindings_for_feature, profile_segment_ids, revolution_axis_for_transfer,
 };
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn transfer_resolved_revolution_surfaces(

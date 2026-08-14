@@ -1,8 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: numbered intersect.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::parameter_slot;
+use crate::decode::analytic::{ConeEquation, PlaneEquation};
+use crate::decode::build::has_transferred_geometry;
+use crate::decode::feature_history::{
+    add_surface_prototype_feature_dependencies, chamfer_constant_distance,
+    equal_distance_chamfer_setback, feature_edge_selection, feature_entity_dependencies,
+    feature_generated_dependencies, feature_output_surface_dependencies, feature_result_edge_ids,
+    feature_result_surface_ids, feature_result_topology, generated_curve_edge_refs,
+    generated_surface_face_refs, geometry_generator_features, knit_class_100_operand_entity_ids,
+    knit_operand_surface_ids, model_feature_ids, native_feature_dependency_ids,
+    profile_segment_ids, reconciled_dependencies, surface_intersect_feature_definition,
+    surface_merge_entity_dependencies, surface_merge_quilt_ids, GeometryGeneratorFeature,
+};
+use crate::decode::holes::{
+    cylinder_from_complementary_outline_bounds, extrusion_extent_and_direction, hole_placement,
+};
+use crate::decode::sketch::{
+    normalized, section_linear_distance_coordinate, solve_section_coordinate_equations,
+    solve_unsigned_dimension_coordinates, SectionCoordinateEquation,
+};
+use crate::decode::surfaces::fc05_model_frame;
+use crate::decode::sweep::{
+    extruded_section_line, feature_outline_planes, feature_plane_equations,
+    placed_tabulated_cylinder_directrix, revolution_boundary_pcurve, revolved_section_circle,
+    revolved_section_surface, signed_unit_chart,
+};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Angle, BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature,
+    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, GeneratedEdgeRef,
+    GeneratedFaceRef, Length, RadiusSpec, RevolutionAxis, Termination,
+};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchGeometry};
+use cadmpeg_ir::units::Units;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn numbered_intersect_name_identifies_section_shape_feature() {

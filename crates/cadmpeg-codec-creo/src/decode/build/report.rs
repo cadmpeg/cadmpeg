@@ -12,11 +12,11 @@ use cadmpeg_ir::sketches::SketchGeometry;
 use crate::container::{self, role, ContainerScan};
 
 use super::super::analytic::is_axis_aligned;
-use super::super::{DecodeReport, LossNote, LossTaxonomy, Severity};
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
     push_carrier_transfer_notes, push_legacy_value_losses, push_structural_layer_notes,
 };
+use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
     let model = &ir.model;

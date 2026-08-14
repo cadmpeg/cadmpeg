@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch arena transfer from feature section tables.
 
+use super::super::coverage::SketchSegmentTransferCoverage;
 use super::super::feature_history::{
     owned_section_feature_id, section_entity_is_generated_profile,
     section_generated_profile_surface_kinds,
@@ -14,11 +15,11 @@ use super::super::sketch::{
     section_point_row_geometry, section_segment_rows, trim_segment_id,
     trimmed_section_segment_geometry_with_missing_line,
 };
-use super::super::{
+use super::super::sketch_ids::{
     feature_definition_has_sketch_design, model_sketch_id, sketch_constraint_id, sketch_entity_id,
-    sketch_feature_id, sketch_native_ref, unique_feature_section_transform,
-    SketchSegmentTransferCoverage,
+    sketch_feature_id, sketch_native_ref,
 };
+use super::super::uniqueness::unique_feature_section_transform;
 use super::entities::transfer_section_entities;
 use super::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,

@@ -1,8 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Expanded-section arenas, feature surface replay associations, and FC05 native records.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
+
+use crate::container::ContainerScan;
+
+use super::coverage::{source_section, surface_family};
+use super::native::{emit_uniform, store_arena};
+use super::native_records::{
+    CreoFc05CircleRecord, CreoFc05CylinderCapPairRecord, CreoFeatureSurfaceReplayAssociation,
+    CreoHalfEdgeRef,
+};
+use super::records::{
+    expanded_section_records, CreoDoubleXarEntryRecord, CreoDoubleXarTableRecord,
+    CreoPrimitiveScalarArrayRecord,
+};
 
 pub(crate) fn attach_expanded_sections(
     scan: &ContainerScan,

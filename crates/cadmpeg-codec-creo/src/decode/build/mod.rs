@@ -17,7 +17,7 @@ pub(super) use report::build_report;
 #[allow(unused_imports)]
 pub(super) use report::has_transferred_geometry;
 
-// Remaining `pub(super)` names stay on the decode glob surface.
+// Remaining `pub(super)` names stay on the build barrel for sibling and test use.
 #[allow(unused_imports)]
 pub(super) use arenas::{emit_geometry_arenas, emit_reference_arenas};
 #[allow(unused_imports)]

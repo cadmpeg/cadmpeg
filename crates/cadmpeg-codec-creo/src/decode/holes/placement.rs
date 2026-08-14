@@ -5,7 +5,7 @@ use cadmpeg_ir::features::{Length, Termination};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::normalized;
+use super::super::sketch::normalized;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrusionSpan {

@@ -1,8 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: blind circular.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::parameter_slot;
+use crate::decode::analytic::PlaneEquation;
+use crate::decode::feature_history::{
+    coordinate_pair_proves_torus_radii, differing_positive_lengths,
+    five_coordinate_envelope_proves_torus_radii, outline_has_unique_radius_delta,
+    paired_five_coordinate_sphere_center, parallel_support_radius, round_constant_radius,
+    round_observed_radii, round_placed_cylinder_radii, round_support_radius,
+    schema_feature_definition, section_entity_is_generated_profile, slot_fillet_cylinder,
+    unique_positive_length,
+};
+use crate::decode::holes::{
+    compact_simple_hole_cylinder_id, extrusion_extent_and_direction,
+    single_cap_circular_sweep_geometry, two_cap_circular_sweep_geometry, ExtrusionSpan,
+};
+use crate::decode::surfaces::{
+    reference_cap_bound_round_frame, reference_circle_pair_cylinder_frame,
+};
+use crate::decode::sweep::{
+    agreed_generated_cylinder_extent, blind_extrusion_from_carriers, bounded_cylinder_span,
+    directed_blind_extrusion_span, generated_bounded_cylinder_extent, generated_cap_plane_extent,
+    generated_rectilinear_plane_extent, ordered_parallel_cap_extent,
+    resolved_feature_extrusion_span, unique_available_positional_cylinder_frames,
+    ExtrusionCarrierSpan,
+};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length, RadiusForm,
+    RadiusSpec, Termination,
+};
+use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::units::Units;
+use std::collections::BTreeSet;
 
 #[test]
 fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {

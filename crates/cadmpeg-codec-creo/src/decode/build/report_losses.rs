@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use crate::container::ContainerScan;
 
-use super::super::{LossNote, LossTaxonomy, Severity};
 use super::coverage::torus_parameter_coverage;
+use cadmpeg_ir::report::{LossNote, LossTaxonomy, Severity};
 
 pub(super) fn coverage_count(coverage: &BTreeMap<String, usize>, key: &str) -> usize {
     coverage.get(key).copied().unwrap_or(0)

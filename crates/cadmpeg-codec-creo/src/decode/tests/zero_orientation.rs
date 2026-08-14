@@ -1,8 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: zero orientation.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::with_decode_ctx;
+use crate::decode::analytic::{
+    ordered_face_loops, ordered_planar_face_loops, point_on_carrier, solve_carriers,
+    CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation,
+};
+use crate::decode::build::has_transferred_geometry;
+use crate::decode::feature_history::{
+    full_turn_revolution_carrier_axis, resolved_revolution_axis, revolution_axis_for_transfer,
+};
+use crate::decode::sketch::{
+    intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
+    SectionIntersectionCarrier,
+};
+use crate::decode::sketch_transfer::{
+    materialized_saved_section_external_ids, resolved_profile_chains,
+};
+use crate::decode::surfaces::{
+    axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
+    coaxial_cones_section_candidates, cubic_extrusion_plane_generator_curve,
+    cubic_unit_interval_roots, nurbs_plane_boundary_curve, resolve_curve_candidates,
+    select_unique_curve_candidate, shared_extrusion_generator_curve,
+};
+use crate::decode::sweep::{
+    bspline_basis, bspline_basis_derivative, interpolation_spline_surface, placed_section_nurbs,
+    revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface,
+    revolved_nurbs_surface, saved_spline_nurbs, saved_spline_sketch_geometry,
+};
+use crate::topology::HalfEdgeId;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{Angle, Length, RevolutionAxis, RevolveExtent, Termination};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{PointId, SurfaceId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
+use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::units::Units;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {

@@ -34,17 +34,17 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, OccurrenceId, ProductDefinitionId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::products::{
+    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
 use super::native::annotate;
-use super::{
-    Occurrence, OccurrenceId, OccurrenceParent, ProductDefinition, ProductDefinitionId,
-    ProductDefinitionKind, PrototypeReference, Transform,
-};
 
 pub(super) fn transfer_part_product(
     scan: &ContainerScan,

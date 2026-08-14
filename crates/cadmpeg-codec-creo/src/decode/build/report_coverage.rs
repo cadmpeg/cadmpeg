@@ -3,10 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use super::super::{
-    constraint_kind_breakdown, surface_family, LossNote, LossTaxonomy, Severity, SURFACE_KINDS,
-};
+use super::super::coverage::{constraint_kind_breakdown, surface_family, SURFACE_KINDS};
 use super::report_losses::coverage_count;
+use cadmpeg_ir::report::{LossNote, LossTaxonomy, Severity};
 
 pub(super) fn push_coverage_drop_losses(
     losses: &mut Vec<LossNote>,

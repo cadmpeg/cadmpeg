@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner resolved-sketch and related unit tests.
 
-use super::*;
+use crate::decode::sketch::{
+    saved_section_missing_line_geometry, section_axis_line_carrier_with_points,
+    section_segment_geometry, section_segment_intersection_carrier_with_missing_line,
+    trimmed_section_segment_geometry_with_missing_line, SectionIntersectionCarrier,
+};
+use crate::decode::sketch_transfer::section_skamp_constraints_for_geometry;
+use crate::decode::sweep::{extruded_geometry_surface, placed_section_geometry_curve};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::topology::Body;
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::sketches::{SketchConstraint, SketchGeometry, SketchId};
+use std::collections::BTreeMap;
 
 mod admission;
 mod blind_circular;

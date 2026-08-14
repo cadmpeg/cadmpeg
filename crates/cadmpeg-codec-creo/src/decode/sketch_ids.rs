@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch native identity, table headers, and feature-definition record ids.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use cadmpeg_ir::features::FeatureId as IrFeatureId;
+use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
+
+use crate::container::ContainerScan;
+
+use super::feature_history::owned_section_feature_id;
+use super::native_records::{CreoSketchBucketHeader, CreoSketchTableHeader};
 
 pub(crate) fn feature_definition_has_sketch_design(
     definition: &crate::feature::FeatureDefinition,

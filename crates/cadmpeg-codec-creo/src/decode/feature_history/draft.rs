@@ -1,24 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema, thicken, datum, and sweep-admission feature definitions.
 
-use super::super::{
-    approximately_equal, circular_sweep_feature_definition, circular_sweep_geometry,
-    compact_simple_hole_cylinder_id, compact_simple_hole_geometry, counterbore_axis_placement,
-    counterbore_dimensions, counterbore_directed_placement, cross, dot,
-    extrusion_extent_and_direction, feature_outline_planes, feature_plane_equations,
-    feature_recipe, feature_recipe_effect, feature_revolution_extent, feature_schema_class,
-    feature_section_sweep_semantics_conflict, feature_sketch_record_id_in_scan,
-    generated_arc_cylinder_extent, generated_bounded_cylinder_extent, generated_cap_plane_extent,
-    generated_nurbs_translation_extent, generated_rectilinear_plane_extent, hole_placement,
-    model_sketch_id, normalized, placed_plane_surfaces, placed_planes,
+use super::super::analytic::{cross, dot, placed_plane_surfaces, placed_planes};
+use super::super::holes::{
+    circular_sweep_feature_definition, circular_sweep_geometry, compact_simple_hole_cylinder_id,
+    compact_simple_hole_geometry, counterbore_axis_placement, counterbore_dimensions,
+    counterbore_directed_placement, extrusion_extent_and_direction, hole_placement,
     simple_drilled_hole_axis_placement, simple_drilled_hole_dimensions,
     simple_drilled_hole_envelope_spans, simple_drilled_hole_placement, simple_drilled_hole_recipe,
-    simple_hole_geometry, stepped_hole_form, unique_feature_datum_plane,
-    unique_feature_definition_for_transform, unique_feature_profile_definition,
-    unique_feature_profile_ref, unique_feature_section_transform, unique_owned_feature_definition,
-    Angle, BooleanOp, CadIr, ChamferSpec, ContainerScan, EdgeSelection, FaceId, FaceSelection,
-    HoleBottom, HoleForm, HoleKind, IrFeatureDefinition, Length, Point3, ProfileRef, RadiusForm,
-    RadiusSpec, RevolutionConstruction, SurfaceGeometry, SurfaceId, Termination, Vector3,
+    simple_hole_geometry, stepped_hole_form,
+};
+use super::super::sketch::{approximately_equal, normalized};
+use super::super::sketch_ids::{feature_sketch_record_id_in_scan, model_sketch_id};
+use super::super::sketch_transfer::{
+    feature_recipe, feature_recipe_effect, feature_revolution_extent, feature_schema_class,
+    feature_section_sweep_semantics_conflict,
+};
+use super::super::sweep::{
+    feature_outline_planes, feature_plane_equations, generated_arc_cylinder_extent,
+    generated_bounded_cylinder_extent, generated_cap_plane_extent,
+    generated_nurbs_translation_extent, generated_rectilinear_plane_extent,
+};
+use super::super::uniqueness::{
+    unique_feature_datum_plane, unique_feature_definition_for_transform,
+    unique_feature_profile_definition, unique_feature_profile_ref,
+    unique_feature_section_transform, unique_owned_feature_definition,
 };
 use super::{
     chamfer_constant_distance, differing_positive_lengths, draft_neutral_plane_selection,
@@ -32,6 +38,16 @@ use super::{
     section_profile_ref, sweep_output_kind, sweep_solid, thicken_plane_offset,
     unresolved_extrude_extent,
 };
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,
+    FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, Length, ProfileRef,
+    RadiusForm, RadiusSpec, RevolutionConstruction, Termination,
+};
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::{FaceId, SurfaceId};
+use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn thicken_feature_definition(

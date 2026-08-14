@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface, curve, sketch-segment, and design-constraint transfer coverage.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition};
+
+use crate::container::ContainerScan;
+
+use super::feature_history::surface_kind_for_geometry;
+use super::records::CreoSurfaceNamedParameterRecord;
 
 pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
     scan.framing

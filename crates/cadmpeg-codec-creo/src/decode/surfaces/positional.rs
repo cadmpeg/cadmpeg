@@ -14,13 +14,13 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 
 use super::super::analytic::cross;
-use super::super::exactly_one;
 use super::super::feature_history::{
     paired_five_coordinate_sphere_center, unique_surface_parameter_record,
 };
 use super::super::native::annotate;
 use super::super::sketch::normalized;
 use super::super::sweep::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
+use super::super::uniqueness::exactly_one;
 
 use super::prototypes::{prototype_scalar, unique_surface_prototype_associations};
 

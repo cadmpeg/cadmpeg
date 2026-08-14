@@ -3,7 +3,8 @@
 
 use super::super::feature_history::feature_skamp_table_complete;
 use super::super::sketch::{trim_segment_id, unique_decoded_section_segment};
-use super::super::{exactly_one, sketch_entity_id};
+use super::super::sketch_ids::sketch_entity_id;
+use super::super::uniqueness::exactly_one;
 use super::{
     complete_section_skamps, section_degenerate_axis_line, section_saved_entity,
     section_skamp_active, unique_bounded_curve_segment, unique_centered_line_segment,

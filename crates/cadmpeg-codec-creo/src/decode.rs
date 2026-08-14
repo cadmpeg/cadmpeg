@@ -10,58 +10,11 @@
 //! the placed body model is incomplete. The report therefore records blocking
 //! geometry and topology losses instead of emitting a partial B-rep.
 
-pub(super) use std::collections::{BTreeMap, BTreeSet};
-#[allow(unused_imports)]
-use std::fmt::Write as _;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::DecodeResult;
 
-pub(super) use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
-pub(super) use cadmpeg_core::CodecError;
-pub(super) use cadmpeg_ir::codec::DecodeResult;
-pub(super) use cadmpeg_ir::document::{CadIr, SourceMeta};
-pub(super) use cadmpeg_ir::features::{
-    Angle, BodySelection, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature,
-    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, FeatureResultTopology,
-    FeatureSourceContent, FeatureTreeNodeRole, GeneratedEdgeRef, GeneratedFaceRef, HoleBottom,
-    HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind,
-    ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent,
-    SurfaceBoundary, SurfaceContinuity, Termination, ThickenSide, VertexSelection,
-};
-pub(super) use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
-};
-pub(super) use cadmpeg_ir::hash::sha256_hex;
-pub(super) use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, FeatureResultTopologyId, LoopId, OccurrenceId,
-    PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, ProductDefinitionId, RegionId,
-    ShellId, SurfaceId, UnknownId, VertexId,
-};
-pub(super) use cadmpeg_ir::math::{Point2, Point3, Vector3};
-pub(super) use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
-};
-pub(super) use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
-pub(super) use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchCoordinateAxis,
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
-    SketchNativeOperand,
-};
-pub(super) use cadmpeg_ir::tessellation::Tessellation;
-pub(super) use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
-    Vertex,
-};
-pub(super) use cadmpeg_ir::transform::Transform;
-pub(super) use cadmpeg_ir::units::Units;
-pub(super) use cadmpeg_ir::unknown::UnknownRecord;
-pub(super) use cadmpeg_ir::AnnotationBuilder;
-pub(super) use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-pub(super) use serde::Serialize;
-
-pub(super) use crate::container::{self, role, ContainerScan};
-pub(super) use crate::topology::HalfEdgeId;
+use crate::container;
 
 mod analytic;
 mod build;
@@ -79,37 +32,15 @@ mod sketch_transfer;
 mod surfaces;
 mod sweep;
 mod uniqueness;
-#[allow(clippy::wildcard_imports)]
-use analytic::*;
-#[allow(clippy::wildcard_imports)]
-use build::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use coverage::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use curve_expressions::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use expanded::*;
-#[allow(clippy::wildcard_imports)]
-use feature_history::*;
-#[allow(clippy::wildcard_imports)]
-use holes::*;
-use native::{annotate, emit_arena, emit_uniform, store_arena};
-#[allow(clippy::wildcard_imports)]
-pub(crate) use native_records::*;
-#[allow(clippy::wildcard_imports)]
-use records::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use sketch::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use sketch_ids::*;
-#[allow(clippy::wildcard_imports)]
-use sketch_transfer::*;
-#[allow(clippy::wildcard_imports)]
-use surfaces::*;
-#[allow(clippy::wildcard_imports)]
-use sweep::*;
-#[allow(clippy::wildcard_imports)]
-pub(crate) use uniqueness::*;
+
+use build::{build_container_ir, build_ir, build_report, BuiltIr};
+
+#[cfg(test)]
+#[allow(unused_imports)] // `resolved_section_scalar_values` is part of the test surface
+pub(crate) use sketch::{
+    resolved_section_coordinates, resolved_section_points, resolved_section_radii,
+    resolved_section_scalar_values,
+};
 
 #[cfg(test)]
 mod tests;

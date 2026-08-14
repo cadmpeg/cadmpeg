@@ -5,9 +5,10 @@ use super::super::analytic::nurbs_intrinsic_parameter_range;
 use super::super::feature_history::feature_allows_additive_linear_extrusion;
 use super::super::native::annotate;
 use super::super::sketch::{normalized, section_point_in_model};
+use super::super::sketch_ids::model_sketch_id;
 use super::super::sketch_transfer::feature_is_first_material_operation;
-use super::super::{
-    model_sketch_id, unique_feature_definition_for_transform, unique_feature_section_transform,
+use super::super::uniqueness::{
+    unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::extent::resolved_feature_extrusion_span;
 use super::nurbs::{

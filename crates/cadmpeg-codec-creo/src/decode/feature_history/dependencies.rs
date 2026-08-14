@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature dependency graphs, affected ids, and link reconciliation.
 
-use super::super::{
-    current_feature_recipe_parent, unique_surface_prototype_associations, CadIr, ContainerScan,
-    EdgeSelection, FaceSelection, IrFeatureDefinition, IrFeatureId,
-};
+use super::super::sketch_transfer::current_feature_recipe_parent;
+use super::super::surfaces::unique_surface_prototype_associations;
 use super::surface_transition_dependencies;
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_dependencies(

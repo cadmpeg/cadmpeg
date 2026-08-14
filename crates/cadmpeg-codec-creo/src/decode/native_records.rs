@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native-arena nested record types moved from `decode.rs`.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub(crate) struct CreoSketchSectionPoint {

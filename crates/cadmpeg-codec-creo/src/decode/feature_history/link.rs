@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-history links and generated surface identity helpers.
 
-use super::super::{
-    model_sketch_id, section_owner_feature_id, unique_feature_definition_for_transform,
-    unique_feature_section_transform, CadIr, ContainerScan, IrFeatureId, SketchEntityId,
-    SketchEntityUse, SketchGeometry, SurfaceGeometry,
+use super::super::sketch_ids::{model_sketch_id, section_owner_feature_id};
+use super::super::uniqueness::{
+    unique_feature_definition_for_transform, unique_feature_section_transform,
 };
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FeatureId as IrFeatureId;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchGeometry};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {

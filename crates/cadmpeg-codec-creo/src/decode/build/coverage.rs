@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
+    BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, HoleKind, ProfileRef, RadiusForm, RadiusSpec,
     RevolveExtent,
 };
@@ -13,7 +13,6 @@ use cadmpeg_ir::features::{
 use crate::container::ContainerScan;
 
 use super::super::feature_history::replayed_torus_minor_radius;
-use super::super::ExtrudeStart;
 use super::ir::{
     body_selection_has_unresolved_operands, face_selection_has_unresolved_operands,
     pattern_kind_has_unresolved_operands, surface_boundary_has_unresolved_operands,

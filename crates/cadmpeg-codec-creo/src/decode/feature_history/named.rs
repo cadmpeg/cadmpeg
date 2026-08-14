@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Named and referenced feature definitions.
 
-use super::super::{
-    feature_recipe_effect, feature_schema_class, unique_feature_profile_ref, BodyKind,
-    BodySelection, BooleanOp, CadIr, ContainerScan, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureTreeNodeRole, IrFeatureDefinition, PatternForm, PatternKind, ProfileRef,
-    RevolutionConstruction, Termination,
-};
+use super::super::sketch_transfer::{feature_recipe_effect, feature_schema_class};
+use super::super::uniqueness::unique_feature_profile_ref;
 use super::{
     feature_reference_name, filled_surface_feature_definition, knit_surface_feature_definition,
     numbered_feature_name_has_family, preceding_features_establish_body, schema_feature_definition,
     section_sweep_boolean_operation, sweep_output_kind, sweep_solid, thicken_feature_definition,
 };
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    BodySelection, BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection,
+    FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, PatternForm, PatternKind,
+    ProfileRef, RevolutionConstruction, Termination,
+};
+use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
 
 pub(in super::super) fn named_feature_definition(

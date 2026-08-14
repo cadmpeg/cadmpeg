@@ -6,12 +6,12 @@ use super::super::feature_history::{
 };
 use super::super::native::annotate;
 use super::super::sketch::{saved_profile_chains, saved_section_entity_geometry};
-use super::super::sweep::{
-    placed_section_geometry_curve, placed_sketch_curve_ref, saved_spline_sketch_geometry,
-};
-use super::super::{
+use super::super::sketch_ids::{
     sketch_entity_id, sketch_identity_scope, sketch_native_ref, sketch_point_ref,
     sketch_section_curve_id,
+};
+use super::super::sweep::{
+    placed_section_geometry_curve, placed_sketch_curve_ref, saved_spline_sketch_geometry,
 };
 use super::{
     opaque_section_segment_identity_suffix, saved_section_external_id,
@@ -71,7 +71,7 @@ pub(super) fn transfer_section_entities(
         .iter()
         .filter_map(|segment| {
             let geometry = segment_geometry(segment)?;
-            let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+            let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
             let id = sketch_entity_id(sketch_id, &suffix);
             annotate(
                 annotations,
@@ -134,7 +134,7 @@ pub(super) fn transfer_section_entities(
     {
         let id = sketch_entity_id(
             sketch_id,
-            section_segment_identity_suffix(&unique_segment_ids, segment),
+            section_segment_identity_suffix(unique_segment_ids, segment),
         );
         annotate(
             annotations,
@@ -470,7 +470,7 @@ pub(super) fn transfer_section_entities(
         {
             continue;
         }
-        let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
+        let suffix = opaque_section_segment_identity_suffix(unique_segment_ids, segment);
         let id = sketch_entity_id(sketch_id, suffix);
         let geometry = if unique_external_id {
             let native_kind =
@@ -525,8 +525,8 @@ pub(super) fn transfer_section_entities(
             definition.order_table.as_ref().and_then(|order| {
                 saved_section_external_id(
                     order,
-                    &unique_saved_ids,
-                    &ambiguous_segment_ids,
+                    unique_saved_ids,
+                    ambiguous_segment_ids,
                     internal_id,
                 )
             })
@@ -605,8 +605,8 @@ pub(super) fn transfer_section_entities(
             definition.order_table.as_ref().and_then(|order| {
                 saved_section_external_id(
                     order,
-                    &unique_saved_ids,
-                    &ambiguous_segment_ids,
+                    unique_saved_ids,
+                    ambiguous_segment_ids,
                     spline.entity_id?,
                 )
             })
@@ -671,8 +671,8 @@ pub(super) fn transfer_section_entities(
             definition,
             sketch_id,
             saved,
-            &unique_saved_ids,
-            &ambiguous_segment_ids,
+            unique_saved_ids,
+            ambiguous_segment_ids,
         );
         if entities.iter().any(|existing| existing.id == entity.id) {
             continue;
@@ -707,7 +707,7 @@ pub(super) fn transfer_section_entities(
             let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
                 continue;
             };
-            let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+            let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
             let id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;

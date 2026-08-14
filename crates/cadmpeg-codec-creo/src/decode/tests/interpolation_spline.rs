@@ -1,8 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: interpolation spline.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use crate::decode::analytic::PlaneEquation;
+use crate::decode::feature_history::{
+    class_942_boundary_surface_entity_graph, draft_neutral_plane_selection,
+    feature_allows_linear_extrusion, feature_is_sheet_extrusion, feature_surface_transitions,
+    filled_surface_feature_definition, named_feature_definition, new_sheet_output_surface_id,
+    numbered_feature_name_has_family, preceding_features_establish_body,
+    reference_named_feature_definition, schema_feature_definition, section_profile_ref,
+    section_sweep_allows_linear_extrusion, section_sweep_boolean_operation,
+    surface_transition_dependencies, sweep_output_kind, thicken_plane_offset,
+};
+use crate::decode::holes::{
+    circular_sweep_cylinder_from_cap_outlines, circular_sweep_feature_definition,
+    cylinder_from_single_cap_outline, extrusion_extent_and_direction,
+    hole_cylinder_from_cap_outlines, hole_extent_and_direction, hole_placement,
+    CircularSweepGeometry, ExtrusionSpan,
+};
+use crate::decode::sketch_transfer::{
+    current_additive_feature_recipe, current_feature_recipe, current_feature_recipe_parent,
+    sketch_constraint_loci_compatible,
+};
+use crate::decode::sweep::{
+    arcs_intersect, circular_section_profile_from_cylinder, connected_sketch_profile_vertices,
+    extrusion_brep_side_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
+    extrusion_side_uvs, line_arc_intersect, ordered_extrusion_profiles, profile_segments_intersect,
+    profile_strictly_contains, resolved_sketch_profiles, ExtrusionProfile,
+};
+use crate::decode::uniqueness::unique_feature_profile_definition;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, Length, PathRef,
+    ProfileRef, RevolutionConstruction, SurfaceBoundary, Termination, ThickenSide,
+};
+use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{BodyId, SurfaceId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
+    SketchGeometry, SketchId, SketchLocus,
+};
+use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::units::Units;
+use std::collections::BTreeMap;
 
 #[test]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {

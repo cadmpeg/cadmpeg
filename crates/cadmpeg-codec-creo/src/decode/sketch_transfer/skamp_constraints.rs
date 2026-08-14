@@ -2,7 +2,7 @@
 //! SKAMP solver constraint emission and locus compatibility.
 
 use super::super::feature_history::feature_solver_table_complete;
-use super::super::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
+use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
     section_entity_external_ids, section_skamp_active, section_skamp_center_entity,
     section_skamp_circular_entity, section_skamp_curve_entity, section_skamp_incidence_locus,

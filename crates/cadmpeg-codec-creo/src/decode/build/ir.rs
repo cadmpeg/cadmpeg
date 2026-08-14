@@ -6,22 +6,25 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::VertexSelection;
 use cadmpeg_ir::features::{
     BodySelection, EdgeSelection, FaceSelection, PathRef, PatternKind, SurfaceBoundary, Termination,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
 use super::super::analytic::placed_plane_surfaces;
-use super::super::attach_expanded_sections;
+use super::super::expanded::attach_expanded_sections;
 use super::super::native::annotate;
 use super::super::sketch::normalized;
-use super::super::{Tessellation, Units, UnknownRecord, VertexSelection};
 use super::arenas::{emit_geometry_arenas, emit_reference_arenas};
 use super::coverage::collect_feature_coverage;
 use super::ir_features::{emit_model_features, finish_feature_transfers};

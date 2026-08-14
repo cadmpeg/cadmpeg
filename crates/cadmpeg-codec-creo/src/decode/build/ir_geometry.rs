@@ -14,6 +14,9 @@ use super::super::analytic::{
     retain_unresolved_visible_carriers, transfer_analytic_pcurve_carriers,
     transfer_topology_bound_planes,
 };
+use super::super::coverage::{
+    curve_transfer_coverage, design_constraint_transfer_coverage, surface_transfer_coverage,
+};
 use super::super::feature_history::{
     feature_relation_table_expected_rows, feature_relation_table_missing_rows,
     feature_solver_table_missing_rows, transfer_resolved_extrusion_vertex_orbit_curves,
@@ -35,9 +38,6 @@ use super::super::sweep::{
     transfer_feature_extrusion_surfaces, transfer_resolved_circular_extrusion_breps,
     transfer_resolved_extrusion_breps, transfer_resolved_revolution_breps,
     transfer_saved_spline_curves,
-};
-use super::super::{
-    curve_transfer_coverage, design_constraint_transfer_coverage, surface_transfer_coverage,
 };
 
 pub(super) fn transfer_and_record_scanned_geometry(

@@ -8,10 +8,11 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::{
-    approximately_equal, feature_dimension_table_complete, normalized,
-    unique_available_positional_cylinder_frames, unique_surface_parameter_record,
+use super::super::feature_history::{
+    feature_dimension_table_complete, unique_surface_parameter_record,
 };
+use super::super::sketch::{approximately_equal, normalized};
+use super::super::sweep::unique_available_positional_cylinder_frames;
 
 pub fn stepped_hole_form(
     feature_id: u32,

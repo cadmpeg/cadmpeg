@@ -11,7 +11,9 @@ use serde::Serialize;
 use crate::container::{self, role, ContainerScan};
 
 use super::super::native::annotate;
-use super::super::{emit_arena, sha256_hex, UnknownRecord};
+use super::super::native::emit_arena;
+use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::unknown::UnknownRecord;
 
 pub(in super::super) fn preserve_passthrough_sections(
     scan: &ContainerScan,

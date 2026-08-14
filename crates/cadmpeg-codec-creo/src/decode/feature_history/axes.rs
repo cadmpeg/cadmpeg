@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolution axes, section profile refs, and geometry-generator features.
 
-use super::super::{
-    cross, dot, normalized, resolved_section_points, section_point_in_model, Angle, CadIr,
-    ContainerScan, IrFeatureId, Point3, ProfileRef, RevolutionAxis, RevolveExtent, SketchId,
-    SurfaceGeometry, SurfaceId, Termination, Vector3,
+use super::super::analytic::{cross, dot};
+use super::super::sketch::{normalized, resolved_section_points, section_point_in_model};
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Angle, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent, Termination,
 };
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::sketches::SketchId;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn resolved_revolution_axis(

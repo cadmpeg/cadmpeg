@@ -8,7 +8,12 @@ use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;
 
+use super::super::expanded::{
+    fc05_circle_records, fc05_cylinder_cap_pair_records, feature_surface_replay_associations,
+};
+use super::super::native::emit_arena;
 use super::super::native::{annotate, emit_uniform, store_arena};
+use super::super::records::family_table_record;
 use super::super::records::{
     cross_section_curve_row_records, curve_expression_records, curve_parameter_records,
     curve_prototype_records, curve_prototype_topology_records, curve_topology_row_records,
@@ -26,10 +31,6 @@ use super::super::records::{
     reference_ellipse_records, reference_line_records, sketch_records,
     surface_merge_replay_affected_id_records, surface_parameter_records, surface_prototype_records,
     surface_row_records, tabulated_cylinder_curve_replay_records, topological_vertex_records,
-};
-use super::super::{
-    emit_arena, family_table_record, fc05_circle_records, fc05_cylinder_cap_pair_records,
-    feature_surface_replay_associations,
 };
 
 /// Emit the `MdlRefInfo` reference-geometry arenas.

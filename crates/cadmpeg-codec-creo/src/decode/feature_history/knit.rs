@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Filled, knit, draft, thicken, and result-topology feature recipes.
 
-use super::super::{
-    dot, exactly_one, model_sketch_id, normalized, unique_feature_profile_definition, CadIr,
-    ContainerScan, EdgeSelection, FaceSelection, FeatureResultTopology, FeatureResultTopologyId,
-    GeneratedFaceRef, IrFeatureDefinition, IrFeatureId, PathRef, PlaneEquation, SurfaceBoundary,
-    SurfaceContinuity, ThickenSide,
-};
+use super::super::analytic::{dot, PlaneEquation};
+use super::super::sketch::normalized;
+use super::super::sketch_ids::model_sketch_id;
+use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use super::{
     feature_entity_producers, feature_result_edge_ids, model_feature_ids, surface_merge_quilt_ids,
     unique_positive_length,
 };
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId, FeatureResultTopology, GeneratedFaceRef, PathRef, SurfaceBoundary,
+    SurfaceContinuity, ThickenSide,
+};
+use cadmpeg_ir::ids::FeatureResultTopologyId;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn filled_surface_feature_definition(

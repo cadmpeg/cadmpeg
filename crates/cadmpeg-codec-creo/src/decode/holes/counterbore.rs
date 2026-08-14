@@ -11,10 +11,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::{
-    approximately_equal, feature_dimension_table_complete, normalized,
-    unique_surface_parameter_record,
+use super::super::feature_history::{
+    feature_dimension_table_complete, unique_surface_parameter_record,
 };
+use super::super::sketch::{approximately_equal, normalized};
 use super::drilled::paired_corner_envelope_axis_spans;
 
 pub fn counterbore_dimensions(

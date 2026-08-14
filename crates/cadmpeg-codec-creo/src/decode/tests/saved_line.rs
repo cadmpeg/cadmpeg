@@ -1,8 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: saved line.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::{
+    extruded_segment_surface, placed_section_curve_geometry, section_segment_intersection_carrier,
+    section_skamp_constraints, trimmed_section_segment_geometry,
+};
+use crate::decode::sketch::{
+    is_full_circle_geometry, resolved_section_coordinates, resolved_section_points,
+    resolved_section_radii, resolved_section_segment_geometry, resolved_trim_vertex_coordinates,
+    saved_profile_chains, saved_section_arc_carrier, saved_section_arc_geometry,
+    saved_section_circle_values, saved_section_entity_geometry, saved_section_line_geometry,
+    saved_section_missing_line_geometry, saved_section_segment_point_coordinates, trim_segment_id,
+};
+use crate::decode::sketch_transfer::{
+    ambiguous_section_segment_external_ids, joined_relation_incidence_entities,
+    materialized_saved_section_external_ids, relation_incidence_entities,
+    saved_section_external_id, section_dimension_constraints, section_entity_external_ids,
+    section_skamp_constraints_for_geometry, section_skamp_incidence_locus,
+    section_skamp_point_locus, semantic_saved_section_entities, solver_only_section_entity_family,
+    unique_saved_section_internal_ids, unresolved_saved_section_entity,
+    SectionEntityIncidenceFamily,
+};
+use cadmpeg_ir::features::{Angle, Length};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn saved_line_joins_through_order_table() {

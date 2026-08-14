@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature recipe, schema class, and revolution-extent helpers.
 
-use super::super::unique_feature_definition_for_transform;
+use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
 use cadmpeg_ir::features::{Angle, RevolveExtent, Termination};
 use std::collections::{BTreeMap, BTreeSet};

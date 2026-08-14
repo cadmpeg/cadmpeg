@@ -2,8 +2,8 @@
 //! External ids and saved-section entity identity.
 
 use super::super::sketch::saved_section_entity_geometry;
+use super::super::sketch_ids::{sketch_entity_id, sketch_identity_scope, sketch_native_ref};
 use super::super::sweep::saved_spline_sketch_geometry;
-use super::super::{sketch_entity_id, sketch_identity_scope, sketch_native_ref};
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Round and chamfer radius reconstruction from support geometry.
 
-use super::super::{
-    alloc_filled, circular_cone, cross, dot, exactly_one, normalized, placed_planes,
-    prototype_scalar, solve_planes, unique_surface_prototype_associations, CadIr, ConeEquation,
-    ContainerScan, CylinderEquation, PlaneEquation, SurfaceGeometry, SurfaceId,
+use super::super::analytic::{
+    circular_cone, cross, dot, placed_planes, solve_planes, ConeEquation, CylinderEquation,
+    PlaneEquation,
 };
+use super::super::sketch::normalized;
+use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associations};
+use super::super::uniqueness::exactly_one;
 use super::agreed_feature_geometry_ids;
+use crate::container::ContainerScan;
+use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::SurfaceId;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn parallel_support_radius(

@@ -1,8 +1,58 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: generated source.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use super::{
+    class_911_surface_row, simple_drilled_recipe_surface_rows, simple_drilled_recipe_table,
+};
+use crate::decode::analytic::rowless_round_face_orientations;
+use crate::decode::coverage::{
+    constraint_kind_breakdown, curve_transfer_coverage, design_constraint_transfer_coverage,
+    surface_transfer_coverage,
+};
+use crate::decode::feature_history::{
+    analytic_surface_id_for_feature, generated_surface_id_for_feature,
+    ordered_analytic_surface_id_for_feature, ordered_family_surface_bindings_for_feature,
+    schema_feature_definition, section_entity_is_generated_profile,
+    section_generated_profile_surface_kinds,
+};
+use crate::decode::holes::{
+    clipped_drilled_hole_placement_from_cone_points, counterbore_axis_placement_from_sources,
+    counterbore_cylinder_sources, counterbore_dimension_values, counterbore_directed_span,
+    counterbore_envelope_dimension_values, counterbore_placement_from_corner_envelopes,
+    counterbore_source_patch_geometries, counterbore_support_axis_placement,
+    counterbore_unenveloped_dimension_values, dimension_pair_matches_envelope_spans,
+    drilled_hole_placement_from_corner_envelopes, paired_corner_envelope_axis_spans,
+    simple_drilled_axis_placement_from_frames, simple_drilled_hole_dimension_values,
+    simple_drilled_hole_recipe, stepped_hole_form, ExtrusionSpan, SimpleDrilledDimensionFamily,
+};
+use crate::decode::sketch::approximately_equal;
+use crate::decode::sketch_transfer::{
+    normalize_section_incidence_curve_family_evidence, sketch_constraint_loci_compatible,
+    SectionEntityIncidenceFamily,
+};
+use crate::decode::surfaces::rowless_round_cylinder_pairs;
+use crate::decode::sweep::{
+    circular_pcurve, extruded_nurbs_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
+    extrusion_side_uvs, ordered_extrusion_profiles, oriented_arc_parameterization,
+    oriented_full_turn_angles, point_on_profile_arc, profile_arc, resolved_sketch_profiles,
+};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, Termination,
+};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+};
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::SourceObjectAssociation;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn generated_source_ids_bind_carriers_independently_of_table_position() {

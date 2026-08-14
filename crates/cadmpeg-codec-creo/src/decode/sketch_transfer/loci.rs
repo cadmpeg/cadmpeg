@@ -6,7 +6,7 @@ use super::super::sketch::{
     resolved_section_points, section_skamp_selected_point, section_skamp_selected_point_id,
     unique_decoded_section_segment, unique_section_skamp_segment, SectionPointSource,
 };
-use super::super::sketch_entity_id;
+use super::super::sketch_ids::sketch_entity_id;
 use super::{
     semantic_saved_section_entities, solver_only_section_entities,
     solver_only_section_entity_family, unique_section_incidence_curve_family,

@@ -12,10 +12,10 @@ use super::super::sketch::{
     resolved_section_segment_geometry, saved_section_entity_geometry, section_point_in_model,
     trim_segment_id,
 };
+use super::super::sketch_ids::sketch_section_curve_id;
 use super::super::sketch_transfer::semantic_saved_section_entities;
-use super::super::{
-    sketch_section_curve_id, unique_feature_definition_for_transform,
-    unique_feature_section_transform,
+use super::super::uniqueness::{
+    unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::extent::resolved_feature_extrusion_span;
 use super::nurbs::{

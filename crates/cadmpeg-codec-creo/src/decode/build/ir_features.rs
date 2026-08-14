@@ -12,6 +12,7 @@ use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;
 
+use super::super::curve_expressions::transfer_curve_expression_features;
 use super::super::feature_history::{
     datum_plane_feature_definition, emit_feature_result_topologies, feature_dependencies,
     feature_output_bodies, feature_parameters, feature_reference_name, feature_source_properties,
@@ -22,14 +23,13 @@ use super::super::feature_history::{
     unbounded_feature_plane_definition,
 };
 use super::super::native::annotate;
+use super::super::sketch_ids::owning_feature_definition_ref;
 use super::super::sketch_transfer::{
     close_sketch_constraint_parameter_references, current_feature_operation,
     current_feature_recipe, current_feature_recipe_parent, feature_schema_class,
     row_feature_schema_classes,
 };
-use super::super::{
-    owning_feature_definition_ref, transfer_curve_expression_features, unique_feature_datum_plane,
-};
+use super::super::uniqueness::unique_feature_datum_plane;
 
 pub(super) fn emit_model_features(
     scan: &ContainerScan,

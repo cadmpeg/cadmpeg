@@ -9,9 +9,8 @@ mod pcurves;
 mod planes;
 mod vertices;
 
-// Preserve the former analytic.rs `pub(super)` surface for `use analytic::*` in
-// decode.rs and `use super::*` in sibling decode modules. Glob consumers do not
-// count as uses for unused_imports.
+// Preserve the former analytic.rs `pub(super)` surface for sibling modules.
+// Named re-exports that siblings do not import still need unused_imports.
 #[allow(unused_imports)]
 pub(super) use carriers::{
     face_boundary_plane, geometry_section_record, native_face_orientations, ordered_face_loops,

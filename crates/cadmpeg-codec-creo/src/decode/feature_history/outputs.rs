@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature output bodies, sweep kind, and native parameter maps.
 
-use super::super::{
+use super::super::sketch_ids::model_sketch_id;
+use super::super::sketch_transfer::{
     current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
-    feature_schema_class, model_sketch_id, unique_feature_definition_for_transform,
-    unique_feature_revolution_extent_kind, BodyId, BodyKind, CadIr, ContainerScan, EdgeId,
-    EdgeSelection, SurfaceId,
+    feature_schema_class, unique_feature_revolution_extent_kind,
 };
+use super::super::uniqueness::unique_feature_definition_for_transform;
 use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::ids::{BodyId, EdgeId, SurfaceId};
+use cadmpeg_ir::topology::BodyKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_output_bodies(

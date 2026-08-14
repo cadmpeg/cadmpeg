@@ -1,8 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: carrier solver.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use crate::decode::analytic::{
+    intersect_plane_with_two_quadrics, intersect_two_planes_with_torus, point_on_carrier,
+    solve_carriers, CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation,
+    TorusEquation,
+};
+use crate::decode::surfaces::{
+    apex_plane_cone_generator_candidates, axis_normal_plane_torus_circle_candidates,
+    carrier_intersection_curve, coaxial_cone_cylinder_circle_candidates,
+    coaxial_cone_sphere_circle_candidates, coaxial_cylinder_sphere_circle_candidates,
+    coaxial_cylinder_torus_circle_candidates, coaxial_sphere_torus_circle_candidates,
+    coaxial_tori_circle_candidates, fc14_held_coordinate, parallel_cylinder_generator_candidates,
+    parallel_plane_cylinder_generator_candidates, select_fc14_axis_coordinate_candidate,
+    select_unique_curve_candidate,
+};
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::math::Point3;
 
 #[test]
 fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {

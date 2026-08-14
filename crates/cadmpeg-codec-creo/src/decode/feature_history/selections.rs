@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature edge selection and generated result-edge identity.
 
-use super::super::{CadIr, ContainerScan, EdgeId, EdgeSelection, GeneratedEdgeRef, IrFeatureId};
 use super::{
     agreed_feature_affected_ids, agreed_feature_replay_edge_ids,
     agreed_feature_replay_geometry_ids, has_feature_affected_ids, model_feature_ids,
 };
+use crate::container::ContainerScan;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{EdgeSelection, FeatureId as IrFeatureId, GeneratedEdgeRef};
+use cadmpeg_ir::ids::EdgeId;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_edge_selection(

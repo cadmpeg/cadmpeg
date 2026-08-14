@@ -1,8 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Curve-from-equation feature transfer and assignment parameter ordering.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Angle, DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId, FeatureSourceContent, Length, ParameterId, ParameterValue,
+};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
+
+use crate::container::ContainerScan;
+
+use super::native::annotate;
 
 pub(crate) fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> String {
     format!(
