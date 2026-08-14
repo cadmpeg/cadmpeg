@@ -1159,12 +1159,11 @@ impl CodecBackend for FcstdCodec {
         };
         let scan = container::scan(ctx, root)?;
         // Charge document object cardinality before persistence/geometry work.
-        let mut admitted_entities = 0_u64;
-        ctx.admit_entities(
+        ctx.charge_entities(
             scan.document.object_count as u64,
-            &mut admitted_entities,
             "admit FCStd document objects",
         )?;
+        let mut admitted_entities = 0_u64;
         if !options.container_only
             && !matches!(scan.document.schema_version.as_str(), "2" | "3" | "4")
         {
@@ -2281,6 +2280,43 @@ mod decode_tests {
             ),
             "{error:?}"
         );
+    }
+
+    #[test]
+    fn decode_keeps_document_objects_and_model_entities_additive() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Stored" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Stored"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("decode stored feature");
+        assert_eq!(decoded.ir().model.entity_count(), 1);
+
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_entities = 1;
+        let error = FcstdCodec
+            .decode(&mut Cursor::new(archive(document)), &options)
+            .expect_err("one document object plus one model entity require a limit of two");
+        assert!(
+            matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::Entities
+                        && limit.context.operation == "admit FCStd entities"
+            ),
+            "{error:?}"
+        );
+
+        options.policy.limits.max_entities = 2;
+        FcstdCodec
+            .decode(&mut Cursor::new(archive(document)), &options)
+            .expect("the exact additive entity limit must admit the fixture");
     }
 
     #[test]

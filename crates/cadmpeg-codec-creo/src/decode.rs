@@ -2253,12 +2253,8 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let scan = container::scan_bytes(root.window());
     // Charge section cardinality before IR construction so max_entities can
     // refuse the build rather than only the finalizer.
+    ctx.charge_entities(scan.framing.sections.len() as u64, "admit Creo sections")?;
     let mut admitted_entities = 0_u64;
-    ctx.admit_entities(
-        scan.framing.sections.len() as u64,
-        &mut admitted_entities,
-        "admit Creo sections",
-    )?;
 
     let BuiltIr {
         mut ir,

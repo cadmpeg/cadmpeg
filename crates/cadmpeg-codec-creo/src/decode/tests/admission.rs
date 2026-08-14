@@ -47,6 +47,44 @@ fn decode_refuses_when_max_entities_is_below_section_cardinality() {
 }
 
 #[test]
+fn decode_keeps_section_and_model_entity_admission_additive() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let fixture = include_bytes!("../../../tests/golden/fixtures/named_cylinder_prototype.prt");
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+        .expect("decode named cylinder prototype");
+    assert_eq!(
+        container::scan_bytes(fixture.as_slice())
+            .framing
+            .sections
+            .len(),
+        1
+    );
+    assert_eq!(decoded.ir().model.entity_count(), 2);
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 2;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect_err("one section plus two model entities require an entity limit of three");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.context.operation == "admit Creo entities"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 3;
+    CreoCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect("the exact additive entity limit must admit the fixture");
+}
+
+#[test]
 fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
     let result = CreoCodec

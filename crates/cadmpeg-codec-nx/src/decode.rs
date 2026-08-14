@@ -136,11 +136,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     }
 
     // Charge stream cardinality before geometry construction.
-    ctx.admit_entities(
-        scan.streams.len() as u64,
-        &mut admitted_entities,
-        "admit NX streams",
-    )?;
+    ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
 
     if let Some((ir, report, annotations, unknowns)) =
         try_decode_geometry(ctx, root, &scan, &mut admitted_entities)?

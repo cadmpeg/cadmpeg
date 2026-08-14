@@ -44,6 +44,38 @@ fn decode_refuses_when_max_entities_is_below_known_cardinality() {
 }
 
 #[test]
+fn decode_keeps_stream_and_model_entity_admission_additive() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = prt_with_partition(&topology_partition_stream());
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(file.clone()), &DecodeOptions::default())
+        .expect("decode topology partition");
+    let model_entities = decoded.ir().model.entity_count() as u64;
+    assert!(model_entities > 1);
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = model_entities;
+    let error = NxCodec
+        .decode(&mut Cursor::new(file.clone()), &options)
+        .expect_err("one stream must remain additive to the model entities");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.context.operation == "admit NX entities"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = model_entities + 1;
+    NxCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect("the exact additive entity limit must admit the fixture");
+}
+
+#[test]
 fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};

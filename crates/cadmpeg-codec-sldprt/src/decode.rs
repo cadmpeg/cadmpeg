@@ -100,14 +100,10 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let scan = container::scan(ctx, root)?;
     // Charge container cardinality before BREP/IR construction so max_entities
     // can refuse the expensive path rather than only the finalizer.
-    let mut admitted_entities = 0_u64;
     let container_entities =
         (scan.blocks.len() + scan.compound_streams.len() + scan.directory.len()) as u64;
-    ctx.admit_entities(
-        container_entities,
-        &mut admitted_entities,
-        "admit SLDPRT container entities",
-    )?;
+    ctx.charge_entities(container_entities, "admit SLDPRT container entities")?;
+    let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
         let (ir, annotations, unknowns, mut pmi_losses) =
@@ -119,11 +115,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
-        ctx.admit_entities(
-            admitted_entities.saturating_add(streams.len() as u64),
-            &mut admitted_entities,
-            "admit SLDPRT body streams",
-        )?;
+        ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,

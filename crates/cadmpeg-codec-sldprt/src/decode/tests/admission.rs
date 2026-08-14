@@ -52,6 +52,45 @@ fn decode_refuses_when_max_entities_is_below_container_cardinality() {
 }
 
 #[test]
+fn decode_keeps_container_stream_and_model_entity_admission_additive() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let fixture = sldprt_with_body_and_history(&triangle_body());
+    let scan = container::scan_bytes(&fixture);
+    let container_entities = scan.blocks.len() + scan.compound_streams.len() + scan.directory.len();
+    let stream_entities = crate::decode::active_body_streams(&scan).len();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("decode triangle body");
+    let model_entities = decoded.ir().model.entity_count();
+    assert!(container_entities > 0);
+    assert!(stream_entities > 0);
+    assert!(model_entities > 0);
+
+    let previous_undercount = (container_entities + stream_entities).max(model_entities) as u64;
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = previous_undercount;
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &options)
+        .expect_err("container, stream, and model cardinalities must remain additive");
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.context.operation == "admit SLDPRT entities"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities =
+        (container_entities + stream_entities + model_entities) as u64;
+    SldprtCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect("the exact additive entity limit must admit the fixture");
+}
+
+#[test]
 fn strict_accepts_operator_requested_container_only() {
     let fixture = synthetic_sldprt();
     let mut options = strict_options();
