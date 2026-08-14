@@ -86,11 +86,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
-            (
-                existing.map_or_else(|| "Rib".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Rib".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -346,7 +346,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 },
                 |record| record.kind.clone(),
             );
-            (kind, parameters, properties)
+            NeutralFeatureEncoding {
+                kind,
+                parameters,
+                properties,
+            }
         })
     }
 

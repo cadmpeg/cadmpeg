@@ -124,11 +124,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         })?;
                 properties.insert("Profile".into(), profile_source);
             }
-            (
-                existing.map_or_else(|| "Revolve".into(), |record| record.kind.clone()),
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Revolve".into(), |record| record.kind.clone()),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -287,8 +287,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 SweepMode::Unresolved => {}
             }
-            (
-                existing.map_or_else(
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(
                     || {
                         match mode {
                             SweepMode::Surface => "Surface-Sweep",
@@ -300,7 +300,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ),
                 parameters,
                 properties,
-            )
+            }
         })
     }
 
@@ -400,13 +400,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if *closed || existing.is_none() || properties.contains_key("Closed") {
                 properties.insert("Closed".into(), closed.to_string());
             }
-            (
-                existing.map_or_else(|| "Loft".into(), |record| record.kind.clone()),
-                existing
+            NeutralFeatureEncoding {
+                kind: existing.map_or_else(|| "Loft".into(), |record| record.kind.clone()),
+                parameters: existing
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default(),
                 properties,
-            )
+            }
         })
     }
 }
