@@ -1,0 +1,511 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Scanned analytic, sketch, and B-rep transfer plus coverage counters.
+
+use std::collections::BTreeMap;
+
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::AnnotationBuilder;
+
+use crate::container::ContainerScan;
+
+use super::super::analytic::{
+    retain_unresolved_visible_carriers, transfer_analytic_pcurve_carriers,
+    transfer_topology_bound_planes,
+};
+use super::super::feature_history::{
+    feature_relation_table_expected_rows, feature_relation_table_missing_rows,
+    feature_solver_table_missing_rows, transfer_resolved_extrusion_vertex_orbit_curves,
+    transfer_resolved_revolution_surfaces, transfer_resolved_revolution_vertex_orbit_curves,
+};
+use super::super::sketch_transfer::transfer_sketches;
+use super::super::surfaces::{
+    transfer_cap_pair_cylinders, transfer_carrier_intersection_curves,
+    transfer_circular_sweep_cylinders, transfer_constrained_slot_fillet_cylinders,
+    transfer_cross_section_planes, transfer_fc05_cap_circles,
+    transfer_first_instance_prototype_surfaces, transfer_hole_cylinders, transfer_native_brep,
+    transfer_nurbs_boundary_curves, transfer_paired_envelope_spheres, transfer_part_product,
+    transfer_positional_cones, transfer_positional_cylinders,
+    transfer_positional_line_extrusion_planes, transfer_positional_tori,
+    transfer_rowless_round_cylinders, transfer_split_outline_cylinders,
+    transfer_tabulated_cylinder_spline_extrusions,
+};
+use super::super::sweep::{
+    transfer_feature_extrusion_surfaces, transfer_resolved_circular_extrusion_breps,
+    transfer_resolved_extrusion_breps, transfer_resolved_revolution_breps,
+    transfer_saved_spline_curves,
+};
+use super::super::{
+    curve_transfer_coverage, design_constraint_transfer_coverage, surface_transfer_coverage,
+};
+
+pub(super) fn transfer_and_record_scanned_geometry(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    coverage: &mut BTreeMap<String, usize>,
+) -> Result<(), CodecError> {
+    let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations);
+    let first_instance_prototype_surface_count =
+        transfer_first_instance_prototype_surfaces(scan, ir, annotations);
+    let paired_envelope_sphere_count = transfer_paired_envelope_spheres(scan, ir, annotations);
+    let positional_torus_count = transfer_positional_tori(scan, ir, annotations);
+    let positional_line_extrusion_plane_count =
+        transfer_positional_line_extrusion_planes(scan, ir, annotations);
+    let tabulated_cylinder_spline_extrusion_count =
+        transfer_tabulated_cylinder_spline_extrusions(scan, ir, annotations);
+    transfer_fc05_cap_circles(scan, ir, annotations);
+    transfer_cap_pair_cylinders(scan, ir, annotations);
+    let saved_spline_curve_count = transfer_saved_spline_curves(scan, ir, annotations);
+    let sketch_segment_coverage = transfer_sketches(scan, ir, annotations);
+    let feature_revolution_surface_count =
+        transfer_resolved_revolution_surfaces(scan, ir, annotations);
+    let feature_revolution_vertex_orbit_curve_count =
+        transfer_resolved_revolution_vertex_orbit_curves(scan, ir, annotations);
+    let feature_extrusion_surface_count =
+        transfer_feature_extrusion_surfaces(scan, ir, annotations);
+    let feature_extrusion_vertex_orbit_curve_count =
+        transfer_resolved_extrusion_vertex_orbit_curves(scan, ir, annotations);
+    let circular_sweep_cylinder_count = transfer_circular_sweep_cylinders(scan, ir, annotations);
+    let positional_cylinder_count = transfer_positional_cylinders(scan, ir, annotations);
+    let positional_cone_count = transfer_positional_cones(scan, ir, annotations);
+    let split_outline_cylinder_count = transfer_split_outline_cylinders(scan, ir, annotations);
+    let hole_cylinder_count = transfer_hole_cylinders(scan, ir, annotations);
+    let constrained_slot_fillet_cylinder_count =
+        transfer_constrained_slot_fillet_cylinders(scan, ir, annotations);
+    let rowless_round_cylinder_count = transfer_rowless_round_cylinders(scan, ir, annotations);
+    let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(scan, ir, annotations);
+    let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
+    let mut derived_intersection_curves =
+        transfer_carrier_intersection_curves(scan, ir, annotations);
+    let nurbs_boundary_curves = transfer_nurbs_boundary_curves(ctx, scan, ir, annotations)?;
+    let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
+    let extrusion_plane_section_generator_curve_count =
+        nurbs_boundary_curves.extrusion_plane_section_generator_count;
+    let shared_extrusion_generator_curve_count =
+        nurbs_boundary_curves.shared_extrusion_generator_count;
+    derived_intersection_curves.extend(nurbs_boundary_curves.ids.iter().cloned());
+    let topology_bound_plane_count = transfer_topology_bound_planes(
+        scan,
+        ir,
+        annotations,
+        &nurbs_boundary_curves.endpoint_witnesses,
+    );
+    let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
+        scan,
+        ir,
+        annotations,
+        &derived_intersection_curves,
+        &analytic_pcurve_carriers,
+        &nurbs_boundary_curves.endpoint_witnesses,
+    );
+    let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations);
+    let feature_circular_extrusion_brep_count =
+        transfer_resolved_circular_extrusion_breps(scan, ir, annotations);
+    let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(scan, ir, annotations);
+    retain_unresolved_visible_carriers(scan, ir, annotations);
+    let transferred_part_product = transfer_part_product(scan, ir, annotations);
+    let decoded_feature_skamp_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| relations.skamps.len())
+        .sum::<usize>();
+    let missing_feature_skamp_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| {
+            feature_solver_table_missing_rows(
+                relations.skamp_header.as_ref(),
+                relations.skamps.len(),
+            )
+        })
+        .sum::<usize>();
+    let skamp_constraint_coverage =
+        design_constraint_transfer_coverage(&ir.model.sketch_constraints, ":skamp:", "creo:skamp:");
+    let decoded_feature_relation_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| relations.rows.len())
+        .sum::<usize>();
+    let missing_feature_relation_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(feature_relation_table_missing_rows)
+        .sum::<usize>();
+    let malformed_feature_relation_table_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .filter(|relations| feature_relation_table_expected_rows(relations).is_none())
+        .count();
+    let decoded_feature_relation_triple_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| relations.triples.len())
+        .sum::<usize>();
+    let missing_feature_relation_triple_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| {
+            feature_solver_table_missing_rows(
+                relations.triples_header.as_ref(),
+                relations.triples.len(),
+            )
+        })
+        .sum::<usize>();
+    let relation_constraint_coverage = design_constraint_transfer_coverage(
+        &ir.model.sketch_constraints,
+        ":relation:",
+        "creo:relation:",
+    );
+    let surface_coverage = surface_transfer_coverage(
+        &scan.surfaces.rows,
+        &ir.model.surfaces,
+        &ir.model.procedural_surfaces,
+    );
+    let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves);
+    {
+        coverage.insert(
+            "unique_visible_surface_row_count".to_string(),
+            surface_coverage.unique_rows,
+        );
+        coverage.insert(
+            "transferred_visible_surface_row_count".to_string(),
+            surface_coverage.transferred_rows,
+        );
+        coverage.insert(
+            "retained_unknown_visible_surface_row_count".to_string(),
+            surface_coverage.retained_unknown_rows,
+        );
+        coverage.insert(
+            "untransferred_visible_surface_row_count".to_string(),
+            surface_coverage
+                .unique_rows
+                .saturating_sub(surface_coverage.transferred_rows),
+        );
+        coverage.insert(
+            "ambiguous_visible_surface_row_count".to_string(),
+            surface_coverage.ambiguous_rows,
+        );
+        for (family, (rows, transferred)) in &surface_coverage.by_family {
+            coverage.insert(format!("visible_{family}_surface_row_count"), *rows);
+            coverage.insert(
+                format!("transferred_visible_{family}_surface_row_count"),
+                *transferred,
+            );
+            coverage.insert(
+                format!("untransferred_visible_{family}_surface_row_count"),
+                rows.saturating_sub(*transferred),
+            );
+            coverage.insert(
+                format!("retained_unknown_visible_{family}_surface_row_count"),
+                surface_coverage
+                    .unknown_by_family
+                    .get(family)
+                    .copied()
+                    .unwrap_or_default(),
+            );
+        }
+        coverage.insert(
+            "unique_visible_curve_row_count".to_string(),
+            curve_coverage.unique_rows,
+        );
+        coverage.insert(
+            "transferred_visible_curve_row_count".to_string(),
+            curve_coverage.transferred_rows,
+        );
+        coverage.insert(
+            "retained_unknown_visible_curve_row_count".to_string(),
+            curve_coverage.retained_unknown_rows,
+        );
+        coverage.insert(
+            "untransferred_visible_curve_row_count".to_string(),
+            curve_coverage
+                .unique_rows
+                .saturating_sub(curve_coverage.transferred_rows),
+        );
+        coverage.insert(
+            "ambiguous_visible_curve_row_count".to_string(),
+            curve_coverage.ambiguous_rows,
+        );
+        for (type_byte, (rows, transferred)) in &curve_coverage.by_type {
+            coverage.insert(
+                format!("visible_curve_type_{type_byte:02x}_row_count"),
+                *rows,
+            );
+            coverage.insert(
+                format!("transferred_visible_curve_type_{type_byte:02x}_row_count"),
+                *transferred,
+            );
+            coverage.insert(
+                format!("retained_unknown_visible_curve_type_{type_byte:02x}_row_count"),
+                curve_coverage
+                    .unknown_by_type
+                    .get(type_byte)
+                    .copied()
+                    .unwrap_or_default(),
+            );
+        }
+        coverage.insert(
+            "transferred_cross_section_plane_count".to_string(),
+            cross_section_plane_count,
+        );
+        coverage.insert(
+            "transferred_first_instance_prototype_surface_count".to_string(),
+            first_instance_prototype_surface_count,
+        );
+        coverage.insert(
+            "transferred_paired_envelope_sphere_count".to_string(),
+            paired_envelope_sphere_count,
+        );
+        coverage.insert(
+            "transferred_positional_torus_count".to_string(),
+            positional_torus_count,
+        );
+        coverage.insert(
+            "transferred_positional_line_extrusion_plane_count".to_string(),
+            positional_line_extrusion_plane_count,
+        );
+        coverage.insert(
+            "transferred_tabulated_cylinder_spline_extrusion_count".to_string(),
+            tabulated_cylinder_spline_extrusion_count,
+        );
+        coverage.insert(
+            "transferred_saved_spline_curve_count".to_string(),
+            saved_spline_curve_count,
+        );
+        coverage.insert(
+            "transferred_topological_point_count".to_string(),
+            topological_point_count,
+        );
+        coverage.insert(
+            "transferred_native_topological_edge_count".to_string(),
+            native_topological_edge_count,
+        );
+        coverage.insert(
+            "transferred_analytic_pcurve_carrier_count".to_string(),
+            analytic_pcurve_carrier_count,
+        );
+        coverage.insert(
+            "transferred_extrusion_plane_boundary_curve_count".to_string(),
+            extrusion_plane_boundary_curve_count,
+        );
+        coverage.insert(
+            "transferred_extrusion_plane_section_generator_curve_count".to_string(),
+            extrusion_plane_section_generator_curve_count,
+        );
+        coverage.insert(
+            "transferred_shared_extrusion_generator_curve_count".to_string(),
+            shared_extrusion_generator_curve_count,
+        );
+        coverage.insert(
+            "transferred_topology_bound_plane_surface_count".to_string(),
+            topology_bound_plane_count,
+        );
+        coverage.insert(
+            "transferred_feature_revolution_surface_count".to_string(),
+            feature_revolution_surface_count,
+        );
+        coverage.insert(
+            "transferred_feature_revolution_vertex_orbit_curve_count".to_string(),
+            feature_revolution_vertex_orbit_curve_count,
+        );
+        coverage.insert(
+            "transferred_feature_extrusion_surface_count".to_string(),
+            feature_extrusion_surface_count,
+        );
+        coverage.insert(
+            "transferred_feature_extrusion_vertex_orbit_curve_count".to_string(),
+            feature_extrusion_vertex_orbit_curve_count,
+        );
+        coverage.insert(
+            "transferred_circular_sweep_cylinder_count".to_string(),
+            circular_sweep_cylinder_count,
+        );
+        coverage.insert(
+            "transferred_hole_cylinder_count".to_string(),
+            hole_cylinder_count,
+        );
+        coverage.insert(
+            "transferred_positional_cylinder_count".to_string(),
+            positional_cylinder_count,
+        );
+        coverage.insert(
+            "transferred_positional_cone_count".to_string(),
+            positional_cone_count,
+        );
+        coverage.insert(
+            "transferred_split_outline_cylinder_count".to_string(),
+            split_outline_cylinder_count,
+        );
+        coverage.insert(
+            "transferred_constrained_slot_fillet_cylinder_count".to_string(),
+            constrained_slot_fillet_cylinder_count,
+        );
+        coverage.insert(
+            "transferred_rowless_round_cylinder_count".to_string(),
+            rowless_round_cylinder_count,
+        );
+        coverage.insert(
+            "transferred_feature_revolution_brep_count".to_string(),
+            feature_revolution_brep_count,
+        );
+        coverage.insert(
+            "transferred_feature_circular_extrusion_brep_count".to_string(),
+            feature_circular_extrusion_brep_count,
+        );
+        coverage.insert(
+            "transferred_feature_extrusion_brep_count".to_string(),
+            feature_extrusion_brep_count,
+        );
+        coverage.insert(
+            "transferred_part_product_count".to_string(),
+            usize::from(transferred_part_product),
+        );
+        coverage.insert(
+            "decoded_feature_segment_row_count".to_string(),
+            sketch_segment_coverage.decoded_rows,
+        );
+        coverage.insert(
+            "resolved_feature_segment_geometry_count".to_string(),
+            sketch_segment_coverage.resolved_geometry,
+        );
+        coverage.insert(
+            "unresolved_feature_segment_geometry_count".to_string(),
+            sketch_segment_coverage
+                .decoded_rows
+                .saturating_sub(sketch_segment_coverage.resolved_geometry),
+        );
+        for (family, (decoded, resolved)) in &sketch_segment_coverage.by_family {
+            coverage.insert(format!("decoded_feature_{family}_segment_count"), *decoded);
+            coverage.insert(
+                format!("resolved_feature_{family}_segment_geometry_count"),
+                *resolved,
+            );
+            coverage.insert(
+                format!("unresolved_feature_{family}_segment_geometry_count"),
+                decoded.saturating_sub(*resolved),
+            );
+        }
+        coverage.insert(
+            "missing_feature_segment_row_count".to_string(),
+            sketch_segment_coverage.missing_rows,
+        );
+        coverage.insert(
+            "decoded_feature_skamp_count".to_string(),
+            decoded_feature_skamp_count,
+        );
+        coverage.insert(
+            "missing_feature_skamp_row_count".to_string(),
+            missing_feature_skamp_row_count,
+        );
+        coverage.insert(
+            "transferred_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.transferred,
+        );
+        coverage.insert(
+            "transferred_native_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.native,
+        );
+        coverage.insert(
+            "transferred_typed_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.typed(),
+        );
+        coverage.insert(
+            "active_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active,
+        );
+        coverage.insert(
+            "active_native_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active_native,
+        );
+        coverage.insert(
+            "active_typed_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active_typed(),
+        );
+        for (kind, count) in &skamp_constraint_coverage.native_by_kind {
+            coverage.insert(
+                format!("transferred_native_feature_skamp_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+        for (kind, count) in &skamp_constraint_coverage.active_native_by_kind {
+            coverage.insert(
+                format!("active_native_feature_skamp_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+        coverage.insert(
+            "decoded_feature_relation_count".to_string(),
+            decoded_feature_relation_count,
+        );
+        coverage.insert(
+            "missing_feature_relation_row_count".to_string(),
+            missing_feature_relation_row_count,
+        );
+        coverage.insert(
+            "malformed_feature_relation_table_count".to_string(),
+            malformed_feature_relation_table_count,
+        );
+        coverage.insert(
+            "decoded_feature_relation_triple_count".to_string(),
+            decoded_feature_relation_triple_count,
+        );
+        coverage.insert(
+            "missing_feature_relation_triple_row_count".to_string(),
+            missing_feature_relation_triple_row_count,
+        );
+        coverage.insert(
+            "transferred_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.transferred,
+        );
+        coverage.insert(
+            "transferred_native_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.native,
+        );
+        coverage.insert(
+            "transferred_typed_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.typed(),
+        );
+        coverage.insert(
+            "active_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active,
+        );
+        coverage.insert(
+            "active_native_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active_native,
+        );
+        coverage.insert(
+            "active_typed_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active_typed(),
+        );
+        for (kind, count) in &relation_constraint_coverage.native_by_kind {
+            coverage.insert(
+                format!("transferred_native_feature_relation_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+        for (kind, count) in &relation_constraint_coverage.active_native_by_kind {
+            coverage.insert(
+                format!("active_native_feature_relation_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+    }
+    Ok(())
+}
