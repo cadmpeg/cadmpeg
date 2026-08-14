@@ -9,3 +9,7 @@ crates/cadmpeg-fuzz/artifacts/
 # corruption, not style: every file under a golden directory must keep the
 # exact bytes its harness wrote, including pretty-JSON layout.
 crates/*/tests/golden/
+
+# Rendered layout pages are byte-compared to the table emitter. A formatter
+# rewrite fails `layout_tables`.
+docs/layouts/*.md

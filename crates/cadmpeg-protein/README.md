@@ -80,7 +80,7 @@ bytes are retained only by the caller. The numbers are tabulated in
 
 A new start page, continuation page, or terminal page without the required
 current-record state is invalid. A stream ending with an open record is
-invalid. A valid logical record begins with four length-prefixed UTF-8 strings:
+valid: the last open record is complete. A valid logical record begins with four length-prefixed UTF-8 strings:
 schema identifier, asset GUID, base asset identifier, and `AssetLibID`.
 
 ## Schema resolution and values

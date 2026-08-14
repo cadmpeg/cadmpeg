@@ -175,6 +175,9 @@ mod tests {
     use std::io::Write as _;
 
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_protein::{
+        CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
+    };
     use zip::write::SimpleFileOptions;
 
     use super::*;
@@ -329,26 +332,27 @@ mod tests {
     }
 
     fn paged_instance(record: &[u8]) -> Vec<u8> {
-        const PAGE_SIZE: usize = 0x88;
         const BODY_SIZE: usize = PAGE_SIZE - 8;
         let mut bytes = (PAGE_SIZE as u32).to_le_bytes().to_vec();
-        bytes.resize(16, 0);
+        bytes.resize(STREAM_HEADER_LEN, 0);
         let mut chunks = record.chunks(BODY_SIZE).peekable();
         let first = chunks.next().expect("record is nonempty");
-        bytes.extend_from_slice(&[0, 0, 0, 0, 0x80, 0, 1, 0]);
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        bytes.extend_from_slice(RECORD_MARKER);
         bytes.extend_from_slice(first);
-        bytes.resize(16 + PAGE_SIZE, 0);
+        bytes.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
         while let Some(chunk) = chunks.next() {
             if chunks.peek().is_some() {
-                bytes.extend_from_slice(&[0, 0, 0, 0, 0x80, 0, 0, 0]);
+                bytes.extend_from_slice(&[0, 0, 0, 0]);
+                bytes.extend_from_slice(CONTINUATION_MARKER);
             } else {
-                bytes.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+                bytes.extend_from_slice(TERMINAL_MARKER);
                 bytes.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
                 bytes.extend_from_slice(&[0, 0]);
             }
             bytes.extend_from_slice(chunk);
-            let page_bytes = bytes.len() - 16;
-            let next_page = 16 + page_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE;
+            let page_bytes = bytes.len() - STREAM_HEADER_LEN;
+            let next_page = STREAM_HEADER_LEN + page_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE;
             bytes.resize(next_page, 0);
         }
         bytes
