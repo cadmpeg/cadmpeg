@@ -385,7 +385,7 @@ item = "cadmpeg_codec_nx::{container,geometry,intersection,nurbs,parasolid,topol
 reason = "hide parser modules behind fuzz/profile facades"
 
 [[change]]
-commit = "d005ae1b28eb174fcb0e277d0d272240786fc3f4"
+commit = "ee7cc76aa1c59ef47267b3e285d9653ea763901c"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::DecodeResult::{ir_mut,source_fidelity_mut}"
