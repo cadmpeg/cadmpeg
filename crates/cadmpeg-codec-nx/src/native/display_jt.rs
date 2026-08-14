@@ -14,7 +14,7 @@ use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Session-free DisplayJT inflate bound: 16 MiB plus 256× input, at most 2 GiB.
+/// Session-free `DisplayJT` inflate bound: 16 MiB plus 256× input, at most 2 GiB.
 const DISPLAY_JT_PROBE_INFLATE_BASE: usize = 16 * 1024 * 1024;
 const DISPLAY_JT_PROBE_INFLATE_RATIO: usize = 256;
 const DISPLAY_JT_PROBE_INFLATE_MAX: usize = 2 * 1024 * 1024 * 1024;

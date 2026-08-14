@@ -2,7 +2,7 @@
 //! Exact evaluation helpers for decoded neutral carriers.
 
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3};
 
 fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<Vec<f64>> {
     if count == 0 || knots.len() != count.checked_add(degree)?.checked_add(1)? {

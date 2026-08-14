@@ -13,6 +13,7 @@ mod global;
 mod graph;
 /// Byte-offset constants generated from `docs/layouts/iges.toml`.
 pub(crate) mod layout;
+#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod native;
 mod parameter;

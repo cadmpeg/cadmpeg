@@ -25,6 +25,7 @@ mod gui;
 mod joint;
 /// Byte-offset constants generated from `docs/layouts/freecad.toml`.
 pub(crate) mod layout;
+#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod mutation;
 mod native;

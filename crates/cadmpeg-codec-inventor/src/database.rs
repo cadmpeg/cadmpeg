@@ -276,6 +276,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    #[allow(dead_code)] // Retained for framed RSe walks that still use the helper.
     fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
         Ok(self
             .source

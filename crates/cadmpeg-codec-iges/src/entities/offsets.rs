@@ -108,6 +108,7 @@ fn source_parameter_map(
     SourceParameterMap::new(native, neutral)
 }
 
+#[allow(clippy::many_single_char_names)]
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -150,7 +151,9 @@ pub(super) fn project(
             continue;
         };
         let components = [record.number(10), record.number(11), record.number(12)];
-        let [Some(x), Some(y), Some(z)] = components else {
+        #[allow(clippy::many_single_char_names)]
+        let [Some(x), Some(y), Some(z)] = components
+        else {
             losses.push(entity_loss(entry, "offset plane normal is not numeric"));
             continue;
         };

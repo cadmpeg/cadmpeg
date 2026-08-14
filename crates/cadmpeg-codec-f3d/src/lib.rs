@@ -95,6 +95,7 @@ mod history_records;
 mod ids;
 /// Byte-offset constants generated from `docs/layouts/f3d.toml`.
 pub(crate) mod layout;
+#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 pub(crate) mod loss;
 mod manifest;
 pub(crate) mod materials;

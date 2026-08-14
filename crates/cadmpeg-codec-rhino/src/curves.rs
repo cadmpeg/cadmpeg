@@ -1411,7 +1411,7 @@ fn push_polycurve_parameter(
     if !value.is_finite() || parameters.last().is_some_and(|previous| value <= *previous) {
         return Err(GeometryError::malformed(
             offset,
-            &format!("{label} parameters are invalid"),
+            format!("{label} parameters are invalid"),
         ));
     }
     parameters.push(value);

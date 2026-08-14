@@ -16,6 +16,7 @@ pub mod fuzz;
 mod kernel;
 /// Byte-offset constants generated from `docs/layouts/inventor.toml`.
 pub(crate) mod layout;
+#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod materials;
 mod native;

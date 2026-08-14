@@ -29,6 +29,7 @@ fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
         .map(|point| point.position)
 }
 
+#[allow(clippy::many_single_char_names)]
 fn direction(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,

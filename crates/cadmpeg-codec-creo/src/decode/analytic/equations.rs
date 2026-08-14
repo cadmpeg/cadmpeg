@@ -5,7 +5,7 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::vecmath::normalized;
-pub use crate::vecmath::{cross, dot};
+pub(crate) use crate::vecmath::{cross, dot};
 
 use super::planes::point_on_carrier;
 

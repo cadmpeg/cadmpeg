@@ -5,7 +5,7 @@ use crate::design::profile_select::historical_face_points;
 use crate::records::{DesignExtrudeSelectionMember, SketchRelationOperand};
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use cadmpeg_ir::geometry::knots_nondecreasing;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3};
 use std::collections::{HashMap, HashSet};
 
 /// Format-side work cap for arrangement edge retention walks.

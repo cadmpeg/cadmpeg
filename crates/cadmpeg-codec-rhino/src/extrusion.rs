@@ -626,7 +626,7 @@ fn require_anonymous_version(
     if reader.i32()? != major || reader.i32()? != minor {
         return Err(GeometryError::unsupported(
             offset,
-            &format!("unsupported {name} version"),
+            format!("unsupported {name} version"),
         ));
     }
     Ok(())

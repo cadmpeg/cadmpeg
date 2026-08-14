@@ -1286,7 +1286,7 @@ fn raw_array_start(
     if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
             reader.position() - 1,
-            &format!("unsupported {label} array version"),
+            format!("unsupported {label} array version"),
         ));
     }
     let count = count(reader, MAX_BREP_ITEMS)?;

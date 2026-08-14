@@ -53,17 +53,17 @@ pub enum CreoLossCode {
     BrepTransferIncomplete,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
     GeometryInstanceCarriersGated,
-    /// Unique VisibGeom surface rows were not transferred as carriers.
+    /// Unique `VisibGeom` surface rows were not transferred as carriers.
     VisibGeomSurfaceUntransferred,
-    /// Unique VisibGeom curve-topology rows were not transferred as carriers.
+    /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
-    /// VisibGeom surface rows share a non-unique identity.
+    /// `VisibGeom` surface rows share a non-unique identity.
     VisibGeomSurfaceAmbiguous,
-    /// VisibGeom curve-topology rows share a non-unique identity.
+    /// `VisibGeom` curve-topology rows share a non-unique identity.
     VisibGeomCurveAmbiguous,
     /// Decoded section segments retain source-native geometry.
     SectionSegmentGeometryUnresolved,
-    /// Model-space planes transferred from VisibGeom local-system frames.
+    /// Model-space planes transferred from `VisibGeom` local-system frames.
     CarrierVisibGeomPlanes,
     /// Model-space planes transferred from topology-bound constructions.
     CarrierTopologyBoundPlanes,
@@ -85,9 +85,9 @@ pub enum CreoLossCode {
     CarrierDatumPlanes,
     /// Finite model-space reference line carriers transferred.
     CarrierReferenceLines,
-    /// Circular reference carriers transferred from MdlRefInfo.
+    /// Circular reference carriers transferred from `MdlRefInfo`.
     CarrierReferenceCircles,
-    /// Elliptical reference carriers transferred from MdlRefInfo.
+    /// Elliptical reference carriers transferred from `MdlRefInfo`.
     CarrierReferenceEllipses,
     /// Exact model-space points transferred for topological vertex orbits.
     CarrierTopologicalPoints,
