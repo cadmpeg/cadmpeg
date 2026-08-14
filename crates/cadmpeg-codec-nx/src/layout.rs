@@ -1,10 +1,60 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Byte-offset constants generated from `docs/layouts/nx.toml`.
+//! Byte-offset and value constants generated from `docs/layouts/nx.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 #![allow(dead_code)] // Not every generated constant is referenced yet.
+
+/// Tag constants from the table inventory.
+pub(crate) mod token {
+    /// `BODY` (`12`). Spec §4.1.
+    pub(crate) const BODY: u8 = 12;
+    /// `SHELL` (`13`). Spec §4.1.
+    pub(crate) const SHELL: u8 = 13;
+    /// `FACE` (`14`). Spec §4.1.
+    pub(crate) const FACE: u8 = 14;
+    /// `LOOP` (`15`). Spec §4.1.
+    pub(crate) const LOOP: u8 = 15;
+    /// `EDGE` (`16`). Spec §4.1.
+    pub(crate) const EDGE: u8 = 16;
+    /// `FIN` (`17`). Spec §4.1.
+    pub(crate) const FIN: u8 = 17;
+    /// `VERTEX` (`18`). Spec §4.1.
+    pub(crate) const VERTEX: u8 = 18;
+    /// `REGION` (`19`). Spec §4.1.
+    pub(crate) const REGION: u8 = 19;
+    /// `POINT` (`29`). Spec §4.1.
+    pub(crate) const POINT: u8 = 29;
+    /// `LINE` (`30`). Spec §4.1.
+    pub(crate) const LINE: u8 = 30;
+    /// `CIRCLE` (`31`). Spec §4.1.
+    pub(crate) const CIRCLE: u8 = 31;
+    /// `ELLIPSE` (`32`). Spec §4.1.
+    pub(crate) const ELLIPSE: u8 = 32;
+    /// `PLANE` (`50`). Spec §4.1.
+    pub(crate) const PLANE: u8 = 50;
+    /// `CYLINDER` (`51`). Spec §4.1.
+    pub(crate) const CYLINDER: u8 = 51;
+    /// `CONE` (`52`). Spec §4.1.
+    pub(crate) const CONE: u8 = 52;
+    /// `SPHERE` (`53`). Spec §4.1.
+    pub(crate) const SPHERE: u8 = 53;
+    /// `TORUS` (`54`). Spec §4.1.
+    pub(crate) const TORUS: u8 = 54;
+    /// `BLEND_SURF` (`56`). Spec §4.1.
+    pub(crate) const BLEND_SURF: u8 = 56;
+    /// `OFFSET_SURF` (`60`). Spec §4.1.
+    pub(crate) const OFFSET_SURF: u8 = 60;
+    /// `B_SURFACE` (`124`). Spec §4.1.
+    pub(crate) const B_SURFACE: u8 = 124;
+    /// `TRIMMED_CURVE` (`133`). Spec §4.1.
+    pub(crate) const TRIMMED_CURVE: u8 = 133;
+    /// `B_CURVE` (`134`). Spec §4.1.
+    pub(crate) const B_CURVE: u8 = 134;
+    /// `SP_CURVE` (`137`). Spec §4.1.
+    pub(crate) const SP_CURVE: u8 = 137;
+}
 
 /// Byte offsets for the `splmsstr_header` record.
 ///
@@ -18,6 +68,8 @@ pub(crate) mod splmsstr_header {
     pub(crate) const LEN: usize = 31;
     /// Offset of `magic` (`bytes[8]`). Spec §2.
     pub(crate) const MAGIC: usize = 0;
+    /// Stated value of `magic` (`bytes[8]`). Spec §2.
+    pub(crate) const MAGIC_VALUE: [u8; 8] = *b"SPLMSSTR";
     /// Offset of `version_tag` (`u8`). Spec §2.
     pub(crate) const VERSION_TAG: usize = 8;
     /// Offset of `file_tag` (`u24`, little-endian). Spec §2.
@@ -30,6 +82,8 @@ pub(crate) mod splmsstr_header {
     pub(crate) const FOOTER_OFFSET: usize = 17;
     /// Offset of `header_marker` (`bytes[6]`). Spec §2.
     pub(crate) const HEADER_MARKER: usize = 25;
+    /// Stated value of `header_marker` (`bytes[6]`). Spec §2.
+    pub(crate) const HEADER_MARKER_VALUE: [u8; 6] = *b"HEADER";
 }
 
 /// Byte offsets for the `directory_entry` record.

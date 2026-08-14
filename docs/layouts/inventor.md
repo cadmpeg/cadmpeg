@@ -206,16 +206,13 @@ Spec §2 · layout: byte offsets · size: 56 B
 
 Spec §4 · layout: byte offsets · size: 18 B
 
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/rse.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 16 | `prefix` | `bytes[16]` | little | spec | a 16-byte prefix |
 | 16 | 2 | `form` | `u16` | little | spec | a u16 form |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-inventor/src/rse.rs` — The bulk parser reads the 18-byte fixed envelope before the exact zlib member.
-- `crates/cadmpeg-codec-inventor/src/rse.rs` — The bulk parser copies the 16-byte prefix from the envelope start.
-- `crates/cadmpeg-codec-inventor/src/rse.rs` — The bulk parser reads the u16 form at envelope offset 16.
 
 ## `meta_body_prefix`
 

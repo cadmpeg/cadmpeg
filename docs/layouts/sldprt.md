@@ -35,16 +35,15 @@ Spec §2 · layout: byte offsets · size: 12 B
 
 Primary and legacy named-scalar operand cell. A lane-local class declaration can begin immediately after this cell.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `class_token` | `u16` | little | spec | little-endian u16 tag at +0 |
 | 2 | 2 | `marker_address` | `u16` | little | spec | u16 marker address at +2 |
 | 4 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at +4 |
 | 8 | 4 | `zero_trailer` | `bytes[4]` | little | spec | four zero bytes at +8 |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs` — The scalar parser reads the primary and legacy operand as one 12-byte cell.
 
 ## `outer_header`
 
@@ -61,18 +60,17 @@ Spec §1.1 · layout: byte offsets · size: 26 B
 
 Fixed prefix only. `preamble[pre_sz]` and `payload[comp_sz]` follow; the record extent is `block_end = marker_offset + 26 + pre_sz + comp_sz`.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 6 | `marker` | `bytes[6]` | little | spec | marker bytes[6] ; 14 00 06 00 08 00 |
+| 0 | 6 | `marker` | `bytes[6]` | little | spec | marker bytes[6] ; 14 00 06 00 08 00 · value `[20, 0, 6, 0, 8, 0]` |
 | 6 | 4 | `type_id` | `u32` | little | spec | type_id u32 LE |
 | 10 | 4 | `crc32` | `u32` | little | spec | crc32 u32 LE ; CRC-32 of the DECOMPRESSED payload |
 | 14 | 4 | `comp_sz` | `u32` | little | spec | comp_sz u32 LE |
 | 18 | 4 | `uncomp_sz` | `u32` | little | spec | uncomp_sz u32 LE |
 | 22 | 4 | `pre_sz` | `u32` | little | spec | pre_sz u32 LE |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/container.rs` — The parser's marker matches the spec's stated marker bytes.
 
 ## `cache_cell_header`
 
@@ -113,15 +111,14 @@ Spec §1 · layout: byte offsets · size: 24 B
 
 Fixed prefix only; the zlib member follows and an 8-byte trailer closes the wrapper.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 16 | `magic` | `bytes[16]` | little | spec | The wrapper is the 16-byte magic `23 1d d5 71 da 81 48 a2 a8 58 98 b2 1b 89 ef 99` |
+| 0 | 16 | `magic` | `bytes[16]` | little | spec | The wrapper is the 16-byte magic `23 1d d5 71 da 81 48 a2 a8 58 98 b2 1b 89 ef 99` · value `[35, 29, 213, 113, 218, 129, 72, 162, 168, 88, 152, 178, 27, 137, 239, 153]` |
 | 16 | 4 | `uncompressed_size` | `u32` | little | spec | followed by the uncompressed byte count as u32 LE |
 | 20 | 4 | `zlib_member_size` | `u32` | little | spec | the complete zlib-member byte count as u32 LE |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/container.rs` — The parser names the same 16-byte wrapper magic.
 
 ## `world_point`
 
@@ -377,15 +374,14 @@ Spec §7.2 · layout: byte offsets · size: 4 B
 
 Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `zero` | `u8` | big | spec | 00 count:u8 |
 | 1 | 1 | `count` | `u8` | big | spec | count:u8 |
 | 2 | 2 | `attr` | `u16` | big | spec | attr u16 BE |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs` — The decoder reads array element data immediately after the 6-byte compact header.
 
 ## `intersection_composite`
 
@@ -1058,6 +1054,9 @@ Unstated regions:
 
 Spec §2 · layout: byte offsets · size: 40 B
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `zero_header` | `u32` | little | spec | followed by four zero bytes |
@@ -1073,13 +1072,12 @@ Spec §2 · layout: byte offsets · size: 40 B
 | 30 | 8 | `zero_before_final_token` | `bytes[8]` | little | spec | eight zero bytes at +30 |
 | 38 | 2 | `final_token` | `u16` | little | spec | a second nonzero u16 token at +38 |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs` — The parser accepts zero or non-null optional identities and requires the complete sparse trailer.
-
 ## `coordinate_system_component_point`
 
 Spec §2 · layout: byte offsets · size: 151 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1100,13 +1098,12 @@ Spec §2 · layout: byte offsets · size: 151 B
 | 119 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | +119 stores eight zero bytes |
 | 127 | 24 | `origin` | `f64[3]` | little | spec | Three finite f64 LE values at +127, +135, and +143 store the solved origin in metres |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser accepts the 151-byte standard component-point record and reads the origin at +127.
-
 ## `coordinate_system_extended_component_point`
 
 Spec §2 · layout: byte offsets · size: 165 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1124,10 +1121,6 @@ Spec §2 · layout: byte offsets · size: 165 B
 | 129 | 4 | `generation` | `u32` | little | spec | +129 stores the shared nonzero non-sentinel generation word |
 | 133 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | +133 stores eight zero bytes |
 | 141 | 24 | `origin` | `f64[3]` | little | spec | Three finite f64 LE values at +141, +149, and +157 store the solved origin in metres |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser accepts the 165-byte extended component-point record and reads the origin at +141.
 
 ## `coordinate_system_component_path_prefix`
 
@@ -1155,6 +1148,9 @@ Spec §2 · layout: byte offsets · size: 86 B
 
 Path-end-relative. An optional eight-byte terminal null slot precedes this suffix and is not part of its size.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 14 | `zero_header` | `bytes[14]` | little | spec | fourteen zero bytes |
@@ -1168,15 +1164,14 @@ Path-end-relative. An optional eight-byte terminal null slot precedes this suffi
 | 54 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | eight zero bytes |
 | 62 | 24 | `origin` | `f64[3]` | little | spec | three finite f64 LE origin coordinates in metres |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires the 14-byte zero header of the path-relative solved suffix.
-
 ## `coordinate_system_ordinal_axis_tail`
 
 Spec §2 · layout: byte offsets · size: 35 B
 
 Origin-end-relative. One or two nonzero u16 tokens follow this fixed core and terminate the feature object.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1184,10 +1179,6 @@ Origin-end-relative. One or two nonzero u16 tokens follow this fixed core and te
 | 2 | 2 | `y_axis_ordinal` | `u16` | little | spec | Two distinct u16 LE values at tail +0 and +2 are in the range `1..3` |
 | 4 | 23 | `zero_before_origin_z` | `bytes[23]` | little | spec | Tail +4 stores 23 zero bytes |
 | 27 | 8 | `origin_z` | `f64` | little | spec | The f64 LE value at tail +27 repeats the component-point origin Z coordinate in metres |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires 23 zero bytes at ordinal-axis tail +4 before the repeated origin Z.
 
 ## `coordinate_system_two_point_separator`
 
@@ -1204,6 +1195,9 @@ Spec §2 · layout: byte offsets · size: 14 B
 
 Spec §2 · layout: byte offsets · size: 94 B
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 16 | `origin_yz` | `f64[2]` | little | spec | Tail +0 and +8 repeat the first point's Y and Z coordinates in metres |
@@ -1213,10 +1207,6 @@ Spec §2 · layout: byte offsets · size: 94 B
 | 65 | 3 | `zero_before_origin` | `bytes[3]` | little | spec | Tail +65 stores three zero bytes |
 | 68 | 24 | `origin` | `f64[3]` | little | spec | Three f64 LE values at +68 store the complete first point |
 | 92 | 2 | `terminal_token` | `u16` | little | spec | tail +92 stores a nonzero u16 token |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires the 94-byte solved tail after the second extended point record.
 
 ## `coordinate_system_endpoint_path_prefix`
 
@@ -1244,6 +1234,9 @@ Spec §2 · layout: byte offsets · size: 142 B
 
 Path-end-relative after the required eight-byte null slot.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 70 | `zero_header` | `bytes[70]` | little | spec | 70 zero bytes |
@@ -1257,13 +1250,12 @@ Path-end-relative after the required eight-byte null slot.
 | 110 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | generation, zero padding |
 | 118 | 24 | `origin` | `f64[3]` | little | spec | finite origin-coordinate layout |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires the 70-byte zero header of the endpoint-path solved suffix.
-
 ## `coordinate_system_line_axis`
 
 Spec §2 · layout: byte offsets · size: 113 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1276,10 +1268,6 @@ Spec §2 · layout: byte offsets · size: 113 B
 | 64 | 24 | `direction` | `f64[3]` | little | spec | Three f64 LE values at +64 store a unit direction |
 | 88 | 1 | `separator` | `u8` | little | spec | Byte +88 is zero |
 | 89 | 24 | `repeated_direction` | `f64[3]` | little | spec | The same direction is repeated as three f64 LE values at +89 |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires sixteen zero bytes at line-axis +16 before the carrier scalar.
 
 ## `coordinate_system_xy_tail`
 
@@ -1324,15 +1312,13 @@ Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneDa
 
 Spec §8 · layout: byte offsets · size: 16 B
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/tessellation.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 12 | `marker` | `bytes[12]` | little | spec | `00 00 00 00 00 00 30 40 00 00 00 00` |
+| 0 | 12 | `marker` | `bytes[12]` | little | spec | `00 00 00 00 00 00 30 40 00 00 00 00` · value `[0, 0, 0, 0, 0, 0, 48, 64, 0, 0, 0, 0]` |
 | 12 | 4 | `source_id` | `u32` | little | spec | nonzero u32 LE source identifier |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The parser's scene-source marker matches the 12-byte specification marker.
-- `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The parser reads the source identifier at marker offset +12.
 
 ## `transformed_reference_plane_metadata`
 
@@ -1340,17 +1326,16 @@ Spec §8 · layout: byte offsets · size: 80 B
 
 Offsets begin immediately after the `moTransRefPlaneData_c` class token.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/metadata.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 8 | `prefix` | `bytes[8]` | little | spec | Fixed prefix. |
+| 0 | 8 | `prefix` | `bytes[8]` | little | spec | Fixed prefix. · value `[255, 255, 255, 255, 255, 255, 255, 255]` |
 | 8 | 24 | `center` | `f64[3]` | little | spec | Plane center xyz in metres. |
 | 32 | 16 | `extents` | `f64[2]` | little | spec | Plane extents in metres. |
 | 48 | 24 | `auxiliary_frame` | `f64[3]` | little | spec | Dimensionless auxiliary frame. |
 | 72 | 8 | `diagonal` | `f64` | little | spec | Plane diagonal in metres. |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/metadata.rs` — The parser requires the fixed prefix before reading the value fields.
 
 ## `display_lists_compact_face_header`
 
@@ -1369,6 +1354,9 @@ Spec §8 · layout: byte offsets · size: 40 B
 
 Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this extended header.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/tessellation.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `triangle_count` | `u32` | little | spec | triangle count as u32 LE at `+0` |
@@ -1378,10 +1366,6 @@ Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor
 | 16 | 4 | `zero_at_16` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |
 | 20 | 4 | `form_token` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |
 | 24 | 16 | `zero_tail` | `bytes[16]` | little | spec | followed by 16 zero bytes at `+24` |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The decoder selects the 40-byte extended header or the 8-byte compact header.
 
 ## `draft_plane_reference_prefix`
 
@@ -1418,6 +1402,9 @@ Spec §2 · layout: byte offsets · size: 30 B
 
 Variable mixed component paths follow this prefix. Offsets begin at the bounded cell field.
 
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `cell_field` | `u32` | little | spec | a bounded u32 LE cell field in `1..65` |
@@ -1425,10 +1412,6 @@ Variable mixed component paths follow this prefix. Offsets begin at the bounded 
 | 8 | 4 | `selector` | `u32` | little | spec | a u32 LE selector |
 | 12 | 16 | `component_marker` | `bytes[16]` | little | spec | the 16-byte duplicated component marker |
 | 28 | 2 | `marker_tail` | `u16` | little | spec | a u16 LE zero tail |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The compact Draft parser validates the fixed selection prefix and its path delimiters.
 
 ## `draft_aligned_direction_frame`
 

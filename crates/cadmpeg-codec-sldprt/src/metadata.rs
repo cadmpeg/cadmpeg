@@ -48,7 +48,7 @@ fn scan_transformed_reference_plane(
     annotations: &mut Annotations,
 ) {
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
-    const PREFIX: &[u8] = &[0xff; 8];
+    const PREFIX: &[u8] = &trans_plane::PREFIX_VALUE;
     let payload = section.payload();
     for offset in payload
         .windows(TOKEN.len())

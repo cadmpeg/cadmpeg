@@ -22,7 +22,7 @@ use crate::layout::tail_directory_entry as dir_ent;
 use crate::layout::zlb_wrapper_header as zlb_hdr;
 
 /// Marker shared by block, cache-cell, and directory frames.
-pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
+pub const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 
 /// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
 /// from driving an unbounded allocation. Real part streams sit far below this.
@@ -268,9 +268,7 @@ impl ContainerScan<'_> {
 }
 
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
-const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = [
-    0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
-];
+const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 
 /// Test whether a prefix contains the container marker after its outer header.
 ///

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Byte-offset constants generated from `docs/layouts/catia.toml`.
+//! Byte-offset and value constants generated from `docs/layouts/catia.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
@@ -9,6 +9,24 @@
 // Records omitted because the table declares a contradiction.
 //
 // - `e5_record_frame` (size_mismatch): The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
+
+/// Tag constants from the table inventory.
+pub(crate) mod token {
+    /// `named stream block` (`FINJPL  `). Spec §4.
+    pub(crate) const NAMED_STREAM_BLOCK: [u8; 8] = *b"FINJPL  ";
+    /// `source-schema string catalog` (`7C 02`). Spec §4.
+    pub(crate) const SOURCE_SCHEMA_STRING_CATALOG: [u8; 2] = [0x7c, 0x02];
+    /// `literal float data` (`7C D9`). Spec §4.
+    pub(crate) const LITERAL_FLOAT_DATA: [u8; 2] = [0x7c, 0xd9];
+    /// `standard edge-table delimiter` (`10 24 04 ff ff 00 00 00`). Spec §4.
+    pub(crate) const STANDARD_EDGE_TABLE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+    /// `vertex XYZ record` (`05 08 01`). Spec §4.
+    pub(crate) const VERTEX_XYZ_RECORD: [u8; 3] = [0x05, 0x08, 0x01];
+    /// `zero-entity record family` (`a9 03`). Spec §4.
+    pub(crate) const ZERO_ENTITY_RECORD_FAMILY: [u8; 2] = [0xa9, 0x03];
+    /// `E5 record family` (`E5 0D 03`). Spec §4.
+    pub(crate) const E5_RECORD_FAMILY: [u8; 3] = [0xe5, 0x0d, 0x03];
+}
 
 /// Byte offsets for the `outer_header` record.
 ///
@@ -22,6 +40,8 @@ pub(crate) mod outer_header {
     pub(crate) const LEN: usize = 64;
     /// Offset of `magic` (`bytes[8]`). Spec §3.1.
     pub(crate) const MAGIC: usize = 0;
+    /// Stated value of `magic` (`bytes[8]`). Spec §3.1.
+    pub(crate) const MAGIC_VALUE: [u8; 8] = *b"V5_CFV2\0";
     /// Offset of `directory_offset` (`u32`, big-endian). Spec §3.1.
     pub(crate) const DIRECTORY_OFFSET: usize = 8;
     /// Offset of `directory_length` (`u32`, big-endian). Spec §3.1.

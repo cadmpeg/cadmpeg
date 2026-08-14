@@ -58,7 +58,7 @@ struct E5Record {
     size: usize,
 }
 
-const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
+const MARKER: &[u8; 3] = &crate::layout::token::E5_RECORD_FAMILY;
 
 fn e5_records(data: &[u8]) -> Vec<E5Record> {
     debug_assert_eq!(MARKER, crate::container::E5_MARKER);

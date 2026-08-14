@@ -40,6 +40,7 @@ type = "u32"
 endianness = "big"
 source = "spec"
 anchor = "Bytes 2 through 5 are the big-endian unsigned 32-bit value `75`"
+value = 75
 
 [[record.field]]
 name = "primitive_bit_lengths"
@@ -84,10 +85,6 @@ type = "bytes[1]"
 source = "spec"
 anchor = "byte 80 is ASCII `1`."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-iges/src/representation.rs"
-contains = "flag[binary_flag::REMAINING_BYTE_COUNT..binary_flag::PRIMITIVE_BIT_LENGTHS] == 75_u32.to_be_bytes()"
-note = "Representation detection requires the fixed big-endian byte count."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-iges/src/representation.rs"

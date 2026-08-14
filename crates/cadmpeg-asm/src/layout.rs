@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Byte-offset constants generated from `docs/layouts/asm.toml`.
+//! Byte-offset and value constants generated from `docs/layouts/asm.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
@@ -10,6 +10,42 @@
 //
 // - `coedge` (size_mismatch): The stated offsets end `chunk[10]` at +99 but the heading declares 100 B. Shifting every stated offset by +1 (head 9 bytes rather than 8, matching the `coedge` name-token length) closes the record at 100; so does leaving the offsets alone and declaring 99 B. The spec does not say which side is wrong.
 // - `edge` (size_mismatch): The stated offsets end the continuity text at +99 but the heading declares 98 B. Removing the one-byte gap at +88 (placing the sense byte at +88 and the text at +89) closes the record at 98 exactly, which suggests both trailing offsets are one too high. The spec does not state which.
+
+/// Tag constants from the table inventory.
+pub(crate) mod token {
+    /// `CHAR` (`0x02`). Spec §2.1.
+    pub(crate) const CHAR: u8 = 2;
+    /// `SHORT` (`0x03`). Spec §2.1.
+    pub(crate) const SHORT: u8 = 3;
+    /// `LONG` (`0x04`). Spec §2.1.
+    pub(crate) const LONG: u8 = 4;
+    /// `FLOAT` (`0x05`). Spec §2.1.
+    pub(crate) const FLOAT: u8 = 5;
+    /// `DOUBLE` (`0x06`). Spec §2.1.
+    pub(crate) const DOUBLE: u8 = 6;
+    /// `TRUE` (`0x0A`). Spec §2.1.
+    pub(crate) const TRUE: u8 = 10;
+    /// `FALSE` (`0x0B`). Spec §2.1.
+    pub(crate) const FALSE: u8 = 11;
+    /// `ENTITY_REF` (`0x0C`). Spec §2.1.
+    pub(crate) const ENTITY_REF: u8 = 12;
+    /// `IDENT` (`0x0D`). Spec §2.1.
+    pub(crate) const IDENT: u8 = 13;
+    /// `SUBIDENT` (`0x0E`). Spec §2.1.
+    pub(crate) const SUBIDENT: u8 = 14;
+    /// `TERMINATOR` (`0x11`). Spec §2.1.
+    pub(crate) const TERMINATOR: u8 = 17;
+    /// `POSITION` (`0x13`). Spec §2.1.
+    pub(crate) const POSITION: u8 = 19;
+    /// `VECTOR_3D` (`0x14`). Spec §2.1.
+    pub(crate) const VECTOR_3D: u8 = 20;
+    /// `ENUM_VALUE` (`0x15`). Spec §2.1.
+    pub(crate) const ENUM_VALUE: u8 = 21;
+    /// `VECTOR_2D` (`0x16`). Spec §2.1.
+    pub(crate) const VECTOR_2D: u8 = 22;
+    /// `INT64` (`0x17`). Spec §2.1.
+    pub(crate) const INT64: u8 = 23;
+}
 
 /// Byte offsets for the `asmheader_binaryfile8` record.
 ///

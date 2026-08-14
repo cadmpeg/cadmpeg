@@ -54,14 +54,13 @@ Spec §1 · layout: byte offsets · size: 3 B
 
 The low five flag bits give the maximum code width from 9 through 16; bit 7 enables block mode and code 256 clears the dictionary. Codes are packed least significant bit first in code-width-sized byte blocks.
 
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `magic` | `bytes[2]` | — | spec | A section payload beginning `1f 9d <flags>` |
+| 0 | 2 | `magic` | `bytes[2]` | — | spec | A section payload beginning `1f 9d <flags>` · value `[31, 157]` |
 | 2 | 1 | `flags` | `u8` | — | spec | The low five flag bits give the maximum code width from 9 through 16; bit 7 enables block mode |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-creo/src/container.rs` — The container names the same two-byte Unix-compress magic.
 
 ## `cmnm_model_name_record`
 
@@ -69,14 +68,13 @@ Spec §1 · layout: byte offsets · size: 11 B
 
 Fixed prefix only; `hhh` bytes of ASCII name follow at +11, then trailing ASCII space padding. Exactly one record establishes model identity; an absent or repeated record leaves model identity undefined.
 
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 8 | `prefix` | `bytes[8]` | — | derived | Width derived from the length of the stated literal `#- CMNM ` including its trailing space. |
+| 0 | 8 | `prefix` | `bytes[8]` | — | derived | Width derived from the length of the stated literal `#- CMNM ` including its trailing space. · value `"#- CMNM "` |
 | 8 | 3 | `name_length_hex` | `bytes[3]` | — | spec | The three ASCII hexadecimal digits give the filename byte length. |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-creo/src/container.rs` — The parser's prefix is the same eight-byte literal, and it reads the three hexadecimal digits immediately after it.
 
 ## `type24_first_coordinate_bounded_round`
 

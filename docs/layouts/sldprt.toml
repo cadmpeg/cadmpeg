@@ -18,6 +18,7 @@ the table says `unstated` and says so in the field note.
 
 [[record]]
 name = "feature_input_operand_cell12"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
 kind = "byte"
 section = "2"
 anchor = "Each cell stores its little-endian u16 tag at +0"
@@ -53,10 +54,6 @@ type = "bytes[4]"
 source = "spec"
 anchor = "four zero bytes at +8"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
-contains = "let cell = payload.get(offset..offset + operand_cell::LEN)?;"
-note = "The scalar parser reads the primary and legacy operand as one 12-byte cell."
 
 # --- Container envelopes ---------------------------------------------------
 
@@ -86,6 +83,7 @@ anchor = "`version` (u32 **big-endian**, value `0x00000004`)"
 
 [[record]]
 name = "block_frame_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/container.rs"
 kind = "byte"
 section = "1.1"
 anchor = "A block begins with the marker `14 00 06 00 08 00` and uses this frame"
@@ -99,6 +97,7 @@ offset = 0
 type = "bytes[6]"
 source = "spec"
 anchor = "marker bytes[6] ; 14 00 06 00 08 00"
+value = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00]
 
 [[record.field]]
 name = "type_id"
@@ -135,10 +134,6 @@ type = "u32"
 source = "spec"
 anchor = "pre_sz u32 LE"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/container.rs"
-contains = "pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];"
-note = "The parser's marker matches the spec's stated marker bytes."
 
 [[record]]
 name = "cache_cell_header"
@@ -246,6 +241,7 @@ anchor = "+26 descriptor bytes[14]"
 
 [[record]]
 name = "zlb_wrapper_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/container.rs"
 kind = "byte"
 section = "1"
 anchor = "Compound streams whose names end in `__ZLB` use a nested semantic-payload wrapper."
@@ -259,6 +255,7 @@ offset = 0
 type = "bytes[16]"
 source = "spec"
 anchor = "The wrapper is the 16-byte magic `23 1d d5 71 da 81 48 a2 a8 58 98 b2 1b 89 ef 99`"
+value = [0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99]
 
 [[record.field]]
 name = "uncompressed_size"
@@ -274,10 +271,6 @@ type = "u32"
 source = "spec"
 anchor = "the complete zlib-member byte count as u32 LE"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/container.rs"
-contains = "0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,"
-note = "The parser names the same 16-byte wrapper magic."
 
 # --- §4 Typed topology tag inventory ---------------------------------------
 
@@ -1014,6 +1007,7 @@ anchor = "attr u16 BE"
 
 [[record]]
 name = "bspline_compact_array_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
 kind = "byte"
 section = "7.2"
 anchor = "00 count:u8 attr u16 BE values[count]"
@@ -1042,10 +1036,6 @@ type = "u16"
 source = "spec"
 anchor = "attr u16 BE"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
-contains = "let values_at = p + arr_hdr::LEN;"
-note = "The decoder reads array element data immediately after the 6-byte compact header."
 
 # --- §7.3 Intersection carriers --------------------------------------------
 
@@ -3983,6 +3973,7 @@ note = "Native reference-point construction state; the solved datum position doe
 
 [[record]]
 name = "extrusion_sparse_operation_trailer"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs"
 kind = "byte"
 section = "2"
 anchor = "The 40-byte sparse form stores six zero bytes at trailer +16"
@@ -4073,13 +4064,10 @@ type = "u16"
 source = "spec"
 anchor = "a second nonzero u16 token at +38"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs"
-contains = "suffix[sparse_tr::OPTIONAL_IDENTITY - sparse_tr::SPARSE_ZERO_PREFIX"
-note = "The parser accepts zero or non-null optional identities and requires the complete sparse trailer."
 
 [[record]]
 name = "coordinate_system_component_point"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 kind = "byte"
 section = "2"
 anchor = "The 151-byte component-point record begins with family byte `2d` or `2f`"
@@ -4198,13 +4186,10 @@ type = "f64[3]"
 source = "spec"
 anchor = "Three finite f64 LE values at +127, +135, and +143 store the solved origin in metres"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "prefix + cs_pt::ZERO_BEFORE_ORIGIN..prefix + cs_pt::ORIGIN"
-note = "The parser accepts the 151-byte standard component-point record and reads the origin at +127."
 
 [[record]]
 name = "coordinate_system_extended_component_point"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 kind = "byte"
 section = "2"
 anchor = "The extended component-point record is 165 bytes"
@@ -4309,10 +4294,6 @@ type = "f64[3]"
 source = "spec"
 anchor = "Three finite f64 LE values at +141, +149, and +157 store the solved origin in metres"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "prefix + cs_ext::ZERO_BEFORE_ORIGIN..prefix + cs_ext::ORIGIN"
-note = "The parser accepts the 165-byte extended component-point record and reads the origin at +141."
 
 [[record]]
 name = "coordinate_system_component_path_prefix"
@@ -4379,6 +4360,7 @@ note = "The owning component-path parser starts counted entries 18 bytes after t
 
 [[record]]
 name = "coordinate_system_component_path_suffix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 kind = "byte"
 section = "2"
 anchor = "Relative to the byte after the path or optional null slot"
@@ -4456,13 +4438,10 @@ type = "f64[3]"
 source = "spec"
 anchor = "three finite f64 LE origin coordinates in metres"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "record.get(trailer..trailer + cs_path_suf::ONE)? != [0; 14]"
-note = "The parser requires the 14-byte zero header of the path-relative solved suffix."
 
 [[record]]
 name = "coordinate_system_ordinal_axis_tail"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 kind = "byte"
 section = "2"
 anchor = "A component-point origin without line-axis references uses an ordinal-axis tail"
@@ -4498,10 +4477,6 @@ type = "f64"
 source = "spec"
 anchor = "The f64 LE value at tail +27 repeats the component-point origin Z coordinate in metres"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "tail.get(ordinal_tail::ZERO_BEFORE_ORIGIN_Z..ordinal_tail::ORIGIN_Z)? != [0; 23]"
-note = "The parser requires 23 zero bytes at ordinal-axis tail +4 before the repeated origin Z."
 
 [[record]]
 name = "coordinate_system_two_point_separator"
@@ -4541,6 +4516,7 @@ anchor = "and two nonzero u16 tokens"
 
 [[record]]
 name = "coordinate_system_two_point_tail"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 kind = "byte"
 section = "2"
 anchor = "A 94-byte solved tail follows the second record"
@@ -4596,10 +4572,6 @@ type = "u16"
 source = "spec"
 anchor = "tail +92 stores a nonzero u16 token"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "if tail.len() != two_pt_tail::LEN"
-note = "The parser requires the 94-byte solved tail after the second extended point record."
 
 [[record]]
 name = "coordinate_system_endpoint_path_prefix"
@@ -4689,6 +4661,7 @@ anchor = "+108 stores two zero bytes"
 
 [[record]]
 name = "coordinate_system_endpoint_path_suffix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 kind = "byte"
 section = "2"
 anchor = "Relative to the byte after that slot"
@@ -4766,13 +4739,10 @@ type = "f64[3]"
 source = "spec"
 anchor = "finite origin-coordinate layout"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "record.get(trailer..trailer + ep_path_suf::ONE)? != [0; 70]"
-note = "The parser requires the 70-byte zero header of the endpoint-path solved suffix."
 
 [[record]]
 name = "coordinate_system_line_axis"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 kind = "byte"
 section = "2"
 anchor = "Each line-axis record is 113 bytes"
@@ -4842,10 +4812,6 @@ type = "f64[3]"
 source = "spec"
 anchor = "The same direction is repeated as three f64 LE values at +89"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
-contains = "prefix + line_axis::ZERO_BEFORE_SCALAR..prefix + line_axis::CARRIER_SCALAR"
-note = "The parser requires sixteen zero bytes at line-axis +16 before the carrier scalar."
 
 [[record]]
 name = "coordinate_system_xy_tail"
@@ -4973,6 +4939,7 @@ anchor = "A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fiel
 
 [[record]]
 name = "display_lists_scene_source_binding"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
 kind = "byte"
 section = "8"
 anchor = "The byte sequence `00 00 00 00 00 00 30 40 00 00 00 00` followed by a nonzero u32 LE source identifier"
@@ -4985,6 +4952,7 @@ offset = 0
 type = "bytes[12]"
 source = "spec"
 anchor = "`00 00 00 00 00 00 30 40 00 00 00 00`"
+value = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00]
 
 [[record.field]]
 name = "source_id"
@@ -4993,18 +4961,11 @@ type = "u32"
 source = "spec"
 anchor = "nonzero u32 LE source identifier"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
-contains = "const SCENE_SOURCE_MARKER: &[u8] = &[ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, ];"
-note = "The parser's scene-source marker matches the 12-byte specification marker."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
-contains = ".then(|| View::u32_le_at(window, scene_src::SOURCE_ID))"
-note = "The parser reads the source identifier at marker offset +12."
 
 [[record]]
 name = "transformed_reference_plane_metadata"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/metadata.rs"
 kind = "byte"
 section = "8"
 anchor = "`moTransRefPlaneData_c` | +0 | bytes[8]"
@@ -5019,6 +4980,7 @@ type = "bytes[8]"
 source = "spec"
 anchor = "`ff ff ff ff ff ff ff ff`"
 note = "Fixed prefix."
+value = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
 
 [[record.field]]
 name = "center"
@@ -5052,10 +5014,6 @@ source = "spec"
 anchor = "+72 | f64 | plane diagonal, metres"
 note = "Plane diagonal in metres."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/metadata.rs"
-contains = "const PREFIX: &[u8] = &[0xff; 8];"
-note = "The parser requires the fixed prefix before reading the value fields."
 
 [[record]]
 name = "display_lists_compact_face_header"
@@ -5082,6 +5040,7 @@ anchor = "strip count as u32 LE at `+4`"
 
 [[record]]
 name = "display_lists_extended_face_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
 kind = "byte"
 section = "8"
 anchor = "The extended form has u32 LE values"
@@ -5138,10 +5097,6 @@ type = "bytes[16]"
 source = "spec"
 anchor = "followed by 16 zero bytes at `+24`"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
-contains = ".get(at + extended_face::ZERO_TAIL..at + extended_face::LEN)"
-note = "The decoder selects the 40-byte extended header or the 8-byte compact header."
 
 [[record]]
 name = "draft_plane_reference_prefix"
@@ -5269,6 +5224,7 @@ anchor = "+110 | u16 LE | zero marker tail"
 
 [[record]]
 name = "draft_compact_selection_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
 kind = "byte"
 section = "2"
 anchor = "The 30-byte fixed prefix starts 12 bytes before the duplicated marker"
@@ -5311,10 +5267,6 @@ type = "u16"
 source = "spec"
 anchor = "a u16 LE zero tail"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
-contains = "let header = marker.checked_sub(compact_sel::COMPONENT_MARKER)?;"
-note = "The compact Draft parser validates the fixed selection prefix and its path delimiters."
 
 [[record]]
 name = "draft_aligned_direction_frame"

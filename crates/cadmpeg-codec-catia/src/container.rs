@@ -27,11 +27,11 @@ use crate::layout::stream_descriptor_header as stream_desc;
 use crate::variant::Variant;
 
 /// The outer and inner container magic.
-pub const OUTER_MAGIC: &[u8; 8] = b"V5_CFV2\0";
+pub const OUTER_MAGIC: &[u8; 8] = &outer_hdr::MAGIC_VALUE;
 /// The nested-container stream-directory magic.
 pub const DIR_MAGIC: &[u8; 16] = b"CATIA_V5 CB0001\0";
 /// Marker opening a FINJPL named outer-body segment.
-pub const FINJPL_MARKER: &[u8; 8] = b"FINJPL  ";
+pub const FINJPL_MARKER: &[u8; 8] = &crate::layout::token::NAMED_STREAM_BLOCK;
 
 /// Semantic family of a FINJPL segment's big-endian type word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

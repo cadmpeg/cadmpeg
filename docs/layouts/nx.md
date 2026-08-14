@@ -58,23 +58,22 @@ Spec §2 · layout: byte offsets · size: 31 B
 
 Fixed prefix through the `HEADER` marker. The spec's byte map labels 0x1f as the start of the directory entries; the §2 prose and the parser both place `entry_count:u32 LE` there with the entries at 0x23. Recorded in the pull request.
 
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 8 | `magic` | `bytes[8]` | little | spec | 0x00..0x07 ASCII "SPLMSSTR" |
+| 0 | 8 | `magic` | `bytes[8]` | little | spec | 0x00..0x07 ASCII "SPLMSSTR" · value `"SPLMSSTR"` |
 | 8 | 1 | `version_tag` | `u8` | little | spec | 0x08 version tag, constant 0x06 |
 | 9 | 3 | `file_tag` | `u24` | little | spec | 0x09..0x0b file-specific uint24 LE (correlates with file complexity, not footer offset) |
 | 12 | 4 | `zero_word` | `u32` | little | spec | 0x0c..0x0f constant 0x00000000 |
 | 16 | 1 | `zero_byte` | `u8` | little | spec | 0x10 constant 0x00 |
 | 17 | 6 | `footer_offset` | `u48` | little | spec | 0x11..0x16 FOOTER offset, 48-bit LE (points into the FOOTER region near EOF) |
-| 25 | 6 | `header_marker` | `bytes[6]` | little | spec | 0x19..0x1e ASCII "HEADER" |
+| 25 | 6 | `header_marker` | `bytes[6]` | little | spec | 0x19..0x1e ASCII "HEADER" · value `"HEADER"` |
 
 Unstated regions:
 
 - `23..25` (2 B): Bytes 0x17..0x18. The spec's byte map skips from `0x11..0x16` to `0x19..0x1e` and states nothing for these two bytes; the parser does not read them either.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-nx/src/container.rs` — The parser's magic matches offset 0x00.
 
 ## `directory_entry`
 

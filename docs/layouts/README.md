@@ -21,7 +21,14 @@ Never edit a `<format>.md` or a generated `src/layout.rs` by hand; regenerate th
 
 A table edit without regeneration fails the test. After regenerating, rebuild, run the owning crate's tests, and review the diff.
 
-The generated file holds `usize` offset constants only: one module per byte-layout record, `LEN` for the record length, and one constant per field. Records that declare a `[[record.discrepancy]]` are omitted, with the reason in a comment. Slot records, column records, tokens, composite types, byte values, widths, and endianness stay in hand-written code and pins. Parsing functions are not generated.
+The generated file holds one module per byte-layout record (`LEN` plus one
+offset constant per field), a `*_VALUE` constant for each field that declares
+`value`, and a `token` module of tag constants. Records that declare a
+`[[record.discrepancy]]` are omitted, with the reason in a comment. Slot
+records, column records, composite types, widths, and endianness stay in
+hand-written code. `[[record.code]]` pins remain only for facts the emitter
+cannot express (column slices, discrepant-record arithmetic, arity tables,
+scope-relative maps). Parsing functions are not generated.
 
 Decoder code imports a record module by path or alias (`use crate::layout::block_frame_header as block;`). Never glob-import a layout module.
 
@@ -42,12 +49,16 @@ The mapping from table to generated file is the explicit list `GENERATED_LAYOUT_
   invented one.
 - **Every multi-byte field resolves an endianness**, or sets it to `unstated`
   and says in a note that the specification omits it.
-- **Code cross-checks hit real source.** `[[record.code]]` asserts a literal
-  substring is present in a named file.
+- **Code cross-checks hit real parser source.** `[[record.code]]` asserts a
+  literal substring is present in a named file. The path must not contain a
+  `tests` segment: a pin is a claim that a parser agrees with the table.
+- **`parsed_by` names a parser.** The path must exist and must not be a test
+  file. It is a locator, not a substring check.
 
-`layout_validator_rejects_broken_tables` runs the same validator over fourteen
-deliberately-broken fixtures in `crates/cadmpeg/tests/fixtures/layout-invalid/`,
-one per rule, so the rules are proven to fire rather than assumed to.
+`layout_validator_rejects_broken_tables` runs the same validator over
+seventeen deliberately-broken fixtures in
+`crates/cadmpeg/tests/fixtures/layout-invalid/`, one per rule, so the rules
+are proven to fire rather than assumed to.
 
 ## Schema
 
@@ -99,7 +110,11 @@ anchor = "**Body (61 B):**"
 size = 61                           # optional; enforced for byte and column
 endianness = "little"               # optional record-level default
 note = "..."
+parsed_by = "crates/cadmpeg-codec-rhino/src/chunks.rs"
 ```
+
+`parsed_by` is a repo-relative parser path, or an array of them. It locates the
+decoder for a stateless reader. It does not verify a substring.
 
 - `byte` — absolute byte offsets. Every field needs `offset` and a fixed width.
 - `slot` — an ordered sequence of typed slots with no stated offsets, for
@@ -120,7 +135,12 @@ endianness = "little"               # optional; falls back to record then file
 source = "spec"                     # spec | derived | code
 anchor = "`chunk[3]` @+34 = first_lump"
 note = "..."                        # required when source = "derived"
+value = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00]
 ```
+
+`value` is the constant the specification states for the field: a byte array,
+an ASCII string (`"V5_CFV2\u0000"`), or an integer matching the field type.
+The emitter writes `{FIELD}_VALUE` next to the offset constant.
 
 `source = "derived"` means arithmetic over values the section states — a stride,
 a preceding field's width, a declared total. The note must say which. It is not
@@ -158,13 +178,15 @@ note = "..."                        # required; state both readings, pick neithe
 
 ### `[[record.code]]`
 
-A claim that a parser agrees with the table.
+A claim that a parser agrees with the table on a fact the emitter cannot
+express. Do not pin a generated offset or value constant: that is navigation,
+and belongs in `parsed_by`.
 
 ```toml
 [[record.code]]
-path = "crates/cadmpeg-asm/src/asm_header.rs"
-contains = "const HEADER_LEN: usize = 47;"
-note = "..."
+path = "crates/cadmpeg-codec-sldprt/src/brep/intersection.rs"
+contains = "let block = preamble + 52;"
+note = "The parser anchors the point block after `preamble = body + 6`."
 ```
 
 ### `[[not_applicable]]`

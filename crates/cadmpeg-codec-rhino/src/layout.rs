@@ -1,10 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Byte-offset constants generated from `docs/layouts/rhino.toml`.
+//! Byte-offset and value constants generated from `docs/layouts/rhino.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
 #![allow(dead_code)] // Not every generated constant is referenced yet.
+
+/// Tag constants from the table inventory.
+pub(crate) mod token {
+    /// `TCODE_SHORT` (`0x80000000`). Spec §4.
+    pub(crate) const TCODE_SHORT: u32 = 0x8000_0000;
+    /// `TCODE_CRC` (`0x00008000`). Spec §4.
+    pub(crate) const TCODE_CRC: u32 = 0x0000_8000;
+    /// `comment block` (`0x00000001`). Spec §6.1.
+    pub(crate) const COMMENT_BLOCK: u32 = 0x0000_0001;
+    /// `end of file` (`0x00007fff`). Spec §6.1.
+    pub(crate) const END_OF_FILE: u32 = 0x0000_7fff;
+    /// `end of table` (`0xffffffff`). Spec §6.1.
+    pub(crate) const END_OF_TABLE: u32 = 0xffff_ffff;
+    /// `object table` (`0x10000013`). Spec §6.1.
+    pub(crate) const OBJECT_TABLE: u32 = 0x1000_0013;
+    /// `object record` (`0x20008070`). Spec §6.2.
+    pub(crate) const OBJECT_RECORD: u32 = 0x2000_8070;
+    /// `class UUID` (`0x0002fffb`). Spec §6.4.
+    pub(crate) const CLASS_UUID: u32 = 0x0002_fffb;
+    /// `class data` (`0x0002fffc`). Spec §6.4.
+    pub(crate) const CLASS_DATA: u32 = 0x0002_fffc;
+}
 
 /// Byte offsets for the `file_header` record.
 ///
@@ -18,6 +40,8 @@ pub(crate) mod file_header {
     pub(crate) const LEN: usize = 32;
     /// Offset of `magic` (`bytes[24]`). Spec §2.
     pub(crate) const MAGIC: usize = 0;
+    /// Stated value of `magic` (`bytes[24]`). Spec §2.
+    pub(crate) const MAGIC_VALUE: [u8; 24] = *b"3D Geometry File Format ";
     /// Offset of `archive_version` (`bytes[8]`). Spec §2.
     pub(crate) const ARCHIVE_VERSION: usize = 24;
 }

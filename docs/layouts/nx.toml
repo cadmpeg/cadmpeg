@@ -35,6 +35,7 @@ anchor = "| Small index | `uint16` BE, 2 bytes |"
 
 [[record]]
 name = "splmsstr_header"
+parsed_by = "crates/cadmpeg-codec-nx/src/container.rs"
 kind = "byte"
 section = "2"
 anchor = "0x00..0x07 ASCII \"SPLMSSTR\""
@@ -48,6 +49,7 @@ offset = 0
 type = "bytes[8]"
 source = "spec"
 anchor = "0x00..0x07 ASCII \"SPLMSSTR\""
+value = "SPLMSSTR"
 
 [[record.field]]
 name = "version_tag"
@@ -90,16 +92,13 @@ offset = 25
 type = "bytes[6]"
 source = "spec"
 anchor = "0x19..0x1e ASCII \"HEADER\""
+value = "HEADER"
 
 [[record.gap]]
 offset = 23
 size = 2
 note = "Bytes 0x17..0x18. The spec's byte map skips from `0x11..0x16` to `0x19..0x1e` and states nothing for these two bytes; the parser does not read them either."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-nx/src/container.rs"
-contains = "pub const MAGIC: &[u8; 8] = b\"SPLMSSTR\";"
-note = "The parser's magic matches offset 0x00."
 
 [[record]]
 name = "directory_entry"

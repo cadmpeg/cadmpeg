@@ -31,7 +31,7 @@ fn binary(prefix: &[u8]) -> bool {
     };
     flag[binary_flag::IDENTIFIER] == b'B'
         && flag[binary_flag::REMAINING_BYTE_COUNT..binary_flag::PRIMITIVE_BIT_LENGTHS]
-            == 75_u32.to_be_bytes()
+            == binary_flag::REMAINING_BYTE_COUNT_VALUE.to_be_bytes()
         && flag[binary_flag::SECTION_DISPLACEMENTS] == b'B'
         && flag[16] == b'S'
         && flag[21] == b'G'

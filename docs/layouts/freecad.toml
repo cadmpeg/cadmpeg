@@ -17,6 +17,7 @@ records is little-endian.
 
 [[record]]
 name = "mesh_kernel_side_entry_header"
+parsed_by = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
 kind = "byte"
 section = "11"
 anchor = "The current typed binary record begins with the 32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field."
@@ -31,6 +32,7 @@ type = "u32"
 source = "spec"
 anchor = "the 32-bit magic `a0b0c0d0`"
 note = "The spec states outright that both byte orders are accepted for this word."
+value = 0xa0b0c0d0
 
 [[record.field]]
 name = "version"
@@ -39,6 +41,7 @@ type = "u32"
 source = "spec"
 anchor = "the 32-bit version `00010000`"
 note = "The spec states outright that both byte orders are accepted for this word."
+value = 0x00010000
 
 [[record.field]]
 name = "information"
@@ -47,23 +50,12 @@ type = "bytes[256]"
 source = "spec"
 anchor = "and a 256-byte information field"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
-contains = "const MESH_MAGIC: u32 = 0xa0b0_c0d0;"
-note = "The parser's mesh magic matches offset 0."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
-contains = "const MESH_VERSION: u32 = 0x0001_0000;"
-note = "The parser's mesh version matches offset 4."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
-contains = "reader.skip(mesh_hdr::LEN - mesh_hdr::INFORMATION)?;"
-note = "The parser skips the stated 256-byte information field."
 
 [[record]]
 name = "mesh_facet"
+parsed_by = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
 kind = "byte"
 section = "11"
 anchor = "Each facet contains three zero-based point indices followed by three stored neighbour indices."
@@ -85,10 +77,6 @@ source = "derived"
 anchor = "three zero-based point indices followed by three stored neighbour indices"
 note = "Offset derived from the three preceding 32-bit indices."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
-contains = ".counted(facet_count as u64, mesh_facet::LEN)"
-note = "The parser bounds the facet array at 24 bytes per facet, matching the derived stride."
 
 [[record]]
 name = "point_kernel_side_entry_header"
@@ -127,6 +115,7 @@ note = "The parser bounds each packed-colour record at 4 bytes after the little-
 
 [[record]]
 name = "link_array_side_entry_header"
+parsed_by = "crates/cadmpeg-codec-freecad/src/product.rs"
 kind = "byte"
 section = "9"
 anchor = "Each side entry begins with a little-endian element count followed by either all single-precision or all double-precision components; exact entry length selects the precision."
@@ -140,10 +129,6 @@ type = "u32"
 source = "spec"
 anchor = "Each side entry begins with a little-endian element count"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-freecad/src/product.rs"
-contains = "link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(8))"
-note = "The parser matches entry length against a 4-byte count prefix plus 8-byte or 4-byte components."
 
 # --- Not tabulated -----------------------------------------------------------
 

@@ -18,7 +18,7 @@ use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
-pub const MAGIC: &[u8; 8] = b"SPLMSSTR";
+pub const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
 
 /// A directory entry from the `HEADER` or `FOOTER` region.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -6,20 +6,21 @@ use std::fmt;
 use cadmpeg_core::decode::View;
 
 use crate::layout::file_header;
+use crate::layout::token;
 
 /// The fixed ASCII prefix of a 3DM file header.
-pub(crate) const MAGIC: &[u8; 24] = b"3D Geometry File Format ";
+pub(crate) const MAGIC: &[u8; 24] = &file_header::MAGIC_VALUE;
 /// The end-of-file chunk typecode.
-pub(crate) const TCODE_ENDOFFILE: u32 = 0x0000_7fff;
+pub(crate) const TCODE_ENDOFFILE: u32 = token::END_OF_FILE;
 /// The short table terminator typecode.
-pub(crate) const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
+pub(crate) const TCODE_ENDOFTABLE: u32 = token::END_OF_TABLE;
 /// The legacy summary chunk typecode.
 pub(crate) const TCODE_SUMMARY: u32 = 0x0200_0013;
 const TCODE_V1_OPENNURBS_CLASS_UUID: u32 = 0x0002_fffd;
 /// The bit marking a short chunk.
-pub(crate) const TCODE_SHORT: u32 = 0x8000_0000;
+pub(crate) const TCODE_SHORT: u32 = token::TCODE_SHORT;
 /// The bit marking a CRC-bearing chunk.
-pub(crate) const TCODE_CRC: u32 = 0x0000_8000;
+pub(crate) const TCODE_CRC: u32 = token::TCODE_CRC;
 
 /// Archive versions understood by the chunk layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

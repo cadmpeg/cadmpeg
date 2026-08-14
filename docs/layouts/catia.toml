@@ -19,6 +19,7 @@ the big-endian lane say so per field.
 
 [[record]]
 name = "outer_header"
+parsed_by = "crates/cadmpeg-codec-catia/src/container.rs"
 kind = "byte"
 section = "3.1"
 anchor = "0x00..0x07 magic = \"V5_CFV2\\0\""
@@ -31,6 +32,7 @@ offset = 0
 type = "bytes[8]"
 source = "spec"
 anchor = "0x00..0x07 magic = \"V5_CFV2\\0\""
+value = "V5_CFV2\u0000"
 
 [[record.field]]
 name = "directory_offset"
@@ -69,10 +71,6 @@ type = "bytes[8]"
 source = "spec"
 anchor = "0x38..0x3F hdr_flags = 8 raw bytes (not constant)"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-catia/src/container.rs"
-contains = "pub const OUTER_MAGIC: &[u8; 8] = b\"V5_CFV2\\0\";"
-note = "The parser's magic matches offset 0x00."
 
 [[record]]
 name = "inner_header"
@@ -109,6 +107,7 @@ anchor = "B      = u32be(inner + 12)   # directory length"
 
 [[record]]
 name = "stream_descriptor_header"
+parsed_by = "crates/cadmpeg-codec-catia/src/container.rs"
 kind = "byte"
 section = "3.4"
 anchor = "ds+0x0c : logical_stream_length  (u32be)"
@@ -141,10 +140,6 @@ offset = 16
 size = 64
 note = "The standard name lies before ds and ends at the fixed tail ds-3..ds. In the legacy form, ds+0x10 starts the variable-length printable UTF-16LE run; its terminator and the remaining bytes through ds+0x50 are zero."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-catia/src/container.rs"
-contains = "let ds = o - stream_desc::EXTENT_COUNT;"
-note = "The parser locates the descriptor start EXTENT_COUNT bytes before the extent-count field."
 
 [[record]]
 name = "extent_struct"
@@ -720,6 +715,7 @@ note = "Scale and flag tail. The spec names it but states no field offsets; the 
 
 [[record]]
 name = "a9_03_frame"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
 kind = "byte"
 section = "8"
 anchor = "Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`"
@@ -747,10 +743,6 @@ type = "u8"
 source = "spec"
 anchor = "`record_length = YY + 12`"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
-contains = "usize::from(data[position + a9_03::TAG_LO_LENGTH_DRIVER]) + 12"
-note = "The parser derives the nominal record end as `position + data[position + TAG_LO_LENGTH_DRIVER] + 12`, matching the stated `YY + 12`."
 
 [[record]]
 name = "zero_entity_edge_stride_5e1a"
@@ -907,6 +899,7 @@ note = "The parser selects the fixed carrier-relative grid offset and 5×7 contr
 
 [[record]]
 name = "e5_record_frame"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/records.rs"
 kind = "byte"
 section = "9"
 anchor = "Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <payload>`, stride `payload_size + 13`"
@@ -920,6 +913,7 @@ offset = 0
 type = "bytes[3]"
 source = "spec"
 anchor = "Framing `E5 0D 03 <cls> <sub>"
+value = [0xe5, 0x0d, 0x03]
 
 [[record.field]]
 name = "class"
@@ -962,10 +956,6 @@ computed = 14
 declared = 13
 note = "The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-catia/src/families/e5/records.rs"
-contains = "const MARKER: &[u8; 3] = b\"\\xe5\\x0d\\x03\";"
-note = "The parser's E5 marker constant; its stride arithmetic is `pos + size + 13`, matching the stated stride and not the enumerated field total."
 
 # --- §7 Outer schema records -------------------------------------------------
 
@@ -1113,6 +1103,7 @@ anchor = "| `E5 0D 03` | preamble or FINJPL segment | E5 native record family |"
 
 [[record]]
 name = "fbb_face_row"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/standard/fbb.rs"
 kind = "byte"
 section = "7.4"
 anchor = "Each eight-byte standard FBB face row stores that face's effective color as `marker[4] A B G R`"
@@ -1154,10 +1145,6 @@ type = "u8"
 source = "spec"
 anchor = "`marker[4] A B G R`"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-catia/src/families/standard/fbb.rs"
-contains = "(row[..fbb_row::ALPHA] == marker).then_some([ row[fbb_row::RED], row[fbb_row::GREEN], row[fbb_row::BLUE], row[fbb_row::ALPHA],"
-note = "The parser reads the colour channels from the last four bytes of the eight-byte row in the stated A B G R order."
 
 # --- Not tabulated -----------------------------------------------------------
 

@@ -17,11 +17,11 @@ pub const STREAM_HEADER_LEN: usize = layout::instance_stream_header::LEN;
 /// Instance-page length in bytes (`0x88`).
 pub const PAGE_SIZE: usize = layout::record_start_page::LEN;
 /// Record-start marker at page bytes 4..8.
-pub const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
+pub const RECORD_MARKER: &[u8] = &record_start_page::MARKER_VALUE;
 /// Continuation marker at page bytes 4..8.
-pub const CONTINUATION_MARKER: &[u8] = b"\x80\x00\x00\x00";
+pub const CONTINUATION_MARKER: &[u8] = &continuation_page::MARKER_VALUE;
 /// Terminal marker at page bytes 0..4.
-pub const TERMINAL_MARKER: &[u8] = b"\xff\xff\xff\xff";
+pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
 const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 
 fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> Option<String> {

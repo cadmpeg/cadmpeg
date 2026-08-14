@@ -15,8 +15,8 @@ use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
 use crate::native::{EntryRecord, PropertyRecord};
 
 const MAX_ELEMENTS: usize = 1_000_000;
-const MESH_MAGIC: u32 = 0xa0b0_c0d0;
-const MESH_VERSION: u32 = 0x0001_0000;
+const MESH_MAGIC: u32 = mesh_hdr::MAGIC_VALUE;
+const MESH_VERSION: u32 = mesh_hdr::VERSION_VALUE;
 
 pub(crate) fn transfer(
     ir: &mut CadIr,

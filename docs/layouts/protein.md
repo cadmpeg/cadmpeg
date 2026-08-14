@@ -24,6 +24,9 @@ block are listed under "Not tabulated". The Inventor compound-stream
 
 Spec §2 · layout: byte offsets · size: 16 B
 
+Parsed by:
+- `crates/cadmpeg-protein/src/lib.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `declared_size` | `u32` | little | spec | The first header word is the little-endian u32 page size and equals `0x88` |
@@ -32,62 +35,54 @@ Unstated regions:
 
 - `4..16` (12 B): The remaining twelve header bytes are retained; the specification states no field in that region.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-protein/src/lib.rs` — The decoder uses the generated header length.
-
 ## `record_start_page`
 
 Spec §3 · layout: byte offsets · size: 136 B
 
+Parsed by:
+- `crates/cadmpeg-protein/src/lib.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 4 | 4 | `marker` | `bytes[4]` | little | spec | `80 00 01 00` at bytes 4..8 |
+| 4 | 4 | `marker` | `bytes[4]` | little | spec | `80 00 01 00` at bytes 4..8 · value `[128, 0, 1, 0]` |
 | 8 | 128 | `body` | `bytes[128]` | little | spec | Bytes 8 through 135 are the 128-byte page body |
 
 Unstated regions:
 
 - `0..4` (4 B): Bytes 0 through 3 are a prefix; the specification states no field there.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-protein/src/lib.rs` — The decoder's page size is the generated record length.
-- `crates/cadmpeg-protein/src/lib.rs` — The decoder's record-start marker matches offset 4.
 
 ## `continuation_page`
 
 Spec §3 · layout: byte offsets · size: 136 B
 
+Parsed by:
+- `crates/cadmpeg-protein/src/lib.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 4 | 4 | `marker` | `bytes[4]` | little | spec | `80 00 00 00` at bytes 4..8 |
+| 4 | 4 | `marker` | `bytes[4]` | little | spec | `80 00 00 00` at bytes 4..8 · value `[128, 0, 0, 0]` |
 | 8 | 128 | `body` | `bytes[128]` | little | spec | Bytes 8 through 135 are the 128-byte page body |
 
 Unstated regions:
 
 - `0..4` (4 B): Bytes 0 through 3 are a prefix; the specification states no field there.
 
-Cross-checked against code:
-
-- `crates/cadmpeg-protein/src/lib.rs` — The decoder's continuation marker matches offset 4.
-
 ## `terminal_page`
 
 Spec §3 · layout: byte offsets · size: 136 B
 
+Parsed by:
+- `crates/cadmpeg-protein/src/lib.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `marker` | `bytes[4]` | little | spec | `ff ff ff ff` at bytes 0..4 |
+| 0 | 4 | `marker` | `bytes[4]` | little | spec | `ff ff ff ff` at bytes 0..4 · value `[255, 255, 255, 255]` |
 | 4 | 2 | `used` | `u16` | little | spec | the used payload length as a little-endian u16 at offset 4 |
 | 8 | 128 | `body` | `bytes[128]` | little | spec | Bytes 8 through 135 are the 128-byte page body |
 
 Unstated regions:
 
 - `6..8` (2 B): Bytes 6 through 7 are a suffix; the specification states no field there.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-protein/src/lib.rs` — The decoder's terminal marker matches offset 0.
 
 ## Not tabulated
 

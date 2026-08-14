@@ -64,7 +64,7 @@ const LEGACY_BANNER_START: &[u8] = b"#Pro/ENGINEER";
 /// JPEG SOI magic, marking the `THMB_IMG_MAIN` preview payload (never geometry).
 pub(crate) const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
 /// Unix `compress` payload prefix.
-pub(crate) const UNIX_COMPRESS_MAGIC: &[u8] = &[0x1f, 0x9d];
+pub(crate) const UNIX_COMPRESS_MAGIC: &[u8] = &crate::layout::unix_compress_header::MAGIC_VALUE;
 
 /// ASCII names that appear in the header/TOC framing and look like section
 /// headers but are structural markers, not body sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
@@ -993,7 +993,7 @@ fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
 }
 
 fn model_name(data: &[u8]) -> Option<(String, usize)> {
-    const PREFIX: &[u8] = b"#- CMNM ";
+    const PREFIX: &[u8] = &cmnm::PREFIX_VALUE;
     let marker = find(data, PREFIX, 0)?;
     let start = marker + cmnm::NAME_LENGTH_HEX;
     find(data, PREFIX, start).is_none().then_some(())?;

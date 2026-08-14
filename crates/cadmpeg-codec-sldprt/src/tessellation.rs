@@ -14,9 +14,7 @@ use crate::layout::display_lists_extended_face_header as extended_face;
 use crate::layout::display_lists_scene_source_binding as scene_src;
 
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
-const SCENE_SOURCE_MARKER: &[u8] = &[
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00,
-];
+const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Summary {

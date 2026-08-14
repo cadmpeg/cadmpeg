@@ -41,6 +41,7 @@ anchor = "Terminal | `ff ff ff ff` at bytes 0..4"
 
 [[record]]
 name = "instance_stream_header"
+parsed_by = "crates/cadmpeg-protein/src/lib.rs"
 kind = "byte"
 section = "2"
 anchor = "`InstanceProperties.bin` and `DefinitionIteratorProperties.bin` start with a 16-byte stream header"
@@ -58,15 +59,12 @@ offset = 4
 size = 12
 note = "The remaining twelve header bytes are retained; the specification states no field in that region."
 
-[[record.code]]
-path = "crates/cadmpeg-protein/src/lib.rs"
-contains = "pub const STREAM_HEADER_LEN: usize = layout::instance_stream_header::LEN;"
-note = "The decoder uses the generated header length."
 
 # --- §3 Pages --------------------------------------------------------------
 
 [[record]]
 name = "record_start_page"
+parsed_by = "crates/cadmpeg-protein/src/lib.rs"
 kind = "byte"
 section = "3"
 anchor = "Each page is 136 bytes"
@@ -78,6 +76,7 @@ offset = 4
 type = "bytes[4]"
 source = "spec"
 anchor = "`80 00 01 00` at bytes 4..8"
+value = [0x80, 0x00, 0x01, 0x00]
 
 [[record.field]]
 name = "body"
@@ -91,18 +90,11 @@ offset = 0
 size = 4
 note = "Bytes 0 through 3 are a prefix; the specification states no field there."
 
-[[record.code]]
-path = "crates/cadmpeg-protein/src/lib.rs"
-contains = "pub const PAGE_SIZE: usize = layout::record_start_page::LEN;"
-note = "The decoder's page size is the generated record length."
 
-[[record.code]]
-path = "crates/cadmpeg-protein/src/lib.rs"
-contains = "pub const RECORD_MARKER: &[u8] = b\"\\x80\\x00\\x01\\x00\";"
-note = "The decoder's record-start marker matches offset 4."
 
 [[record]]
 name = "continuation_page"
+parsed_by = "crates/cadmpeg-protein/src/lib.rs"
 kind = "byte"
 section = "3"
 anchor = "Each page is 136 bytes"
@@ -114,6 +106,7 @@ offset = 4
 type = "bytes[4]"
 source = "spec"
 anchor = "`80 00 00 00` at bytes 4..8"
+value = [0x80, 0x00, 0x00, 0x00]
 
 [[record.field]]
 name = "body"
@@ -127,13 +120,10 @@ offset = 0
 size = 4
 note = "Bytes 0 through 3 are a prefix; the specification states no field there."
 
-[[record.code]]
-path = "crates/cadmpeg-protein/src/lib.rs"
-contains = "pub const CONTINUATION_MARKER: &[u8] = b\"\\x80\\x00\\x00\\x00\";"
-note = "The decoder's continuation marker matches offset 4."
 
 [[record]]
 name = "terminal_page"
+parsed_by = "crates/cadmpeg-protein/src/lib.rs"
 kind = "byte"
 section = "3"
 anchor = "Each page is 136 bytes"
@@ -145,6 +135,7 @@ offset = 0
 type = "bytes[4]"
 source = "spec"
 anchor = "`ff ff ff ff` at bytes 0..4"
+value = [0xff, 0xff, 0xff, 0xff]
 
 [[record.field]]
 name = "used"
@@ -165,10 +156,6 @@ offset = 6
 size = 2
 note = "Bytes 6 through 7 are a suffix; the specification states no field there."
 
-[[record.code]]
-path = "crates/cadmpeg-protein/src/lib.rs"
-contains = "pub const TERMINAL_MARKER: &[u8] = b\"\\xff\\xff\\xff\\xff\";"
-note = "The decoder's terminal marker matches offset 0."
 
 # --- Not tabulated ---------------------------------------------------------
 

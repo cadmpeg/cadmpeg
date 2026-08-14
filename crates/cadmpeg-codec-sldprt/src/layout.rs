@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Byte-offset constants generated from `docs/layouts/sldprt.toml`.
+//! Byte-offset and value constants generated from `docs/layouts/sldprt.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
@@ -9,6 +9,22 @@
 // Records omitted because the table declares a contradiction.
 //
 // - `chart_00_28` (overlap): The spec's ordered field list places the unnamed seventh f64 at body +34..+42, which overlaps the sentinel the same paragraph puts at body +36. The two are consistent only if the stated `+36`, `+44`, and `+52` are measured from the byte after `attr` (body +6) rather than from the body start; `crates/cadmpeg-codec-sldprt/src/brep/intersection.rs` reads them that way, placing the sentinels at body +42 and +50 and the point block at body +58. §4 uses body-relative offsets elsewhere (`00 1d` xyz at body +14), so the two conventions collide inside one document. The spec does not say which applies here.
+
+/// Tag constants from the table inventory.
+pub(crate) mod token {
+    /// `bridge` (`00 0e`). Spec §4.
+    pub(crate) const BRIDGE: [u8; 2] = [0x00, 0x0e];
+    /// `loop head` (`00 0f`). Spec §4.
+    pub(crate) const LOOP_HEAD: [u8; 2] = [0x00, 0x0f];
+    /// `edge-use` (`00 10`). Spec §4.
+    pub(crate) const EDGE_USE: [u8; 2] = [0x00, 0x10];
+    /// `oriented coedge` (`00 11`). Spec §4.
+    pub(crate) const ORIENTED_COEDGE: [u8; 2] = [0x00, 0x11];
+    /// `vertex-use` (`00 12`). Spec §4.
+    pub(crate) const VERTEX_USE: [u8; 2] = [0x00, 0x12];
+    /// `world point` (`00 1d`). Spec §4.
+    pub(crate) const WORLD_POINT: [u8; 2] = [0x00, 0x1d];
+}
 
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
@@ -54,6 +70,8 @@ pub(crate) mod block_frame_header {
     pub(crate) const LEN: usize = 26;
     /// Offset of `marker` (`bytes[6]`). Spec §1.1.
     pub(crate) const MARKER: usize = 0;
+    /// Stated value of `marker` (`bytes[6]`). Spec §1.1.
+    pub(crate) const MARKER_VALUE: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
     /// Offset of `type_id` (`u32`, little-endian). Spec §1.1.
     pub(crate) const TYPE_ID: usize = 6;
     /// Offset of `crc32` (`u32`, little-endian). Spec §1.1.
@@ -124,6 +142,8 @@ pub(crate) mod zlb_wrapper_header {
     pub(crate) const LEN: usize = 24;
     /// Offset of `magic` (`bytes[16]`). Spec §1.
     pub(crate) const MAGIC: usize = 0;
+    /// Stated value of `magic` (`bytes[16]`). Spec §1.
+    pub(crate) const MAGIC_VALUE: [u8; 16] = [0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99];
     /// Offset of `uncompressed_size` (`u32`, little-endian). Spec §1.
     pub(crate) const UNCOMPRESSED_SIZE: usize = 16;
     /// Offset of `zlib_member_size` (`u32`, little-endian). Spec §1.
@@ -1676,6 +1696,8 @@ pub(crate) mod display_lists_scene_source_binding {
     pub(crate) const LEN: usize = 16;
     /// Offset of `marker` (`bytes[12]`). Spec §8.
     pub(crate) const MARKER: usize = 0;
+    /// Stated value of `marker` (`bytes[12]`). Spec §8.
+    pub(crate) const MARKER_VALUE: [u8; 12] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00];
     /// Offset of `source_id` (`u32`, little-endian). Spec §8.
     pub(crate) const SOURCE_ID: usize = 12;
 }
@@ -1692,6 +1714,8 @@ pub(crate) mod transformed_reference_plane_metadata {
     pub(crate) const LEN: usize = 80;
     /// Offset of `prefix` (`bytes[8]`). Spec §8.
     pub(crate) const PREFIX: usize = 0;
+    /// Stated value of `prefix` (`bytes[8]`). Spec §8.
+    pub(crate) const PREFIX_VALUE: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
     /// Offset of `center` (`f64[3]`, little-endian). Spec §8.
     pub(crate) const CENTER: usize = 8;
     /// Offset of `extents` (`f64[2]`, little-endian). Spec §8.

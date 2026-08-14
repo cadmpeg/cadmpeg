@@ -130,6 +130,7 @@ note = "The decoder selects the member by this type GUID before reading this pre
 
 [[record]]
 name = "design_decal_scope_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
 kind = "byte"
 section = "3.1"
 anchor = "A `Decal` scope is a presentation timeline object"
@@ -185,13 +186,10 @@ type = "bytes[6]"
 source = "spec"
 anchor = "with six trailing zero bytes"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
-contains = "let mapping_mode_at = scope_at + decal_scope::MAPPING_MODE;"
-note = "The decoder reads the mapping mode after validating both marked-reference envelopes."
 
 [[record]]
 name = "design_decal_image_asset_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
 kind = "byte"
 section = "3.1"
 anchor = "The referenced Decal image asset has two consecutive indexed records"
@@ -226,13 +224,10 @@ type = "bytes[6]"
 source = "spec"
 anchor = "six zero bytes at offsets 24 through 29"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
-contains = "if name_at != asset_at + decal_asset::LEN"
-note = "The parser requires the paired image-name header at the exact end of this record."
 
 [[record]]
 name = "design_decal_image_name_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
 kind = "byte"
 section = "3.1"
 anchor = "The image-name record begins at offset 30"
@@ -260,13 +255,10 @@ type = "u32"
 source = "spec"
 anchor = "An LP-UTF16 archive-entry basename begins at offset 21"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
-contains = "name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT"
-note = "The parser bounds the variable basename after this fixed prefix."
 
 [[record]]
 name = "design_parameter_owner_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
 section = "3.1"
 anchor = "All owner forms share an eleven-byte indexed header, eight zero bytes, `01 + u32 1`, `01 + u32 scope_record_index`, six zero bytes, `u32 local_ordinal`, a scalar envelope"
@@ -329,10 +321,6 @@ type = "u32"
 source = "spec"
 anchor = "`u32 local_ordinal`"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
-contains = "let scalar = frame.get(owner_prefix::LEN..parameter_marker)?;"
-note = "The structural owner parser starts the selected scalar envelope after the tabulated prefix."
 
 [[record]]
 name = "design_body_map_prefix_10"
@@ -656,6 +644,7 @@ anchor = "a u32 flags-map count at offset 21"
 
 [[record]]
 name = "paramesh_texture_filename_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
 kind = "byte"
 section = "3.1"
 anchor = "Its indexed header is followed by ten zero bytes and one nonempty u32-count UTF-16LE archive-entry basename."
@@ -683,10 +672,6 @@ type = "u32"
 source = "spec"
 anchor = "one nonempty u32-count UTF-16LE archive-entry basename"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "lp_utf16_bounded(record, texture_filename::BASENAME_CODE_UNIT_COUNT, 1..=1024)?"
-note = "The typed filename parser reads the count at the tabulated offset and requires an exact record end."
 
 [[record]]
 name = "paramesh_body_wrapper"
@@ -754,6 +739,7 @@ anchor = "a u32 body count at offset 21"
 
 [[record]]
 name = "paramesh_feature_scope_base"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
 kind = "byte"
 section = "3.1"
 anchor = "This closing record is exactly 30 bytes: its indexed header, eight zero bytes, and a marked same-segment owner reference at offset 19."
@@ -780,10 +766,6 @@ type = "bytes[11]"
 source = "spec"
 anchor = "a marked same-segment owner reference at offset 19"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
-contains = "paired_relative.checked_add(feature_scope_base::LEN) == Some(record.len())"
-note = "The scope parser requires the nested base record to end exactly 30 bytes after its header."
 
 [[record]]
 name = "paramesh_scene_state"
@@ -926,6 +908,10 @@ anchor = "Its marked same-segment reference at offset 262 points back to the col
 
 [[record]]
 name = "assembly_operand_path_locator_reference_run"
+parsed_by = [
+    "crates/cadmpeg-codec-f3d/src/design/assembly.rs",
+    "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs",
+]
 kind = "byte"
 section = "Assembly operands"
 anchor = "Every other form stores a u32 count of two followed by two marked same-segment operand-path-locator references."
@@ -968,13 +954,10 @@ path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
 contains = "633 | 732 => Some([362, 373]),"
 note = "The compact assembly forms use the two tabulated scope-relative locator-reference offsets."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?"
-note = "The parser locates the count immediately before the first locator reference."
 
 [[record]]
 name = "assembly_operand_path_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "Assembly operands"
 anchor = "An operand-path locator is a fixed 190-byte indexed record with record index `N`."
@@ -1051,13 +1034,10 @@ type = "bytes[2]"
 source = "spec"
 anchor = "two zero bytes at offset 188"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "locator_at.checked_add(path_locator::ZERO_TAIL_2)?"
-note = "The parser requires the two-byte zero tail at the end of the 190-byte locator."
 
 [[record]]
 name = "assembly_operand_path_wrapper"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "Assembly operands"
 anchor = "The wrapper is exactly 37 bytes"
@@ -1099,13 +1079,10 @@ type = "bytes[11]"
 source = "spec"
 anchor = "a marked reference to path record `N+1` at offset 26"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?"
-note = "The parser checks the ten-byte zero run after the wrapper header."
 
 [[record]]
 name = "assembly_axial_construction_carrier"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "Assembly operands"
 anchor = "The fixed span from the primary header through the paired header is 391 bytes."
@@ -1167,28 +1144,13 @@ type = "bytes[11]"
 source = "spec"
 anchor = "The carrier's paired indexed header starts at offset 380"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "start.checked_add(axial_carrier::OPERAND_TRANSFORM)?"
-note = "The parser reads and compares the construction transform at the tabulated offset."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "start.checked_add(axial_carrier::FIRST_AXIS_RECORD_REFERENCE)?"
-note = "The parser reads the first axis reference at the tabulated offset."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "start.checked_add(axial_carrier::SECOND_AXIS_RECORD_REFERENCE)?"
-note = "The parser reads the second axis reference at the tabulated offset."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?"
-note = "The parser requires the paired construction header at the tabulated offset."
 
 [[record]]
 name = "assembly_axial_selector_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "Assembly operands"
 anchor = "An axial selector primary record has a 37-byte fixed prefix"
@@ -1223,13 +1185,10 @@ type = "u32"
 source = "spec"
 anchor = "and u32 value 1. Two 36-code-unit LP-UTF16 GUIDs follow"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "selector_at.checked_add(axial_selector::ZERO_RUN_11)?"
-note = "The parser checks the fixed selector zero run."
 
 [[record]]
 name = "assembly_axial_role_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "Assembly operands"
 anchor = "The occurrence-role record at selector-record index plus five starts with"
@@ -1264,10 +1223,6 @@ type = "u32"
 source = "spec"
 anchor = "the u32 code-unit count of a 36-code-unit LP-UTF16 role GUID"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "role_at.checked_add(axial_role::CONSTANT_ONE)?"
-note = "The parser checks the fixed role-record discriminator."
 
 [[record]]
 name = "grouped_recipe_reference_prefix"
@@ -2991,6 +2946,7 @@ anchor = "offset 34 stores u32 one"
 
 [[record]]
 name = "current_extrude_operation_fields"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
 anchor = "The current reference-aware layout stores three zero bytes at `operation + 15` through `operation + 17`"
@@ -3053,13 +3009,10 @@ type = "f64[3]"
 source = "spec"
 anchor = "Its profile normal is three contiguous unit-length f64 values at `operation + 18`"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "operation_offset.checked_add(extrude_fields::PROFILE_NORMAL)?"
-note = "The current Extrude parser anchors the profile-normal and nullable-slot run at the tabulated offset."
 
 [[record]]
 name = "current_extrude_non_target_extent_pair"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
 anchor = "A first-side value other than `2` is followed by nine zero bytes and the second-side value at first-side offset `+13`"
@@ -3087,13 +3040,10 @@ type = "u32"
 source = "spec"
 anchor = "the second-side value at first-side offset `+13`"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "first_side_extent_offset.checked_add(extrude_extent_pair::SECOND_SIDE_EXTENT)?"
-note = "The current Extrude parser verifies the nine-byte zero run before reading the second-side value."
 
 [[record]]
 name = "current_extrude_shape_target_extent_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
 anchor = "A u32 zero-based scope-reference ordinal immediately after the seventh slot names the same target-group record"
@@ -3121,13 +3071,10 @@ type = "u32"
 source = "spec"
 anchor = "the first-side value `2` follows that byte"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "extent_cursor.checked_add(extrude_target::FIRST_SIDE_EXTENT)?"
-note = "The current Extrude parser requires first-side extent value 2 five bytes after the target ordinal."
 
 [[record]]
 name = "early_distance_extrude_absent_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
 anchor = "An absent field is one zero byte and places the operation u32 at offset 21"
@@ -3174,13 +3121,10 @@ type = "u32"
 source = "spec"
 anchor = "A u32 geometry-kind discriminator follows the Boolean"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "0 => (None, None, start.checked_add(early_absent::OPERATION)?, 208),"
-note = "The absent-prefix arm places the operation immediately after the marker and the scope reference count at offset 208."
 
 [[record]]
 name = "early_distance_extrude_present_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
 anchor = "A present field is byte `01` and u32 zero and places the operation at offset 25"
@@ -3234,10 +3178,6 @@ type = "u32"
 source = "spec"
 anchor = "A u32 geometry-kind discriminator follows the Boolean"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
-contains = "start.checked_add(early_present::OPERATION)?"
-note = "The present-prefix arm places the operation four bytes after the prefix u32."
 
 [[record]]
 name = "shifted_extrude_prologue"

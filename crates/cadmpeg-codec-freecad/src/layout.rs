@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Byte-offset constants generated from `docs/layouts/freecad.toml`.
+//! Byte-offset and value constants generated from `docs/layouts/freecad.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
@@ -18,8 +18,12 @@ pub(crate) mod mesh_kernel_side_entry_header {
     pub(crate) const LEN: usize = 264;
     /// Offset of `magic` (`u32`, endianness unstated). Spec §11.
     pub(crate) const MAGIC: usize = 0;
+    /// Stated value of `magic` (`u32`). Spec §11.
+    pub(crate) const MAGIC_VALUE: u32 = 0xa0b0_c0d0;
     /// Offset of `version` (`u32`, endianness unstated). Spec §11.
     pub(crate) const VERSION: usize = 4;
+    /// Stated value of `version` (`u32`). Spec §11.
+    pub(crate) const VERSION_VALUE: u32 = 0x0001_0000;
     /// Offset of `information` (`bytes[256]`). Spec §11.
     pub(crate) const INFORMATION: usize = 8;
 }
