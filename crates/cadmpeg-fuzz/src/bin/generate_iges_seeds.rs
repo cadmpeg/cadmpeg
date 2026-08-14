@@ -3,7 +3,8 @@
 
 use std::fmt::Write as _;
 use std::fs;
-use std::path::Path;
+
+include!("../seed_paths.rs");
 
 const GLOBAL: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
 
@@ -114,8 +115,8 @@ fn trimmed_plane() -> Vec<u8> {
 }
 
 fn main() {
-    let directory = Path::new("seeds/iges_container");
-    fs::create_dir_all(directory).expect("required invariant");
+    let directory = seed_dir("seeds/iges_container");
+    fs::create_dir_all(&directory).expect("required invariant");
     for (name, bytes) in [
         ("point_5_3", point()),
         ("trimmed_plane_5_3", trimmed_plane()),

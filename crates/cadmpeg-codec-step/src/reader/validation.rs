@@ -495,3 +495,6 @@ impl ValueExt for Value {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

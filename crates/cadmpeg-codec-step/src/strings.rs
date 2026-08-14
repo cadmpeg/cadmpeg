@@ -239,3 +239,6 @@ fn error<T>(offset: usize, message: &str) -> Result<T, StringError> {
         message: message.into(),
     })
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

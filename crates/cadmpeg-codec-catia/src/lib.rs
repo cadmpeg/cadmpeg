@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
-//! [`CatiaCodec`] is the normal public decode API. The optional `fuzzing`
-//! feature may expose additional modules. It implements the shared [`Codec`]
+//! [`CatiaCodec`] is the normal public decode API. A hidden `fuzz` module
+//! exposes `()`-returning parser wrappers. It implements the shared [`Codec`]
 //! interface: it detects the `V5_CFV2` file signature, inspects the catalogued
 //! logical streams, identifies the storage variant, and decodes the record
 //! families supported for that variant.
@@ -22,12 +22,12 @@
 //! # fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.CATPart")?;
 //! let decoded = CatiaCodec.decode(&mut input, &DecodeOptions::default())?;
-//! println!("{} surfaces", decoded.ir.model.surfaces.len());
+//! println!("{} surfaces", decoded.ir().model.surfaces.len());
 //! # Ok(())
 //! # }
 //! ```
 //!
-//! Read `decoded.report.losses` before consuming model relationships. A partial
+//! Read `decoded.report().losses` before consuming model relationships. A partial
 //! decode preserves the native payload in an unknown record and reports the
 //! model layers that remain unresolved.
 //!
@@ -46,6 +46,8 @@ pub(crate) mod design_feature;
 pub(crate) mod entity_table;
 pub(crate) mod families;
 pub(crate) mod formula;
+/// Byte-offset constants generated from `docs/layouts/catia.toml`.
+pub(crate) mod layout;
 pub(crate) mod legacy_entity;
 pub(crate) mod native;
 pub(crate) mod nurbs;
@@ -56,7 +58,6 @@ pub(crate) mod value_block;
 pub(crate) mod variant;
 pub(crate) mod wire;
 
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzz;
 
@@ -117,4 +118,6 @@ impl CodecBackend for CatiaCodec {
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-mod tests;
+mod integration_tests;
+#[cfg(test)]
+pub(crate) mod test_support;

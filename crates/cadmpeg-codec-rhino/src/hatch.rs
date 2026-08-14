@@ -277,7 +277,7 @@ pub(crate) fn apply_userdata(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::archive_test_support::{class_wrapper, polyline_payload, POLYLINE_CLASS};
+    use crate::test_support::{class_wrapper, polyline_payload, POLYLINE_CLASS};
 
     fn plane_bytes() -> Vec<u8> {
         [

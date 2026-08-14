@@ -2,8 +2,8 @@
 //! Subtype reference tables, intcurve subtype classification, and token walkers.
 
 use crate::nurbs::reader::INT_WIDTHS;
-use crate::sab::Record;
-use cadmpeg_core::le::int_at as read_int;
+use crate::sab::{int_le_at, Record};
+use cadmpeg_core::decode::View;
 
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
@@ -219,7 +219,7 @@ pub(crate) fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
     let mut pos = 0usize;
     while pos < bytes.len() {
         if bytes[pos..].starts_with(marker) {
-            if let Some(index) = read_int(bytes, pos + marker.len(), int_width) {
+            if let Some(index) = int_le_at(bytes, pos + marker.len(), int_width) {
                 if index >= 0 {
                     refs.push(index as usize);
                 }
@@ -228,7 +228,7 @@ pub(crate) fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
             && bytes.get(pos + 1) == Some(&0x04)
             && bytes.get(pos + 2 + int_width) == Some(&0x10)
         {
-            if let Some(index) = read_int(bytes, pos + 2, int_width) {
+            if let Some(index) = int_le_at(bytes, pos + 2, int_width) {
                 if index >= 0 {
                     refs.push(index as usize);
                 }
@@ -280,13 +280,9 @@ pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: usize) -> Option<u
         0x13 | 0x14 => 25,
         0x16 => 17,
         0x07 | 0x0d | 0x0e => 2 + usize::from(*bytes.get(pos + 1)?),
-        0x08 => {
-            3 + usize::from(u16::from_le_bytes(
-                bytes.get(pos + 1..pos + 3)?.try_into().ok()?,
-            ))
-        }
+        0x08 => 3 + usize::from(View::u16_le_at(bytes, pos + 1)?),
         0x09 | 0x12 => {
-            let length = read_int(bytes, pos + 1, int_width)?;
+            let length = int_le_at(bytes, pos + 1, int_width)?;
             1 + int_width + usize::try_from(length).ok()?
         }
         _ => return None,

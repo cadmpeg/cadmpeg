@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::le::u32_at;
+use cadmpeg_core::decode::View;
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2015,7 +2015,11 @@ impl<'a> Section<'a> {
     pub fn record_area_header(&self) -> Option<RecordAreaHeader<'a>> {
         let bytes = self.record_area?;
         let offset = self.record_area_offset?;
-        let control_words = [u32_at(bytes, 0)?, u32_at(bytes, 4)?, u32_at(bytes, 8)?];
+        let control_words = [
+            View::u32_le_at(bytes, 0)?,
+            View::u32_le_at(bytes, 4)?,
+            View::u32_le_at(bytes, 8)?,
+        ];
         let suffix = bytes.get(12..)?;
         is_product_record(suffix).then_some(())?;
         let length = usize::from(suffix[2]) - 2;
@@ -4293,7 +4297,9 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
         if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
             continue;
         }
-        let trailer = u32::from_be_bytes(bytes[at + 1..at + 5].try_into().expect("four bytes"));
+        let Some(trailer) = View::u32_be_at(bytes, at + 1) else {
+            continue;
+        };
         lanes.push(DatumPlaneObjectIndexLane {
             offset: start,
             declared_count,
@@ -4824,9 +4830,7 @@ fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<(Vec<u32>, Vec<usiz
     let mut offsets = Vec::with_capacity(count - 1);
     for _ in 1..count {
         offsets.push(*at);
-        values.push(u32::from_be_bytes(
-            bytes.get(*at..*at + 4)?.try_into().ok()?,
-        ));
+        values.push(View::u32_be_at(bytes, *at)?);
         *at += 4;
     }
     Some((values, offsets))
@@ -5406,24 +5410,21 @@ pub fn references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
     let mut at = 0usize;
     while at < bytes.len() {
         if bytes[at] == 0xe0 {
-            if let Some(raw) = bytes
-                .get(at + 1..at + 5)
-                .and_then(|raw| raw.try_into().ok())
-            {
+            if let Some(value) = View::u32_be_at(bytes, at + 1) {
                 out.push(ReferenceValue {
                     offset: base_offset + at,
                     kind: ReferenceKind::PersistentHandle,
-                    value: u32::from_be_bytes(raw),
+                    value,
                 });
                 at += 5;
                 continue;
             }
         } else if bytes[at] & 0xf0 == 0xc0 {
-            if let Some(raw) = bytes.get(at..at + 4).and_then(|raw| raw.try_into().ok()) {
+            if let Some(value) = View::u32_be_at(bytes, at) {
                 out.push(ReferenceValue {
                     offset: base_offset + at,
                     kind: ReferenceKind::Tagged28,
-                    value: u32::from_be_bytes(raw) & 0x0fff_ffff,
+                    value: value & 0x0fff_ffff,
                 });
                 at += 4;
                 continue;
@@ -5582,11 +5583,7 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
             break;
         };
         let offset = at + relative;
-        let Some(payload_len) = bytes
-            .get(offset + 8..offset + 12)
-            .and_then(|raw| raw.try_into().ok())
-            .map(u32::from_be_bytes)
-            .map(|value| value as usize)
+        let Some(payload_len) = View::u32_be_at(bytes, offset + 8).map(|value| value as usize)
         else {
             break;
         };
@@ -5642,7 +5639,7 @@ fn section_record_area_pointer(
     section_end: usize,
 ) -> Option<(usize, usize)> {
     let mut matches = (schema_start..section_end.saturating_sub(3)).filter_map(|at| {
-        let relative = usize::try_from(u32_at(bytes, at)?).ok()?;
+        let relative = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         let target = section_offset.checked_add(relative)?;
         (target >= at.checked_add(4)? && target.checked_add(15)? <= section_end).then_some(())?;
         is_product_record(bytes.get(target.checked_add(12)?..section_end)?).then_some((target, at))
@@ -5685,7 +5682,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
     let mut out = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
     for table in 0..bytes.len().saturating_sub(4) {
-        let Some(count) = u32_at(bytes, table).map(|value| value as usize) else {
+        let Some(count) = View::u32_le_at(bytes, table).map(|value| value as usize) else {
             continue;
         };
         if !(2..=100_000).contains(&count) {
@@ -5704,12 +5701,13 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             continue;
         };
         if !is_product_record(bytes.get(table_end..).unwrap_or_default())
-            || u32_at(bytes, index_start) != Some(0)
+            || View::u32_le_at(bytes, index_start) != Some(0)
             || !seen_record_starts.insert(table_end)
         {
             continue;
         }
-        let Some(first) = u32_at(bytes, index_start + 4).map(|value| value as usize) else {
+        let Some(first) = View::u32_le_at(bytes, index_start + 4).map(|value| value as usize)
+        else {
             continue;
         };
         let Some(base) = table_end.checked_sub(first) else {
@@ -5717,7 +5715,8 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         };
         let mut offsets = Vec::with_capacity(count + 1);
         for index in 0..=count {
-            let Some(value) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {
+            let Some(value) = View::u32_le_at(bytes, index_start + index * 4).map(|v| v as usize)
+            else {
                 offsets.clear();
                 break;
             };
@@ -5740,7 +5739,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 records.clear();
                 break;
             };
-            let Some(object_id) = u32_at(bytes, table + 4 + index * 4) else {
+            let Some(object_id) = View::u32_le_at(bytes, table + 4 + index * 4) else {
                 records.clear();
                 break;
             };
@@ -5767,7 +5766,8 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         }
     }
     for count_offset in 8..bytes.len().saturating_sub(4) {
-        let Some(record_count) = u32_at(bytes, count_offset).map(|value| value as usize) else {
+        let Some(record_count) = View::u32_le_at(bytes, count_offset).map(|value| value as usize)
+        else {
             continue;
         };
         if !(2..=100_000).contains(&record_count) {
@@ -5780,13 +5780,15 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(index_start) = count_offset.checked_sub(index_len) else {
             continue;
         };
-        let Some(first) = u32_at(bytes, index_start).map(|value| value as usize) else {
+        let Some(first) = View::u32_le_at(bytes, index_start).map(|value| value as usize) else {
             continue;
         };
-        let Some(second) = u32_at(bytes, index_start + 4).map(|value| value as usize) else {
+        let Some(second) = View::u32_le_at(bytes, index_start + 4).map(|value| value as usize)
+        else {
             continue;
         };
-        let Some(last) = u32_at(bytes, count_offset - 4).map(|value| value as usize) else {
+        let Some(last) = View::u32_le_at(bytes, count_offset - 4).map(|value| value as usize)
+        else {
             continue;
         };
         if first < count_offset + 4 || first >= second || second > last || last > bytes.len() {
@@ -5794,7 +5796,8 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         }
         let mut offsets = Vec::with_capacity(offset_count);
         for index in 0..offset_count {
-            let Some(offset) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {
+            let Some(offset) = View::u32_le_at(bytes, index_start + index * 4).map(|v| v as usize)
+            else {
                 offsets.clear();
                 break;
             };
@@ -5926,9 +5929,8 @@ fn offset_store_product_anchored_form(bytes: &[u8]) -> Option<OffsetStoreControl
                 value | (u32::from(*byte) << (shift * 8))
             })
     });
-    let values = bytes[leading_width..*product_offset]
-        .chunks_exact(4)
-        .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk")))
+    let values = (0..(*product_offset - leading_width) / 4)
+        .map(|index| View::u32_le_at(bytes, leading_width + index * 4).expect("four-byte chunk"))
         .collect();
     Some(OffsetStoreControlForm::ProductAnchored {
         leading_value: leading_value.map(|value| (leading_width, value)),
@@ -6261,5 +6263,4 @@ pub(crate) fn parameter_name_parts(name: &str) -> Option<(u32, Option<&str>)> {
 }
 
 #[cfg(test)]
-#[path = "om_parser_tests.rs"]
-mod parser_tests;
+mod tests;

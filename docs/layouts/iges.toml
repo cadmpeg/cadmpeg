@@ -40,6 +40,7 @@ type = "u32"
 endianness = "big"
 source = "spec"
 anchor = "Bytes 2 through 5 are the big-endian unsigned 32-bit value `75`"
+value = 75
 
 [[record.field]]
 name = "primitive_bit_lengths"
@@ -84,15 +85,11 @@ type = "bytes[1]"
 source = "spec"
 anchor = "byte 80 is ASCII `1`."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-iges/src/layout.rs"
-contains = "flag[1..5] == 75_u32.to_be_bytes()"
-note = "Representation detection requires the fixed big-endian byte count."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-iges/src/layout.rs"
-contains = "flag[73..79]"
-note = "Representation detection validates the six-byte Binary sequence padding."
+path = "crates/cadmpeg-codec-iges/src/representation.rs"
+contains = "matches!(byte, b' ' | b'0')"
+note = "Representation detection validates the six-byte Binary sequence padding as ASCII blanks or zeroes."
 
 [[record]]
 name = "canonical_card"
@@ -249,8 +246,8 @@ note = "Four two-digit decimal subfields: blank status, subordinate-entity switc
 
 [[record.code]]
 path = "crates/cadmpeg-codec-iges/src/directory.rs"
-contains = ".get(..72)"
-note = "The parser takes columns 1-72 as the Directory Entry data area and splits it into eight-column fields."
+contains = "let mut fields = [[b' '; 8]; 9];"
+note = "The parser splits columns 1-72 into nine eight-column Directory Entry fields."
 
 [[record]]
 name = "directory_entry_card_2"

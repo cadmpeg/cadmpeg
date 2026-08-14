@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Golden inspect and decode snapshots over code-built SAT streams.
 //!
-//! Inputs come from [`crate::tests`] builders. Snapshot regeneration never
+//! Inputs come from [`crate::test_support`] builders. Snapshot regeneration never
 //! writes input bytes.
 
 use std::io::Cursor;
@@ -10,7 +10,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::golden::snapshot_text;
 
-use crate::tests::BinaryFixtureKind;
+use crate::test_support::BinaryFixtureKind;
 use crate::SatCodec;
 
 const TEXT_SPHERE_INSPECT: &str = include_str!("../tests/golden/inspect/text_sphere.json");
@@ -31,9 +31,9 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match SatCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
         Ok(result) => serde_json::json!({
-            "ir": result.ir,
-            "report": result.report,
-            "source_fidelity": result.source_fidelity,
+            "ir": result.ir(),
+            "report": result.report(),
+            "source_fidelity": result.source_fidelity(),
         }),
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
@@ -51,19 +51,19 @@ fn cases() -> [Case; 3] {
     [
         Case {
             stem: "text_sphere",
-            bytes: crate::tests::text_sphere_stream(1.0),
+            bytes: crate::test_support::text_sphere_stream(1.0),
             inspect_golden: TEXT_SPHERE_INSPECT,
             decode_golden: TEXT_SPHERE_DECODE,
         },
         Case {
             stem: "binary_asm",
-            bytes: crate::tests::binary_sphere_stream(BinaryFixtureKind::Asm),
+            bytes: crate::test_support::binary_sphere_stream(BinaryFixtureKind::Asm),
             inspect_golden: BINARY_ASM_INSPECT,
             decode_golden: BINARY_ASM_DECODE,
         },
         Case {
             stem: "binary_acis",
-            bytes: crate::tests::binary_sphere_stream(BinaryFixtureKind::Acis),
+            bytes: crate::test_support::binary_sphere_stream(BinaryFixtureKind::Acis),
             inspect_golden: BINARY_ACIS_INSPECT,
             decode_golden: BINARY_ACIS_DECODE,
         },

@@ -7,6 +7,7 @@ use super::trimming::pcurve_geometry;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::Pcurve;
 use cadmpeg_ir::ids::{
@@ -123,6 +124,7 @@ fn topology_vertex(
         .clone()
 }
 
+#[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
 fn project_pcurve_uses(
     candidate: &mut ModelDraft,
     source: &CadIr,
@@ -131,12 +133,13 @@ fn project_pcurve_uses(
     factor: f64,
     fit_tolerance: Option<f64>,
     id_stem: &str,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Option<Vec<PcurveUse>> {
     uses.iter()
         .enumerate()
         .map(|(index, (isoparametric, sequence))| {
             let (geometry, range) =
-                pcurve_geometry(source, *sequence, surface, factor, fit_tolerance)?;
+                pcurve_geometry(source, *sequence, surface, factor, fit_tolerance, ctx)?;
             let id = PcurveId(format!("{id_stem}:{index}"));
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
@@ -162,6 +165,7 @@ fn pcurves_agree(
     expected_start: Point3,
     expected_end: Point3,
     tolerance: f64,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> bool {
     if uses.is_empty() {
         return true;
@@ -176,6 +180,7 @@ fn pcurves_agree(
                 support.geometry,
                 support.factor,
                 Some(tolerance),
+                ctx,
             )?;
             let start = evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
                 cadmpeg_ir::eval::model_surface_point_by_id(&index, support.id, uv.u, uv.v)
@@ -207,6 +212,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> BrepProjection {
     let records = parameters
         .iter()
@@ -639,6 +645,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => (entry.transform != 0).then(|| transform.body_transform()),
             Err(message) => {
@@ -779,6 +786,7 @@ pub(super) fn project(
                                 expected,
                                 expected,
                                 tolerance,
+                                ctx,
                             ) {
                                 losses.push(entity_loss(
                                     entry,
@@ -797,6 +805,7 @@ pub(super) fn project(
                                 &format!(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
                                 ),
+                                ctx,
                             ) else {
                                 valid = false;
                                 break;
@@ -843,6 +852,7 @@ pub(super) fn project(
                             expected_start,
                             expected_end,
                             tolerance,
+                            ctx,
                         ) {
                             losses.push(entity_loss(
                                 entry,
@@ -918,6 +928,7 @@ pub(super) fn project(
                             factor,
                             Some(tolerance),
                             &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
+                            ctx,
                         ) else {
                             valid = false;
                             break;
@@ -1073,3 +1084,6 @@ pub(super) fn project(
         losses,
     }
 }
+
+#[cfg(test)]
+mod tests;

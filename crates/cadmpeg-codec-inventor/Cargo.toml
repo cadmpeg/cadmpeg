@@ -15,7 +15,6 @@ categories = ["encoding", "parser-implementations", "graphics"]
 exclude = ["tests/golden/**"]
 
 [features]
-fuzzing = []
 schema = ["dep:schemars", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
 
 [dependencies]

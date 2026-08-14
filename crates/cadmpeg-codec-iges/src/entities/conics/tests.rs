@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
+#![allow(unused_imports)]
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
+    SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
+};
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::CadIr;
+
+use crate::test_support::*;
+use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+#[test]
+fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
+    let fixtures: [(i64, &[u8]); 5] = [
+        (0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
+        (1, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
+        (
+            2,
+            b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;",
+        ),
+        (3, b"104,1,0,0,0,-4,0,0,2,1,-2,1;"),
+        (3, b"104,0,0,1,-4,0,0,0,1,2,1,-2;"),
+    ];
+    for (form, parameters) in fixtures {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(form, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.ir().model.curves.len(), 1, "form {form}");
+        assert_eq!(result.ir().model.edges.len(), 1, "form {form}");
+        assert_eq!(result.ir().model.edges[0].tolerance, Some(0.001));
+        assert!(result
+            .ir()
+            .model
+            .vertices
+            .iter()
+            .all(|vertex| vertex.tolerance == Some(0.001)));
+        match (&result.ir().model.curves[0].geometry, form) {
+            (cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }, 0 | 1)
+            | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }, 2)
+            | (cadmpeg_ir::geometry::CurveGeometry::Parabola { .. }, 3) => {}
+            (geometry, _) => panic!("unexpected form {form} geometry {geometry:?}"),
+        }
+        assert!(result.report().losses.is_empty(), "form {form}");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        assert!(
+            validation.is_ok(),
+            "form {form}: {:#?}",
+            validation.findings
+        );
+    }
+}
+
+#[test]
+fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
+    for (parameters, point_name, decoded) in [
+        (
+            b"104,0.25,0,1,0,0,-1,0,2.000999,0,0,1;".as_slice(),
+            "start",
+            true,
+        ),
+        (
+            b"104,0.25,0,1,0,0,-1,0,2.001001,0,0,1;".as_slice(),
+            "start",
+            false,
+        ),
+        (
+            b"104,0.25,0,1,0,0,-1,0,2,0,0,1.000999;".as_slice(),
+            "terminate",
+            true,
+        ),
+        (
+            b"104,0.25,0,1,0,0,-1,0,2,0,0,1.001001;".as_slice(),
+            "terminate",
+            false,
+        ),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(1, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            result.ir().model.curves.len(),
+            usize::from(decoded),
+            "{point_name}"
+        );
+        assert_eq!(
+            result.ir().model.edges.len(),
+            usize::from(decoded),
+            "{point_name}"
+        );
+        if decoded {
+            assert!(result.report().losses.is_empty(), "{point_name}");
+        } else {
+            assert_eq!(result.report().losses.len(), 1, "{point_name}");
+            assert!(
+                result.report().losses[0]
+                    .message
+                    .contains(&format!("conic {point_name} point disagrees")),
+                "{point_name}: {:?}",
+                result.report().losses
+            );
+        }
+    }
+}
+
+#[test]
+fn decode_canonicalizes_ellipse_arc_seam_noise() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(conic_arc_file(
+                0,
+                b"104,0.25,0,1,0,0,-1,0,2,-0.0000000000001,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        result.ir().model.edges[0].param_range.map(|range| range[0]),
+        Some(0.0)
+    );
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}

@@ -9,6 +9,7 @@ use crate::chunks::{
     BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::Record;
+use crate::layout::class_uuid_chunk_body as class_uuid_body;
 use crate::settings::{self, DocumentMetadata, SourceRange, Xform};
 use crate::wire::Uuid;
 
@@ -379,7 +380,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     require_long(&wrapper, OPENNURBS_CLASS)?;
     let uuid_chunk = child(bytes, wrapper.body.start, wrapper.body.end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end - uuid_chunk.body_start != 20 {
+    if uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN {
         return Err(malformed_at(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
@@ -389,7 +390,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         warnings.push(note);
     }
     let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body.start..uuid_chunk.body.start + 16]
+        bytes[uuid_chunk.body.start..uuid_chunk.body.start + class_uuid_body::CRC32]
             .try_into()
             .expect("UUID length checked"),
     );
@@ -1184,7 +1185,7 @@ pub(crate) fn parse_object_record(
     offset = class.body.start;
     let uuid_chunk = child(bytes, offset, class.body.end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end - uuid_chunk.body_start != 20 {
+    if uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN {
         return Err(malformed_at(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
@@ -1391,3 +1392,6 @@ pub(crate) fn resolve_identities(
         object.warnings.extend(local_warnings);
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

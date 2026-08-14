@@ -23,7 +23,7 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
 };
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, View};
 use std::collections::{HashMap, HashSet};
 
 pub(super) fn compact_body_selections(
@@ -128,12 +128,7 @@ fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
         return None;
     }
     let offset = usize::try_from(class.offset).ok()?;
-    Some(u16::from_le_bytes(
-        lane.native_payload
-            .get(offset + 8 + class.name.len()..offset + 10 + class.name.len())?
-            .try_into()
-            .ok()?,
-    ))
+    View::u16_le_at(&lane.native_payload, offset + 8 + class.name.len())
 }
 
 pub(crate) fn compact_body_state_ids_for_selection(
@@ -187,7 +182,7 @@ pub(super) fn compact_body_retention_mode(
     if field[0..2] != [0x30, 0x80] || field[6..10] != [0; 4] {
         return None;
     }
-    match u32::from_le_bytes(field[2..6].try_into().ok()?) {
+    match View::u32_le_at(field, 2)? {
         0 => Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected),
         1 => Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected),
         _ => None,
@@ -219,9 +214,7 @@ pub(super) fn compact_body_state_ids(
         let Some(header) = compact_body_state_header(payload, offset, token) else {
             continue;
         };
-        result.push(u32::from_le_bytes(
-            header[11..15].try_into().expect("four-byte body id"),
-        ));
+        result.push(View::u32_le_at(header, 11).expect("four-byte body id"));
     }
     result
 }
@@ -238,10 +231,7 @@ pub(crate) fn compact_edge_reference_list_for_feature(
             return None;
         }
         let count_start = offset.checked_sub(12)?;
-        let count = usize::try_from(u32::from_le_bytes(
-            payload.get(count_start..count_start + 4)?.try_into().ok()?,
-        ))
-        .ok()?;
+        let count = usize::try_from(View::u32_le_at(payload, count_start)?).ok()?;
         compact_component_reference_list(payload, offset, false)
             .filter(|references| references.len() == count)
     })
@@ -275,14 +265,8 @@ pub(super) fn compact_edge_selections(
             .ok()?
             .checked_add(6 + class.name.len())
     });
-    let compact_edge_token = class_name_end.and_then(|offset| {
-        Some(u16::from_le_bytes(
-            lane.native_payload
-                .get(offset..offset + 2)?
-                .try_into()
-                .ok()?,
-        ))
-    });
+    let compact_edge_token =
+        class_name_end.and_then(|offset| View::u16_le_at(&lane.native_payload, offset));
     for (object_index, &(name, feature)) in objects.iter().enumerate() {
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
         if !matches!(kind, NativeClassKind::Fillet | NativeClassKind::Chamfer) {
@@ -419,15 +403,8 @@ fn first_class_object_in_interval(
                 .ok()?
                 .checked_add(6 + class.name.len())
         })
-        .filter_map(|offset| {
-            Some(u16::from_le_bytes(
-                lane.native_payload
-                    .get(offset..offset + 2)?
-                    .try_into()
-                    .ok()?,
-            ))
-        })
-        .filter(|token| token & 0x8000 != 0 && *token != u16::MAX)
+        .filter_map(|offset| View::u16_le_at(&lane.native_payload, offset))
+        .filter(|token| is_class_token(*token))
         .collect::<Vec<_>>();
     tokens.sort_unstable();
     tokens.dedup();
@@ -435,12 +412,7 @@ fn first_class_object_in_interval(
         [token] => (start..end.saturating_sub(7)).find(|offset| {
             lane.native_payload.get(*offset..*offset + 2) == Some(&[0x20, 0x81])
                 && lane.native_payload.get(*offset + 2..*offset + 4) == Some(&[0x10, 0x00])
-                && lane
-                    .native_payload
-                    .get(*offset + 4..*offset + 6)
-                    .and_then(|bytes| bytes.try_into().ok())
-                    .map(u16::from_le_bytes)
-                    .is_some_and(|instance| instance & 0x8000 != 0 && instance != u16::MAX)
+                && View::u16_le_at(&lane.native_payload, *offset + 4).is_some_and(is_class_token)
                 && lane.native_payload.get(*offset + 6..*offset + 8)
                     == Some(token.to_le_bytes().as_slice())
         }),
@@ -485,8 +457,7 @@ pub(super) fn compact_surface_selections(
             let body = usize::try_from(class.offset)
                 .ok()?
                 .checked_add(6 + class.name.len())?;
-            let token =
-                u16::from_le_bytes(lane.native_payload.get(body..body + 2)?.try_into().ok()?);
+            let token = View::u16_le_at(&lane.native_payload, body)?;
             is_class_token(token).then_some(token)
         })
         .collect::<HashSet<_>>();
@@ -816,8 +787,7 @@ fn operation_surface_selection_candidates(
 }
 
 fn component_source(component: &FeatureInputComponentPathEntry) -> Option<u32> {
-    let source: [u8; 4] = component.type_signature[4..8].try_into().ok()?;
-    Some(u32::from_le_bytes(source))
+    View::u32_le_at(&component.type_signature, 4)
 }
 
 fn compact_surface_selection_candidates_for_class(
@@ -908,10 +878,7 @@ pub(super) fn cosmetic_thread_cylinder_references(
         .into_iter()
         .flatten()
         .filter(|offset| {
-            lane.native_payload
-                .get(*offset..*offset + 2)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u16::from_le_bytes)
+            View::u16_le_at(&lane.native_payload, *offset)
                 .is_some_and(|token| cylinder_reference_tokens.contains(&token))
         })
         .collect::<Vec<_>>();
@@ -936,10 +903,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         .chain(diameter_tail)
         .flatten()
         .filter(|offset| {
-            lane.native_payload
-                .get(*offset..*offset + 2)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u16::from_le_bytes)
+            View::u16_le_at(&lane.native_payload, *offset)
                 .is_some_and(|token| cylinder_reference_tokens.contains(&token))
         })
         .filter_map(|body| {
@@ -1014,7 +978,7 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
     body_offset: usize,
 ) -> Option<usize> {
     let body = payload.get(body_offset..body_offset + 11)?;
-    let nested_token = u16::from_le_bytes(body[2..4].try_into().ok()?);
+    let nested_token = View::u16_le_at(body, 2)?;
     if !is_class_token(nested_token)
         || body[4..8] != 2u32.to_le_bytes()
         || !matches!(body[8], 0 | 0x40)
@@ -1026,12 +990,7 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
         .into_iter()
         .find_map(|relative| {
             let marker = body_offset.checked_add(relative)?;
-            let count = u32::from_le_bytes(
-                payload
-                    .get(marker.checked_sub(12)?..marker - 8)?
-                    .try_into()
-                    .ok()?,
-            );
+            let count = View::u32_le_at(payload, marker.checked_sub(12)?)?;
             ((1..=64).contains(&count)
                 && payload
                     .get(marker - 8..marker - 4)
@@ -1048,7 +1007,7 @@ pub(super) fn component_face_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    let token = u16::from_le_bytes(payload.get(body_offset..body_offset + 2)?.try_into().ok()?);
+    let token = View::u16_le_at(payload, body_offset)?;
     let flags = payload.get(body_offset + 6..body_offset + 8)?;
     if !is_class_token(token)
         || payload.get(body_offset + 2..body_offset + 6)? != 2u32.to_le_bytes()
@@ -1103,7 +1062,7 @@ pub(super) fn compact_sketch_surface_component_path_at(
         return None;
     }
     let kind = payload.get(marker - 8..marker - 4)?;
-    let selector = u32::from_le_bytes(payload.get(marker - 4..marker)?.try_into().ok()?);
+    let selector = View::u32_le_at(payload, marker - 4)?;
     let (components, end) = compact_heterogeneous_component_path(payload, marker + 18, 3)?;
     match kind {
         [_, 3, 0, 0] => Some(components),
@@ -1155,13 +1114,9 @@ pub(super) fn compact_surface_selection_at(
     let mut components = Vec::new();
     while payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice()) {
         components.push(FeatureInputComponentPathEntry {
-            instance: Some(u16::from_le_bytes(
-                payload.get(cursor..cursor + 2)?.try_into().ok()?,
-            )),
+            instance: Some(View::u16_le_at(payload, cursor)?),
             type_signature: signature.as_slice().try_into().ok()?,
-            local_id: Some(u32::from_le_bytes(
-                payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
-            )),
+            local_id: Some(View::u32_le_at(payload, cursor + 16)?),
         });
         cursor += 20;
         if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice())
@@ -1289,11 +1244,9 @@ pub(super) fn component_vector_path_at(
     {
         return None;
     }
-    let cell_count = usize::try_from(u32::from_le_bytes(
-        payload.get(header..header + 4)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (2..=65).contains(count))?;
+    let cell_count = usize::try_from(View::u32_le_at(payload, header)?)
+        .ok()
+        .filter(|count| (2..=65).contains(count))?;
     let candidates = [
         compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1),
         (cell_count > 2)
@@ -1345,10 +1298,10 @@ pub(super) fn compact_mixed_component_path(
 ) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
     let signature_at = |offset: usize| -> Option<[u8; 12]> {
         let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
-        let type_family = u16::from_le_bytes(signature[0..2].try_into().ok()?);
-        let type_variant = u16::from_le_bytes(signature[2..4].try_into().ok()?);
-        let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
-        let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
+        let type_family = View::u16_le_at(&signature, 0)?;
+        let type_variant = View::u16_le_at(&signature, 2)?;
+        let source = View::u32_le_at(&signature, 4)?;
+        let identity = View::u32_le_at(&signature, 8)?;
         (is_class_token(type_family) && type_variant != 0 && source != 0 && identity != 0)
             .then_some(signature)
     };
@@ -1357,27 +1310,21 @@ pub(super) fn compact_mixed_component_path(
             let tagged = payload
                 .get(offset..offset + 4)
                 .is_some_and(|bytes| {
-                    let instance = u16::from_le_bytes([bytes[0], bytes[1]]);
-                    instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..4] == [0, 0]
+                    View::u16_le_at(bytes, 0).is_some_and(is_class_token) && bytes[2..4] == [0, 0]
                 })
                 .then(|| {
-                    let instance =
-                        u16::from_le_bytes(payload.get(offset..offset + 2)?.try_into().ok()?);
+                    let instance = View::u16_le_at(payload, offset)?;
                     let type_signature = signature_at(offset + 4)?;
                     let next_is_tagged = remaining > 1
                         && payload.get(offset + 16..offset + 20).is_some_and(|bytes| {
-                            let next_instance = u16::from_le_bytes([bytes[0], bytes[1]]);
-                            next_instance & 0x8000 != 0
-                                && next_instance != u16::MAX
+                            View::u16_le_at(bytes, 0).is_some_and(is_class_token)
                                 && bytes[2..4] == [0, 0]
                                 && signature_at(offset + 20).is_some()
                         });
                     let local_id = if next_is_tagged {
                         None
                     } else {
-                        Some(u32::from_le_bytes(
-                            payload.get(offset + 16..offset + 20)?.try_into().ok()?,
-                        ))
+                        Some(View::u32_le_at(payload, offset + 16)?)
                     };
                     Some((
                         FeatureInputComponentPathEntry {
@@ -1394,9 +1341,7 @@ pub(super) fn compact_mixed_component_path(
                     FeatureInputComponentPathEntry {
                         instance: None,
                         type_signature: signature_at(offset)?,
-                        local_id: Some(u32::from_le_bytes(
-                            payload.get(offset + 12..offset + 16)?.try_into().ok()?,
-                        )),
+                        local_id: Some(View::u32_le_at(payload, offset + 12)?),
                     },
                     16,
                 ))
@@ -1434,11 +1379,9 @@ pub(super) fn counted_surface_component_path_at(
     {
         return None;
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(header..header + 4)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (1..=64).contains(count))?;
+    let count = usize::try_from(View::u32_le_at(payload, header)?)
+        .ok()
+        .filter(|count| (1..=64).contains(count))?;
     let candidates = [
         compact_mixed_component_path(payload, marker + 18, count, false),
         (count > 1)
@@ -1468,8 +1411,8 @@ fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
         .get(signature..signature + 4)?
         .try_into()
         .ok()?;
-    let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
-    let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
+    let family = View::u16_le_at(&prefix, 0)?;
+    let variant = View::u16_le_at(&prefix, 2)?;
     (is_class_token(family) && variant != 0).then_some(prefix)
 }
 
@@ -1481,13 +1424,13 @@ fn inline_mirror_surface_paths(
 ) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
     let signature_at = |offset: usize| -> Option<[u8; 12]> {
         let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
-        let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
-        let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
+        let source = View::u32_le_at(&signature, 4)?;
+        let identity = View::u32_le_at(&signature, 8)?;
         (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
     };
     let instance_before = |offset: usize| -> Option<u16> {
         let bytes = payload.get(offset.checked_sub(4)?..offset)?;
-        let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
+        let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let mut result = Vec::new();
@@ -1497,11 +1440,7 @@ fn inline_mirror_surface_paths(
         }
         let local_bytes = &payload[terminal + 12..terminal + 16];
         let next_is_component = {
-            let instance = u16::from_le_bytes(
-                local_bytes[..2]
-                    .try_into()
-                    .expect("two-byte instance slice"),
-            );
+            let instance = View::u16_le_at(local_bytes, 0).expect("two-byte instance slice");
             is_class_token(instance)
                 && local_bytes[2..] == [0, 0]
                 && signature_at(terminal + 16).is_some()
@@ -1535,20 +1474,20 @@ pub(super) fn inline_surface_reference_at(
     offset: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     let prefix: [u8; 4] = payload.get(offset..offset + 4)?.try_into().ok()?;
-    let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
-    let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
+    let family = View::u16_le_at(&prefix, 0)?;
+    let variant = View::u16_le_at(&prefix, 2)?;
     if !is_class_token(family) || variant == 0 {
         return None;
     }
     let signature_at = |offset: usize| -> Option<[u8; 12]> {
         let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
-        let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
-        let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
+        let source = View::u32_le_at(&signature, 4)?;
+        let identity = View::u32_le_at(&signature, 8)?;
         (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
     };
     let instance_before = |offset: usize| -> Option<u16> {
         let bytes = payload.get(offset.checked_sub(4)?..offset)?;
-        let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
+        let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let mut cursor = offset;
@@ -1556,13 +1495,13 @@ pub(super) fn inline_surface_reference_at(
     loop {
         let signature = signature_at(cursor)?;
         let tail: [u8; 4] = payload.get(cursor + 12..cursor + 16)?.try_into().ok()?;
-        let instance = u16::from_le_bytes(tail[..2].try_into().ok()?);
+        let instance = View::u16_le_at(&tail, 0)?;
         let continues =
             is_class_token(instance) && tail[2..] == [0, 0] && signature_at(cursor + 16).is_some();
         components.push(FeatureInputComponentPathEntry {
             instance: instance_before(cursor),
             type_signature: signature,
-            local_id: (!continues).then(|| u32::from_le_bytes(tail)),
+            local_id: (!continues).then(|| View::u32_le_at(&tail, 0)).flatten(),
         });
         if !continues {
             return Some(components);
@@ -1583,13 +1522,13 @@ pub(crate) fn generated_surface_identities(
             .get(offset..offset + 12)?
             .try_into()
             .ok()?;
-        let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
-        let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
+        let source = View::u32_le_at(&signature, 4)?;
+        let identity = View::u32_le_at(&signature, 8)?;
         (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
     };
     let instance_before = |offset: usize| -> Option<u16> {
         let bytes = lane.native_payload.get(offset.checked_sub(4)?..offset)?;
-        let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
+        let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let prefixes = lane
@@ -1608,8 +1547,8 @@ pub(crate) fn generated_surface_identities(
                 .get(body + 2..body + 6)?
                 .try_into()
                 .ok()?;
-            let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
-            let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
+            let family = View::u16_le_at(&prefix, 0)?;
+            let variant = View::u16_le_at(&prefix, 2)?;
             if !is_class_token(family) || variant == 0 {
                 return None;
             }
@@ -1634,8 +1573,7 @@ pub(crate) fn generated_surface_identities(
         let tail: [u8; 4] = lane.native_payload[terminal + 12..terminal + 16]
             .try_into()
             .expect("bounded surface identity tail");
-        let possible_instance =
-            u16::from_le_bytes(tail[..2].try_into().expect("two-byte instance slice"));
+        let possible_instance = View::u16_le_at(&tail, 0).expect("two-byte instance slice");
         if is_class_token(possible_instance)
             && tail[2..] == [0, 0]
             && signature_prefix_at(terminal + 16, prefix).is_some()
@@ -1653,12 +1591,9 @@ pub(crate) fn generated_surface_identities(
         let Some(components) = inline_surface_reference_at(&lane.native_payload, offset) else {
             continue;
         };
-        let feature_source_id = u32::from_le_bytes(
-            signature[4..8]
-                .try_into()
-                .expect("four-byte feature source ID slice"),
-        );
-        let local_identity = u32::from_le_bytes(tail);
+        let feature_source_id =
+            View::u32_le_at(&signature, 4).expect("four-byte feature source ID");
+        let local_identity = View::u32_le_at(&tail, 0).expect("four-byte local identity");
         let key = (
             prefix,
             components
@@ -1725,10 +1660,7 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
     {
         return None;
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(count_start..count_start + 4)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let count = usize::try_from(View::u32_le_at(payload, count_start)?).ok()?;
     if !(1..=64).contains(&count) {
         return None;
     }
@@ -1775,11 +1707,9 @@ pub(crate) fn compact_edge_component_path_at(
     {
         return None;
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(count_start..count_start + 4)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (1..=64).contains(count))?;
+    let count = usize::try_from(View::u32_le_at(payload, count_start)?)
+        .ok()
+        .filter(|count| (1..=64).contains(count))?;
     compact_component_reference_list_at(payload, marker)
         .map(|references| {
             references
@@ -1816,23 +1746,18 @@ fn compact_component_reference_list(
     {
         return None;
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(count_start..count_start + 4)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (1..=64).contains(count))?;
+    let count = usize::try_from(View::u32_le_at(payload, count_start)?)
+        .ok()
+        .filter(|count| (1..=64).contains(count))?;
     let signature_prefix: [u8; 4] = payload.get(marker + 22..marker + 26)?.try_into().ok()?;
-    let prefix_token = u16::from_le_bytes(signature_prefix[..2].try_into().ok()?);
-    let prefix_variant = u16::from_le_bytes(signature_prefix[2..].try_into().ok()?);
-    if prefix_token & 0x8000 == 0 || prefix_token == u16::MAX || prefix_variant == 0 {
+    let prefix_token = View::u16_le_at(&signature_prefix, 0)?;
+    let prefix_variant = View::u16_le_at(&signature_prefix, 2)?;
+    if !is_class_token(prefix_token) || prefix_variant == 0 {
         return None;
     }
     let hop_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
-        let instance = u16::from_le_bytes(payload.get(offset..offset + 2)?.try_into().ok()?);
-        if instance & 0x8000 == 0
-            || instance == u16::MAX
-            || payload.get(offset + 2..offset + 4)? != [0, 0]
-        {
+        let instance = View::u16_le_at(payload, offset)?;
+        if !is_class_token(instance) || payload.get(offset + 2..offset + 4)? != [0, 0] {
             return None;
         }
         let type_signature: [u8; 12] = payload.get(offset + 4..offset + 16)?.try_into().ok()?;
@@ -1872,9 +1797,7 @@ fn compact_component_reference_list(
         }
         has_reference_framing |= reference.len() > 1;
         let last = reference.last_mut()?;
-        last.local_id = Some(u32::from_le_bytes(
-            payload.get(cursor..cursor + 4)?.try_into().ok()?,
-        ));
+        last.local_id = Some(View::u32_le_at(payload, cursor)?);
         cursor += 4;
         if payload.get(cursor..cursor + 4) == Some(&[0xff; 4]) {
             cursor += 4;
@@ -1982,11 +1905,9 @@ pub(super) fn compact_component_path_end_at(payload: &[u8], marker: usize) -> Op
     {
         return None;
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(count_start..count_start + 4)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (1..=64).contains(count))?;
+    let count = usize::try_from(View::u32_le_at(payload, count_start)?)
+        .ok()
+        .filter(|count| (1..=64).contains(count))?;
     let candidates = distinct_candidates(
         [
             compact_wide_component_path(payload, marker + 18, count),
@@ -2065,7 +1986,7 @@ fn edge_terminal_source_at(payload: &[u8], end: usize) -> Option<u32> {
     {
         return None;
     }
-    let source = u32::from_le_bytes(trailer[16..20].try_into().ok()?);
+    let source = View::u32_le_at(trailer, 16)?;
     (source != 0).then_some(source)
 }
 
@@ -2086,13 +2007,7 @@ pub(crate) fn compact_edge_owner_feature_at(
     features: &[crate::records::Feature],
     consumer_ref: &str,
 ) -> Option<String> {
-    let count = usize::try_from(u32::from_le_bytes(
-        payload
-            .get(marker.checked_sub(12)?..marker - 8)?
-            .try_into()
-            .ok()?,
-    ))
-    .ok()?;
+    let count = usize::try_from(View::u32_le_at(payload, marker.checked_sub(12)?)?).ok()?;
     let owner_source = if compact_component_reference_list_at(payload, marker).is_some() {
         None
     } else {
@@ -2162,9 +2077,7 @@ fn compact_homogeneous_edge_ids(
         if payload.get(cursor + 4..cursor + 16)? != signature {
             return None;
         }
-        ids.push(u32::from_le_bytes(
-            payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
-        ));
+        ids.push(View::u32_le_at(payload, cursor + 16)?);
         cursor += 20;
         if index + 1 < count && payload.get(cursor + 4..cursor + 16)? != signature {
             if payload.get(cursor..cursor + 4)? == [0; 4]
@@ -2210,7 +2123,7 @@ fn compact_component_path_with_layout(
     let local_id_offset = if wide { 20 } else { 16 };
     let entry_at = |offset: usize| {
         let instance = payload.get(offset..offset + 4)?;
-        let token = u16::from_le_bytes(instance[0..2].try_into().ok()?);
+        let token = View::u16_le_at(instance, 0)?;
         (is_class_token(token)
             && instance[2..4] == [0, 0]
             && payload.get(offset + 4..offset + 6)? != [0, 0]
@@ -2229,16 +2142,9 @@ fn compact_component_path_with_layout(
     for index in 0..count {
         entry_at(cursor)?;
         entries.push(FeatureInputComponentPathEntry {
-            instance: Some(u16::from_le_bytes(
-                payload.get(cursor..cursor + 2)?.try_into().ok()?,
-            )),
+            instance: Some(View::u16_le_at(payload, cursor)?),
             type_signature: payload.get(cursor + 4..cursor + 16)?.try_into().ok()?,
-            local_id: Some(u32::from_le_bytes(
-                payload
-                    .get(cursor + local_id_offset..cursor + entry_length)?
-                    .try_into()
-                    .ok()?,
-            )),
+            local_id: Some(View::u32_le_at(payload, cursor + local_id_offset)?),
         });
         cursor += entry_length;
         if index + 1 == count {
@@ -2259,18 +2165,17 @@ fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> boo
         4 => payload.get(cursor..cursor + 4).is_some_and(|bytes| {
             bytes == [0; 4]
                 || bytes == [0xff; 4]
-                || (is_class_token(u16::from_le_bytes([bytes[0], bytes[1]]))
-                    && bytes[2..4] == [1, 0])
-                || (u16::from_le_bytes([bytes[0], bytes[1]]) != 0
-                    && bytes[0..2] != [0xff, 0xff]
-                    && bytes[2..4] == [0, 0])
+                || View::u16_le_at(bytes, 0).is_some_and(|token| {
+                    (is_class_token(token) && bytes[2..4] == [1, 0])
+                        || (token != 0 && bytes[0..2] != [0xff, 0xff] && bytes[2..4] == [0, 0])
+                })
         }),
         6 => payload.get(cursor..cursor + 6).is_some_and(|bytes| {
-            u16::from_le_bytes([bytes[0], bytes[1]]) != u16::MAX && bytes[2..] == [0; 4]
+            View::u16_le_at(bytes, 0).is_some_and(|token| token != u16::MAX) && bytes[2..] == [0; 4]
         }),
         8 => payload.get(cursor..cursor + 8).is_some_and(|bytes| {
-            let first = u32::from_le_bytes(bytes[..4].try_into().expect("four-byte state"));
-            let second = u32::from_le_bytes(bytes[4..].try_into().expect("four-byte state"));
+            let first = View::u32_le_at(bytes, 0).expect("four-byte state");
+            let second = View::u32_le_at(bytes, 4).expect("four-byte state");
             (first == 0 && second == 0)
                 || (first == u32::MAX && second <= 1)
                 || (first == 0 && !matches!(second, 0 | u32::MAX))
@@ -2289,7 +2194,7 @@ fn compact_sparse_component_path(
 ) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
     fn entry_prefix(payload: &[u8], offset: usize) -> Option<(u16, [u8; 12])> {
         let instance = payload.get(offset..offset + 4)?;
-        let token = u16::from_le_bytes(instance[..2].try_into().ok()?);
+        let token = View::u16_le_at(instance, 0)?;
         (is_class_token(token)
             && instance[2..] == [0; 2]
             && payload.get(offset + 4..offset + 6)? != [0; 2])
@@ -2314,9 +2219,7 @@ fn compact_sparse_component_path(
         let (instance, type_signature) = entry_prefix(payload, cursor)?;
         for entry_length in [20usize, 16] {
             let local_id = if entry_length == 20 {
-                Some(u32::from_le_bytes(
-                    payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
-                ))
+                Some(View::u32_le_at(payload, cursor + 16)?)
             } else {
                 None
             };
@@ -2353,21 +2256,17 @@ fn compact_sparse_component_path(
 }
 
 fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
-    let end = cursor.checked_add(count.checked_mul(2)?)?;
-    let ids = payload
-        .get(cursor..end)?
-        .chunks_exact(2)
-        .map(|bytes| u32::from(u16::from_le_bytes([bytes[0], bytes[1]])))
-        .collect::<Vec<_>>();
+    let mut view = View::over_retained(payload);
+    view.seek(cursor)?;
+    let ids = view.read_counted(count as u64, 2, |view| view.u16_le().map(u32::from))?;
+    let end = view.position();
     let suffix = payload.get(end..)?;
     let sentinel_terminated = suffix.get(..19).is_some_and(|suffix| {
         suffix[..16].iter().all(|byte| *byte == 0) && suffix[16..19] == [0xff, 0xfe, 0xff]
     });
     let object_terminated = suffix.get(..10).is_some_and(|suffix| {
-        suffix[..8].iter().all(|byte| *byte == 0) && {
-            let token = u16::from_le_bytes([suffix[8], suffix[9]]);
-            is_class_token(token)
-        }
+        suffix[..8].iter().all(|byte| *byte == 0)
+            && View::u16_le_at(suffix, 8).is_some_and(is_class_token)
     });
     (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated)).then_some(ids)
 }
@@ -2384,12 +2283,9 @@ pub(super) fn compact_body_selection_vector(
         {
             continue;
         }
-        let Some(count_bytes) = payload.get(relative + 12..relative + 16) else {
-            continue;
-        };
-        let Ok(count) = usize::try_from(u32::from_le_bytes(
-            count_bytes.try_into().expect("four-byte count"),
-        )) else {
+        let Some(count) =
+            View::u32_le_at(payload, relative + 12).and_then(|count| usize::try_from(count).ok())
+        else {
             continue;
         };
         let Some(ids_end) = count
@@ -2415,13 +2311,13 @@ pub(super) fn compact_body_selection_vector(
         {
             continue;
         }
-        let Some(ids) = payload.get(relative + 16..ids_end) else {
+        let mut view = View::over_retained(payload);
+        if view.seek(relative + 16).is_none() {
+            continue;
+        }
+        let Some(local_body_ids) = view.read_counted(count as u64, 4, View::u32_le) else {
             continue;
         };
-        let local_body_ids = ids
-            .chunks_exact(4)
-            .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte chunk")))
-            .collect();
         return Some((base + relative, local_body_ids));
     }
     None
@@ -2433,10 +2329,7 @@ pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option
     {
         return super::direct_edits::move_body_selection_at(payload, offset);
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(offset + 12..offset + 16)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let count = usize::try_from(View::u32_le_at(payload, offset + 12)?).ok()?;
     let ids_end = offset.checked_add(16 + count.checked_mul(4)?)?;
     let sentinel_end = ids_end.checked_add(4)?;
     let zeros_end = sentinel_end.checked_add(12)?;
@@ -2445,13 +2338,9 @@ pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option
     {
         return None;
     }
-    Some(
-        payload
-            .get(offset + 16..ids_end)?
-            .chunks_exact(4)
-            .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte chunk")))
-            .collect(),
-    )
+    let mut view = View::over_retained(payload);
+    view.seek(offset + 16)?;
+    view.read_counted(count as u64, 4, View::u32_le)
 }
 
 pub(super) fn compact_general_curve_ref_at(payload: &[u8], offset: usize) -> bool {
@@ -2488,8 +2377,8 @@ pub(super) fn component_profile_source_at(payload: &[u8], prefix: usize) -> Opti
         return None;
     }
     let mut sources = [prefix + 69, prefix + 81].into_iter().filter_map(|source| {
-        let id = u32::from_le_bytes(payload.get(source..source + 4)?.try_into().ok()?);
-        let stamp = u32::from_le_bytes(payload.get(source + 4..source + 8)?.try_into().ok()?);
+        let id = View::u32_le_at(payload, source)?;
+        let stamp = View::u32_le_at(payload, source + 4)?;
         if id == 0 || stamp == 0 {
             return None;
         }
@@ -2525,11 +2414,9 @@ pub(super) fn component_reference_curve_path_at(
     {
         return None;
     }
-    let count = usize::try_from(u32::from_le_bytes(
-        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (1..=64).contains(count))?;
+    let count = usize::try_from(View::u32_le_at(payload, marker.checked_sub(12)?)?)
+        .ok()
+        .filter(|count| (1..=64).contains(count))?;
     let parse = |count: usize| {
         let mut cursor = marker + 18;
         let signature: [u8; 12] = payload.get(cursor + 4..cursor + 16)?.try_into().ok()?;
@@ -2539,13 +2426,9 @@ pub(super) fn component_reference_curve_path_at(
                 return None;
             }
             components.push(FeatureInputComponentPathEntry {
-                instance: Some(u16::from_le_bytes(
-                    payload.get(cursor..cursor + 2)?.try_into().ok()?,
-                )),
+                instance: Some(View::u16_le_at(payload, cursor)?),
                 type_signature: signature,
-                local_id: Some(u32::from_le_bytes(
-                    payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
-                )),
+                local_id: Some(View::u32_le_at(payload, cursor + 16)?),
             });
             cursor += 20;
             if index + 1 != count {
@@ -2649,10 +2532,10 @@ pub(super) fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16;
     }
     Some((
         [
-            u16::from_le_bytes(payload.get(offset + 64..offset + 66)?.try_into().ok()?),
-            u16::from_le_bytes(payload.get(offset + 66..offset + 68)?.try_into().ok()?),
+            View::u16_le_at(payload, offset + 64)?,
+            View::u16_le_at(payload, offset + 66)?,
         ],
-        u16::from_le_bytes(payload.get(offset + 68..offset + 70)?.try_into().ok()?),
+        View::u16_le_at(payload, offset + 68)?,
     ))
 }
 
@@ -2688,7 +2571,7 @@ pub(super) fn coordinate_marker_local_links(
             return None;
         }
         let cell = payload.get(start..start + 12)?;
-        let tag = u16::from_le_bytes([cell[0], cell[1]]);
+        let tag = View::u16_le_at(cell, 0)?;
         let kind = operand_kind([cell[0], cell[1]])?;
         if !operand_accepts_marker(kind, SketchInputKind::LineOrCircle)
             || !operand_accepts_marker(kind, SketchInputKind::Arc)
@@ -2699,7 +2582,7 @@ pub(super) fn coordinate_marker_local_links(
             return None;
         }
         selector = Some(tag);
-        links.push(u16::from_le_bytes([cell[2], cell[3]]));
+        links.push(View::u16_le_at(cell, 2)?);
     }
     None
 }
@@ -2734,4 +2617,4 @@ pub(super) fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> u
 }
 
 #[cfg(test)]
-mod selections_tests;
+mod tests;

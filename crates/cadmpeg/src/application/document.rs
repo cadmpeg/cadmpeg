@@ -38,12 +38,10 @@ impl LoadedDocument {
 
     /// Creates a document from a native decode result.
     pub fn decoded(result: DecodeResult) -> Self {
+        let (ir, report, fidelity) = result.into_parts();
         Self {
-            ir: result.ir,
-            origin: LoadOrigin::Decoded {
-                report: result.report,
-                fidelity: result.source_fidelity,
-            },
+            ir,
+            origin: LoadOrigin::Decoded { report, fidelity },
         }
     }
 

@@ -4,6 +4,8 @@
 use std::collections::BTreeSet;
 use std::ops::Range;
 
+use cadmpeg_core::decode::View;
+
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{Record, Table};
 use crate::objects::{parse_class_wrapper, read_uuid_list};
@@ -455,11 +457,10 @@ pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingErr
     if count == 0 {
         return Ok(String::new());
     }
+    let mut view = View::over_retained(reader.take(count.saturating_mul(2))?);
     let mut values = Vec::with_capacity(count.saturating_sub(1));
     for _ in 0..count {
-        values.push(u16::from_le_bytes(
-            reader.take(2)?.try_into().expect("length checked"),
-        ));
+        values.push(view.u16_le().expect("length checked"));
     }
     if values.pop() != Some(0) {
         return Err(FramingError::Structural {
@@ -1346,11 +1347,7 @@ pub(crate) fn parse_setting(
                         .to_string(),
                 });
             }
-            let material_index = i32::from_le_bytes(
-                data[record.body.start..record.body.start + 4]
-                    .try_into()
-                    .expect("length checked"),
-            );
+            let material_index = View::i32_le_at(data, record.body.start).expect("length checked");
             if material_index < -1 {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
@@ -1358,11 +1355,8 @@ pub(crate) fn parse_setting(
                 });
             }
             settings.current_material = Some(material_index);
-            settings.current_material_source = Some(i32::from_le_bytes(
-                data[record.body.start + 4..record.body.end]
-                    .try_into()
-                    .expect("length checked"),
-            ));
+            settings.current_material_source =
+                Some(View::i32_le_at(data, record.body.start + 4).expect("length checked"));
             Ok(())
         }
         CURRENT_COLOR => {
@@ -1377,11 +1371,8 @@ pub(crate) fn parse_setting(
                     .try_into()
                     .expect("length checked"),
             );
-            settings.current_color_source = Some(i32::from_le_bytes(
-                data[record.body.start + 4..record.body.end]
-                    .try_into()
-                    .expect("length checked"),
-            ));
+            settings.current_color_source =
+                Some(View::i32_le_at(data, record.body.start + 4).expect("length checked"));
             Ok(())
         }
         CURRENT_WIRE_DENSITY => {
@@ -1415,3 +1406,6 @@ pub(crate) fn parse_setting(
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

@@ -112,3 +112,6 @@ pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

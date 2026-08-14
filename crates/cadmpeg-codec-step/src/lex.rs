@@ -709,3 +709,6 @@ fn match_exact_ignoring_controls(input: &[u8], mut at: usize, expected: &[u8]) -
     }
     Some(at)
 }
+
+#[cfg(test)]
+mod tests;

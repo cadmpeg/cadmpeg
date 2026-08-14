@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema-governed `RSe` database, registry, and revision tables.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,60 +264,64 @@ pub(crate) fn parse_revisions(
 }
 
 struct Cursor<'a> {
-    bytes: &'a [u8],
-    position: usize,
+    source: View<'a>,
     scope: &'static str,
 }
 
 impl<'a> Cursor<'a> {
-    const fn new(bytes: &'a [u8], scope: &'static str) -> Self {
+    fn new(bytes: &'a [u8], scope: &'static str) -> Self {
         Self {
-            bytes,
-            position: 0,
+            source: View::over_retained(bytes),
             scope,
         }
     }
 
-    fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        let end = self.position.checked_add(len).ok_or_else(|| {
-            CodecError::Malformed(format!("{} {field} range overflows", self.scope))
-        })?;
-        let value = self
-            .bytes
-            .get(self.position..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))?;
-        self.position = end;
-        Ok(value)
-    }
-
-    fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, field)?[0])
-    }
-
-    fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(self.array(field)?))
-    }
-
-    fn i16(&mut self, field: &str) -> Result<i16, CodecError> {
-        Ok(i16::from_le_bytes(self.array(field)?))
-    }
-
-    fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(self.array(field)?))
-    }
-
-    fn u64(&mut self, field: &str) -> Result<u64, CodecError> {
-        Ok(u64::from_le_bytes(self.array(field)?))
-    }
-
-    fn array<const N: usize>(&mut self, field: &str) -> Result<[u8; N], CodecError> {
+    fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
         Ok(self
-            .take(N, field)?
-            .try_into()
-            .expect("cursor returned requested fixed length"))
+            .source
+            .req_take(len)
+            .map_err(|error| error.during(field))?)
     }
 
-    fn u16_array<const N: usize>(&mut self, field: &str) -> Result<[u16; N], CodecError> {
+    fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
+        Ok(self.source.req_u8().map_err(|error| error.during(field))?)
+    }
+
+    fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
+        Ok(self
+            .source
+            .req_u16_le()
+            .map_err(|error| error.during(field))?)
+    }
+
+    fn i16(&mut self, field: &'static str) -> Result<i16, CodecError> {
+        Ok(self
+            .source
+            .req_i16_le()
+            .map_err(|error| error.during(field))?)
+    }
+
+    fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
+        Ok(self
+            .source
+            .req_u32_le()
+            .map_err(|error| error.during(field))?)
+    }
+
+    fn u64(&mut self, field: &'static str) -> Result<u64, CodecError> {
+        Ok(self
+            .source
+            .req_u64_le()
+            .map_err(|error| error.during(field))?)
+    }
+
+    fn array<const N: usize>(&mut self, field: &'static str) -> Result<[u8; N], CodecError> {
+        self.source
+            .array()
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
+    }
+
+    fn u16_array<const N: usize>(&mut self, field: &'static str) -> Result<[u16; N], CodecError> {
         let mut values = [0; N];
         for value in &mut values {
             *value = self.u16(field)?;
@@ -325,7 +329,7 @@ impl<'a> Cursor<'a> {
         Ok(values)
     }
 
-    fn u32_array<const N: usize>(&mut self, field: &str) -> Result<[u32; N], CodecError> {
+    fn u32_array<const N: usize>(&mut self, field: &'static str) -> Result<[u32; N], CodecError> {
         let mut values = [0; N];
         for value in &mut values {
             *value = self.u32(field)?;
@@ -333,7 +337,7 @@ impl<'a> Cursor<'a> {
         Ok(values)
     }
 
-    fn version(&mut self, field: &str) -> Result<VersionTuple, CodecError> {
+    fn version(&mut self, field: &'static str) -> Result<VersionTuple, CodecError> {
         Ok(VersionTuple {
             revision: self.u8(field)?,
             minor: self.u8(field)?,
@@ -342,7 +346,7 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    fn count(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
+    fn count(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
         let count = usize::try_from(self.u32(field)?)
             .map_err(|_| CodecError::Malformed(format!("{} {field} is too large", self.scope)))?;
         if count > maximum {
@@ -354,16 +358,16 @@ impl<'a> Cursor<'a> {
         Ok(count)
     }
 
-    fn utf16(&mut self, field: &str, maximum: usize) -> Result<String, CodecError> {
+    fn utf16(&mut self, field: &'static str, maximum: usize) -> Result<String, CodecError> {
         let count = self.count(field, maximum)?;
         let byte_len = count.checked_mul(2).ok_or_else(|| {
             CodecError::Malformed(format!("{} {field} length overflows", self.scope))
         })?;
-        let units = self
-            .take(byte_len, field)?
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
+        let mut view = View::over_retained(self.take(byte_len, field)?);
+        let mut units = Vec::with_capacity(count);
+        for _ in 0..count {
+            units.push(view.req_u16_le().map_err(|error| error.during(field))?);
+        }
         String::from_utf16(&units)
             .map_err(|_| CodecError::Malformed(format!("{} {field} is not UTF-16", self.scope)))
     }
@@ -371,7 +375,7 @@ impl<'a> Cursor<'a> {
     fn id_list(
         &mut self,
         ctx: &DecodeContext<'_>,
-        field: &str,
+        field: &'static str,
     ) -> Result<Vec<[u8; 16]>, CodecError> {
         let count = self.count(field, 1_000_000)?;
         ctx.charge_collection_items(count as u64, "admit Inventor registry identifier list")?;
@@ -383,13 +387,13 @@ impl<'a> Cursor<'a> {
     }
 
     fn finish(self) -> Result<(), CodecError> {
-        if self.position == self.bytes.len() {
+        if self.source.is_empty() {
             Ok(())
         } else {
             Err(CodecError::Malformed(format!(
                 "{} has {} trailing bytes",
                 self.scope,
-                self.bytes.len() - self.position
+                self.source.remaining()
             )))
         }
     }

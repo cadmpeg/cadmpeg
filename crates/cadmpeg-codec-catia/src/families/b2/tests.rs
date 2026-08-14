@@ -1,21 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record-decoder tests for the `b2` family over synthetic byte fixtures.
 
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use crate::tests::{
-    a5_surface_stream, b2_circle_stream, b2_cone_face_stream, b2_cone_stream,
-    b2_construction_use_stream, b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
-    b2_edge_parameter_stream, b2_edge_parameter_stream_for, b2_embedded_cylinder_stream,
-    b2_group_stream, b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_link_5f_stream,
-    b2_linked_counted_owner_stream, b2_linked_owner_stream, b2_long_61_stream,
-    b2_offset_support_stream, b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream,
-    b2_plane_carrier_stream, b2_range_origin_cylinder_stream, b2_reference_list_stream,
-    b2_resolved_revolution_stream, b2_revolution_stream, b2_sphere_stream,
-    b2_topology_metadata_stream, b2_torus_stream, b2_width_coded_owner_packet_stream,
-    b3_cylinder_stream, b3_offset_support_stream,
-};
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::SurfaceGeometry;
+
+use crate::test_support::*;
+use crate::variant::Variant;
+use crate::CatiaCodec;
 
 #[test]
 fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
@@ -115,7 +110,7 @@ fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
         0x40,
     ]);
     for value in values {
-        stream.extend_from_slice(&crate::tests::le_f64(value));
+        stream.extend_from_slice(&crate::test_support::le_f64(value));
     }
 
     let carriers = crate::families::b2::records::b2_plane_carriers(&stream);
@@ -1533,4 +1528,78 @@ fn b2_composite_parser_reads_the_complete_type_three_group() {
     let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
     assert_eq!(cylinders.len(), 31);
     assert!(cylinders.iter().all(|cylinder| cylinder.wrapper_pos == 0));
+}
+
+#[test]
+fn decode_inner_no_directory_transfers_b2_cylinder() {
+    assert_eq!(
+        crate::container::scan_bytes(inner_no_directory_b2_catpart()).variant,
+        Variant::InnerNoDirectory
+    );
+    let mut cur = Cursor::new(inner_no_directory_b2_catpart());
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Cylinder { radius: 2.0, .. }
+    ));
+}
+
+#[test]
+fn offset_support_binds_by_native_domain_knot_limits() {
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
+    let mut decoy = carriers[0].clone();
+    let SurfaceGeometry::Nurbs(surface) = &mut decoy.geometry else {
+        panic!("NURBS fixture");
+    };
+    for knot in &mut surface.v_knots {
+        *knot += 10.0;
+    }
+    carriers.push(decoy);
+    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
+        panic!("NURBS fixture");
+    };
+    let offset = crate::families::b2::records::B2OffsetSupport {
+        pos: 0,
+        support_id: 7,
+        distance: 2.0,
+        domain: [
+            surface.u_knots[0],
+            surface.v_knots[0],
+            *surface.u_knots.last().unwrap(),
+            *surface.v_knots.last().unwrap(),
+        ],
+    };
+
+    assert_eq!(
+        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
+        [Some(0)]
+    );
+}
+
+#[test]
+fn consolidated_edge_nodes_require_canonical_headers_and_terminal_controls() {
+    let bytes = b2_edge_node_stream();
+    assert_eq!(crate::families::b2::records::b2_edge_nodes(&bytes).len(), 1);
+
+    let mut noncanonical_header = bytes.clone();
+    noncanonical_header[0] = 0xb3;
+    noncanonical_header[4] = 0x04;
+    noncanonical_header.insert(5, 1);
+    assert!(crate::families::b2::records::b2_edge_nodes(&noncanonical_header).is_empty());
+
+    let mut wide_header = bytes.clone();
+    wide_header[0] = 0xb3;
+    wide_header[4] = 0x04;
+    wide_header.insert(5, 0x40);
+    let wide_nodes = crate::families::b2::records::b2_edge_nodes(&wide_header);
+    let [wide_node] = wide_nodes.as_slice() else {
+        panic!("canonical wide-header edge node")
+    };
+    assert_eq!(wide_node.header_token, 0x4004);
+
+    let mut invalid_terminal = bytes;
+    *invalid_terminal.last_mut().expect("edge terminal") = 0x03;
+    assert!(crate::families::b2::records::b2_edge_nodes(&invalid_terminal).is_empty());
 }

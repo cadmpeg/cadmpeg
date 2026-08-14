@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_core::decode::View;
+
 use crate::container::{Container, EntryContent};
 
 const ENTRY_NAME: &str = "/Root/UG_PART/LastSavedToggleInfoStream";
@@ -94,27 +96,26 @@ pub fn saved_toggle_records(
 }
 
 fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedToggleStream> {
-    let version = *bytes.first()?;
+    let mut view = View::over_retained(bytes);
+    let version = view.u8()?;
     if version != 1 || bytes.len() < 9 {
         return None;
     }
-    let raw_count: [u8; 4] = bytes.get(1..5)?.try_into().ok()?;
-    let count = usize::try_from(u32::from_le_bytes(raw_count)).ok()?;
+    let raw_count = view.array::<4>()?;
+    let count = usize::try_from(View::u32_le_at(&raw_count, 0)?).ok()?;
     // The shortest canonical member is a two-byte length plus 32 hex digits,
     // a colon, and `On`. Bound allocation before reading any member lengths.
     if count > (bytes.len() - 9) / 37 {
         return None;
     }
 
-    let mut at = 5usize;
     let mut entries = Vec::with_capacity(count);
     for ordinal in 0..count {
-        let member_offset = at;
-        let raw_byte_len: [u8; 2] = bytes.get(at..at.checked_add(2)?)?.try_into().ok()?;
-        at += 2;
-        let byte_len = usize::from(u16::from_le_bytes(raw_byte_len));
-        let end = at.checked_add(byte_len)?;
-        let value = std::str::from_utf8(bytes.get(at..end)?).ok()?;
+        let member_offset = view.position();
+        let raw_byte_len = view.array::<2>()?;
+        let byte_len = usize::from(View::u16_le_at(&raw_byte_len, 0)?);
+        let value_at = view.position();
+        let value = std::str::from_utf8(view.take(byte_len)?).ok()?;
         let (toggle_id, state) = value.rsplit_once(':')?;
         if toggle_id.len() != 32
             || !toggle_id
@@ -135,12 +136,12 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
             state,
             raw_byte_len,
             source_offset: source_offset.checked_add(member_offset as u64)?,
-            value_source_offset: source_offset.checked_add(at as u64)?,
+            value_source_offset: source_offset.checked_add(value_at as u64)?,
         });
-        at = end;
     }
-    let trailer: [u8; 4] = bytes.get(at..at.checked_add(4)?)?.try_into().ok()?;
-    if at + 4 != bytes.len() {
+    let trailer_at = view.position();
+    let trailer = view.array::<4>()?;
+    if !view.is_empty() {
         return None;
     }
     Some(ParsedToggleStream {
@@ -151,7 +152,7 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
             entries: entries.iter().map(|entry| entry.id.clone()).collect(),
             trailer,
             source_offset,
-            trailer_source_offset: source_offset.checked_add(at as u64)?,
+            trailer_source_offset: source_offset.checked_add(trailer_at as u64)?,
         },
         entries,
     })

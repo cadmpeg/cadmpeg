@@ -506,3 +506,6 @@ fn value_text(
             .map(|value| format!("{name}({value})")),
     }
 }
+
+#[cfg(test)]
+mod tests;

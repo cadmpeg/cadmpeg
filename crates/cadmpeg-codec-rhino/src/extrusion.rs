@@ -748,6 +748,9 @@ pub(crate) mod tests {
     use super::*;
     use crate::chunks::ArchiveVersion;
     use crate::curves::Compound;
+    use crate::layout::anonymous_version_prefix as anon_ver;
+    use crate::layout::long_chunk_header_v50 as long_v50;
+    use crate::layout::uuid_wire_form as uuid_wire;
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1017,9 +1020,10 @@ pub(crate) mod tests {
         let mut item = Vec::new();
         push_i32(&mut item, 1);
         push_i32(&mut item, 0);
-        item.extend([7; 16]);
+        item.extend([7; uuid_wire::LEN]);
         item.extend(wrapper);
-        let wrapper_range = 24..24 + wrapper_len;
+        let wrapper_range =
+            anon_ver::LEN + uuid_wire::LEN..anon_ver::LEN + uuid_wire::LEN + wrapper_len;
         let item = crc_chunk_excluding(ANONYMOUS, &item, &[wrapper_range]);
         let item_len = item.len();
         let mut cache = Vec::new();
@@ -1180,9 +1184,9 @@ pub(crate) mod tests {
     #[test]
     fn strict_flags_trim_domains_and_future_versions_are_rejected() {
         let valid = payload(2, [false, false], None);
-        let body_start = 12;
+        let body_start = long_v50::LEN;
         let profile_len = polyline_wrapper(false, true).len();
-        let common = body_start + 8 + profile_len;
+        let common = body_start + anon_ver::LEN + profile_len;
         let trim_start = common + 48;
         let up_start = trim_start + 16;
         let miter_flags = up_start + 24;
@@ -1217,7 +1221,8 @@ pub(crate) mod tests {
             .is_err());
         }
         let mut future = payload(2, [false, false], None);
-        future[body_start + 4..body_start + 8].copy_from_slice(&4_i32.to_le_bytes());
+        future[body_start + anon_ver::MINOR..body_start + anon_ver::LEN]
+            .copy_from_slice(&4_i32.to_le_bytes());
         assert!(matches!(
             decode(
                 &future,

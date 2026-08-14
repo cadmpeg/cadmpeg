@@ -10,9 +10,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-#[cfg(feature = "fuzzing")]
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
@@ -42,6 +40,10 @@ impl<'a> MeshExpand<'a> {
 
     pub(crate) fn root(self) -> View<'a> {
         self.root
+    }
+
+    pub(crate) fn ctx(self) -> &'a DecodeContext<'a> {
+        self.ctx
     }
 }
 
@@ -87,6 +89,15 @@ impl MeshBudget {
         }
     }
 
+    /// Caps retained mesh-buffer bytes with the session retained-byte ceiling.
+    pub(crate) fn from_session(ctx: &DecodeContext<'_>) -> Self {
+        let policy = usize::try_from(ctx.policy().limits.max_retained_bytes).unwrap_or(usize::MAX);
+        Self {
+            used: 0,
+            limit: policy.min(MAX_DOCUMENT_BUFFER_OUTPUT),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn with_limit(limit: usize) -> Self {
         Self { used: 0, limit }
@@ -109,6 +120,29 @@ impl MeshBudget {
     fn commit(&mut self, bytes: usize) {
         self.used = self.used.saturating_add(bytes);
     }
+}
+
+fn buffer_output_limit(expand: MeshExpand<'_>) -> usize {
+    usize::try_from(expand.ctx.policy().limits.max_decompressed_bytes_per_expand)
+        .unwrap_or(usize::MAX)
+        .min(MAX_BUFFER_OUTPUT)
+}
+
+fn commit_mesh_buffer(
+    expand: MeshExpand<'_>,
+    document_budget: &mut MeshBudget,
+    declared: usize,
+    position: usize,
+) -> Result<(), GeometryError> {
+    document_budget.commit(declared);
+    expand
+        .ctx
+        .charge_retained(
+            u64::try_from(declared).unwrap_or(u64::MAX),
+            "rhino_mesh_buffer",
+            None,
+        )
+        .map_err(|refusal| expansion_refused(position, &refusal))
 }
 
 /// A decoded mesh and non-fatal channel warnings.
@@ -465,8 +499,8 @@ fn distance_squared(a: Point3, b: Point3) -> f64 {
 fn face_index(raw: &[u8], offset: usize, width: i32) -> u32 {
     match width {
         1 => u32::from(raw[offset]),
-        2 => u16::from_le_bytes([raw[offset], raw[offset + 1]]) as u32,
-        4 => u32::from_le_bytes(raw[offset..offset + 4].try_into().expect("face width")),
+        2 => u32::from(View::u16_le_at(raw, offset).expect("face width")),
+        4 => View::u32_le_at(raw, offset).expect("face width"),
         _ => unreachable!(),
     }
 }
@@ -605,7 +639,8 @@ fn read_buffer<'a>(
     if declared == 0 {
         return Ok(None);
     }
-    if declared > MAX_BUFFER_OUTPUT {
+    let buffer_limit = buffer_output_limit(expand);
+    if declared > buffer_limit {
         return Err(error(
             reader.position() - 4,
             &format!("invalid {name} size"),
@@ -613,7 +648,7 @@ fn read_buffer<'a>(
     }
     *decompressed_bytes = decompressed_bytes
         .checked_add(declared)
-        .filter(|total| *total <= MAX_BUFFER_OUTPUT)
+        .filter(|total| *total <= buffer_limit)
         .ok_or_else(|| {
             error(
                 reader.position() - 4,
@@ -633,7 +668,7 @@ fn read_buffer<'a>(
         0 => {
             let mut input = reader.unread()?;
             let stored = input.take(declared)?.to_vec();
-            document_budget.commit(declared);
+            commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
             (Cow::Owned(stored), declared)
         }
         1 => {
@@ -665,7 +700,7 @@ fn read_buffer<'a>(
                 "expansion source must alias the compressed chunk body"
             );
             let (view, compressed) = inflate(expand, source, declared)?;
-            document_budget.commit(declared);
+            commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
             if compressed != chunk.body.len() {
                 return Err(error(
                     chunk.body.start + compressed,
@@ -702,12 +737,10 @@ fn read_buffer<'a>(
     Ok(Some(bytes))
 }
 
-#[cfg(feature = "fuzzing")]
 pub(crate) fn fuzz_buffer(data: &[u8]) {
-    if data.len() < 2 {
+    let Some(expected) = View::u16_le_at(data, 0).map(usize::from) else {
         return;
-    }
-    let expected = usize::from(u16::from_le_bytes([data[0], data[1]]));
+    };
     let Ok(mut reader) = BoundedReader::new(data, 2, data.len()) else {
         return;
     };
@@ -979,16 +1012,12 @@ fn parse_f32_points(bytes: &[u8]) -> Result<Vec<[f32; 3]>, GeometryError> {
     if !bytes.len().is_multiple_of(12) {
         return Err(error(0, "invalid f32 point channel length"));
     }
-    let points: Vec<[f32; 3]> = bytes
-        .chunks_exact(12)
-        .map(|chunk| {
-            [
-                f32::from_le_bytes(chunk[0..4].try_into().expect("point width")),
-                f32::from_le_bytes(chunk[4..8].try_into().expect("point width")),
-                f32::from_le_bytes(chunk[8..12].try_into().expect("point width")),
-            ]
+    let mut view = View::over_retained(bytes);
+    let points = view
+        .read_counted((bytes.len() / 12) as u64, 12, |view| {
+            Some([view.f32_le()?, view.f32_le()?, view.f32_le()?])
         })
-        .collect();
+        .ok_or_else(|| error(0, "invalid f32 point channel length"))?;
     if points
         .iter()
         .any(|point| point.iter().any(|value| !value.is_finite()))
@@ -1009,16 +1038,11 @@ fn parse_f64_points(bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
     if !bytes.len().is_multiple_of(24) {
         return Err(error(0, "invalid f64 point channel length"));
     }
-    Ok(bytes
-        .chunks_exact(24)
-        .map(|chunk| {
-            [
-                f64::from_le_bytes(chunk[0..8].try_into().expect("point width")),
-                f64::from_le_bytes(chunk[8..16].try_into().expect("point width")),
-                f64::from_le_bytes(chunk[16..24].try_into().expect("point width")),
-            ]
-        })
-        .collect())
+    let mut view = View::over_retained(bytes);
+    view.read_counted((bytes.len() / 24) as u64, 24, |view| {
+        Some([view.f64_le()?, view.f64_le()?, view.f64_le()?])
+    })
+    .ok_or_else(|| error(0, "invalid f64 point channel length"))
 }
 
 fn synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {

@@ -8,6 +8,7 @@
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
 use crate::container::parasolid_offset;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
 use std::io::Read as _;
 
@@ -149,7 +150,9 @@ pub struct StreamHeader {
 pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let sig = parasolid_offset(payload)?;
     let desc_len_at = sig + 4;
-    let desc_len = usize::from(cadmpeg_core::be::u16_at(payload, desc_len_at)?);
+    let mut view = View::over_retained(payload);
+    view.seek(desc_len_at)?;
+    let desc_len = usize::from(view.u16_be()?);
     let desc_start = desc_len_at + 2;
     let desc_end = desc_start + desc_len;
     let description = String::from_utf8_lossy(payload.get(desc_start..desc_end)?).into_owned();
@@ -196,13 +199,9 @@ pub(crate) fn mesh_polyline(payload: &[u8]) -> Option<Vec<Point3>> {
         if payload.get(tag_at..tag_at + 2) != Some(&[0x00, 0x22]) || tag_at < 4 {
             continue;
         }
-        let Some(count_bytes) = payload
-            .get(tag_at - 4..tag_at)
-            .and_then(|bytes| bytes.try_into().ok())
+        let Some(scalar_count) =
+            View::u32_be_at(payload, tag_at - 4).and_then(|count| usize::try_from(count).ok())
         else {
-            continue;
-        };
-        let Ok(scalar_count) = usize::try_from(u32::from_be_bytes(count_bytes)) else {
             continue;
         };
         if scalar_count < 6 || scalar_count % 3 != 0 {
@@ -217,9 +216,9 @@ pub(crate) fn mesh_polyline(payload: &[u8]) -> Option<Vec<Point3>> {
         let mut points = Vec::with_capacity(scalar_count / 3);
         for xyz in values.chunks_exact(24) {
             let point = Point3::new(
-                f64::from_be_bytes(xyz[0..8].try_into().expect("eight-byte chunk")),
-                f64::from_be_bytes(xyz[8..16].try_into().expect("eight-byte chunk")),
-                f64::from_be_bytes(xyz[16..24].try_into().expect("eight-byte chunk")),
+                View::f64_be_at(xyz, 0)?,
+                View::f64_be_at(xyz, 8)?,
+                View::f64_be_at(xyz, 16)?,
             );
             if ![point.x, point.y, point.z].into_iter().all(f64::is_finite) {
                 points.clear();
@@ -241,3 +240,6 @@ pub(crate) fn mesh_polyline(payload: &[u8]) -> Option<Vec<Point3>> {
     }
     Some(points.clone())
 }
+
+#[cfg(test)]
+mod tests;

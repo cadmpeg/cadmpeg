@@ -11,7 +11,7 @@ use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord}
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::UnionFind;
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -552,7 +552,8 @@ pub(crate) fn resolve_edge_faces_from_runs(
     serialized: &[[usize; 2]],
     runs: &[MeshEdgeRun],
 ) -> Option<Vec<[usize; 2]>> {
-    let mut occurrence_faces = vec![Vec::new(); serialized.len()];
+    let mut occurrence_faces =
+        alloc_filled(serialized.len(), Vec::new(), "catia_edge_run_faces").ok()?;
     for run in runs {
         let faces = occurrence_faces.get_mut(run.edge)?;
         if !faces.contains(&run.face) {
@@ -743,9 +744,21 @@ fn mesh_face_coverage(
     }
     let mut occurrences_by_cycle = cycles
         .iter()
-        .map(|face_cycles| vec![Vec::<(usize, MeshEdgeOccurrence)>::new(); face_cycles.len()])
-        .collect::<Vec<_>>();
-    let mut present_edges_by_face = vec![HashSet::<usize>::new(); cycles.len()];
+        .map(|face_cycles| {
+            alloc_filled(
+                face_cycles.len(),
+                Vec::<(usize, MeshEdgeOccurrence)>::new(),
+                "catia_mesh_cycle_occurrences",
+            )
+            .ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut present_edges_by_face = alloc_filled(
+        cycles.len(),
+        HashSet::<usize>::new(),
+        "catia_mesh_face_edges",
+    )
+    .ok()?;
     for (edge, values) in occurrences.iter().enumerate() {
         for &occurrence in values {
             let face_cycles = occurrences_by_cycle.get_mut(occurrence.face)?;
@@ -754,7 +767,8 @@ fn mesh_face_coverage(
             present_edges_by_face[occurrence.face].insert(edge);
         }
     }
-    let mut edges_by_face = vec![Vec::new(); cycles.len()];
+    let mut edges_by_face =
+        alloc_filled(cycles.len(), Vec::new(), "catia_mesh_edges_by_face").ok()?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for face in faces {
             if face >= cycles.len() {
@@ -770,7 +784,7 @@ fn mesh_face_coverage(
     for (face, face_cycles) in cycles.iter().enumerate() {
         let mut gaps = Vec::new();
         for (cycle_index, cycle) in face_cycles.iter().enumerate() {
-            let mut covered = vec![false; cycle.len()];
+            let mut covered = alloc_filled(cycle.len(), false, "catia_mesh_cycle_coverage").ok()?;
             for &(edge, occurrence) in &occurrences_by_cycle[face][cycle_index] {
                 let (start, segment_count) =
                     edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
@@ -1821,7 +1835,12 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
             MeshFaceAssignmentDomain::Ordered(assignments) => assignments
                 .into_iter()
                 .map(|assignment| {
-                    let mut boundaries = vec![Vec::new(); cycle_lengths[face].len()];
+                    let mut boundaries = alloc_filled(
+                        cycle_lengths[face].len(),
+                        Vec::new(),
+                        "catia_mesh_ordered_boundaries",
+                    )
+                    .ok()?;
                     for run in runs.iter().filter(|run| run.face == face) {
                         boundaries[run.cycle].push((
                             MeshBoundaryEdgeCandidate {
@@ -1851,7 +1870,8 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                         .map(|(cycle, mut uses)| {
                             uses.sort_unstable_by_key(|(edge, _)| edge.start);
                             let length = cycle_lengths[face][cycle];
-                            let mut coverage = vec![0u8; length];
+                            let mut coverage =
+                                alloc_filled(length, 0u8, "catia_mesh_boundary_coverage").ok()?;
                             for (edge, segment_count) in &uses {
                                 for offset in 0..*segment_count {
                                     let covered = &mut coverage[(edge.start + offset) % length];
@@ -1947,16 +1967,16 @@ fn boundary_endpoint_support(
         .collect::<HashSet<_>>();
     let mut supported = layers
         .iter()
-        .map(|layer| vec![false; layer.len()])
-        .collect::<Vec<_>>();
+        .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_layer_marks").ok())
+        .collect::<Option<Vec<_>>>()?;
     for first_point in first_points {
         if !budget.charge_by(layer_states.checked_mul(3)?) {
             return None;
         }
         let mut forward = layers
             .iter()
-            .map(|layer| vec![false; layer.len()])
-            .collect::<Vec<_>>();
+            .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_forward_marks").ok())
+            .collect::<Option<Vec<_>>>()?;
         for (state, reachable) in first_layer.iter().zip(&mut forward[0]) {
             *reachable = state.start == first_point;
         }
@@ -1975,8 +1995,8 @@ fn boundary_endpoint_support(
         }
         let mut backward = layers
             .iter()
-            .map(|layer| vec![false; layer.len()])
-            .collect::<Vec<_>>();
+            .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_backward_marks").ok())
+            .collect::<Option<Vec<_>>>()?;
         let last = layers.len() - 1;
         for (state, (reachable, value)) in layers[last]
             .iter()
@@ -2410,9 +2430,16 @@ pub fn standard_mesh_placement_endpoint_pairs(
     }
     let assignments =
         standard_mesh_pruned_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)?;
-    let mut domains = vec![Vec::new(); edge_rows.len()];
-    let mut placement_counts = vec![0usize; edge_rows.len()];
-    let mut bound_counts = vec![0usize; edge_rows.len()];
+    let mut domains = alloc_filled(
+        edge_rows.len(),
+        Vec::new(),
+        "catia_placement_endpoint_domains",
+    )
+    .ok()?;
+    let mut placement_counts =
+        alloc_filled(edge_rows.len(), 0usize, "catia_placement_counts").ok()?;
+    let mut bound_counts =
+        alloc_filled(edge_rows.len(), 0usize, "catia_placement_bound_counts").ok()?;
     for face in assignments {
         let mut placements = face.into_iter().flatten().collect::<Vec<_>>();
         placements.sort_unstable_by_key(|candidate| candidate.placement);
@@ -2479,7 +2506,7 @@ pub fn propagate_edge_port_points(
     }
 
     let mut queue = (0..edge_ports.len()).collect::<std::collections::VecDeque<_>>();
-    let mut queued = vec![true; edge_ports.len()];
+    let mut queued = alloc_filled(edge_ports.len(), true, "catia_edge_port_queue").ok()?;
     while let Some(edge) = queue.pop_front() {
         queued[edge] = false;
         let ports = edge_ports[edge];
@@ -2771,7 +2798,7 @@ fn edge_port_candidate_assignment(
     }
     let mut components = components.into_values().collect::<Vec<_>>();
     components.sort_by_key(|component| component[0]);
-    let mut solution = vec![None; ports.len()];
+    let mut solution = alloc_filled(ports.len(), None, "catia_edge_port_solution").ok()?;
     for component in components {
         let component_ports = component
             .iter()
@@ -2786,7 +2813,7 @@ fn edge_port_candidate_assignment(
             candidates: &component_candidates,
             port_points: HashMap::new(),
             point_ports: HashMap::new(),
-            edge_pairs: vec![None; component.len()],
+            edge_pairs: alloc_filled(component.len(), None, "catia_edge_port_pairs").ok()?,
             solution: None,
             solution_key: None,
             ambiguous: false,

@@ -1782,6 +1782,7 @@ fn finish_model_decode<'a>(
     brep: Brep,
     body_visibilities: Vec<crate::records::BodyVisibility>,
     undecoded_candidates: usize,
+    admitted_entities: u64,
 ) -> Result<DecodeResult, CodecError> {
     F3dDecodeSession::from_geometry(
         ctx,
@@ -1790,6 +1791,7 @@ fn finish_model_decode<'a>(
         brep,
         body_visibilities,
         undecoded_candidates,
+        admitted_entities,
     )?
     .into_result()
 }
@@ -1824,6 +1826,7 @@ struct F3dDecodeSession<'a> {
     deferred_xref: Option<Result<Option<crate::xref::XrefTable>, CodecError>>,
     deferred_non_root_act: Option<usize>,
     deferred_has_appearance: Option<bool>,
+    admitted_entities: u64,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -1834,6 +1837,7 @@ impl<'a> F3dDecodeSession<'a> {
         brep: Brep,
         body_visibilities: Vec<crate::records::BodyVisibility>,
         undecoded_candidates: usize,
+        mut admitted_entities: u64,
     ) -> Result<Self, CodecError> {
         let mut report = build_geometry_report(scan, &brep);
         if undecoded_candidates != 0 {
@@ -1855,6 +1859,9 @@ impl<'a> F3dDecodeSession<'a> {
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
         let (mut ir, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
+        // ASM transfer already charged its delta; keep the running counter in
+        // sync so a later admit_entities call cannot double-count those bodies.
+        admitted_entities = admitted_entities.max(ir.model.entity_count() as u64);
         let AsmTransferRemainder {
             body_keys: _,
             face_keys: _,
@@ -1862,12 +1869,17 @@ impl<'a> F3dDecodeSession<'a> {
             stats: _,
             annotation_records,
         } = asm_remainder;
-        let (subds, subd_losses) = crate::tsm::decode(scan)?;
+        let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
         ir.model.subds = subds;
         let mesh_projection = project_mesh_bodies(scan, &mut ir, &mut native, &mut report)?;
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
+        ctx.admit_entities(
+            ir.model.entity_count() as u64,
+            &mut admitted_entities,
+            "admit F3D geometry entities",
+        )?;
         Ok(Self {
             ctx,
             scan,
@@ -1884,10 +1896,15 @@ impl<'a> F3dDecodeSession<'a> {
             deferred_xref: None,
             deferred_non_root_act: None,
             deferred_has_appearance: None,
+            admitted_entities,
         })
     }
 
-    fn from_metadata(ctx: &'a DecodeContext<'a>, scan: &'a ContainerScan<'a>) -> Self {
+    fn from_metadata(
+        ctx: &'a DecodeContext<'a>,
+        scan: &'a ContainerScan<'a>,
+        admitted_entities: u64,
+    ) -> Self {
         let (ir, unknowns) = build_metadata_ir(scan);
         Self {
             ctx,
@@ -1901,11 +1918,21 @@ impl<'a> F3dDecodeSession<'a> {
             deferred_xref: None,
             deferred_non_root_act: None,
             deferred_has_appearance: None,
+            admitted_entities,
         }
+    }
+
+    fn admit_model_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
+        self.ctx.admit_entities(
+            self.ir.model.entity_count() as u64,
+            &mut self.admitted_entities,
+            operation,
+        )
     }
 
     /// Decode design graph, products, annotations, and the report.
     fn into_result(mut self) -> Result<DecodeResult, CodecError> {
+        self.admit_model_entities("admit F3D geometry entities")?;
         self.decode_design_graph()?;
         self.decode_products()?;
         self.finalize()
@@ -2154,7 +2181,8 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_relations,
             self.ir.tolerances.linear,
         );
-        charge_sketch_arrangement_work(ctx, self.ir.model.sketch_entities.len())?;
+        let arrangement_budget =
+            ctx.work_budget(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
         crate::design::profile_select::bind_sweep_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -2241,6 +2269,7 @@ impl<'a> F3dDecodeSession<'a> {
                 histories: &self.native.asm_histories,
                 linear_tolerance: self.ir.tolerances.linear,
                 angular_tolerance: self.ir.tolerances.angular,
+                arrangement_budget: &arrangement_budget,
             },
         );
         if self.geometry.is_some() {
@@ -2420,6 +2449,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &mesh_projection,
             );
             report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+            self.admit_model_entities("admit F3D entities")?;
             self.native.store(self.ir.native.namespace_mut("f3d"))?;
             let annotations =
                 populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns);
@@ -2446,6 +2476,7 @@ impl<'a> F3dDecodeSession<'a> {
                 Some(Err(error)) => self.report.losses.push(xref_parse_loss(&error)),
                 None => {}
             }
+            let mut admitted_entities = self.admitted_entities;
             return decode_result(
                 ctx,
                 self.ir,
@@ -2453,10 +2484,12 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 self.unknowns,
                 source_image,
+                &mut admitted_entities,
             );
         }
 
         report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+        self.admit_model_entities("admit F3D entities")?;
         self.native.store(self.ir.native.namespace_mut("f3d"))?;
         let geometry = self.geometry.take().expect("geometry");
         let annotations = populate_annotations(
@@ -2470,6 +2503,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.unknowns,
         );
         let source_image = preserve_source_image(scan);
+        let mut admitted_entities = self.admitted_entities;
         decode_result(
             ctx,
             self.ir,
@@ -2477,6 +2511,7 @@ impl<'a> F3dDecodeSession<'a> {
             annotations,
             self.unknowns,
             source_image,
+            &mut admitted_entities,
         )
     }
 }
@@ -2488,6 +2523,12 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 /// Decode a `.f3d` reader into a document and its loss report.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(ctx, root)?;
+    let mut admitted_entities = 0_u64;
+    ctx.admit_entities(
+        scan.entries.len() as u64,
+        &mut admitted_entities,
+        "admit F3D archive entries",
+    )?;
 
     if crate::f3z::is_f3z(&scan) {
         return crate::f3z::decode(ctx, &scan);
@@ -2502,7 +2543,15 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         if let Ok(Some(table)) = crate::xref::decode(&scan) {
             apply_assembly_classification(&mut report, &scan, &table);
         }
-        return decode_result(ctx, ir, report, annotations, unknowns, source_image);
+        return decode_result(
+            ctx,
+            ir,
+            report,
+            annotations,
+            unknowns,
+            source_image,
+            &mut admitted_entities,
+        );
     }
 
     let unbound_body_bindings =
@@ -2594,6 +2643,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 brep,
                 body_visibilities,
                 model_breps.len() - decoded_brep_count,
+                admitted_entities,
             );
         }
     }
@@ -2601,11 +2651,19 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     // No binary stream decoded: the model may be carried only in the text
     // encoding.
     if let Some((text_facts, text_brep)) = try_decode_text_model(&scan)? {
-        return finish_model_decode(ctx, &scan, &text_facts, text_brep, Vec::new(), 0);
+        return finish_model_decode(
+            ctx,
+            &scan,
+            &text_facts,
+            text_brep,
+            Vec::new(),
+            0,
+            admitted_entities,
+        );
     }
 
     // No decodable SAB stream: use container metadata through the shared session.
-    F3dDecodeSession::from_metadata(ctx, &scan).into_result()
+    F3dDecodeSession::from_metadata(ctx, &scan, admitted_entities).into_result()
 }
 
 /// Projected mesh geometry and the Design records that own it.
@@ -3169,18 +3227,6 @@ fn apply_assembly_classification(
     }
 }
 
-/// Charge session work for sketch-arrangement walks, capped by the format-side
-/// arrangement ceiling so policy and format limits both bind.
-fn charge_sketch_arrangement_work(
-    ctx: &DecodeContext<'_>,
-    sketch_entities: usize,
-) -> Result<(), CodecError> {
-    let units = u64::try_from(sketch_entities.saturating_mul(sketch_entities.max(1)))
-        .unwrap_or(u64::MAX)
-        .min(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
-    ctx.charge_work(units, "f3d_sketch_arrangement")
-}
-
 fn decode_result(
     ctx: &DecodeContext<'_>,
     mut ir: CadIr,
@@ -3188,10 +3234,15 @@ fn decode_result(
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
+    admitted_entities: &mut u64,
 ) -> Result<DecodeResult, CodecError> {
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit F3D entities")?;
+    ctx.admit_entities(
+        ir.model.entity_count() as u64,
+        admitted_entities,
+        "admit F3D entities",
+    )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [source_image]);
@@ -4758,1754 +4809,4 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        apply_appearance_base_colors, bind_mesh_feature_definitions,
-        container_only_dimension_parameters, design_projection_gaps, face_selection_is_resolved,
-        feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
-        mesh_texture_assignments, unresolved_dimension_companion_count, DesignProjectionGaps,
-        MeshProjection,
-    };
-    use crate::native::F3dNative;
-    use crate::records::{
-        DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-        DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter,
-        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-        DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
-    };
-
-    #[test]
-    fn mesh_feature_binds_tessellations_in_design_body_order() {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
-
-        let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
-        let mut scope = DesignParameterScope::empty(scope_id, "Base Mesh Feature", 10);
-        // The feature's owning entity reference is distinct from its scope index.
-        scope.reference_members = vec![221];
-        let mut features = vec![Feature {
-            id: FeatureId("feature:mesh-import".into()),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: Some("Base Mesh Feature".into()),
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: "Base Mesh Feature".into(),
-                parameters: std::collections::BTreeMap::new(),
-                properties: std::collections::BTreeMap::new(),
-            },
-            native_ref: Some(scope_id.into()),
-        }];
-        let projection = MeshProjection {
-            count: 2,
-            tessellations_by_scope: std::collections::HashMap::from([(
-                ("f3d:Design/BulkStream.dat".into(), 10),
-                vec!["tessellation:z-body".into(), "tessellation:a-body".into()],
-            )]),
-        };
-
-        bind_mesh_feature_definitions(&mut features, &[scope], &projection);
-
-        assert_eq!(
-            features[0].definition,
-            FeatureDefinition::MeshImport {
-                tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),],
-            }
-        );
-        assert!(!feature_definition_is_incomplete(&features[0].definition));
-    }
-
-    #[test]
-    fn mesh_texture_ids_resolve_through_design_table_order() {
-        use cadmpeg_ir::assets::AssetId;
-        use cadmpeg_ir::tessellation::TessellationTextureAssignment;
-
-        let first = AssetId("asset:first".into());
-        let second = AssetId("asset:second".into());
-        let textures = [
-            ("resource:first".into(), first.clone()),
-            ("resource:second".into(), second.clone()),
-            ("resource:third".into(), first.clone()),
-        ];
-        assert_eq!(
-            mesh_texture_assignments(Some(&[0, 2, 1, 3, 2]), &textures, 5)
-                .expect("texture assignments"),
-            vec![
-                TessellationTextureAssignment {
-                    source_id: Some("resource:first".into()),
-                    texture: first,
-                    triangles: vec![2],
-                },
-                TessellationTextureAssignment {
-                    source_id: Some("resource:second".into()),
-                    texture: second,
-                    triangles: vec![1, 4],
-                },
-                TessellationTextureAssignment {
-                    source_id: Some("resource:third".into()),
-                    texture: AssetId("asset:first".into()),
-                    triangles: vec![3],
-                },
-            ]
-        );
-        assert!(matches!(
-            mesh_texture_assignments(
-                Some(&[2]),
-                &[("resource:only".into(), AssetId("asset:only".into()))],
-                1,
-            ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn indexed_mesh_channels_project_default_and_override_selectors() {
-        let attribute = crate::paramesh::MeshAttribute {
-            role: 4,
-            resource_guid: None,
-            authored_name: None,
-            groups: Vec::new(),
-            element_code: 4,
-            domain: crate::paramesh::MeshAttributeDomain::Corner,
-            item_size: Some(1),
-            values: vec![10, 11, 12, 13, 14],
-            indices: Some(vec![0, 2]),
-            triangle_values: None,
-        };
-        let mut unresolved = std::collections::BTreeMap::new();
-        let channels = mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved);
-
-        assert!(unresolved.is_empty());
-        assert_eq!(channels.len(), 1);
-        assert_eq!(
-            channels[0].domain,
-            cadmpeg_ir::tessellation::TessellationChannelDomain::Corner
-        );
-        assert_eq!(channels[0].count, 5);
-        assert_eq!(channels[0].indices, [3, 1, 4]);
-        assert_eq!(channels[0].data, [10, 11, 12, 13, 14]);
-    }
-
-    #[test]
-    fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
-        let native = |kind: &str| cadmpeg_ir::features::FeatureDefinition::Native {
-            kind: kind.into(),
-            parameters: std::collections::BTreeMap::new(),
-            properties: std::collections::BTreeMap::new(),
-        };
-
-        assert!(!feature_definition_is_incomplete(&native("Canvas")));
-        assert!(!feature_definition_is_incomplete(&native("Decal")));
-        assert!(feature_definition_is_incomplete(&native("Fillet")));
-    }
-
-    #[test]
-    fn full_round_fillet_with_automatic_sides_is_complete() {
-        use cadmpeg_ir::features::{
-            FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundFilletGroup,
-            FullRoundSideSelection,
-        };
-
-        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        ir.model.features.push(Feature {
-            id: FeatureId("feature:full-round".into()),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: Some("Fillet".into()),
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::FullRoundFillet {
-                groups: vec![FullRoundFilletGroup {
-                    center_faces: FaceSelection::Resolved {
-                        faces: vec!["face:center".into()],
-                        native: "native:center-group".into(),
-                    },
-                    side_one_faces: FullRoundSideSelection::Automatic,
-                    side_two_faces: FullRoundSideSelection::Automatic,
-                }],
-            },
-            native_ref: None,
-        });
-
-        assert!(!feature_definition_is_incomplete(
-            &ir.model.features[0].definition
-        ));
-        assert_eq!(
-            design_projection_gaps(&ir, &F3dNative::default()).incomplete_features,
-            0
-        );
-    }
-
-    #[test]
-    fn extrude_completeness_requires_resolved_profile_start_and_termination() {
-        let extrude = |profile: serde_json::Value,
-                       start: serde_json::Value,
-                       termination: serde_json::Value| {
-            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(serde_json::json!({
-                "definition": "extrude",
-                "profile": profile,
-                "start": start,
-                "extent": {
-                    "kind": "one_sided",
-                    "side": {"termination": termination}
-                },
-                "solid": true,
-                "op": "new_body"
-            }))
-            .expect("Extrude definition")
-        };
-        let sketch_profile = serde_json::json!({
-            "kind": "sketch_profiles",
-            "value": {"sketch": "sketch:1", "profiles": [0]}
-        });
-        let profile_start = serde_json::json!({"kind": "profile_plane"});
-        let blind = serde_json::json!({"kind": "blind", "length": 10.0});
-
-        assert!(!feature_definition_is_incomplete(&extrude(
-            sketch_profile.clone(),
-            profile_start.clone(),
-            blind.clone(),
-        )));
-        assert!(feature_definition_is_incomplete(&extrude(
-            serde_json::json!({"kind": "native", "value": "native:profile"}),
-            profile_start.clone(),
-            blind.clone(),
-        )));
-        assert!(feature_definition_is_incomplete(&extrude(
-            sketch_profile.clone(),
-            serde_json::json!({"kind": "unresolved"}),
-            blind,
-        )));
-        assert!(feature_definition_is_incomplete(&extrude(
-            sketch_profile,
-            profile_start,
-            serde_json::json!({"kind": "to_face", "face": {"kind": "unresolved"}}),
-        )));
-    }
-
-    #[test]
-    fn hole_completeness_requires_support_placement_size_and_extent() {
-        let complete: cadmpeg_ir::features::FeatureDefinition =
-            serde_json::from_value(serde_json::json!({
-                "definition": "hole",
-                "face": {"kind": "faces", "value": ["face:support"]},
-                "position": {"x": 1.0, "y": 2.0, "z": 3.0},
-                "direction": {"x": 0.0, "y": 0.0, "z": -1.0},
-                "kind": {"kind": "simple_drilled", "drill_point_angle": 2.0},
-                "diameter": 5.0,
-                "extent": {"kind": "blind", "length": 10.0}
-            }))
-            .expect("complete Hole definition");
-        assert!(!feature_definition_is_incomplete(&complete));
-
-        let mut missing_placement = complete.clone();
-        let cadmpeg_ir::features::FeatureDefinition::Hole {
-            position,
-            direction,
-            ..
-        } = &mut missing_placement
-        else {
-            panic!("Hole definition");
-        };
-        *position = None;
-        *direction = None;
-        assert!(feature_definition_is_incomplete(&missing_placement));
-
-        let mut native_support = complete.clone();
-        let cadmpeg_ir::features::FeatureDefinition::Hole { face, .. } = &mut native_support else {
-            panic!("Hole definition");
-        };
-        *face = Some(cadmpeg_ir::features::FaceSelection::Native(
-            "native:support".into(),
-        ));
-        assert!(feature_definition_is_incomplete(&native_support));
-
-        let mut missing_extent = complete;
-        let cadmpeg_ir::features::FeatureDefinition::Hole { extent, .. } = &mut missing_extent
-        else {
-            panic!("Hole definition");
-        };
-        *extent = None;
-        assert!(feature_definition_is_incomplete(&missing_extent));
-    }
-
-    #[test]
-    fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
-        use cadmpeg_ir::features::{FaceSelection, FeatureId, GeneratedFaceRef};
-        use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalFaceId};
-
-        assert!(face_selection_is_resolved(&FaceSelection::Generated {
-            faces: vec![GeneratedFaceRef {
-                feature: FeatureId("feature:source".into()),
-                local_id: "face:1".into(),
-            }],
-            native: "native:generated-face".into(),
-        }));
-        assert!(face_selection_is_resolved(
-            &FaceSelection::HistoricalPartial {
-                state: FeatureInputTopologyId("state:1".into()),
-                faces: vec![HistoricalFaceId("face:1".into())],
-                unresolved: Vec::new(),
-                native: "native:historical-face".into(),
-            }
-        ));
-        assert!(!face_selection_is_resolved(
-            &FaceSelection::HistoricalPartial {
-                state: FeatureInputTopologyId("state:1".into()),
-                faces: vec![HistoricalFaceId("face:1".into())],
-                unresolved: vec!["native:missing-face".into()],
-                native: "native:historical-face".into(),
-            }
-        ));
-    }
-
-    #[test]
-    fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() {
-        use cadmpeg_ir::features::{
-            FaceSelection, FeatureDefinition, PathRef, SurfaceBoundary, SurfaceContinuity,
-        };
-        use cadmpeg_ir::ids::{EdgeId, FaceId};
-
-        let surface = |support_faces, continuity, merge_result| FeatureDefinition::FilledSurface {
-            boundary: SurfaceBoundary::Path(PathRef::Edges(vec![EdgeId("edge:1".into())])),
-            support_faces,
-            continuity: Some(continuity),
-            boundary_continuities: Vec::new(),
-            merge_result,
-        };
-
-        assert!(!feature_definition_is_incomplete(&surface(
-            FaceSelection::Faces(Vec::new()),
-            SurfaceContinuity::Contact,
-            Some(false),
-        )));
-        assert!(feature_definition_is_incomplete(&surface(
-            FaceSelection::Faces(Vec::new()),
-            SurfaceContinuity::Contact,
-            None,
-        )));
-        assert!(feature_definition_is_incomplete(&surface(
-            FaceSelection::Faces(Vec::new()),
-            SurfaceContinuity::Tangent,
-            Some(true),
-        )));
-        assert!(!feature_definition_is_incomplete(&surface(
-            FaceSelection::Faces(vec![FaceId("face:support".into())]),
-            SurfaceContinuity::Curvature,
-            Some(true),
-        )));
-    }
-
-    #[test]
-    fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
-        let definition = |value| {
-            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
-                .expect("sheet-metal definition")
-        };
-        let base_flange = |profile| {
-            definition(serde_json::json!({
-                "definition": "sheet_metal_base_flange",
-                "profile": profile,
-                "thickness": 2.5,
-                "side": "forward"
-            }))
-        };
-        let edge_flange = |edges| {
-            definition(serde_json::json!({
-                "definition": "sheet_metal_edge_flange",
-                "edges": edges,
-                "height": {"kind": "distance", "value": 25.0},
-                "angle": std::f64::consts::FRAC_PI_2,
-                "height_datum": "outer_faces",
-                "bend_position": "inside",
-                "width": {"kind": "full_edge"},
-                "bend_radius": 2.5
-            }))
-        };
-        let hem = |edges| {
-            definition(serde_json::json!({
-                "definition": "sheet_metal_hem",
-                "edges": edges,
-                "form": {"kind": "flat", "value": {"length": 10.0}},
-                "direction": "forward",
-                "bend_radius": 2.5
-            }))
-        };
-
-        assert!(!feature_definition_is_incomplete(&base_flange(
-            serde_json::json!({"kind": "sketch", "value": "sketch:1"}),
-        )));
-        assert!(feature_definition_is_incomplete(&base_flange(
-            serde_json::json!({"kind": "native", "value": "native:profile"}),
-        )));
-        assert!(!feature_definition_is_incomplete(&edge_flange(
-            serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
-        )));
-        assert!(feature_definition_is_incomplete(&edge_flange(
-            serde_json::json!({"kind": "native", "value": "native:edges"}),
-        )));
-        assert!(!feature_definition_is_incomplete(&hem(
-            serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
-        )));
-        assert!(feature_definition_is_incomplete(&hem(
-            serde_json::json!({"kind": "native", "value": "native:edges"}),
-        )));
-    }
-
-    #[test]
-    fn selected_face_and_edge_features_require_neutral_operands() {
-        let definition = |value| {
-            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
-                .expect("selected feature definition")
-        };
-        let fillet = |edges| {
-            definition(serde_json::json!({
-                "definition": "fillet",
-                "groups": [{
-                    "edges": edges,
-                    "radius": {"kind": "constant", "radius": 5.0},
-                    "tangency_weight": 1.0
-                }]
-            }))
-        };
-
-        assert!(!feature_definition_is_incomplete(&fillet(
-            serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
-        )));
-        assert!(feature_definition_is_incomplete(&fillet(
-            serde_json::json!({"kind": "native", "value": "native:edges"}),
-        )));
-        assert!(!feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "delete_face",
-                "faces": {"kind": "faces", "value": ["face:1"]},
-                "heal": true
-            }),
-        )));
-        assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "delete_face",
-                "faces": {"kind": "native", "value": "native:faces"},
-                "heal": true
-            }),
-        )));
-        assert!(!feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "offset_surface",
-                "faces": {"kind": "faces", "value": ["face:1"]},
-                "distance": 2.0
-            }),
-        )));
-        assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "offset_surface",
-                "faces": {"kind": "faces", "value": ["face:1"]}
-            }),
-        )));
-    }
-
-    #[test]
-    fn form_and_primitive_completeness_requires_construction_payloads() {
-        let definition = |value| {
-            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
-                .expect("construction definition")
-        };
-
-        assert!(!feature_definition_is_incomplete(&definition(
-            serde_json::json!({"definition": "form", "cages": ["subd:1"]}),
-        )));
-        assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({"definition": "form", "cages": []}),
-        )));
-        assert!(!feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "block",
-                "dimensions": [30.0, 40.0, 20.0],
-                "placement": [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0]
-                ],
-                "op": "join"
-            }),
-        )));
-        assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "block",
-                "dimensions": [30.0, 40.0, 20.0],
-                "op": "join"
-            }),
-        )));
-        assert!(!feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "primitive",
-                "solid": {
-                    "kind": "cylinder",
-                    "radius": 15.0,
-                    "height": 7.0,
-                    "angle": std::f64::consts::TAU
-                },
-                "op": "join"
-            }),
-        )));
-        assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "primitive",
-                "solid": {
-                    "kind": "cylinder",
-                    "radius": 15.0,
-                    "height": 7.0,
-                    "angle": std::f64::consts::TAU
-                },
-                "op": "unresolved"
-            }),
-        )));
-    }
-
-    #[test]
-    fn datum_point_completeness_requires_a_resolved_construction_rule() {
-        let definition = |construction: Option<serde_json::Value>| {
-            let mut value = serde_json::json!({
-                "definition": "datum_point",
-                "position": {"x": 1.0, "y": 2.0, "z": 3.0}
-            });
-            if let Some(construction) = construction {
-                value
-                    .as_object_mut()
-                    .expect("DatumPoint object")
-                    .insert("construction".into(), construction);
-            }
-            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
-                .expect("DatumPoint definition")
-        };
-
-        assert!(!feature_definition_is_incomplete(&definition(Some(
-            serde_json::json!({
-                "kind": "circle_center",
-                "edge": {"kind": "edges", "value": ["edge:1"]}
-            }),
-        ))));
-        assert!(feature_definition_is_incomplete(&definition(None)));
-        assert!(feature_definition_is_incomplete(&definition(Some(
-            serde_json::json!({
-                "kind": "distance_on_edge",
-                "edge": {"kind": "native", "value": "native:edge"},
-                "fraction": 0.5
-            }),
-        ))));
-    }
-
-    #[test]
-    fn datum_plane_completeness_distinguishes_frames_from_construction_rules() {
-        let definition = |value| {
-            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
-                .expect("datum-plane definition")
-        };
-
-        assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "datum_plane",
-                "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
-                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
-            }),
-        )));
-        let three_point = |point: serde_json::Value| {
-            serde_json::json!({
-                "definition": "datum_three_point_plane",
-                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0},
-                "points": [point.clone(), point.clone(), point]
-            })
-        };
-        assert!(!feature_definition_is_incomplete(&definition(three_point(
-            serde_json::json!({
-                "kind": "historical",
-                "value": {
-                    "state": "state:1",
-                    "vertex": "vertex:1",
-                    "native": "native:1"
-                }
-            }),
-        ))));
-        assert!(feature_definition_is_incomplete(&definition(three_point(
-            serde_json::json!({"kind": "native", "value": "native:1"}),
-        ))));
-        assert!(!feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "datum_principal_plane",
-                "plane": "top"
-            }),
-        )));
-        assert!(!feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "datum_offset_plane",
-                "reference": "feature:plane",
-                "distance": 5.0
-            }),
-        )));
-        assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({
-                "definition": "datum_offset_plane",
-                "distance": 5.0
-            }),
-        )));
-    }
-
-    #[test]
-    fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
-        use cadmpeg_ir::features::{
-            Angle, BodySelection, BooleanOp, CoilConstruction, CoilExtent, CoilPlacement,
-            CoilResult, CoilSection, CoilSectionPlacement, FeatureDefinition, Length,
-        };
-        use cadmpeg_ir::ids::BodyId;
-        use cadmpeg_ir::math::{Point3, Vector3};
-
-        let construction = CoilConstruction {
-            placement: CoilPlacement::Explicit {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-                radial: Vector3::new(1.0, 0.0, 0.0),
-            },
-            diameter: Length(10.0),
-            extent: CoilExtent::RevolutionsHeight {
-                revolutions: 2.0,
-                height: Length(5.0),
-            },
-            section: CoilSection::Circular {
-                diameter: Length(1.0),
-            },
-            section_placement: CoilSectionPlacement::Center,
-            clockwise: false,
-            taper: Angle(0.0),
-        };
-        let definition = |construction, result| FeatureDefinition::Coil {
-            construction,
-            result,
-        };
-
-        assert!(!feature_definition_is_incomplete(&definition(
-            construction.clone(),
-            CoilResult::NewBody,
-        )));
-
-        let mut native_placement = construction.clone();
-        native_placement.placement = CoilPlacement::Native {
-            native_ref: "native:placement".into(),
-        };
-        assert!(feature_definition_is_incomplete(&definition(
-            native_placement,
-            CoilResult::NewBody,
-        )));
-
-        let native_target = definition(
-            construction.clone(),
-            CoilResult::Boolean {
-                operation: BooleanOp::Join,
-                targets: BodySelection::Native("native:target".into()),
-            },
-        );
-        assert!(feature_definition_is_incomplete(&native_target));
-
-        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        ir.model.features.push(cadmpeg_ir::features::Feature {
-            id: cadmpeg_ir::features::FeatureId("feature:coil".into()),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: Default::default(),
-            source_tag: Some("CoilPrimitive".into()),
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: native_target,
-            native_ref: None,
-        });
-        let gaps = design_projection_gaps(&ir, &F3dNative::default());
-        assert_eq!(gaps.incomplete_features, 1);
-        assert_eq!(gaps.body_selections, 1);
-
-        assert!(!feature_definition_is_incomplete(&definition(
-            construction,
-            CoilResult::Boolean {
-                operation: BooleanOp::Cut,
-                targets: BodySelection::Bodies(vec![BodyId("body:1".into())]),
-            },
-        )));
-    }
-
-    #[test]
-    fn draft_completeness_requires_material_side() {
-        let complete: cadmpeg_ir::features::FeatureDefinition =
-            serde_json::from_value(serde_json::json!({
-                "definition": "draft",
-                "faces": {"kind": "faces", "value": ["face:drafted"]},
-                "neutral_plane": {"kind": "faces", "value": ["face:neutral"]},
-                "pull_direction": null,
-                "angle": 0.1,
-                "outward": true
-            }))
-            .expect("complete neutral-plane Draft");
-        assert!(!feature_definition_is_incomplete(&complete));
-
-        let mut incomplete = complete;
-        let cadmpeg_ir::features::FeatureDefinition::Draft { outward, .. } = &mut incomplete else {
-            panic!("Draft definition");
-        };
-        *outward = None;
-        assert!(feature_definition_is_incomplete(&incomplete));
-    }
-
-    #[test]
-    fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
-
-        let resolved: FeatureDefinition = serde_json::from_value(serde_json::json!({
-            "definition": "loft",
-            "sections": [
-                {
-                    "kind": "spatial_sketch_profiles",
-                    "value": {"sketch": "spatial-sketch", "profiles": [2, 3]}
-                },
-                {
-                    "kind": "spatial_sketch_profiles",
-                    "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
-                }
-            ],
-            "guides": [{
-                "kind": "spatial_sketch_curves",
-                "value": {"sketch": "spatial-sketch", "curves": ["curve"]}
-            }],
-            "op": "join"
-        }))
-        .expect("resolved Loft definition");
-        assert!(!feature_definition_is_incomplete(&resolved));
-
-        let unresolved: FeatureDefinition = serde_json::from_value(serde_json::json!({
-            "definition": "loft",
-            "sections": [
-                {"kind": "native", "value": "native:profile"},
-                {
-                    "kind": "spatial_sketch_profiles",
-                    "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
-                }
-            ],
-            "guides": [{"kind": "native", "value": "native:guide"}],
-            "op": "join"
-        }))
-        .expect("unresolved Loft definition");
-        assert!(feature_definition_is_incomplete(&unresolved));
-
-        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        ir.model.features.push(Feature {
-            id: FeatureId("feature:loft".into()),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: Some("Loft".into()),
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: unresolved,
-            native_ref: None,
-        });
-
-        let gaps = design_projection_gaps(&ir, &F3dNative::default());
-        assert_eq!(gaps.incomplete_features, 1);
-        assert_eq!(gaps.profile_selections, 1);
-        assert_eq!(gaps.path_selections, 1);
-    }
-
-    #[test]
-    fn incomplete_feature_families_are_counted_by_source_operation() {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
-
-        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        let feature = |id: &str, source_tag: Option<&str>, kind: &str| Feature {
-            id: FeatureId(id.into()),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: source_tag.map(str::to_owned),
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Native {
-                kind: kind.into(),
-                parameters: std::collections::BTreeMap::new(),
-                properties: std::collections::BTreeMap::new(),
-            },
-            native_ref: None,
-        };
-        ir.model
-            .features
-            .push(feature("feature:1", Some("EdgeFlange"), "native-a"));
-        ir.model
-            .features
-            .push(feature("feature:2", Some("EdgeFlange"), "native-b"));
-        ir.model.features.push(feature("feature:3", None, "Hem"));
-        ir.model
-            .features
-            .push(feature("feature:4", Some("Canvas"), "Canvas"));
-
-        assert_eq!(
-            incomplete_feature_families(&ir),
-            std::collections::BTreeMap::from([("EdgeFlange", 2), ("Hem", 1)])
-        );
-    }
-
-    #[test]
-    fn design_projection_gaps_count_unresolved_body_map_pairs() {
-        let ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        let mut native = F3dNative::default();
-        native.design_body_bindings.push(DesignBodyBinding {
-            id: "f3d:design:body-binding#0".into(),
-            stream: "Design/BulkStream.dat".into(),
-            pair_count: 1,
-            pair_ordinal: 0,
-            asm_body_key: 0,
-            asm_body_key_offset: 0,
-            entity_suffix: 1,
-            entity_suffix_offset: 8,
-            blob_name: "BREP.snapshot.smb".into(),
-            blob_name_offset: 16,
-            body: None,
-        });
-
-        assert_eq!(
-            design_projection_gaps(&ir, &native).unresolved_body_bindings,
-            1
-        );
-    }
-
-    #[test]
-    fn design_projection_gaps_count_cosmetic_thread_faces() {
-        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        for (ordinal, face) in [
-            serde_json::json!({"kind": "native", "value": "native:thread-face"}),
-            serde_json::json!({"kind": "unresolved"}),
-            serde_json::json!({
-                "kind": "historical",
-                "value": {
-                    "state": "feature-input",
-                    "faces": ["historical:face"],
-                    "native": "native:thread-group"
-                }
-            }),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            ir.model.features.push(
-                serde_json::from_value(serde_json::json!({
-                    "id": format!("thread-{ordinal}"),
-                    "ordinal": ordinal,
-                    "definition": {
-                        "definition": "cosmetic_thread",
-                        "face": face,
-                        "diameter": 2.5
-                    }
-                }))
-                .expect("CosmeticThread feature"),
-            );
-        }
-
-        assert_eq!(
-            design_projection_gaps(&ir, &F3dNative::default()).face_selections,
-            2
-        );
-    }
-
-    #[test]
-    fn design_projection_gaps_count_each_retained_selection_family() {
-        use cadmpeg_ir::math::{Point2, Point3, Vector3};
-        use cadmpeg_ir::sketches::{
-            Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-            SketchEntityId, SketchGeometry, SketchId,
-        };
-
-        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        ir.model.sketch_constraints.push(SketchConstraint {
-            id: SketchConstraintId("constraint".into()),
-            sketch: SketchId("sketch".into()),
-            definition: SketchConstraintDefinition::Native {
-                native_kind: "dimension".into(),
-                native_state: None,
-                native_flags: None,
-                native_properties: std::collections::BTreeMap::new(),
-                entities: Vec::new(),
-                parameter: None,
-                operands: Vec::new(),
-            },
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: Some("native:sketch-relation".into()),
-        });
-        let mut native_dimension = ir.model.sketch_constraints[0].clone();
-        native_dimension.id = SketchConstraintId("dimension".into());
-        native_dimension.native_ref = Some("native:dimension-companion".into());
-        ir.model.sketch_constraints.push(native_dimension);
-        ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "extrude",
-                "ordinal": 0,
-                "definition": {
-                    "definition": "extrude",
-                    "profile": {
-                        "kind": "sketch_selection",
-                        "value": {"sketch": "sketch", "selections": ["native:profile"]}
-                    },
-                    "start": {"kind": "profile_plane"},
-                    "extent": {
-                        "kind": "one_sided",
-                        "side": {
-                            "termination": {
-                                "kind": "to_face",
-                                "face": {"kind": "native", "value": "native:face"}
-                            }
-                        }
-                    },
-                    "op": "cut"
-                }
-            }))
-            .expect("Extrude feature"),
-        );
-        ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "sweep",
-                "ordinal": 1,
-                "definition": {
-                    "definition": "sweep",
-                    "section": {
-                        "kind": "profile",
-                        "value": {"kind": "native", "value": "native:sweep-profile"}
-                    },
-                    "path": {"kind": "native", "value": "native:sweep-path"},
-                    "mode": {"mode": "solid", "op": "cut"}
-                }
-            }))
-            .expect("Sweep feature"),
-        );
-        ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "fillet",
-                "ordinal": 2,
-                "definition": {
-                    "definition": "fillet",
-                    "groups": [
-                        {
-                            "edges": {"kind": "native", "value": "native:edges"},
-                            "radius": {"kind": "constant", "radius": 1.0}
-                        },
-                        {
-                            "edges": {"kind": "unresolved"},
-                            "radius": {"kind": "constant", "radius": 2.0}
-                        },
-                        {
-                            "edges": {
-                                "kind": "historical_partial",
-                                "value": {
-                                    "state": "history-input",
-                                    "edges": [],
-                                    "unresolved": [
-                                        "native:edge-operand#1",
-                                        "f3d:test:lost-edge-reference#2"
-                                    ],
-                                    "native": "native:partial-edges"
-                                }
-                            },
-                            "radius": {"kind": "constant", "radius": 3.0}
-                        }
-                    ]
-                }
-            }))
-            .expect("Fillet feature"),
-        );
-        ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "suppressed-fillet",
-                "ordinal": 2,
-                "suppressed": true,
-                "definition": {
-                    "definition": "fillet",
-                    "groups": [{
-                        "edges": {"kind": "native", "value": "native:suppressed-edges"},
-                        "radius": {"kind": "constant", "radius": 3.0}
-                    }]
-                }
-            }))
-            .expect("suppressed Fillet feature"),
-        );
-        ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "native-feature",
-                "ordinal": 3,
-                "definition": {
-                    "definition": "native",
-                    "kind": "unsupported",
-                    "parameters": {},
-                    "properties": {}
-                }
-            }))
-            .expect("native feature"),
-        );
-        ir.model.features.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "unresolved-pattern",
-                "ordinal": 4,
-                "definition": {
-                    "definition": "pattern",
-                    "seeds": [],
-                    "pattern": {
-                        "kind": "unresolved",
-                        "form": "circular"
-                    }
-                }
-            }))
-            .expect("unresolved pattern feature"),
-        );
-
-        let mut native = F3dNative::default();
-        native.design_sketch_placements.push(DesignSketchPlacement {
-            member_run_head: false,
-            id: "native:sketch-placement".into(),
-            scope_record_index: Some(10),
-            entity_id: "Sketch_1".into(),
-            entity_suffix: 1,
-            visibility: None,
-            byte_offset: 0,
-            class_tag: "000".into(),
-            record_index: 10,
-            frame_length: 1,
-            transform: [[0.0; 4]; 4],
-            transform_offset: None,
-            paired_class_tag: "001".into(),
-            paired_byte_offset: 1,
-        });
-        native.sketch_points.push(SketchPoint {
-            id: "native:sketch-point".into(),
-            record_index: 11,
-            owner_reference: Some(1),
-            class_tag: "000".into(),
-            byte_offset: 0,
-            coordinate_offset: 0,
-            entity_genesis: None,
-            record_form: crate::records::SketchPointRecordForm::default(),
-            persistent_id: Some(1),
-            paired_reference: 0,
-            flags: [0; 8],
-            coordinates: Point2::new(0.0, 0.0),
-            depth: 0.0,
-            closure: None,
-            companion: None,
-        });
-        native.sketch_curve_identities.push(SketchCurveIdentity {
-            id: "native:sketch-curve".into(),
-            record_index: 12,
-            owner_reference: Some(1),
-            class_tag: "000".into(),
-            byte_offset: 0,
-            geometry_offset: 0,
-            entity_genesis: None,
-            primary_id: 1,
-            secondary_id: 2,
-            geometry: None,
-        });
-        native.lost_edge_references.push(LostEdgeReference {
-            id: "f3d:test:lost-edge-reference#2".into(),
-            record_byte_offset: 0,
-            class_tag_offset: 0,
-            class_tag: "000".into(),
-            record_index: 0,
-            record_index_offset: 0,
-            byte_offset: 0,
-            next_byte_offset: 1,
-            next_class_tag: "001".into(),
-            next_record_index: 1,
-        });
-        native.sketch_relations.push(SketchRelation {
-            id: "native:sketch-relation".into(),
-            record_index: 1,
-            class_tag: "000".into(),
-            byte_offset: 0,
-            state_offset: 0,
-            owner_reference: 1,
-            owner_entity_id: "0_1".into(),
-            auxiliary_references: Vec::new(),
-            auxiliary_reference_offsets: Vec::new(),
-            rectangular_counted_reference_count: None,
-            members: Vec::new(),
-            resolved_members: Vec::new(),
-            member_offsets: Vec::new(),
-            owner_reference_offset: 0,
-            state: 0,
-            constraint_kinds: Vec::new(),
-            unknown_constraint_bits: 0,
-            member_relation_ordinals: Vec::new(),
-            entity_genesis: None,
-            pattern: None,
-            return_members: Vec::new(),
-            resolved_return_members: Vec::new(),
-            return_member_offsets: Vec::new(),
-            raw_bytes: Vec::new(),
-        });
-        native.design_parameters.push(DesignParameter {
-            id: "f3d:test:design-parameter#2".into(),
-            byte_offset: 0,
-            class_tag: "000".into(),
-            record_index: 2,
-            family_discriminator: Some(0),
-            family_discriminator_offset: Some(0),
-            source_ordinal: 2,
-            owner_record_index: Some(3),
-            expression: "1 mm".into(),
-            expression_offset: 0,
-            source_kind: "Linear Dimension-2".into(),
-            source_kind_offset: 0,
-            kind: DesignParameterKind::Dimension,
-            unit: Some("native-unit".into()),
-            unit_offset: Some(0),
-            name: "d2".into(),
-            name_offset: 0,
-            evaluated_value: 0.1,
-            evaluated_value_offset: 0,
-        });
-        native.design_parameter_scopes.push(DesignParameterScope {
-            id: "native:unprojected-scope".into(),
-            byte_offset: 0,
-            class_tag: "000".into(),
-            record_index: 3,
-            frame_length: 1,
-            kind: "Unsupported".into(),
-            kind_offset: 0,
-            extrude_prologue: None,
-            coil_operation: None,
-            coil_operation_offset: None,
-            coil_extent: None,
-            coil_extent_offset: None,
-            coil_section: None,
-            coil_section_offset: None,
-            coil_section_placement: None,
-            coil_section_placement_offset: None,
-            coil_clockwise: None,
-            coil_clockwise_offset: None,
-            coil_placement: None,
-            coil_transform: None,
-            feature_ordinal: 1,
-            feature_ordinal_offset: 0,
-            history_state_id: None,
-            history_state_id_offset: 0,
-            previous_history_state_id: None,
-            previous_history_state_id_offset: 0,
-            reference_count_offset: 0,
-            reference_members: Vec::new(),
-            reference_member_offsets: Vec::new(),
-            solid_primitive: None,
-            direct_face_operation: None,
-            move_operation: None,
-            scale_operation: None,
-            surface_stitch_operation: None,
-            surface_extend_operation: None,
-            surface_offset_operation: None,
-            ruled_surface_operation: None,
-            surface_patch_boundaries: Vec::new(),
-            base_flange_operation: None,
-            edge_flange_operation: None,
-            hem_operation: None,
-            fixed_extrude_parameters: None,
-            fixed_fillet_parameters: None,
-            fixed_chamfer_parameters: None,
-            path_feature_construction: None,
-            combine_operation: None,
-            thread_construction: None,
-            draft_operation: None,
-            copy_paste_bodies_operation: None,
-            base_feature_construction: None,
-            work_plane_transform: None,
-            work_plane_transform_offset: None,
-            work_plane_reference: None,
-            work_plane_reference_offset: None,
-            work_plane_construction: None,
-            work_axis_construction: None,
-            joint_origin_transform: None,
-            joint_origin_transform_offset: None,
-            joint_origin_reference: None,
-            joint_origin_reference_offset: None,
-            work_point_construction: None,
-            unclosed_construction_operand_groups: Vec::new(),
-            hole_construction: None,
-            extrude_profile: None,
-            sweep_profile: None,
-            circular_pattern_construction: None,
-            rectangular_pattern_construction: None,
-            assembly_alignment: None,
-            component_insert_construction: None,
-            copy_paste_component_operation: None,
-            mirror_construction: None,
-            base_flange_profile: None,
-            entity_id: None,
-            entity_suffix: None,
-            entity_reference_offset: None,
-            paired_class_tag: "001".into(),
-            paired_byte_offset: 1,
-        });
-        assert_eq!(
-            design_projection_gaps(&ir, &native),
-            DesignProjectionGaps {
-                unresolved_body_bindings: 0,
-                incomplete_features: 6,
-                native_reference_images: 0,
-                native_decals: 0,
-                unprojected_feature_scopes: 1,
-                unprojected_parameters: 1,
-                unresolved_parameter_owners: 1,
-                untyped_parameter_units: 1,
-                unresolved_expression_dependencies: 0,
-                unprojected_history_dependencies: 0,
-                ambiguous_history_dependencies: 0,
-                native_sketch_relations: 1,
-                native_dimensions: 1,
-                unprojected_sketch_placements: 1,
-                unprojected_sketch_points: 1,
-                unprojected_sketch_curves: 1,
-                unprojected_sketch_surfaces: 0,
-                unprojected_sketch_texts: 0,
-                unprojected_sketch_relations: 0,
-                unprojected_dimensions: 0,
-                profile_selections: 2,
-                path_selections: 1,
-                face_selections: 1,
-                body_selections: 0,
-                partially_resolved_face_members: 0,
-                native_edge_selections: 2,
-                partially_resolved_edge_members: 1,
-                unresolved_edge_selections: 1,
-                unrepaired_lost_edge_references: 1,
-            }
-        );
-
-        native.design_construction_operand_groups.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "native:partial-edges",
-                "scope_record_index": 1,
-                "scope_reference_ordinal": 0,
-                "record_index": 2,
-                "byte_offset": 0,
-                "class_tag": "300",
-                "members": [3],
-                "lost_edge_references": ["f3d:test:lost-edge-reference#2"],
-                "member_offsets": [0],
-                "frame": {
-                    "member_count_offset": 0,
-                    "opaque_index": 1,
-                    "opaque_index_offset": 0,
-                    "opaque_scalar": 1.0,
-                    "opaque_scalar_offset": 0,
-                    "variant": false
-                },
-                "role": 0x10_0000_0000u64,
-                "role_offset": 0,
-                "paired_class_tag": "258",
-                "paired_byte_offset": 0
-            }))
-            .expect("lost-reference construction group"),
-        );
-        let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
-            &mut ir.model.features[2].definition
-        else {
-            unreachable!();
-        };
-        groups[2].edges = cadmpeg_ir::features::EdgeSelection::Historical {
-            state: cadmpeg_ir::ids::FeatureInputTopologyId("history-input".into()),
-            edges: vec![cadmpeg_ir::ids::HistoricalEdgeId("history-edge".into())],
-            native: "native:partial-edges".into(),
-        };
-        assert_eq!(
-            design_projection_gaps(&ir, &native).unrepaired_lost_edge_references,
-            0
-        );
-
-        native.sketch_points[0].owner_reference = None;
-        native.sketch_curve_identities[0].owner_reference = None;
-        let ownerless = design_projection_gaps(&ir, &native);
-        assert_eq!(ownerless.unprojected_sketch_points, 0);
-        assert_eq!(ownerless.unprojected_sketch_curves, 0);
-        native.sketch_points[0].owner_reference = Some(1);
-        native.sketch_curve_identities[0].owner_reference = Some(1);
-
-        ir.model.sketches.push(Sketch {
-            id: SketchId("sketch".into()),
-            name: None,
-            configuration: None,
-            visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
-            native_ref: Some("native:sketch-placement".into()),
-        });
-        for (id, native_ref) in [
-            ("point", "native:sketch-point"),
-            ("curve", "native:sketch-curve"),
-        ] {
-            ir.model.sketch_entities.push(SketchEntity {
-                id: SketchEntityId(id.into()),
-                sketch: SketchId("sketch".into()),
-                construction: false,
-                native_ref: Some(native_ref.into()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point {
-                    position: Point2::new(0.0, 0.0),
-                },
-            });
-        }
-        let gaps = design_projection_gaps(&ir, &native);
-        assert_eq!(gaps.unprojected_sketch_placements, 0);
-        assert_eq!(gaps.unprojected_sketch_points, 0);
-        assert_eq!(gaps.unprojected_sketch_curves, 0);
-
-        ir.model.parameters.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "parameter-2",
-                "ordinal": 2,
-                "name": "d2",
-                "expression": "1 mm",
-                "native_ref": "f3d:test:design-parameter#2"
-            }))
-            .expect("Design parameter"),
-        );
-        assert_eq!(
-            design_projection_gaps(&ir, &native).unprojected_parameters,
-            0
-        );
-    }
-
-    #[test]
-    fn design_projection_gaps_require_unique_scope_state_dependencies() {
-        let scope = |record_index, current, previous| DesignParameterScope {
-            id: format!("f3d:native:scope#{record_index}"),
-            byte_offset: u64::from(record_index),
-            class_tag: "000".into(),
-            record_index,
-            frame_length: 1,
-            kind: "Unsupported".into(),
-            kind_offset: 0,
-            extrude_prologue: None,
-            coil_operation: None,
-            coil_operation_offset: None,
-            coil_extent: None,
-            coil_extent_offset: None,
-            coil_section: None,
-            coil_section_offset: None,
-            coil_section_placement: None,
-            coil_section_placement_offset: None,
-            coil_clockwise: None,
-            coil_clockwise_offset: None,
-            coil_placement: None,
-            coil_transform: None,
-            feature_ordinal: record_index,
-            feature_ordinal_offset: 0,
-            history_state_id: current,
-            history_state_id_offset: 0,
-            previous_history_state_id: previous,
-            previous_history_state_id_offset: 0,
-            reference_count_offset: 0,
-            reference_members: Vec::new(),
-            reference_member_offsets: Vec::new(),
-            solid_primitive: None,
-            direct_face_operation: None,
-            move_operation: None,
-            scale_operation: None,
-            surface_stitch_operation: None,
-            surface_extend_operation: None,
-            surface_offset_operation: None,
-            ruled_surface_operation: None,
-            surface_patch_boundaries: Vec::new(),
-            base_flange_operation: None,
-            edge_flange_operation: None,
-            hem_operation: None,
-            fixed_extrude_parameters: None,
-            fixed_fillet_parameters: None,
-            fixed_chamfer_parameters: None,
-            path_feature_construction: None,
-            combine_operation: None,
-            thread_construction: None,
-            draft_operation: None,
-            copy_paste_bodies_operation: None,
-            base_feature_construction: None,
-            work_plane_transform: None,
-            work_plane_transform_offset: None,
-            work_plane_reference: None,
-            work_plane_reference_offset: None,
-            work_plane_construction: None,
-            work_axis_construction: None,
-            joint_origin_transform: None,
-            joint_origin_transform_offset: None,
-            joint_origin_reference: None,
-            joint_origin_reference_offset: None,
-            work_point_construction: None,
-            unclosed_construction_operand_groups: Vec::new(),
-            hole_construction: None,
-            extrude_profile: None,
-            sweep_profile: None,
-            circular_pattern_construction: None,
-            rectangular_pattern_construction: None,
-            assembly_alignment: None,
-            component_insert_construction: None,
-            copy_paste_component_operation: None,
-            mirror_construction: None,
-            base_flange_profile: None,
-            entity_id: None,
-            entity_suffix: None,
-            entity_reference_offset: None,
-            paired_class_tag: "001".into(),
-            paired_byte_offset: u64::from(record_index) + 1,
-        };
-        let mut native = F3dNative::default();
-        native.design_parameter_scopes = vec![
-            scope(1, Some(10), None),
-            scope(2, Some(11), Some(10)),
-            scope(3, Some(20), None),
-            scope(4, Some(20), None),
-            scope(5, Some(21), Some(20)),
-        ];
-        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        ir.model.features = native
-            .design_parameter_scopes
-            .iter()
-            .map(|scope| {
-                serde_json::from_value(serde_json::json!({
-                    "id": format!("feature-{}", scope.record_index),
-                    "ordinal": scope.record_index,
-                    "definition": {
-                        "definition": "native",
-                        "kind": "Unsupported",
-                        "parameters": {},
-                        "properties": {}
-                    },
-                    "native_ref": scope.id
-                }))
-                .expect("native feature")
-            })
-            .collect();
-
-        let gaps = design_projection_gaps(&ir, &native);
-        assert_eq!(gaps.unprojected_feature_scopes, 0);
-        assert_eq!(gaps.unprojected_history_dependencies, 1);
-        assert_eq!(gaps.ambiguous_history_dependencies, 1);
-
-        let predecessor = ir.model.features[0].id.clone();
-        ir.model.features[1].dependencies.push(predecessor);
-        let gaps = design_projection_gaps(&ir, &native);
-        assert_eq!(gaps.unprojected_history_dependencies, 0);
-        assert_eq!(gaps.ambiguous_history_dependencies, 1);
-    }
-
-    #[test]
-    fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scope() {
-        let stream = "f3d:Design/BulkStream.dat";
-        let mut predecessor = DesignParameterScope::empty(
-            &format!("{stream}:design-parameter-scope#100"),
-            "Extrude",
-            100,
-        );
-        predecessor.history_state_id = Some(7);
-        let mut internal = DesignParameterScope::empty(
-            &format!("{stream}:design-parameter-scope#150"),
-            "Base Feature",
-            150,
-        );
-        internal.history_state_id = Some(8);
-        internal.previous_history_state_id = Some(7);
-        let mut successor = DesignParameterScope::empty(
-            &format!("{stream}:design-parameter-scope#200"),
-            "Fillet",
-            200,
-        );
-        successor.history_state_id = Some(9);
-        successor.previous_history_state_id = Some(8);
-        let scopes = vec![successor, internal, predecessor];
-        let timeline = DesignFeatureTimeline {
-            id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-            byte_offset: 0,
-            class_tag: "256".into(),
-            record_index: 1,
-            source_ordinal: 0,
-            frame_length: 0,
-            context_record_index: 2,
-            context_record_index_offset: 0,
-            item_count_offset: 0,
-            item_record_indices: vec![100, 200],
-            item_record_index_offsets: vec![0, 0],
-        };
-        let (features, _) =
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                &crate::design::feature_project::ProjectInputs {
-                    native: &[],
-                    owners: &[],
-                    scopes: &scopes,
-                    timelines: std::slice::from_ref(&timeline),
-                    construction_groups: &[],
-                    fillet_radius_groups: &[],
-                    edge_operands: &[],
-                    edge_identity_operands: &[],
-                    entity_selection_operands: &[],
-                    curve_identities: &[],
-                    face_operands: &[],
-                    body_recipe_operands: &[],
-                    placements: &[],
-                    body_bindings: &[],
-                    histories: &[],
-                },
-            )
-            .expect("timeline projection through one internal scope");
-        let mut native = F3dNative::default();
-        native.design_parameter_scopes = scopes;
-        native.design_feature_timelines = vec![timeline];
-        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
-        ir.model.features = features;
-
-        let gaps = design_projection_gaps(&ir, &native);
-        assert_eq!(gaps.unprojected_feature_scopes, 0);
-        assert_eq!(gaps.unprojected_history_dependencies, 0);
-        assert_eq!(gaps.ambiguous_history_dependencies, 0);
-    }
-
-    #[test]
-    fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
-        let stream = "f3d:test/BulkStream.dat";
-        let mut ir = cadmpeg_ir::examples::unit_cube();
-        let mut native = F3dNative::default();
-        native.design_parameters.push(DesignParameter {
-            id: format!("{stream}:design-parameter#10"),
-            byte_offset: 0,
-            class_tag: "305".into(),
-            record_index: 10,
-            family_discriminator: Some(0),
-            family_discriminator_offset: Some(22),
-            source_ordinal: 0,
-            owner_record_index: Some(20),
-            expression: "5 mm".into(),
-            expression_offset: 40,
-            source_kind: "Linear Dimension-2".into(),
-            source_kind_offset: 60,
-            kind: DesignParameterKind::Dimension,
-            unit: Some("mm".into()),
-            unit_offset: Some(90),
-            name: "d1".into(),
-            name_offset: 100,
-            evaluated_value: 0.5,
-            evaluated_value_offset: 110,
-        });
-        native.design_parameter_owners.push(DesignParameterOwner {
-            id: format!("{stream}:design-parameter-owner#20"),
-            byte_offset: 120,
-            frame_length: 104,
-            class_tag: "292".into(),
-            record_index: 20,
-            scope_record_index: 1,
-            local_ordinal: 0,
-            evaluated_value: 0.5,
-            evaluated_value_offset: 160,
-            parameter_record_index: 10,
-            owned_ordinal: 0,
-            variant: Some(0),
-            companion_record_index: 30,
-        });
-        native
-            .design_parameter_companions
-            .push(DesignParameterCompanion {
-                id: format!("{stream}:design-parameter-companion#30"),
-                byte_offset: 220,
-                class_tag: "408".into(),
-                record_index: 30,
-                owner_record_index: 20,
-                timestamp_micros: 1,
-                timestamp_micros_offset: 262,
-                payload_byte_offset: 278,
-                payload_byte_length: 100,
-                owned_recipe_ids: Vec::new(),
-            });
-        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 1);
-        ir.model.sketch_constraints.push(
-            serde_json::from_value(serde_json::json!({
-                "id": "f3d:model:sketch-constraint#dimension",
-                "sketch": "f3d:model:sketch#1",
-                "definition": {
-                    "kind": "distance",
-                    "entities": [],
-                    "parameter": "f3d:model:parameter#1"
-                },
-                "native_ref": format!("{stream}:design-parameter-companion#30")
-            }))
-            .expect("neutral dimension constraint"),
-        );
-        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-        ir.model.sketch_constraints.clear();
-
-        let mut recipe_backed = native.clone();
-        recipe_backed
-            .design_dimension_recipe_records
-            .push(DesignDimensionRecipeRecord {
-                id: format!("{stream}:design-dimension-recipe-record#31"),
-                companion_record_index: 30,
-                recipe_ordinal: 0,
-                recipe_id: format!("{stream}:construction-recipe#31"),
-                recipe_kind: crate::records::ConstructionRecipeKind::Edge,
-                byte_offset: 278,
-                class_tag: "423".into(),
-                record_index: 31,
-                frame_length: 100,
-                prefix_offset: 300,
-                prefix_bytes: Vec::new(),
-                references: Vec::new(),
-                program_offset: 320,
-                program: vec![-1],
-                matching_edge_operand_ids: Vec::new(),
-            });
-        assert_eq!(unresolved_dimension_companion_count(&recipe_backed, &ir), 0);
-
-        native
-            .design_dimension_locus_pairs
-            .push(DesignDimensionLocusPair {
-                id: format!("{stream}:design-dimension-locus-pair#278"),
-                companion_record_index: 99,
-                governing_companion_record_index: 30,
-                byte_offset: 278,
-                class_tag: "423".into(),
-                record_index: 31,
-                frame_length: 100,
-                opaque_index: 0,
-                opaque_index_offset: 300,
-                first_geometry_record_index: 40,
-                first_geometry_reference_offset: 305,
-                first_role: 1,
-                first_role_offset: 315,
-                second_geometry_record_index: 41,
-                second_geometry_reference_offset: 320,
-                second_role: 2,
-                second_role_offset: 330,
-                paired_class_tag: "259".into(),
-                paired_byte_offset: 378,
-            });
-        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-        assert!(container_only_dimension_parameters(&native).is_empty());
-        native.design_dimension_locus_pairs[0].companion_record_index = 30;
-        native.design_dimension_locus_pairs[0].governing_companion_record_index = 99;
-        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-        assert_eq!(container_only_dimension_parameters(&native).len(), 1);
-
-        native.design_dimension_locus_pairs.clear();
-        native
-            .design_dimension_null_locus_pairs
-            .push(DesignDimensionNullLocusPair {
-                id: format!("{stream}:design-dimension-null-locus-pair#278"),
-                companion_record_index: 99,
-                governing_companion_record_index: 30,
-                byte_offset: 278,
-                class_tag: "423".into(),
-                record_index: 31,
-                frame_length: 100,
-                null_reference_offset: 300,
-                null_role: 14,
-                null_role_offset: 305,
-                geometry_record_index: 40,
-                geometry_reference_offset: 310,
-                geometry_role: 3,
-                geometry_role_offset: 320,
-                paired_class_tag: "259".into(),
-                paired_byte_offset: 378,
-            });
-        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-        native.design_dimension_null_locus_pairs[0].companion_record_index = 30;
-        native.design_dimension_null_locus_pairs[0].governing_companion_record_index = 99;
-        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
-    }
-
-    #[test]
-    fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
-        use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-        use cadmpeg_ir::ids::AppearanceId;
-        use cadmpeg_ir::topology::Color;
-
-        let mut ir = cadmpeg_ir::examples::unit_cube();
-        let body = ir.model.bodies[0].id.clone();
-        let first_face = ir.model.faces[0].id.clone();
-        let second_face = ir.model.faces[1].id.clone();
-        let direct = Color {
-            r: 0.9,
-            g: 0.8,
-            b: 0.7,
-            a: 1.0,
-        };
-        let material = Color {
-            r: 0.1,
-            g: 0.2,
-            b: 0.3,
-            a: 1.0,
-        };
-        ir.model.bodies[0].color = Some(direct);
-        ir.model.appearances.push(Appearance {
-            id: AppearanceId("f3d:appearance#material".into()),
-            name: None,
-            asset_guid: None,
-            library_id: None,
-            textures: Vec::new(),
-            visual_guid: None,
-            physical_token: None,
-            schema: None,
-            category: None,
-            base_color: Some(material),
-            properties: Default::default(),
-        });
-        let binding = |id: &str, target| AppearanceBinding {
-            id: id.into(),
-            target,
-            appearance: AppearanceId("f3d:appearance#material".into()),
-            source_entity_id: None,
-            object_type: None,
-            channels: Default::default(),
-        };
-        ir.model.appearance_bindings = vec![
-            binding("body", AppearanceTarget::Body(body)),
-            binding("face", AppearanceTarget::Face(first_face)),
-            binding("ambiguous-a", AppearanceTarget::Face(second_face.clone())),
-            binding("ambiguous-b", AppearanceTarget::Face(second_face)),
-        ];
-
-        apply_appearance_base_colors(&mut ir);
-        assert_eq!(ir.model.bodies[0].color, Some(direct));
-        assert_eq!(ir.model.faces[0].color, Some(material));
-        assert_eq!(ir.model.faces[1].color, None);
-    }
-}
+mod tests;

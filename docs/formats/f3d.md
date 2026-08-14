@@ -96,12 +96,12 @@ Registry field 4 declares one channel whose values address vertices or triangle 
 
 The element code selects the stored element:
 
-| Code | Element                                                                                     |
-| ---- | ------------------------------------------------------------------------------------------- |
-| 2    | two f32 components                                                                          |
-| 4    | four f32 components: red, green, blue, and alpha, in the authored sRGB scale                |
-| 5    | a unit direction encoded as two f32 octahedral coordinates                                  |
-| 7    | one terminal-delta u32 value per triangle                                                    |
+| Code | Element                                                                      |
+| ---- | ---------------------------------------------------------------------------- |
+| 2    | two f32 components                                                           |
+| 4    | four f32 components: red, green, blue, and alpha, in the authored sRGB scale |
+| 5    | a unit direction encoded as two f32 octahedral coordinates                   |
+| 7    | one terminal-delta u32 value per triangle                                    |
 
 A field-4 channel that declares no index stream stores exactly one value per vertex, so the value stream holds the vertex count times the element width. A field-4 channel that declares an index stream stores one default value for each vertex, followed by one override value for each indexed corner position. If the value table has `E` elements and the mesh has `V` vertices, the index stream has `E - V` signed i32 values. The first `E - V - 1` values are two's-complement differences; the final value is the absolute terminal corner position. The first decoded position is the terminal minus the sum of the differences. Each next position adds the next difference. Positions are strictly increasing and address the triangle-corner sequence. A corner at a decoded position uses the corresponding override value. Every other corner uses the default value for its referenced vertex. Role 0 with code 5 supplies the corner-normal table. Roles 3 and 4 mark the texture-coordinate and colour channels.
 
@@ -892,7 +892,7 @@ Visual and physical materials are distinct serialized channels.
 
 Color attribute records include `rgb_color-st-attrib`, `truecolor-adesk-attrib`, `entatt_color-bt-attrib`, `color-adesk-attrib`, and `material-adesk-attrib`. The exact direct-color forms and their forward-chain precedence are specified in [`asm.md` §5.6](asm.md#56-attributes-on-the-topology-graph). `color-adesk-attrib` is an AutoCAD Color Index or inheritance selector. Its palette and display context are not in the F3D B-rep stream. `material-adesk-attrib` is a material-library lookup pair and carries no color value. Neither record independently defines a neutral color. Both remain source attributes. `Timestamp_attrib_def` carries an f64 Unix-epoch timestamp in microseconds for the original feature or body creation time. The ASM header `save_date` stores the file save-time string.
 
-`.protein` assets are **nested ZIP archives** carrying per-asset `AssetData/*.bin` value streams plus XML schemas (`CommonSchema`, `GenericSchema`, `PhysMatSchema`, `PrismOpaqueSchema`, …). `InstanceProperties.bin` and `DefinitionIteratorProperties.bin` have a 16-byte prefix followed by 136-byte pages. Each page is a record-start page marked `80 00 01 00` at offset 4, a continuation page marked `80 00 00 00` at offset 4, or a terminal page opening with `ffffffff` and carrying a u16 used length at offset 4. A record takes the whole 128-byte body of its record-start page and of each following continuation page, and ends at the first terminal page, which contributes only its used length. A record-start page also ends the record before it, and so does the end of the stream. Record extents come from page framing; scanning the concatenated payload for the record-start marker does not recover them.
+`.protein` assets are **nested ZIP archives** carrying per-asset `AssetData/*.bin` value streams plus XML schemas (`CommonSchema`, `GenericSchema`, `PhysMatSchema`, `PrismOpaqueSchema`, …). The package ZIP, `InstanceProperties.bin` / `DefinitionIteratorProperties.bin` page framing, logical-record header, schema inheritance, and property carriers are specified in [`protein.md`](protein.md).
 
 The decoded Protein records form a document-local appearance catalog. Catalog entries do not imply a topology assignment; only Design body assignments, body-override records, and per-face assignment records bind an appearance to topology.
 

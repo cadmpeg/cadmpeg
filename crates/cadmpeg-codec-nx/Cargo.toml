@@ -19,10 +19,6 @@ documentation = "https://docs.rs/cadmpeg-codec-nx"
 keywords = ["cad", "siemens-nx", "parasolid", "prt", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
-[features]
-fuzzing = []
-profile = []
-
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
@@ -41,7 +37,6 @@ cadmpeg-test-support = { workspace = true }
 [[bin]]
 name = "nx_profile"
 path = "src/bin/nx_profile.rs"
-required-features = ["profile"]
 
 [lints]
 workspace = true

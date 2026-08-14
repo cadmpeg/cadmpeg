@@ -11,8 +11,24 @@
 //! byte synchronization and record extents without requiring semantic decoding
 //! of each payload.
 
-use cadmpeg_core::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
+use cadmpeg_core::decode::View;
 use std::sync::Arc;
+
+pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: usize) -> Option<i64> {
+    match width {
+        4 => Some(i64::from(View::i32_le_at(bytes, offset)?)),
+        8 => View::i64_le_at(bytes, offset),
+        _ => None,
+    }
+}
+
+pub(crate) fn vec3_le_at(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
+    Some([
+        View::f64_le_at(bytes, offset)?,
+        View::f64_le_at(bytes, offset.checked_add(8)?)?,
+        View::f64_le_at(bytes, offset.checked_add(16)?)?,
+    ])
+}
 
 /// A decoded SAB token. The codec assigns typed values to the payload it
 /// consumes; framing preserves every token so record boundaries stay exact.
@@ -272,32 +288,26 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
             Lexed::Value(Token::Char(*bytes.get(p).ok_or_else(truncated)?)),
             p + 1,
         ),
-        0x03 => {
-            let s = bytes.get(p..p + 2).ok_or_else(truncated)?;
-            (
-                Lexed::Value(Token::Short(i16::from_le_bytes(
-                    s.try_into()
-                        .expect("invariant: bytes.get(p..p+2) is a 2-byte slice"),
-                ))),
-                p + 2,
-            )
-        }
+        0x03 => (
+            Lexed::Value(Token::Short(
+                View::i16_le_at(bytes, p).ok_or_else(truncated)?,
+            )),
+            p + 2,
+        ),
         0x04 => {
-            let v = read_i(bytes, p, ref_width).ok_or_else(truncated)?;
+            let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
             (Lexed::Value(Token::Long(v)), p + ref_width)
         }
-        0x05 => {
-            let s = bytes.get(p..p + 4).ok_or_else(truncated)?;
-            (
-                Lexed::Value(Token::Float(f32::from_le_bytes(
-                    s.try_into()
-                        .expect("invariant: bytes.get(p..p+4) is a 4-byte slice"),
-                ))),
-                p + 4,
-            )
-        }
+        0x05 => (
+            Lexed::Value(Token::Float(
+                View::f32_le_at(bytes, p).ok_or_else(truncated)?,
+            )),
+            p + 4,
+        ),
         0x06 => (
-            Lexed::Value(Token::Double(read_f64(bytes, p).ok_or_else(truncated)?)),
+            Lexed::Value(Token::Double(
+                View::f64_le_at(bytes, p).ok_or_else(truncated)?,
+            )),
             p + 8,
         ),
         0x07 => {
@@ -310,11 +320,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
             )
         }
         0x08 => {
-            let s = bytes.get(p..p + 2).ok_or_else(truncated)?;
-            let len = u16::from_le_bytes(
-                s.try_into()
-                    .expect("invariant: bytes.get(p..p+2) is a 2-byte slice"),
-            ) as usize;
+            let len = usize::from(View::u16_le_at(bytes, p).ok_or_else(truncated)?);
             (
                 Lexed::Value(Token::Str(
                     read_string(bytes, p + 2, len).ok_or_else(truncated)?,
@@ -323,7 +329,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
             )
         }
         0x09 | 0x12 => {
-            let len = read_i(bytes, p, ref_width).ok_or_else(truncated)?;
+            let len = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
             let len = usize::try_from(len).map_err(|_| err("negative string length"))?;
             (
                 Lexed::Value(Token::Str(
@@ -335,7 +341,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         0x0a => (Lexed::Value(Token::True), p),
         0x0b => (Lexed::Value(Token::False), p),
         0x0c => {
-            let v = read_i(bytes, p, ref_width).ok_or_else(truncated)?;
+            let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
             (Lexed::Value(Token::Ref(v)), p + ref_width)
         }
         0x0d => {
@@ -356,24 +362,24 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         0x10 => (Lexed::Value(Token::SubtypeClose), p),
         0x11 => (Lexed::Terminator, p),
         0x13 => (
-            Lexed::Value(Token::Position(read_vec3(bytes, p).ok_or_else(truncated)?)),
+            Lexed::Value(Token::Position(vec3_le_at(bytes, p).ok_or_else(truncated)?)),
             p + 24,
         ),
         0x14 => (
-            Lexed::Value(Token::Vector3(read_vec3(bytes, p).ok_or_else(truncated)?)),
+            Lexed::Value(Token::Vector3(vec3_le_at(bytes, p).ok_or_else(truncated)?)),
             p + 24,
         ),
         0x15 => {
-            let v = read_i(bytes, p, ref_width).ok_or_else(truncated)?;
+            let v = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
             (Lexed::Value(Token::Enum(v)), p + ref_width)
         }
         0x16 => {
-            let u = read_f64(bytes, p).ok_or_else(truncated)?;
-            let v = read_f64(bytes, p + 8).ok_or_else(truncated)?;
+            let u = View::f64_le_at(bytes, p).ok_or_else(truncated)?;
+            let v = View::f64_le_at(bytes, p + 8).ok_or_else(truncated)?;
             (Lexed::Value(Token::Vector2([u, v])), p + 16)
         }
         0x17 => {
-            let v = read_i(bytes, p, 8).ok_or_else(truncated)?;
+            let v = int_le_at(bytes, p, 8).ok_or_else(truncated)?;
             (Lexed::Value(Token::Int64(v)), p + 8)
         }
         other => {

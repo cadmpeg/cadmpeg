@@ -1,0 +1,419 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Offset and coincident reference-plane frame projection tests.
+#![allow(clippy::unwrap_used)]
+#![allow(unused_imports)]
+
+use super::super::*;
+use super::*;
+
+#[test]
+fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
+    let mut reference = feature("sldprt:history:feature#0:0", None, 0);
+    reference.input_class = Some("moRefPlane_c".into());
+    reference
+        .properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    reference.properties.insert("Normal".into(), "1,0,0".into());
+    reference.properties.insert("UAxis".into(), "0,0,-1".into());
+    let mut offset = feature("sldprt:history:feature#0:1", None, 1);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "6mm".into());
+    offset
+        .properties
+        .insert("Origin".into(), "6mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "1,0,0".into());
+    offset.properties.insert("UAxis".into(), "0,0,1".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![reference, offset],
+    };
+
+    let projected = project_features(&[history]);
+    assert!(matches!(
+        &projected[1].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(bound)),
+            distance: Length(6.0),
+        } if bound == &projected[0].id
+    ));
+    assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+}
+
+#[test]
+fn coincident_plane_frame_does_not_infer_an_offset_reference() {
+    let mut reference = feature("sldprt:history:feature#0:0", None, 0);
+    reference.input_class = Some("moRefPlane_c".into());
+    reference
+        .properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    reference.properties.insert("Normal".into(), "1,0,0".into());
+    reference.properties.insert("UAxis".into(), "0,0,-1".into());
+    let mut offset = feature("sldprt:history:feature#0:1", None, 1);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "0mm".into());
+    offset
+        .properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "1,0,0".into());
+    offset.properties.insert("UAxis".into(), "0,0,-1".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![reference, offset],
+    };
+
+    let projected = project_features(&[history]);
+    assert!(matches!(
+        &projected[1].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(0.0),
+        }
+    ));
+}
+
+#[test]
+fn planar_face_reference_requires_one_coincident_face() {
+    let surface = Surface {
+        id: cadmpeg_ir::ids::SurfaceId("surface".into()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 12.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    let face = Face {
+        id: cadmpeg_ir::ids::FaceId("face".into()),
+        shell: cadmpeg_ir::ids::ShellId("shell".into()),
+        surface: surface.id.clone(),
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: Vec::new(),
+        name: None,
+        color: None,
+        tolerance: None,
+    };
+    let surfaces = HashMap::from([(&surface.id, &surface)]);
+    let mut selection = FaceSelection::Unresolved;
+    resolve_planar_face_selection(
+        &mut selection,
+        Point3::new(5.0, -3.0, 12.0),
+        Vector3::new(0.0, 0.0, -1.0),
+        std::slice::from_ref(&face),
+        &surfaces,
+    );
+    assert_eq!(selection, FaceSelection::Faces(vec![face.id.clone()]));
+
+    let mut native = FaceSelection::Native("component-path".into());
+    resolve_planar_face_selection(
+        &mut native,
+        Point3::new(5.0, -3.0, 12.0),
+        Vector3::new(0.0, 0.0, -1.0),
+        std::slice::from_ref(&face),
+        &surfaces,
+    );
+    assert_eq!(
+        native,
+        FaceSelection::Resolved {
+            faces: vec![face.id.clone()],
+            native: "component-path".into(),
+        }
+    );
+
+    let mut duplicate = face.clone();
+    duplicate.id = cadmpeg_ir::ids::FaceId("duplicate".into());
+    let mut ambiguous = FaceSelection::Unresolved;
+    resolve_planar_face_selection(
+        &mut ambiguous,
+        Point3::new(0.0, 0.0, 12.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        &[face.clone(), duplicate.clone()],
+        &surfaces,
+    );
+    assert_eq!(ambiguous, FaceSelection::Unresolved);
+
+    let mut split = FaceSelection::Native("historical-face".into());
+    resolve_planar_face_selection(
+        &mut split,
+        Point3::new(0.0, 0.0, 12.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        &[face.clone(), duplicate.clone()],
+        &surfaces,
+    );
+    assert_eq!(
+        split,
+        FaceSelection::Resolved {
+            faces: vec![face.id, duplicate.id],
+            native: "historical-face".into(),
+        }
+    );
+}
+
+#[test]
+fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
+    let surface = Surface {
+        id: cadmpeg_ir::ids::SurfaceId("surface".into()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, -5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    let face = Face {
+        id: cadmpeg_ir::ids::FaceId("face".into()),
+        shell: cadmpeg_ir::ids::ShellId("shell".into()),
+        surface: surface.id.clone(),
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: Vec::new(),
+        name: None,
+        color: None,
+        tolerance: None,
+    };
+    let surfaces = HashMap::from([(&surface.id, &surface)]);
+    let mut selection = FaceSelection::Native("component-path".into());
+    let origin = Point3::new(0.0, 0.0, 5.0);
+
+    resolve_offset_plane_face_selection(
+        &mut selection,
+        origin,
+        Vector3::new(0.0, 0.0, 1.0),
+        std::slice::from_ref(&face),
+        &surfaces,
+    );
+
+    assert_eq!(origin, Point3::new(0.0, 0.0, 5.0));
+    assert_eq!(selection, FaceSelection::Native("component-path".into()));
+}
+
+#[test]
+fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
+    let mut offset = feature("sldprt:history:feature#0:0", None, 0);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "6mm".into());
+    offset
+        .properties
+        .insert("Origin".into(), "6mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "1,0,0".into());
+    offset.properties.insert("UAxis".into(), "0,0,1".into());
+    let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
+    principal.name = "Right".into();
+    principal.input_class = Some("moRefPlane_c".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![offset, principal],
+    };
+
+    let projected = project_features(&[history]);
+    assert!(matches!(
+        &projected[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(6.0),
+        }
+    ));
+    assert!(projected[0].dependencies.is_empty());
+}
+
+#[test]
+fn explicit_offset_plane_reference_cannot_bind_itself() {
+    let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "0mm".into());
+    offset.properties.insert("Reference".into(), "35".into());
+    offset
+        .properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "0,0,1".into());
+    offset.properties.insert("UAxis".into(), "1,0,0".into());
+
+    let projected = project_features(&[FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![offset],
+    }]);
+
+    assert!(matches!(
+        projected[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(0.0),
+        }
+    ));
+    assert!(projected[0].dependencies.is_empty());
+}
+
+#[test]
+fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
+    let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "6mm".into());
+    offset.properties.insert("Reference".into(), "4".into());
+    offset
+        .properties
+        .insert("Origin".into(), "6mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "1,0,0".into());
+    offset.properties.insert("UAxis".into(), "0,0,-1".into());
+    let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
+    principal.name = "Right".into();
+    principal.input_class = Some("moRefPlane_c".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![offset, principal],
+    };
+
+    let mut projected = project_features(&[history]);
+    assert!(matches!(
+        &projected[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            distance: Length(6.0),
+        } if reference == &projected[1].id
+    ));
+    assert_eq!(projected[0].dependencies, [projected[1].id.clone()]);
+    assert!(order_features_for_regeneration(&mut projected));
+    assert_eq!(projected[1].ordinal, 0);
+    assert_eq!(projected[0].ordinal, 1);
+}
+
+#[test]
+fn explicit_principal_reference_survives_a_coincident_result_frame() {
+    let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "6mm".into());
+    offset.properties.insert("Reference".into(), "2".into());
+    offset
+        .properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "0,0,1".into());
+    offset.properties.insert("UAxis".into(), "1,0,0".into());
+    let mut principal = feature("sldprt:history:feature#0:1", Some("2"), 1);
+    principal.name = "Front".into();
+    principal.input_class = Some("moRefPlane_c".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![offset, principal],
+    };
+
+    let mut projected = project_features(&[history]);
+    assert!(matches!(
+        &projected[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            distance: Length(6.0),
+        } if reference == &projected[1].id
+    ));
+    assert!(order_features_for_regeneration(&mut projected));
+    assert_eq!(projected[1].ordinal, 0);
+    assert_eq!(projected[0].ordinal, 1);
+}
+
+#[test]
+fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
+    let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "0mm".into());
+    offset.properties.insert("Reference".into(), "4".into());
+    offset
+        .properties
+        .insert("Origin".into(), "0mm,5mm,0mm".into());
+    offset.properties.insert("Normal".into(), "0,1,0".into());
+    offset.properties.insert("UAxis".into(), "1,0,0".into());
+    offset
+        .properties
+        .insert("ReferenceFaceOrigin".into(), "0mm,5mm,0mm".into());
+    offset
+        .properties
+        .insert("ReferenceFaceNormal".into(), "0,1,0".into());
+    offset
+        .properties
+        .insert("ReferenceFaceUAxis".into(), "1,0,0".into());
+    let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
+    principal.name = "Right".into();
+    principal.input_class = Some("moRefPlane_c".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![offset, principal],
+    };
+
+    let projected = project_features(&[history]);
+
+    assert!(matches!(
+        &projected[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                ..
+            }),
+            distance: Length(0.0),
+        }
+    ));
+    assert!(projected[0].dependencies.is_empty());
+}
+
+#[test]
+fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
+    let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "6mm".into());
+    offset.properties.insert("Reference".into(), "40".into());
+    offset
+        .properties
+        .insert("Origin".into(), "6mm,0mm,0mm".into());
+    offset.properties.insert("Normal".into(), "1,0,0".into());
+    offset.properties.insert("UAxis".into(), "0,1,0".into());
+    let mut reference = feature("sldprt:history:feature#0:1", Some("40"), 1);
+    reference.input_class = Some("moRefPlane_c".into());
+    reference
+        .properties
+        .insert("Origin".into(), "0mm,0mm,0mm".into());
+    reference.properties.insert("Normal".into(), "1,0,0".into());
+    reference.properties.insert("UAxis".into(), "0,1,0".into());
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![offset, reference],
+    };
+
+    let mut projected = project_features(&[history]);
+
+    assert!(matches!(
+        &projected[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            distance: Length(6.0),
+        } if reference == &projected[1].id
+    ));
+    assert!(order_features_for_regeneration(&mut projected));
+    assert_eq!(projected[1].ordinal, 0);
+    assert_eq!(projected[0].ordinal, 1);
+}

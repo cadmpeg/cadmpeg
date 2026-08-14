@@ -1,6 +1,7 @@
 //! Compact reference plane record index.
 
 use super::reference_geometry::reference_plane_frame_key;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 
@@ -136,7 +137,7 @@ fn unique_reference_plane_source(sources: impl IntoIterator<Item = u32>) -> Opti
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
-    let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+    let source = View::u32_le_at(bytes, 0)?;
     if source == 0
         || bytes.get(8..14)?.iter().any(|byte| *byte != 0)
         || bytes.get(14) != Some(&1)
@@ -146,7 +147,7 @@ fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
         return None;
     }
     let scalar = |offset| {
-        let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(bytes, offset)?;
         value.is_finite().then_some(value)
     };
     let basis = [
@@ -168,8 +169,8 @@ fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
 }
 
 fn compact_declared_reference_plane_record(bytes: &[u8]) -> Option<u32> {
-    let identity = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-    let legacy_source = u16::from_le_bytes(bytes.get(10..12)?.try_into().ok()?);
+    let identity = View::u32_le_at(bytes, 0)?;
+    let legacy_source = View::u16_le_at(bytes, 10)?;
     let trailer = bytes.get(47..63)?;
     let common = bytes.get(12..39)?.iter().all(|byte| *byte == 0)
         && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
@@ -220,10 +221,10 @@ pub(super) fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, V
     let mut frames = payload
         .windows(RECORD_LEN)
         .filter_map(|bytes| {
-            let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+            let source = View::u32_le_at(bytes, 0)?;
             let scalar = |index: usize| {
                 let offset = 15 + index * 8;
-                let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+                let value = View::f64_le_at(bytes, offset)?;
                 value.is_finite().then_some(value)
             };
             let u_axis = Vector3::new(scalar(0)?, scalar(1)?, scalar(2)?);

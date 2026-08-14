@@ -1874,35 +1874,4 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::sketch_curve_offset_matches;
-    use crate::features::{Angle, Length};
-    use crate::math::Point2;
-    use crate::sketches::SketchGeometry;
-
-    #[test]
-    fn trimmed_concentric_arcs_validate_as_offsets() {
-        let arc = |radius, start, end| SketchGeometry::Arc {
-            center: Point2::new(3.0, -4.0),
-            radius: Length(radius),
-            start_angle: Angle(start),
-            end_angle: Angle(end),
-        };
-        let source = arc(2.0, 0.0, std::f64::consts::FRAC_PI_2);
-        let trimmed_result = arc(5.0, 0.1, 1.4);
-        let disjoint_result = arc(5.0, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2);
-
-        assert!(sketch_curve_offset_matches(
-            &source,
-            &trimmed_result,
-            -3.0,
-            1.0e-6,
-        ));
-        assert!(!sketch_curve_offset_matches(
-            &source,
-            &disjoint_result,
-            -3.0,
-            1.0e-6,
-        ));
-    }
-}
+mod tests;

@@ -8,6 +8,7 @@ use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
 use crate::framing::read_xmt_width as read_xmt;
+use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
 
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
@@ -756,7 +757,7 @@ pub(crate) fn chart_source_record_at(
         {
             continue;
         }
-        let block = preamble + 52;
+        let block = preamble + chart_preamble::LEN;
         let Some(chart_points) = chart_points(stream, block, count, point_layout) else {
             continue;
         };
@@ -1071,3 +1072,6 @@ fn distance(first: Point3, second: Point3) -> f64 {
     ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
         .sqrt()
 }
+
+#[cfg(test)]
+mod tests;

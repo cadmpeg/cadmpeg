@@ -2,10 +2,9 @@
 //! Decode the boundary-settings record a `SurfacePatch` scope references once
 //! per boundary component.
 
-use cadmpeg_core::le::{f64_at, u32_at};
-
 use super::sketch::IndexedRecordOffsets;
 use crate::records::{DesignPatchContinuity, DesignSurfacePatchBoundary};
+use cadmpeg_core::decode::View;
 
 /// Payload offset of the record's class level, past the indexed header of a
 /// record whose display name is empty.
@@ -43,7 +42,9 @@ pub(crate) fn surface_patch_boundaries(
 /// base level's reference run closes the record and carries no settings.
 fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurfacePatchBoundary> {
     let payload = at.checked_add(PAYLOAD)?;
-    if u32_at(bytes, at.checked_add(15)?)? != 0 || bytes.get(payload..payload + 2)? != [0; 2] {
+    if View::u32_le_at(bytes, at.checked_add(15)?)? != 0
+        || bytes.get(payload..payload + 2)? != [0; 2]
+    {
         return None;
     }
     let is_seed_selection = match bytes.get(payload + 2)? {
@@ -51,7 +52,7 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
         1 => true,
         _ => return None,
     };
-    let scale = f64_at(bytes, payload + 11)?;
+    let scale = View::f64_le_at(bytes, payload + 11)?;
     if !scale.is_finite() {
         return None;
     }
@@ -60,8 +61,8 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
         scope_reference_ordinal: 0,
         record_index: 0,
         is_seed_selection,
-        continuity: DesignPatchContinuity::from_code(u32_at(bytes, payload + 3)?),
-        flip: u32_at(bytes, payload + 7)?,
+        continuity: DesignPatchContinuity::from_code(View::u32_le_at(bytes, payload + 3)?),
+        flip: View::u32_le_at(bytes, payload + 7)?,
         scale,
         model_reference,
     })
@@ -71,5 +72,5 @@ fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
     if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
         return None;
     }
-    u32_at(bytes, at + 1)
+    View::u32_le_at(bytes, at + 1)
 }

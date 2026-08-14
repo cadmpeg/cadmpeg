@@ -202,3 +202,6 @@ fn is_reference_file(path: &str) -> bool {
             .is_some_and(|name| name.eq_ignore_ascii_case("RefdFiles"))
         && components.next().is_some()
 }
+
+#[cfg(test)]
+mod tests;

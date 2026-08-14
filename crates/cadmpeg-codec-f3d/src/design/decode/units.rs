@@ -10,10 +10,11 @@
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use cadmpeg_core::le::u32_at;
+use crate::layout::indexed_design_record_header as indexed_header;
+use cadmpeg_core::decode::View;
 
 /// An indexed-record header: `u32 3`, three class-tag digits, `u32 index`.
-const HEADER_LEN: usize = 11;
+const HEADER_LEN: usize = indexed_header::LEN;
 /// One reference slot: `01`, a `u32` record index, and six zero bytes.
 const REFERENCE_LEN: usize = 11;
 /// The collection names six unit systems.
@@ -44,7 +45,7 @@ fn ascii_at(bytes: &[u8], at: usize) -> Option<(String, usize)> {
 /// Read the `u32` field at `at` and check it equals `expected`, returning the
 /// offset past it.
 fn expect_u32(bytes: &[u8], at: usize, expected: u32) -> Option<usize> {
-    (u32_at(bytes, at)? == expected).then(|| at + 4)
+    (View::u32_le_at(bytes, at)? == expected).then(|| at + 4)
 }
 
 /// Check that the four bytes at `at` are zero, returning the offset past them.
@@ -59,7 +60,7 @@ fn reference_at(bytes: &[u8], at: usize) -> Option<u32> {
     {
         return None;
     }
-    u32_at(bytes, at + 1)
+    View::u32_le_at(bytes, at + 1)
 }
 
 /// Read a `u32 expected` count followed by that many reference slots.

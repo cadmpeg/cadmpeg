@@ -68,7 +68,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let mut ir = serde_json::to_value(&result.ir).expect("serialize ir");
+            let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
                 *native = serde_json::json!({
                     "__elided": "native arenas are pinned by digest, not by value",
@@ -80,8 +80,8 @@ fn decode_snapshot(bytes: &[u8]) -> String {
             }
             serde_json::json!({
                 "ir": ir,
-                "report": serde_json::to_value(&result.report).expect("serialize report"),
-                "source_fidelity": serde_json::to_value(&result.source_fidelity)
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
                     .expect("serialize source_fidelity"),
             })
         }
@@ -127,8 +127,8 @@ fn encode_once(bytes: &[u8]) -> Result<(cadmpeg_ir::ExportReport, Vec<u8>), Stri
     let report = Encoder::plan(
         &FcstdCodec,
         EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         },
     )
     .and_then(|plan| plan.write_to(&mut produced))
@@ -188,8 +188,8 @@ fn step_snapshot(bytes: &[u8]) -> String {
     match Encoder::plan(
         &StepCodec::default(),
         EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         },
     )
     .and_then(|plan| plan.write_to(&mut exported))

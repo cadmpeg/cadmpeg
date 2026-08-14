@@ -478,3 +478,6 @@ pub(crate) fn losses(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

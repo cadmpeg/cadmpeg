@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::native::{
@@ -31,6 +32,14 @@ pub struct Graph {
 
 /// Recover the persistence graph without interpreting geometry.
 pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
+    parse_with_context(bytes, None)
+}
+
+/// Recover the persistence graph, charging retained property XML against the session.
+pub fn parse_with_context(
+    bytes: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
@@ -69,7 +78,10 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
         .ok_or_else(|| {
             CodecError::Malformed(format!("{declarations_tag} Count is missing or invalid"))
         })?;
-    if declared_count > MAX_OBJECTS {
+    let object_limit = ctx
+        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_entities).ok())
+        .map_or(MAX_OBJECTS, |policy| policy.min(MAX_OBJECTS));
+    if declared_count > object_limit {
         return Err(CodecError::Malformed("object count limit exceeded".into()));
     }
     if schema == "2" && objects_node.attribute("Dependencies").is_some() {
@@ -251,6 +263,7 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
             document_properties,
             &crate::native::native_id("document", "0"),
             &mut properties,
+            ctx,
         )?;
     }
     for object in &objects {
@@ -317,7 +330,7 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
                         .map(|record| record.id.clone())
                 })
                 .unwrap_or_else(|| object.id.clone());
-            parse_properties(text, container, &property_owner, &mut properties)?;
+            parse_properties(text, container, &property_owner, &mut properties, ctx)?;
         }
     }
     for property in &mut properties {
@@ -342,6 +355,7 @@ fn parse_properties(
     container: roxmltree::Node<'_, '_>,
     owner: &str,
     output: &mut Vec<PropertyRecord>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
     let nodes = container
         .children()
@@ -407,14 +421,22 @@ fn parse_properties(
             .filter(|value| value.is_element() && *value != node)
             .enumerate()
             .map(|(value_order, value)| {
+                let len = value.range().len();
                 retained_value_bytes = retained_value_bytes
-                    .checked_add(value.range().len())
+                    .checked_add(len)
                     .filter(|total| *total <= MAX_PROPERTY_VALUE_XML_BYTES)
                     .ok_or_else(|| {
                         CodecError::Malformed(format!(
                             "property {name} retained value XML limit exceeded"
                         ))
                     })?;
+                if let Some(ctx) = ctx {
+                    ctx.charge_retained(
+                        u64::try_from(len).unwrap_or(u64::MAX),
+                        "fcstd_property_value_xml",
+                        None,
+                    )?;
+                }
                 Ok(ValueRecord {
                     tag: value.tag_name().name().to_owned(),
                     order: value_order,
@@ -741,3 +763,6 @@ fn required_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Result<String, Co
 fn bool_attr(value: Option<&str>) -> Option<bool> {
     value.map(|value| matches!(value, "1" | "true" | "True" | "TRUE"))
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

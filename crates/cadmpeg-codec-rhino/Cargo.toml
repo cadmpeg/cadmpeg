@@ -19,10 +19,6 @@ documentation = "https://docs.rs/cadmpeg-codec-rhino"
 keywords = ["cad", "rhino", "3dm", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
-[features]
-default = []
-fuzzing = []
-
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true

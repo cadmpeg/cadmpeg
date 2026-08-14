@@ -6,6 +6,8 @@ use std::fs;
 use std::io::{Cursor, Write};
 use std::path::Path;
 
+include!("../seed_paths.rs");
+
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
 use zip::write::SimpleFileOptions;
@@ -27,8 +29,8 @@ fn main() {
 // ============================================================================
 
 fn generate_f3d_seeds() {
-    let dir = Path::new("seeds/f3d_container");
-    fs::create_dir_all(dir).unwrap();
+    let dir = seed_dir("seeds/f3d_container");
+    fs::create_dir_all(&dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty_zip", f3d::empty_zip()),
@@ -516,8 +518,8 @@ mod f3d {
 // ============================================================================
 
 fn generate_sldprt_seeds() {
-    let dir = Path::new("seeds/sldprt_container");
-    fs::create_dir_all(dir).unwrap();
+    let dir = seed_dir("seeds/sldprt_container");
+    fs::create_dir_all(&dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -840,8 +842,8 @@ mod sldprt {
 // ============================================================================
 
 fn generate_catia_seeds() {
-    let dir = Path::new("seeds/catia_container");
-    fs::create_dir_all(dir).unwrap();
+    let dir = seed_dir("seeds/catia_container");
+    fs::create_dir_all(&dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -967,8 +969,8 @@ mod catia {
 // ============================================================================
 
 fn generate_creo_seeds() {
-    let dir = Path::new("seeds/creo_container");
-    fs::create_dir_all(dir).unwrap();
+    let dir = seed_dir("seeds/creo_container");
+    fs::create_dir_all(&dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -1030,8 +1032,8 @@ mod creo {
 // ============================================================================
 
 fn generate_nx_seeds() {
-    let dir = Path::new("seeds/nx_container");
-    fs::create_dir_all(dir).unwrap();
+    let dir = seed_dir("seeds/nx_container");
+    fs::create_dir_all(&dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -1181,8 +1183,8 @@ fn generate_ir_seeds() {
     let valid_v0 = minimal.replacen(&current_version_field, r#""ir_version": "0""#, 1);
     assert_ne!(valid_v0, minimal, "current ir_version field must match");
 
-    let from_json = Path::new("seeds/ir_from_json");
-    replace_seed_directory(from_json);
+    let from_json = seed_dir("seeds/ir_from_json");
+    replace_seed_directory(&from_json);
     for (name, data) in &canonical {
         fs::write(from_json.join(name), data).unwrap();
         println!("  ir/{name} ({} bytes)", data.len());
@@ -1190,31 +1192,31 @@ fn generate_ir_seeds() {
     fs::write(from_json.join("valid_v0_rejected.json"), valid_v0).unwrap();
 
     for target in ["ir_validate", "ir_canonical_roundtrip", "step_writer"] {
-        let dir = Path::new("seeds").join(target);
+        let dir = seed_dir(target);
         replace_seed_directory(&dir);
         for (name, data) in &canonical {
             fs::write(dir.join(name), data).unwrap();
         }
     }
 
-    let mutated = Path::new("seeds/ir_validate_mutated");
-    replace_seed_directory(mutated);
+    let mutated = seed_dir("seeds/ir_validate_mutated");
+    replace_seed_directory(&mutated);
     for (index, (name, data)) in canonical.iter().enumerate() {
         let mut input = vec![index as u8];
         input.extend_from_slice(data);
         fs::write(mutated.join(name), input).unwrap();
     }
 
-    let custom = Path::new("seeds/step_writer_custom");
-    replace_seed_directory(custom);
+    let custom = seed_dir("seeds/step_writer_custom");
+    replace_seed_directory(&custom);
     for (index, (name, data)) in canonical.iter().enumerate() {
         let mut input = vec![index as u8; 8];
         input.extend_from_slice(data);
         fs::write(custom.join(name), input).unwrap();
     }
 
-    let iges_writer = Path::new("seeds/iges_writer");
-    replace_seed_directory(iges_writer);
+    let iges_writer = seed_dir("seeds/iges_writer");
+    replace_seed_directory(&iges_writer);
     for (name, control, data) in [
         ("minimal_v5_1.json", 0_u8, minimal.as_bytes()),
         ("unit_cube_v5_2.json", 1_u8, cube.as_bytes()),
@@ -1230,8 +1232,8 @@ fn generate_ir_seeds() {
         fs::write(iges_writer.join(name), input).unwrap();
     }
 
-    let diff = Path::new("seeds/ir_diff");
-    replace_seed_directory(diff);
+    let diff = seed_dir("seeds/ir_diff");
+    replace_seed_directory(&diff);
     for (name, selector, left, right) in [
         (
             "minimal_vs_minimal",
@@ -1284,7 +1286,7 @@ fn generate_mutated_seeds() {
         "seeds/nx_container",
     ];
     for dir in container_dirs {
-        for entry in fs::read_dir(dir).unwrap() {
+        for entry in fs::read_dir(seed_dir(dir)).unwrap() {
             let path = entry.unwrap().path();
             let name = path.file_name().unwrap().to_str().unwrap();
             if MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
@@ -1294,14 +1296,15 @@ fn generate_mutated_seeds() {
     }
 
     for dir in ["seeds/ir_from_json"] {
-        for entry in fs::read_dir(dir).unwrap() {
+        let dir = seed_dir(dir);
+        for entry in fs::read_dir(&dir).unwrap() {
             let path = entry.unwrap().path();
             let name = path.file_name().unwrap().to_str().unwrap();
             if MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
                 fs::remove_file(path).unwrap();
             }
         }
-        let mut entries: Vec<_> = fs::read_dir(dir)
+        let mut entries: Vec<_> = fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().path())
             .filter(|p| {

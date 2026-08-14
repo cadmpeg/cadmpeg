@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::be::{f64_at, u16_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -52,9 +52,9 @@ pub(crate) enum SweepKind {
 }
 
 fn unit3(bytes: &[u8], at: usize) -> Option<Vector3> {
-    let x = f64_at(bytes, at)?;
-    let y = f64_at(bytes, at + 8)?;
-    let z = f64_at(bytes, at + 16)?;
+    let x = View::f64_be_at(bytes, at)?;
+    let y = View::f64_be_at(bytes, at + 8)?;
+    let z = View::f64_be_at(bytes, at + 16)?;
     if !(x.is_finite() && y.is_finite() && z.is_finite()) {
         return None;
     }
@@ -66,9 +66,9 @@ fn unit3(bytes: &[u8], at: usize) -> Option<Vector3> {
 }
 
 fn point_mm(bytes: &[u8], at: usize) -> Option<Point3> {
-    let x = f64_at(bytes, at)?;
-    let y = f64_at(bytes, at + 8)?;
-    let z = f64_at(bytes, at + 16)?;
+    let x = View::f64_be_at(bytes, at)?;
+    let y = View::f64_be_at(bytes, at + 8)?;
+    let z = View::f64_be_at(bytes, at + 16)?;
     if !(x.is_finite() && y.is_finite() && z.is_finite()) {
         return None;
     }
@@ -88,14 +88,14 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let attr = u16_at(bytes, p)?;
+    let attr = View::u16_be_at(bytes, p)?;
     if attr == 0 {
         return None;
     }
     if !matches!(bytes.get(p + 16), Some(0x2b | 0x2d)) {
         return None;
     }
-    let profile_attr = u16_at(bytes, p + 17)?;
+    let profile_attr = View::u16_be_at(bytes, p + 17)?;
     if profile_attr == 0 {
         return None;
     }

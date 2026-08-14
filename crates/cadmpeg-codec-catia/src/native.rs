@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
 use std::ops::Range;
 
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
 
 use crate::catalog;
@@ -3462,12 +3463,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
     let (payload, trailer_offset) = if suffix.get(payload_offset..payload_offset + 5)
         == Some(&[0xe6, 0x00, 0x00, 0x00, 0xe6])
     {
-        let bits = u64::from_le_bytes(
-            suffix
-                .get(payload_offset + 5..payload_offset + 13)?
-                .try_into()
-                .ok()?,
-        );
+        let bits = View::u64_le_at(suffix, payload_offset + 5)?;
         f64::from_bits(bits).is_finite().then_some(())?;
         (
             CatiaEntitySuffixPayload::Evaluation {
@@ -3478,21 +3474,11 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             payload_offset + 13,
         )
     } else if prefix_code == 0x32 {
-        let selector = u32::from_le_bytes(
-            suffix
-                .get(payload_offset..payload_offset + 4)?
-                .try_into()
-                .ok()?,
-        );
+        let selector = View::u32_le_at(suffix, payload_offset)?;
         let value_offset = payload_offset + 4;
         let (value, trailer_offset) = match *suffix.get(value_offset)? {
             0xe6 => {
-                let bits = u64::from_le_bytes(
-                    suffix
-                        .get(value_offset + 1..value_offset + 9)?
-                        .try_into()
-                        .ok()?,
-                );
+                let bits = View::u64_le_at(suffix, value_offset + 1)?;
                 f64::from_bits(bits).is_finite().then_some(())?;
                 (
                     CatiaEntitySuffixSelectedValue::Evaluation {
@@ -3517,12 +3503,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             0x32 => (
                 CatiaEntitySuffixSelectedValue::SchemaSelector {
                     offset: u64::try_from(value_offset).ok()?,
-                    ordinal: u32::from_le_bytes(
-                        suffix
-                            .get(value_offset + 1..value_offset + 5)?
-                            .try_into()
-                            .ok()?,
-                    ),
+                    ordinal: View::u32_le_at(suffix, value_offset + 1)?,
                 },
                 value_offset + 5,
             ),
@@ -3556,12 +3537,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             0xe9 => (CatiaEntitySuffixPayload::ControlE9, payload_offset + 1),
             0x37 => (CatiaEntitySuffixPayload::Separator37, payload_offset + 1),
             0xe6 => {
-                let bits = u64::from_le_bytes(
-                    suffix
-                        .get(payload_offset + 1..payload_offset + 9)?
-                        .try_into()
-                        .ok()?,
-                );
+                let bits = View::u64_le_at(suffix, payload_offset + 1)?;
                 f64::from_bits(bits).is_finite().then_some(())?;
                 (
                     CatiaEntitySuffixPayload::Evaluation {
@@ -11472,3 +11448,6 @@ impl From<&container::OuterContainerDeclaration> for CatiaOuterContainerBinding 
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

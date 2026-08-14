@@ -32,3 +32,6 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests;

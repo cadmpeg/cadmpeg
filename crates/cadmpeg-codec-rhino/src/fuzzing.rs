@@ -5,6 +5,8 @@ use std::mem::size_of;
 
 use crate::chunks::{self, ArchiveVersion};
 use crate::container::Record;
+use crate::layout::file_header;
+use crate::layout::uuid_wire_form as uuid_wire;
 use crate::wire::Uuid;
 
 const ARCHIVES: [ArchiveVersion; 9] = [
@@ -23,10 +25,10 @@ fn selected_archive(selector: u8) -> ArchiveVersion {
     ARCHIVES[usize::from(selector) % ARCHIVES.len()]
 }
 
-fn uuid(mut canonical: [u8; 16]) -> Uuid {
-    canonical[..4].reverse();
-    canonical[4..6].reverse();
-    canonical[6..8].reverse();
+fn uuid(mut canonical: [u8; uuid_wire::LEN]) -> Uuid {
+    canonical[..uuid_wire::DATA2].reverse();
+    canonical[uuid_wire::DATA2..uuid_wire::DATA3].reverse();
+    canonical[uuid_wire::DATA3..uuid_wire::DATA4].reverse();
     Uuid::from_wire(canonical)
 }
 
@@ -57,7 +59,7 @@ pub fn chunks(data: &[u8]) {
     let Ok(header) = chunks::parse_header(data) else {
         return;
     };
-    let mut offset = header.start_offset + 32;
+    let mut offset = header.start_offset + file_header::LEN;
     for _ in 0..1024 {
         let Ok(chunk) = chunks::chunk_at(data, offset, data.len(), header.archive_version, false)
         else {
@@ -136,9 +138,17 @@ pub fn subd(data: &[u8]) {
     let _ = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
 }
 
+/// Desktop salvage ceilings for fuzz wrappers.
+///
+/// `DecodePolicy::service()` tightens collection and entity limits 8–16× and
+/// would silently shrink coverage. Wrappers must not copy that profile.
+fn fuzz_policy() -> cadmpeg_core::decode::DecodePolicy {
+    cadmpeg_core::decode::DecodePolicy::default()
+}
+
 fn with_expand(data: &[u8], f: impl FnOnce(crate::mesh::MeshExpand<'_>)) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let policy = fuzz_policy();
     let Ok((ctx, root)) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     else {

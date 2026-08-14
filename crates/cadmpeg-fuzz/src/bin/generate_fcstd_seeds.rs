@@ -3,7 +3,8 @@
 
 use std::fs;
 use std::io::{Cursor, Read};
-use std::path::{Path, PathBuf};
+
+include!("../seed_paths.rs");
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     for target in [
@@ -15,12 +16,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "fcstd_element_map",
         "fcstd_auxiliary",
     ] {
-        let directory = PathBuf::from("seeds").join(target);
+        let directory = seed_dir(target);
         if directory.exists() {
             fs::remove_dir_all(directory)?;
         }
     }
-    let fixture = fs::read("../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd")?;
+    let fixture = fs::read(
+        crate_root().join("../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"),
+    )?;
     write("fcstd_container", "core_design_product.FCStd", &fixture)?;
     write("fcstd_decode", "core_design_product.FCStd", &fixture)?;
 
@@ -58,7 +61,7 @@ fn archive_entry(bytes: &[u8], name: &str) -> Result<Vec<u8>, Box<dyn std::error
 }
 
 fn write(target: &str, name: &str, bytes: &[u8]) -> std::io::Result<()> {
-    let directory = PathBuf::from("seeds").join(target);
+    let directory = seed_dir(target);
     fs::create_dir_all(&directory)?;
-    fs::write(Path::new(&directory).join(name), bytes)
+    fs::write(directory.join(name), bytes)
 }

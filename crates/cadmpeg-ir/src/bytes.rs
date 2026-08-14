@@ -84,3 +84,6 @@ pub mod option {
             .transpose()
     }
 }
+
+#[cfg(test)]
+mod tests;

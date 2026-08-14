@@ -497,3 +497,6 @@ fn patch_compact(payload: &mut [u8], body_start: usize, offset: u64, values: &[f
     }
     Some(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -3606,3 +3606,6 @@ mod nurbs_write_tests {
         ));
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

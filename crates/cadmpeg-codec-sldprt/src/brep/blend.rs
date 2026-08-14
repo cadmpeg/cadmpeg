@@ -7,9 +7,11 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::be::{f64_at, u16_at};
+use cadmpeg_core::decode::View;
 
 use super::LEN_TO_MM;
+
+use crate::layout::rolling_ball_blend_00_38 as blend_rec;
 
 /// One exact constant-radius blend construction.
 #[derive(Debug, Clone)]
@@ -61,29 +63,27 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
     if bytes.get(body) == Some(&0xff) {
         body += 1;
     }
-    let attr = u16_at(bytes, body)?;
-    if attr == 0 || !matches!(bytes.get(body + 16), Some(0x2b | 0x2d)) {
+    let attr = View::u16_be_at(bytes, body + blend_rec::ATTR)?;
+    if attr == 0 || !matches!(bytes.get(body + blend_rec::MARKER), Some(0x2b | 0x2d)) {
         return None;
     }
-    let payload = body + 17;
-    let selector = *bytes.get(payload)?;
+    let selector = *bytes.get(body + blend_rec::SELECTOR)?;
     if !matches!(selector, 0x45 | 0x52) {
         return None;
     }
     let references = [
-        u16_at(bytes, payload + 1)?,
-        u16_at(bytes, payload + 3)?,
-        u16_at(bytes, payload + 5)?,
+        View::u16_be_at(bytes, body + blend_rec::SUPPORT0)?,
+        View::u16_be_at(bytes, body + blend_rec::SUPPORT1)?,
+        View::u16_be_at(bytes, body + blend_rec::SPINE)?,
     ];
     if references.contains(&0) {
         return None;
     }
-    let values = payload + 7;
     let values = [
-        f64_at(bytes, values)?,
-        f64_at(bytes, values + 8)?,
-        f64_at(bytes, values + 16)?,
-        f64_at(bytes, values + 24)?,
+        View::f64_be_at(bytes, body + blend_rec::OFFSET0)?,
+        View::f64_be_at(bytes, body + blend_rec::OFFSET1)?,
+        View::f64_be_at(bytes, body + blend_rec::SIDE0)?,
+        View::f64_be_at(bytes, body + blend_rec::SIDE1)?,
     ];
     if values.iter().any(|value| !value.is_finite())
         || (values[2].abs() - 1.0).abs() > 1.0e-12

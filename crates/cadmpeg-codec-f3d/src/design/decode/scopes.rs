@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse parameter scopes and exact feature-construction frames.
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
+use crate::bytes::{f64s_at, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::operands::{
     parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
@@ -12,6 +12,52 @@ use crate::design::decode::sketch::{
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
+use crate::layout::assembly_axial_construction_carrier as axial_carrier;
+use crate::layout::assembly_axial_role_prefix as axial_role;
+use crate::layout::assembly_axial_selector_prefix as axial_selector;
+use crate::layout::assembly_operand_path_locator as path_locator;
+use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
+use crate::layout::assembly_operand_path_wrapper as path_wrapper;
+use crate::layout::base_feature_body_snapshot_body_entry as snapshot_entry;
+use crate::layout::base_feature_body_snapshot_compact_preamble as snapshot_compact_preamble;
+use crate::layout::base_feature_body_snapshot_expanded_preamble as snapshot_expanded_preamble;
+use crate::layout::base_feature_body_snapshot_guid as snapshot_guid;
+use crate::layout::base_feature_body_snapshot_linkage_tail as snapshot_tail;
+use crate::layout::base_feature_body_snapshot_prefix as snapshot;
+use crate::layout::base_feature_body_snapshot_scope_prefix as snapshot_scope;
+use crate::layout::base_feature_compact_repeated_body_entry as compact_entry;
+use crate::layout::base_feature_compact_result_body_count as compact_count;
+use crate::layout::base_feature_result_body_entry as result_body_entry;
+use crate::layout::base_feature_result_body_prefix as result_body;
+use crate::layout::coil_compact_placement_identity_frame as coil_identity;
+use crate::layout::coil_compact_placement_matrix_frame as coil_matrix;
+use crate::layout::coil_compact_placement_owner_identity_frame as coil_owner_identity;
+use crate::layout::coil_compact_scope_discriminators as coil_compact;
+use crate::layout::coil_long_scope_fixed_prologue as coil_long;
+use crate::layout::combine_compact_operation_prefix as combine_compact;
+use crate::layout::combine_extended_reference_operation_prefix as combine_extended;
+use crate::layout::combine_external_selector_prefix as combine_external;
+use crate::layout::combine_standard_operation_prefix as combine_standard;
+use crate::layout::compact_loft_operation_prefix as compact_loft;
+use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
+use crate::layout::current_extrude_operation_fields as extrude_fields;
+use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
+use crate::layout::early_distance_extrude_absent_prefix as early_absent;
+use crate::layout::early_distance_extrude_present_prefix as early_present;
+use crate::layout::edge_flange_fixed_operation_section as edge_flange;
+use crate::layout::edge_flange_to_object_fixed_operation_section as flange_to_object;
+use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
+use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
+use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
+use crate::layout::marker_one_revolve_prologue as revolve;
+use crate::layout::named_solid_primitive_prologue as solid_prologue;
+use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
+use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
+use crate::layout::shifted_extrude_prologue as shifted_extrude;
+use crate::layout::thread_compact_construction_tail as thread_compact_tail;
+use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
+use crate::layout::thread_standard_construction_tail as thread_tail;
+use crate::layout::thread_standard_scope_prefix as thread_standard;
 use crate::records::{
     ConstructionRecipe, DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget,
     DesignAssemblyAxialSelectorIdentity, DesignAssemblyOperandFrame, DesignAssemblyOperandPath,
@@ -38,7 +84,7 @@ use crate::records::{
     DesignThreadForm, DesignWorkAxisConstruction, DesignWorkPointConstruction,
     DesignWorkPointInput, DesignWorkPointRule,
 };
-use cadmpeg_core::le::{f64_at, f64s_at, u16_at, u32_at, u64_at as read_u64};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -205,18 +251,26 @@ pub(crate) fn exact_thread_construction(
 }
 
 fn exact_thread_prefix(bytes: &[u8]) -> Option<(DesignThreadForm, usize)> {
-    let direct =
-        if bytes.get(11..21)? == [0; 10] && f64_at(bytes, 21)?.to_bits() == 60.0f64.to_bits() {
-            thread_form(bytes, 29, 34).map(|form| (form, 38))
-        } else {
-            None
-        };
-    let owner_marked = if bytes.get(11..20)? == [0; 9]
-        && u32_at(bytes, 20)? == 1
-        && bytes.get(24) == Some(&0)
-        && f64_at(bytes, 25)?.to_bits() == 60.0f64.to_bits()
+    let direct = if bytes.get(thread_standard::ZERO_RUN_10..thread_standard::FIXED_SCALAR)?
+        == [0; 10]
+        && View::f64_le_at(bytes, thread_standard::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits()
     {
-        thread_form(bytes, 33, 38).map(|form| (form, 42))
+        thread_form(
+            bytes,
+            thread_standard::STANDARD_MARKER,
+            thread_standard::STANDARD_PREFIX_TAIL,
+        )
+        .map(|form| (form, thread_standard::LEN))
+    } else {
+        None
+    };
+    let owner_marked = if bytes.get(thread_owner::ZERO_RUN_9..thread_owner::OWNER_MARKER)? == [0; 9]
+        && View::u32_le_at(bytes, thread_owner::OWNER_MARKER)? == 1
+        && bytes.get(thread_owner::SEPARATOR) == Some(&0)
+        && View::f64_le_at(bytes, thread_owner::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits()
+    {
+        thread_form(bytes, thread_owner::FORM_MARKER, thread_owner::FORM_TOKEN)
+            .map(|form| (form, thread_owner::LEN))
     } else {
         None
     };
@@ -255,20 +309,24 @@ pub(crate) fn parse_thread_payload(
         return None;
     }
     let nominal_size = nominal_size_text.parse::<f64>().ok()?;
-    let major_diameter = f64_at(bytes, after_profile + 5)?;
-    let minor_diameter = f64_at(bytes, after_profile + 13)?;
+    let major_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MAJOR_DIAMETER)?;
+    let minor_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MINOR_DIAMETER)?;
     let pitch_marker = match form {
         DesignThreadForm::Standard => 1,
         DesignThreadForm::Compact => 0,
     };
-    let pitch = (bytes.get(after_profile + 21) == Some(&pitch_marker))
-        .then(|| f64_at(bytes, after_profile + 22))??;
-    let pitch_diameter = f64_at(bytes, after_profile + 30)?;
+    let pitch = (bytes.get(after_profile + thread_tail::PITCH_MARKER) == Some(&pitch_marker))
+        .then(|| View::f64_le_at(bytes, after_profile + thread_tail::PITCH))??;
+    let pitch_diameter = View::f64_le_at(bytes, after_profile + thread_tail::PITCH_DIAMETER)?;
     let trailer: &[u8] = match form {
         DesignThreadForm::Standard => &[0, 1],
         DesignThreadForm::Compact => &[0, 0, 0, 1],
     };
-    if bytes.get(after_profile + 38..after_profile + 38 + trailer.len())? != trailer
+    let trailer_at = match form {
+        DesignThreadForm::Standard => thread_tail::STANDARD_TRAILER,
+        DesignThreadForm::Compact => thread_compact_tail::COMPACT_TRAILER,
+    };
+    if bytes.get(after_profile + trailer_at..after_profile + trailer_at + trailer.len())? != trailer
         || ![
             nominal_size,
             major_diameter,
@@ -525,17 +583,23 @@ fn exact_assembly_axial_component_operand_at(
 ) -> Option<AxialComponentOperand> {
     let construction_class_tag =
         exact_indexed_header_at(bytes, start, frame.reference_record_index)?;
-    let paired_at = start.checked_add(380)?;
+    let paired_at = start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?;
     let construction_paired_class_tag =
         exact_indexed_header_at(bytes, paired_at, frame.reference_record_index)?;
-    let construction_transform_at = start.checked_add(48)?;
+    let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
     if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
         return None;
     }
     let (first_axis_record_index, first_axis_record_index_offset) =
-        exact_same_segment_record_reference(bytes, start.checked_add(192)?)?;
+        exact_same_segment_record_reference(
+            bytes,
+            start.checked_add(axial_carrier::FIRST_AXIS_RECORD_REFERENCE)?,
+        )?;
     let (second_axis_record_index, second_axis_record_index_offset) =
-        exact_same_segment_record_reference(bytes, start.checked_add(208)?)?;
+        exact_same_segment_record_reference(
+            bytes,
+            start.checked_add(axial_carrier::SECOND_AXIS_RECORD_REFERENCE)?,
+        )?;
     if first_axis_record_index == second_axis_record_index {
         return None;
     }
@@ -628,14 +692,20 @@ fn exact_assembly_axial_selector(
     let selector_class_tag = exact_indexed_header_at(bytes, selector_at, selector_record_index)?;
     let selector_paired_class_tag =
         exact_indexed_header_at(bytes, selector_paired_at, selector_record_index)?;
-    if bytes.get(selector_at.checked_add(11)?..selector_at.checked_add(22)?)? != [0; 11] {
+    if bytes.get(
+        selector_at.checked_add(axial_selector::ZERO_RUN_11)?
+            ..selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?,
+    )? != [0; 11]
+    {
         return None;
     }
-    let mut cursor = selector_at.checked_add(22)?;
+    let mut cursor = selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?;
     let nested_record_index_offset = cursor.checked_add(1)?;
     let (nested_record_index, _) = exact_same_segment_record_reference(bytes, cursor)?;
     cursor = cursor.checked_add(11)?;
-    if nested_record_index != selector_record_index.checked_add(3)? || u32_at(bytes, cursor)? != 1 {
+    if nested_record_index != selector_record_index.checked_add(3)?
+        || View::u32_le_at(bytes, cursor)? != 1
+    {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -647,9 +717,9 @@ fn exact_assembly_axial_selector(
         lp_utf16_bounded(bytes, selector_context_at, 36..=36)?;
     if !is_guid_relaxed(&selector_asset_id)
         || !is_guid_relaxed(&selector_context_id)
-        || u32_at(bytes, after_selector_context_id)? != 2
-        || u32_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
-        || u32_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
+        || View::u32_le_at(bytes, after_selector_context_id)? != 2
+        || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
+        || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
     {
         return None;
     }
@@ -660,7 +730,7 @@ fn exact_assembly_axial_selector(
     if occurrence_reference == 0
         || occurrence.segment.is_some()
         || occurrence.link_name.is_some()
-        || u32_at(bytes, cursor)? != 1
+        || View::u32_le_at(bytes, cursor)? != 1
     {
         return None;
     }
@@ -682,12 +752,15 @@ fn exact_assembly_axial_selector(
     };
     let role_at = *role_at;
     let role_class_tag = exact_indexed_header_at(bytes, role_at, role_record_index)?;
-    if bytes.get(role_at.checked_add(11)?..role_at.checked_add(21)?)? != [0; 10]
-        || u32_at(bytes, role_at.checked_add(21)?)? != 1
+    if bytes.get(
+        role_at.checked_add(axial_role::ZERO_RUN_10)?
+            ..role_at.checked_add(axial_role::CONSTANT_ONE)?,
+    )? != [0; 10]
+        || View::u32_le_at(bytes, role_at.checked_add(axial_role::CONSTANT_ONE)?)? != 1
     {
         return None;
     }
-    let occurrence_role_at = role_at.checked_add(25)?;
+    let occurrence_role_at = role_at.checked_add(axial_role::ROLE_CODE_UNIT_COUNT)?;
     let (occurrence_role, after_occurrence_role) =
         lp_utf16_bounded(bytes, occurrence_role_at, 36..=36)?;
     if !is_guid_relaxed(&occurrence_role) || after_occurrence_role > limit {
@@ -762,7 +835,7 @@ fn exact_paired_indexed_record_between(
 
 fn exact_indexed_header_at(bytes: &[u8], start: usize, record_index: u32) -> Option<String> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    (u32_at(bytes, after_tag)? == record_index).then_some(class_tag)
+    (View::u32_le_at(bytes, after_tag)? == record_index).then_some(class_tag)
 }
 
 fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Option<(u32, u64)> {
@@ -789,7 +862,7 @@ fn exact_single_joint_origin_frame(
         || bytes.get(start + 11..start + 24)? != [0; 13]
         || bytes.get(start + 29..start + 36)? != [0; 7]
         || bytes.get(start + 169..start + 175)? != [0; 6]
-        || u32_at(bytes, start + 175)? != 1
+        || View::u32_le_at(bytes, start + 175)? != 1
     {
         return None;
     }
@@ -1029,7 +1102,7 @@ fn exact_surface_boundary_operation(
                     && marked_record_reference(bytes, *start + 48)
                         == distance_record_index.checked_sub(1)
                     && bytes.get(*start + 53..*start + 59) == Some(&[0; 6])
-                    && u32_at(bytes, *start + 59).is_some_and(|value| value != 0)
+                    && View::u32_le_at(bytes, *start + 59).is_some_and(|value| value != 0)
                     && bytes.get(*start + 63..*start + 67) == Some(&[0; 4])
                     && marked_record_reference(bytes, *start + 67) == Some(scope.record_index)
                     && bytes.get(*start + 72..*start + 78) == Some(&[0; 6])
@@ -1057,7 +1130,8 @@ fn exact_surface_boundary_operation(
                 || class_tag.len() != 3
                 || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || bytes.get(start + 11..start + 21)? != [0; 10]
-                || u32_at(bytes, start + 21)? != u32::try_from(edge_record_indices.len()).ok()?
+                || View::u32_le_at(bytes, start + 21)?
+                    != u32::try_from(edge_record_indices.len()).ok()?
                 || edge_record_indices
                     .iter()
                     .enumerate()
@@ -1067,10 +1141,10 @@ fn exact_surface_boundary_operation(
                     })
                 || bytes.get(tail..tail + 2)? != [0; 2]
                 || bytes.get(tail + 11..tail + 21)? != [0; 10]
-                || u32_at(bytes, tail + 21)? != boundary_kind
+                || View::u32_le_at(bytes, tail + 21)? != boundary_kind
                 || bytes.get(tail + 25..tail + 35)? != [0; 10]
-                || u32_at(bytes, tail + 35)? != 210
-                || u32_at(bytes, tail + 47)? != 210
+                || View::u32_le_at(bytes, tail + 35)? != 210
+                || View::u32_le_at(bytes, tail + 47)? != 210
                 || marked_record_reference(bytes, tail + 51) != boundary_record_index.checked_add(2)
                 || bytes.get(tail + 56..tail + 62)? != [0; 6]
                 || bytes.get(tail + 62..tail + 65)? != [1, 0, 0]
@@ -1081,9 +1155,9 @@ fn exact_surface_boundary_operation(
             {
                 return None;
             }
-            let mode = u32_at(bytes, tail + 2)?;
+            let mode = View::u32_le_at(bytes, tail + 2)?;
             let boundary_reference_record_index = marked_record_reference(bytes, tail + 6)?;
-            let tolerance = f64_at(bytes, tail + 39)?;
+            let tolerance = View::f64_le_at(bytes, tail + 39)?;
             (tolerance.is_finite() && tolerance > 0.0).then_some(ExactSurfaceBoundaryOperation {
                 distance: scalar.value,
                 distance_offset: scalar.value_offset,
@@ -1211,29 +1285,29 @@ pub(crate) fn exact_component_insert_construction(
                     && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
                     && bytes.get(start + 33..start + 37)? == [0; 4]
                     && bytes.get(start + 37) == Some(&1)
-                    && u32_at(bytes, start + 38)? == relation_record_index
+                    && View::u32_le_at(bytes, start + 38)? == relation_record_index
                     && bytes.get(start + 42..start + 50)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
             {
-                (start + 50, read_u64(bytes, start + 25)?)
+                (start + 50, View::u64_le_at(bytes, start + 25)?)
             }
             (381, "261")
                 if bytes.get(start + 11..start + 20)? == [0; 9]
                     && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
                     && bytes.get(start + 33..start + 37)? == [0; 4]
                     && bytes.get(start + 37) == Some(&1)
-                    && u32_at(bytes, start + 38)? == relation_record_index
+                    && View::u32_le_at(bytes, start + 38)? == relation_record_index
                     && bytes.get(start + 42..start + 49)? == [0, 0, 0, 0, 0, 0, 1] =>
             {
-                (start + 49, read_u64(bytes, start + 25)?)
+                (start + 49, View::u64_le_at(bytes, start + 25)?)
             }
             (395, "258")
                 if bytes.get(start + 11..start + 21)? == [0; 10]
                     && bytes.get(start + 29..start + 33)? == [0; 4]
                     && bytes.get(start + 33) == Some(&1)
-                    && u32_at(bytes, start + 34)? == relation_record_index
+                    && View::u32_le_at(bytes, start + 34)? == relation_record_index
                     && bytes.get(start + 38..start + 46)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
             {
-                (start + 46, read_u64(bytes, start + 21)?)
+                (start + 46, View::u64_le_at(bytes, start + 21)?)
             }
             (404, _)
                 if bytes.get(start + 11..start + 20)? == [0; 9]
@@ -1241,11 +1315,11 @@ pub(crate) fn exact_component_insert_construction(
                     && bytes.get(start + 25..start + 29)? == [0; 4]
                     && bytes.get(start + 37..start + 41)? == [0; 4]
                     && bytes.get(start + 41) == Some(&1)
-                    && u32_at(bytes, start + 42)? == relation_record_index
+                    && View::u32_le_at(bytes, start + 42)? == relation_record_index
                     && bytes.get(start + 46..start + 52)? == [0; 6]
                     && bytes.get(start + 52..start + 54)? == [1, 0] =>
             {
-                (start + 54, read_u64(bytes, start + 29)?)
+                (start + 54, View::u64_le_at(bytes, start + 29)?)
             }
             _ => return None,
         };
@@ -1261,12 +1335,12 @@ pub(crate) fn exact_component_insert_construction(
             || bytes.get(relation_at + 35) != Some(&1)
             || bytes.get(relation_at + 40..relation_at + 47)? != [0; 7]
             || bytes.get(relation_at + 47) != Some(&1)
-            || u32_at(bytes, relation_at + 48)? != scope.record_index
+            || View::u32_le_at(bytes, relation_at + 48)? != scope.record_index
             || bytes.get(relation_at + 52..relation_at + 58)? != [0; 6]
         {
             return None;
         }
-        let carrier_record_index = u32_at(bytes, relation_at + 22)?;
+        let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
         let mut placements = Vec::new();
         for &carrier_at in records
             .offsets(carrier_record_index)
@@ -1300,12 +1374,12 @@ pub(crate) fn exact_component_insert_construction(
             || bytes.get(relation_at + 34) != Some(&1)
             || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
             || bytes.get(relation_at + 46) != Some(&1)
-            || u32_at(bytes, relation_at + 47)? != scope.record_index
+            || View::u32_le_at(bytes, relation_at + 47)? != scope.record_index
             || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
         {
             return None;
         }
-        let carrier_record_index = u32_at(bytes, relation_at + 22)?;
+        let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
         let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
         let mut placements = Vec::new();
         for at in carrier_at + 11..relation_at {
@@ -1363,7 +1437,7 @@ fn legacy_component_insert_placements(
     };
     if class_tag != "288"
         || after_tag != carrier_at + 7
-        || u32_at(bytes, after_tag) != Some(carrier_record_index)
+        || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
     {
         return Vec::new();
     }
@@ -1452,12 +1526,12 @@ fn exact_copy_paste_component_operation(
         || bytes.get(relation_at + 34) != Some(&1)
         || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
         || bytes.get(relation_at + 46) != Some(&1)
-        || u32_at(bytes, relation_at + 47)? != scope.record_index
+        || View::u32_le_at(bytes, relation_at + 47)? != scope.record_index
         || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
     {
         return None;
     }
-    let copied_occurrence_record_index = u32_at(bytes, relation_at + 22)?;
+    let copied_occurrence_record_index = View::u32_le_at(bytes, relation_at + 22)?;
     let copied_candidates = occurrences
         .iter()
         .filter(|occurrence| {
@@ -1665,8 +1739,8 @@ fn exact_as_built_operand_frames(
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let frames = paths.each_ref().map(|path| {
         let locator_at = usize::try_from(path.link.locator_byte_offset).ok()?;
-        let reference_at = locator_at.checked_add(21)?;
-        let transform_at = locator_at.checked_add(33)?;
+        let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
+        let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
         Some(DesignAssemblyOperandFrame {
             reference_record_index: marked_record_reference(bytes, reference_at)?,
             reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
@@ -1691,8 +1765,9 @@ fn exact_assembly_operand_paths(
         .checked_add(11)?;
     let locator_offsets =
         crate::design::assembly::operand_path_locator_offsets(scope.frame_length)?;
-    let count_at = scope_at.checked_add(locator_offsets[0].checked_sub(4)?)?;
-    if u32_at(bytes, count_at)? != 2 {
+    let count_at = scope_at
+        .checked_add(locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?)?;
+    if View::u32_le_at(bytes, count_at)? != 2 {
         return None;
     }
     let paths = locator_offsets.map(|relative_offset| {
@@ -1725,11 +1800,11 @@ fn exact_assembly_operand_paths(
     let first_start = usize::try_from(first.link.locator_byte_offset).ok()?;
     let first_end = usize::try_from(first.link.wrapper_byte_offset)
         .ok()?
-        .checked_add(crate::design::assembly::OPERAND_PATH_WRAPPER_LENGTH)?;
+        .checked_add(path_wrapper::LEN)?;
     let second_start = usize::try_from(second.link.locator_byte_offset).ok()?;
     let second_end = usize::try_from(second.link.wrapper_byte_offset)
         .ok()?
-        .checked_add(crate::design::assembly::OPERAND_PATH_WRAPPER_LENGTH)?;
+        .checked_add(path_wrapper::LEN)?;
     if first.link.locator_record_index == second.link.locator_record_index
         || (first_start < second_end && second_start < first_end)
     {
@@ -1746,40 +1821,62 @@ fn exact_assembly_operand_path_envelope(
     locator_at: usize,
 ) -> Option<DesignAssemblyOperandPath> {
     let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
-    if bytes.get(locator_at.checked_add(11)?..locator_at.checked_add(21)?)? != [0; 10]
-        || exact_same_segment_record_reference(bytes, locator_at.checked_add(21)?)?.0 == 0
-        || bytes.get(locator_at.checked_add(32)?) != Some(&0)
-        || rigid_transform_at(bytes, locator_at.checked_add(33)?).is_none()
-        || bytes.get(locator_at.checked_add(161)?) != Some(&0)
+    if bytes.get(
+        locator_at.checked_add(path_locator::ZERO_RUN_10)?
+            ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+    )? != [0; 10]
+        || exact_same_segment_record_reference(
+            bytes,
+            locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+        )?
+        .0 == 0
+        || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
+        || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?).is_none()
+        || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
     {
         return None;
     }
-    let (scope_record_index, locator_scope_reference_offset) =
-        exact_same_segment_record_reference(bytes, locator_at.checked_add(162)?)?;
-    let (wrapper_record_index, wrapper_reference_offset) =
-        exact_same_segment_record_reference(bytes, locator_at.checked_add(173)?)?;
+    let (scope_record_index, locator_scope_reference_offset) = exact_same_segment_record_reference(
+        bytes,
+        locator_at.checked_add(path_locator::SCOPE_BACKLINK)?,
+    )?;
+    let (wrapper_record_index, wrapper_reference_offset) = exact_same_segment_record_reference(
+        bytes,
+        locator_at.checked_add(path_locator::WRAPPER_REFERENCE)?,
+    )?;
     let path_record_index = locator_record_index.checked_add(1)?;
     if scope_record_index != scope.record_index
         || wrapper_record_index != locator_record_index.checked_add(2)?
-        || u32_at(bytes, locator_at.checked_add(184)?)? != 2
-        || bytes.get(locator_at.checked_add(188)?..locator_at.checked_add(190)?)? != [0; 2]
+        || View::u32_le_at(bytes, locator_at.checked_add(path_locator::CONSTANT_TWO)?)? != 2
+        || bytes.get(
+            locator_at.checked_add(path_locator::ZERO_TAIL_2)?
+                ..locator_at.checked_add(path_locator::LEN)?,
+        )? != [0; 2]
     {
         return None;
     }
-    let path_at = locator_at.checked_add(crate::design::assembly::OPERAND_PATH_LOCATOR_LENGTH)?;
+    let path_at = locator_at.checked_add(path_locator::LEN)?;
     let wrapper_at = next_indexed_record_offset(bytes, path_at.checked_add(1)?)?;
     let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
-    let wrapper_end =
-        wrapper_at.checked_add(crate::design::assembly::OPERAND_PATH_WRAPPER_LENGTH)?;
-    if bytes.get(wrapper_at.checked_add(11)?..wrapper_at.checked_add(21)?)? != [0; 10]
-        || bytes.get(wrapper_at.checked_add(21)?) != Some(&1)
-        || u32_at(bytes, wrapper_at.checked_add(22)?)? != 1
+    let wrapper_end = wrapper_at.checked_add(path_wrapper::LEN)?;
+    if bytes.get(
+        wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?
+            ..wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?,
+    )? != [0; 10]
+        || bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?) != Some(&1)
+        || View::u32_le_at(
+            bytes,
+            wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)?,
+        )? != 1
         || next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)? != wrapper_end
     {
         return None;
     }
     let (referenced_path_record_index, path_reference_offset) =
-        exact_same_segment_record_reference(bytes, wrapper_at.checked_add(26)?)?;
+        exact_same_segment_record_reference(
+            bytes,
+            wrapper_at.checked_add(path_wrapper::PATH_REFERENCE)?,
+        )?;
     if referenced_path_record_index != path_record_index {
         return None;
     }
@@ -1806,7 +1903,7 @@ fn exact_assembly_operand_path(
     link: DesignAssemblyOperandPathLink,
 ) -> Option<DesignAssemblyOperandPath> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 1..=8, u8::is_ascii_digit)?;
-    if read_u64(bytes, after_tag)? != u64::from(record_index) {
+    if View::u64_le_at(bytes, after_tag)? != u64::from(record_index) {
         return None;
     }
     let mut occurrence_guids = Vec::new();
@@ -1841,7 +1938,7 @@ fn exact_assembly_operand_path(
                 identity_guids.push(guid);
                 position = after_guid;
             }
-            if read_u64(bytes, position)? != 2 {
+            if View::u64_le_at(bytes, position)? != 2 {
                 return None;
             }
             position += 8;
@@ -1854,7 +1951,7 @@ fn exact_assembly_operand_path(
                 identity_guids.push(guid);
                 position = after_guid;
             }
-            if u32_at(bytes, position)? != 2
+            if View::u32_le_at(bytes, position)? != 2
                 || !bytes.get(position + 4..end)?.iter().all(|byte| *byte == 0)
             {
                 return None;
@@ -1864,7 +1961,7 @@ fn exact_assembly_operand_path(
             if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
                 return None;
             }
-            let count = usize::try_from(u32_at(bytes, after_tag + 14)?).ok()?;
+            let count = usize::try_from(View::u32_le_at(bytes, after_tag + 14)?).ok()?;
             if !(1..=64).contains(&count) {
                 return None;
             }
@@ -1893,7 +1990,7 @@ fn exact_assembly_operand_path(
                     identity_guids.push(guid);
                     position = after_guid;
                 }
-                if read_u64(bytes, position)? != 2 {
+                if View::u64_le_at(bytes, position)? != 2 {
                     return None;
                 }
                 position += 8;
@@ -1907,7 +2004,7 @@ fn exact_assembly_operand_path(
                     identity_guids.push(guid);
                     position = after_guid;
                 }
-                if u32_at(bytes, position)? != 2
+                if View::u32_le_at(bytes, position)? != 2
                     || !bytes
                         .get(position + 4..limit)?
                         .iter()
@@ -2304,13 +2401,16 @@ fn exact_legacy_circular_pattern_axis(
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != start + 7
-        || u32_at(bytes, after_tag) != Some(record_index)
+        || View::u32_le_at(bytes, after_tag) != Some(record_index)
         || bytes.get(start + 11..start + 21) != Some(&[0; 10])
     {
         return None;
     }
     let (identity_offsets, selection_at, second_count_at, second_identity_at, scope_at, tail_at) =
-        match (paired_at.checked_sub(start), u32_at(bytes, start + 21)) {
+        match (
+            paired_at.checked_sub(start),
+            View::u32_le_at(bytes, start + 21),
+        ) {
             (Some(129), Some(1)) => (
                 vec![start + 26, start + 56],
                 start + 40,
@@ -2333,8 +2433,8 @@ fn exact_legacy_circular_pattern_axis(
     if (identity_offsets.len() == 2
         && (marked_record_reference(bytes, first_identity_at).is_none()
             || bytes.get(first_identity_at + 5..first_identity_at + 11) != Some(&[0; 6])
-            || u32_at(bytes, start + 36) != Some(1)))
-        || u32_at(bytes, second_count_at) != Some(1)
+            || View::u32_le_at(bytes, start + 36) != Some(1)))
+        || View::u32_le_at(bytes, second_count_at) != Some(1)
         || marked_record_reference(bytes, second_identity_at).is_none()
         || bytes.get(second_identity_at + 5..second_identity_at + 11) != Some(&[0; 6])
         || marked_record_reference(bytes, scope_at) != Some(scope.record_index)
@@ -2348,10 +2448,10 @@ fn exact_legacy_circular_pattern_axis(
     {
         return None;
     }
-    let opaque_index = u32_at(bytes, tail_at)?;
+    let opaque_index = View::u32_le_at(bytes, tail_at)?;
     if opaque_index == 0
-        || !f64_at(bytes, tail_at + 4)?.is_finite()
-        || u32_at(bytes, tail_at + 12) != Some(opaque_index)
+        || !View::f64_le_at(bytes, tail_at + 4)?.is_finite()
+        || View::u32_le_at(bytes, tail_at + 12) != Some(opaque_index)
         || marked_record_reference(bytes, tail_at + 16) != record_index.checked_add(2)
         || bytes.get(tail_at + 21..tail_at + 27) != Some(&[0; 6])
         || bytes.get(tail_at + 27..tail_at + 29) != Some(&[0; 2])
@@ -2368,13 +2468,13 @@ fn exact_legacy_circular_pattern_axis(
     if paired_class_tag.len() != 3
         || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || paired_after_tag != paired_at + 7
-        || u32_at(bytes, paired_after_tag) != Some(record_index)
+        || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
     {
         return None;
     }
     let wrapper_record_indices = identity_offsets
         .iter()
-        .map(|offset| u32_at(bytes, *offset))
+        .map(|offset| View::u32_le_at(bytes, *offset))
         .collect::<Option<Vec<_>>>()?;
     let wrappers = wrapper_record_indices
         .iter()
@@ -2412,9 +2512,9 @@ fn exact_pattern_identity_wrapper(
     let start = *start;
     let (_, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
     if after_tag != start + 7
-        || u32_at(bytes, after_tag) != Some(record_index)
+        || View::u32_le_at(bytes, after_tag) != Some(record_index)
         || bytes.get(start + 11..start + 21) != Some(&[0; 10])
-        || read_u64(bytes, start + 21)? == 0
+        || View::u64_le_at(bytes, start + 21)? == 0
     {
         return None;
     }
@@ -2422,7 +2522,7 @@ fn exact_pattern_identity_wrapper(
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !crate::bytes::is_guid_relaxed(&asset_id)
         || !crate::bytes::is_guid_relaxed(&context_id)
-        || u32_at(bytes, after_context_id) != Some(2)
+        || View::u32_le_at(bytes, after_context_id) != Some(2)
         || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4])
         || marked_record_reference(bytes, after_context_id + 8) != record_index.checked_add(1)
         || bytes.get(after_context_id + 13..after_context_id + 19) != Some(&[0; 6])
@@ -2431,7 +2531,7 @@ fn exact_pattern_identity_wrapper(
     }
     let nested_one_at = next_indexed_record_offset(bytes, after_context_id + 19)?;
     let (_, nested_one_tag) = lp_ascii_filtered(bytes, nested_one_at, 3..=3, u8::is_ascii_digit)?;
-    if u32_at(bytes, nested_one_tag) != record_index.checked_add(1)
+    if View::u32_le_at(bytes, nested_one_tag) != record_index.checked_add(1)
         || bytes.get(nested_one_at + 11..nested_one_at + 21) != Some(&[0; 10])
         || marked_record_reference(bytes, nested_one_at + 21) != record_index.checked_add(2)
         || bytes.get(nested_one_at + 26..nested_one_at + 32) != Some(&[0; 6])
@@ -2442,15 +2542,15 @@ fn exact_pattern_identity_wrapper(
     let (_, identity_tag) = lp_ascii_filtered(bytes, identity_at, 3..=3, u8::is_ascii_digit)?;
     let next_at = next_indexed_record_offset(bytes, identity_at + 29)?;
     let (_, next_tag) = lp_ascii_filtered(bytes, next_at, 3..=3, u8::is_ascii_digit)?;
-    if u32_at(bytes, identity_tag) != record_index.checked_add(2)
+    if View::u32_le_at(bytes, identity_tag) != record_index.checked_add(2)
         || bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10])
         || identity_at.checked_add(29) != Some(next_at)
-        || u32_at(bytes, next_tag) != record_index.checked_add(3)
+        || View::u32_le_at(bytes, next_tag) != record_index.checked_add(3)
     {
         return None;
     }
     Some((
-        read_u64(bytes, identity_at + 21)?,
+        View::u64_le_at(bytes, identity_at + 21)?,
         u64::try_from(identity_at + 21).ok()?,
     ))
 }
@@ -2610,9 +2710,9 @@ fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Optio
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
-        || u32_at(bytes, start + 22)? != header.record_index.checked_add(3)?
+        || View::u32_le_at(bytes, start + 22)? != header.record_index.checked_add(3)?
         || bytes.get(start + 26..start + 32)? != [0; 6]
-        || u32_at(bytes, start + 32)? != 1
+        || View::u32_le_at(bytes, start + 32)? != 1
     {
         return None;
     }
@@ -2620,7 +2720,7 @@ fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Optio
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !crate::bytes::is_guid_relaxed(&asset_id)
         || !crate::bytes::is_guid_relaxed(&context_id)
-        || u32_at(bytes, after_context_id)? != 2
+        || View::u32_le_at(bytes, after_context_id)? != 2
         || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
     {
         return None;
@@ -2638,7 +2738,7 @@ fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Optio
         (next_at, header.record_index.checked_add(4)?),
     ] {
         let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag)? != expected {
+        if View::u32_le_at(bytes, after_tag)? != expected {
             return None;
         }
     }
@@ -2649,7 +2749,7 @@ fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Optio
         return None;
     }
     Some((
-        u32_at(bytes, identity_at + 21)?,
+        View::u32_le_at(bytes, identity_at + 21)?,
         u64::try_from(identity_at + 21).ok()?,
     ))
 }
@@ -2666,28 +2766,28 @@ fn exact_circular_pattern_axis(
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != start + 7
-        || u32_at(bytes, after_tag) != Some(record_index)
+        || View::u32_le_at(bytes, after_tag) != Some(record_index)
         || paired_at.checked_sub(start) != Some(195)
         || bytes.get(start + 11..start + 21) != Some(&[0; 10])
-        || u32_at(bytes, start + 21) != Some(8)
+        || View::u32_le_at(bytes, start + 21) != Some(8)
         || bytes.get(start + 73..start + 89) != Some(&[0; 16])
-        || u32_at(bytes, start + 89)? == 0
-        || u32_at(bytes, start + 93) != Some(1)
+        || View::u32_le_at(bytes, start + 89)? == 0
+        || View::u32_le_at(bytes, start + 93) != Some(1)
         || marked_record_reference(bytes, start + 97) != Some(selection_record_index)
         || bytes.get(start + 102..start + 108) != Some(&[0; 6])
         || bytes.get(start + 108..start + 110) != Some(&[0; 2])
-        || u32_at(bytes, start + 110) != Some(1)
+        || View::u32_le_at(bytes, start + 110) != Some(1)
         || marked_record_reference(bytes, start + 114).is_none()
         || bytes.get(start + 119..start + 125) != Some(&[0; 6])
-        || read_u64(bytes, start + 125) != Some(0x0000_0004_0000_0000)
+        || View::u64_le_at(bytes, start + 125) != Some(0x0000_0004_0000_0000)
         || bytes.get(start + 133..start + 143) != Some(&[0; 10])
     {
         return None;
     }
-    let opaque_index = u32_at(bytes, start + 143)?;
+    let opaque_index = View::u32_le_at(bytes, start + 143)?;
     if opaque_index == 0
-        || !f64_at(bytes, start + 147)?.is_finite()
-        || u32_at(bytes, start + 155) != Some(opaque_index)
+        || !View::f64_le_at(bytes, start + 147)?.is_finite()
+        || View::u32_le_at(bytes, start + 155) != Some(opaque_index)
         || marked_record_reference(bytes, start + 159) != record_index.checked_add(2)
         || bytes.get(start + 164..start + 172) != Some(&[0; 8])
         || marked_record_reference(bytes, start + 172) != record_index.checked_add(1)
@@ -2702,7 +2802,7 @@ fn exact_circular_pattern_axis(
     if paired_class_tag.len() != 3
         || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || paired_after_tag != paired_at + 7
-        || u32_at(bytes, paired_after_tag) != Some(record_index)
+        || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
     {
         return None;
     }
@@ -2742,16 +2842,16 @@ fn exact_fixed_pattern_count(
             if class_tag.len() != 3
                 || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || after_tag != start + 7
-                || u32_at(bytes, after_tag) != Some(record_index)
+                || View::u32_le_at(bytes, after_tag) != Some(record_index)
                 || paired_at.checked_sub(start) != Some(99)
                 || bytes.get(start + 11..start + 19) != Some(&[0; 8])
                 || bytes.get(start + 19) != Some(&1)
-                || u32_at(bytes, start + 20) != Some(1)
+                || View::u32_le_at(bytes, start + 20) != Some(1)
                 || marked_record_reference(bytes, start + 24) != Some(scope_record_index)
                 || bytes.get(start + 29..start + 40) != Some(&[0; 11])
                 || marked_record_reference(bytes, start + 44) != record_index.checked_add(2)
                 || bytes.get(start + 49..start + 55) != Some(&[0; 6])
-                || u32_at(bytes, start + 55)? == 0
+                || View::u32_le_at(bytes, start + 55)? == 0
                 || bytes.get(start + 59..start + 63) != Some(&[0; 4])
                 || marked_record_reference(bytes, start + 63) != Some(scope_record_index)
                 || bytes.get(start + 68..start + 76) != Some(&[0; 8])
@@ -2762,7 +2862,7 @@ fn exact_fixed_pattern_count(
             {
                 return None;
             }
-            let count = u32_at(bytes, start + 40)?;
+            let count = View::u32_le_at(bytes, start + 40)?;
             (count > 0).then_some((count, (start + 40) as u64))
         })
         .collect::<Vec<_>>();
@@ -2797,7 +2897,7 @@ pub(crate) fn exact_copy_paste_bodies_operation(
         return None;
     }
     let body_group_count_at = body_group_after_index.checked_add(10)?;
-    let body_group_count = usize::try_from(u32_at(bytes, body_group_count_at)?).ok()?;
+    let body_group_count = usize::try_from(View::u32_le_at(bytes, body_group_count_at)?).ok()?;
     if body_group_count != scope.reference_members.len().checked_sub(1)? {
         return None;
     }
@@ -2824,7 +2924,7 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     if bytes.get(count_at) != Some(&1) {
         return None;
     }
-    let reference_count = usize::try_from(u32_at(bytes, count_at + 1)?).ok()?;
+    let reference_count = usize::try_from(View::u32_le_at(bytes, count_at + 1)?).ok()?;
     let body_count = scope.reference_members.len().checked_sub(1)?;
     if reference_count != body_count.checked_mul(2)? {
         return None;
@@ -2843,7 +2943,7 @@ pub(crate) fn exact_copy_paste_bodies_operation(
         {
             return None;
         }
-        u32_at(bytes, at + 1)
+        View::u32_le_at(bytes, at + 1)
     };
     for ordinal in 0..body_count {
         let source_at = references_at.checked_add(ordinal.checked_mul(30)?)?;
@@ -2902,7 +3002,7 @@ pub(crate) fn exact_base_feature_construction(
             body_reference_record_offsets: Vec::new(),
             body_reference_fields: Vec::new(),
             repeated_reference_fields: Vec::new(),
-            metadata_record: u32_at(bytes, usize::try_from(scope.byte_offset).ok()? + 37)?,
+            metadata_record: View::u32_le_at(bytes, usize::try_from(scope.byte_offset).ok()? + 37)?,
             metadata_record_offset: scope.byte_offset + 37,
             metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
             result_records: Vec::new(),
@@ -2910,10 +3010,16 @@ pub(crate) fn exact_base_feature_construction(
             result_fields: Vec::new(),
         });
     }
-    if bytes.get(start + 11..start + 19)? != [0; 8] || bytes.get(start + 19) != Some(&1) {
+    if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
+        || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
+    {
         return None;
     }
-    let combined_count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
+    let combined_count = usize::try_from(View::u32_le_at(
+        bytes,
+        start + result_body::COMBINED_BODY_REFERENCE_COUNT,
+    )?)
+    .ok()?;
     if combined_count == 0 || combined_count > 200_000 || combined_count % 2 != 0 {
         return None;
     }
@@ -2927,7 +3033,7 @@ pub(crate) fn exact_base_feature_construction(
     if scope.frame_length != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
         return None;
     }
-    let mut cursor = start + 24;
+    let mut cursor = start + result_body::LEN;
     let mut read_u64_run = |count: usize| {
         let mut values = Vec::with_capacity(count);
         let mut offsets = Vec::with_capacity(count);
@@ -2936,10 +3042,21 @@ pub(crate) fn exact_base_feature_construction(
             if bytes.get(cursor) != Some(&1) {
                 return None;
             }
-            values.push(read_u64(bytes, cursor + 1)?);
-            offsets.push(u64::try_from(cursor + 1).ok()?);
-            fields.push(bytes.get(cursor + 9..cursor + 15)?.try_into().ok()?);
-            cursor += 15;
+            values.push(View::u64_le_at(
+                bytes,
+                cursor + result_body_entry::REFERENCE_VALUE,
+            )?);
+            offsets.push(u64::try_from(cursor + result_body_entry::REFERENCE_VALUE).ok()?);
+            fields.push(
+                bytes
+                    .get(
+                        cursor + result_body_entry::REFERENCE_FIELD
+                            ..cursor + result_body_entry::LEN,
+                    )?
+                    .try_into()
+                    .ok()?,
+            );
+            cursor += result_body_entry::LEN;
         }
         Some((values, offsets, fields))
     };
@@ -2955,26 +3072,28 @@ pub(crate) fn exact_base_feature_construction(
     if expanded {
         if bytes.get(cursor) != Some(&1)
             || bytes.get(cursor + 1..cursor + 7) != Some(&[0; 6])
-            || usize::try_from(u32_at(bytes, cursor + 7)?).ok()? != body_count
+            || usize::try_from(View::u32_le_at(bytes, cursor + 7)?).ok()? != body_count
         {
             return None;
         }
         cursor += 11;
     } else if compact {
-        if bytes.get(cursor) != Some(&1)
-            || bytes.get(cursor + 1..cursor + 6) != Some(&[0; 5])
-            || bytes.get(cursor + 6) != Some(&1)
-            || usize::try_from(u32_at(bytes, cursor + 7)?).ok()? != body_count
+        if bytes.get(cursor + compact_count::COUNT_MARKER) != Some(&1)
+            || bytes.get(cursor + compact_count::ZERO_RUN_5..cursor + compact_count::REPEAT_MARKER)
+                != Some(&[0; 5])
+            || bytes.get(cursor + compact_count::REPEAT_MARKER) != Some(&1)
+            || usize::try_from(View::u32_le_at(bytes, cursor + compact_count::BODY_COUNT)?).ok()?
+                != body_count
         {
             return None;
         }
-        cursor += 11;
+        cursor += compact_count::LEN;
     } else {
         if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 1..cursor + 11) != Some(&[0; 10]) {
             return None;
         }
         cursor += 11;
-        if usize::try_from(u32_at(bytes, cursor)?).ok()? != body_count {
+        if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
             return None;
         }
         cursor += 4;
@@ -2986,11 +3105,18 @@ pub(crate) fn exact_base_feature_construction(
         } else {
             body_reference_records[ordinal]
         };
-        if bytes.get(cursor) != Some(&1) || u32_at(bytes, cursor + 1)? != expected {
+        if bytes.get(cursor + compact_entry::BODY_MARKER) != Some(&1)
+            || View::u32_le_at(bytes, cursor + compact_entry::BODY_ENTITY_SUFFIX)? != expected
+        {
             return None;
         }
-        repeated_reference_fields.push(bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?);
-        cursor += 11;
+        repeated_reference_fields.push(
+            bytes
+                .get(cursor + compact_entry::BODY_FIELD..cursor + compact_entry::LEN)?
+                .try_into()
+                .ok()?,
+        );
+        cursor += compact_entry::LEN;
     }
     if bytes.get(cursor) != Some(&0) {
         return None;
@@ -2999,14 +3125,14 @@ pub(crate) fn exact_base_feature_construction(
     if bytes.get(cursor) != Some(&1) {
         return None;
     }
-    let metadata_record = u32::try_from(read_u64(bytes, cursor + 1)?).ok()?;
+    let metadata_record = u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?;
     let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
     let metadata_field_width = if expanded || compact { 2 } else { 6 };
     let metadata_field = bytes
         .get(cursor + 9..cursor + 9 + metadata_field_width)?
         .to_vec();
     cursor += 9 + metadata_field_width;
-    if usize::try_from(u32_at(bytes, cursor)?).ok()? != body_count {
+    if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
         return None;
     }
     cursor += 4;
@@ -3017,7 +3143,7 @@ pub(crate) fn exact_base_feature_construction(
         if bytes.get(cursor) != Some(&1) {
             return None;
         }
-        result_records.push(u32_at(bytes, cursor + 1)?);
+        result_records.push(View::u32_le_at(bytes, cursor + 1)?);
         result_record_offsets.push(u64::try_from(cursor + 1).ok()?);
         result_fields.push(bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?);
         cursor += 11;
@@ -3048,7 +3174,6 @@ fn exact_base_feature_body_snapshot(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignBaseFeatureConstruction> {
-    const BODY_ENTRY_SIZE: usize = 15;
     // Fixed prefix, linkage and GUID blocks, generic scope prefix, kind
     // prefix, ordinal, and closing tail; the kind payload adds 2L bytes.
     const FIXED_FRAME_LENGTH: u64 = 431;
@@ -3059,19 +3184,19 @@ fn exact_base_feature_body_snapshot(
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let body_count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
+    let body_count = usize::try_from(View::u32_le_at(bytes, start + snapshot::BODY_COUNT)?).ok()?;
     let kind_width = scope.kind.encode_utf16().count().checked_mul(2)?;
     let expected_frame_length = FIXED_FRAME_LENGTH
-        .checked_add(u64::try_from(body_count.checked_mul(BODY_ENTRY_SIZE)?).ok()?)?
+        .checked_add(u64::try_from(body_count.checked_mul(snapshot_entry::LEN)?).ok()?)?
         .checked_add(u64::try_from(kind_width).ok()?)?;
     if !(1..=200_000).contains(&body_count)
         || scope.frame_length != expected_frame_length
-        || bytes.get(start + 11..start + 19)? != [0; 8]
-        || bytes.get(start + 19) != Some(&1)
+        || bytes.get(start + snapshot::ZERO_RUN_8..start + snapshot::BODY_COUNT_MARKER)? != [0; 8]
+        || bytes.get(start + snapshot::BODY_COUNT_MARKER) != Some(&1)
     {
         return None;
     }
-    let mut cursor = start + 24;
+    let mut cursor = start + snapshot::LEN;
     let mut body_entity_suffixes = Vec::with_capacity(body_count);
     let mut body_entity_suffix_offsets = Vec::with_capacity(body_count);
     let mut body_entity_fields = Vec::with_capacity(body_count);
@@ -3079,23 +3204,36 @@ fn exact_base_feature_body_snapshot(
         if bytes.get(cursor) != Some(&1) {
             return None;
         }
-        body_entity_suffixes.push(read_u64(bytes, cursor + 1)?);
-        body_entity_suffix_offsets.push(u64::try_from(cursor + 1).ok()?);
-        body_entity_fields.push(bytes.get(cursor + 9..cursor + 15)?.try_into().ok()?);
-        cursor += BODY_ENTRY_SIZE;
+        body_entity_suffixes.push(View::u64_le_at(
+            bytes,
+            cursor + snapshot_entry::BODY_ENTITY_SUFFIX,
+        )?);
+        body_entity_suffix_offsets
+            .push(u64::try_from(cursor + snapshot_entry::BODY_ENTITY_SUFFIX).ok()?);
+        body_entity_fields.push(
+            bytes
+                .get(cursor + snapshot_entry::BODY_ENTITY_FIELD..cursor + snapshot_entry::LEN)?
+                .try_into()
+                .ok()?,
+        );
+        cursor += snapshot_entry::LEN;
     }
-    let preamble = bytes.get(cursor..cursor + 9)?;
+    let preamble = bytes.get(cursor..cursor + snapshot_expanded_preamble::LEN)?;
     let packed_guid_preamble = if preamble == [1, 0, 0, 0, 0, 1, 0, 0, 0] {
         true
-    } else if preamble[..8] == [1, 0, 0, 0, 1, 0, 0, 0] {
+    } else if preamble[..snapshot_compact_preamble::LEN] == [1, 0, 0, 0, 1, 0, 0, 0] {
         false
     } else {
         return None;
     };
-    cursor += if packed_guid_preamble { 9 } else { 8 };
+    cursor += if packed_guid_preamble {
+        snapshot_expanded_preamble::LEN
+    } else {
+        snapshot_compact_preamble::LEN
+    };
     let parse_guid = |at: usize| {
         let (guid, end) = lp_utf16_bounded(bytes, at, 36..=36)?;
-        crate::bytes::is_guid_relaxed(&guid).then_some((guid, end, at + 4))
+        crate::bytes::is_guid_relaxed(&guid).then_some((guid, end, at + snapshot_guid::GUID_UTF16))
     };
     let (first_guid, after_first_guid, first_guid_offset) = parse_guid(cursor)?;
     let (second_guid, after_second_guid, second_guid_offset) = parse_guid(after_first_guid)?;
@@ -3107,38 +3245,57 @@ fn exact_base_feature_body_snapshot(
     } else {
         after_second_guid
     };
-    if bytes.get(after_guids..after_guids + 7)? != [0, 0, 1, 1, 0, 0, 0]
-        || bytes.get(after_guids + 7) != Some(&1)
-        || read_u64(bytes, after_guids + 8)? != *body_entity_suffixes.first()?
-        || bytes.get(after_guids + 16..after_guids + 19)? != [0; 3]
-        || bytes.get(after_guids + 19) != Some(&1)
+    if bytes.get(after_guids..after_guids + snapshot_tail::FIRST_BODY_MARKER)?
+        != [0, 0, 1, 1, 0, 0, 0]
+        || bytes.get(after_guids + snapshot_tail::FIRST_BODY_MARKER) != Some(&1)
+        || View::u64_le_at(bytes, after_guids + snapshot_tail::FIRST_BODY_ENTITY_SUFFIX)?
+            != *body_entity_suffixes.first()?
+        || bytes.get(
+            after_guids + snapshot_tail::ZERO_RUN_3..after_guids + snapshot_tail::LINKAGE_MARKER,
+        )? != [0; 3]
+        || bytes.get(after_guids + snapshot_tail::LINKAGE_MARKER) != Some(&1)
     {
         return None;
     }
-    let linkage_record = u32::try_from(read_u64(bytes, after_guids + 20)?).ok()?;
+    let linkage_record = u32::try_from(View::u64_le_at(
+        bytes,
+        after_guids + snapshot_tail::LINKAGE_RECORD,
+    )?)
+    .ok()?;
     if linkage_record != scope.reference_members[0]
-        || bytes.get(after_guids + 28..after_guids + 34)? != [0; 6]
-        || u32_at(bytes, after_guids + 34)? != 1
-        || bytes.get(after_guids + 38) != Some(&1)
+        || bytes.get(
+            after_guids + snapshot_tail::ZERO_RUN_6..after_guids + snapshot_tail::RELATION_COUNT,
+        )? != [0; 6]
+        || View::u32_le_at(bytes, after_guids + snapshot_tail::RELATION_COUNT)? != 1
+        || bytes.get(after_guids + snapshot_tail::AUXILIARY_MARKER) != Some(&1)
     {
         return None;
     }
-    let auxiliary_record = u32::try_from(read_u64(bytes, after_guids + 39)?).ok()?;
-    if bytes.get(after_guids + 47..after_guids + 53)? != [0; 6]
-        || bytes.get(after_guids + 53..after_guids + 57)? != [0; 4]
+    let auxiliary_record = u32::try_from(View::u64_le_at(
+        bytes,
+        after_guids + snapshot_tail::AUXILIARY_RECORD,
+    )?)
+    .ok()?;
+    if bytes.get(
+        after_guids + snapshot_tail::TRAILING_ZERO_RUN_6
+            ..after_guids + snapshot_tail::TRAILING_ZERO_RUN_4,
+    )? != [0; 6]
+        || bytes.get(
+            after_guids + snapshot_tail::TRAILING_ZERO_RUN_4..after_guids + snapshot_tail::LEN,
+        )? != [0; 4]
     {
         return None;
     }
-    let (third_guid, after_third_guid, third_guid_offset) = parse_guid(after_guids + 57)?;
-    let reference_count_at = after_third_guid.checked_add(3)?;
-    let reference_marker = reference_count_at.checked_add(4)?;
-    let state_at = reference_marker.checked_add(11)?;
-    let kind_at = state_at.checked_add(4)?;
-    if kind_at != after_third_guid.checked_add(22)?
-        || bytes.get(after_third_guid..reference_count_at)? != [0; 3]
-        || u32_at(bytes, reference_count_at)? != 1
+    let (third_guid, after_third_guid, third_guid_offset) =
+        parse_guid(after_guids + snapshot_tail::LEN)?;
+    let reference_count_at = after_third_guid.checked_add(snapshot_scope::REFERENCE_COUNT)?;
+    let reference_marker = after_third_guid.checked_add(snapshot_scope::REFERENCE_MARKER)?;
+    let state_at = after_third_guid.checked_add(snapshot_scope::HISTORY_STATE_ID)?;
+    let kind_at = after_third_guid.checked_add(snapshot_scope::KIND_CODE_UNIT_COUNT)?;
+    if bytes.get(after_third_guid..reference_count_at)? != [0; 3]
+        || View::u32_le_at(bytes, reference_count_at)? != 1
         || bytes.get(reference_marker) != Some(&1)
-        || u32_at(bytes, reference_marker + 1)? != scope.reference_members[0]
+        || View::u32_le_at(bytes, reference_marker + 1)? != scope.reference_members[0]
         || bytes.get(reference_marker + 5..state_at)? != [0; 6]
         || scope.reference_count_offset != u64::try_from(reference_count_at).ok()?
         || scope.reference_member_offsets.first().copied()
@@ -3150,16 +3307,16 @@ fn exact_base_feature_body_snapshot(
     }
     match scope.history_state_id {
         Some(history_state_id)
-            if u32_at(bytes, state_at)? != u32::try_from(history_state_id).ok()? =>
+            if View::u32_le_at(bytes, state_at)? != u32::try_from(history_state_id).ok()? =>
         {
             return None;
         }
-        None if u32_at(bytes, state_at)? != u32::MAX => return None,
+        None if View::u32_le_at(bytes, state_at)? != u32::MAX => return None,
         _ => {}
     }
     let (kind, kind_end) = lp_utf16_bounded(bytes, kind_at, 1..=256)?;
     if kind != scope.kind
-        || u32_at(bytes, kind_end)? != scope.feature_ordinal
+        || View::u32_le_at(bytes, kind_end)? != scope.feature_ordinal
         || scope.feature_ordinal_offset != u64::try_from(kind_end).ok()?
         || scope.previous_history_state_id.is_some()
         || scope.previous_history_state_id_offset != 0
@@ -3182,9 +3339,10 @@ fn exact_base_feature_body_snapshot(
             u64::try_from(third_guid_offset).ok()?,
         ],
         linkage_record,
-        linkage_record_offset: u64::try_from(after_guids + 20).ok()?,
+        linkage_record_offset: u64::try_from(after_guids + snapshot_tail::LINKAGE_RECORD).ok()?,
         auxiliary_record,
-        auxiliary_record_offset: u64::try_from(after_guids + 39).ok()?,
+        auxiliary_record_offset: u64::try_from(after_guids + snapshot_tail::AUXILIARY_RECORD)
+            .ok()?,
     })
 }
 
@@ -3204,13 +3362,14 @@ pub(crate) fn exact_solid_primitive(
             )
         }
         "BoxPrimitive" | "CylinderPrimitive" => {
-            if bytes.get(start + 11..start + 20)? != [0; 9]
-                || bytes.get(start + 24) != Some(&0)
-                || bytes.get(start + 25) != Some(&1)
+            if bytes.get(start + solid_prologue::ZERO_RUN_9..start + solid_prologue::OPERATION)?
+                != [0; 9]
+                || bytes.get(start + solid_prologue::ZERO_FLAG) != Some(&0)
+                || bytes.get(start + solid_prologue::FORM_MARKER) != Some(&1)
             {
                 return None;
             }
-            let operation_offset = start.checked_add(20)?;
+            let operation_offset = start.checked_add(solid_prologue::OPERATION)?;
             (
                 primitive_operation(bytes, operation_offset)?,
                 operation_offset,
@@ -3235,7 +3394,7 @@ pub(crate) fn exact_solid_primitive(
                 && bytes.get(start + 41) == Some(&1)
                 && bytes.get(start + 52) == Some(&1) =>
         {
-            let diameter_record_index = u32_at(bytes, start + 42)?;
+            let diameter_record_index = View::u32_le_at(bytes, start + 42)?;
             let (diameter, diameter_offset) =
                 exact_primitive_diameter(bytes, records, diameter_record_index)?;
             let (transform, transform_offset) = matrix(64)?;
@@ -3257,8 +3416,8 @@ pub(crate) fn exact_solid_primitive(
                 && bytes.get(start + 52) == Some(&1)
                 && bytes.get(start + 63) == Some(&1) =>
         {
-            let major_diameter_record_index = u32_at(bytes, start + 31)?;
-            let minor_diameter_record_index = u32_at(bytes, start + 53)?;
+            let major_diameter_record_index = View::u32_le_at(bytes, start + 31)?;
+            let minor_diameter_record_index = View::u32_le_at(bytes, start + 53)?;
             if major_diameter_record_index == minor_diameter_record_index {
                 return None;
             }
@@ -3337,7 +3496,7 @@ pub(crate) fn exact_solid_primitive(
 }
 
 fn primitive_operation(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
-    match u32_at(bytes, offset)? {
+    match View::u32_le_at(bytes, offset)? {
         1 => Some(DesignExtrudeOperation::Join),
         2 => Some(DesignExtrudeOperation::Cut),
         3 => Some(DesignExtrudeOperation::Intersect),
@@ -3419,19 +3578,21 @@ fn exact_fixed_scalar(
                 if frame_length == 103
                     && (marked_record_reference(bytes, start + 24).is_none()
                         || marked_record_reference(bytes, start + 48).is_none()
-                        || marked_record_reference(bytes, start + 67) != u32_at(bytes, start + 25)
+                        || marked_record_reference(bytes, start + 67)
+                            != View::u32_le_at(bytes, start + 25)
                         || bytes.get(start + 78..start + 80) != Some(&[0; 2])
                         || marked_record_reference(bytes, start + 80).is_none()
                         || bytes.get(start + 85..start + 92) != Some(&[0; 7])
-                        || marked_record_reference(bytes, start + 92) != u32_at(bytes, start + 25))
+                        || marked_record_reference(bytes, start + 92)
+                            != View::u32_le_at(bytes, start + 25))
                 {
                     return None;
                 }
             }
-            let value = f64_at(bytes, start + 40)?;
+            let value = View::f64_le_at(bytes, start + 40)?;
             value.is_finite().then_some(FixedScalarFrame {
                 owner_record_index: (bytes.get(start + 24) == Some(&1))
-                    .then(|| u32_at(bytes, start + 25))
+                    .then(|| View::u32_le_at(bytes, start + 25))
                     .flatten(),
                 ordinal: *bytes.get(start + 35)?,
                 value,
@@ -3461,7 +3622,7 @@ pub(crate) fn exact_direct_face_operation(
                 (Some(264), 4) | (Some(253), 3)
             ) && bytes.get(start + 25) == Some(&1) =>
         {
-            let distance_record_index = u32_at(bytes, start + 26)?;
+            let distance_record_index = View::u32_le_at(bytes, start + 26)?;
             if scope.reference_members.last() != Some(&distance_record_index) {
                 return None;
             }
@@ -3481,11 +3642,12 @@ pub(crate) fn exact_direct_face_operation(
                             + 11 * u64::try_from(scope.reference_members.len().checked_sub(2)?)
                                 .ok()?
                         && bytes.get(start + 34) == Some(&1)
-                        && u32_at(bytes, start + 35) == scope.reference_members.get(1).copied()
+                        && View::u32_le_at(bytes, start + 35)
+                            == scope.reference_members.get(1).copied()
                         && bytes.get(start + 39..start + 45) == Some(&[0; 6])
                         && matches!(bytes.get(start + 45), Some(0 | 1))
                         && bytes.get(start + 46..start + 48) == Some(&[1, 1])
-                        && u32_at(bytes, start + 48)
+                        && View::u32_le_at(bytes, start + 48)
                             == scope.reference_members.first().copied() =>
                 {
                     (47, true)
@@ -3499,7 +3661,7 @@ pub(crate) fn exact_direct_face_operation(
                 Some(287) if bytes.get(start + 47) == Some(&1) => (47, false),
                 _ => return None,
             };
-            let thickness_record_index = u32_at(bytes, start + reference_offset + 1)?;
+            let thickness_record_index = View::u32_le_at(bytes, start + reference_offset + 1)?;
             let expected_thickness = if thickness_is_first {
                 scope.reference_members.first()
             } else {
@@ -3529,14 +3691,14 @@ pub(crate) fn exact_direct_face_operation(
                             && bytes.get(start + 25..start + 27) == Some(&[1, 0])
                             && bytes.get(start + 27) == Some(&1)
                             && bytes.get(start + 32..start + 51) == Some(&[0; 19])
-                            && u32_at(bytes, start + 51) == Some(1)
+                            && View::u32_le_at(bytes, start + 51) == Some(1)
                             && bytes.get(start + 55) == Some(&1)
-                            && u32_at(bytes, start + 56)
+                            && View::u32_le_at(bytes, start + 56)
                                 == scope.reference_members.get(1).copied()
                             && bytes.get(start + 60..start + 66) == Some(&[0; 6]) =>
                     {
                         (
-                            u32_at(bytes, start + 28)?,
+                            View::u32_le_at(bytes, start + 28)?,
                             true,
                             bytes[start + 21] != 0,
                             start + 21,
@@ -3546,13 +3708,13 @@ pub(crate) fn exact_direct_face_operation(
                         if matches!(bytes.get(start + 25), Some(0 | 1))
                             && bytes.get(start + 26) == Some(&0)
                             && bytes.get(start + 27) == Some(&1)
-                            && u32_at(bytes, start + 51) == Some(1)
+                            && View::u32_le_at(bytes, start + 51) == Some(1)
                             && bytes.get(start + 55) == Some(&1)
-                            && u32_at(bytes, start + 56)
+                            && View::u32_le_at(bytes, start + 56)
                                 == scope.reference_members.first().copied() =>
                     {
                         (
-                            u32_at(bytes, start + 28)?,
+                            View::u32_le_at(bytes, start + 28)?,
                             false,
                             bytes[start + 25] != 0,
                             start + 25,
@@ -3563,14 +3725,14 @@ pub(crate) fn exact_direct_face_operation(
                             && matches!(bytes.get(start + 21), Some(0 | 1))
                             && bytes.get(start + 22) == Some(&1)
                             && bytes.get(start + 27..start + 42) == Some(&[0; 15])
-                            && u32_at(bytes, start + 42) == Some(1)
+                            && View::u32_le_at(bytes, start + 42) == Some(1)
                             && bytes.get(start + 46) == Some(&1)
-                            && u32_at(bytes, start + 47)
+                            && View::u32_le_at(bytes, start + 47)
                                 == scope.reference_members.first().copied()
                             && bytes.get(start + 51..start + 57) == Some(&[0; 6]) =>
                     {
                         (
-                            u32_at(bytes, start + 23)?,
+                            View::u32_le_at(bytes, start + 23)?,
                             false,
                             bytes[start + 21] != 0,
                             start + 21,
@@ -3616,7 +3778,7 @@ pub(crate) fn exact_move_operation(
             let (class_tag, after_tag) =
                 lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
             let frame_length = paired.checked_sub(start)?;
-            if u32_at(bytes, after_tag) != Some(*record_index)
+            if View::u32_le_at(bytes, after_tag) != Some(*record_index)
                 || bytes.get(start + 11..start + 43) != Some(&[0; 32])
             {
                 continue;
@@ -3628,7 +3790,7 @@ pub(crate) fn exact_move_operation(
             {
                 continue;
             }
-            let form = u32_at(bytes, start + 43)?;
+            let form = View::u32_le_at(bytes, start + 43)?;
             if !matches!(form, 1 | 5) {
                 continue;
             }
@@ -3670,20 +3832,20 @@ pub(crate) fn exact_scale_operation(
     else {
         return None;
     };
-    if u32_at(bytes, start + 20)? != 1
+    if View::u32_le_at(bytes, start + 20)? != 1
         || bytes.get(start + 24) != Some(&0)
         || marked_record_reference(bytes, start + 33)? != *scope.reference_members.last()?
         || marked_record_reference(bytes, start + 44)? != *center_record_index
-        || u32_at(bytes, start + 55)? != 1
+        || View::u32_le_at(bytes, start + 55)? != 1
         || bytes.get(start + 59) != Some(&0)
-        || u32_at(bytes, start + 60)? != 1
-        || u32_at(bytes, start + 64)? != 1
+        || View::u32_le_at(bytes, start + 60)? != 1
+        || View::u32_le_at(bytes, start + 64)? != 1
         || marked_record_reference(bytes, start + 68)? != *body_group_record_index
     {
         return None;
     }
     let uniform_factor_offset = start + 25;
-    let uniform_factor = f64_at(bytes, uniform_factor_offset)?;
+    let uniform_factor = View::f64_le_at(bytes, uniform_factor_offset)?;
     if !uniform_factor.is_finite() || uniform_factor <= 0.0 {
         return None;
     }
@@ -3786,11 +3948,11 @@ fn exact_embedded_extrude_distance(
                 || bytes.get(start + 11..start + 21) != Some(&[0; 10])
                 || marked_record_reference(bytes, start + 21)? != scope_record_index
                 || bytes.get(start + 26..start + 32) != Some(&[0; 6])
-                || u32_at(bytes, start + 32)? != 1
+                || View::u32_le_at(bytes, start + 32)? != 1
                 || marked_record_reference(bytes, start + 36).is_none()
                 || bytes.get(start + 41..start + 47) != Some(&[0; 6])
-                || u32_at(bytes, start + 47)? != 210
-                || u32_at(bytes, start + 59)? != 210
+                || View::u32_le_at(bytes, start + 47)? != 210
+                || View::u32_le_at(bytes, start + 59)? != 210
                 || marked_record_reference(bytes, start + 63)? != second_auxiliary
                 || bytes.get(start + 68..start + 74) != Some(&[0; 6])
                 || bytes.get(start + 74..start + 77) != Some(&[1, 0, 0])
@@ -3801,7 +3963,7 @@ fn exact_embedded_extrude_distance(
             {
                 return None;
             }
-            let value = f64_at(bytes, start + 51)?;
+            let value = View::f64_le_at(bytes, start + 51)?;
             (value.is_finite() && value > 0.0).then_some(FixedScalarFrame {
                 owner_record_index: Some(scope_record_index),
                 ordinal: 0,
@@ -3975,7 +4137,7 @@ pub(crate) fn exact_path_feature_construction(
 ) -> Option<DesignPathFeatureConstruction> {
     let start = usize::try_from(scope.byte_offset).ok()?;
     let operation = |offset| {
-        Some(match u32_at(bytes, offset)? {
+        Some(match View::u32_le_at(bytes, offset)? {
             1 => DesignExtrudeOperation::Join,
             2 => DesignExtrudeOperation::Cut,
             3 => DesignExtrudeOperation::Intersect,
@@ -3986,11 +4148,11 @@ pub(crate) fn exact_path_feature_construction(
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::Revolve
             if matches!(scope.reference_members.len(), 6 | 8)
-                && bytes.get(start + 20) == Some(&1)
-                && u32_at(bytes, start + 21) == Some(0)
-                && u32_at(bytes, start + 29) == Some(2)
-                && bytes.get(start + 33) == Some(&0)
-                && u32_at(bytes, start + 34) == Some(1) =>
+                && bytes.get(start + revolve::MARKER) == Some(&1)
+                && View::u32_le_at(bytes, start + revolve::ZERO_VALUE) == Some(0)
+                && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
+                && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0)
+                && View::u32_le_at(bytes, start + revolve::STRUCTURAL_CONSTANT) == Some(1) =>
         {
             let candidates = parameter_owners
                 .iter()
@@ -4007,8 +4169,8 @@ pub(crate) fn exact_path_feature_construction(
                 return None;
             };
             Some(DesignPathFeatureConstruction::Revolve {
-                operation: operation(start + 25)?,
-                operation_offset: u64::try_from(start + 25).ok()?,
+                operation: operation(start + revolve::OPERATION)?,
+                operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
                 angle: angle.evaluated_value,
                 angle_record_index: angle.record_index,
                 angle_offset: angle.evaluated_value_offset,
@@ -4019,8 +4181,8 @@ pub(crate) fn exact_path_feature_construction(
         DesignFeatureFamily::Revolve
             if parameter_scope_payload_length(scope) == Some(372)
                 && scope.reference_members.len() == 7
-                && u32_at(bytes, start + 29) == Some(2)
-                && bytes.get(start + 33) == Some(&0) =>
+                && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
+                && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0) =>
         {
             let lanes = scope
                 .reference_members
@@ -4044,8 +4206,8 @@ pub(crate) fn exact_path_feature_construction(
                 return None;
             }
             Some(DesignPathFeatureConstruction::Revolve {
-                operation: operation(start + 25)?,
-                operation_offset: u64::try_from(start + 25).ok()?,
+                operation: operation(start + revolve::OPERATION)?,
+                operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
                 angle: angle.value,
                 angle_record_index: *angle_record_index,
                 angle_offset: angle.value_offset,
@@ -4058,13 +4220,13 @@ pub(crate) fn exact_path_feature_construction(
                 && scope.paired_class_tag == "258"
                 && parameter_scope_payload_length(scope) == Some(363)
                 && scope.reference_members.len() == 8
-                && u32_at(bytes, start + 25) == Some(2)
+                && View::u32_le_at(bytes, start + 25) == Some(2)
                 && bytes.get(start + 29) == Some(&0)
-                && u32_at(bytes, start + 30) == Some(1)
+                && View::u32_le_at(bytes, start + 30) == Some(1)
                 && bytes.get(start + 34) == Some(&1)
                 && bytes.get(start + 43..start + 45) == Some(&[0; 2]) =>
         {
-            let angle_record_index = u32::try_from(read_u64(bytes, start + 35)?).ok()?;
+            let angle_record_index = u32::try_from(View::u64_le_at(bytes, start + 35)?).ok()?;
             if scope.reference_members.get(6) != Some(&angle_record_index) {
                 return None;
             }
@@ -4094,15 +4256,19 @@ pub(crate) fn exact_path_feature_construction(
         }
         DesignFeatureFamily::Loft
             if scope.class_tag.len() == 3
-                && bytes.get(start + 11..start + 21) == Some(&[0; 10])
-                && bytes.get(start + 21..start + 25) == Some(&[1; 4])
-                && bytes.get(start + 29) == Some(&0)
-                && u32_at(bytes, start + 30) == Some(u32::MAX)
-                && bytes.get(start + 34..start + 45) == Some(&[0; 11]) =>
+                && bytes
+                    .get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
+                    == Some(&[0; 10])
+                && bytes.get(start + compact_loft::ONE_RUN_4..start + compact_loft::OPERATION)
+                    == Some(&[1; 4])
+                && bytes.get(start + compact_loft::ZERO_FLAG) == Some(&0)
+                && View::u32_le_at(bytes, start + compact_loft::ALL_ONES) == Some(u32::MAX)
+                && bytes.get(start + compact_loft::ZERO_RUN_11..start + compact_loft::LEN)
+                    == Some(&[0; 11]) =>
         {
             Some(DesignPathFeatureConstruction::Loft {
-                operation: operation(start + 25)?,
-                operation_offset: u64::try_from(start + 25).ok()?,
+                operation: operation(start + compact_loft::OPERATION)?,
+                operation_offset: u64::try_from(start + compact_loft::OPERATION).ok()?,
             })
         }
         DesignFeatureFamily::Loft
@@ -4250,7 +4416,7 @@ pub(crate) fn exact_work_plane_frame(
                 {
                     (
                         start + 76,
-                        Some((u32_at(bytes, start + 58)?, (start + 58) as u64)),
+                        Some((View::u32_le_at(bytes, start + 58)?, (start + 58) as u64)),
                     )
                 }
                 _ => continue,
@@ -4295,8 +4461,8 @@ pub(crate) fn exact_work_axis_construction(
     };
     if axis_paired.checked_sub(*axis_start)? != 232
         || bytes.get(axis_start + 11..axis_start + 21) != Some(&[0; 10])
-        || u32_at(bytes, axis_start + 21)? != 8
-        || u32_at(bytes, axis_start + 118)? != 2
+        || View::u32_le_at(bytes, axis_start + 21)? != 8
+        || View::u32_le_at(bytes, axis_start + 118)? != 2
     {
         return None;
     }
@@ -4316,7 +4482,7 @@ pub(crate) fn exact_work_axis_construction(
     for (ordinal, expected) in point_record_indices.iter().enumerate() {
         let reference_at = axis_start + 122 + ordinal * 11;
         if bytes.get(reference_at) != Some(&1)
-            || u32_at(bytes, reference_at + 1)? != *expected
+            || View::u32_le_at(bytes, reference_at + 1)? != *expected
             || bytes.get(reference_at + 5..reference_at + 11) != Some(&[0; 6])
         {
             return None;
@@ -4423,7 +4589,7 @@ pub(crate) fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<us
     match present {
         0 => Some(cursor),
         1 => {
-            let count = u32_at(bytes, cursor)?;
+            let count = View::u32_le_at(bytes, cursor)?;
             if count > 16 {
                 return None;
             }
@@ -4487,12 +4653,12 @@ fn point_data_level(
     let position_at = cursor;
     cursor = cursor.checked_add(24)?;
     let reference_type_at = cursor;
-    let reference_type = u32_at(body, cursor)?;
+    let reference_type = View::u32_le_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
     if version >= 3 {
         cursor = cursor.checked_add(24)?;
     }
-    let arity = usize::try_from(u32_at(body, cursor)?).ok()?;
+    let arity = usize::try_from(View::u32_le_at(body, cursor)?).ok()?;
     cursor = cursor.checked_add(4)?;
     if arity == 0 || arity > end.checked_sub(cursor)? {
         return None;
@@ -4541,7 +4707,7 @@ pub(crate) fn exact_work_point_construction(
             else {
                 continue;
             };
-            if u32_at(bytes, after_tag) != Some(*record_index) {
+            if View::u32_le_at(bytes, after_tag) != Some(*record_index) {
                 continue;
             }
             // A class tag is `256` plus an index into the segment's own type
@@ -4632,7 +4798,7 @@ pub(crate) fn exact_hole_construction(
             if class_tag.len() != 3
                 || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || after_tag != start + 7
-                || u32_at(bytes, after_tag) != Some(*record_index)
+                || View::u32_le_at(bytes, after_tag) != Some(*record_index)
             {
                 continue;
             }
@@ -4663,7 +4829,7 @@ fn hole_construction_frame_at(
 ) -> Option<DesignHoleConstruction> {
     let body = bytes.get(..paired_at)?;
     let mut cursor = payload_prologue(body, payload_at, paired_at)?;
-    let _bounding_box_index = u32_at(body, cursor)?;
+    let _bounding_box_index = View::u32_le_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
     let position_at = cursor;
     cursor = cursor.checked_add(24)?;
@@ -4672,13 +4838,13 @@ fn hole_construction_frame_at(
     let point_parameters_at = cursor;
     cursor = cursor.checked_add(16)?;
     let reference_type_at = cursor;
-    let reference_type = u32_at(body, cursor)?;
+    let reference_type = View::u32_le_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
     let tangent_point_data_prefix = *body.get(cursor)?;
     cursor = cursor.checked_add(1)?;
     let tangent_point_data_at = cursor;
     cursor = cursor.checked_add(24)?;
-    let input_count = usize::try_from(u32_at(body, cursor)?).ok()?;
+    let input_count = usize::try_from(View::u32_le_at(body, cursor)?).ok()?;
     cursor = cursor.checked_add(4)?;
     if input_count == 0 || input_count > paired_at.checked_sub(cursor)? {
         return None;
@@ -4753,40 +4919,62 @@ pub(crate) fn exact_combine_operation(
     let extended_reference =
         scope.class_tag == "329" && scope.paired_class_tag == "261" && scope.frame_length == 363;
     let (form, operation_offset, keep_tools_offset) = if compact {
-        if bytes.get(start + 11..start + 21)? != [0; 10]
-            || bytes.get(start + 26..start + 29)? != [0; 3]
-            || bytes.get(start + 29..start + 31)? != [1, 0]
-            || u32_at(bytes, start + 31) != Some(1)
-            || bytes.get(start + 35) != Some(&1)
-            || read_u64(bytes, start + 36) == Some(0)
-            || bytes.get(start + 44..start + 46)? != [0; 2]
+        if bytes.get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
+            != [0; 10]
+            || bytes
+                .get(start + combine_compact::ZERO_RUN_3..start + combine_compact::REFERENCE_FORM)?
+                != [0; 3]
+            || bytes.get(
+                start + combine_compact::REFERENCE_FORM..start + combine_compact::CONSTANT_ONE,
+            )? != [1, 0]
+            || View::u32_le_at(bytes, start + combine_compact::CONSTANT_ONE) != Some(1)
+            || bytes.get(start + combine_compact::REFERENCE_MARKER) != Some(&1)
+            || View::u64_le_at(bytes, start + combine_compact::REFERENCE_VALUE) == Some(0)
+            || bytes.get(start + combine_compact::REFERENCE_TAIL..start + combine_compact::LEN)?
+                != [0; 2]
         {
             return None;
         }
-        (DesignCombineForm::Compact, start + 21, start + 25)
+        (
+            DesignCombineForm::Compact,
+            start + combine_compact::OPERATION,
+            start + combine_compact::KEEP_TOOLS,
+        )
     } else if extended_reference {
-        let mut reference_at = start.checked_add(35)?;
+        let mut reference_at = start.checked_add(combine_extended::REFERENCE_MARKER)?;
         let reference = take_reference(bytes, &mut reference_at)?;
-        if bytes.get(start + 11..start + 29)? != [0; 18]
-            || bytes.get(start + 29) != Some(&1)
+        if bytes
+            .get(start + combine_extended::ZERO_RUN_18..start + combine_extended::FORM_MARKER)?
+            != [0; 18]
+            || bytes.get(start + combine_extended::FORM_MARKER) != Some(&1)
             || reference.target.is_none_or(|target| target == 0)
             || reference.segment.is_some()
             || reference.link_name.is_some()
-            || reference_at != start.checked_add(46)?
+            || reference_at != start.checked_add(combine_extended::LEN)?
         {
             return None;
         }
-        (DesignCombineForm::ExtendedReference, start + 31, start + 30)
+        (
+            DesignCombineForm::ExtendedReference,
+            start + combine_extended::OPERATION,
+            start + combine_extended::KEEP_TOOLS,
+        )
     } else {
-        if bytes.get(start + 11..start + 20)? != [0; 9]
-            || bytes.get(start + 24) != Some(&0)
-            || bytes.get(start + 26..start + 33)? != [0; 7]
+        if bytes.get(start + combine_standard::ZERO_RUN_9..start + combine_standard::OPERATION)?
+            != [0; 9]
+            || bytes.get(start + combine_standard::ZERO_FLAG) != Some(&0)
+            || bytes.get(start + combine_standard::ZERO_RUN_7..start + combine_standard::LEN)?
+                != [0; 7]
         {
             return None;
         }
-        (DesignCombineForm::Standard, start + 20, start + 25)
+        (
+            DesignCombineForm::Standard,
+            start + combine_standard::OPERATION,
+            start + combine_standard::KEEP_TOOLS,
+        )
     };
-    let operation = match u32_at(bytes, operation_offset)? {
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
         3 => DesignExtrudeOperation::Intersect,
@@ -4877,12 +5065,12 @@ fn take_external_reference_identity(
         return None;
     }
     let target_at = cursor.checked_add(1)?;
-    let target = read_u64(bytes, target_at)?;
+    let target = View::u64_le_at(bytes, target_at)?;
     if target == 0 || bytes.get(target_at.checked_add(8)?) != Some(&1) {
         return None;
     }
     let segment_at = target_at.checked_add(9)?;
-    let segment = u32_at(bytes, segment_at)?;
+    let segment = View::u32_le_at(bytes, segment_at)?;
     let asset_at = segment_at.checked_add(4)?;
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_at, 1..=256)?;
     if !is_guid_relaxed(&asset_id) || bytes.get(after_asset_id) != Some(&0) {
@@ -4936,15 +5124,18 @@ fn exact_combine_external_body_identity(
     scope_record_index: u32,
     record_index: u32,
 ) -> Option<DesignCombineExternalBodyIdentity> {
-    if bytes.get(start + 11..start + 25)? != [0; 14] {
+    if bytes.get(
+        start + combine_external::ZERO_RUN_14..start + combine_external::NESTED_REFERENCE_MARKER,
+    )? != [0; 14]
+    {
         return None;
     }
-    let mut cursor = start.checked_add(25)?;
+    let mut cursor = start.checked_add(combine_external::NESTED_REFERENCE_MARKER)?;
     let nested = take_reference(bytes, &mut cursor)?;
     if nested.target != Some(u64::from(record_index.checked_add(3)?))
         || nested.segment.is_some()
         || nested.link_name.is_some()
-        || u32_at(bytes, cursor)? != 1
+        || View::u32_le_at(bytes, cursor)? != 1
     {
         return None;
     }
@@ -4957,9 +5148,9 @@ fn exact_combine_external_body_identity(
         lp_utf16_bounded(bytes, selector_context_at, 1..=256)?;
     if !is_guid_relaxed(&selector_asset_id)
         || !is_guid_relaxed(&selector_context_id)
-        || u32_at(bytes, after_selector_context_id)? != 2
-        || u32_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
-        || u32_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
+        || View::u32_le_at(bytes, after_selector_context_id)? != 2
+        || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
+        || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
     {
         return None;
     }
@@ -4970,28 +5161,28 @@ fn exact_combine_external_body_identity(
     if occurrence_reference == 0
         || occurrence.segment.is_some()
         || occurrence.link_name.is_some()
-        || u32_at(bytes, cursor)? != 1
+        || View::u32_le_at(bytes, cursor)? != 1
     {
         return None;
     }
     cursor = cursor.checked_add(4)?;
     let external = take_external_reference_identity(bytes, &mut cursor)?;
     if external.asset_id != selector_asset_id
-        || u32_at(bytes, cursor)? != 9
-        || u16_at(bytes, cursor.checked_add(4)?)? != 2
+        || View::u32_le_at(bytes, cursor)? != 9
+        || View::u16_le_at(bytes, cursor.checked_add(4)?)? != 2
     {
         return None;
     }
     cursor = cursor.checked_add(6)?;
     let first_tail_value_at = cursor;
-    let first_tail_value = read_u64(bytes, cursor)?;
+    let first_tail_value = View::u64_le_at(bytes, cursor)?;
     cursor = cursor.checked_add(8)?;
-    if u32_at(bytes, cursor)? != 48 {
+    if View::u32_le_at(bytes, cursor)? != 48 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
     let second_tail_value_at = cursor;
-    let second_tail_value = read_u64(bytes, cursor)?;
+    let second_tail_value = View::u64_le_at(bytes, cursor)?;
     cursor = cursor.checked_add(8)?;
     let take_local = |cursor: &mut usize, expected| {
         let reference = take_reference(bytes, cursor)?;
@@ -5053,14 +5244,15 @@ fn combine_operation_identity_role(
 ) -> Option<CombineOperandRole> {
     let selection_reference = selection_record_index.to_le_bytes();
     if frame.get(11..21)? == [0; 10]
-        && u32_at(frame, 21)? == 1
+        && View::u32_le_at(frame, 21)? == 1
         && frame.get(25) == Some(&1)
         && frame.get(26..30)? == selection_reference
         && frame.get(30..36)? == [0; 6]
     {
         return Some(CombineOperandRole::Target);
     }
-    if frame.get(11..20)? != [0; 9] || frame.get(20) != Some(&1) || u32_at(frame, 21)? != 1 {
+    if frame.get(11..20)? != [0; 9] || frame.get(20) != Some(&1) || View::u32_le_at(frame, 21)? != 1
+    {
         return None;
     }
     let (property, after_property) = lp_ascii_filtered(frame, 25, 0..=2000, u8::is_ascii_graphic)?;
@@ -5069,7 +5261,7 @@ fn combine_operation_identity_role(
     let count_at = after_property_type.checked_add(8)?;
     if property != "DcFeatureOperationIdFlag"
         || property_type != "IntrinsicMetaTypeuint64"
-        || u32_at(frame, count_at)? != 1
+        || View::u32_le_at(frame, count_at)? != 1
         || frame.get(count_at + 4) != Some(&1)
         || frame.get(count_at + 5..count_at + 9)? != selection_reference
         || frame.get(count_at + 9..count_at + 15)? != [0; 6]
@@ -5272,12 +5464,12 @@ pub(crate) fn parse_parameter_scope(
     };
     let kind_end = *kind_end;
     let reference_table_end = kind_at.checked_sub(4)?;
-    let feature_ordinal = u32_at(bytes, kind_end)?;
+    let feature_ordinal = View::u32_le_at(bytes, kind_end)?;
     if feature_ordinal == 0 {
         return None;
     }
     let history_state_id_offset = reference_table_end;
-    let history_state_id = match u32_at(bytes, history_state_id_offset)? {
+    let history_state_id = match View::u32_le_at(bytes, history_state_id_offset)? {
         u32::MAX => None,
         state_id => Some(i64::from(state_id)),
     };
@@ -5287,13 +5479,13 @@ pub(crate) fn parse_parameter_scope(
             None => None,
         };
     let previous_history_state_id =
-        previous_history_state_id_offset.and_then(|offset| match u32_at(bytes, offset)? {
+        previous_history_state_id_offset.and_then(|offset| match View::u32_le_at(bytes, offset)? {
             u32::MAX => None,
             state_id => Some(i64::from(state_id)),
         });
     let mut reference_tables = Vec::new();
     for count_at in start + 11..reference_table_end {
-        let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
+        let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0
             || count_at
                 .checked_add(4)?
@@ -5311,7 +5503,7 @@ pub(crate) fn parse_parameter_scope(
                 members.clear();
                 break;
             }
-            members.push(u32_at(bytes, marker + 1)?);
+            members.push(View::u32_le_at(bytes, marker + 1)?);
             offsets.push(u64::try_from(marker + 1).ok()?);
         }
         if members.len() == count {
@@ -5511,9 +5703,9 @@ fn named_parameter_scope_tail_is_valid(
     if marker.checked_add(59)? != paired_at || bytes.get(label_end..marker)? != [0; 7] {
         return Some(false);
     }
-    let first_lane_value = read_u64(bytes, marker + 2)?;
-    let second_lane_value = read_u64(bytes, marker + 34)?;
-    let third_lane_value = read_u64(bytes, marker + 48)?;
+    let first_lane_value = View::u64_le_at(bytes, marker + 2)?;
+    let second_lane_value = View::u64_le_at(bytes, marker + 34)?;
+    let third_lane_value = View::u64_le_at(bytes, marker + 48)?;
     Some(
         bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
             && bytes.get(marker) == Some(&1)
@@ -5522,10 +5714,10 @@ fn named_parameter_scope_tail_is_valid(
             && second_lane_value == first_lane_value
             && third_lane_value == first_lane_value
             && bytes.get(marker + 10..marker + 12)? == [0; 2]
-            && u32_at(bytes, marker + 12)? > 0
-            && u32_at(bytes, marker + 16)? == 0xfc
-            && f64_at(bytes, marker + 20)?.is_finite()
-            && u32_at(bytes, marker + 28)? == 0xfc
+            && View::u32_le_at(bytes, marker + 12)? > 0
+            && View::u32_le_at(bytes, marker + 16)? == 0xfc
+            && View::f64_le_at(bytes, marker + 20)?.is_finite()
+            && View::u32_le_at(bytes, marker + 28)? == 0xfc
             && bytes.get(marker + 32) == Some(&1)
             && bytes
                 .get(marker + 33)
@@ -5592,7 +5784,7 @@ fn exact_coil_placement(
     let (selection_class_tag, selection_after_tag) =
         lp_ascii_filtered(bytes, selection_start, 3..=3, u8::is_ascii_digit)?;
     if selection_after_tag != selection_start.checked_add(7)?
-        || u32_at(bytes, selection_after_tag)? != selection_record_index
+        || View::u32_le_at(bytes, selection_after_tag)? != selection_record_index
     {
         return None;
     }
@@ -5605,40 +5797,62 @@ fn exact_coil_placement(
     let (transform_class_tag, transform_after_tag) =
         lp_ascii_filtered(bytes, transform_start, 3..=3, u8::is_ascii_digit)?;
     if transform_after_tag != transform_start.checked_add(7)?
-        || u32_at(bytes, transform_after_tag)? != transform_record_index
+        || View::u32_le_at(bytes, transform_after_tag)? != transform_record_index
     {
         return None;
     }
     let frame_length = transform_paired.checked_sub(transform_start)?;
     let (transform, transform_offset) = match frame_length {
-        213 if bytes.get(transform_start + 55) == Some(&1)
-            && bytes.get(transform_start + 56..transform_start + 65) == Some(&[0; 9][..])
-            && bytes.get(transform_start + 65) == Some(&1) =>
+        coil_identity::LEN
+            if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
+                && bytes.get(
+                    transform_start + coil_identity::IDENTITY_ZERO_RUN
+                        ..transform_start + coil_identity::IDENTITY_MARKER,
+                ) == Some(&[0; 9][..])
+                && bytes.get(transform_start + coil_identity::IDENTITY_MARKER) == Some(&1) =>
         {
             (identity_matrix(), None)
         }
-        233 if bytes.get(transform_start + 55) == Some(&1)
-            && bytes.get(transform_start + 56..transform_start + 65) == Some(&[0; 9][..])
-            && bytes.get(transform_start + 65) == Some(&1)
-            && bytes.get(transform_start + 213..transform_start + 222) == Some(&[0; 9][..])
-            && bytes.get(transform_start + 222) == Some(&1)
-            && u32_at(bytes, transform_start + 223) == Some(scope.record_index)
-            && bytes.get(transform_start + 227..transform_start + 233) == Some(&[0; 6][..]) =>
+        coil_owner_identity::LEN
+            if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
+                && bytes.get(
+                    transform_start + coil_identity::IDENTITY_ZERO_RUN
+                        ..transform_start + coil_identity::IDENTITY_MARKER,
+                ) == Some(&[0; 9][..])
+                && bytes.get(transform_start + coil_identity::IDENTITY_MARKER) == Some(&1)
+                && bytes.get(
+                    transform_start + coil_identity::LEN
+                        ..transform_start + coil_owner_identity::OWNER_REFERENCE_MARKER,
+                ) == Some(&[0; 9][..])
+                && bytes.get(transform_start + coil_owner_identity::OWNER_REFERENCE_MARKER)
+                    == Some(&1)
+                && View::u32_le_at(
+                    bytes,
+                    transform_start + coil_owner_identity::OWNER_SCOPE_RECORD_INDEX,
+                ) == Some(scope.record_index)
+                && bytes.get(
+                    transform_start + coil_owner_identity::OWNER_REFERENCE_TAIL
+                        ..transform_start + coil_owner_identity::LEN,
+                ) == Some(&[0; 6][..]) =>
         {
             (identity_matrix(), None)
         }
-        341 if bytes.get(transform_start + 55) == Some(&1)
-            && bytes.get(transform_start + 56..transform_start + 65) == Some(&[0; 9][..])
-            && bytes.get(transform_start + 65) == Some(&0) =>
+        coil_matrix::LEN
+            if bytes.get(transform_start + coil_matrix::PLACEMENT_MARKER) == Some(&1)
+                && bytes.get(
+                    transform_start + coil_matrix::EXPLICIT_ZERO_RUN
+                        ..transform_start + coil_matrix::EXPLICIT_FORM_MARKER,
+                ) == Some(&[0; 9][..])
+                && bytes.get(transform_start + coil_matrix::EXPLICIT_FORM_MARKER) == Some(&0) =>
         {
-            let values = f64s_at(bytes, transform_start.checked_add(66)?, 16)?;
+            let values = f64s_at(bytes, transform_start.checked_add(coil_matrix::MATRIX)?, 16)?;
             let mut transform = [[0.0; 4]; 4];
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
             (
                 transform,
-                Some(u64::try_from(transform_start.checked_add(66)?).ok()?),
+                Some(u64::try_from(transform_start.checked_add(coil_matrix::MATRIX)?).ok()?),
             )
         }
         _ => return None,
@@ -5757,15 +5971,15 @@ fn exact_coil_discriminators(
     {
         return Some(fields);
     }
-    let operation_offset = start.checked_add(20)?;
-    let operation = match (kind, u32_at(bytes, operation_offset)?) {
+    let operation_offset = start.checked_add(coil_compact::OPERATION)?;
+    let operation = match (kind, View::u32_le_at(bytes, operation_offset)?) {
         ("SpirePrimitive", 1) => DesignExtrudeOperation::Join,
         ("SpirePrimitive", 2) => DesignExtrudeOperation::Cut,
         ("SpirePrimitive", 3) => DesignExtrudeOperation::Intersect,
         ("SpirePrimitive", 4) | ("CoilPrimitive", 1) => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
-    let clockwise_offset = start.checked_add(24)?;
+    let clockwise_offset = start.checked_add(coil_compact::CLOCKWISE)?;
     let clockwise = match bytes.get(clockwise_offset)? {
         0 => false,
         1 => true,
@@ -5776,29 +5990,31 @@ fn exact_coil_discriminators(
         "CoilPrimitive" => 4,
         _ => return None,
     };
-    if u32_at(bytes, start.checked_add(26)?)? != structural_constant {
+    if View::u32_le_at(bytes, start.checked_add(coil_compact::STRUCTURAL_CONSTANT)?)?
+        != structural_constant
+    {
         return None;
     }
-    let extent_offset = start.checked_add(30)?;
-    let extent = match u32_at(bytes, extent_offset)? {
+    let extent_offset = start.checked_add(coil_compact::EXTENT)?;
+    let extent = match View::u32_le_at(bytes, extent_offset)? {
         1 => DesignCoilExtent::RevolutionsHeight,
         2 => DesignCoilExtent::RevolutionsPitch,
         3 => DesignCoilExtent::HeightPitch,
         4 => DesignCoilExtent::Spiral,
         _ => return None,
     };
-    let section_offset = start.checked_add(92)?;
-    let section_placement_offset = start.checked_add(107)?;
+    let section_offset = start.checked_add(coil_compact::SECTION_PLACEMENT)?;
+    let section_placement_offset = start.checked_add(coil_compact::SECTION_SHAPE)?;
     let (section, section_placement) = match kind {
         "SpirePrimitive" => (
-            match u32_at(bytes, section_offset)? {
+            match View::u32_le_at(bytes, section_offset)? {
                 0 => DesignCoilSection::Circular,
                 1 => DesignCoilSection::Square,
                 2 => DesignCoilSection::ExternalTriangle,
                 3 => DesignCoilSection::InternalTriangle,
                 _ => return None,
             },
-            match u32_at(bytes, section_placement_offset)? {
+            match View::u32_le_at(bytes, section_placement_offset)? {
                 4 => DesignCoilSectionPlacement::Inside,
                 _ => return None,
             },
@@ -5807,14 +6023,14 @@ fn exact_coil_discriminators(
         // opposite lanes from SpirePrimitive: position at offset 92 and
         // section shape at offset 107.
         "CoilPrimitive" => (
-            match u32_at(bytes, section_placement_offset)? {
+            match View::u32_le_at(bytes, section_placement_offset)? {
                 1 => DesignCoilSection::Circular,
                 2 => DesignCoilSection::Square,
                 3 => DesignCoilSection::ExternalTriangle,
                 4 => DesignCoilSection::InternalTriangle,
                 _ => return None,
             },
-            match u32_at(bytes, section_offset)? {
+            match View::u32_le_at(bytes, section_offset)? {
                 1 => DesignCoilSectionPlacement::Inside,
                 2 => DesignCoilSectionPlacement::Center,
                 3 => DesignCoilSectionPlacement::Outside,
@@ -5849,14 +6065,18 @@ fn exact_long_coil_discriminators(
     }
     let frame_length = paired_at.checked_sub(start)?;
     if !matches!(frame_length, 450 | 578)
-        || bytes.get(start.checked_add(11)?..start.checked_add(22)?)? != [0; 11]
-        || u32_at(bytes, start.checked_add(26)?)? != 1
-        || marked_record_reference(bytes, start.checked_add(30)?)? != *reference_members.get(4)?
-        || marked_record_reference(bytes, start.checked_add(41)?)? != *reference_members.get(8)?
+        || bytes.get(
+            start.checked_add(coil_long::ZERO_RUN_11)?..start.checked_add(coil_long::OPERATION)?,
+        )? != [0; 11]
+        || View::u32_le_at(bytes, start.checked_add(coil_long::STRUCTURAL_CONSTANT)?)? != 1
+        || marked_record_reference(bytes, start.checked_add(coil_long::FIFTH_REFERENCE)?)?
+            != *reference_members.get(4)?
+        || marked_record_reference(bytes, start.checked_add(coil_long::NINTH_REFERENCE)?)?
+            != *reference_members.get(8)?
     {
         return None;
     }
-    let operation_value = u32_at(bytes, start.checked_add(22)?)?;
+    let operation_value = View::u32_le_at(bytes, start.checked_add(coil_long::OPERATION)?)?;
     let operation = match (frame_length, operation_value) {
         (450, 1) => DesignExtrudeOperation::Join,
         (450, 2) => DesignExtrudeOperation::Cut,
@@ -5866,7 +6086,7 @@ fn exact_long_coil_discriminators(
     };
     Some(CoilDiscriminators {
         operation,
-        operation_offset: u64::try_from(start.checked_add(22)?).ok()?,
+        operation_offset: u64::try_from(start.checked_add(coil_long::OPERATION)?).ok()?,
         // The long form has no extent selector. Its exact owned parameter set
         // supplies the mode after the scope is parsed.
         extent: None,
@@ -5997,20 +6217,20 @@ fn exact_legacy_distance_extrude_prologue(
     start: usize,
     reference_count_at: usize,
 ) -> Option<DesignExtrudePrologue> {
-    let marker_offset = start.checked_add(20)?;
+    let marker_offset = start.checked_add(early_absent::ABSENT_PREFIX)?;
     let (prefix_value, prefix_value_offset, operation_offset, expected_reference_count_delta) =
         match bytes.get(marker_offset)? {
-            0 => (None, None, marker_offset.checked_add(1)?, 208),
+            0 => (None, None, start.checked_add(early_absent::OPERATION)?, 208),
             1 => {
-                let prefix_value_offset = marker_offset.checked_add(1)?;
-                let prefix_value = u32_at(bytes, prefix_value_offset)?;
+                let prefix_value_offset = start.checked_add(early_present::PREFIX_VALUE)?;
+                let prefix_value = View::u32_le_at(bytes, prefix_value_offset)?;
                 if prefix_value != 0 {
                     return None;
                 }
                 (
                     Some(prefix_value),
                     Some(prefix_value_offset),
-                    prefix_value_offset.checked_add(4)?,
+                    start.checked_add(early_present::OPERATION)?,
                     212,
                 )
             }
@@ -6019,7 +6239,7 @@ fn exact_legacy_distance_extrude_prologue(
     if reference_count_at.checked_sub(start)? != expected_reference_count_delta {
         return None;
     }
-    let operation = match u32_at(bytes, operation_offset)? {
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
         3 => DesignExtrudeOperation::Intersect,
@@ -6027,7 +6247,7 @@ fn exact_legacy_distance_extrude_prologue(
         _ => return None,
     };
     let extent_kind_offset = operation_offset.checked_add(4)?;
-    let extent_kind = u32_at(bytes, extent_kind_offset)?;
+    let extent_kind = View::u32_le_at(bytes, extent_kind_offset)?;
     if extent_kind != 2 {
         return None;
     }
@@ -6038,7 +6258,7 @@ fn exact_legacy_distance_extrude_prologue(
         _ => return None,
     };
     let geometry_kind_offset = direction_reversed_offset.checked_add(1)?;
-    let geometry_kind = u32_at(bytes, geometry_kind_offset)?;
+    let geometry_kind = View::u32_le_at(bytes, geometry_kind_offset)?;
     if !matches!(geometry_kind, 0 | 1) {
         return None;
     }
@@ -6065,7 +6285,7 @@ fn exact_current_extrude_prologue(
     let direct_offset = start.checked_add(28)?;
     let reference = if bytes.get(start.checked_add(25)?) == Some(&1) {
         let reference_record_index_offset = start.checked_add(26)?;
-        let record_index = u32_at(bytes, reference_record_index_offset)?;
+        let record_index = View::u32_le_at(bytes, reference_record_index_offset)?;
         let prefix_tail = start.checked_add(30)?;
         let candidates = [
             (start.checked_add(37)?, None),
@@ -6080,12 +6300,12 @@ fn exact_current_extrude_prologue(
                 .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
                 && marker_offset.is_none_or(|offset| bytes.get(offset) == Some(&1))
                 && reference_members.contains(&record_index)
-                && matches!(u32_at(bytes, *operation_offset), Some(1..=4))
+                && matches!(View::u32_le_at(bytes, *operation_offset), Some(1..=4))
                 && matches!(
-                    u32_at(bytes, operation_offset.saturating_add(4)),
+                    View::u32_le_at(bytes, operation_offset.saturating_add(4)),
                     Some(1..=3)
                 )
-                && u32_at(bytes, operation_offset.saturating_add(8)).is_some()
+                && View::u32_le_at(bytes, operation_offset.saturating_add(8)).is_some()
                 && matches!(bytes.get(operation_offset.saturating_add(12)), Some(0 | 1))
                 && matches!(bytes.get(operation_offset.saturating_add(13)), Some(0 | 1))
                 && matches!(bytes.get(operation_offset.saturating_add(14)), Some(0..=2))
@@ -6114,43 +6334,47 @@ fn exact_current_extrude_prologue(
         .map_or((direct_offset, None), |(offset, reference)| {
             (offset, Some(reference))
         });
-    let operation = match u32_at(bytes, operation_offset)? {
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
         3 => DesignExtrudeOperation::Intersect,
         4 => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
-    let direction_offset = operation_offset.checked_add(4)?;
-    let face_extend_offset = operation_offset.checked_add(8)?;
+    let direction_offset = operation_offset.checked_add(extrude_fields::DIRECTION)?;
+    let face_extend_offset = operation_offset.checked_add(extrude_fields::FACE_EXTEND)?;
     let direction_face_extend_values = [
-        u32_at(bytes, direction_offset)?,
-        u32_at(bytes, face_extend_offset)?,
+        View::u32_le_at(bytes, direction_offset)?,
+        View::u32_le_at(bytes, face_extend_offset)?,
     ];
     if !matches!(direction_face_extend_values[0], 1..=3) {
         return None;
     }
-    let direction_reversed_offset = operation_offset.checked_add(12)?;
+    let direction_reversed_offset =
+        operation_offset.checked_add(extrude_fields::DIRECTION_REVERSED)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let solid_operation_offset = operation_offset.checked_add(13)?;
+    let solid_operation_offset = operation_offset.checked_add(extrude_fields::GEOMETRY_KIND)?;
     let solid_operation = match bytes.get(solid_operation_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let start_offset = operation_offset.checked_add(14)?;
+    let start_offset = operation_offset.checked_add(extrude_fields::START_SUPPORT)?;
     let start = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
         1 => DesignExtrudeStart::OffsetProfilePlane,
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
     };
-    let profile_normal_offset = operation_offset.checked_add(18)?;
-    if bytes.get(operation_offset.checked_add(15)?..profile_normal_offset)? != [0; 3] {
+    let profile_normal_offset = operation_offset.checked_add(extrude_fields::PROFILE_NORMAL)?;
+    if bytes
+        .get(operation_offset.checked_add(extrude_fields::ZERO_RUN_3)?..profile_normal_offset)?
+        != [0; 3]
+    {
         return None;
     }
     let profile_normal = f64s_at(bytes, profile_normal_offset, 3)?;
@@ -6184,11 +6408,14 @@ fn exact_current_extrude_prologue(
         }
     }
     let first_side_target_ordinal = final_slot_reference.and_then(|record_index| {
-        let scope_reference_ordinal = u32_at(bytes, extent_cursor)?;
+        let scope_reference_ordinal = View::u32_le_at(bytes, extent_cursor)?;
         let ordinal = usize::try_from(scope_reference_ordinal).ok()?;
         if reference_members.get(ordinal) != Some(&record_index)
-            || bytes.get(extent_cursor.checked_add(4)?) != Some(&0)
-            || u32_at(bytes, extent_cursor.checked_add(5)?) != Some(2)
+            || bytes.get(extent_cursor.checked_add(extrude_target::ZERO_SEPARATOR)?) != Some(&0)
+            || View::u32_le_at(
+                bytes,
+                extent_cursor.checked_add(extrude_target::FIRST_SIDE_EXTENT)?,
+            ) != Some(2)
         {
             return None;
         }
@@ -6201,11 +6428,12 @@ fn exact_current_extrude_prologue(
         extent_cursor = extent_cursor.checked_add(5)?;
     }
     let first_side_extent_offset = extent_cursor;
-    let first_side_extent = u32_at(bytes, first_side_extent_offset)?;
+    let first_side_extent = View::u32_le_at(bytes, first_side_extent_offset)?;
     let second_side_extent_offset = if first_side_extent == 2 {
         reference_count_at.checked_sub(4)?
     } else {
-        let second_side_extent_offset = first_side_extent_offset.checked_add(13)?;
+        let second_side_extent_offset =
+            first_side_extent_offset.checked_add(extrude_extent_pair::SECOND_SIDE_EXTENT)?;
         if bytes.get(first_side_extent_offset.checked_add(4)?..second_side_extent_offset)? != [0; 9]
         {
             return None;
@@ -6217,7 +6445,10 @@ fn exact_current_extrude_prologue(
     {
         return None;
     }
-    let side_extent_discriminators = [first_side_extent, u32_at(bytes, second_side_extent_offset)?];
+    let side_extent_discriminators = [
+        first_side_extent,
+        View::u32_le_at(bytes, second_side_extent_offset)?,
+    ];
     let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
     Some(DesignExtrudePrologue::ReferenceAware {
         reference,
@@ -6263,17 +6494,23 @@ fn exact_legacy_shifted_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    if u32_at(bytes, start.checked_add(20)?)? != 1
-        || bytes.get(start.checked_add(24)?..start.checked_add(27)?)? != [0; 3]
+    if View::u32_le_at(bytes, start.checked_add(shifted_extrude::PREFIX_CONSTANT)?)? != 1
+        || bytes.get(
+            start.checked_add(shifted_extrude::ZERO_RUN_3)?
+                ..start.checked_add(shifted_extrude::OPERATION)?,
+        )? != [0; 3]
     {
         return None;
     }
-    let marker_offset = start.checked_add(27)?;
+    let marker_offset = start.checked_add(shifted_extrude::OPERATION)?;
     let (operation_prefix_marker, operation_prefix_marker_offset, field_shift) =
-        if matches!(u32_at(bytes, marker_offset), Some(1..=4)) {
+        if matches!(View::u32_le_at(bytes, marker_offset), Some(1..=4)) {
             (None, None, 0)
         } else if bytes.get(marker_offset) == Some(&1)
-            && matches!(u32_at(bytes, marker_offset.checked_add(1)?), Some(1..=4))
+            && matches!(
+                View::u32_le_at(bytes, marker_offset.checked_add(1)?),
+                Some(1..=4)
+            )
         {
             (Some(1), Some(marker_offset as u64), 1)
         } else {
@@ -6283,7 +6520,7 @@ fn exact_legacy_shifted_extrude_prologue(
     let reference_count_delta = reference_count_at
         .checked_sub(start)?
         .checked_sub(field_shift)?;
-    let operation = match u32_at(bytes, operation_offset)? {
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
         3 => DesignExtrudeOperation::Intersect,
@@ -6293,18 +6530,22 @@ fn exact_legacy_shifted_extrude_prologue(
     let first_extent_offset = operation_offset.checked_add(4)?;
     let second_extent_offset = operation_offset.checked_add(8)?;
     let direction_face_extend_values = [
-        u32_at(bytes, first_extent_offset)?,
-        u32_at(bytes, second_extent_offset)?,
+        View::u32_le_at(bytes, first_extent_offset)?,
+        View::u32_le_at(bytes, second_extent_offset)?,
     ];
     if !matches!(direction_face_extend_values[0], 1..=3) {
         return None;
     }
     let two_sided_offsets = || {
         if reference_count_delta == 283 {
-            let first_parameter_at = start.checked_add(139 + field_shift)?;
-            let first_side_extent_offset = start.checked_add(166 + field_shift)?;
-            let second_parameter_at = start.checked_add(170 + field_shift)?;
-            let second_side_extent_offset = start.checked_add(181 + field_shift)?;
+            let first_parameter_at =
+                start.checked_add(shifted_283::FIRST_PARAMETER_REFERENCE + field_shift)?;
+            let first_side_extent_offset =
+                start.checked_add(shifted_283::FIRST_SIDE_EXTENT + field_shift)?;
+            let second_parameter_at =
+                start.checked_add(shifted_283::SECOND_PARAMETER_REFERENCE + field_shift)?;
+            let second_side_extent_offset =
+                start.checked_add(shifted_283::SECOND_SIDE_EXTENT + field_shift)?;
             let compact_valid = bytes
                 .get(start.checked_add(150 + field_shift)?..first_side_extent_offset)?
                 == [0; 16]
@@ -6316,9 +6557,14 @@ fn exact_legacy_shifted_extrude_prologue(
                     .all(|reference| {
                         reference.is_some_and(|value| reference_members.contains(&value))
                     })
-                && marked_record_reference(bytes, start.checked_add(185 + field_shift)?).is_some()
+                && marked_record_reference(
+                    bytes,
+                    start.checked_add(shifted_283::TRAILING_ENTITY_REFERENCE + field_shift)?,
+                )
+                .is_some()
                 && bytes.get(
-                    start.checked_add(196 + field_shift)?..start.checked_add(204 + field_shift)?,
+                    start.checked_add(shifted_283::ZERO_RUN_8 + field_shift)?
+                        ..start.checked_add(shifted_283::LEN + field_shift)?,
                 )? == [0; 8];
             if compact_valid {
                 return Some([first_side_extent_offset, second_side_extent_offset]);
@@ -6346,7 +6592,7 @@ fn exact_legacy_shifted_extrude_prologue(
         if first_side_extent_offset.checked_add(4)? > reference_count_at {
             return None;
         }
-        let first_side_extent = u32_at(bytes, first_side_extent_offset)?;
+        let first_side_extent = View::u32_le_at(bytes, first_side_extent_offset)?;
         let second_side_extent_offset = if first_side_extent == 2 {
             reference_count_at.checked_sub(4)?
         } else {
@@ -6356,14 +6602,20 @@ fn exact_legacy_shifted_extrude_prologue(
             return None;
         }
         let offsets = [first_side_extent_offset, second_side_extent_offset];
-        let discriminators = [u32_at(bytes, offsets[0])?, u32_at(bytes, offsets[1])?];
+        let discriminators = [
+            View::u32_le_at(bytes, offsets[0])?,
+            View::u32_le_at(bytes, offsets[1])?,
+        ];
         exact_extrude_extent(direction_face_extend_values[0], discriminators)
             .map(|extent| (offsets, discriminators, extent))
     };
     let (side_extent_discriminator_offsets, side_extent_discriminators, extent) =
         if direction_face_extend_values[0] == 2 {
             let offsets = two_sided_offsets()?;
-            let discriminators = [u32_at(bytes, offsets[0])?, u32_at(bytes, offsets[1])?];
+            let discriminators = [
+                View::u32_le_at(bytes, offsets[0])?,
+                View::u32_le_at(bytes, offsets[1])?,
+            ];
             (
                 offsets,
                 discriminators,
@@ -6371,10 +6623,23 @@ fn exact_legacy_shifted_extrude_prologue(
             )
         } else {
             let (first_offset, second_offset) = match reference_count_delta {
-                262 if bytes.get(operation_offset.checked_add(14)?) == Some(&1) => (116, 130),
+                262 if bytes.get(operation_offset.checked_add(extrude_fields::START_SUPPORT)?)
+                    == Some(&1) =>
+                {
+                    (
+                        offset_lane::FIRST_SIDE_EXTENT,
+                        offset_lane::SECOND_SIDE_EXTENT,
+                    )
+                }
                 252 | 262 | 263 => (106, 110),
-                272 => (116, 130),
-                283 => (116, 130),
+                272 => (
+                    offset_lane::FIRST_SIDE_EXTENT,
+                    offset_lane::SECOND_SIDE_EXTENT,
+                ),
+                283 => (
+                    offset_lane::FIRST_SIDE_EXTENT,
+                    offset_lane::SECOND_SIDE_EXTENT,
+                ),
                 294 => (116, 129),
                 692 => (106, 110),
                 _ => return None,
@@ -6384,19 +6649,20 @@ fn exact_legacy_shifted_extrude_prologue(
                 start.checked_add(second_offset + field_shift)?,
             )?
         };
-    let direction_reversed_offset = operation_offset.checked_add(12)?;
+    let direction_reversed_offset =
+        operation_offset.checked_add(extrude_fields::DIRECTION_REVERSED)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let solid_operation_offset = operation_offset.checked_add(13)?;
+    let solid_operation_offset = operation_offset.checked_add(extrude_fields::GEOMETRY_KIND)?;
     let solid_operation = match bytes.get(solid_operation_offset)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let start_offset = operation_offset.checked_add(14)?;
+    let start_offset = operation_offset.checked_add(extrude_fields::START_SUPPORT)?;
     let start = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
         1 => DesignExtrudeStart::OffsetProfilePlane,
@@ -6464,22 +6730,22 @@ pub(crate) fn exact_base_flange_operation(
         return None;
     };
     if paired_at.checked_sub(start)? != 416
-        || u32_at(bytes, start + 73)? != 1
+        || View::u32_le_at(bytes, start + 73)? != 1
         || bytes.get(start + 81) != Some(&1)
-        || u32_at(bytes, start + 82)? != *settings_record_index
+        || View::u32_le_at(bytes, start + 82)? != *settings_record_index
         || bytes.get(start + 86..start + 92)? != [0; 6]
-        || u32_at(bytes, start + 92)? != 1
+        || View::u32_le_at(bytes, start + 92)? != 1
         || bytes.get(start + 112) != Some(&1)
-        || u32_at(bytes, start + 113)? != *thickness_record_index
+        || View::u32_le_at(bytes, start + 113)? != *thickness_record_index
         || bytes.get(start + 117..start + 123)? != [0; 6]
-        || u32_at(bytes, start + 141)? != 1
+        || View::u32_le_at(bytes, start + 141)? != 1
         || bytes.get(start + 145) != Some(&1)
-        || u32_at(bytes, start + 146)? != *profile_group_record_index
+        || View::u32_le_at(bytes, start + 146)? != *profile_group_record_index
         || bytes.get(start + 150..start + 156)? != [0; 6]
     {
         return None;
     }
-    let thickness = f64_at(bytes, start + 123)?;
+    let thickness = View::f64_le_at(bytes, start + 123)?;
     if !thickness.is_finite() || thickness <= 0.0 {
         return None;
     }
@@ -6504,7 +6770,7 @@ pub(crate) fn exact_ruled_surface_operation(
         return None;
     }
     let method_offset = start.checked_add(20)?;
-    let method = match u32_at(bytes, method_offset)? {
+    let method = match View::u32_le_at(bytes, method_offset)? {
         0 => DesignRuledSurfaceMethod::Tangent,
         1 => DesignRuledSurfaceMethod::Normal,
         2 => DesignRuledSurfaceMethod::Direction,
@@ -6530,13 +6796,13 @@ pub(crate) fn exact_ruled_surface_operation(
     let angle_owner_record_index = fixed_reference(start.checked_add(28)?)?;
     let distance_owner_record_index = fixed_reference(start.checked_add(39)?)?;
     let corner_offset = start.checked_add(50)?;
-    let corner = match u32_at(bytes, corner_offset)? {
+    let corner = match View::u32_le_at(bytes, corner_offset)? {
         0 => DesignRuledSurfaceCorner::Rounded,
         1 => DesignRuledSurfaceCorner::Mitered,
         _ => return None,
     };
     let take_reference_list = |mut cursor: usize| {
-        let count = usize::try_from(u32_at(bytes, cursor)?).ok()?;
+        let count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
         if count > 100_000 {
             return None;
         }
@@ -6549,13 +6815,13 @@ pub(crate) fn exact_ruled_surface_operation(
         Some((records, cursor))
     };
     let (mut edge_group_record_indices, mut cursor) = take_reference_list(start.checked_add(54)?)?;
-    if u32_at(bytes, cursor)? != 0 {
+    if View::u32_le_at(bytes, cursor)? != 0 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
     let (auxiliary_record_indices, next) = take_reference_list(cursor)?;
     cursor = next;
-    if u32_at(bytes, cursor)? != 0 {
+    if View::u32_le_at(bytes, cursor)? != 0 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -6659,8 +6925,8 @@ fn edge_flange_operation_at(
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
-    let bend_position = DesignBendPosition::from_code(u32_at(bytes, common)?);
-    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+    let bend_position = DesignBendPosition::from_code(View::u32_le_at(bytes, common)?);
+    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
     // Every reference the fixed section names is removed from this pool, so the
@@ -6672,27 +6938,28 @@ fn edge_flange_operation_at(
         Some(index)
     };
 
-    let mut cursor = common.checked_add(8)?;
+    let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
     let edge_wrapper_record_indices = vec![claim(
         marked_record_reference(bytes, cursor)?,
         &mut unclaimed,
     )?];
-    cursor = cursor.checked_add(11)?;
+    cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
     let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = cursor.checked_add(11)?;
-    let height_datum = DesignSheetMetalHeightDatum::from_code(u32_at(bytes, cursor)?);
-    cursor = cursor.checked_add(4)?;
+    cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
+    let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(bytes, cursor)?);
+    cursor = common.checked_add(edge_flange::ANGLE_OWNER_REFERENCE)?;
     let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = cursor.checked_add(11)?;
+    cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = cursor.checked_add(11)?;
-    let reference_side_code = u32_at(bytes, cursor)?;
-    let bend_radius_offset = cursor.checked_add(15)?;
-    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    cursor = common.checked_add(edge_flange::UNSETTLED_SIDE_REFERENCE)?;
+    let reference_side_code = View::u32_le_at(bytes, cursor)?;
+    let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
+    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
         return None;
     }
-    let result_count = usize::try_from(u32_at(bytes, bend_radius_offset.checked_add(14)?)?).ok()?;
+    let result_count =
+        usize::try_from(View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?).ok()?;
     // The aggregate-group and role-`0x08` group slots close the section after the
     // result-record run, so they also confirm the recovered result count.
     let aggregate_slot = bend_radius_offset
@@ -6763,8 +7030,8 @@ fn edge_flange_to_object_operation_at(
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
-    let bend_position = DesignBendPosition::from_code(u32_at(bytes, common)?);
-    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+    let bend_position = DesignBendPosition::from_code(View::u32_le_at(bytes, common)?);
+    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
     let mut unclaimed = references.to_vec();
@@ -6773,27 +7040,27 @@ fn edge_flange_to_object_operation_at(
         pool.remove(at);
         Some(index)
     };
-    let mut cursor = common.checked_add(8)?;
+    let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
     let edge_wrapper_record_indices = vec![claim(
         marked_record_reference(bytes, cursor)?,
         &mut unclaimed,
     )?];
-    cursor = cursor.checked_add(11)?;
+    cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
     let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = cursor.checked_add(11)?;
-    let height_datum = DesignSheetMetalHeightDatum::from_code(u32_at(bytes, cursor)?);
-    cursor = cursor.checked_add(4)?;
+    cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
+    let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(bytes, cursor)?);
+    cursor = common.checked_add(edge_flange::ANGLE_OWNER_REFERENCE)?;
     let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = cursor.checked_add(11)?;
+    cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = cursor.checked_add(11)?;
-    let reference_side_code = u32_at(bytes, cursor)?;
-    let bend_radius_offset = cursor.checked_add(15)?;
-    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    cursor = common.checked_add(edge_flange::UNSETTLED_SIDE_REFERENCE)?;
+    let reference_side_code = View::u32_le_at(bytes, cursor)?;
+    let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
+    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
         return None;
     }
-    let result_count = u32_at(bytes, bend_radius_offset.checked_add(14)?)?;
+    let result_count = View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?;
     if result_count != 1
         || bytes.get(bend_radius_offset.checked_add(18)?..bend_radius_offset.checked_add(22)?)?
             != [0; 4]
@@ -6804,34 +7071,67 @@ fn edge_flange_to_object_operation_at(
         return None;
     }
     let target_group_record_index = claim(
-        marked_record_reference(bytes, common.checked_add(94)?)?,
+        marked_record_reference(
+            bytes,
+            common.checked_add(flange_to_object::TARGET_GROUP_REFERENCE)?,
+        )?,
         &mut unclaimed,
     )?;
-    if u32_at(bytes, common.checked_add(105)?)? != 2 {
+    if View::u32_le_at(
+        bytes,
+        common.checked_add(flange_to_object::TARGET_REFERENCE_COUNT)?,
+    )? != 2
+    {
         return None;
     }
     let reference_record_indices = [
-        marked_record_reference(bytes, common.checked_add(109)?)?,
-        marked_record_reference(bytes, common.checked_add(124)?)?,
+        marked_record_reference(
+            bytes,
+            common.checked_add(flange_to_object::INSERTED_REFERENCE_ONE)?,
+        )?,
+        marked_record_reference(
+            bytes,
+            common.checked_add(flange_to_object::INSERTED_REFERENCE_TWO)?,
+        )?,
     ];
     if reference_record_indices[0] == reference_record_indices[1]
         || reference_record_indices
             .iter()
             .any(|record_index| references.contains(record_index))
-        || u32_at(bytes, common.checked_add(120)?)? != 1
-        || bytes.get(common.checked_add(135)?..common.checked_add(139)?)? != [0; 4]
-        || u32_at(bytes, common.checked_add(139)?)? != 1
-        || bytes.get(common.checked_add(154)?..common.checked_add(166)?)? != [0; 12]
-        || u32_at(bytes, common.checked_add(166)?)? != 1
+        || View::u32_le_at(
+            bytes,
+            common.checked_add(flange_to_object::INSERTED_REFERENCE_COUNT)?,
+        )? != 1
+        || bytes.get(
+            common.checked_add(135)?
+                ..common.checked_add(flange_to_object::AGGREGATE_REFERENCE_COUNT)?,
+        )? != [0; 4]
+        || View::u32_le_at(
+            bytes,
+            common.checked_add(flange_to_object::AGGREGATE_REFERENCE_COUNT)?,
+        )? != 1
+        || bytes.get(
+            common.checked_add(154)?..common.checked_add(flange_to_object::EDGE_REFERENCE_COUNT)?,
+        )? != [0; 12]
+        || View::u32_le_at(
+            bytes,
+            common.checked_add(flange_to_object::EDGE_REFERENCE_COUNT)?,
+        )? != 1
     {
         return None;
     }
     let aggregate_group_record_index = claim(
-        marked_record_reference(bytes, common.checked_add(143)?)?,
+        marked_record_reference(
+            bytes,
+            common.checked_add(flange_to_object::AGGREGATE_GROUP_REFERENCE)?,
+        )?,
         &mut unclaimed,
     )?;
     let edge_group_record_index = claim(
-        marked_record_reference(bytes, common.checked_add(170)?)?,
+        marked_record_reference(
+            bytes,
+            common.checked_add(flange_to_object::EDGE_GROUP_REFERENCE)?,
+        )?,
         &mut unclaimed,
     )?;
     let target_operand_record_index =
@@ -6923,7 +7223,7 @@ fn hem_gap_length_operation_at(
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
-    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
 
@@ -6940,14 +7240,14 @@ fn hem_gap_length_operation_at(
         )
     };
 
-    let edge_wrapper_record_index = slot(8, &mut unclaimed)?;
-    let settings_record_index = slot(19, &mut unclaimed)?;
+    let edge_wrapper_record_index = slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed)?;
+    let settings_record_index = slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed)?;
     // The two owners are the form's inputs in local-ordinal order.
-    let gap_owner_record_index = slot(42, &mut unclaimed)?;
-    let length_owner_record_index = slot(53, &mut unclaimed)?;
+    let gap_owner_record_index = slot(hem_gap::GAP_OWNER_REFERENCE, &mut unclaimed)?;
+    let length_owner_record_index = slot(hem_gap::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
 
-    let bend_radius_offset = common.checked_add(71)?;
-    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    let bend_radius_offset = common.checked_add(hem_gap::INSIDE_BEND_RADIUS)?;
+    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
         return None;
     }
@@ -6974,10 +7274,10 @@ fn hem_gap_length_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: u32_at(bytes, common)?,
-        direction_code: u32_at(bytes, common.checked_add(30)?)?,
+        form_code: View::u32_le_at(bytes, common)?,
+        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
         direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: u32_at(bytes, common.checked_add(36)?)?,
+        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
     })
 }
 
@@ -7001,7 +7301,7 @@ fn hem_radius_angle_operation_at(
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
-    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
 
@@ -7018,12 +7318,12 @@ fn hem_radius_angle_operation_at(
         )
     };
 
-    let edge_wrapper_record_index = slot(8, &mut unclaimed)?;
-    let settings_record_index = slot(19, &mut unclaimed)?;
-    let angle_owner_record_index = slot(41, &mut unclaimed)?;
-    let radius_owner_record_index = slot(54, &mut unclaimed)?;
-    let bend_radius_offset = common.checked_add(71)?;
-    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    let edge_wrapper_record_index = slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed)?;
+    let settings_record_index = slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed)?;
+    let angle_owner_record_index = slot(hem_rolled::ANGLE_OWNER_REFERENCE, &mut unclaimed)?;
+    let radius_owner_record_index = slot(hem_rolled::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
+    let bend_radius_offset = common.checked_add(hem_rolled::INSIDE_BEND_RADIUS)?;
+    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
         return None;
     }
@@ -7049,10 +7349,10 @@ fn hem_radius_angle_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: u32_at(bytes, common)?,
-        direction_code: u32_at(bytes, common.checked_add(30)?)?,
+        form_code: View::u32_le_at(bytes, common)?,
+        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
         direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: u32_at(bytes, common.checked_add(36)?)?,
+        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
     })
 }
 
@@ -7071,7 +7371,7 @@ fn hem_gap_length_radius_operation_at(
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
-    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
         return None;
     }
 
@@ -7088,13 +7388,13 @@ fn hem_gap_length_radius_operation_at(
         )
     };
 
-    let edge_wrapper_record_index = slot(8, &mut unclaimed)?;
-    let settings_record_index = slot(19, &mut unclaimed)?;
-    let gap_owner_record_index = slot(42, &mut unclaimed)?;
-    let length_owner_record_index = slot(53, &mut unclaimed)?;
-    let radius_owner_record_index = slot(64, &mut unclaimed)?;
-    let bend_radius_offset = common.checked_add(81)?;
-    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    let edge_wrapper_record_index = slot(hem_gap::EDGE_WRAPPER_REFERENCE, &mut unclaimed)?;
+    let settings_record_index = slot(hem_gap::SETTINGS_REFERENCE, &mut unclaimed)?;
+    let gap_owner_record_index = slot(hem_teardrop::GAP_OWNER_REFERENCE, &mut unclaimed)?;
+    let length_owner_record_index = slot(hem_teardrop::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
+    let radius_owner_record_index = slot(hem_teardrop::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
+    let bend_radius_offset = common.checked_add(hem_teardrop::INSIDE_BEND_RADIUS)?;
+    let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
         return None;
     }
@@ -7121,10 +7421,10 @@ fn hem_gap_length_radius_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: u32_at(bytes, common)?,
-        direction_code: u32_at(bytes, common.checked_add(30)?)?,
+        form_code: View::u32_le_at(bytes, common)?,
+        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
         direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: u32_at(bytes, common.checked_add(36)?)?,
+        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
     })
 }
 
@@ -7132,7 +7432,7 @@ fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
     if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
         return None;
     }
-    u32_at(bytes, at + 1)
+    View::u32_le_at(bytes, at + 1)
 }
 
 pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
@@ -7143,952 +7443,4 @@ pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Op
 }
 
 #[cfg(test)]
-mod mirror_tests {
-    use super::*;
-
-    fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> usize {
-        let start = bytes.len();
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-        start
-    }
-
-    fn utf16(bytes: &mut Vec<u8>, value: &str) {
-        bytes.extend_from_slice(
-            &u32::try_from(value.encode_utf16().count())
-                .expect("test GUID length fits u32")
-                .to_le_bytes(),
-        );
-        for unit in value.encode_utf16() {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    #[test]
-    fn compact_mirror_reference_uses_the_identity_record_lane() {
-        let record_index = 40;
-        let reference = 17_u32;
-        let mut bytes = Vec::new();
-        let start = indexed_header(&mut bytes, *b"320", record_index);
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.push(1);
-        bytes.extend_from_slice(&(record_index + 3).to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-        bytes.extend_from_slice(&1_u32.to_le_bytes());
-        utf16(&mut bytes, "dfa12ed5-41e3-47c2-947d-286843e235df");
-        utf16(&mut bytes, "15afb570-2968-417f-8485-96c81b2d332f");
-        bytes.extend_from_slice(&2_u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        indexed_header(&mut bytes, *b"259", record_index);
-        indexed_header(&mut bytes, *b"306", record_index + 1);
-        indexed_header(&mut bytes, *b"291", record_index + 2);
-        let identity = indexed_header(&mut bytes, *b"428", record_index + 3);
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&reference.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        indexed_header(&mut bytes, *b"457", record_index + 4);
-        let header = DesignRecordHeader {
-            id: String::new(),
-            record_index,
-            class_tag: "320".into(),
-            byte_offset: start as u64,
-        };
-
-        assert_eq!(
-            compact_feature_reference(&bytes, &header),
-            Some((reference, (identity + 21) as u64))
-        );
-        bytes[identity + 20] = 1;
-        assert_eq!(compact_feature_reference(&bytes, &header), None);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        exact_coil_placement, exact_hole_construction, exact_path_feature_construction,
-        exact_pattern_identity_wrapper, exact_work_point_construction,
-        named_parameter_scope_tail_is_valid, parse_parameter_scope, HOLE_POINT_DATA_TYPE_GUID,
-        POINT_DATA_TYPE_GUID,
-    };
-    use crate::design::decode::sketch::IndexedRecordOffsets;
-    use crate::records::{
-        ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
-        DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
-        DesignRecordHeader, DesignWorkPointInputCarrier, DesignWorkPointRule,
-    };
-    use std::collections::HashMap;
-
-    fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn named_scope_tail(lane_value: u64) -> Vec<u8> {
-        let label = "Canvas";
-        let label_code_units = label.encode_utf16().count();
-        let marker = 19 + label_code_units * 2;
-        let mut bytes = vec![0; marker + 59];
-        bytes[0..4].copy_from_slice(&1u32.to_le_bytes());
-        let mut label_bytes = Vec::new();
-        lp_utf16(&mut label_bytes, label);
-        bytes[8..8 + label_bytes.len()].copy_from_slice(&label_bytes);
-        bytes[marker] = 1;
-        bytes[marker + 1] = 0xd5;
-        bytes[marker + 2..marker + 10].copy_from_slice(&lane_value.to_le_bytes());
-        bytes[marker + 12..marker + 16].copy_from_slice(&u32::MAX.to_le_bytes());
-        bytes[marker + 16..marker + 20].copy_from_slice(&0xfcu32.to_le_bytes());
-        bytes[marker + 20..marker + 28].copy_from_slice(&0.25f64.to_le_bytes());
-        bytes[marker + 28..marker + 32].copy_from_slice(&0xfcu32.to_le_bytes());
-        bytes[marker + 32] = 1;
-        bytes[marker + 33] = 0xd4;
-        bytes[marker + 34..marker + 42].copy_from_slice(&lane_value.to_le_bytes());
-        bytes[marker + 42..marker + 46].copy_from_slice(&[0, 1, 0, 0]);
-        bytes[marker + 46] = 1;
-        bytes[marker + 47] = 0xd3;
-        bytes[marker + 48..marker + 56].copy_from_slice(&lane_value.to_le_bytes());
-        bytes
-    }
-
-    #[test]
-    fn named_scope_tail_requires_one_repeated_binary_lane_value() {
-        for lane_value in [0, 1] {
-            let bytes = named_scope_tail(lane_value);
-            assert_eq!(
-                named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-                Some(true)
-            );
-        }
-
-        let mut mismatched = named_scope_tail(0);
-        let marker = mismatched.len() - 59;
-        mismatched[marker + 34..marker + 42].copy_from_slice(&1u64.to_le_bytes());
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&mismatched, 0, mismatched.len(), mismatched.len()),
-            Some(false)
-        );
-
-        let outside_domain = named_scope_tail(2);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(
-                &outside_domain,
-                0,
-                outside_domain.len(),
-                outside_domain.len()
-            ),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() {
-        for class_tag in ["301", "449"] {
-            let mut bytes = Vec::new();
-            let class_tag_bytes = class_tag
-                .as_bytes()
-                .try_into()
-                .expect("three-byte class tag");
-            indexed_header(&mut bytes, class_tag_bytes, 20);
-            bytes.resize(64, 0);
-            bytes[21..25].fill(1);
-            bytes[25..29].copy_from_slice(&1u32.to_le_bytes());
-            bytes[30..34].fill(0xff);
-
-            let mut scope = DesignParameterScope::empty("generated:loft#20", "Loft", 20);
-            scope.class_tag = class_tag.into();
-            scope.frame_length = 64;
-            let construction = exact_path_feature_construction(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &[],
-            )
-            .expect("compact Loft operation");
-            assert_eq!(
-                construction,
-                DesignPathFeatureConstruction::Loft {
-                    operation: DesignExtrudeOperation::Join,
-                    operation_offset: 25,
-                }
-            );
-
-            bytes[24] = 0;
-            assert_eq!(
-                exact_path_feature_construction(
-                    &bytes,
-                    &IndexedRecordOffsets::build(&bytes),
-                    &scope,
-                    &[],
-                ),
-                None
-            );
-        }
-    }
-
-    fn compact_coil_placement_fixture(
-        matrix: Option<[[f64; 4]; 4]>,
-    ) -> (Vec<u8>, DesignParameterScope, usize) {
-        let mut bytes = Vec::new();
-        let selection_record_index = 100;
-        let transform_record_index = 200;
-        indexed_header(&mut bytes, *b"333", selection_record_index);
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.push(1);
-        bytes.extend_from_slice(&(selection_record_index + 3).to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        lp_utf16(&mut bytes, "11111111-1111-4111-8111-111111111111");
-        lp_utf16(&mut bytes, "22222222-2222-4222-8222-222222222222");
-        bytes.extend_from_slice(&2u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        indexed_header(&mut bytes, *b"265", selection_record_index);
-        indexed_header(&mut bytes, *b"301", selection_record_index + 1);
-        indexed_header(&mut bytes, *b"446", selection_record_index + 2);
-        indexed_header(&mut bytes, *b"429", selection_record_index + 3);
-        bytes.extend_from_slice(&[0; 18]);
-        bytes.extend_from_slice(&1331u64.to_le_bytes());
-        bytes.extend_from_slice(&183u64.to_le_bytes());
-        indexed_header(&mut bytes, *b"311", selection_record_index + 4);
-
-        let transform_start = bytes.len();
-        indexed_header(&mut bytes, *b"270", transform_record_index);
-        let frame_length = if matrix.is_some() { 341 } else { 213 };
-        bytes.resize(transform_start + frame_length, 0);
-        bytes[transform_start + 55] = 1;
-        if let Some(matrix) = matrix {
-            bytes[transform_start + 65] = 0;
-            for (ordinal, value) in matrix.into_iter().flatten().enumerate() {
-                let offset = transform_start + 66 + ordinal * 8;
-                bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-            }
-        } else {
-            bytes[transform_start + 65] = 1;
-        }
-        indexed_header(&mut bytes, *b"259", transform_record_index);
-
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-            "CoilPrimitive",
-            42,
-        );
-        scope.frame_length = 442;
-        scope.reference_members = vec![
-            selection_record_index,
-            transform_record_index,
-            300,
-            301,
-            302,
-            303,
-            304,
-            305,
-        ];
-        (bytes, scope, transform_start)
-    }
-
-    fn compact_coil_owner_identity_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
-        let (mut bytes, scope, transform_start) = compact_coil_placement_fixture(None);
-        let paired_start = transform_start + 213;
-        let paired = bytes.split_off(paired_start);
-        bytes.extend_from_slice(&[0; 9]);
-        bytes.push(1);
-        bytes.extend_from_slice(&scope.record_index.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-        bytes.extend_from_slice(&paired);
-        (bytes, scope, transform_start)
-    }
-
-    fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
-        let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
-        scope.frame_length = 411;
-        scope.reference_members.pop();
-        scope.coil_extent = Some(DesignCoilExtent::Spiral);
-        (bytes, scope, transform_start)
-    }
-
-    fn compact_coil_face_selection_fixture(
-    ) -> (Vec<u8>, DesignParameterScope, Vec<ConstructionRecipe>) {
-        let mut bytes = Vec::new();
-        let selection_record_index = 100;
-        let transform_record_index = 200;
-        indexed_header(&mut bytes, *b"333", selection_record_index);
-        bytes.extend_from_slice(&[0; 12]);
-        bytes.push(1);
-        bytes.extend_from_slice(&(selection_record_index + 3).to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-        bytes.push(1);
-        bytes.extend_from_slice(&[0; 3]);
-        lp_utf16(&mut bytes, "11111111-1111-4111-8111-111111111111");
-        lp_utf16(&mut bytes, "22222222-2222-4222-8222-222222222222");
-        bytes.extend_from_slice(&2u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        indexed_header(&mut bytes, *b"265", selection_record_index);
-        indexed_header(&mut bytes, *b"301", selection_record_index + 1);
-        indexed_header(&mut bytes, *b"446", selection_record_index + 2);
-        indexed_header(&mut bytes, *b"429", selection_record_index + 3);
-        bytes.extend_from_slice(&16u32.to_le_bytes());
-        let recipe_byte_offset = bytes.len();
-        bytes.extend_from_slice(b"face_recipe_data");
-        bytes.extend_from_slice(&0i32.to_le_bytes());
-        bytes.extend_from_slice(&(-1i32).to_le_bytes());
-        let transform_start = bytes.len();
-
-        indexed_header(&mut bytes, *b"270", transform_record_index);
-        bytes.resize(transform_start + 341, 0);
-        bytes[transform_start + 55] = 1;
-        bytes[transform_start + 65] = 0;
-        let transform: [[f64; 4]; 4] = [
-            [-1.0, 0.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.7],
-            [0.0, 0.0, 0.0, 1.0],
-        ];
-        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
-            let offset = transform_start + 66 + ordinal * 8;
-            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-        }
-        indexed_header(&mut bytes, *b"259", transform_record_index);
-
-        let stream = "f3d:Design/BulkStream.dat";
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-            "CoilPrimitive",
-            42,
-        );
-        scope.frame_length = 432;
-        scope.reference_members = vec![
-            selection_record_index,
-            transform_record_index,
-            300,
-            301,
-            302,
-            303,
-            304,
-            305,
-        ];
-        let recipes = vec![ConstructionRecipe {
-            id: format!("{stream}:construction-recipe#{recipe_byte_offset}"),
-            byte_offset: recipe_byte_offset as u64,
-            record_index_offset: None,
-            kind: ConstructionRecipeKind::Face,
-            design_id: Some("body".into()),
-            design_id_offset: None,
-            design_selector: None,
-            recipe_index: 0,
-            record_index: 103,
-        }];
-        (bytes, scope, recipes)
-    }
-
-    #[test]
-    fn compact_coil_placement_accepts_identity_and_matrix_frames() {
-        let explicit = [
-            [-1.0, 0.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.7],
-            [0.0, 0.0, 0.0, 1.0],
-        ];
-        for (ordinal, (matrix, expected_offset)) in [(None, None), (Some(explicit), Some(66))]
-            .into_iter()
-            .enumerate()
-        {
-            let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(matrix);
-            scope.frame_length = if ordinal == 0 { 432 } else { 442 };
-            let records = IndexedRecordOffsets::build(&bytes);
-            let placement = exact_coil_placement(&bytes, &records, &scope, &[])
-                .expect("compact Coil placement");
-            assert_eq!(placement.selection_record_index, 100);
-            assert_eq!(placement.transform_record_index, 200);
-            assert_eq!(
-                placement.selection,
-                DesignCoilSelection::Persistent {
-                    asset_id: "11111111-1111-4111-8111-111111111111".into(),
-                    context_id: "22222222-2222-4222-8222-222222222222".into(),
-                    identity_record_index: 103,
-                    primary_identity: 1331,
-                    secondary_identity: Some(183),
-                    curve_secondary_identity: None,
-                }
-            );
-            assert_eq!(
-                placement.transform_offset,
-                expected_offset.map(|offset| (transform_start + offset) as u64)
-            );
-            assert_eq!(
-                placement.transform,
-                matrix.unwrap_or([
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ])
-            );
-        }
-    }
-
-    #[test]
-    fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
-        let (bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
-        let placement =
-            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
-                .expect("owner-referenced compact Coil placement");
-        assert_eq!(
-            placement.transform,
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]
-        );
-        assert_eq!(placement.transform_offset, None);
-        assert_eq!(
-            placement.transform_record_byte_offset,
-            transform_start as u64
-        );
-    }
-
-    #[test]
-    fn compact_coil_spiral_placement_accepts_seven_reference_form() {
-        let (bytes, scope, transform_start) = compact_coil_spiral_placement_fixture();
-        let placement =
-            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
-                .expect("seven-reference compact Coil spiral placement");
-        assert_eq!(placement.selection_record_index, 100);
-        assert_eq!(placement.transform_record_index, 200);
-        assert_eq!(
-            placement.transform_record_byte_offset,
-            transform_start as u64
-        );
-    }
-
-    #[test]
-    fn compact_coil_seven_reference_form_requires_spiral_extent() {
-        let (bytes, mut scope, _) = compact_coil_spiral_placement_fixture();
-        scope.coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
-        assert_eq!(
-            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
-            None
-        );
-    }
-
-    #[test]
-    fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
-        let (mut bytes, scope, transform_start) = compact_coil_placement_fixture(Some([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.7],
-            [0.0, 0.0, 0.0, 1.0],
-        ]));
-        let matrix_value_offset = transform_start + 66 + 10 * 8;
-        bytes[matrix_value_offset..matrix_value_offset + 8]
-            .copy_from_slice(&(-1.0f64).to_le_bytes());
-        assert_eq!(
-            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
-            None
-        );
-
-        let (mut bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
-        bytes[transform_start + 65] = 0;
-        assert_eq!(
-            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
-            None
-        );
-
-        let (mut bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
-        bytes[transform_start + 223] ^= 1;
-        assert_eq!(
-            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
-            None
-        );
-    }
-
-    #[test]
-    fn compact_coil_placement_accepts_face_recipe_selection() {
-        let (bytes, scope, recipes) = compact_coil_face_selection_fixture();
-        let placement = exact_coil_placement(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &recipes,
-        )
-        .expect("compact Coil face placement");
-        assert_eq!(
-            placement.selection,
-            DesignCoilSelection::FaceRecipe {
-                asset_id: "11111111-1111-4111-8111-111111111111".into(),
-                context_id: "22222222-2222-4222-8222-222222222222".into(),
-                recipe_record_index: 103,
-                recipe_record_byte_offset: recipes[0].byte_offset - 15,
-                recipe_id: recipes[0].id.clone(),
-                recipe_kind: ConstructionRecipeKind::Face,
-                design_id: Some("body".into()),
-                design_selector: None,
-            }
-        );
-    }
-
-    #[test]
-    fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
-        fn header(bytes: &mut Vec<u8>, class_tag: &str, record_index: u32) {
-            bytes.extend_from_slice(&3u32.to_le_bytes());
-            bytes.extend_from_slice(class_tag.as_bytes());
-            bytes.extend_from_slice(&record_index.to_le_bytes());
-        }
-        fn marked(bytes: &mut Vec<u8>, record_index: u32) {
-            bytes.push(1);
-            bytes.extend_from_slice(&record_index.to_le_bytes());
-            bytes.extend_from_slice(&[0; 6]);
-        }
-
-        let mut bytes = Vec::new();
-        let record_index = 80;
-        header(&mut bytes, "308", record_index);
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&40u64.to_le_bytes());
-        lp_utf16(&mut bytes, "384d79a0-c23e-42aa-b993-74df1f8dfcae");
-        lp_utf16(&mut bytes, "352c47d7-42ba-443e-9de1-ae0e37cc129d");
-        bytes.extend_from_slice(&2u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        marked(&mut bytes, record_index + 1);
-        header(&mut bytes, "305", record_index + 1);
-        bytes.extend_from_slice(&[0; 10]);
-        marked(&mut bytes, record_index + 2);
-        header(&mut bytes, "300", record_index + 2);
-        bytes.extend_from_slice(&[0; 10]);
-        let identity_offset = bytes.len();
-        bytes.extend_from_slice(&503u64.to_le_bytes());
-        header(&mut bytes, "308", record_index + 3);
-
-        assert_eq!(
-            exact_pattern_identity_wrapper(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                record_index,
-            ),
-            Some((503, identity_offset as u64))
-        );
-        bytes[identity_offset - 1] = 1;
-        assert_eq!(
-            exact_pattern_identity_wrapper(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                record_index,
-            ),
-            None
-        );
-    }
-
-    /// A `WorkPoint` scope record, its paired header, and one point-data record
-    /// frame: the indexed header, the payload prologue with an optional property
-    /// block, the class-level members of `version`, a base-level run of `inputs`
-    /// references, and the second header that closes the frame.
-    fn work_point_stream(
-        class_tag: &str,
-        version: u32,
-        property: bool,
-        pick_point: Option<u64>,
-        position: [f64; 3],
-        reference_type: u32,
-        inputs: u32,
-    ) -> (Vec<u8>, DesignParameterScope, usize) {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"427");
-        bytes.extend_from_slice(&12u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.push(1);
-        bytes.extend_from_slice(&55u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-        bytes.extend_from_slice(&7u32.to_le_bytes());
-        lp_utf16(&mut bytes, "WorkPoint");
-        let mut tail = [0; 78];
-        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
-        tail[31..35].copy_from_slice(&2u32.to_le_bytes());
-        bytes.extend_from_slice(&tail);
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"259");
-        bytes.extend_from_slice(&12u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 11]);
-
-        bytes.extend_from_slice(&(class_tag.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(class_tag.as_bytes());
-        bytes.extend_from_slice(&55u32.to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.push(0);
-        if property {
-            bytes.push(1);
-            bytes.extend_from_slice(&1u32.to_le_bytes());
-            bytes.extend_from_slice(&6u32.to_le_bytes());
-            bytes.extend_from_slice(b"pt_tag");
-            bytes.extend_from_slice(&23u32.to_le_bytes());
-            bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
-            bytes.extend_from_slice(&9u64.to_le_bytes());
-        } else {
-            bytes.push(0);
-        }
-        if version >= 2 {
-            bytes.extend_from_slice(&0i32.to_le_bytes());
-        }
-        for _ in 0..2 {
-            bytes.extend_from_slice(&f64::to_le_bytes(0.0));
-        }
-        if version >= 1 {
-            match pick_point {
-                Some(target) => {
-                    bytes.push(1);
-                    bytes.extend_from_slice(&target.to_le_bytes());
-                    bytes.extend_from_slice(&[0, 0]);
-                }
-                None => bytes.push(0),
-            }
-        }
-        let position_at = bytes.len();
-        for value in position {
-            bytes.extend_from_slice(&f64::to_le_bytes(value));
-        }
-        bytes.extend_from_slice(&reference_type.to_le_bytes());
-        if version >= 3 {
-            for _ in 0..3 {
-                bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
-            }
-        }
-        bytes.extend_from_slice(&inputs.to_le_bytes());
-        for input in 0..inputs {
-            bytes.push(1);
-            bytes.extend_from_slice(&u64::from(70 + input).to_le_bytes());
-            bytes.extend_from_slice(&[0, 0]);
-        }
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"259");
-        bytes.extend_from_slice(&55u32.to_le_bytes());
-
-        let header = DesignRecordHeader {
-            id: "generated:scope-header#0".into(),
-            record_index: 12,
-            class_tag: "427".into(),
-            byte_offset: 0,
-        };
-        let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-            .expect("WorkPoint scope");
-        (bytes, scope, position_at)
-    }
-
-    fn hole_point_stream() -> (Vec<u8>, DesignParameterScope, usize, usize) {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"282");
-        bytes.extend_from_slice(&55u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&[0, 0]);
-        bytes.extend_from_slice(&7u32.to_le_bytes());
-        let position_at = bytes.len();
-        for value in [1.25_f64, -2.5, 3.75] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        for value in [0.0_f64, 0.0, 1.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        for value in [0.125_f64, -0.25] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes.extend_from_slice(&19u32.to_le_bytes());
-        bytes.push(0x7f);
-        for value in [-1.0_f64, -1.0, -1.0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        let input_reference_at = bytes.len();
-        bytes.push(1);
-        bytes.extend_from_slice(&378u64.to_le_bytes());
-        bytes.extend_from_slice(&[0; 2]);
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"259");
-        bytes.extend_from_slice(&55u32.to_le_bytes());
-
-        let mut scope = DesignParameterScope::empty("generated:hole#0", "Hole", 12);
-        scope.reference_members.push(55);
-        (bytes, scope, position_at, input_reference_at)
-    }
-
-    #[test]
-    fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
-        let (bytes, scope, position_at, input_reference_at) = hole_point_stream();
-        let records = IndexedRecordOffsets::build(&bytes);
-        let construction = exact_hole_construction(
-            &bytes,
-            &records,
-            &scope,
-            &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]),
-        )
-        .expect("hole point carrier");
-
-        assert_eq!(construction.point_record_index, 55);
-        assert_eq!(construction.point_record_byte_offset, 0);
-        assert_eq!(construction.position, [1.25, -2.5, 3.75]);
-        assert_eq!(construction.position_offset, position_at as u64);
-        assert_eq!(construction.direction, [0.0, 0.0, 1.0]);
-        assert_eq!(construction.direction_offset, (position_at + 24) as u64);
-        assert_eq!(construction.point_parameters, [0.125, -0.25]);
-        assert_eq!(construction.reference_type, 19);
-        assert_eq!(construction.tangent_point_data_prefix, 0x7f);
-        assert_eq!(construction.tangent_point_data, [-1.0, -1.0, -1.0]);
-        assert_eq!(construction.input_record_indices, [378]);
-        assert_eq!(
-            construction.input_record_offsets,
-            [(input_reference_at + 1) as u64]
-        );
-    }
-
-    #[test]
-    fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
-        let (bytes, scope, position_at) =
-            work_point_stream("282", 3, true, Some(9), [1.25, -2.5, 3.75], 20, 1);
-
-        let frame = exact_work_point_construction(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &HashMap::new(),
-        )
-        .expect("work point frame");
-        assert_eq!(frame.position, [1.25, -2.5, 3.75]);
-        assert_eq!(frame.position_offset, position_at as u64);
-        assert_eq!(work_point_input_indices(&frame.rule), [70]);
-    }
-
-    #[test]
-    fn work_point_position_reads_every_class_version_that_stores_one() {
-        for version in 0..=3 {
-            let (bytes, scope, position_at) =
-                work_point_stream("282", version, false, None, [4.0, 5.0, 6.0], 5, 1);
-
-            let frame = exact_work_point_construction(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &HashMap::new(),
-            )
-            .unwrap_or_else(|| panic!("class version {version}"));
-            assert_eq!(frame.position, [4.0, 5.0, 6.0], "class version {version}");
-            assert_eq!(
-                frame.position_offset, position_at as u64,
-                "class version {version}"
-            );
-        }
-    }
-
-    #[test]
-    fn work_point_reads_the_class_version_its_type_table_stores() {
-        let (bytes, scope, position_at) =
-            work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
-        let records = IndexedRecordOffsets::build(&bytes);
-        let frame = exact_work_point_construction(
-            &bytes,
-            &records,
-            &scope,
-            &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
-        )
-        .expect("work point frame");
-        assert_eq!(frame.position, [4.0, 5.0, 6.0]);
-        assert_eq!(frame.position_offset, position_at as u64);
-        // The stored version drives the read: a version that describes a
-        // different member sequence does not yield this frame's coordinate.
-        assert_ne!(
-            exact_work_point_construction(
-                &bytes,
-                &records,
-                &scope,
-                &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 0))])
-            )
-            .map(|frame| frame.position_offset),
-            Some(position_at as u64)
-        );
-        // An unregistered entity falls back to the agreement sweep.
-        assert_eq!(
-            exact_work_point_construction(
-                &bytes,
-                &records,
-                &scope,
-                &HashMap::from([(9, (POINT_DATA_TYPE_GUID, 0))])
-            ),
-            exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
-        );
-    }
-
-    #[test]
-    fn work_point_position_does_not_depend_on_the_segment_local_class_tag() {
-        // A class tag is `256` plus an index into the segment's own type table,
-        // so the point-data class wears a different tag in every segment. The
-        // coordinate is the same wherever the type table names the class.
-        for class_tag in ["282", "316", "364", "409", "424", "460", "468"] {
-            let (bytes, scope, position_at) =
-                work_point_stream(class_tag, 2, false, None, [7.5, 8.5, 9.5], 5, 1);
-            let records = IndexedRecordOffsets::build(&bytes);
-
-            let frame = exact_work_point_construction(
-                &bytes,
-                &records,
-                &scope,
-                &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
-            )
-            .unwrap_or_else(|| panic!("class tag {class_tag}"));
-            assert_eq!(frame.position, [7.5, 8.5, 9.5], "class tag {class_tag}");
-            assert_eq!(
-                frame.position_offset, position_at as u64,
-                "class tag {class_tag}"
-            );
-        }
-    }
-
-    #[test]
-    fn work_point_rejects_a_registered_entity_of_another_type() {
-        // The tag says `282`, but the type table names a different class for
-        // this entity, so the record is not point data whatever its tag reads.
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
-        let records = IndexedRecordOffsets::build(&bytes);
-
-        assert_eq!(
-            exact_work_point_construction(
-                &bytes,
-                &records,
-                &scope,
-                &HashMap::from([(55, ("A0A15D26-1F3B-4120-A3F1-9CDDA189AB74", 2))])
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn work_point_uses_the_serialized_input_count_for_every_rule() {
-        // The input count is a member of the point-data level. It frames the
-        // run independently of the rule selector, including three-input
-        // constructions.
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 1);
-
-        let records = IndexedRecordOffsets::build(&bytes);
-        let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
-            .expect("work point frame");
-        assert_eq!(work_point_input_indices(&frame.rule), [70]);
-        assert_eq!(frame.rule.reference_type(), 18);
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
-        let frame = exact_work_point_construction(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &HashMap::new(),
-        )
-        .expect("work point frame");
-        assert_eq!(work_point_input_indices(&frame.rule), [70, 71]);
-
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 8, 3);
-        let frame = exact_work_point_construction(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &HashMap::new(),
-        )
-        .expect("work point frame");
-        assert_eq!(work_point_input_indices(&frame.rule), [70, 71, 72]);
-
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
-        let frame = exact_work_point_construction(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &HashMap::new(),
-        )
-        .expect("work point frame");
-        assert_eq!(work_point_input_indices(&frame.rule), [70, 71]);
-    }
-
-    #[test]
-    fn work_point_rule_codes_select_typed_input_arities() {
-        for (reference_type, arity) in [(5, 1), (7, 2), (8, 3), (10, 1), (14, 2), (20, 1)] {
-            let (bytes, scope, _) = work_point_stream(
-                "282",
-                2,
-                false,
-                None,
-                [1.0, 2.0, 3.0],
-                reference_type,
-                arity,
-            );
-            let frame = exact_work_point_construction(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &HashMap::new(),
-            )
-            .expect("work point frame");
-            assert_eq!(frame.rule.reference_type(), reference_type);
-            assert_eq!(u32::try_from(frame.rule.inputs().len()).unwrap(), arity);
-            assert!(match frame.rule {
-                DesignWorkPointRule::CircleCenter { .. } => reference_type == 5,
-                DesignWorkPointRule::TwoEdgeIntersection { .. } => reference_type == 7,
-                DesignWorkPointRule::ThreePlaneIntersection { .. } => reference_type == 8,
-                DesignWorkPointRule::Vertex { .. } => reference_type == 10,
-                DesignWorkPointRule::EdgePlaneIntersection { .. } => reference_type == 14,
-                DesignWorkPointRule::DistanceOnEdge { .. } => reference_type == 20,
-                DesignWorkPointRule::Native { .. } => false,
-            });
-        }
-    }
-
-    #[test]
-    fn work_point_rule_code_with_wrong_arity_remains_native() {
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 5, 2);
-        let frame = exact_work_point_construction(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &HashMap::new(),
-        )
-        .expect("work point frame");
-
-        assert!(matches!(
-            frame.rule,
-            DesignWorkPointRule::Native {
-                reference_type: 5,
-                ref inputs,
-            } if inputs.len() == 2
-        ));
-    }
-
-    #[test]
-    fn work_point_rule_rejects_an_incompatible_input_carrier() {
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
-        let mut frame = exact_work_point_construction(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &HashMap::new(),
-        )
-        .expect("work point frame");
-        assert!(frame.rule.carriers_are_compatible());
-
-        frame.rule.inputs_mut()[1].carrier =
-            Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
-                operand_id: "f3d:native:edge-operand#wrong-role".into(),
-            }));
-        assert!(!frame.rule.carriers_are_compatible());
-    }
-
-    fn work_point_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
-        rule.inputs()
-            .iter()
-            .map(|input| input.record_index)
-            .collect()
-    }
-}
+mod tests;

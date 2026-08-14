@@ -54,75 +54,48 @@ pub(crate) enum PmDcListMetadata {
 
 pub(crate) struct Cursor<'a> {
     source: View<'a>,
-    position: usize,
 }
 
 impl<'a> Cursor<'a> {
     pub(crate) const fn new(source: View<'a>) -> Self {
-        Self {
-            source,
-            position: 0,
-        }
+        Self { source }
     }
 
     pub(crate) fn remaining(&self) -> usize {
-        self.source.window().len().saturating_sub(self.position)
+        self.source.remaining()
     }
 
-    pub(crate) fn peek_u32(&self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(
-            self.source
-                .window()
-                .get(self.position..self.position.saturating_add(4))
-                .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor PmDc {field}")))?
-                .try_into()
-                .expect("four-byte field"),
-        ))
+    pub(crate) fn peek_u32(&self, _field: &str) -> Result<u32, CodecError> {
+        let mut view = self.source;
+        Ok(view.req_u32_le()?)
     }
 
-    pub(crate) fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        let end = self.position.checked_add(len).ok_or_else(|| {
-            CodecError::Malformed(format!("Inventor PmDc {field} range overflows"))
-        })?;
-        let value = self
-            .source
-            .window()
-            .get(self.position..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor PmDc {field}")))?;
-        self.position = end;
-        Ok(value)
+    pub(crate) fn take(&mut self, len: usize, _field: &str) -> Result<&'a [u8], CodecError> {
+        Ok(self.source.req_take(len)?)
     }
 
-    pub(crate) fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, field)?[0])
+    pub(crate) fn u8(&mut self, _field: &str) -> Result<u8, CodecError> {
+        Ok(self.source.req_u8()?)
     }
 
-    pub(crate) fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(
-            self.take(2, field)?.try_into().expect("two-byte field"),
-        ))
+    pub(crate) fn u16(&mut self, _field: &str) -> Result<u16, CodecError> {
+        Ok(self.source.req_u16_le()?)
     }
 
-    pub(crate) fn i16(&mut self, field: &str) -> Result<i16, CodecError> {
-        Ok(i16::from_le_bytes(
-            self.take(2, field)?.try_into().expect("two-byte field"),
-        ))
+    pub(crate) fn i16(&mut self, _field: &str) -> Result<i16, CodecError> {
+        Ok(self.source.req_i16_le()?)
     }
 
-    pub(crate) fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(
-            self.take(4, field)?.try_into().expect("four-byte field"),
-        ))
+    pub(crate) fn u32(&mut self, _field: &str) -> Result<u32, CodecError> {
+        Ok(self.source.req_u32_le()?)
     }
 
-    pub(crate) fn i32(&mut self, field: &str) -> Result<i32, CodecError> {
-        Ok(i32::from_le_bytes(
-            self.take(4, field)?.try_into().expect("four-byte field"),
-        ))
+    pub(crate) fn i32(&mut self, _field: &str) -> Result<i32, CodecError> {
+        Ok(self.source.req_i32_le()?)
     }
 
     pub(crate) fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
-        let value = f64::from_le_bytes(self.take(8, field)?.try_into().expect("eight-byte field"));
+        let value = self.source.req_f64_le()?;
         if !value.is_finite() {
             return Err(CodecError::Malformed(format!(
                 "Inventor PmDc {field} is not finite"
@@ -146,11 +119,10 @@ impl<'a> Cursor<'a> {
             CodecError::Malformed(format!("Inventor PmDc {field} length overflows"))
         })?;
         ctx.charge_retained(len as u64, "retain Inventor PmDc string", None)?;
-        let value = self
-            .take(len, field)?
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
+        let mut value = Vec::with_capacity(units);
+        for _ in 0..units {
+            value.push(self.source.req_u16_le()?);
+        }
         String::from_utf16(&value)
             .map_err(|_| CodecError::Malformed(format!("Inventor PmDc {field} is not UTF-16")))
     }

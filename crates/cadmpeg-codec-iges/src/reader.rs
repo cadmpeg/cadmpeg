@@ -63,13 +63,17 @@ pub(crate) fn decode(
     options: DecodeOptions,
     ctx: &DecodeContext<'_>,
 ) -> Result<DecodeResult, CodecError> {
-    decode_with_occurrence_limits(
-        bytes,
-        options,
-        native::MAX_PRODUCT_OCCURRENCES,
-        native::MAX_PRODUCT_OCCURRENCE_DEPTH,
-        Some(ctx),
-    )
+    let output = usize::try_from(ctx.policy().limits.max_collection_items)
+        .ok()
+        .map_or(native::MAX_PRODUCT_OCCURRENCES, |policy| {
+            policy.min(native::MAX_PRODUCT_OCCURRENCES)
+        });
+    let depth = usize::try_from(ctx.policy().limits.max_recursion_depth)
+        .ok()
+        .map_or(native::MAX_PRODUCT_OCCURRENCE_DEPTH, |policy| {
+            policy.min(native::MAX_PRODUCT_OCCURRENCE_DEPTH)
+        });
+    decode_with_occurrence_limits(bytes, options, output, depth, Some(ctx))
 }
 
 fn decode_with_occurrence_limits(
@@ -123,7 +127,7 @@ fn decode_with_occurrence_limits(
         }
     } else {
         charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
-        entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global)
+        entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)
     };
     let projected_entities = ir.model.entity_count() as u64;
     charge_entities(ctx, projected_entities, "iges_projected_entities")?;
@@ -321,3 +325,6 @@ fn charge_work(
 ) -> Result<(), CodecError> {
     ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
 }
+
+#[cfg(test)]
+mod tests;

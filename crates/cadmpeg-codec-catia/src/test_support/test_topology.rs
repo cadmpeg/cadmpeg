@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Synthetic standard-family topology streams for fixture CATParts.
+
+#![allow(clippy::unwrap_used)]
+use super::{be_f32, le_f32};
+
+pub(crate) fn standard_quad_topology_stream() -> Vec<u8> {
+    let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
+    for handle in [1u16, 10, 11, 12, 13, 14, 15, 16, 17, 10] {
+        bytes.extend_from_slice(&handle.to_be_bytes());
+    }
+
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
+    bytes.extend_from_slice(&[0x01, 0x01, 0x04]);
+    for row in [
+        [100u16, 11, 101],
+        [101, 13, 102],
+        [102, 15, 103],
+        [103, 17, 100],
+    ] {
+        bytes.extend_from_slice(&[0x02, 0x03]);
+        for handle in row {
+            bytes.extend_from_slice(&handle.to_be_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
+    bytes.extend_from_slice(&[0x01, 0x06, 0x04]);
+    for xyz in [
+        [0.0f32, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in xyz {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
+pub(crate) fn fbb_only_quad_topology_stream() -> Vec<u8> {
+    let standard = standard_quad_topology_stream();
+    let fbb_start = standard
+        .windows(4)
+        .position(|marker| marker == [0x30, 0x04, 0x04, 0xff])
+        .expect("FBB face row");
+    let mut bytes = standard[..fbb_start + 8].to_vec();
+    bytes[1] = 0x4c;
+    let mut frame = Vec::new();
+    for value in [0.0f32, 0.0, 1.0] {
+        frame.extend_from_slice(&le_f32(value));
+    }
+    bytes.splice(8..8, frame);
+    let delimiter = [0x10, 0xf4, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+    for (kind, rows) in [
+        (1, [[10u16, 11, 12], [12, 13, 14]]),
+        (2, [[14u16, 15, 16], [16, 17, 10]]),
+    ] {
+        bytes.extend_from_slice(&[0x01, kind, 2]);
+        for row in rows {
+            bytes.extend_from_slice(&[0x02, 3]);
+            for handle in row {
+                bytes.extend_from_slice(&handle.to_be_bytes());
+            }
+        }
+        bytes.extend_from_slice(&delimiter);
+    }
+    bytes.extend_from_slice(&[0x01, 0x06, 0x04]);
+    for xyz in [
+        [0.0f32, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in xyz {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
+pub(crate) fn fbb_only_quad_surface_stream() -> Vec<u8> {
+    let mut bytes = vec![0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
+    bytes.resize(49, 0);
+    bytes[48] = 0x01;
+    for (tag, center) in [
+        (1u8, [0.5f32, 0.0]),
+        (2, [1.0, 0.5]),
+        (3, [0.5, 1.0]),
+        (4, [0.0, 0.5]),
+    ] {
+        bytes.extend_from_slice(&[0x60, tag, 0, 0, 0x00, 0x12, 0x00, 0x33, 0x37]);
+        for value in [center[0], center[1], 0.0, 0.5] {
+            bytes.extend_from_slice(&be_f32(value));
+        }
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    bytes.extend_from_slice(&[0xff, 0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32]);
+    for value in [0.5f32, 0.5, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes
+}

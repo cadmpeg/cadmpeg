@@ -30,11 +30,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "{} bodies, {} faces, geometry_transferred={}",
-        decoded.ir.model.bodies.len(),
-        decoded.ir.model.faces.len(),
-        decoded.report.geometry_transferred,
+        decoded.ir().model.bodies.len(),
+        decoded.ir().model.faces.len(),
+        decoded.report().geometry_transferred,
     );
-    for loss in &decoded.report.losses {
+    for loss in &decoded.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
     }
     Ok(())

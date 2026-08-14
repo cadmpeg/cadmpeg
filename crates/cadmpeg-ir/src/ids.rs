@@ -285,21 +285,4 @@ id_type!(
 );
 
 #[cfg(test)]
-mod tests {
-    use super::{format_identity, is_valid_identity, IdentityError};
-
-    #[test]
-    fn three_component_ids_are_valid() {
-        assert!(is_valid_identity("step:file:signature#0"));
-        assert!(format_identity("step", "file", "signature", 0u8).is_ok());
-    }
-
-    #[test]
-    fn two_component_ids_are_rejected() {
-        assert!(!is_valid_identity("step:signature#0"));
-        assert!(matches!(
-            format_identity("step", "", "signature", 0u8),
-            Err(IdentityError::InvalidComponent { label: "scope", .. })
-        ));
-    }
-}
+mod tests;

@@ -5,6 +5,7 @@ use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -41,6 +42,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Projection {
     let records = parameters
         .iter()
@@ -169,6 +171,7 @@ pub(super) fn project(
                                 global.length_factor_mm(),
                                 global.real_precision(),
                                 &mut BTreeSet::new(),
+                                ctx,
                             )
                             .is_ok()
                     })
@@ -412,22 +415,4 @@ pub(super) fn project(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::has_in_plane_component;
-
-    #[test]
-    fn view_up_component_test_is_scale_invariant() {
-        assert!(has_in_plane_component(
-            [0.0, 0.0, 1.0e-200],
-            [0.0, 1.0e-200, 0.0]
-        ));
-        assert!(has_in_plane_component(
-            [1.0e200, 0.0, 0.0],
-            [1.0e200, 1.0e184, 0.0]
-        ));
-        assert!(!has_in_plane_component(
-            [1.0e200, 0.0, 0.0],
-            [1.0e200, 0.0, 0.0]
-        ));
-    }
-}
+mod tests;

@@ -308,8 +308,12 @@ fn placement(properties: &[&PropertyRecord], name: &str) -> Option<[[f64; 4]; 4]
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::joint_kind;
+    use crate::test_support::*;
+    use crate::FcstdCodec;
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use std::io::Cursor;
 
     #[test]
     fn every_primary_joint_family_has_a_neutral_variant() {
@@ -337,5 +341,134 @@ mod tests {
                 "{family} must not fall through to a native joint family"
             );
         }
+    }
+
+    #[test]
+    pub(crate) fn recovers_assembly_joint_operands_frames_and_state() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
+ <Object type="App::FeaturePython" name="Joint" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Assembly"><Properties Count="0"/></Object>
+ <Object name="Joint"><Properties Count="14">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="2"><Sub value="A.Face1"/><Sub value="A.Edge2"/></XLink></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="1"><Sub value="B.Edge3"/></XLink></Property>
+  <Property name="Placement1" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement2" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="15"/></Property>
+  <Property name="AngleMin" type="App::PropertyAngle"><Float value="-30"/></Property>
+  <Property name="AngleMax" type="App::PropertyAngle"><Float value="45"/></Property>
+  <Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="EnableAngleMax" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Detach1" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Offset1" type="App::PropertyPlacement"><PropertyPlacement Px="0.5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Offset2" type="App::PropertyPlacement"><PropertyPlacement Px="1.5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("joint");
+        let joints = result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("native")
+            .arena_as::<crate::native::JointRecord>("joints")
+            .expect("joints");
+        assert_eq!(joints.len(), 1);
+        assert_eq!(joints[0].kind, "Revolute");
+        assert_eq!(joints[0].references.len(), 2);
+        assert_eq!(
+            joints[0].references[0].object.as_deref(),
+            Some("fcstd:native:object#Assembly")
+        );
+        assert_eq!(joints[0].references[0].subelements, ["A.Face1", "A.Edge2"]);
+        assert_eq!(joints[0].placements[1][0][3], 2.0);
+        assert_eq!(
+            joints[0].parameters.get("Suppressed").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(result.ir().model.assembly_joints.len(), 1);
+        let joint = &result.ir().model.assembly_joints[0];
+        assert_eq!(joint.kind, cadmpeg_ir::JointKind::Revolute);
+        assert_eq!(joint.operands.len(), 2);
+        assert!(joint
+            .operands
+            .iter()
+            .all(|operand| operand.occurrence.is_some()));
+        assert_eq!(joint.frames[1].rows[0][3], 2.0);
+        assert_eq!(joint.offset_frames.len(), 2);
+        assert_eq!(joint.offset_frames[0].rows[0][3], 0.5);
+        assert_eq!(joint.offset_frames[1].rows[0][3], 1.5);
+        assert!(joint.suppressed);
+        assert_eq!(joint.detached, [true, false]);
+        assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < 1e-12);
+        let limits = joint.angular_limits.as_ref().expect("angular limits");
+        assert!((limits.minimum.expect("minimum") - (-30_f64).to_radians()).abs() < 1e-12);
+        assert!((limits.maximum.expect("maximum") - 45_f64.to_radians()).abs() < 1e-12);
+        assert!(crate::validate_native(result.ir()).is_empty());
+        assert_valid_document(result.ir());
+        let mut corrupted = result.ir().clone();
+        let limits = corrupted.model.assembly_joints[0]
+            .angular_limits
+            .as_mut()
+            .expect("limits");
+        limits.minimum = Some(2.0);
+        limits.maximum = Some(1.0);
+        assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains("invalid assembly joint")));
+        let mut corrupted = result.ir().clone();
+        corrupted.model.assembly_joints[0].operands[0].external_document =
+            Some(cadmpeg_ir::ExternalDocumentReference {
+                path: Some("external.FCStd".into()),
+                document_id: None,
+                resolution: cadmpeg_ir::ExternalResolution::Unresolved,
+            });
+        assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains("invalid assembly joint operands")));
+    }
+
+    #[test]
+    fn transfers_grounded_assembly_state_with_resolved_component() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="BasePlate" id="1"/>
+ <Object type="App::FeaturePython" name="Ground" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="BasePlate"><Properties Count="0"/></Object>
+ <Object name="Ground"><Properties Count="2">
+  <Property name="ObjectToGround" type="App::PropertyLink"><Link value="BasePlate"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="7" Py="8" Pz="9" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("grounded assembly object");
+        assert_eq!(result.ir().model.assembly_joints.len(), 1);
+        let joint = &result.ir().model.assembly_joints[0];
+        assert_eq!(joint.kind, cadmpeg_ir::JointKind::Grounded);
+        assert_eq!(joint.operands.len(), 1);
+        assert!(joint.operands[0].occurrence.is_some());
+        assert_eq!(joint.frames.len(), 1);
+        assert_eq!(joint.frames[0].rows[0][3], 7.0);
+        assert_eq!(joint.frames[0].rows[1][3], 8.0);
+        assert_eq!(joint.frames[0].rows[2][3], 9.0);
+        assert!(crate::validate_native(result.ir()).is_empty());
+        assert_valid_document(result.ir());
     }
 }

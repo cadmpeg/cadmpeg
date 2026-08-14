@@ -1321,3 +1321,6 @@ pub enum SketchConstraintDefinition {
         operands: Vec<SketchNativeOperand>,
     },
 }
+
+#[cfg(test)]
+mod tests;

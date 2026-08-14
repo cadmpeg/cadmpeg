@@ -124,7 +124,7 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::archive_test_support::crc_chunk;
+    use crate::test_support::crc_chunk;
 
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();

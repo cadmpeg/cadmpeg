@@ -20,6 +20,7 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
     BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FilletGroup, Length,
     PatternSeed, RadiusSpec, VariableRadius,
@@ -1518,9 +1519,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             let body = usize::try_from(class.offset)
                                 .ok()?
                                 .checked_add(6 + class.name.len())?;
-                            let token = u16::from_le_bytes(
-                                lane.native_payload.get(body..body + 2)?.try_into().ok()?,
-                            );
+                            let token = View::u16_le_at(&lane.native_payload, body)?;
                             is_class_token(token).then_some(token)
                         })
                         .collect::<HashSet<_>>();

@@ -2,7 +2,7 @@
 //!
 //! Closes vertex-coordinate quotients and enumerates face endpoint configurations.
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 #[cfg(test)]
@@ -541,7 +541,8 @@ impl MeshCoordinateRootDomains {
         point_count: usize,
         budget: Option<&WorkBudget<'_>>,
     ) -> Option<Vec<usize>> {
-        let mut roots_by_point = vec![Vec::new(); point_count];
+        let mut roots_by_point =
+            alloc_filled(point_count, Vec::new(), "catia_quotient_roots_by_point").ok()?;
         for (root, domain) in domains.iter().enumerate() {
             for &point in domain {
                 roots_by_point[point].push(root);
@@ -582,7 +583,8 @@ impl MeshCoordinateRootDomains {
             ) {
                 return None;
             }
-            let mut roots_by_point = vec![Vec::new(); self.point_count];
+            let mut roots_by_point =
+                alloc_filled(self.point_count, Vec::new(), "catia_quotient_refine_roots").ok()?;
             for (root, domain) in domains.iter().enumerate() {
                 for &point in domain {
                     roots_by_point[point].push(root);
@@ -611,8 +613,10 @@ impl MeshCoordinateRootDomains {
                 if changed_roots.is_empty() {
                     return Some((domains, coverage_matching));
                 }
-                let mut reached_roots = vec![false; domains.len()];
-                let mut reached_points = vec![false; self.point_count];
+                let mut reached_roots =
+                    alloc_filled(domains.len(), false, "catia_quotient_reached_roots").ok()?;
+                let mut reached_points =
+                    alloc_filled(self.point_count, false, "catia_quotient_reached_points").ok()?;
                 let mut root_queue = VecDeque::from(changed_roots);
                 while let Some(root) = root_queue.pop_front() {
                     if reached_roots[root] {
@@ -1024,7 +1028,8 @@ impl MeshQuotient {
             return None;
         }
         let edge_ids = (0..edges.len()).collect::<Vec<_>>();
-        let mut root_edges = vec![Vec::new(); roots.len()];
+        let mut root_edges =
+            alloc_filled(roots.len(), Vec::new(), "catia_quotient_root_edges").ok()?;
         for (edge, [left, right]) in edges.iter().copied().enumerate() {
             root_edges[left].push(edge);
             if right != left {
@@ -1602,25 +1607,41 @@ impl MeshQuotient {
                         .map(|component| {
                             let incidence = incidence_cycles(component, &edge_points);
                             let Some([incidence]) = incidence.as_deref() else {
-                                return vec![false; domain.cycles.len()];
+                                return alloc_filled(
+                                    domain.cycles.len(),
+                                    false,
+                                    "catia_deferred_incompatible",
+                                )
+                                .ok();
                             };
-                            domain
-                                .cycles
-                                .iter()
-                                .map(|cycle| {
-                                    deferred_boundary_cycle_matches(cycle, incidence, &missing)
-                                })
-                                .collect::<Vec<_>>()
+                            Some(
+                                domain
+                                    .cycles
+                                    .iter()
+                                    .map(|cycle| {
+                                        deferred_boundary_cycle_matches(cycle, incidence, &missing)
+                                    })
+                                    .collect::<Vec<_>>(),
+                            )
                         })
-                        .collect::<Vec<_>>();
-                    let mut matched = vec![None; domain.cycles.len()];
+                        .collect::<Option<Vec<_>>>();
+                    let Some(compatible) = compatible else {
+                        return false;
+                    };
+                    let Ok(mut matched) =
+                        alloc_filled(domain.cycles.len(), None, "catia_deferred_matched")
+                    else {
+                        return false;
+                    };
                     (0..closed_components.len()).all(|component| {
-                        augment(
-                            component,
-                            &compatible,
-                            &mut vec![false; domain.cycles.len()],
-                            &mut matched,
-                        )
+                        let Ok(mut visited) = alloc_filled(
+                            domain.cycles.len(),
+                            false,
+                            "catia_deferred_augment_visit",
+                        ) else {
+                            return false;
+                        };
+                        augment(component, &compatible, &mut visited, &mut matched)
                     })
                 }
             }
@@ -4015,17 +4036,17 @@ fn common_supported_corner_equations(
                 .collect::<Vec<_>>();
             let mut supported = (0..boundary.len())
                 .map(|index| {
-                    vec![
-                        vec![false; directions[(index + 1) % boundary.len()].len()];
-                        directions[index].len()
-                    ]
+                    let width = directions[(index + 1) % boundary.len()].len();
+                    let height = directions[index].len();
+                    let row = alloc_filled(width, false, "catia_boundary_dir_row").ok()?;
+                    alloc_filled(height, row, "catia_boundary_dir_grid").ok()
                 })
-                .collect::<Vec<_>>();
+                .collect::<Option<Vec<_>>>()?;
             for first in 0..directions[0].len() {
                 let mut forward = directions
                     .iter()
-                    .map(|states| vec![false; states.len()])
-                    .collect::<Vec<_>>();
+                    .map(|states| alloc_filled(states.len(), false, "catia_boundary_forward").ok())
+                    .collect::<Option<Vec<_>>>()?;
                 forward[0][first] = true;
                 for index in 0..boundary.len().saturating_sub(1) {
                     for left in 0..directions[index].len() {
@@ -4045,8 +4066,8 @@ fn common_supported_corner_equations(
                 let last = boundary.len() - 1;
                 let mut backward = directions
                     .iter()
-                    .map(|states| vec![false; states.len()])
-                    .collect::<Vec<_>>();
+                    .map(|states| alloc_filled(states.len(), false, "catia_boundary_backward").ok())
+                    .collect::<Option<Vec<_>>>()?;
                 for state in 0..directions[last].len() {
                     let left_node = port(boundary[last], directions[last][state], true)?;
                     let right_node = port(boundary[0], directions[0][first], false)?;
@@ -4765,7 +4786,7 @@ fn edge_class_search_constraint(
             pairs
         })
         .collect::<Vec<_>>();
-    let mut active = vec![false; choices.len()];
+    let mut active = alloc_filled(choices.len(), false, "catia_edge_class_active").ok()?;
     let mut ordered = Vec::new();
     for left in 0..choices.len() {
         for right in left + 1..choices.len() {
@@ -5228,7 +5249,12 @@ pub(crate) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                 compose_relations(prefixes.last().expect("prefix identity"), relation, budget)?;
             prefixes.push(composed);
         }
-        let mut suffixes = vec![EndpointRelation::new(); layers.len() + 1];
+        let mut suffixes = alloc_filled(
+            layers.len() + 1,
+            EndpointRelation::new(),
+            "catia_endpoint_suffixes",
+        )
+        .ok()?;
         suffixes[layers.len()] = identity;
         for layer in (0..layers.len()).rev() {
             suffixes[layer] = compose_relations(&layers[layer].2, &suffixes[layer + 1], budget)?;
@@ -5915,7 +5941,9 @@ impl MeshSelectionSearch<'_> {
                 constraints[*right_node].push((*left_node, parity));
             }
         }
-        let mut flips = vec![None; constraints.len()];
+        let Ok(mut flips) = alloc_filled(constraints.len(), None, "catia_selection_flips") else {
+            return false;
+        };
         for root in 0..constraints.len() {
             if flips[root].is_some() {
                 continue;
@@ -6184,7 +6212,9 @@ impl MeshSelectionSearch<'_> {
                 &directions,
             )
             .and_then(|mut topology| {
-                let mut use_counts = vec![0usize; topology.edge_rows.len()];
+                let mut use_counts =
+                    alloc_filled(topology.edge_rows.len(), 0usize, "catia_search_edge_uses")
+                        .ok()?;
                 for coedge in topology
                     .faces
                     .iter()
@@ -6200,7 +6230,12 @@ impl MeshSelectionSearch<'_> {
                     orient_face_cycles(&mut topology.faces)?;
                 }
                 let edge_vertices = topology.edge_vertices()?;
-                let mut point_assignment = vec![None; topology.logical_vertex_count];
+                let mut point_assignment = alloc_filled(
+                    topology.logical_vertex_count,
+                    None,
+                    "catia_search_point_assignment",
+                )
+                .ok()?;
                 for (edge, vertices) in edge_vertices.into_iter().enumerate() {
                     for (port, vertex) in vertices.into_iter().enumerate() {
                         let root = quotient.union.find(edge * 2 + port);
@@ -6395,7 +6430,7 @@ pub(crate) fn canonicalize_mesh_vertex_labels(
     {
         return None;
     }
-    let mut seen = vec![false; point_assignment.len()];
+    let mut seen = alloc_filled(point_assignment.len(), false, "catia_mesh_vertex_seen").ok()?;
     for &point in point_assignment {
         let entry = seen.get_mut(point)?;
         if std::mem::replace(entry, true) {
@@ -6411,7 +6446,8 @@ pub(crate) fn canonicalize_mesh_vertex_labels(
         coedge.start_vertex = *point_assignment.get(coedge.start_vertex)?;
         coedge.end_vertex = *point_assignment.get(coedge.end_vertex)?;
     }
-    let mut edge_vertices = vec![None; topology.edge_rows.len()];
+    let mut edge_vertices =
+        alloc_filled(topology.edge_rows.len(), None, "catia_mesh_edge_vertices").ok()?;
     for coedge in topology
         .faces
         .iter()
@@ -6621,7 +6657,8 @@ fn resolve_singleton_mesh_selection(
             .collect::<Vec<_>>(),
     )?;
     let edge_vertices = topology.edge_vertices()?;
-    let mut edge_use_counts = vec![0usize; edge_rows.len()];
+    let mut edge_use_counts =
+        alloc_filled(edge_rows.len(), 0usize, "catia_mesh_edge_use_counts").ok()?;
     for use_ in selected
         .iter()
         .flat_map(|assignment| &assignment.boundaries)

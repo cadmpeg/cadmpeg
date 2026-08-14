@@ -55,3 +55,6 @@ pub(crate) mod splines;
 pub(crate) mod structure;
 pub(crate) mod surfaces;
 pub(crate) mod trimming;
+
+#[cfg(test)]
+mod tests;

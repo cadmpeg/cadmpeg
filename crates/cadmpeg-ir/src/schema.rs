@@ -571,3 +571,6 @@ impl_entity_schema!(
     id.0;
     id, name, description, items
 );
+
+#[cfg(test)]
+mod tests;

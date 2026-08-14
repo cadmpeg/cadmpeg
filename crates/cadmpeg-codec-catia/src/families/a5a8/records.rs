@@ -5,13 +5,11 @@
 
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
-#[cfg(any(test, feature = "fuzzing"))]
-use crate::wire::records::consolidated_records;
 use crate::wire::records::{
-    a_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
-    ConsolidatedRecord,
+    a_family_frames_from_records, consolidated_records, parse_consolidated_pcurve,
+    ConsolidatedFrame, ConsolidatedPcurve, ConsolidatedRecord,
 };
-use cadmpeg_core::le::{u16_at as u16_le, u32_at as u32_le};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
     NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
     RollingBallJetSite, SurfaceGeometry,
@@ -107,7 +105,8 @@ fn a8_frames(data: &[u8], class: u8) -> Vec<A8Frame> {
             pos += 1;
             continue;
         }
-        let Some(length) = u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
+        let Some(length) =
+            View::u32_le_at(data, pos + 3).and_then(|value| usize::try_from(value).ok())
         else {
             pos += 1;
             continue;
@@ -120,7 +119,7 @@ fn a8_frames(data: &[u8], class: u8) -> Vec<A8Frame> {
             pos += 1;
             continue;
         };
-        let Some(object_id) = u32_le(data, pos + 7) else {
+        let Some(object_id) = View::u32_le_at(data, pos + 7) else {
             pos += 1;
             continue;
         };
@@ -152,12 +151,12 @@ fn object_stream_frame(data: &[u8], pos: usize) -> Option<ObjectStreamFrame> {
         0xb5 => (
             pos.checked_add(8)?,
             usize::from(*data.get(pos + 3)?),
-            u32_le(data, pos + 4)?,
+            View::u32_le_at(data, pos + 4)?,
         ),
         0xa8 => (
             pos.checked_add(11)?,
-            usize::try_from(u32_le(data, pos + 3)?).ok()?,
-            u32_le(data, pos + 7)?,
+            usize::try_from(View::u32_le_at(data, pos + 3)?).ok()?,
+            View::u32_le_at(data, pos + 7)?,
         ),
         _ => return None,
     };
@@ -256,11 +255,7 @@ fn parse_a8_elided_surface_tail(
     {
         return None;
     }
-    let read_f64 = |offset: usize| -> Option<f64> {
-        Some(f64::from_le_bytes(
-            tail.get(offset..offset + 8)?.try_into().ok()?,
-        ))
-    };
+    let read_f64 = |offset: usize| View::f64_le_at(tail, offset);
     let zero_u = read_f64(4)?;
     let positive_u = read_f64(12)?;
     let zero_v = read_f64(20)?;
@@ -321,10 +316,12 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<A8SurfacePar
     }
     let continuation_start = 71;
     let continuation_end = continuation_start + continuation_bytes;
-    let continuation = tail[continuation_start..continuation_end]
-        .chunks_exact(8)
-        .map(|bytes| f64::from_le_bytes(bytes.try_into().expect("eight-byte f64")))
-        .collect::<Vec<_>>();
+    let mut continuation_view =
+        View::over_retained(tail.get(continuation_start..continuation_end)?);
+    let mut continuation = Vec::new();
+    while !continuation_view.is_empty() {
+        continuation.push(continuation_view.f64_le()?);
+    }
     if continuation.iter().any(|value| !value.is_finite()) {
         return None;
     }
@@ -1206,7 +1203,6 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
-#[cfg(any(test, feature = "fuzzing"))]
 pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     a8_frames(data, 0x34)
         .into_iter()
@@ -1415,7 +1411,6 @@ fn a8_external_grid_candidates(
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
-#[cfg(any(test, feature = "fuzzing"))]
 pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     let records = consolidated_records(data);
     a5_surfaces_from_records(data, &records)
@@ -1684,13 +1679,13 @@ fn object_stream_reference(bytes: &[u8], at: &mut usize) -> Option<u32> {
     let lead = *bytes.get(*at)?;
     let (value, width) = match lead {
         0x38 => (u32_le_24(bytes, *at + 1)?, 4),
-        0x30 => (u32::from(u16_le(bytes, *at + 1)?) << 8, 3),
+        0x30 => (u32::from(View::u16_le_at(bytes, *at + 1)?) << 8, 3),
         0x28 => (
             u32::from(*bytes.get(*at + 1)?) | (u32::from(*bytes.get(*at + 2)?) << 16),
             3,
         ),
         0x20 => (u32::from(*bytes.get(*at + 1)?) << 16, 2),
-        0x18 => (u32::from(u16_le(bytes, *at + 1)?), 3),
+        0x18 => (u32::from(View::u16_le_at(bytes, *at + 1)?), 3),
         0x10 => (u32::from(*bytes.get(*at + 1)?) << 8, 2),
         0x08 => (u32::from(*bytes.get(*at + 1)?), 2),
         0x80..=0xff => (u32::from(lead - 0x80), 1),

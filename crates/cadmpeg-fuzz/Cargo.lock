@@ -64,7 +64,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cadmpeg-asm"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -74,7 +74,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-catia"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-creo"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -96,7 +96,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-f3d"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
@@ -117,7 +117,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-freecad"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-iges"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-inventor"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
@@ -157,7 +157,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-nx"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-rhino"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -183,8 +183,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-sat"
+version = "0.5.1"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+]
+
+[[package]]
 name = "cadmpeg-codec-sldprt"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -201,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-step"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "cadmpeg-container",
@@ -213,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-container"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-core",
  "crc32fast",
@@ -224,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-core"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -244,6 +253,7 @@ dependencies = [
  "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
+ "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
  "cadmpeg-container",
@@ -258,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-ir"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "cadmpeg-core",
@@ -270,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-protein"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "cadmpeg-core",
  "flate2",

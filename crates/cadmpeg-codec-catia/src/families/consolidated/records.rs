@@ -4,7 +4,7 @@
 //! and their native incidence graph, and resolves edge-block side carriers
 //! against typed analytic and NURBS charts.
 
-use cadmpeg_core::le::u16_at as u16_le;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -260,7 +260,7 @@ pub fn consolidated_edge_definition_data(
 fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Option<u8>)> {
     match *bytes.get(*at)? {
         lead @ (0x0a | 0x0b) => {
-            let value = u32::from(u16_le(bytes, *at + 1)?);
+            let value = u32::from(View::u16_le_at(bytes, *at + 1)?);
             *at += 3;
             Some((value, Some(lead)))
         }

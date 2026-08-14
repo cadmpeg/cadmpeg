@@ -12,8 +12,11 @@
 
 use std::ops::Range;
 
-use cadmpeg_core::le::u32_at as u32_le;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
+
+use crate::layout::a_family_frame as a_frame;
+use crate::layout::b_family_frame as b_frame;
 
 use super::bytes::{compact_int, f64_le};
 
@@ -240,9 +243,14 @@ fn parse_consolidated_record(
         .and_then(|byte| byte.checked_sub(0xa4))
         .filter(|width| (1..=3).contains(width))
     {
-        let length =
-            u32_le(data, pos.checked_add(3)?).and_then(|value| usize::try_from(value).ok())?;
-        (ConsolidatedFamily::A, width, pos.checked_add(7)?, length)
+        let length = View::u32_le_at(data, pos.checked_add(a_frame::PAYLOAD_LEN)?)
+            .and_then(|value| usize::try_from(value).ok())?;
+        (
+            ConsolidatedFamily::A,
+            width,
+            pos.checked_add(a_frame::LEN)?,
+            length,
+        )
     } else {
         let width = data
             .get(pos)
@@ -251,12 +259,12 @@ fn parse_consolidated_record(
         (
             ConsolidatedFamily::B,
             width,
-            pos.checked_add(4)?,
-            usize::from(*data.get(pos.checked_add(3)?)?),
+            pos.checked_add(b_frame::LEN)?,
+            usize::from(*data.get(pos.checked_add(b_frame::PAYLOAD_LEN)?)?),
         )
     };
-    let flag = *data.get(pos.checked_add(1)?)?;
-    let class = *data.get(pos.checked_add(2)?)?;
+    let flag = *data.get(pos.checked_add(a_frame::FLAG)?)?;
+    let class = *data.get(pos.checked_add(a_frame::CLASS)?)?;
     if !flags.contains(&flag) {
         return None;
     }
@@ -356,7 +364,10 @@ pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
-    cadmpeg_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
+    let mut view = View::over_retained(bytes);
+    view.seek(at)
+        .and_then(|()| view.f32_le())
+        .unwrap_or(f32::NAN)
 }
 
 #[cfg(test)]

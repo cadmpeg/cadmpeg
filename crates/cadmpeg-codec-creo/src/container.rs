@@ -9,7 +9,7 @@
 //! `#` terminator and printable name distinguish section boundaries from
 //! similar bytes in feature data.
 //!
-//! [`scan`] reads the stream and returns a [`ContainerScan`] containing section
+//! [`scan_bytes`] reads the stream and returns a [`ContainerScan`] containing section
 //! metadata, the persistence layout, namespace counts, typed structural rows,
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
@@ -32,6 +32,7 @@ use crate::feature::{
     FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
     FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
+use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
@@ -63,7 +64,7 @@ const LEGACY_BANNER_START: &[u8] = b"#Pro/ENGINEER";
 /// JPEG SOI magic, marking the `THMB_IMG_MAIN` preview payload (never geometry).
 pub(crate) const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
 /// Unix `compress` payload prefix.
-pub(crate) const UNIX_COMPRESS_MAGIC: &[u8] = &[0x1f, 0x9d];
+pub(crate) const UNIX_COMPRESS_MAGIC: &[u8] = &crate::layout::unix_compress_header::MAGIC_VALUE;
 
 /// ASCII names that appear in the header/TOC framing and look like section
 /// headers but are structural markers, not body sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
@@ -992,16 +993,19 @@ fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
 }
 
 fn model_name(data: &[u8]) -> Option<(String, usize)> {
-    const PREFIX: &[u8] = b"#- CMNM ";
+    const PREFIX: &[u8] = &cmnm::PREFIX_VALUE;
     let marker = find(data, PREFIX, 0)?;
-    let start = marker + PREFIX.len();
+    let start = marker + cmnm::NAME_LENGTH_HEX;
     find(data, PREFIX, start).is_none().then_some(())?;
-    let length_bytes = data.get(start..start + 3)?;
+    let length_bytes = data.get(start..marker + cmnm::LEN)?;
     let length = usize::from_str_radix(std::str::from_utf8(length_bytes).ok()?, 16).ok()?;
-    let name = data.get(start + 3..start + 3 + length)?;
+    let name = data.get(marker + cmnm::LEN..marker + cmnm::LEN + length)?;
     (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
         .then_some(())?;
-    Some((std::str::from_utf8(name).ok()?.to_string(), start + 3))
+    Some((
+        std::str::from_utf8(name).ok()?.to_string(),
+        marker + cmnm::LEN,
+    ))
 }
 
 fn relation_model_name(filename: &str) -> Option<&str> {
@@ -2758,3 +2762,6 @@ mod feature_row_definition_tests {
         assert_eq!(definitions[0].owner_feature_id, Some(247));
     }
 }
+
+#[cfg(test)]
+mod tests;

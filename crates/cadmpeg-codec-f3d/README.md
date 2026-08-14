@@ -25,10 +25,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.f3d")?;
     let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    for loss in &result.report.losses {
+    for loss in &result.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
     }
-    println!("{} bodies", result.ir.model.bodies.len());
+    println!("{} bodies", result.ir().model.bodies.len());
     Ok(())
 }
 ```
@@ -49,13 +49,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.f3d")?;
     let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    // Edit supported fields in result.ir.
+    // Edit supported fields in result.ir().
 
     let mut output = File::create("part-edited.f3d")?;
     F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &result.ir,
-            fidelity: Some(&result.source_fidelity),
+            ir: &result.ir(),
+            fidelity: Some(&result.source_fidelity()),
         })?
         .write_to(&mut output)?;
     Ok(())

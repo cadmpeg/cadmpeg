@@ -1,4 +1,15 @@
-use super::*;
+use crate::decode::analytic::{
+    directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints, meridian_circle_pcurve,
+    nonperiodic_nurbs_endpoint_points, oriented_native_pcurve_endpoints, planar_curve_pcurve,
+    ruled_generator_line_pcurve, solve_pcurve_vertex_domains,
+    surface_of_revolution_parallel_pcurve, unique_oriented_native_pcurve,
+};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::units::Units;
+use std::collections::BTreeMap;
 
 #[test]
 fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {

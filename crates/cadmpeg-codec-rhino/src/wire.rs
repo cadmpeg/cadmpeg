@@ -7,6 +7,8 @@ use std::fmt;
 use cadmpeg_core::decode::BoundedCount;
 use cadmpeg_core::CodecError;
 
+use crate::layout::uuid_wire_form as uuid_wire;
+
 /// A vector that must contain exactly a count proven against input.
 #[derive(Debug)]
 pub(crate) struct ExactVec<T> {
@@ -53,47 +55,49 @@ impl<T> ExactVec<T> {
 /// A UUID in canonical textual byte order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Uuid {
-    bytes: [u8; 16],
+    bytes: [u8; uuid_wire::LEN],
 }
 
 impl Uuid {
     /// Creates a UUID from bytes in canonical textual order.
-    pub(crate) const fn from_canonical(bytes: [u8; 16]) -> Self {
+    pub(crate) const fn from_canonical(bytes: [u8; uuid_wire::LEN]) -> Self {
         Self { bytes }
     }
 
     /// Parses the mixed-endian UUID wire representation.
-    pub(crate) fn from_wire(bytes: [u8; 16]) -> Self {
-        let mut canonical = [0; 16];
+    pub(crate) fn from_wire(bytes: [u8; uuid_wire::LEN]) -> Self {
+        let mut canonical = [0; uuid_wire::LEN];
         for index in 0..4 {
             canonical[index] = bytes[3 - index];
         }
         for index in 0..2 {
-            canonical[4 + index] = bytes[5 - index];
-            canonical[6 + index] = bytes[7 - index];
+            canonical[uuid_wire::DATA2 + index] = bytes[5 - index];
+            canonical[uuid_wire::DATA3 + index] = bytes[7 - index];
         }
-        canonical[8..].copy_from_slice(&bytes[8..]);
+        canonical[uuid_wire::DATA4..].copy_from_slice(&bytes[uuid_wire::DATA4..]);
         Self { bytes: canonical }
     }
 
     /// Inverse of [`Uuid::from_wire`].
     #[cfg(test)]
-    pub(crate) fn to_wire(self) -> [u8; 16] {
-        let mut wire = [0; 16];
+    pub(crate) fn to_wire(self) -> [u8; uuid_wire::LEN] {
+        let mut wire = [0; uuid_wire::LEN];
         for index in 0..4 {
             wire[3 - index] = self.bytes[index];
         }
         for index in 0..2 {
-            wire[5 - index] = self.bytes[4 + index];
-            wire[7 - index] = self.bytes[6 + index];
+            wire[5 - index] = self.bytes[uuid_wire::DATA2 + index];
+            wire[7 - index] = self.bytes[uuid_wire::DATA3 + index];
         }
-        wire[8..].copy_from_slice(&self.bytes[8..]);
+        wire[uuid_wire::DATA4..].copy_from_slice(&self.bytes[uuid_wire::DATA4..]);
         wire
     }
 
     /// Returns the nil UUID.
     pub(crate) const fn nil() -> Self {
-        Self { bytes: [0; 16] }
+        Self {
+            bytes: [0; uuid_wire::LEN],
+        }
     }
 
     /// Returns whether this UUID is nil.
@@ -124,24 +128,4 @@ pub(crate) fn scaled_coordinate(value: f64, scale: f64) -> Option<f64> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::Uuid;
-
-    /// `to_wire` inverts `from_wire` on the mixed-endian group transposition.
-    #[test]
-    fn wire_and_canonical_forms_round_trip() {
-        let canonical = Uuid::from_canonical([
-            0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76,
-            0xad, 0xe5,
-        ]);
-        let wire = canonical.to_wire();
-        assert_eq!(
-            wire,
-            [
-                0x3b, 0x73, 0x59, 0x05, 0x32, 0x53, 0xd1, 0x49, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76,
-                0xad, 0xe5,
-            ]
-        );
-        assert_eq!(Uuid::from_wire(wire), canonical);
-    }
-}
+mod tests;

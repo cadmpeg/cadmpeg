@@ -13,6 +13,7 @@ use crate::database::{
     SegmentRegistry,
 };
 use crate::kernel::{select_active_carrier, ActiveCarrierState};
+use crate::layout::bulk_envelope as envelope;
 use crate::records::{frame_bulk_records, parse_meta_tables, MetaTables, RseRecordTable};
 
 /// A validated `V<n>` storage-band number.
@@ -512,7 +513,7 @@ fn parse_bulk_stream<'a>(
 ) -> Result<SegmentBulk<'a>, CodecError> {
     let bytes = source.window();
     let header = bytes
-        .get(..18)
+        .get(..envelope::LEN)
         .ok_or_else(|| CodecError::Malformed("truncated RSe bulk envelope".into()))?;
     if bytes.len() == header.len() {
         return Err(CodecError::Malformed(
@@ -520,8 +521,8 @@ fn parse_bulk_stream<'a>(
         ));
     }
     let mut prefix = [0; 16];
-    prefix.copy_from_slice(&header[..16]);
-    let form = BulkForm(u16::from_le_bytes([header[16], header[17]]));
+    prefix.copy_from_slice(&header[envelope::PREFIX..envelope::FORM]);
+    let form = BulkForm(View::u16_le_at(header, envelope::FORM).expect("18-byte bulk header"));
     let compressed = source
         .child(source.start() + header.len(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;
@@ -572,7 +573,7 @@ fn parse_meta_stream_v8<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<SegmentMetaState<'a>, CodecError> {
-    let mut cursor = MetaCursor::new(source.window());
+    let mut cursor = MetaCursor::new(source);
     let marker = cursor.length_prefixed_utf8("marker")?;
     let version = cursor.u16("version")?;
     if marker != "RSe Meta Stream Version 8" || version != 8 {
@@ -592,7 +593,7 @@ fn parse_meta_stream_v8<'a>(
         ));
     }
     let compressed = source
-        .child(source.start() + cursor.position, source.end())
+        .child(cursor.position(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
     let body = inflate_zlib_exact(ctx, compressed)?;
     let tables = parse_meta_tables(ctx, body)?;
@@ -610,63 +611,57 @@ fn parse_meta_stream_v8<'a>(
     })))
 }
 
-#[cfg(feature = "fuzzing")]
 pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
     let _ = parse_meta_stream_v8(ctx, source);
 }
 
-#[cfg(feature = "fuzzing")]
 pub(crate) fn fuzz_bulk_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
     let _ = parse_bulk_stream(ctx, source, BulkReadMode::Expand);
 }
 
 struct MetaCursor<'a> {
-    bytes: &'a [u8],
-    position: usize,
+    source: View<'a>,
 }
 
 impl<'a> MetaCursor<'a> {
-    const fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, position: 0 }
+    const fn new(source: View<'a>) -> Self {
+        Self { source }
     }
 
     fn remaining(&self) -> usize {
-        self.bytes.len().saturating_sub(self.position)
+        self.source.remaining()
     }
 
-    fn take(&mut self, len: usize, what: &str) -> Result<&'a [u8], CodecError> {
-        let end = self.position.checked_add(len).ok_or_else(|| {
-            CodecError::Malformed(format!("RSe metadata {what} length overflows"))
-        })?;
-        let value = self
-            .bytes
-            .get(self.position..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated RSe metadata {what}")))?;
-        self.position = end;
-        Ok(value)
+    fn position(&self) -> usize {
+        self.source.position()
     }
 
-    fn u8(&mut self, what: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, what)?[0])
+    fn take(&mut self, len: usize, what: &'static str) -> Result<&'a [u8], CodecError> {
+        Ok(self
+            .source
+            .req_take(len)
+            .map_err(|error| error.during(what))?)
     }
 
-    fn u16(&mut self, what: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(
-            self.take(2, what)?
-                .try_into()
-                .expect("two-byte cursor read"),
-        ))
+    fn u8(&mut self, what: &'static str) -> Result<u8, CodecError> {
+        Ok(self.source.req_u8().map_err(|error| error.during(what))?)
     }
 
-    fn u32(&mut self, what: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(
-            self.take(4, what)?
-                .try_into()
-                .expect("four-byte cursor read"),
-        ))
+    fn u16(&mut self, what: &'static str) -> Result<u16, CodecError> {
+        Ok(self
+            .source
+            .req_u16_le()
+            .map_err(|error| error.during(what))?)
     }
 
-    fn u32_array<const N: usize>(&mut self, what: &str) -> Result<[u32; N], CodecError> {
+    fn u32(&mut self, what: &'static str) -> Result<u32, CodecError> {
+        Ok(self
+            .source
+            .req_u32_le()
+            .map_err(|error| error.during(what))?)
+    }
+
+    fn u32_array<const N: usize>(&mut self, what: &'static str) -> Result<[u32; N], CodecError> {
         let mut values = [0; N];
         for value in &mut values {
             *value = self.u32(what)?;
@@ -674,7 +669,7 @@ impl<'a> MetaCursor<'a> {
         Ok(values)
     }
 
-    fn u16_array<const N: usize>(&mut self, what: &str) -> Result<[u16; N], CodecError> {
+    fn u16_array<const N: usize>(&mut self, what: &'static str) -> Result<[u16; N], CodecError> {
         let mut values = [0; N];
         for value in &mut values {
             *value = self.u16(what)?;
@@ -682,7 +677,7 @@ impl<'a> MetaCursor<'a> {
         Ok(values)
     }
 
-    fn length(&mut self, what: &str, width: usize) -> Result<usize, CodecError> {
+    fn length(&mut self, what: &'static str, width: usize) -> Result<usize, CodecError> {
         let count = usize::try_from(self.u32(what)?)
             .map_err(|_| CodecError::Malformed(format!("RSe metadata {what} is too large")))?;
         count
@@ -690,7 +685,7 @@ impl<'a> MetaCursor<'a> {
             .ok_or_else(|| CodecError::Malformed(format!("RSe metadata {what} length overflows")))
     }
 
-    fn length_prefixed_utf8(&mut self, what: &str) -> Result<String, CodecError> {
+    fn length_prefixed_utf8(&mut self, what: &'static str) -> Result<String, CodecError> {
         let len = self.length(what, 1)?;
         if len > 256 {
             return Err(CodecError::Malformed(format!(
@@ -703,18 +698,18 @@ impl<'a> MetaCursor<'a> {
             .map_err(|_| CodecError::Malformed(format!("RSe metadata {what} is not UTF-8")))
     }
 
-    fn length_prefixed_utf16(&mut self, what: &str) -> Result<String, CodecError> {
+    fn length_prefixed_utf16(&mut self, what: &'static str) -> Result<String, CodecError> {
         let len = self.length(what, 2)?;
         if len > 8_192 {
             return Err(CodecError::Malformed(format!(
                 "RSe metadata {what} exceeds 4096 UTF-16 units"
             )));
         }
-        let units = self
-            .take(len, what)?
-            .chunks_exact(2)
-            .map(|word| u16::from_le_bytes([word[0], word[1]]))
-            .collect::<Vec<_>>();
+        let mut view = View::over_retained(self.take(len, what)?);
+        let mut units = Vec::with_capacity(len / 2);
+        for _ in 0..len / 2 {
+            units.push(view.req_u16_le().map_err(|error| error.during(what))?);
+        }
         String::from_utf16(&units)
             .map_err(|_| CodecError::Malformed(format!("RSe metadata {what} is not UTF-16")))
     }
@@ -784,14 +779,30 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic bulk stream fits policy");
+        assert_eq!(&bytes[..16], &[0x3c; 16]);
+        assert_eq!(
+            u16::from_le_bytes(bytes[16..18].try_into().expect("planted form")),
+            0x0104
+        );
+        assert!(bytes.len() > 18);
         let bulk = parse_bulk_stream(&ctx, root, BulkReadMode::Expand)
             .expect("synthetic bulk stream parses");
+        assert_eq!(bulk.prefix.len(), 16);
         assert_eq!(bulk.prefix, [0x3c; 16]);
         assert_eq!(bulk.form.value(), 0x0104);
         assert_eq!(
             bulk.expanded.expect("expanded in decode mode").window(),
             b"framed bulk records"
         );
+    }
+
+    #[test]
+    fn bulk_stream_rejects_a_truncated_envelope() {
+        let bytes = vec![0x3c; 17];
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("truncated envelope fits policy");
+        assert!(parse_bulk_stream(&ctx, root, BulkReadMode::HeaderOnly).is_err());
     }
 
     #[test]

@@ -6,12 +6,13 @@ use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
+use crate::layout::indexed_design_record_header as indexed_header;
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DesignBodyBinding,
     DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
@@ -42,45 +43,42 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
             continue;
         };
         let count_offset = start + prefix.len();
-        let Some(count_raw) = bytes.get(count_offset..count_offset + 4) else {
+        let mut view = View::over_retained(bytes);
+        if view.seek(count_offset).is_none() {
+            continue;
+        }
+        let Some(count) = view
+            .u32_le()
+            .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
+        else {
             continue;
         };
-        let count =
-            usize::try_from(u32::from_le_bytes(count_raw.try_into().expect(
-                "invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4",
-            )))
-            .unwrap_or(usize::MAX);
         if count > 100_000 {
             continue;
         }
-        let mut cursor = count_offset + 4;
         let mut decoded = Vec::with_capacity(count);
         for _ in 0..count {
-            if bytes.get(cursor) != Some(&1) {
+            let cursor = view.position();
+            if view.u8() != Some(1) {
                 decoded.clear();
                 break;
             }
-            let Some(id_raw) = bytes.get(cursor + 1..cursor + 9) else {
+            let Some(entity_suffix) = view.u64_le() else {
                 decoded.clear();
                 break;
             };
-            let Some(flags_raw) = bytes.get(cursor + 9..cursor + 11) else {
+            let Some(flags) = view.u16_le() else {
                 decoded.clear();
                 break;
             };
             decoded.push(DesignBodyMember {
                 id: ids::native_design_body_member_id(&entry.name, cursor),
                 byte_offset: cursor as u64,
-                entity_suffix: u64::from_le_bytes(id_raw.try_into().expect(
-                    "invariant: id_raw is an 8-byte slice from bytes.get(range) of length 8",
-                )),
-                flags: u16::from_le_bytes(flags_raw.try_into().expect(
-                    "invariant: flags_raw is a 2-byte slice from bytes.get(range) of length 2",
-                )),
+                entity_suffix,
+                flags,
             });
-            cursor += 11;
         }
-        if decoded.len() == count && bytes.get(cursor) == Some(&0) {
+        if decoded.len() == count && bytes.get(view.position()) == Some(&0) {
             out.extend(decoded);
         }
     }
@@ -209,7 +207,7 @@ fn indexed_headers_in(
                 continue;
             };
             if class_tag.len() == 3 && class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-                let Some(record_index) = u32_at(bytes, after_tag) else {
+                let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
                     continue;
                 };
                 return Some((at, record_index));
@@ -229,12 +227,12 @@ pub(crate) fn body_bound_candidates(
             return None;
         }
         let values = [
-            f64_at(bytes, offset + 1)?,
-            f64_at(bytes, offset + 9)?,
-            f64_at(bytes, offset + 17)?,
-            f64_at(bytes, offset + 25)?,
-            f64_at(bytes, offset + 33)?,
-            f64_at(bytes, offset + 41)?,
+            View::f64_le_at(bytes, offset + 1)?,
+            View::f64_le_at(bytes, offset + 9)?,
+            View::f64_le_at(bytes, offset + 17)?,
+            View::f64_le_at(bytes, offset + 25)?,
+            View::f64_le_at(bytes, offset + 33)?,
+            View::f64_le_at(bytes, offset + 41)?,
         ];
         (values.iter().all(|value| value.is_finite())
             && (0..3).all(|axis| values[axis] >= values[axis + 3])
@@ -258,7 +256,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             }
             let framed_name = offset
                 .checked_sub(4)
-                .and_then(|at| u32_at(bytes, at))
+                .and_then(|at| View::u32_le_at(bytes, at))
                 .and_then(|length| usize::try_from(length).ok())
                 == Some(name.len());
             if !framed_name {
@@ -271,7 +269,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 .and_then(|(design_id, design_id_at)| {
                     let selector_at = design_id_at.checked_add(design_id.len())?;
                     Some(ConstructionRecipeSelector {
-                        value: u32_at(bytes, selector_at)?,
+                        value: View::u32_le_at(bytes, selector_at)?,
                         byte_offset: u64::try_from(selector_at).ok()?,
                     })
                 });
@@ -281,13 +279,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             *counter += 1;
             let record_index_offset = offset.checked_sub(16);
             let record_index = record_index_offset
-                .and_then(|at| bytes.get(at..at + 4))
-                .map(|raw| {
-                    i32::from_le_bytes(
-                        raw.try_into()
-                            .expect("invariant: bytes.get(at..at+4) is a 4-byte slice"),
-                    )
-                })
+                .and_then(|at| View::i32_le_at(bytes, at))
                 .unwrap_or_default();
             out.push(ConstructionRecipe {
                 id: ids::native_construction_recipe_id(stream, offset),
@@ -327,13 +319,7 @@ fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String,
 }
 
 fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
-    let length = usize::try_from(u32::from_le_bytes(
-        bytes
-            .get(length_offset..length_offset + 4)?
-            .try_into()
-            .ok()?,
-    ))
-    .ok()?;
+    let length = usize::try_from(View::u32_le_at(bytes, length_offset)?).ok()?;
     if !(1..=8).contains(&length) {
         return None;
     }
@@ -450,9 +436,12 @@ pub(crate) fn body_bindings(
                     "F3D Design body-map carrier entity {entity_id} exceeds u32"
                 ))
             })?;
-            if read_u32(bytes, start) != Some(3)
-                || bytes.get(start + 4..start + 7) != Some(class_tag.as_bytes())
-                || read_u32(bytes, start + 7) != Some(record_index)
+            if View::u32_le_at(bytes, start) != Some(3)
+                || bytes
+                    .get(start + indexed_header::CLASS_TAG..start + indexed_header::RECORD_INDEX)
+                    != Some(class_tag.as_bytes())
+                || View::u32_le_at(bytes, start + indexed_header::RECORD_INDEX)
+                    != Some(record_index)
             {
                 return Err(CodecError::Malformed(format!(
                     "F3D Design body-map carrier entity {entity_id} has an invalid indexed header"
@@ -485,18 +474,18 @@ fn parse_body_map_frame(
     prefix_len: usize,
 ) -> Result<Option<Vec<BodyBinding>>, CodecError> {
     let Some(count_at) = start
-        .checked_add(11)
+        .checked_add(indexed_header::LEN)
         .and_then(|payload| payload.checked_add(prefix_len))
     else {
         return Ok(None);
     };
     if !bytes
-        .get(start + 11..count_at)
+        .get(start + indexed_header::LEN..count_at)
         .is_some_and(|prefix| prefix.iter().all(|byte| *byte == 0))
     {
         return Ok(None);
     }
-    let Some(pair_count) = read_u32(bytes, count_at) else {
+    let Some(pair_count) = View::u32_le_at(bytes, count_at) else {
         return Ok(None);
     };
     let count = usize::try_from(pair_count).map_err(|_| {
@@ -516,7 +505,9 @@ fn parse_body_map_frame(
     let Some(name_at) = pairs_end.checked_add(12) else {
         return Ok(None);
     };
-    if read_u64(bytes, pairs_end).is_none() || read_u32(bytes, pairs_end + 8) != Some(0) {
+    if View::u64_le_at(bytes, pairs_end).is_none()
+        || View::u32_le_at(bytes, pairs_end + 8) != Some(0)
+    {
         return Ok(None);
     }
     let Some(max_name_chars) = name_at
@@ -544,7 +535,9 @@ fn parse_body_map_frame(
     })?;
     for pair in 0..count {
         let at = pairs_start + pair * 16;
-        let (Some(key), Some(suffix)) = (read_u64(bytes, at), read_u64(bytes, at + 8)) else {
+        let (Some(key), Some(suffix)) =
+            (View::u64_le_at(bytes, at), View::u64_le_at(bytes, at + 8))
+        else {
             return Err(CodecError::Malformed(format!(
                 "F3D Design body map at byte {start} has a truncated pair run"
             )));
@@ -776,7 +769,7 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
-        if read_u32(bytes, at) != Some(GUID_CHARS as u32)
+        if View::u32_le_at(bytes, at) != Some(GUID_CHARS as u32)
             || !is_utf16_guid(&bytes[at + 4..at + 4 + GUID_BYTES])
         {
             at += 1;
@@ -784,7 +777,7 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
         }
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
-            if let (0 | 1, Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
+            if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
                 out.push(BrowserNodeRecord {
                     guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
                     entity_suffix: member,
@@ -797,10 +790,11 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
 }
 
 fn utf16_le_string(bytes: &[u8]) -> String {
-    let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect();
+    let mut view = View::over_retained(bytes);
+    let mut units = Vec::with_capacity(bytes.len() / 2);
+    while let Some(unit) = view.u16_le() {
+        units.push(unit);
+    }
     String::from_utf16_lossy(&units)
 }
 
@@ -1091,6 +1085,62 @@ mod tests {
         assert!(
             !visibility.contains_key(&entity),
             "two unjoined typed nodes are ambiguous"
+        );
+    }
+
+    #[test]
+    fn body_bound_candidate_has_one_marker_and_six_ordered_f64_values() {
+        let values: [f64; 6] = [4.0, 6.0, 1.5, -1.0, 0.0, -0.25];
+        let mut bytes = vec![1];
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let candidates = body_bound_candidates(&bytes, 0, bytes.len()).collect::<Vec<_>>();
+        assert_eq!(candidates, [(0, values)]);
+
+        bytes[0] = 0;
+        assert!(body_bound_candidates(&bytes, 0, bytes.len())
+            .next()
+            .is_none());
+    }
+
+    #[test]
+    fn bounded_face_record_identity_is_not_a_second_design_id() {
+        let mut bytes = Vec::new();
+        for _ in 0..2 {
+            let mut prefix = [0u8; 27];
+            prefix[11..15].copy_from_slice(&309i32.to_le_bytes());
+            prefix[23..27].copy_from_slice(&24u32.to_le_bytes());
+            bytes.extend_from_slice(&prefix);
+            bytes.extend_from_slice(b"bounded_face_recipe_data");
+            bytes.extend_from_slice(&(-1i64).to_le_bytes());
+        }
+        let mut recipes = Vec::new();
+        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
+        assert_eq!(recipes.len(), 2);
+        assert!(recipes.iter().all(|recipe| recipe.record_index == 309));
+        assert!(recipes.iter().all(|recipe| recipe.design_id.is_none()));
+        assert_eq!(recipes[0].recipe_index, 0);
+        assert_eq!(recipes[1].recipe_index, 1);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&4u32.to_le_bytes());
+        body.extend_from_slice(b"2265");
+        body.extend_from_slice(&3u32.to_le_bytes());
+        body.extend_from_slice(&[0; 12]);
+        body.extend_from_slice(&16u32.to_le_bytes());
+        body.extend_from_slice(b"body_recipe_data");
+        let mut recipes = Vec::new();
+        crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes);
+        assert_eq!(recipes.len(), 1);
+        assert_eq!(recipes[0].design_id.as_deref(), Some("2265"));
+        assert_eq!(recipes[0].design_id_offset, Some(4));
+        assert_eq!(
+            recipes[0].design_selector,
+            Some(crate::records::ConstructionRecipeSelector {
+                value: 3,
+                byte_offset: 8,
+            })
         );
     }
 }

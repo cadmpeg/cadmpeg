@@ -811,7 +811,6 @@ const fn legacy_block_len(version: u8) -> usize {
 
 struct Cursor<'a> {
     source: View<'a>,
-    position: usize,
 }
 
 struct ReferenceList {
@@ -822,25 +821,11 @@ struct ReferenceList {
 
 impl<'a> Cursor<'a> {
     const fn new(source: View<'a>) -> Self {
-        Self {
-            source,
-            position: 0,
-        }
+        Self { source }
     }
 
-    fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        let end = self.position.checked_add(len).ok_or_else(|| {
-            CodecError::Malformed(format!("Inventor presentation {field} range overflows"))
-        })?;
-        let bytes = self
-            .source
-            .window()
-            .get(self.position..end)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("truncated Inventor presentation {field}"))
-            })?;
-        self.position = end;
-        Ok(bytes)
+    fn take(&mut self, len: usize, _field: &str) -> Result<&'a [u8], CodecError> {
+        Ok(self.source.req_take(len)?)
     }
 
     fn skip(&mut self, len: usize, field: &str) -> Result<(), CodecError> {
@@ -856,32 +841,24 @@ impl<'a> Cursor<'a> {
         Ok(())
     }
 
-    fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, field)?[0])
+    fn u8(&mut self, _field: &str) -> Result<u8, CodecError> {
+        Ok(self.source.req_u8()?)
     }
 
-    fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(
-            self.take(2, field)?.try_into().expect("two-byte read"),
-        ))
+    fn u16(&mut self, _field: &str) -> Result<u16, CodecError> {
+        Ok(self.source.req_u16_le()?)
     }
 
-    fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(
-            self.take(4, field)?.try_into().expect("four-byte read"),
-        ))
+    fn u32(&mut self, _field: &str) -> Result<u32, CodecError> {
+        Ok(self.source.req_u32_le()?)
     }
 
-    fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
-        Ok(f64::from_le_bytes(
-            self.take(8, field)?.try_into().expect("eight-byte read"),
-        ))
+    fn f64(&mut self, _field: &str) -> Result<f64, CodecError> {
+        Ok(self.source.req_f64_le()?)
     }
 
-    fn f32(&mut self, field: &str) -> Result<f32, CodecError> {
-        Ok(f32::from_le_bytes(
-            self.take(4, field)?.try_into().expect("four-byte read"),
-        ))
+    fn f32(&mut self, _field: &str) -> Result<f32, CodecError> {
+        Ok(self.source.req_f32_le()?)
     }
 
     fn reference(&mut self, field: &str) -> Result<u32, CodecError> {
@@ -951,12 +928,11 @@ impl<'a> Cursor<'a> {
             ))
         })?;
         ctx.charge_retained(byte_len as u64, "retain Inventor PmApp UTF-16 string", None)?;
-        let bytes = self.take(byte_len, field)?;
-        let units = bytes
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-            .collect::<Vec<_>>();
-        String::from_utf16(&units)
+        let mut encoded = Vec::with_capacity(units);
+        for _ in 0..units {
+            encoded.push(self.source.req_u16_le()?);
+        }
+        String::from_utf16(&encoded)
             .map(|value| value.trim_end_matches('\0').to_owned())
             .map_err(|_| {
                 CodecError::Malformed(format!("Inventor presentation {field} is invalid UTF-16"))
@@ -977,9 +953,12 @@ impl<'a> Cursor<'a> {
     }
 
     fn remainder(&mut self) -> Result<View<'a>, CodecError> {
-        let start = self.source.start() + self.position;
-        self.position = self.source.window().len();
-        self.source.child(start, self.source.end()).ok_or_else(|| {
+        let start = self.source.position();
+        let end = self.source.end();
+        self.source.seek(end).ok_or_else(|| {
+            CodecError::Malformed("Inventor presentation suffix range is invalid".into())
+        })?;
+        self.source.child(start, end).ok_or_else(|| {
             CodecError::Malformed("Inventor presentation suffix range is invalid".into())
         })
     }

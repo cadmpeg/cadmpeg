@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
+use crate::bytes::{
+    f64s_at, lp_ascii_filtered, lp_utf16_bounded, take_reference, utf16le_at, Reference,
+};
 use crate::container::{role, ContainerScan};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
+use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
 use crate::records::{
     DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     DesignSketchVisibility, LostEdgeReference, PersistentReference, PersistentReferenceKind,
@@ -13,7 +16,7 @@ use crate::records::{
     SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
     DESIGN_MODULE_SKETCH,
 };
-use cadmpeg_core::le::{f32_at, f64_at, f64s_at, take_f32, u32_at, u64_at as read_u64, utf16le_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
@@ -141,7 +144,9 @@ pub fn decode_sketch_placements(
         let mut referenced_indices = Vec::new();
         for window in frame.windows(11) {
             if window[0] == 1 && window[5..11] == [0; 6] {
-                let record_index = u32::from_le_bytes([window[1], window[2], window[3], window[4]]);
+                let Some(record_index) = View::u32_le_at(window, 1) else {
+                    continue;
+                };
                 if !referenced_indices.contains(&record_index) {
                     referenced_indices.push(record_index);
                 }
@@ -332,13 +337,17 @@ fn decode_sketch_visibility_member(
     member_at: usize,
     entity_suffix: u64,
 ) -> Option<DesignSketchVisibility> {
-    let record_index = read_u64(bytes, member_at + 7)?;
-    if record_index != entity_suffix || bytes.get(member_at + 15..member_at + 19) != Some(&[0; 4]) {
+    let record_index = View::u64_le_at(bytes, member_at + visibility_member::ENTITY_SUFFIX)?;
+    if record_index != entity_suffix
+        || bytes.get(
+            member_at + visibility_member::ZERO_RUN..member_at + visibility_member::OWNER_REFERENCE,
+        ) != Some(&[0; 4])
+    {
         return None;
     }
-    let mut cursor = member_at + 19;
+    let mut cursor = member_at + visibility_member::OWNER_REFERENCE;
     let owner = take_reference(bytes, &mut cursor)?;
-    if cursor != member_at + 30
+    if cursor != member_at + visibility_member::STREAM_ORDINAL
         || owner.target == Some(0)
         || owner.target.is_none()
         || owner.segment.is_some()
@@ -347,18 +356,18 @@ fn decode_sketch_visibility_member(
     {
         return None;
     }
-    let stream_ordinal = u32_at(bytes, cursor)?;
-    if stream_ordinal == 0 || bytes.get(cursor + 4) != Some(&0) {
+    let stream_ordinal = View::u32_le_at(bytes, cursor)?;
+    if stream_ordinal == 0 || bytes.get(member_at + visibility_member::RESERVED_ZERO) != Some(&0) {
         return None;
     }
     let stream_ordinal_offset = cursor;
-    let visible_offset = cursor + 5;
+    let visible_offset = member_at + visibility_member::VISIBLE;
     let visible = match bytes.get(visible_offset) {
         Some(0) => false,
         Some(1) => true,
         _ => return None,
     };
-    if bytes.get(visible_offset + 1) != Some(&1) {
+    if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
         return None;
     }
     Some(DesignSketchVisibility {
@@ -367,55 +376,6 @@ fn decode_sketch_visibility_member(
         visible_offset: visible_offset as u64,
         visible,
     })
-}
-
-#[cfg(test)]
-mod sketch_visibility_member_tests {
-    use super::decode_sketch_visibility_member;
-
-    const ENTITY_SUFFIX: u64 = 201;
-
-    fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"256");
-        bytes.extend_from_slice(&ENTITY_SUFFIX.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.push(1);
-        bytes.extend_from_slice(&203u64.to_le_bytes());
-        bytes.extend_from_slice(&[0, 0]);
-        bytes.extend_from_slice(&stream_ordinal.to_le_bytes());
-        bytes.push(0);
-        bytes.push(visible);
-        bytes.push(1);
-        bytes
-    }
-
-    #[test]
-    fn sketch_visibility_member_decodes_both_boolean_values() {
-        let hidden = decode_sketch_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX)
-            .expect("hidden member");
-        assert_eq!(hidden.stream_ordinal, 1);
-        assert_eq!(hidden.stream_ordinal_offset, 30);
-        assert_eq!(hidden.visible_offset, 35);
-        assert!(!hidden.visible);
-
-        let visible = decode_sketch_visibility_member(&member(513, 1), 0, ENTITY_SUFFIX)
-            .expect("visible member");
-        assert_eq!(visible.stream_ordinal, 513);
-        assert!(visible.visible);
-    }
-
-    #[test]
-    fn sketch_visibility_member_rejects_invalid_ordinal_or_owner() {
-        assert!(decode_sketch_visibility_member(&member(1, 2), 0, ENTITY_SUFFIX).is_none());
-        assert!(decode_sketch_visibility_member(&member(0, 1), 0, ENTITY_SUFFIX).is_none());
-        assert!(decode_sketch_visibility_member(&member(1, 1), 0, ENTITY_SUFFIX + 1).is_none());
-
-        let mut external_owner = member(1, 1);
-        external_owner[28] = 1;
-        assert!(decode_sketch_visibility_member(&external_owner, 0, ENTITY_SUFFIX).is_none());
-    }
 }
 
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
@@ -448,7 +408,7 @@ pub(crate) fn parse_member_run_head_placement(
     {
         return None;
     }
-    let head_index = u32_at(bytes, paired_at + 20)?;
+    let head_index = View::u32_le_at(bytes, paired_at + 20)?;
     if bytes.get(paired_at + 24..paired_at + 28) != Some(&[0u8; 4][..]) {
         return None;
     }
@@ -535,7 +495,7 @@ pub(crate) fn parse_sketch_placement_candidates(
             || paired_class_tag.len() != 3
             || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
             || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            || u32_at(bytes, paired_after_tag) != Some(record_index)
+            || View::u32_le_at(bytes, paired_after_tag) != Some(record_index)
         {
             continue;
         }
@@ -690,26 +650,20 @@ pub fn decode_persistent_references(
                 let offset = cursor + relative;
                 cursor = offset + name.len();
                 let compact_type_offset = offset + name.len();
-                let type_offset = if u32_at(bytes, compact_type_offset) == Some(23) {
+                let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
                     compact_type_offset
-                } else if u32_at(bytes, compact_type_offset) == Some(2)
-                    && u32_at(bytes, compact_type_offset + 4) == Some(14)
+                } else if View::u32_le_at(bytes, compact_type_offset) == Some(2)
+                    && View::u32_le_at(bytes, compact_type_offset + 4) == Some(14)
                     && bytes
                         .get(compact_type_offset + 8..compact_type_offset + 22)
                         .is_some()
-                    && u32_at(bytes, compact_type_offset + 22) == Some(23)
+                    && View::u32_le_at(bytes, compact_type_offset + 22) == Some(23)
                 {
                     compact_type_offset + 22
                 } else {
                     continue;
                 };
-                let Some(length_bytes) = bytes.get(type_offset..type_offset + 4) else {
-                    continue;
-                };
-                if u32::from_le_bytes(length_bytes.try_into().expect(
-                    "invariant: length_bytes is a 4-byte slice from bytes.get(range) of length 4",
-                )) != 23
-                {
+                if View::u32_le_at(bytes, type_offset) != Some(23) {
                     continue;
                 }
                 let type_name = b"IntrinsicMetaTypeuint64";
@@ -718,7 +672,7 @@ pub fn decode_persistent_references(
                     continue;
                 }
                 let value_offset = type_offset + 4 + type_name.len();
-                let Some(raw) = bytes.get(value_offset..value_offset + 8) else {
+                let Some(value) = View::u64_le_at(bytes, value_offset) else {
                     continue;
                 };
                 out.push((
@@ -728,9 +682,7 @@ pub fn decode_persistent_references(
                         byte_offset: offset as u64,
                         value_offset: (value_offset - offset) as u32,
                         kind,
-                        value: u64::from_le_bytes(raw.try_into().expect(
-                            "invariant: raw is an 8-byte slice from bytes.get(range) of length 8",
-                        )),
+                        value,
                     },
                 ));
             }
@@ -771,11 +723,11 @@ pub fn decode_lost_edge_references(
             if after_tag != header_offset + 7
                 || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
-                || u32_at(bytes, header_offset + 25) != Some(marker.len() as u32)
+                || View::u32_le_at(bytes, header_offset + 25) != Some(marker.len() as u32)
             {
                 continue;
             }
-            let Some(record_index) = u32_at(bytes, after_tag) else {
+            let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
                 continue;
             };
             let next_byte_offset = offset + marker.len();
@@ -789,7 +741,7 @@ pub fn decode_lost_edge_references(
             {
                 continue;
             }
-            let Some(next_record_index) = u32_at(bytes, after_next_tag) else {
+            let Some(next_record_index) = View::u32_le_at(bytes, after_next_tag) else {
                 continue;
             };
             out.push(LostEdgeReference {
@@ -816,7 +768,7 @@ pub(crate) fn parse_settled_entity_header(
     bytes: &[u8],
     start: usize,
 ) -> Option<(u64, String, bool, usize)> {
-    let entity_suffix = u64::from_le_bytes(bytes.get(start + 7..start + 15)?.try_into().ok()?);
+    let entity_suffix = View::u64_le_at(bytes, start + 7)?;
     if entity_suffix == 0 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5]) {
         return None;
     }
@@ -844,7 +796,7 @@ pub(crate) fn parse_genesis_entity_header(
     bytes: &[u8],
     start: usize,
 ) -> Option<(u64, String, bool, usize)> {
-    let entity_suffix = u64::from(u32_at(bytes, start + 7)?);
+    let entity_suffix = u64::from(View::u32_le_at(bytes, start + 7)?);
     if entity_suffix == 0 {
         return None;
     }
@@ -852,7 +804,9 @@ pub(crate) fn parse_genesis_entity_header(
     while bytes.get(cursor) == Some(&0) && cursor < start + 35 {
         cursor += 1;
     }
-    if cursor == start + 11 || bytes.get(cursor) != Some(&1) || u32_at(bytes, cursor + 1) != Some(1)
+    if cursor == start + 11
+        || bytes.get(cursor) != Some(&1)
+        || View::u32_le_at(bytes, cursor + 1) != Some(1)
     {
         return None;
     }
@@ -890,10 +844,11 @@ pub(crate) fn parse_sketch_member_run(
     let Some(paired) = next_indexed_record_offset(bytes, from) else {
         return empty;
     };
-    if u32_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
+    if View::u32_le_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
         return empty;
     }
-    let Some(count) = u32_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
+    let Some(count) =
+        View::u32_le_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
     else {
         return empty;
     };
@@ -903,7 +858,7 @@ pub(crate) fn parse_sketch_member_run(
     {
         return empty;
     }
-    let Some(base_point_index) = u32_at(bytes, paired + 57) else {
+    let Some(base_point_index) = View::u32_le_at(bytes, paired + 57) else {
         return empty;
     };
     let mut member_indices = Vec::with_capacity(count + 1);
@@ -917,7 +872,7 @@ pub(crate) fn parse_sketch_member_run(
         {
             return empty;
         }
-        let Some(record_index) = u32_at(bytes, marker + 1) else {
+        let Some(record_index) = View::u32_le_at(bytes, marker + 1) else {
             return empty;
         };
         member_indices.push(record_index);
@@ -937,7 +892,7 @@ pub(crate) fn parse_legacy_sketch_member_run(
     entity_suffix: u32,
 ) -> Option<(Vec<u32>, Vec<u64>)> {
     let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
-    if u32_at(bytes, paired_at + 7) != Some(entity_suffix)
+    if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
         || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
         || bytes.get(paired_at + 19) != Some(&1)
         || bytes.get(paired_at + 24..paired_at + 30) != Some(&[0u8; 6][..])
@@ -952,7 +907,7 @@ pub(crate) fn parse_legacy_sketch_member_run(
     {
         return None;
     }
-    let count = usize::try_from(u32_at(bytes, paired_at + 41)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, paired_at + 41)?).ok()?;
     if count == 0 {
         return None;
     }
@@ -969,7 +924,7 @@ pub(crate) fn parse_legacy_sketch_member_run(
         {
             return None;
         }
-        member_indices.push(u32_at(bytes, marker + 1)?);
+        member_indices.push(View::u32_le_at(bytes, marker + 1)?);
         member_offsets.push((marker + 1) as u64);
     }
     Some((member_indices, member_offsets))
@@ -1147,7 +1102,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<std::collections::HashSet<_>>();
         for &start in &indexed_offsets {
-            let Some(entity_suffix) = u32_at(bytes, start + 7) else {
+            let Some(entity_suffix) = View::u32_le_at(bytes, start + 7) else {
                 continue;
             };
             if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
@@ -1377,17 +1332,12 @@ pub(crate) fn decode_pattern_definition(
     parsed: &ParsedSketchRelation,
 ) -> Option<crate::records::SketchPatternDefinition> {
     use crate::records::{SketchPatternDefinition, SketchPatternDirection};
-    let f64_at = |at: usize| {
-        payload
-            .get(at..at + 8)
-            .map(|raw| f64::from_le_bytes(raw.try_into().expect("8-byte slice")))
-            .filter(|value| value.is_finite())
-    };
+    let f64_at = |at: usize| View::f64_le_at(payload, at).filter(|value| value.is_finite());
     let reference_end = |ordinal: usize| Some(parsed.auxiliary_reference_offsets.get(ordinal)? + 4);
     if parsed.state == 0x1000_0000 && parsed.auxiliary_references.len() == 2 {
         let angle_at = reference_end(1)? + 6;
         let evaluated_angle = f64_at(angle_at)?;
-        let evaluated_count = u32_at(payload, angle_at + 8)?;
+        let evaluated_count = View::u32_le_at(payload, angle_at + 8)?;
         if !(1..=100_000).contains(&evaluated_count) {
             return None;
         }
@@ -1422,7 +1372,7 @@ pub(crate) fn decode_pattern_definition(
             ),
         ];
         for (count_at, count_ordinal, distance_ordinal) in clauses {
-            let evaluated_count = u32_at(payload, count_at)?;
+            let evaluated_count = View::u32_le_at(payload, count_at)?;
             if !(1..=100_000).contains(&evaluated_count) {
                 return None;
             }
@@ -1516,7 +1466,7 @@ pub(crate) fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
     if record.get(tail) != Some(&1) || record.get(tail + 5..tail + 11) != Some(&[0u8; 6][..]) {
         return None;
     }
-    u32_at(record, tail + 1)
+    View::u32_le_at(record, tail + 1)
 }
 
 pub(crate) fn decode_sketch_points_from_stream(
@@ -1677,7 +1627,7 @@ pub(crate) fn read_property_block(
         0 => *cursor += 1,
         1 => {
             *cursor += 1;
-            let count = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            let count = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
             if count > MAX_RELATION_RUN {
                 return None;
             }
@@ -1690,7 +1640,7 @@ pub(crate) fn read_property_block(
                 if type_name != "IntrinsicMetaTypeuint64" {
                     return None;
                 }
-                properties.push((key, read_u64(payload, after_type)?));
+                properties.push((key, View::u64_le_at(payload, after_type)?));
                 *cursor = after_type.checked_add(8)?;
             }
         }
@@ -1831,12 +1781,15 @@ fn read_text_reference(
 /// intensity, so a run leaving `[0, 1]` says the record is misframed rather
 /// than that the text carries an out-of-range colour.
 fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
+    let mut view = View::over_retained(payload);
+    view.seek(*cursor)?;
     let mut components = [0f32; 4];
     for component in &mut components {
-        let value = take_f32(payload, cursor)?;
+        let value = view.f32_le()?;
         (0.0..=1.0).contains(&value).then_some(())?;
         *component = value;
     }
+    *cursor = view.position();
     let [r, g, b, a] = components;
     Some(Color { r, g, b, a })
 }
@@ -1917,14 +1870,14 @@ fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<
         0 => *cursor += 1,
         1 => {
             *cursor += 1;
-            let count = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            let count = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
             if count > MAX_RELATION_RUN {
                 return None;
             }
             *cursor = cursor.checked_add(4)?;
             for _ in 0..count {
                 take_reference(payload, cursor)?;
-                u32_at(payload, *cursor)?;
+                View::u32_le_at(payload, *cursor)?;
                 *cursor = cursor.checked_add(4)?;
             }
         }
@@ -1965,7 +1918,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         (None, None) => return None,
     };
     let identity = if is_txt_tag {
-        let rotation = f64_at(payload, cursor)?;
+        let rotation = View::f64_le_at(payload, cursor)?;
         rotation.is_finite().then_some(())?;
         SketchTextIdentity::TxtTag { rotation }
     } else {
@@ -1985,7 +1938,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         SketchTextIdentity::TextexTag => {
             (payload.get(cursor)? == &1).then_some(())?;
             cursor += 1;
-            let width_factor = f64_at(payload, cursor)?;
+            let width_factor = View::f64_le_at(payload, cursor)?;
             cursor = cursor.checked_add(8)?;
             let color = read_sketch_text_color(payload, &mut cursor)?;
             (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
@@ -1999,7 +1952,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
             (None, color)
         }
     };
-    let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let font_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if font_count == 0 || font_count > 1_024 {
         return None;
     }
@@ -2009,7 +1962,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         (payload.get(cursor)? == &0).then_some(())?;
         cursor += 1;
     }
-    let height = f64_at(payload, cursor)? * 10.0;
+    let height = View::f64_le_at(payload, cursor)? * 10.0;
     cursor = cursor.checked_add(8)?;
     (height.is_finite() && height > 0.0).then_some(())?;
     Some(SketchTextHead {
@@ -2033,7 +1986,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
 fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
     if after_tag != 7
-        || u32_at(payload, after_tag).is_none()
+        || View::u32_le_at(payload, after_tag).is_none()
         || payload.get(11..20)?.iter().any(|byte| *byte != 0)
     {
         return None;
@@ -2049,11 +2002,11 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     let persistent_id = property("textex_tag")?;
     (payload.get(cursor)? == &0).then_some(())?;
     cursor += 1;
-    let width_factor = f64_at(payload, cursor)?;
+    let width_factor = View::f64_le_at(payload, cursor)?;
     cursor = cursor.checked_add(8)?;
     (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
     let color = read_sketch_text_color(payload, &mut cursor)?;
-    let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let font_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if font_count == 0 || font_count > 1_024 {
         return None;
     }
@@ -2061,7 +2014,7 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     cursor = after_font;
     (payload.get(cursor)? == &0).then_some(())?;
     cursor += 1;
-    let height = f64_at(payload, cursor)? * 10.0;
+    let height = View::f64_le_at(payload, cursor)? * 10.0;
     cursor = cursor.checked_add(8)?;
     (height.is_finite() && height > 0.0).then_some(())?;
     Some(SketchTextHead {
@@ -2088,9 +2041,9 @@ fn decode_sketch_text_tail(
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     // Horizontal alignment enum and three flag bytes.
-    let horizontal_alignment = Some(u32_at(payload, cursor)?);
+    let horizontal_alignment = Some(View::u32_le_at(payload, cursor)?);
     cursor = cursor.checked_add(7)?;
-    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
@@ -2098,8 +2051,8 @@ fn decode_sketch_text_tail(
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
     // Vertical alignment enum, one flag byte, and the font weight.
-    let vertical_alignment = Some(u32_at(payload, cursor)?);
-    let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
+    let vertical_alignment = Some(View::u32_le_at(payload, cursor)?);
+    let font_weight = View::u32_le_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
     // The class tail opens with the text-type enum, which gates the placement
@@ -2107,7 +2060,7 @@ fn decode_sketch_text_tail(
     // flag byte follows the enum and repeats it, so a slot form that has
     // desynchronized fails here instead of framing a transform out of whatever
     // bytes the walk landed on.
-    let text_type = u32_at(payload, cursor)?;
+    let text_type = View::u32_le_at(payload, cursor)?;
     (u32::from(*payload.get(cursor.checked_add(4)?)?) == text_type).then_some(())?;
     cursor = cursor.checked_add(5)?;
     let placement = match text_type {
@@ -2146,8 +2099,8 @@ fn decode_txt_tag_sketch_text_tail(
 ) -> Option<SketchTextTail> {
     cursor = cursor.checked_add(2)?;
     let anchor = Point2::new(
-        f64_at(payload, cursor)? * 10.0,
-        f64_at(payload, cursor.checked_add(8)?)? * 10.0,
+        View::f64_le_at(payload, cursor)? * 10.0,
+        View::f64_le_at(payload, cursor.checked_add(8)?)? * 10.0,
     );
     (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
     let anchor_run = if class_version < TXT_TAG_ANCHOR_MEMBER_VERSION {
@@ -2156,13 +2109,13 @@ fn decode_txt_tag_sketch_text_tail(
         TXT_TAG_ANCHOR_RUN
     };
     cursor = cursor.checked_add(16 + anchor_run)?;
-    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
     let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
     cursor = after_text;
-    let references = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let references = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if references > MAX_RELATION_RUN {
         return None;
     }
@@ -2170,7 +2123,7 @@ fn decode_txt_tag_sketch_text_tail(
     for _ in 0..references {
         take_reference(payload, &mut cursor)?;
     }
-    let font_weight = u32_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)? as i32;
+    let font_weight = View::u32_le_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
     let owner = take_reference(payload, &mut cursor)?;
@@ -2202,24 +2155,24 @@ fn decode_indexed_sketch_text_tail(
     second_slot: TextReferenceSlot,
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
-    let horizontal_alignment = Some(u32_at(payload, cursor)?);
+    let horizontal_alignment = Some(View::u32_le_at(payload, cursor)?);
     cursor = cursor.checked_add(7)?;
-    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
     let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
-    let vertical_alignment = Some(u32_at(payload, cursor)?);
-    let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
+    let vertical_alignment = Some(View::u32_le_at(payload, cursor)?);
+    let font_weight = View::u32_le_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
-    if !matches!(u32_at(payload, cursor)?, 0 | 1)
-        || u32_at(payload, cursor.checked_add(4)?)? != 1
-        || u32_at(payload, cursor.checked_add(8)?)? != 256
-        || u32_at(payload, cursor.checked_add(12)?)? != 0
-        || u32_at(payload, cursor.checked_add(16)?)? != 0
+    if !matches!(View::u32_le_at(payload, cursor)?, 0 | 1)
+        || View::u32_le_at(payload, cursor.checked_add(4)?)? != 1
+        || View::u32_le_at(payload, cursor.checked_add(8)?)? != 256
+        || View::u32_le_at(payload, cursor.checked_add(12)?)? != 0
+        || View::u32_le_at(payload, cursor.checked_add(16)?)? != 0
         || payload
             .get(cursor.checked_add(20)?..cursor.checked_add(22)?)?
             .iter()
@@ -2227,14 +2180,15 @@ fn decode_indexed_sketch_text_tail(
     {
         return None;
     }
-    let mut scale_cursor = cursor.checked_add(22)?;
-    let scale_u = take_f32(payload, &mut scale_cursor)?;
-    let scale_v = take_f32(payload, &mut scale_cursor)?;
+    let mut scale_view = View::over_retained(payload);
+    scale_view.seek(cursor.checked_add(22)?)?;
+    let scale_u = scale_view.f32_le()?;
+    let scale_v = scale_view.f32_le()?;
     if !scale_u.is_finite() || !scale_v.is_finite() || scale_u <= 0.0 || scale_v <= 0.0 {
         return None;
     }
     (payload
-        .get(scale_cursor..cursor.checked_add(35)?)?
+        .get(scale_view.position()..cursor.checked_add(35)?)?
         .iter()
         .all(|byte| *byte == 0))
     .then_some(())?;
@@ -2433,14 +2387,14 @@ fn decode_version_zero_sketch_point(
     }
     cursor = cursor.checked_add(1)?;
     let coordinate_offset = u32::try_from(cursor).ok()?;
-    let x = f64_at(payload, cursor)?;
-    let y = f64_at(payload, cursor.checked_add(8)?)?;
+    let x = View::f64_le_at(payload, cursor)?;
+    let y = View::f64_le_at(payload, cursor.checked_add(8)?)?;
     cursor = cursor.checked_add(16)?;
     if payload.get(cursor..cursor.checked_add(20)?) != Some(&[0; 20][..])
-        || f32_at(payload, cursor + 20) != Some(1.0)
+        || View::f32_le_at(payload, cursor + 20) != Some(1.0)
         || payload.get(cursor + 24..cursor + 36) != Some(&[0; 12][..])
-        || f32_at(payload, cursor + 36) != Some(1.0)
-        || f32_at(payload, cursor + 40) != Some(1.0)
+        || View::f32_le_at(payload, cursor + 36) != Some(1.0)
+        || View::f32_le_at(payload, cursor + 40) != Some(1.0)
         || payload.get(cursor + 44..cursor + 54) != Some(&[1, 1, 0, 0, 0, 0, 1, 0, 0, 0][..])
     {
         return None;
@@ -2509,12 +2463,12 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     cursor = flags_end;
     let coordinate_offset = u32::try_from(cursor).ok()?;
     let coordinates = [
-        f64_at(payload, cursor)?,
-        f64_at(payload, cursor.checked_add(8)?)?,
-        f64_at(payload, cursor.checked_add(16)?)?,
+        View::f64_le_at(payload, cursor)?,
+        View::f64_le_at(payload, cursor.checked_add(8)?)?,
+        View::f64_le_at(payload, cursor.checked_add(16)?)?,
     ];
     cursor = cursor.checked_add(24)?;
-    let selector = read_u64(payload, cursor)?;
+    let selector = View::u64_le_at(payload, cursor)?;
     let state = *payload.get(cursor.checked_add(8)?)?;
     let reserved_zero_count = if class_version == 8 { 8 } else { 12 };
     let floats_at = cursor.checked_add(9 + reserved_zero_count)?;
@@ -2522,8 +2476,8 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         .get(cursor + 9..floats_at)?
         .iter()
         .any(|byte| *byte != 0)
-        || f32_at(payload, floats_at) != Some(1.0)
-        || f32_at(payload, floats_at + 4) != Some(1.0)
+        || View::f32_le_at(payload, floats_at) != Some(1.0)
+        || View::f32_le_at(payload, floats_at + 4) != Some(1.0)
         || payload.get(floats_at + 8..floats_at + 13) != Some(&[0, 1, 0, 0, 0][..])
     {
         return None;
@@ -2628,7 +2582,7 @@ fn decode_sketch_point_companion(
     } else {
         return None;
     };
-    let count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if count > MAX_RELATION_RUN {
         return None;
     }
@@ -2819,21 +2773,21 @@ pub(crate) struct ParsedSketchSurface {
 
 pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface> {
     if payload.get(20) != Some(&1)
-        || u32_at(payload, 21) != Some(2)
-        || u32_at(payload, 25) != Some(13)
+        || View::u32_le_at(payload, 21) != Some(2)
+        || View::u32_le_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
-        || u32_at(payload, 42) != Some(23)
+        || View::u32_le_at(payload, 42) != Some(23)
         || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
-        || u32_at(payload, 77) != Some(11)
+        || View::u32_le_at(payload, 77) != Some(11)
         || payload.get(81..92) != Some(b"surface_tag")
-        || u32_at(payload, 92) != Some(23)
+        || View::u32_le_at(payload, 92) != Some(23)
         || payload.get(96..119) != Some(b"IntrinsicMetaTypeuint64")
     {
         return None;
     }
-    let entity_genesis = read_u64(payload, 69);
-    let persistent_id = read_u64(payload, 119)?;
-    let point_count = usize::try_from(u32_at(payload, 127)?).ok()?;
+    let entity_genesis = View::u64_le_at(payload, 69);
+    let persistent_id = View::u64_le_at(payload, 119)?;
+    let point_count = usize::try_from(View::u32_le_at(payload, 127)?).ok()?;
     if point_count == 0 || point_count > 100_000 {
         return None;
     }
@@ -2841,18 +2795,19 @@ pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface
     let coordinate_bytes = point_count.checked_mul(24)?;
     let coordinates = f64s_at(payload, 131, coordinate_count)?;
     let degrees_at = 131usize.checked_add(coordinate_bytes)?;
-    let u_degree = u32_at(payload, degrees_at)?;
-    let v_degree = u32_at(payload, degrees_at.checked_add(4)?)?;
-    let u_knot_count = usize::try_from(u32_at(payload, degrees_at.checked_add(8)?)?).ok()?;
+    let u_degree = View::u32_le_at(payload, degrees_at)?;
+    let v_degree = View::u32_le_at(payload, degrees_at.checked_add(4)?)?;
+    let u_knot_count =
+        usize::try_from(View::u32_le_at(payload, degrees_at.checked_add(8)?)?).ok()?;
     let u_knots_at = degrees_at.checked_add(12)?;
     let u_knots = f64s_at(payload, u_knots_at, u_knot_count)?;
     let v_count_at = u_knots_at.checked_add(u_knot_count.checked_mul(8)?)?;
-    let v_knot_count = usize::try_from(u32_at(payload, v_count_at)?).ok()?;
+    let v_knot_count = usize::try_from(View::u32_le_at(payload, v_count_at)?).ok()?;
     let v_knots_at = v_count_at.checked_add(4)?;
     let v_knots = f64s_at(payload, v_knots_at, v_knot_count)?;
     let grid_at = v_knots_at.checked_add(v_knot_count.checked_mul(8)?)?;
-    let u_count = usize::try_from(u32_at(payload, grid_at)?).ok()?;
-    let v_count = usize::try_from(u32_at(payload, grid_at.checked_add(4)?)?).ok()?;
+    let u_count = usize::try_from(View::u32_le_at(payload, grid_at)?).ok()?;
+    let v_count = usize::try_from(View::u32_le_at(payload, grid_at.checked_add(4)?)?).ok()?;
     let expected_u_knots = u_count.checked_add(usize::try_from(u_degree).ok()?.checked_add(1)?)?;
     let expected_v_knots = v_count.checked_add(usize::try_from(v_degree).ok()?.checked_add(1)?)?;
     if u_degree == 0
@@ -2903,7 +2858,7 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
             else {
                 continue;
             };
-            let Some(record_index) = u32_at(bytes, after_tag) else {
+            let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
                 continue;
             };
             let payload = &bytes[record_at..];
@@ -3123,14 +3078,14 @@ fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize, Opti
     if let Some((primary, secondary)) = decode_sketch_curve_identity_variant(payload, 0, 2) {
         return Some((primary, secondary, 0, None));
     }
-    if u32_at(payload, 25) != Some(13)
+    if View::u32_le_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
-        || u32_at(payload, 42) != Some(23)
+        || View::u32_le_at(payload, 42) != Some(23)
         || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
     {
         return None;
     }
-    let entity_genesis = u64::from_le_bytes(payload.get(69..77)?.try_into().ok()?);
+    let entity_genesis = View::u64_le_at(payload, 69)?;
     decode_sketch_curve_identity_variant(payload, 52, 3)
         .map(|(primary, secondary)| (primary, secondary, 52, Some(entity_genesis)))
 }
@@ -3141,21 +3096,21 @@ fn decode_sketch_curve_identity_variant(
     property_count: u32,
 ) -> Option<(u64, u64)> {
     if payload.get(20) != Some(&1)
-        || u32_at(payload, 21) != Some(property_count)
-        || u32_at(payload, 25 + shift) != Some(14)
+        || View::u32_le_at(payload, 21) != Some(property_count)
+        || View::u32_le_at(payload, 25 + shift) != Some(14)
         || payload.get(29 + shift..43 + shift) != Some(b"crv_primary_id")
-        || u32_at(payload, 43 + shift) != Some(23)
+        || View::u32_le_at(payload, 43 + shift) != Some(23)
         || payload.get(47 + shift..70 + shift) != Some(b"IntrinsicMetaTypeuint64")
-        || u32_at(payload, 78 + shift) != Some(16)
+        || View::u32_le_at(payload, 78 + shift) != Some(16)
         || payload.get(82 + shift..98 + shift) != Some(b"crv_secondary_id")
-        || u32_at(payload, 98 + shift) != Some(23)
+        || View::u32_le_at(payload, 98 + shift) != Some(23)
         || payload.get(102 + shift..125 + shift) != Some(b"IntrinsicMetaTypeuint64")
     {
         return None;
     }
     Some((
-        u64::from_le_bytes(payload.get(70 + shift..78 + shift)?.try_into().ok()?),
-        u64::from_le_bytes(payload.get(125 + shift..133 + shift)?.try_into().ok()?),
+        View::u64_le_at(payload, 70 + shift)?,
+        View::u64_le_at(payload, 125 + shift)?,
     ))
 }
 
@@ -3205,7 +3160,7 @@ fn decode_sketch_curve_geometry(
 
 fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let values = (0..12)
-        .map(|ordinal| f64_at(payload, 133 + ordinal * 8))
+        .map(|ordinal| View::f64_le_at(payload, 133 + ordinal * 8))
         .collect::<Option<Vec<_>>>()?;
     if values.iter().any(|value| !value.is_finite()) {
         return None;
@@ -3268,7 +3223,7 @@ pub(crate) fn decode_text_frame_line(
         lp_ascii_filtered(payload, cursor, 0..=2000, u8::is_ascii_graphic)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || u32_at(payload, after_tag) != Some(record_index)
+        || View::u32_le_at(payload, after_tag) != Some(record_index)
         || payload.get(after_tag + 4..after_tag + 12) != Some(&[0; 8])
     {
         return None;
@@ -3282,15 +3237,9 @@ pub(crate) fn decode_text_frame_line(
 
 fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let base = 133usize;
-    let prefix = payload.get(base..base + 8)?;
-    let carrier_reference = (prefix != [0xff; 8]).then(|| {
-        u64::from_le_bytes(
-            prefix
-                .try_into()
-                .expect("invariant: prefix is an 8-byte slice from payload.get(range) of length 8"),
-        )
-    });
-    if u32_at(payload, base + 8) != Some(3) || payload.get(base + 88) != Some(&1) {
+    let carrier = View::u64_le_at(payload, base)?;
+    let carrier_reference = (carrier != u64::MAX).then_some(carrier);
+    if View::u32_le_at(payload, base + 8) != Some(3) || payload.get(base + 88) != Some(&1) {
         return None;
     }
     let subtype_class_tag = std::str::from_utf8(payload.get(base + 12..base + 15)?)
@@ -3299,30 +3248,30 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     if !subtype_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    let degree = u32_at(payload, base + 90)?;
-    let fit_tolerance = f64_at(payload, base + 94)?;
-    let knot_count = usize::try_from(u32_at(payload, base + 102)?).ok()?;
-    if u32_at(payload, base + 106)? as usize != knot_count
-        || u32_at(payload, base + 110)? != 8
+    let degree = View::u32_le_at(payload, base + 90)?;
+    let fit_tolerance = View::f64_le_at(payload, base + 94)?;
+    let knot_count = usize::try_from(View::u32_le_at(payload, base + 102)?).ok()?;
+    if View::u32_le_at(payload, base + 106)? as usize != knot_count
+        || View::u32_le_at(payload, base + 110)? != 8
         || knot_count > 100_000
     {
         return None;
     }
     let knots = f64s_at(payload, base + 114, knot_count)?;
     let weights_at = base + 114 + knot_count * 8;
-    let weight_count = usize::try_from(u32_at(payload, weights_at)?).ok()?;
-    if u32_at(payload, weights_at + 4)? as usize != weight_count
-        || u32_at(payload, weights_at + 8)? != 8
+    let weight_count = usize::try_from(View::u32_le_at(payload, weights_at)?).ok()?;
+    if View::u32_le_at(payload, weights_at + 4)? as usize != weight_count
+        || View::u32_le_at(payload, weights_at + 8)? != 8
         || weight_count > 100_000
     {
         return None;
     }
     let weights = f64s_at(payload, weights_at + 12, weight_count)?;
     let points_at = weights_at + 12 + weight_count * 8;
-    let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
+    let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
     if (weight_count != 0 && point_count != weight_count)
-        || u32_at(payload, points_at + 4)? as usize != point_count
-        || u32_at(payload, points_at + 8)? != 8
+        || View::u32_le_at(payload, points_at + 4)? as usize != point_count
+        || View::u32_le_at(payload, points_at + 8)? != 8
         || knot_count != point_count.checked_add(degree as usize + 1)?
     {
         return None;
@@ -3345,7 +3294,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
         SketchCurveGeometry::Nurbs {
             carrier_reference,
             subtype_class_tag,
-            subtype_record_index: u32_at(payload, base + 15)?,
+            subtype_record_index: View::u32_le_at(payload, base + 15)?,
             degree,
             fit_tolerance: fit_tolerance * 10.0,
             scalar_width: 8,
@@ -3359,15 +3308,9 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
 
 pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let base = 133usize;
-    let prefix = payload.get(base..base + 8)?;
-    let carrier_reference = (prefix != [0xff; 8]).then(|| {
-        u64::from_le_bytes(
-            prefix
-                .try_into()
-                .expect("invariant: prefix is an eight-byte slice"),
-        )
-    });
-    if u32_at(payload, base + 8) != Some(3)
+    let carrier = View::u64_le_at(payload, base)?;
+    let carrier_reference = (carrier != u64::MAX).then_some(carrier);
+    if View::u32_le_at(payload, base + 8) != Some(3)
         || payload.get(base + 19..base + 27) != Some(&[0; 8])
         || payload.get(base + 27) != Some(&1)
         || payload.get(base + 32..base + 42) != Some(&[0; 10])
@@ -3391,35 +3334,35 @@ pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveG
     if !subtype_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    let degree = u32_at(payload, base + 90)?;
-    let fit_tolerance = f64_at(payload, base + 42)?;
-    let knot_count = usize::try_from(u32_at(payload, base + 102)?).ok()?;
-    let knot_capacity = usize::try_from(u32_at(payload, base + 106)?).ok()?;
+    let degree = View::u32_le_at(payload, base + 90)?;
+    let fit_tolerance = View::f64_le_at(payload, base + 42)?;
+    let knot_count = usize::try_from(View::u32_le_at(payload, base + 102)?).ok()?;
+    let knot_capacity = usize::try_from(View::u32_le_at(payload, base + 106)?).ok()?;
     if degree == 0
         || knot_capacity < knot_count
-        || u32_at(payload, base + 110)? != 8
+        || View::u32_le_at(payload, base + 110)? != 8
         || knot_capacity > 100_000
     {
         return None;
     }
     let knots = f64s_at(payload, base + 114, knot_count)?;
     let weights_at = base + 114 + knot_count * 8;
-    let weight_count = usize::try_from(u32_at(payload, weights_at)?).ok()?;
-    let weight_capacity = usize::try_from(u32_at(payload, weights_at + 4)?).ok()?;
+    let weight_count = usize::try_from(View::u32_le_at(payload, weights_at)?).ok()?;
+    let weight_capacity = usize::try_from(View::u32_le_at(payload, weights_at + 4)?).ok()?;
     if weight_capacity < weight_count
-        || u32_at(payload, weights_at + 8)? != 8
+        || View::u32_le_at(payload, weights_at + 8)? != 8
         || weight_capacity > 100_000
     {
         return None;
     }
     let weights = f64s_at(payload, weights_at + 12, weight_count)?;
     let points_at = weights_at + 12 + weight_count * 8;
-    let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
-    let point_capacity = usize::try_from(u32_at(payload, points_at + 4)?).ok()?;
+    let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
+    let point_capacity = usize::try_from(View::u32_le_at(payload, points_at + 4)?).ok()?;
     if (weight_count != 0 && point_count != weight_count)
         || point_capacity < point_count
         || point_capacity > 100_000
-        || u32_at(payload, points_at + 8)? != 8
+        || View::u32_le_at(payload, points_at + 8)? != 8
         || knot_count != point_count.checked_add(degree as usize + 1)?
     {
         return None;
@@ -3442,7 +3385,7 @@ pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveG
         SketchCurveGeometry::Nurbs {
             carrier_reference,
             subtype_class_tag,
-            subtype_record_index: u32_at(payload, base + 15)?,
+            subtype_record_index: View::u32_le_at(payload, base + 15)?,
             degree,
             fit_tolerance: fit_tolerance * 10.0,
             scalar_width: 8,
@@ -3461,7 +3404,7 @@ pub(crate) fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
 pub(crate) fn decode_compact_planar_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let values_at = 133;
     let values = (0..9)
-        .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
+        .map(|ordinal| View::f64_le_at(payload, values_at + ordinal * 8))
         .collect::<Option<Vec<_>>>()?;
     if values.iter().any(|value| !value.is_finite())
         || values[2] != 0.0
@@ -3485,7 +3428,7 @@ fn decode_line_family(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
 
 fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeometry> {
     let values = (0..12)
-        .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
+        .map(|ordinal| View::f64_le_at(payload, values_at + ordinal * 8))
         .collect::<Option<Vec<_>>>()?;
     if values.iter().any(|value| !value.is_finite()) {
         return None;
@@ -3731,19 +3674,19 @@ fn take_auxiliary_relation_reference(
 /// members: a u32-counted map whose entry is a u64 key, a u32 count, and that
 /// many u64 values; then a u32-counted run of u32.
 fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
-    let entries = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+    let entries = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
     if entries > MAX_RELATION_RUN {
         return None;
     }
     *cursor += 4;
     for _ in 0..entries {
-        let values = usize::try_from(u32_at(payload, *cursor + 8)?).ok()?;
+        let values = usize::try_from(View::u32_le_at(payload, *cursor + 8)?).ok()?;
         if values > MAX_RELATION_RUN {
             return None;
         }
         *cursor += 12 + values * 8;
     }
-    let ordinals = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+    let ordinals = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
     if ordinals > MAX_RELATION_RUN {
         return None;
     }
@@ -3815,7 +3758,7 @@ fn parse_relation_class_members(
             // the counted runs and the unit directions that follow them already
             // reject a misframed record, and the flags do not.
             *cursor += 3;
-            let reference_count = u32_at(payload, *cursor)?;
+            let reference_count = View::u32_le_at(payload, *cursor)?;
             let references = usize::try_from(reference_count).ok()?;
             if references > MAX_RELATION_RUN {
                 return None;
@@ -3884,7 +3827,7 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     let mut member_offsets = Vec::new();
     let mut member_relation_ordinals = Vec::new();
     if paired_run {
-        let member_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+        let member_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
         if member_count > MAX_RELATION_RUN {
             return None;
         }
@@ -3896,7 +3839,7 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
             let (member, offset) = take_relation_reference(payload, &mut cursor)?;
             members.push(member);
             member_offsets.push(offset);
-            member_relation_ordinals.push(u32_at(payload, cursor)?);
+            member_relation_ordinals.push(View::u32_le_at(payload, cursor)?);
             cursor += 4;
         }
     }
@@ -3924,20 +3867,13 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     // The constraint mask follows `ParentNode` directly. It is a u64 in the
     // paired-run form and a u32 at relation base-class version 0.
     let (state, mut cursor) = match mask_width {
-        SketchRelationMaskWidth::U64 => (
-            u64::from_le_bytes(
-                payload
-                    .get(state_offset..state_offset + 8)?
-                    .try_into()
-                    .ok()?,
-            ),
-            state_offset + 8,
+        SketchRelationMaskWidth::U64 => (View::u64_le_at(payload, state_offset)?, state_offset + 8),
+        SketchRelationMaskWidth::U32 => (
+            u64::from(View::u32_le_at(payload, state_offset)?),
+            state_offset + 4,
         ),
-        SketchRelationMaskWidth::U32 => {
-            (u64::from(u32_at(payload, state_offset)?), state_offset + 4)
-        }
     };
-    let return_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    let return_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if return_count > MAX_RELATION_RUN {
         return None;
     }
@@ -3982,43 +3918,40 @@ type TextGlyphRun = (u32, Vec<[[f64; 4]; 4]>, usize);
 
 fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
     let (text_reference, end) = marked_u32(payload, at)?;
-    if payload.get(end..end + 6) != Some(&[0u8; 6]) {
+    let mut view = View::over_retained(payload);
+    view.seek(end)?;
+    if view.take(6)? != [0u8; 6] {
         return None;
     }
-    let count = usize::try_from(u32_at(payload, end + 6)?).ok()?;
+    let count = usize::try_from(view.u32_le()?).ok()?;
     if !(1..=4096).contains(&count) {
         return None;
     }
-    let mut cursor = end + 10;
     let mut transforms = Vec::with_capacity(count);
     for _ in 0..count {
-        if u32_at(payload, cursor) != Some(16) {
+        if view.u32_le()? != 16 {
             return None;
         }
         let mut transform = [[0.0; 4]; 4];
-        for ordinal in 0..16 {
-            let value = f64::from_le_bytes(
-                payload
-                    .get(cursor + 4 + ordinal * 8..cursor + 12 + ordinal * 8)?
-                    .try_into()
-                    .ok()?,
-            );
-            if !value.is_finite() {
-                return None;
+        for row in &mut transform {
+            for cell in row {
+                let value = view.f64_le()?;
+                if !value.is_finite() {
+                    return None;
+                }
+                *cell = value;
             }
-            transform[ordinal / 4][ordinal % 4] = value;
         }
         transforms.push(transform);
-        cursor += 132;
     }
-    Some((text_reference, transforms, cursor))
+    Some((text_reference, transforms, view.position()))
 }
 
 /// Whether an indexed-record header starts at `at`: a u32 length prefix of
 /// three, a three-digit ASCII class tag, and a u32 record index. The eleven
 /// bytes must be present.
 fn indexed_record_header_at(bytes: &[u8], at: usize) -> bool {
-    u32_at(bytes, at) == Some(3)
+    View::u32_le_at(bytes, at) == Some(3)
         && bytes
             .get(at + 4..at + 7)
             .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit))
@@ -4029,7 +3962,7 @@ fn indexed_record_header_at(bytes: &[u8], at: usize) -> bool {
 /// spends its first seven bytes on the length-prefixed class tag, so the index
 /// always sits at `at + 7`.
 pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
-    u32_at(bytes, at.checked_add(7)?)
+    View::u32_le_at(bytes, at.checked_add(7)?)
 }
 
 pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
@@ -4065,7 +3998,8 @@ pub(crate) fn next_indexed_record_offset_with_index(
 }
 
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
-    (bytes.get(position) == Some(&1)).then_some((u32_at(bytes, position + 1)?, position + 5))
+    (bytes.get(position) == Some(&1))
+        .then_some((View::u32_le_at(bytes, position + 1)?, position + 5))
 }
 
 struct SketchReferenceList {
@@ -4081,29 +4015,36 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
     // The eight-byte base-record slot is either a u32 record reference with a
     // zero high half or the all-ones sentinel marking a sketch with no base
     // record; the list grammar is identical in both forms.
-    let record_reference = if bytes.get(position..position + 8) == Some(&[0xFF; 8]) {
-        None
-    } else {
-        let reference = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?);
-        if bytes.get(position + 4..position + 8) != Some(&[0; 4]) {
-            return None;
-        }
-        Some(reference)
+    let mut view = View::over_retained(bytes);
+    view.seek(position)?;
+    let low = view.u32_le()?;
+    let high = view.u32_le()?;
+    let record_reference = match (low, high) {
+        (u32::MAX, u32::MAX) => None,
+        (reference, 0) => Some(reference),
+        _ => return None,
     };
-    if bytes.get(position + 8) != Some(&1) {
+    if view.u8()? != 1 {
         return None;
     }
-    let declared_count =
-        u32::from_le_bytes(bytes.get(position + 9..position + 13)?.try_into().ok()?);
-    let mut cursor = position + 13;
+    let declared_count = view.u32_le()?;
     let mut references = Vec::new();
     let mut reference_offsets = Vec::new();
-    while bytes.get(cursor) == Some(&1) && bytes.get(cursor + 5..cursor + 11) == Some(&[0; 6]) {
-        references.push(u32::from_le_bytes(
-            bytes.get(cursor + 1..cursor + 5)?.try_into().ok()?,
-        ));
-        reference_offsets.push(cursor + 1);
-        cursor += 11;
+    loop {
+        let mut probe = view;
+        if probe.u8() != Some(1) {
+            break;
+        }
+        let offset = probe.position();
+        let Some(reference) = probe.u32_le() else {
+            break;
+        };
+        if probe.take(6) != Some(&[0; 6]) {
+            break;
+        }
+        reference_offsets.push(offset);
+        references.push(reference);
+        view = probe;
     }
     (references.len() == declared_count as usize).then_some(SketchReferenceList {
         record_reference,
@@ -4111,850 +4052,9 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         declared_count,
         references,
         reference_offsets,
-        end: cursor,
+        end: view.position(),
     })
 }
 
 #[cfg(test)]
-mod point_record_tests {
-    use super::{
-        decode_sketch_point_companion, decode_sketch_point_record, SKETCH_CONTAINER_TYPE_GUID,
-        SKETCH_POINT_COMPANION_TYPE, SKETCH_POINT_TYPE_GUID,
-    };
-    use crate::records::{
-        SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
-        SketchPointRecordForm,
-    };
-    use std::collections::HashMap;
-
-    const POINT: u32 = 41;
-    const COMPANION: u32 = 43;
-    const OWNER: u32 = 17;
-    const LINE: &str = "DCA267ED-D615-4934-B64F-AD805E8003E2";
-    const ARC: &str = "F0130424-8B7E-4092-93C9-1CA807482534";
-
-    fn push_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
-        out.extend_from_slice(&u32::try_from(class_tag.len()).unwrap().to_le_bytes());
-        out.extend_from_slice(class_tag.as_bytes());
-        out.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn push_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
-    fn push_reference(out: &mut Vec<u8>, target: u32, type_guid: Option<&str>) {
-        out.push(1);
-        out.extend_from_slice(&u64::from(target).to_le_bytes());
-        if let Some(type_guid) = type_guid {
-            push_ascii(out, type_guid);
-        }
-        out.extend_from_slice(&[0; 2]);
-    }
-
-    fn tagged_point_payload(
-        version: u32,
-        inline_typed: bool,
-        selector: u64,
-        state: u8,
-        padded_paired_reference: bool,
-    ) -> Vec<u8> {
-        let mut payload = Vec::new();
-        push_header(&mut payload, "257", POINT);
-        payload.extend_from_slice(&[0; 9]);
-        payload.push(1);
-        payload.extend_from_slice(&1u32.to_le_bytes());
-        push_ascii(&mut payload, "pt_tag");
-        push_ascii(&mut payload, "IntrinsicMetaTypeuint64");
-        payload.extend_from_slice(&500u64.to_le_bytes());
-        let paired_type = inline_typed.then_some(SKETCH_POINT_COMPANION_TYPE.0);
-        push_reference(&mut payload, COMPANION, paired_type);
-        payload.extend(std::iter::repeat_n(0, if version == 11 { 8 } else { 7 }));
-        for value in [1.25f64, -2.5, 0.25] {
-            payload.extend_from_slice(&value.to_le_bytes());
-        }
-        payload.extend_from_slice(&selector.to_le_bytes());
-        payload.push(state);
-        payload.extend(std::iter::repeat_n(0, if version == 8 { 8 } else { 12 }));
-        payload.extend_from_slice(&1.0f32.to_le_bytes());
-        payload.extend_from_slice(&1.0f32.to_le_bytes());
-        payload.extend_from_slice(&[0, 1, 0, 0, 0]);
-        push_reference(&mut payload, COMPANION, paired_type);
-        if padded_paired_reference {
-            payload.extend_from_slice(&[0; 4]);
-        }
-        push_reference(
-            &mut payload,
-            OWNER,
-            inline_typed.then_some(SKETCH_CONTAINER_TYPE_GUID),
-        );
-        payload
-    }
-
-    #[test]
-    fn point_record_parser_closes_every_versioned_three_coordinate_form() {
-        let cases = [
-            (8, false, 0, 0, false, SketchPointRecordForm::Version8),
-            (10, false, 0, 1, false, SketchPointRecordForm::Version10),
-            (
-                10,
-                true,
-                0,
-                1,
-                false,
-                SketchPointRecordForm::Version10InlineTyped {
-                    trailing_reference: OWNER,
-                },
-            ),
-        ];
-        for (version, inline_typed, selector, state, padded, expected_form) in cases {
-            let decoded = decode_sketch_point_record(
-                &tagged_point_payload(version, inline_typed, selector, state, padded),
-                version,
-            )
-            .expect("synthetic point form");
-            assert_eq!(decoded.record_form, expected_form);
-            assert_eq!(decoded.persistent_id, Some(500));
-            assert_eq!(decoded.paired_reference, COMPANION);
-            assert_eq!(decoded.coordinates, [1.25, -2.5, 0.25]);
-            assert_eq!(
-                decoded.closure,
-                Some(SketchPointClosure { selector, state })
-            );
-        }
-        for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0)] {
-            for padded_paired_reference in [false, true] {
-                let decoded = decode_sketch_point_record(
-                    &tagged_point_payload(11, false, selector, state, padded_paired_reference),
-                    11,
-                )
-                .expect("synthetic version-11 point");
-                assert_eq!(
-                    decoded.record_form,
-                    SketchPointRecordForm::Version11 {
-                        padded_paired_reference,
-                    }
-                );
-                assert_eq!(
-                    decoded.closure,
-                    Some(SketchPointClosure { selector, state })
-                );
-            }
-        }
-        for (selector, state) in [(1, 1), (2, 0), (4, 1), (3, 0), (0, 2)] {
-            assert!(decode_sketch_point_record(
-                &tagged_point_payload(11, false, selector, state, false),
-                11,
-            )
-            .is_none());
-        }
-    }
-
-    #[test]
-    fn version_zero_point_retains_its_one_flag_and_source_local_identity() {
-        let mut payload = Vec::new();
-        push_header(&mut payload, "257", POINT);
-        payload.extend_from_slice(&[0; 10]);
-        push_reference(&mut payload, COMPANION, None);
-        payload.push(1);
-        payload.extend_from_slice(&1.25f64.to_le_bytes());
-        payload.extend_from_slice(&(-2.5f64).to_le_bytes());
-        payload.extend_from_slice(&[0; 20]);
-        payload.extend_from_slice(&1.0f32.to_le_bytes());
-        payload.extend_from_slice(&[0; 12]);
-        payload.extend_from_slice(&1.0f32.to_le_bytes());
-        payload.extend_from_slice(&1.0f32.to_le_bytes());
-        payload.extend_from_slice(&[1, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
-        push_reference(&mut payload, COMPANION, None);
-        push_reference(&mut payload, OWNER, None);
-        let decoded = decode_sketch_point_record(&payload, 0).expect("version-0 point");
-        assert_eq!(decoded.record_form, SketchPointRecordForm::Version0);
-        assert_eq!(decoded.persistent_id, None);
-        assert_eq!(decoded.flags, [1, 0, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(decoded.coordinates, [1.25, -2.5, 0.0]);
-        assert_eq!(decoded.closure, None);
-    }
-
-    #[test]
-    fn point_companion_retains_both_prefixes_and_reference_encodings() {
-        let types = HashMap::from([
-            (POINT, (SKETCH_POINT_TYPE_GUID, 11, "Geometry")),
-            (71, (LINE, 2, "Geometry")),
-            (72, (ARC, 0, "Geometry")),
-        ]);
-        for prefix_present_zero in [false, true] {
-            for reference_encoding in [
-                SketchPointCompanionReferenceEncoding::SameSegment,
-                SketchPointCompanionReferenceEncoding::InlineTyped,
-            ] {
-                if prefix_present_zero
-                    && reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped
-                {
-                    continue;
-                }
-                let mut payload = Vec::new();
-                push_header(&mut payload, "258", COMPANION);
-                if prefix_present_zero {
-                    payload.extend_from_slice(&[0; 9]);
-                    payload.extend_from_slice(&[1, 0, 0, 0, 0]);
-                } else {
-                    payload.extend_from_slice(&[0; 10]);
-                }
-                payload.extend_from_slice(&2u32.to_le_bytes());
-                let inline_typed =
-                    reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
-                push_reference(&mut payload, 71, inline_typed.then_some(LINE));
-                push_reference(&mut payload, 72, inline_typed.then_some(ARC));
-                payload.push(0);
-                push_reference(
-                    &mut payload,
-                    POINT,
-                    inline_typed.then_some(SKETCH_POINT_TYPE_GUID),
-                );
-                assert_eq!(
-                    decode_sketch_point_companion(
-                        &payload,
-                        POINT,
-                        reference_encoding,
-                        true,
-                        &types,
-                    ),
-                    Some(SketchPointCompanion {
-                        prefix_present_zero,
-                        reference_encoding,
-                        incident_curves: vec![71, 72],
-                    })
-                );
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod curve_class_tests {
-    use super::{
-        decode_circular_arc, decode_line, decode_sketch_curve_geometry, SketchCurveClass,
-        CURRENT_SKETCH_NURBS_TYPE, SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES,
-        SKETCH_TEXT_FRAME_LINE_TYPE_GUID,
-    };
-    use crate::records::SketchCurveGeometry;
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    fn analytic_payload(values: [f64; 12]) -> Vec<u8> {
-        let mut payload = vec![0; 133];
-        for value in values {
-            payload.extend_from_slice(&value.to_le_bytes());
-        }
-        payload
-    }
-
-    #[test]
-    fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc() {
-        let payload = analytic_payload([
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            1.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_1_SQRT_2,
-            0.0,
-            std::f64::consts::FRAC_1_SQRT_2,
-        ]);
-        assert!(decode_line(&payload).is_some());
-        assert!(decode_circular_arc(&payload).is_some());
-
-        let line = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line)
-            .expect("typed line payload");
-        assert_eq!(line.geometry_offset, 133);
-        assert_eq!(
-            line.geometry,
-            SketchCurveGeometry::Line {
-                start: Point3::new(0.0, 0.0, 0.0),
-                end: Point3::new(0.0, 0.0, 10.0),
-                direction: Vector3::new(0.0, 0.0, 1.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-            }
-        );
-
-        let circular = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular)
-            .expect("typed circular payload");
-        assert!(matches!(circular.geometry, SketchCurveGeometry::Arc { .. }));
-    }
-
-    #[test]
-    fn typed_line_accepts_the_referenced_compact_planar_form() {
-        let mut payload = vec![0; 133];
-        payload.push(1);
-        payload.extend_from_slice(&42u32.to_le_bytes());
-        payload.extend_from_slice(&[0; 6]);
-        for value in [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0] {
-            payload.extend_from_slice(&f64::to_le_bytes(value));
-        }
-        payload.push(1);
-        payload.extend_from_slice(&37u32.to_le_bytes());
-        payload.extend_from_slice(&[0; 6]);
-
-        let parsed = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line)
-            .expect("typed referenced compact line");
-        assert_eq!(parsed.geometry_offset, 144);
-        assert!(matches!(parsed.geometry, SketchCurveGeometry::Line { .. }));
-    }
-
-    #[test]
-    fn curve_type_versions_select_only_their_settled_grammars() {
-        for (type_guid, version, module) in SKETCH_LINE_TYPES {
-            assert_eq!(
-                SketchCurveClass::of(type_guid, version, module),
-                Some(SketchCurveClass::Line)
-            );
-        }
-        for (type_guid, version, module) in SKETCH_CIRCULAR_TYPES {
-            assert_eq!(
-                SketchCurveClass::of(type_guid, version, module),
-                Some(SketchCurveClass::Circular)
-            );
-        }
-        assert_eq!(
-            SketchCurveClass::of(
-                CURRENT_SKETCH_NURBS_TYPE.0,
-                CURRENT_SKETCH_NURBS_TYPE.1,
-                CURRENT_SKETCH_NURBS_TYPE.2,
-            ),
-            Some(SketchCurveClass::Nurbs)
-        );
-        assert_eq!(
-            SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 0, "MSketch"),
-            Some(SketchCurveClass::TextFrameLine)
-        );
-        assert_eq!(
-            SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 0, "Geometry"),
-            None
-        );
-        assert_eq!(
-            SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 3, "Geometry"),
-            None
-        );
-        assert_eq!(
-            SketchCurveClass::of(SKETCH_CIRCULAR_TYPES[0].0, 1, "Geometry"),
-            None
-        );
-        assert_eq!(
-            SketchCurveClass::of(CURRENT_SKETCH_NURBS_TYPE.0, 2, CURRENT_SKETCH_NURBS_TYPE.2,),
-            None
-        );
-        assert_eq!(
-            SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 1, "MSketch"),
-            None
-        );
-        assert_eq!(
-            SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 2, "MSketch"),
-            None
-        );
-    }
-}
-
-#[cfg(test)]
-mod relation_class_tests {
-    use super::{
-        decode_pattern_definition, parse_classed_sketch_relation, relation_mask_width,
-        SketchRelationClass, SketchRelationMaskWidth,
-    };
-    use crate::records::{SketchPatternDefinition, SketchPatternDirection};
-
-    /// One present reference: the presence byte, the u64 target, and the
-    /// `cross_document` and same-segment flags.
-    fn push_reference(out: &mut Vec<u8>, target: u32) {
-        out.push(1);
-        out.extend_from_slice(&u64::from(target).to_le_bytes());
-        out.extend_from_slice(&[0u8; 2]);
-    }
-
-    /// One absent reference.
-    fn push_absent_reference(out: &mut Vec<u8>) {
-        out.push(0);
-    }
-
-    /// A relation record: the header, the paired member run, an empty property
-    /// block, `class_members`, `ParentNode`, the u64 mask, the return run, and
-    /// the trailing zero byte. The record ends where the parse must end.
-    fn relation_record(
-        members: &[(u32, u32)],
-        class_members: &[u8],
-        owner: u32,
-        mask: u64,
-        returns: &[u32],
-    ) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(&3u32.to_le_bytes());
-        out.extend_from_slice(b"298");
-        out.extend_from_slice(&7u32.to_le_bytes());
-        out.extend_from_slice(&[0u8; 8]);
-        out.push(1);
-        out.extend_from_slice(
-            &u32::try_from(members.len())
-                .expect("member count fits a u32")
-                .to_le_bytes(),
-        );
-        for (reference, ordinal) in members {
-            push_reference(&mut out, *reference);
-            out.extend_from_slice(&ordinal.to_le_bytes());
-        }
-        out.push(0);
-        out.extend_from_slice(class_members);
-        push_reference(&mut out, owner);
-        out.extend_from_slice(&mask.to_le_bytes());
-        out.extend_from_slice(
-            &u32::try_from(returns.len())
-                .expect("return count fits a u32")
-                .to_le_bytes(),
-        );
-        for reference in returns {
-            push_reference(&mut out, *reference);
-        }
-        out.push(0);
-        out
-    }
-
-    /// A relation-base-class version-0 record: no paired run and a u32 mask.
-    fn legacy_relation_record(owner: u32, mask: u32, returns: &[u32]) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(&3u32.to_le_bytes());
-        out.extend_from_slice(b"298");
-        out.extend_from_slice(&7u32.to_le_bytes());
-        out.extend_from_slice(&[0u8; 8]);
-        out.push(0);
-        out.push(0);
-        push_reference(&mut out, owner);
-        out.extend_from_slice(&mask.to_le_bytes());
-        out.extend_from_slice(
-            &u32::try_from(returns.len())
-                .expect("return count fits a u32")
-                .to_le_bytes(),
-        );
-        for reference in returns {
-            push_reference(&mut out, *reference);
-        }
-        out.push(0);
-        out
-    }
-
-    /// The two pattern tables, both empty.
-    fn empty_pattern_tables() -> [u8; 8] {
-        [0u8; 8]
-    }
-
-    /// One rectangular direction clause.
-    fn push_direction_clause(
-        out: &mut Vec<u8>,
-        count: u32,
-        count_parameter: u32,
-        direction: [f64; 3],
-        distance: f64,
-        distance_parameter: u32,
-    ) {
-        out.extend_from_slice(&count.to_le_bytes());
-        push_reference(out, count_parameter);
-        for axis in direction {
-            out.extend_from_slice(&axis.to_le_bytes());
-        }
-        out.extend_from_slice(&distance.to_le_bytes());
-        push_reference(out, distance_parameter);
-    }
-
-    /// A glyph run: the text reference, the character count, and one block of
-    /// `u32 16` and a row-major 4x4 transform.
-    fn push_glyph_run(out: &mut Vec<u8>, text: u32, translation: f64) {
-        push_reference(out, text);
-        out.extend_from_slice(&1u32.to_le_bytes());
-        out.extend_from_slice(&16u32.to_le_bytes());
-        for row in 0..4 {
-            for column in 0..4 {
-                let value = if row == 0 && column == 3 {
-                    translation
-                } else {
-                    f64::from(u8::from(row == column))
-                };
-                out.extend_from_slice(&value.to_le_bytes());
-            }
-        }
-    }
-
-    #[test]
-    fn relation_classes_are_named_by_type_guid() {
-        assert_eq!(
-            SketchRelationClass::of("60403D47-0C49-49B0-BDE8-1679608164A2", 3),
-            Some(SketchRelationClass::Plain)
-        );
-        assert_eq!(
-            SketchRelationClass::of("d3bd153b-eb8a-405e-9d29-69ee0c3d227c", 0),
-            Some(SketchRelationClass::Plain)
-        );
-        assert_eq!(
-            SketchRelationClass::of("73762C3B-82DC-4632-93B0-B8FE1CC5282F", 0),
-            Some(SketchRelationClass::Plain)
-        );
-        assert_eq!(
-            SketchRelationClass::of("24DB790E-3DCD-4336-AFA3-6F119EF2239B", 0),
-            Some(SketchRelationClass::Tangent)
-        );
-        assert_eq!(
-            SketchRelationClass::of("8269E861-0BB7-47E0-9911-5AE3EC475058", 3),
-            Some(SketchRelationClass::CircularPattern)
-        );
-        assert_eq!(
-            SketchRelationClass::of("40800FB9-C2BE-494E-A047-7D76E82B9F6C", 5),
-            Some(SketchRelationClass::RectangularPattern)
-        );
-        assert_eq!(
-            SketchRelationClass::of("8B369926-123F-4F9D-878E-6D4C076128D3", 0),
-            Some(SketchRelationClass::TextFrame)
-        );
-        assert_eq!(
-            SketchRelationClass::of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 0),
-            Some(SketchRelationClass::TextPath {
-                leading_flag: false
-            })
-        );
-        assert_eq!(
-            SketchRelationClass::of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 1),
-            Some(SketchRelationClass::TextPath { leading_flag: true })
-        );
-        assert_eq!(
-            SketchRelationClass::of("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 0),
-            None
-        );
-    }
-
-    #[test]
-    fn relation_leading_block_selects_member_run_and_mask_width() {
-        let modern = relation_record(&[(300, 0)], &[], 201, 0x0020_0000_0000, &[300]);
-        assert_eq!(
-            relation_mask_width(&modern),
-            Some(SketchRelationMaskWidth::U64)
-        );
-        let modern_parsed =
-            parse_classed_sketch_relation(&modern, SketchRelationClass::Plain).unwrap();
-        assert_eq!(modern_parsed.state, 0x0020_0000_0000);
-        assert_eq!(modern_parsed.members, [300]);
-
-        let legacy = legacy_relation_record(201, 0x8000_0000, &[300]);
-        assert_eq!(
-            relation_mask_width(&legacy),
-            Some(SketchRelationMaskWidth::U32)
-        );
-        let legacy_parsed =
-            parse_classed_sketch_relation(&legacy, SketchRelationClass::Plain).unwrap();
-        assert_eq!(legacy_parsed.state, 0x8000_0000);
-        assert!(legacy_parsed.members.is_empty());
-        assert_eq!(legacy_parsed.return_members, [300]);
-
-        let mut invalid = legacy;
-        invalid[19] = 2;
-        assert_eq!(relation_mask_width(&invalid), None);
-        assert!(parse_classed_sketch_relation(&invalid, SketchRelationClass::Plain).is_none());
-    }
-
-    #[test]
-    fn plain_relation_reads_parent_node_without_class_members() {
-        let record = relation_record(&[(300, 1), (301, 0)], &[], 201, 0x1, &[300, 301]);
-        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
-            .expect("the classed parse reads the record");
-        assert_eq!(parsed.owner_reference, 201);
-        assert_eq!(parsed.state, 0x1);
-        assert_eq!(parsed.members, [300, 301]);
-        assert_eq!(parsed.return_members, [300, 301]);
-        assert!(parsed.auxiliary_references.is_empty());
-        assert_eq!(parsed.parsed_end, record.len());
-    }
-
-    #[test]
-    fn tangent_relation_reads_its_three_flags() {
-        // The middle flag is `1`, which the reference-marker walk reads as the
-        // presence byte of a reference and steps into the flags.
-        let record = relation_record(&[(300, 1), (301, 0)], &[0, 1, 0], 201, 0x100, &[300, 301]);
-        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Tangent)
-            .expect("the classed parse reads the record");
-        assert_eq!(parsed.owner_reference, 201);
-        assert_eq!(parsed.state, 0x100);
-        assert!(parsed.auxiliary_references.is_empty());
-        assert_eq!(parsed.parsed_end, record.len());
-        assert!(parse_classed_sketch_relation(
-            &relation_record(&[(300, 1)], &[0, 2, 0], 201, 0x100, &[300]),
-            SketchRelationClass::Tangent
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn circular_pattern_relation_reads_its_parameters_and_tables() {
-        let mut class_members = Vec::new();
-        push_reference(&mut class_members, 336);
-        push_reference(&mut class_members, 333);
-        class_members.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
-        class_members.extend_from_slice(&3u32.to_le_bytes());
-        class_members.extend_from_slice(&empty_pattern_tables());
-        class_members.push(0);
-        let record = relation_record(
-            &[(300, 1), (301, 0)],
-            &class_members,
-            201,
-            0x1000_0000,
-            &[300, 301],
-        );
-        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
-            .expect("the classed parse reads the record");
-        assert_eq!(parsed.owner_reference, 201);
-        assert_eq!(parsed.auxiliary_references, [336, 333]);
-        assert_eq!(parsed.parsed_end, record.len());
-        assert_eq!(
-            decode_pattern_definition(&record, &parsed),
-            Some(SketchPatternDefinition::Circular {
-                angle_parameter: 336,
-                count_parameter: 333,
-                evaluated_angle: std::f64::consts::TAU,
-                evaluated_count: 3,
-            })
-        );
-    }
-
-    #[test]
-    fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
-        let mut class_members = Vec::new();
-        push_absent_reference(&mut class_members);
-        push_absent_reference(&mut class_members);
-        class_members.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
-        class_members.extend_from_slice(&6u32.to_le_bytes());
-        // One map entry keyed `1` holding two values, then a two-entry u32 run.
-        class_members.extend_from_slice(&1u32.to_le_bytes());
-        class_members.extend_from_slice(&1u64.to_le_bytes());
-        class_members.extend_from_slice(&2u32.to_le_bytes());
-        class_members.extend_from_slice(&122u64.to_le_bytes());
-        class_members.extend_from_slice(&118u64.to_le_bytes());
-        class_members.extend_from_slice(&2u32.to_le_bytes());
-        class_members.extend_from_slice(&1u32.to_le_bytes());
-        class_members.extend_from_slice(&2u32.to_le_bytes());
-        class_members.push(0);
-        let record = relation_record(&[(300, 1)], &class_members, 201, 0x1000_0000, &[300]);
-        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
-            .expect("the classed parse reads the record");
-        assert_eq!(parsed.owner_reference, 201);
-        assert!(parsed.auxiliary_references.is_empty());
-        assert_eq!(parsed.parsed_end, record.len());
-        assert_eq!(decode_pattern_definition(&record, &parsed), None);
-    }
-
-    #[test]
-    fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clauses() {
-        let mut class_members = vec![1, 0, 0];
-        class_members.extend_from_slice(&1u32.to_le_bytes());
-        push_reference(&mut class_members, 900);
-        class_members.extend_from_slice(&empty_pattern_tables());
-        push_direction_clause(&mut class_members, 3, 464, [1.0, 0.0, 0.0], 3.0, 470);
-        push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.5, 473);
-        let record = relation_record(
-            &[(300, 1), (301, 0)],
-            &class_members,
-            201,
-            0x2000_0000,
-            &[300, 301],
-        );
-        let parsed =
-            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
-                .expect("the classed parse reads the record");
-        assert_eq!(parsed.owner_reference, 201);
-        assert_eq!(parsed.auxiliary_references, [900, 464, 470, 467, 473]);
-        assert_eq!(parsed.rectangular_reference_count, Some(1));
-        assert_eq!(parsed.rectangular_clause_ordinal, Some(1));
-        assert_eq!(parsed.parsed_end, record.len());
-        assert_eq!(
-            decode_pattern_definition(&record, &parsed),
-            Some(SketchPatternDefinition::Rectangular {
-                directions: [
-                    SketchPatternDirection {
-                        evaluated_count: 3,
-                        count_parameter: 464,
-                        direction: [1.0, 0.0, 0.0],
-                        evaluated_distance: 3.0,
-                        distance_parameter: 470,
-                    },
-                    SketchPatternDirection {
-                        evaluated_count: 1,
-                        count_parameter: 467,
-                        direction: [0.0, 1.0, 0.0],
-                        evaluated_distance: 0.5,
-                        distance_parameter: 473,
-                    },
-                ],
-            })
-        );
-    }
-
-    #[test]
-    fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
-        let mut class_members = vec![0, 0, 0];
-        class_members.extend_from_slice(&0u32.to_le_bytes());
-        class_members.extend_from_slice(&empty_pattern_tables());
-        push_direction_clause(&mut class_members, 4, 464, [1.0, 0.0, 0.0], 2.0, 470);
-        push_direction_clause(&mut class_members, 2, 467, [0.0, 1.0, 0.0], 1.5, 473);
-        let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-        let parsed =
-            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
-                .expect("the classed parse reads the record");
-        assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
-        assert_eq!(parsed.rectangular_reference_count, Some(0));
-        assert_eq!(parsed.rectangular_clause_ordinal, Some(0));
-        assert_eq!(parsed.parsed_end, record.len());
-        let Some(SketchPatternDefinition::Rectangular { directions }) =
-            decode_pattern_definition(&record, &parsed)
-        else {
-            panic!("expected a rectangular pattern definition");
-        };
-        assert_eq!(directions[0].evaluated_count, 4);
-        assert_eq!(directions[1].evaluated_count, 2);
-    }
-
-    #[test]
-    fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
-        let mut class_members = vec![0, 0, 0];
-        class_members.extend_from_slice(&1u32.to_le_bytes());
-        push_absent_reference(&mut class_members);
-        class_members.extend_from_slice(&empty_pattern_tables());
-        push_direction_clause(&mut class_members, 2, 464, [1.0, 0.0, 0.0], 1.5, 470);
-        push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.0, 473);
-        let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-        let parsed =
-            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
-                .expect("the classed parse reads the absent run member");
-
-        assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
-        assert_eq!(parsed.rectangular_reference_count, Some(1));
-        assert_eq!(parsed.rectangular_clause_ordinal, Some(0));
-        assert!(matches!(
-            decode_pattern_definition(&record, &parsed),
-            Some(SketchPatternDefinition::Rectangular { .. })
-        ));
-    }
-
-    #[test]
-    fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
-        let mut class_members = vec![0, 0, 0];
-        class_members.extend_from_slice(&2u32.to_le_bytes());
-        // The first counted-run reference uses the segment form. Its trailing
-        // segment value is a plausible count if a reader starts one reference
-        // early.
-        class_members.push(1);
-        class_members.extend_from_slice(&900u64.to_le_bytes());
-        class_members.extend_from_slice(&[0, 1]);
-        class_members.extend_from_slice(&2u32.to_le_bytes());
-        push_reference(&mut class_members, 901);
-        class_members.extend_from_slice(&empty_pattern_tables());
-
-        class_members.extend_from_slice(&0u32.to_le_bytes());
-        push_absent_reference(&mut class_members);
-        // Together with the empty table counts and absent-reference marker,
-        // these bytes form a shifted unit vector `[0, 1, 0]`.
-        class_members.extend_from_slice(&[0x00, 0xf0, 0x3f, 0, 0, 0, 0, 0]);
-        class_members.extend_from_slice(&0.0f64.to_le_bytes());
-        class_members.extend_from_slice(&0.0f64.to_le_bytes());
-        class_members.extend_from_slice(&0.0f64.to_le_bytes());
-        push_reference(&mut class_members, 470);
-
-        push_direction_clause(&mut class_members, 1, 467, [1.0, 0.0, 0.0], 0.5, 473);
-        let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-        let parsed =
-            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
-                .expect("the classed parse retains the incomplete relation");
-
-        assert_eq!(parsed.auxiliary_references, [900, 901, 470, 467, 473]);
-        assert_eq!(parsed.rectangular_reference_count, Some(2));
-        assert_eq!(parsed.rectangular_clause_ordinal, None);
-        assert_eq!(decode_pattern_definition(&record, &parsed), None);
-    }
-
-    #[test]
-    fn text_frame_relation_reads_its_two_references() {
-        let mut class_members = Vec::new();
-        push_absent_reference(&mut class_members);
-        push_reference(&mut class_members, 2394);
-        let record = relation_record(
-            &[(2394, 0), (2403, 0)],
-            &class_members,
-            201,
-            0x100_0000_0000,
-            &[2403],
-        );
-        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
-            .expect("the classed parse reads the record");
-        assert_eq!(parsed.auxiliary_references, [2394]);
-        assert_eq!(parsed.parsed_end, record.len());
-        assert_eq!(
-            decode_pattern_definition(&record, &parsed),
-            Some(SketchPatternDefinition::TextFrame {
-                text_reference: 2394
-            })
-        );
-
-        let mut both = Vec::new();
-        push_reference(&mut both, 2404);
-        push_reference(&mut both, 2394);
-        let record = relation_record(
-            &[(2394, 0), (2403, 0)],
-            &both,
-            201,
-            0x100_0000_0000,
-            &[2403],
-        );
-        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
-            .expect("the classed parse reads the record");
-        assert_eq!(parsed.auxiliary_references, [2404, 2394]);
-        assert_eq!(parsed.parsed_end, record.len());
-    }
-
-    #[test]
-    fn text_path_relation_reads_its_glyph_run_at_both_versions() {
-        for leading_flag in [false, true] {
-            let mut class_members = Vec::new();
-            if leading_flag {
-                class_members.push(1);
-            }
-            push_glyph_run(&mut class_members, 2, 5.0);
-            let record = relation_record(
-                &[(1, 1), (2, 0)],
-                &class_members,
-                201,
-                0x200_0000_0000,
-                &[1],
-            );
-            let parsed = parse_classed_sketch_relation(
-                &record,
-                SketchRelationClass::TextPath { leading_flag },
-            )
-            .expect("the classed parse reads the record");
-            assert_eq!(parsed.auxiliary_references, [2]);
-            assert_eq!(parsed.parsed_end, record.len());
-            let Some(SketchPatternDefinition::TextPath {
-                text_reference,
-                glyph_transforms,
-            }) = decode_pattern_definition(&record, &parsed)
-            else {
-                panic!("expected a text-path pattern definition");
-            };
-            assert_eq!(text_reference, 2);
-            assert_eq!(glyph_transforms[0][0][3], 5.0);
-            // The version-0 layout has no leading byte, so reading one steps
-            // into the text reference and the run no longer closes.
-            assert!(parse_classed_sketch_relation(
-                &record,
-                SketchRelationClass::TextPath {
-                    leading_flag: !leading_flag
-                }
-            )
-            .is_none_or(|other| other.parsed_end != record.len()));
-        }
-    }
-}
+mod tests;

@@ -44,20 +44,22 @@ Spec §2 · layout: byte offsets · size: 32 B
 
 The version field is right-justified decimal text, not a binary integer: leading ASCII spaces then at least one ASCII digit. Version `5` and version `50` are distinct.
 
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/chunks.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 24 | `magic` | `bytes[24]` | little | spec | The trailing space is part of the magic. |
+| 0 | 24 | `magic` | `bytes[24]` | little | spec | The trailing space is part of the magic. · value `"3D Geometry File Format "` |
 | 24 | 8 | `archive_version` | `bytes[8]` | little | spec | bytes 24..31 right-justified decimal archive version |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-rhino/src/chunks.rs` — The parser's 24-byte magic matches offset 0.
 
 ## `uuid_wire_form`
 
 Spec §3.3 · layout: byte offsets · size: 16 B
 
 The only mixed-endian primitive in the format. The worked example is canonical `4ED7D4DD-E947-11D3-BFE5-0010830122F0`, wire `DD D4 D7 4E 47 E9 D3 11 BF E5 00 10 83 01 22 F0`.
+
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/wire.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -72,20 +74,22 @@ Spec §4 · layout: byte offsets · size: 8 B
 
 Archive versions below 50. The length word is `i32` below archive version 50 and `i64` from 50; the 8-byte total here is the below-50 form. `declared_length` bytes of body follow and include the trailing checksum when present.
 
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/chunks.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `typecode` | `u32` | little | spec | Every chunk begins with a little-endian `u32 typecode`. |
 | 4 | 4 | `declared_length` | `i32` | little | spec | archive version < 50 i32 |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-rhino/src/chunks.rs` — The parser's short-chunk flag matches the §4 constant that selects between the long and short forms.
 
 ## `long_chunk_header_v50`
 
 Spec §4 · layout: byte offsets · size: 12 B
 
 Archive versions 50 and above widen the length word to `i64`.
+
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/chunks.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -98,21 +102,23 @@ Spec §5 · layout: byte offsets · size: 20 B
 
 `TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk whose declared length is exactly the file-size field width. The stored size includes the 32-byte header, all preceding chunks, the EOF typecode, the EOF value field, and the file-size field. Below archive version 50 the length and size words are four bytes each and the record is 12 bytes. The 20-byte total is derived from the three stated widths; the spec states no total.
 
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/chunks.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `typecode` | `u32` | little | spec | `TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk |
 | 4 | 8 | `declared_length` | `i64` | little | spec | archive version >= 50 length = 8, u64 file_size |
 | 12 | 8 | `file_size` | `u64` | little | spec | archive version >= 50 length = 8, u64 file_size |
 
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-rhino/src/chunks.rs` — The parser's end-of-file typecode matches the stated value.
-
 ## `class_uuid_chunk_body`
 
 Spec §7 · layout: byte offsets · size: 20 B
 
 One of the two places the specification states a record body size outright.
+
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/objects.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -124,6 +130,9 @@ One of the two places the specification states a record body size outright.
 Spec §10 · layout: byte offsets · size: 9 B
 
 A zero size ends the buffer immediately: no CRC, method, or body follows, so the prologue collapses to its first four bytes. Method 0 stores the bytes verbatim; method 1 stores one anonymous long chunk whose body is a complete zlib stream.
+
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/chunks.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -176,6 +185,9 @@ The field list is stated in order; the 10-byte total follows from the three stat
 Spec §5 · layout: byte offsets · size: 8 B
 
 The anonymous form. The packed form is one byte with `major = version >> 4` and `minor = version & 0x0f`. The two forms are not interchangeable.
+
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/extrusion.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

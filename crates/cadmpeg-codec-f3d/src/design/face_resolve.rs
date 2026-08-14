@@ -1464,17 +1464,20 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        bounded_face_candidate_by_boundary_cardinality, convergent_face_support,
-        loft_edge_profile_face_slot, stable_face_support_set,
-    };
+    #![allow(unused_imports)]
+    use super::*;
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
         DesignEdgeRecipeStructure, DesignHistoricalFaceBoundaryContext,
         DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext, DesignParameterScope,
         DesignRecipeReference,
     };
+    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::FaceId;
+    use cadmpeg_ir::ids::{ShellId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::sketches::{Sketch, SketchId};
+    use cadmpeg_ir::topology::{Face, Sense};
 
     fn face(slot: i64) -> FaceId {
         FaceId(format!("f3d:brep:entity#{slot}"))
@@ -1805,5 +1808,85 @@ mod tests {
                 native,
             }) if state == expected_state && faces == [expected_face] && native == [group.id]
         ));
+    }
+
+    #[test]
+    fn selected_face_start_requires_unique_sketch_plane_coincidence() {
+        use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+        use cadmpeg_ir::topology::{Face, Sense};
+
+        let sketch = Sketch {
+            id: SketchId("sketch".into()),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 2.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+        let face = |id: &str, surface: &str| Face {
+            id: FaceId(id.into()),
+            shell: ShellId("shell".into()),
+            surface: SurfaceId(surface.into()),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
+            id: SurfaceId(id.into()),
+            geometry: SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let faces = [
+            face("coincident", "surface-coincident"),
+            face("offset", "surface-offset"),
+            face("tilted", "surface-tilted"),
+        ];
+        let surfaces = [
+            plane(
+                "surface-coincident",
+                Point3::new(5.0, -3.0, 2.0),
+                Vector3::new(0.0, 0.0, -2.0),
+            ),
+            plane(
+                "surface-offset",
+                Point3::new(0.0, 0.0, 2.1),
+                Vector3::new(0.0, 0.0, 1.0),
+            ),
+            plane(
+                "surface-tilted",
+                Point3::new(0.0, 0.0, 2.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            ),
+        ];
+
+        assert!(crate::design::face_resolve::face_coincident_with_sketch(
+            &faces[0].id,
+            &sketch,
+            &faces,
+            &surfaces,
+            1.0e-6,
+            1.0e-10,
+        ));
+        for candidate in &faces[1..] {
+            assert!(!crate::design::face_resolve::face_coincident_with_sketch(
+                &candidate.id,
+                &sketch,
+                &faces,
+                &surfaces,
+                1.0e-6,
+                1.0e-10,
+            ));
+        }
     }
 }

@@ -39,7 +39,7 @@ The six one-byte primitive length fields select the bit widths used by the remai
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `identifier` | `bytes[1]` | — | spec | Byte 1 is ASCII `B`. |
-| 1 | 4 | `remaining_byte_count` | `u32` | big | spec | Bytes 2 through 5 are the big-endian unsigned 32-bit value `75` |
+| 1 | 4 | `remaining_byte_count` | `u32` | big | spec | Bytes 2 through 5 are the big-endian unsigned 32-bit value `75` · value `75` |
 | 5 | 6 | `primitive_bit_lengths` | `bytes[6]` | — | spec | Bytes 6 through 11 are the one-byte bit lengths `Is`, `Id`, `NXs`, `NFs`, `NXd`, and `NFd`. |
 | 11 | 30 | `section_displacements` | `bytes[30]` | — | spec | Six repetitions of a one-byte ASCII section identifier and a big-endian u32 displacement. |
 | 41 | 31 | `unassigned` | `bytes[31]` | — | spec | Bytes 42 through 72 are unassigned. |
@@ -49,8 +49,7 @@ The six one-byte primitive length fields select the bit widths used by the remai
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-iges/src/layout.rs` — Representation detection requires the fixed big-endian byte count.
-- `crates/cadmpeg-codec-iges/src/layout.rs` — Representation detection validates the six-byte Binary sequence padding.
+- `crates/cadmpeg-codec-iges/src/representation.rs` — Representation detection validates the six-byte Binary sequence padding as ASCII blanks or zeroes.
 
 ## `canonical_card`
 
@@ -106,7 +105,7 @@ Columns 1-72 of the first of the two Directory Entry cards, as nine fixed eight-
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-iges/src/directory.rs` — The parser takes columns 1-72 as the Directory Entry data area and splits it into eight-column fields.
+- `crates/cadmpeg-codec-iges/src/directory.rs` — The parser splits columns 1-72 into nine eight-column Directory Entry fields.
 
 ## `directory_entry_card_2`
 

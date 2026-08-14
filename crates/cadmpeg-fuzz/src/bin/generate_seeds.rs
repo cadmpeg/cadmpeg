@@ -3,7 +3,8 @@
 
 use std::fs;
 use std::io::{Cursor, Write};
-use std::path::Path;
+
+include!("../seed_paths.rs");
 
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
@@ -36,8 +37,8 @@ fn main() {
     ];
 
     for directory in ["seeds/f3d_container", "seeds/f3d_roundtrip"] {
-        let seeds_dir = Path::new(directory);
-        fs::create_dir_all(seeds_dir).expect("create seeds dir");
+        let seeds_dir = seed_dir(directory);
+        fs::create_dir_all(&seeds_dir).expect("create seeds dir");
         for (name, data) in &seeds {
             let path = seeds_dir.join(name);
             fs::write(&path, data).expect("write seed");

@@ -5,7 +5,7 @@ use std::hint::black_box;
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
-use cadmpeg_codec_step::{parse, write_step, StepCodec, StepWriteOptions};
+use cadmpeg_codec_step::{write_step, StepCodec, StepWriteOptions};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
@@ -70,7 +70,10 @@ fn main() {
     let codec = StepCodec::default();
 
     measure("parse typed", || {
-        black_box(parse::parse(black_box(&points)).expect("required invariant"));
+        black_box(
+            cadmpeg_codec_step::fuzz::parse_entity_count(black_box(&points))
+                .expect("required invariant"),
+        );
     });
     measure("decode typed", || {
         let mut input = Cursor::new(&points);

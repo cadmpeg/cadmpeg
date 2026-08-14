@@ -54,9 +54,9 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match RhinoCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => serde_json::json!({
-            "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
-            "report": serde_json::to_value(&result.report).expect("serialize report"),
-            "source_fidelity": serde_json::to_value(&result.source_fidelity)
+            "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+            "report": serde_json::to_value(result.report()).expect("serialize report"),
+            "source_fidelity": serde_json::to_value(result.source_fidelity())
                 .expect("serialize source_fidelity"),
         }),
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
@@ -92,8 +92,8 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
     let written = Encoder::plan(
         &RhinoEncoder::new(version),
         EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: decoded.ir(),
+            fidelity: Some(decoded.source_fidelity()),
         },
     )
     .and_then(|plan| plan.write_to(&mut encoded));

@@ -110,3 +110,6 @@ pub(crate) fn transfer(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

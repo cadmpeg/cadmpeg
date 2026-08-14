@@ -951,19 +951,4 @@ fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::parameter_in_domain;
-
-    #[test]
-    fn parameter_domain_accepts_serialization_rounding_at_a_boundary() {
-        let lower = 0.1_f64;
-        let upper = std::f64::consts::TAU;
-        let one_ulp_below_lower = f64::from_bits(lower.to_bits() - 1);
-        let one_ulp_above_upper = f64::from_bits(upper.to_bits() + 1);
-
-        assert!(parameter_in_domain(one_ulp_below_lower, [lower, upper]));
-        assert!(parameter_in_domain(one_ulp_above_upper, [lower, upper]));
-        assert!(!parameter_in_domain(lower - 1.0e-8, [lower, upper]));
-        assert!(!parameter_in_domain(upper + 1.0e-8, [lower, upper]));
-    }
-}
+mod tests;

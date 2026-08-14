@@ -2,11 +2,13 @@
 //! Typed SW Objects document metadata.
 
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::le::{f64_at as f64_le, u32_at as u32_le, u64_at as u64_le};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::Exactness;
+
+use crate::layout::transformed_reference_plane_metadata as trans_plane;
 
 pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<SourceAttribute> {
     let mut out = Vec::new();
@@ -46,7 +48,7 @@ fn scan_transformed_reference_plane(
     annotations: &mut Annotations,
 ) {
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
-    const PREFIX: &[u8] = &[0xff; 8];
+    const PREFIX: &[u8] = &trans_plane::PREFIX_VALUE;
     let payload = section.payload();
     for offset in payload
         .windows(TOKEN.len())
@@ -57,9 +59,9 @@ fn scan_transformed_reference_plane(
         if payload.get(prefix..prefix + PREFIX.len()) != Some(PREFIX) {
             continue;
         }
-        let start = prefix + PREFIX.len();
+        let start = prefix + trans_plane::CENTER;
         let Some(values) = (0..9)
-            .map(|index| f64_le(payload, start + index * 8))
+            .map(|index| View::f64_le_at(payload, start + index * 8))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -119,12 +121,12 @@ fn scan_length_user_units(
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
-        let value = String::from_utf16_lossy(
-            &bytes
-                .chunks_exact(2)
-                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-                .collect::<Vec<_>>(),
-        );
+        let mut view = View::over_retained(bytes);
+        let mut units = Vec::new();
+        while let Some(unit) = view.u16_le() {
+            units.push(unit);
+        }
+        let value = String::from_utf16_lossy(&units);
         if value.trim().is_empty() {
             continue;
         }
@@ -175,12 +177,12 @@ fn scan_units_xml(
 fn xml_text(bytes: &[u8]) -> Option<String> {
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {
-        Some(String::from_utf16_lossy(
-            &bytes[2..]
-                .chunks_exact(2)
-                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-                .collect::<Vec<_>>(),
-        ))
+        let mut view = View::over_retained(&bytes[2..]);
+        let mut units = Vec::new();
+        while let Some(unit) = view.u16_le() {
+            units.push(unit);
+        }
+        Some(String::from_utf16_lossy(&units))
     } else {
         std::str::from_utf8(bytes).ok().map(str::to_string)
     }
@@ -205,7 +207,7 @@ fn scan_vectors(
     {
         let start = offset + token.len() + skip;
         let Some(values) = (0..count)
-            .map(|index| f64_le(payload, start + index * 8))
+            .map(|index| View::f64_le_at(payload, start + index * 8))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -236,7 +238,10 @@ fn scan_part(section: Section<'_>, out: &mut Vec<SourceAttribute>, annotations: 
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
         let start = offset + TOKEN.len();
-        let (Some(id), Some(version)) = (u32_le(payload, start), u32_le(payload, start + 8)) else {
+        let (Some(id), Some(version)) = (
+            View::u32_le_at(payload, start),
+            View::u32_le_at(payload, start + 8),
+        ) else {
             continue;
         };
         out.push(attribute(
@@ -267,9 +272,9 @@ fn scan_configuration_manager(
     {
         let start = offset + TOKEN.len();
         let (Some(minor), Some(states), Some(filetime)) = (
-            u32_le(payload, start + 66),
+            View::u32_le_at(payload, start + 66),
             payload.get(start + 107),
-            u64_le(payload, start + 117),
+            View::u64_le_at(payload, start + 117),
         ) else {
             continue;
         };
@@ -318,3 +323,6 @@ fn attribute(
         values,
     }
 }
+
+#[cfg(test)]
+mod tests;

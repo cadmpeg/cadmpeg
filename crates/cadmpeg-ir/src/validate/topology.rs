@@ -152,84 +152,6 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
     }
 }
 
-#[cfg(test)]
-#[allow(clippy::items_after_test_module)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn zero_count_composite_stage_is_compositionally_invalid() {
-        let stages = [
-            crate::features::PatternStage {
-                pattern: Box::new(PatternKind::Linear {
-                    direction: None,
-                    spacing: Length(1.0),
-                    count: 1,
-                    second: None,
-                }),
-                combination: PatternStageCombination::Initialize,
-            },
-            crate::features::PatternStage {
-                pattern: Box::new(PatternKind::Scale {
-                    center: crate::features::PatternScaleCenter::FirstSeedCentroid,
-                    final_factor: 2.0,
-                    count: 0,
-                }),
-                combination: PatternStageCombination::AlignedSlices,
-            },
-        ];
-        assert!(!composite_composition_is_valid(&stages));
-    }
-
-    #[test]
-    fn unresolved_composite_count_can_feed_a_cartesian_stage() {
-        let stages = [
-            crate::features::PatternStage {
-                pattern: Box::new(PatternKind::Unresolved { form: None }),
-                combination: PatternStageCombination::Initialize,
-            },
-            crate::features::PatternStage {
-                pattern: Box::new(PatternKind::Linear {
-                    direction: None,
-                    spacing: Length(1.0),
-                    count: 2,
-                    second: None,
-                }),
-                combination: PatternStageCombination::CartesianProduct,
-            },
-        ];
-        assert!(composite_composition_is_valid(&stages));
-    }
-
-    #[test]
-    fn historical_body_overlap_ignores_set_ordering_form() {
-        use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
-
-        let state = FeatureInputTopologyId("test:input".into());
-        let target = BodySelection::Historical {
-            state: state.clone(),
-            bodies: vec![HistoricalBodyId("test:body:4".into())],
-            native: "target".into(),
-        };
-        let overlapping = BodySelection::HistoricalUnorderedSet {
-            state: state.clone(),
-            bodies: vec![
-                HistoricalBodyId("test:body:2".into()),
-                HistoricalBodyId("test:body:4".into()),
-            ],
-            native: vec!["tool-a".into(), "tool-b".into()],
-        };
-        let disjoint = BodySelection::HistoricalSet {
-            state,
-            bodies: vec![HistoricalBodyId("test:body:5".into())],
-            native: vec!["tool".into()],
-        };
-
-        assert!(body_selections_overlap(&target, &overlapping));
-        assert!(!body_selections_overlap(&target, &disjoint));
-    }
-}
-
 fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
     let mut locations = locations;
     let Some(first) = locations.next() else {
@@ -6655,3 +6577,6 @@ pub(super) fn wire_error(findings: &mut Vec<Finding>, id: &str, message: &str) {
         entity: Some(id.into()),
     });
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` visual-property records.
 
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Color;
 
 use crate::container::ContainerScan;
@@ -27,7 +28,9 @@ pub fn materials(scan: &ContainerScan) -> Vec<Material> {
             let Some(raw) = bytes.get(p..p + 4) else {
                 continue;
             };
-            let packed = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
+            let Some(packed) = View::u32_le_at(raw, 0) else {
+                continue;
+            };
             let name_header = p + 16;
             if bytes.get(name_header..name_header + 3) != Some(&[0xff, 0xfe, 0xff]) {
                 continue;
@@ -39,10 +42,11 @@ pub fn materials(scan: &ContainerScan) -> Vec<Material> {
             let Some(raw_name) = bytes.get(start..start + length * 2) else {
                 continue;
             };
-            let units: Vec<u16> = raw_name
-                .chunks_exact(2)
-                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-                .collect();
+            let mut view = View::over_retained(raw_name);
+            let mut units = Vec::new();
+            while let Some(unit) = view.u16_le() {
+                units.push(unit);
+            }
             let name = String::from_utf16_lossy(&units).trim().to_string();
             if name.is_empty() {
                 continue;
@@ -62,3 +66,6 @@ pub fn materials(scan: &ContainerScan) -> Vec<Material> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests;

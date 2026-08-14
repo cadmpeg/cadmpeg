@@ -24,10 +24,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.igs")?;
     let result = IgesCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    for loss in &result.report.losses {
+    for loss in &result.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
     }
-    println!("{} bodies", result.ir.model.bodies.len());
+    println!("{} bodies", result.ir().model.bodies.len());
     Ok(())
 }
 ```

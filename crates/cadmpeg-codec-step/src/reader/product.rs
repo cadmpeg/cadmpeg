@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -41,7 +43,9 @@ pub(super) fn decode(
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
-) -> StageOutcome<ProductData> {
+    ctx: Option<&DecodeContext<'_>>,
+    admitted_ir_entities: &mut u64,
+) -> Result<StageOutcome<ProductData>, CodecError> {
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
@@ -87,7 +91,7 @@ pub(super) fn decode(
             definition_descriptions.entry(id).or_insert(description);
         }
     }
-    let shape_bindings = shape_bindings(exchange, &definitions, topology);
+    let shape_bindings = shape_bindings(exchange, &definitions, topology, ctx);
     let definition_counts =
         definitions
             .values()
@@ -300,6 +304,7 @@ pub(super) fn decode(
             link_transform: None,
             native_ref: None,
         });
+        admit_occurrence(ctx, ir, admitted_ir_entities)?;
         root_ordinal = root_ordinal.saturating_add(1);
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
         pending_occurrences.push_back((definition, id));
@@ -331,9 +336,10 @@ pub(super) fn decode(
                 continue;
             };
             let parent_path = occurrence_paths.get(&parent).cloned().unwrap_or_default();
-            if parent_path.len() >= MAX_ASSEMBLY_DEPTH {
+            let depth_limit = assembly_depth_limit(ctx);
+            if parent_path.len() >= depth_limit {
                 warnings.push(format!(
-                    "NAUO #{usage_id} exceeds the {MAX_ASSEMBLY_DEPTH}-level assembly depth limit"
+                    "NAUO #{usage_id} exceeds the {depth_limit}-level assembly depth limit"
                 ));
                 continue;
             }
@@ -354,9 +360,10 @@ pub(super) fn decode(
                 "occurrence",
                 format!("{usage_id}{suffix}"),
             ));
-            if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+            let occurrence_cap = occurrence_limit(ctx);
+            if ir.model.occurrences.len() >= occurrence_cap {
                 warnings.push(format!(
-                    "assembly occurrence expansion exceeds the {MAX_OCCURRENCES}-occurrence limit"
+                    "assembly occurrence expansion exceeds the {occurrence_cap}-occurrence limit"
                 ));
                 break 'expansion;
             }
@@ -401,6 +408,7 @@ pub(super) fn decode(
                 link_transform: None,
                 native_ref: Some(format!("#{usage_id}")),
             });
+            admit_occurrence(ctx, ir, admitted_ir_entities)?;
             *ordinal = ordinal.saturating_add(1);
             let mut path = parent_path;
             path.insert(usage.child_definition);
@@ -420,6 +428,7 @@ pub(super) fn decode(
         ir,
         &mut warnings,
         &mut losses,
+        ctx,
     );
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
@@ -455,7 +464,7 @@ pub(super) fn decode(
             typed.insert(id);
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: ProductData {
             product_definition_ids_by_source,
         },
@@ -463,9 +472,34 @@ pub(super) fn decode(
         warnings,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
+fn admit_occurrence(
+    ctx: Option<&DecodeContext<'_>>,
+    ir: &CadIr,
+    admitted: &mut u64,
+) -> Result<(), CodecError> {
+    let current = u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX);
+    if let Some(ctx) = ctx {
+        ctx.admit_entities(current, admitted, "step_assembly_occurrence")?;
+    } else {
+        *admitted = current;
+    }
+    Ok(())
+}
+
+fn occurrence_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
+    ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_entities).ok())
+        .map_or(MAX_OCCURRENCES, |policy| policy.min(MAX_OCCURRENCES))
+}
+
+fn assembly_depth_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
+    ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+        .map_or(MAX_ASSEMBLY_DEPTH, |policy| policy.min(MAX_ASSEMBLY_DEPTH))
+}
+
+#[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
 fn apply_body_placements(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -474,6 +508,7 @@ fn apply_body_placements(
     ir: &mut CadIr,
     warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
+    ctx: Option<&DecodeContext<'_>>,
 ) {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
@@ -525,6 +560,7 @@ fn apply_body_placements(
             &mut representation_cache,
             &mut BTreeSet::new(),
             0,
+            ctx,
         );
         if bodies.is_empty() {
             continue;
@@ -583,6 +619,7 @@ fn shape_bindings(
     exchange: &Exchange,
     definitions: &BTreeMap<u64, u64>,
     topology: &TopologyData,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> BTreeMap<u64, Vec<BodyId>> {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
@@ -608,6 +645,7 @@ fn shape_bindings(
             definitions,
             topology,
             &mut representation_cache,
+            ctx,
         ) {
             result.entry(definition).or_default().extend(bodies);
         }
@@ -622,6 +660,7 @@ fn shape_binding(
     definitions: &BTreeMap<u64, u64>,
     topology: &TopologyData,
     representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(u64, Vec<BodyId>)> {
     let definition = *pds.get(
         &named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
@@ -637,6 +676,7 @@ fn shape_binding(
         representation_cache,
         &mut BTreeSet::new(),
         0,
+        ctx,
     );
     Some((definition, bodies))
 }
@@ -1214,3 +1254,6 @@ impl ValueExt for Value {
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

@@ -5334,3 +5334,6 @@ pub(crate) fn json_scalar_text(value: &serde_json::Value) -> String {
         value => value.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests;

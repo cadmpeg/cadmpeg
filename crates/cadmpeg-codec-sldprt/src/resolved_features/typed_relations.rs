@@ -26,6 +26,7 @@ use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
@@ -1775,14 +1776,7 @@ pub(super) fn extended_wide_selected_axis_endpoints<'a>(
     {
         return None;
     }
-    let endpoint = |relative| {
-        Some(u32::from(u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )))
-    };
+    let endpoint = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
     let encoded = [endpoint(64)?, endpoint(66)?];
     if encoded[0] == encoded[1] || encoded.contains(&u32::from(u16::MAX)) {
         return None;
@@ -1845,12 +1839,7 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
         return None;
     }
     let endpoint_id = |relative| {
-        let id = u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        );
+        let id = View::u16_le_at(payload, offset + relative)?;
         (!matches!(id, 0 | u16::MAX)).then_some(u32::from(id))
     };
     let endpoint_ids = [endpoint_id(56)?, endpoint_id(58)?];
@@ -1897,15 +1886,8 @@ pub(super) fn one_based_point_roster_line_endpoint_markers<'a>(
     {
         return None;
     }
-    let endpoint_index = |relative| {
-        usize::from(u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        ))
-        .checked_sub(1)
-    };
+    let endpoint_index =
+        |relative| usize::from(View::u16_le_at(payload, offset + relative)?).checked_sub(1);
     let indices = [endpoint_index(56)?, endpoint_index(58)?];
     if indices[0] == indices[1] {
         return None;
@@ -1963,14 +1945,7 @@ pub(super) fn legacy_point_roster_line_endpoint_markers<'a>(
     {
         return None;
     }
-    let index = |relative| {
-        Some(usize::from(u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )))
-    };
+    let index = |relative| Some(usize::from(View::u16_le_at(payload, offset + relative)?));
     let indices = [index(56)?, index(58)?];
     if indices[0] == indices[1] || indices.contains(&usize::from(u16::MAX)) {
         return None;
@@ -2000,14 +1975,7 @@ pub(super) fn legacy_terminal_profile_indexed_endpoints<'a>(
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(curve.offset).ok()?;
     let endpoint_offset = legacy_terminal_profile_endpoint_offset(payload, offset)?;
-    let endpoint = |relative| {
-        Some(u32::from(u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        )))
-    };
+    let endpoint = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
     let endpoint_ids = [endpoint(endpoint_offset)?, endpoint(endpoint_offset + 2)?];
     if endpoint_ids[0].checked_add(1) != Some(endpoint_ids[1]) {
         return None;
@@ -2120,7 +2088,7 @@ pub(super) fn current_coordinate_linked_line_endpoints<'a>(
     {
         return None;
     }
-    let local_id = u32::from(u16::from_le_bytes(cell[2..4].try_into().ok()?));
+    let local_id = u32::from(View::u16_le_at(cell, 2)?);
     let mut endpoints = markers.iter().copied().filter(|marker| {
         marker.feature_ref == line.feature_ref
             && marker.local_id == Some(local_id)
@@ -2184,9 +2152,9 @@ fn coordinate_centered_line_center(payload: &[u8], offset: usize) -> Option<[f64
     {
         return finite_coordinate_pair(payload, offset + 66);
     }
-    let direct = u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?);
-    let count = u16::from_le_bytes(payload.get(offset + 76..offset + 78)?.try_into().ok()?);
-    let tagged = u16::from_le_bytes(payload.get(offset + 82..offset + 84)?.try_into().ok()?);
+    let direct = View::u16_le_at(payload, offset + 74)?;
+    let count = View::u16_le_at(payload, offset + 76)?;
+    let tagged = View::u16_le_at(payload, offset + 82)?;
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])

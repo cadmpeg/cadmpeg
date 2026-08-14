@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::le::{u32_at, u64_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_prefix, lp_utf16_bounded, lp_utf16_bytes, take_reference};
@@ -91,7 +91,7 @@ pub(crate) fn browser_node_records(
             )));
         }
         let record = &bytes[frame.start..frame.end];
-        let record_index = u32_at(record, 7).ok_or_else(|| {
+        let record_index = View::u32_le_at(record, 7).ok_or_else(|| {
             CodecError::Malformed(format!(
                 "F3D Design browser-node entity {} has a truncated record index",
                 frame.entity_id
@@ -123,7 +123,7 @@ pub(crate) fn browser_node_records(
                 frame.entity_id
             )));
         };
-        let entity_suffix = u64_at(record, after_guid + 3).ok_or_else(|| {
+        let entity_suffix = View::u64_le_at(record, after_guid + 3).ok_or_else(|| {
             CodecError::Malformed("F3D Design browser-node suffix is truncated".into())
         })?;
         out.push(BrowserNodeRecord {
@@ -201,12 +201,13 @@ pub(crate) fn body_presentations(
                 ),
             )
         } else {
-            let entity_suffix = u64_at(framed_bytes, frame.start + 7).ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "F3D Design bare body-presentation entity {} has a truncated head",
-                    frame.entity_id
-                ))
-            })?;
+            let entity_suffix =
+                View::u64_le_at(framed_bytes, frame.start + 7).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D Design bare body-presentation entity {} has a truncated head",
+                        frame.entity_id
+                    ))
+                })?;
             if entity_suffix == 0 || entity_suffix != frame.entity_id {
                 return Err(CodecError::Malformed(format!(
                     "F3D Design bare body-presentation entity {} has head entity {entity_suffix}",

@@ -20,6 +20,8 @@ pub(crate) mod presentation;
 pub mod profile_select;
 pub mod sketch_project;
 #[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
 mod tests;
 
 use crate::records::ConstructionRecipeKind;

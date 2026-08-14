@@ -3908,7 +3908,7 @@ mod tests {
             )
             .expect("required invariant");
         let references = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -3921,19 +3921,19 @@ mod tests {
         assert_eq!(references[0].topology_xmt, 4);
         assert_eq!(references[0].attribute_list_xmt, 41);
         assert!(references[0].attribute_list_record.is_some());
-        assert_eq!(result.ir.model.attributes.len(), 1);
+        assert_eq!(result.ir().model.attributes.len(), 1);
         assert_eq!(
-            result.ir.model.attributes[0].target,
+            result.ir().model.attributes[0].target,
             cadmpeg_ir::attributes::AttributeTarget::Face(cadmpeg_ir::ids::FaceId(
                 "nx:s0:face#4".into()
             ))
         );
         assert_eq!(
-            result.ir.model.attributes[0].name,
+            result.ir().model.attributes[0].name,
             "parasolid_type_84_reference_5"
         );
         assert_eq!(
-            result.ir.model.attributes[0].values,
+            result.ir().model.attributes[0].values,
             [cadmpeg_ir::attributes::AttributeValue::String(
                 "deadbeef".into()
             )]
@@ -4131,7 +4131,7 @@ mod tests {
                 .expect("required invariant");
 
             let procedural = result
-                .ir
+                .ir()
                 .model
                 .procedural_surfaces
                 .first()
@@ -4152,9 +4152,9 @@ mod tests {
             assert_eq!(*v_sense, None);
             assert!(extension_flags.is_empty());
             assert_ne!(procedural.surface, *support);
-            assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+            assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
             let records = result
-                .ir
+                .ir()
                 .native
                 .namespace("nx")
                 .expect("required invariant")
@@ -4166,7 +4166,7 @@ mod tests {
             assert_eq!(records[0].support_xmt, 6);
             assert_eq!(records[0].distance, 2.5);
             let carrier = result
-                .ir
+                .ir()
                 .model
                 .surfaces
                 .iter()
@@ -4183,7 +4183,7 @@ mod tests {
                 &carrier.geometry,
                 SurfaceGeometry::Procedural { construction } if construction == &procedural.id
             ));
-            assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
         }
     }
 
@@ -4195,9 +4195,9 @@ mod tests {
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
 
-        assert_eq!(result.ir.model.edges.len(), 1);
+        assert_eq!(result.ir().model.edges.len(), 1);
         let records = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4209,10 +4209,10 @@ mod tests {
         assert_eq!(records[0].original_curve_xmt, 9);
         assert_eq!(records[0].tolerance_to_original, 0.000_01);
         assert_eq!(
-            result.ir.model.edges[0].curve.as_ref(),
-            Some(&result.ir.model.curves[0].id)
+            result.ir().model.edges[0].curve.as_ref(),
+            Some(&result.ir().model.curves[0].id)
         );
-        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
     }
 
     #[test]
@@ -4224,7 +4224,7 @@ mod tests {
             .expect("required invariant");
 
         let procedural = result
-            .ir
+            .ir()
             .model
             .procedural_surfaces
             .first()
@@ -4250,9 +4250,9 @@ mod tests {
         assert_eq!(supports[1].as_ref().map(|side| side.reversed), Some(false));
         assert!(spine.is_none());
         assert!(native.is_none());
-        assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+        assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
         let records = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4264,7 +4264,7 @@ mod tests {
         assert_eq!(records[0].offsets, [-3.0, 3.0]);
         assert_eq!(records[0].thumb_weights, [1.0, 1.0]);
         let carrier = result
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
@@ -4277,7 +4277,7 @@ mod tests {
                 .map(|association| association.object_id.as_str()),
             Some(records[0].id.as_str())
         );
-        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
     }
 
     #[test]
@@ -4288,9 +4288,12 @@ mod tests {
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
 
-        let edge_curve = result.ir.model.edges[0].curve.as_ref().expect("edge curve");
+        let edge_curve = result.ir().model.edges[0]
+            .curve
+            .as_ref()
+            .expect("edge curve");
         let curve = result
-            .ir
+            .ir()
             .model
             .curves
             .iter()
@@ -4298,7 +4301,7 @@ mod tests {
             .expect("intersection carrier");
         assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
         let records = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4312,13 +4315,13 @@ mod tests {
             curve.source_object.as_ref().map(|source| &source.object_id),
             Some(&records[0].id)
         );
-        assert_eq!(result.ir.model.procedural_curves.len(), 1);
-        assert_eq!(result.ir.model.procedural_curves[0].curve, curve.id);
-        assert!(result.report.losses.iter().any(|loss| {
+        assert_eq!(result.ir().model.procedural_curves.len(), 1);
+        assert_eq!(result.ir().model.procedural_curves[0].curve, curve.id);
+        assert!(result.report().losses.iter().any(|loss| {
             loss.code.category() == LossCategory::Geometry
                 && loss.message.starts_with("1 surface-intersection record(s)")
         }));
-        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
     }
 
     #[test]
@@ -4338,9 +4341,9 @@ mod tests {
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
 
-        assert_eq!(result.ir.model.procedural_curves.len(), 1);
+        assert_eq!(result.ir().model.procedural_curves.len(), 1);
         let records = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4351,10 +4354,10 @@ mod tests {
         assert_eq!(records[0].header_references[0], 1);
         assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
         assert_eq!(
-            result.ir.model.edges[0].curve.as_ref(),
-            Some(&result.ir.model.procedural_curves[0].curve)
+            result.ir().model.edges[0].curve.as_ref(),
+            Some(&result.ir().model.procedural_curves[0].curve)
         );
-        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
     }
 
     #[test]
@@ -4366,7 +4369,7 @@ mod tests {
             .expect("required invariant");
 
         let terms = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4381,7 +4384,7 @@ mod tests {
             .iter()
             .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));
         let support_uv = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4396,7 +4399,7 @@ mod tests {
             crate::intersection::SupportUvFraming::Direct
         ));
         let charts = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4416,13 +4419,13 @@ mod tests {
         ));
 
         let procedural = result
-            .ir
+            .ir()
             .model
             .procedural_curves
             .first()
             .expect("intersection construction");
         let curve = result
-            .ir
+            .ir()
             .model
             .curves
             .iter()
@@ -4444,12 +4447,12 @@ mod tests {
         assert!(context.sides[0].pcurve.is_some());
         assert!(context.sides[1].surface.is_none());
         assert_eq!(context.parameter_range, [0.0, 0.01]);
-        assert!(result.ir.model.coedges[0].pcurves.is_empty());
-        assert!(!result.report.losses.iter().any(|loss| {
+        assert!(result.ir().model.coedges[0].pcurves.is_empty());
+        assert!(!result.report().losses.iter().any(|loss| {
             loss.code.category() == LossCategory::Geometry
                 && loss.message.contains("surface-intersection record(s)")
         }));
-        let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 
@@ -4462,7 +4465,7 @@ mod tests {
             .expect("required invariant");
 
         let records = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4479,7 +4482,7 @@ mod tests {
         );
 
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-            &result.ir.model.procedural_curves[0].definition
+            &result.ir().model.procedural_curves[0].definition
         else {
             panic!("typed intersection");
         };
@@ -4494,11 +4497,11 @@ mod tests {
         let result = NxCodec
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
-        let edge = result.ir.model.edges.first().expect("edge");
-        assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
+        let edge = result.ir().model.edges.first().expect("edge");
+        assert_eq!(edge.curve.as_ref(), Some(&result.ir().model.curves[0].id));
         assert_eq!(edge.param_range, Some([0.25, 0.75]));
         let records = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -4508,6 +4511,6 @@ mod tests {
         assert_eq!(records[0].basis_xmt, 9);
         assert_eq!(records[0].points, [[0.0; 3]; 2]);
         assert_eq!(records[0].parameters, [0.000_25, 0.000_75]);
-        assert!(cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
     }
 }

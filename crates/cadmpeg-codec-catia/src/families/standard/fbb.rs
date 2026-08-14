@@ -1,12 +1,13 @@
 //! Byte-level parsing for standard nested CATIA V5 B-rep (`FBB`) streams:
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{View, WorkBudget};
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
     CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology, TrimRecord,
 };
+use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::reconstruct_incidence_candidates;
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::motif_port_points;
@@ -56,11 +57,17 @@ pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Option<usize> {
 #[must_use]
 pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
     let (start, count, _) = selected_standard_run(bytes)?;
-    let marker: [u8; 4] = bytes.get(start..start + 4)?.try_into().ok()?;
+    let marker: [u8; 4] = bytes.get(start..start + fbb_row::ALPHA)?.try_into().ok()?;
     (0..count)
         .map(|index| {
-            let row = bytes.get(start + index * 8..start + (index + 1) * 8)?;
-            (row[..4] == marker).then_some([row[7], row[6], row[5], row[4]])
+            let row =
+                bytes.get(start + index * fbb_row::LEN..start + (index + 1) * fbb_row::LEN)?;
+            (row[..fbb_row::ALPHA] == marker).then_some([
+                row[fbb_row::RED],
+                row[fbb_row::GREEN],
+                row[fbb_row::BLUE],
+                row[fbb_row::ALPHA],
+            ])
         })
         .collect()
 }
@@ -484,7 +491,7 @@ pub(crate) struct StandardFbbGroup {
 pub(crate) fn standard_fbb_groups(bytes: &[u8]) -> Vec<StandardFbbGroup> {
     crate::container::fbb_run_ranges(bytes)
         .into_iter()
-        .filter_map(|range| parse_standard_group(bytes, range.start, range.len() / 8))
+        .filter_map(|range| parse_standard_group(bytes, range.start, range.len() / fbb_row::LEN))
         .collect()
 }
 
@@ -493,7 +500,7 @@ fn parse_standard_group(
     face_start: usize,
     face_count: usize,
 ) -> Option<StandardFbbGroup> {
-    let after_faces = face_start.checked_add(face_count.checked_mul(8)?)?;
+    let after_faces = face_start.checked_add(face_count.checked_mul(fbb_row::LEN)?)?;
     let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let topologies = [1, 2, 3]
@@ -516,7 +523,7 @@ pub(crate) fn selected_standard_run(bytes: &[u8]) -> Option<(usize, usize, usize
     let ranges = crate::container::fbb_run_ranges(bytes);
     if let [range] = ranges.as_slice() {
         // A single marker run has no competing population to disambiguate.
-        return Some((range.start, range.len() / 8, range.end));
+        return Some((range.start, range.len() / fbb_row::LEN, range.end));
     }
     let groups = standard_fbb_groups(bytes);
     match groups.as_slice() {
@@ -532,13 +539,15 @@ pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
     let mut best = None;
     let mut tied = false;
     let mut position = 0;
-    while position + 8 <= bytes.len() {
+    while position + fbb_row::LEN <= bytes.len() {
         if crate::container::is_fbb_row(&bytes[position..]) {
             let start = position;
             let mut count = 0;
-            while position + 8 <= bytes.len() && crate::container::is_fbb_row(&bytes[position..]) {
+            while position + fbb_row::LEN <= bytes.len()
+                && crate::container::is_fbb_row(&bytes[position..])
+            {
                 count += 1;
-                position += 8;
+                position += fbb_row::LEN;
             }
             if best.is_none_or(|(_, best_count, _)| count > best_count) {
                 best = Some((start, count, position));
@@ -582,7 +591,7 @@ fn parse_count(bytes: &[u8], position: &mut usize) -> Option<usize> {
     if first != 0xff {
         return Some(usize::from(first));
     }
-    let value = u32::from_le_bytes(bytes.get(*position..*position + 4)?.try_into().ok()?);
+    let value = View::u32_le_at(bytes, *position)?;
     *position += 4;
     usize::try_from(value).ok()
 }
@@ -711,7 +720,7 @@ pub(crate) fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Ve
         position += 3;
         let mut point = [0.0; 3];
         for coordinate in &mut point {
-            let value = f32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?);
+            let value = View::f32_le_at(bytes, position)?;
             if !value.is_finite() {
                 return None;
             }
@@ -842,25 +851,16 @@ pub(crate) fn parse_trim_record_layout(
         return None;
     }
     position += 1;
-    let handle_count = usize::try_from(u32::from_le_bytes(
-        bytes.get(position..position + 4)?.try_into().ok()?,
-    ))
-    .ok()?;
+    let handle_count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
     position += 4;
     if handle_count == 0 {
         return None;
     }
     let frame_vector = if mask & 8 != 0 {
         let components = [
-            f64::from(f32::from_le_bytes(
-                bytes.get(position..position + 4)?.try_into().ok()?,
-            )),
-            f64::from(f32::from_le_bytes(
-                bytes.get(position + 4..position + 8)?.try_into().ok()?,
-            )),
-            f64::from(f32::from_le_bytes(
-                bytes.get(position + 8..position + 12)?.try_into().ok()?,
-            )),
+            f64::from(View::f32_le_at(bytes, position)?),
+            f64::from(View::f32_le_at(bytes, position + 4)?),
+            f64::from(View::f32_le_at(bytes, position + 8)?),
         ];
         position += 12;
         let norm2 = components.iter().map(|value| value * value).sum::<f64>();
@@ -932,9 +932,7 @@ pub(crate) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Opt
     for _ in 0..layout.stored_count {
         let handle = match width {
             1 => u32::from(*bytes.get(position)?),
-            2 => u32::from(u16::from_be_bytes(
-                bytes.get(position..position + 2)?.try_into().ok()?,
-            )),
+            2 => u32::from(View::u16_be_at(bytes, position)?),
             3 => u32::from_be_bytes([
                 0,
                 *bytes.get(position)?,

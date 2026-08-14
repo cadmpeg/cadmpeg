@@ -8,6 +8,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
+use crate::layout::jt_document_header as jt_hdr;
+use crate::layout::jt_toc_entry as jt_toc;
+use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
+
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
@@ -760,33 +764,24 @@ struct ParsedJtElement<'a> {
 fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>, usize)> {
     const END_OBJECT_TYPE: [u8; 16] = [0xff; 16];
     let mut elements = Vec::new();
-    let mut cursor = 0usize;
+    let mut view = View::over_retained(payload);
     loop {
-        let element_byte_len = payload
-            .get(cursor..cursor.checked_add(4)?)
-            .and_then(|value| value.try_into().ok())
-            .map(u32::from_le_bytes)?;
-        let element_end = cursor
-            .checked_add(4)?
-            .checked_add(usize::try_from(element_byte_len).ok()?)?;
-        let element = payload.get(cursor + 4..element_end)?;
+        let cursor = view.position();
+        let element_byte_len = view.u32_le()?;
+        let element = view.take(usize::try_from(element_byte_len).ok()?)?;
         if element_byte_len == 16 && element == END_OBJECT_TYPE {
-            return Some((elements, element_end));
+            return Some((elements, view.position()));
         }
         let object_type_id = element.get(..16)?;
         let &object_base_type = element.get(16)?;
-        let object_id = element
-            .get(17..21)
-            .and_then(|value| value.try_into().ok())
-            .map(u32::from_le_bytes)?;
+        let object_id = View::u32_le_at(element, 17)?;
         elements.push(ParsedJtElement {
             offset: cursor,
             object_type_id,
             object_id,
             object_base_type,
-            body: &element[21..],
+            body: element.get(21..)?,
         });
-        cursor = element_end;
     }
 }
 
@@ -795,32 +790,23 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16
     if body.get(..8) != Some(PREFIX.as_slice()) {
         return None;
     }
-    let count = body
-        .get(8..12)
-        .and_then(|value| value.try_into().ok())
-        .map(u32::from_le_bytes)?;
-    let count = usize::try_from(count).ok()?;
-    if body.len() != 12usize.checked_add(count.checked_mul(2)?)? {
-        return None;
-    }
-    let code_units = body[12..]
-        .chunks_exact(2)
-        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
-        .collect::<Vec<_>>();
+    let mut view = View::over_retained(body);
+    view.seek(8)?;
+    let count = view.u32_le()?;
+    let code_units = view.read_counted(u64::from(count), 2, View::u16_le)?;
+    view.is_empty().then_some(())?;
     let value = String::from_utf16(&code_units).ok()?;
     Some((code_units, value))
 }
 
 pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
-    if body.len() < 20 {
-        return None;
-    }
-    let base_version = u16::from_le_bytes(body[0..2].try_into().ok()?);
-    let vertex_version = u16::from_le_bytes(body[2..4].try_into().ok()?);
-    let vertex_bindings = u64::from_le_bytes(body[4..12].try_into().ok()?);
-    let topological_mesh_version = u16::from_le_bytes(body[12..14].try_into().ok()?);
-    let vertex_records_object_id = u32::from_le_bytes(body[14..18].try_into().ok()?);
-    let compressed_lod_version = u16::from_le_bytes(body[18..20].try_into().ok()?);
+    let mut view = View::over_retained(body);
+    let base_version = view.u16_le()?;
+    let vertex_version = view.u16_le()?;
+    let vertex_bindings = view.u64_le()?;
+    let topological_mesh_version = view.u16_le()?;
+    let vertex_records_object_id = view.u32_le()?;
+    let compressed_lod_version = view.u16_le()?;
     if base_version != 1 || vertex_version != 1 || !matches!(topological_mesh_version, 1 | 2) {
         return None;
     }
@@ -832,7 +818,7 @@ pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u
         topological_mesh_version,
         vertex_records_object_id,
         compressed_lod_version,
-        &body[20..],
+        body.get(view.position()..)?,
     ))
 }
 
@@ -879,17 +865,16 @@ pub(crate) fn jt9_topology_high_degree_lane_count(
         let Some(envelope) = representation.get(candidate_end..header_end) else {
             continue;
         };
-        let bindings = u64::from_le_bytes(envelope[4..12].try_into().ok()?);
+        let bindings = View::u64_le_at(envelope, 4)?;
         let quantization = &envelope[12..16];
-        let topological_vertex_count = u32::from_le_bytes(envelope[16..20].try_into().ok()?);
+        let topological_vertex_count = View::u32_le_at(envelope, 16)?;
         let vertex_attribute_count = if topological_vertex_count == 0 {
             0
         } else {
-            let attribute_end = header_end.checked_add(4)?;
-            let Some(bytes) = representation.get(header_end..attribute_end) else {
+            let Some(count) = View::u32_le_at(representation, header_end) else {
                 continue;
             };
-            u32::from_le_bytes(bytes.try_into().ok()?)
+            count
         };
         if bindings == expected_vertex_bindings
             && quantization[0] <= 24
@@ -913,32 +898,27 @@ pub(crate) fn parse_jt_base_node_body(
 ) -> Option<(u16, u32, Vec<u32>, &[u8])> {
     let (version, flags_offset, count_offset, attributes_offset): (u16, usize, usize, usize) =
         if format_major < 10 {
-            (
-                u16::from_le_bytes(body.get(..2)?.try_into().ok()?),
-                2,
-                6,
-                10,
-            )
+            (View::u16_le_at(body, 0)?, 2, 6, 10)
         } else {
             (u16::from(*body.first()?), 1, 5, 9)
         };
-    let flags = u32::from_le_bytes(body.get(flags_offset..flags_offset + 4)?.try_into().ok()?);
-    let attribute_count =
-        u32::from_le_bytes(body.get(count_offset..count_offset + 4)?.try_into().ok()?);
-    let attribute_count = usize::try_from(attribute_count).ok()?;
-    let header_end = attributes_offset.checked_add(attribute_count.checked_mul(4)?)?;
-    let attributes = body.get(attributes_offset..header_end)?;
-    let attribute_object_ids = attributes
-        .chunks_exact(4)
-        .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
-        .collect();
-    Some((version, flags, attribute_object_ids, &body[header_end..]))
+    let flags = View::u32_le_at(body, flags_offset)?;
+    let attribute_count = View::u32_le_at(body, count_offset)?;
+    let mut view = View::over_retained(body);
+    view.seek(attributes_offset)?;
+    let attribute_object_ids = view.read_counted(u64::from(attribute_count), 4, View::u32_le)?;
+    Some((
+        version,
+        flags,
+        attribute_object_ids,
+        body.get(view.position()..)?,
+    ))
 }
 
 pub(crate) fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-    let version = u16::from_le_bytes(family.get(..2)?.try_into().ok()?);
-    let child_object_id = u32::from_le_bytes(family.get(2..6)?.try_into().ok()?);
+    let version = View::u16_le_at(family, 0)?;
+    let child_object_id = View::u32_le_at(family, 2)?;
     (version == 1 && family.len() == 6).then_some((version, child_object_id))
 }
 
@@ -964,16 +944,10 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
     body: &[u8],
 ) -> Option<ParsedJtTriStripShapeNode> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
-    if family.len() < 100 || u16::from_le_bytes(family[..2].try_into().ok()?) != 1 {
+    if family.len() < jt_family::LEN || View::u16_le_at(family, jt_family::SHAPE_VERSION)? != 1 {
         return None;
     }
-    let f32_at = |offset: usize| {
-        family
-            .get(offset..offset + 4)
-            .and_then(|value| value.try_into().ok())
-            .map(f32::from_le_bytes)
-            .filter(|value| value.is_finite())
-    };
+    let f32_at = |offset: usize| View::f32_le_at(family, offset).filter(|value| value.is_finite());
     let bounds_at = |offset: usize| {
         let bounds = [
             [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
@@ -991,32 +965,33 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
     };
     let range_at = |offset: usize| {
         let range = [
-            i32::from_le_bytes(family.get(offset..offset + 4)?.try_into().ok()?),
-            i32::from_le_bytes(family.get(offset + 4..offset + 8)?.try_into().ok()?),
+            View::i32_le_at(family, offset)?,
+            View::i32_le_at(family, offset + 4)?,
         ];
         (range[0] >= 0 && range[0] <= range[1]).then_some(range)
     };
-    let compression_level = f32_at(82).filter(|value| (0.0..=1.0).contains(value))?;
-    let area = f32_at(50).filter(|value| *value >= 0.0)?;
-    let vertex_version = u16::from_le_bytes(family[86..88].try_into().ok()?);
+    let compression_level =
+        f32_at(jt_family::COMPRESSION_LEVEL).filter(|value| (0.0..=1.0).contains(value))?;
+    let area = f32_at(jt_family::AREA).filter(|value| *value >= 0.0)?;
+    let vertex_version = View::u16_le_at(family, jt_family::VERTEX_VERSION)?;
     if !matches!(vertex_version, 1 | 2) {
         return None;
     }
-    let expected_len = if vertex_version == 1 { 100 } else { 108 };
+    let expected_len = if vertex_version == 1 {
+        jt_family::LEN
+    } else {
+        108
+    };
     if family.len() != expected_len {
         return None;
     }
-    let vertex_bindings = u64::from_le_bytes(family[88..96].try_into().ok()?);
-    let vertex_quantization_bits = family[96];
-    let normal_quantization_factor = family[97];
-    let texture_quantization_bits = family[98];
-    let color_quantization_bits = family[99];
+    let vertex_bindings = View::u64_le_at(family, jt_family::VERTEX_BINDINGS)?;
+    let vertex_quantization_bits = family[jt_family::VERTEX_QUANTIZATION_BITS];
+    let normal_quantization_factor = family[jt_family::NORMAL_QUANTIZATION_FACTOR];
+    let texture_quantization_bits = family[jt_family::TEXTURE_QUANTIZATION_BITS];
+    let color_quantization_bits = family[jt_family::COLOR_QUANTIZATION_BITS];
     let version_2_vertex_bindings = (vertex_version == 2).then(|| {
-        u64::from_le_bytes(
-            family[100..108]
-                .try_into()
-                .expect("version-2 binding lane is fixed-width"),
-        )
+        View::u64_le_at(family, jt_family::LEN).expect("version-2 binding lane is fixed-width")
     });
     if vertex_quantization_bits > 24
         || normal_quantization_factor > 13
@@ -1026,13 +1001,13 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
         return None;
     }
     Some(ParsedJtTriStripShapeNode {
-        reserved_bounds: bounds_at(2)?,
-        untransformed_bounds: bounds_at(26)?,
+        reserved_bounds: bounds_at(jt_family::RESERVED_BOUNDS)?,
+        untransformed_bounds: bounds_at(jt_family::UNTRANSFORMED_BOUNDS)?,
         area,
-        vertex_count_range: range_at(54)?,
-        node_count_range: range_at(62)?,
-        polygon_count_range: range_at(70)?,
-        memory_byte_len: u32::from_le_bytes(family[78..82].try_into().ok()?),
+        vertex_count_range: range_at(jt_family::VERTEX_COUNT_RANGE)?,
+        node_count_range: range_at(jt_family::NODE_COUNT_RANGE)?,
+        polygon_count_range: range_at(jt_family::POLYGON_COUNT_RANGE)?,
+        memory_byte_len: View::u32_le_at(family, jt_family::MEMORY_BYTE_LEN)?,
         compression_level,
         vertex_version,
         vertex_bindings,
@@ -1060,16 +1035,11 @@ pub(crate) struct ParsedJtPartitionNode {
 }
 
 fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
-    let version = u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?);
-    let count = u32::from_le_bytes(bytes.get(2..6)?.try_into().ok()?);
-    let count = usize::try_from(count).ok()?;
-    let end = 6usize.checked_add(count.checked_mul(4)?)?;
-    let children = bytes
-        .get(6..end)?
-        .chunks_exact(4)
-        .map(|value| u32::from_le_bytes(value.try_into().expect("four-byte chunk")))
-        .collect();
-    Some((version, children, &bytes[end..]))
+    let mut view = View::over_retained(bytes);
+    let version = view.u16_le()?;
+    let count = view.u32_le()?;
+    let children = view.read_counted(u64::from(count), 4, View::u32_le)?;
+    Some((version, children, bytes.get(view.position()..)?))
 }
 
 pub(crate) fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
@@ -1080,36 +1050,19 @@ pub(crate) fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, Vec<u32>, &
 pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
-    let partition_flags = u32::from_le_bytes(family.get(..4)?.try_into().ok()?);
+    let mut view = View::over_retained(family);
+    let partition_flags = view.u32_le()?;
     if partition_flags & !1 != 0 {
         return None;
     }
-    let name_count_offset = 4usize;
-    let name_count = u32::from_le_bytes(
-        family
-            .get(name_count_offset..name_count_offset.checked_add(4)?)?
-            .try_into()
-            .ok()?,
-    );
-    let name_count = usize::try_from(name_count).ok()?;
-    let name_start = name_count_offset.checked_add(4)?;
-    let name_end = name_start.checked_add(name_count.checked_mul(2)?)?;
-    let file_name_code_units = family
-        .get(name_start..name_end)?
-        .chunks_exact(2)
-        .map(|value| u16::from_le_bytes(value.try_into().expect("two-byte chunk")))
-        .collect::<Vec<_>>();
+    let name_count = view.u32_le()?;
+    let file_name_code_units = view.read_counted(u64::from(name_count), 2, View::u16_le)?;
     let file_name = String::from_utf16(&file_name_code_units).ok()?;
     if file_name.is_empty() || file_name.chars().any(char::is_control) {
         return None;
     }
-    let f32_at = |offset: usize| {
-        family
-            .get(offset..offset.checked_add(4)?)
-            .and_then(|value| value.try_into().ok())
-            .map(f32::from_le_bytes)
-            .filter(|value| value.is_finite())
-    };
+    let name_end = view.position();
+    let f32_at = |offset: usize| View::f32_le_at(family, offset).filter(|value| value.is_finite());
     let bounds_at = |offset: usize| {
         let bounds = [
             [f32_at(offset)?, f32_at(offset + 4)?, f32_at(offset + 8)?],
@@ -1140,18 +1093,8 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
     }
     cursor = cursor.checked_add(4)?;
     let count_range = |offset: usize| {
-        let minimum = i32::from_le_bytes(
-            family
-                .get(offset..offset.checked_add(4)?)?
-                .try_into()
-                .ok()?,
-        );
-        let maximum = i32::from_le_bytes(
-            family
-                .get(offset + 4..offset.checked_add(8)?)?
-                .try_into()
-                .ok()?,
-        );
+        let minimum = View::i32_le_at(family, offset)?;
+        let maximum = View::i32_le_at(family, offset.checked_add(4)?)?;
         (minimum >= 0 && (maximum == -1 || maximum >= minimum)).then_some([minimum, maximum])
     };
     let vertex_count_range = count_range(cursor)?;
@@ -1193,29 +1136,24 @@ pub(crate) struct ParsedJtRangeLodNode {
 }
 
 fn parse_jt_f32_vector(bytes: &[u8]) -> Option<(Vec<f32>, &[u8])> {
-    let count = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-    let count = usize::try_from(count).ok()?;
-    let end = 4usize.checked_add(count.checked_mul(4)?)?;
-    let values = bytes
-        .get(4..end)?
-        .chunks_exact(4)
-        .map(|value| f32::from_le_bytes(value.try_into().expect("four-byte chunk")))
-        .collect::<Vec<_>>();
+    let mut view = View::over_retained(bytes);
+    let count = view.u32_le()?;
+    let values = view.read_counted(u64::from(count), 4, View::f32_le)?;
     values
         .iter()
         .all(|value| value.is_finite())
-        .then_some((values, &bytes[end..]))
+        .then_some((values, bytes.get(view.position()..)?))
 }
 
 pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     let (group_version, child_object_ids, mut family) = parse_jt9_group_data(family)?;
-    let lod_version = u16::from_le_bytes(family.get(..2)?.try_into().ok()?);
+    let lod_version = View::u16_le_at(family, 0)?;
     family = &family[2..];
     let (reserved_values, remaining) = parse_jt_f32_vector(family)?;
     family = remaining;
-    let reserved_value = i32::from_le_bytes(family.get(..4)?.try_into().ok()?);
-    let range_version = u16::from_le_bytes(family.get(4..6)?.try_into().ok()?);
+    let reserved_value = View::i32_le_at(family, 0)?;
+    let range_version = View::u16_le_at(family, 4)?;
     let (range_limits, remaining) = parse_jt_f32_vector(&family[6..])?;
     if range_limits.iter().any(|value| *value < 0.0)
         || range_limits.windows(2).any(|pair| pair[0] >= pair[1])
@@ -1223,9 +1161,9 @@ pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRange
         return None;
     }
     let center = [
-        f32::from_le_bytes(remaining.get(0..4)?.try_into().ok()?),
-        f32::from_le_bytes(remaining.get(4..8)?.try_into().ok()?),
-        f32::from_le_bytes(remaining.get(8..12)?.try_into().ok()?),
+        View::f32_le_at(remaining, 0)?,
+        View::f32_le_at(remaining, 4)?,
+        View::f32_le_at(remaining, 8)?,
     ];
     if remaining.len() != 12 || center.iter().any(|value| !value.is_finite()) {
         return None;
@@ -1245,11 +1183,12 @@ pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRange
 pub(crate) fn parse_jt9_geometric_transform_body(
     body: &[u8],
 ) -> Option<(u8, u32, u16, [[f32; 4]; 4])> {
-    let base_version = u16::from_le_bytes(body.get(0..2)?.try_into().ok()?);
-    let state_flags = *body.get(2)?;
-    let field_inhibit_flags = u32::from_le_bytes(body.get(3..7)?.try_into().ok()?);
-    let version = u16::from_le_bytes(body.get(7..9)?.try_into().ok()?);
-    let stored_values_mask = u16::from_le_bytes(body.get(9..11)?.try_into().ok()?);
+    let mut view = View::over_retained(body);
+    let base_version = view.u16_le()?;
+    let state_flags = view.u8()?;
+    let field_inhibit_flags = view.u32_le()?;
+    let version = view.u16_le()?;
+    let stored_values_mask = view.u16_le()?;
     if base_version != 1 || version != 1 || state_flags & !0x0f != 0 || field_inhibit_flags != 0 {
         return None;
     }
@@ -1259,20 +1198,17 @@ pub(crate) fn parse_jt9_geometric_transform_body(
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let mut cursor = 11usize;
     for index in 0..16 {
         if stored_values_mask & (0x8000 >> index) == 0 {
             continue;
         }
-        let end = cursor.checked_add(4)?;
-        let value = f32::from_le_bytes(body.get(cursor..end)?.try_into().ok()?);
+        let value = view.f32_le()?;
         if !value.is_finite() {
             return None;
         }
         matrix[index / 4][index % 4] = value;
-        cursor = cursor.checked_add(4)?;
     }
-    if cursor != body.len()
+    if !view.is_empty()
         || matrix[0][3] != 0.0
         || matrix[1][3] != 0.0
         || matrix[2][3] != 0.0
@@ -1306,11 +1242,11 @@ pub(crate) fn parse_jt9_geometric_transform_body(
 type ParsedJt9Material = (u8, u32, u16, u16, [[f32; 4]; 4], f32, Option<f32>);
 
 pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
-    let base_version = u16::from_le_bytes(body.get(0..2)?.try_into().ok()?);
+    let base_version = View::u16_le_at(body, 0)?;
     let state_flags = *body.get(2)?;
-    let field_inhibit_flags = u32::from_le_bytes(body.get(3..7)?.try_into().ok()?);
-    let version = u16::from_le_bytes(body.get(7..9)?.try_into().ok()?);
-    let data_flags = u16::from_le_bytes(body.get(9..11)?.try_into().ok()?);
+    let field_inhibit_flags = View::u32_le_at(body, 3)?;
+    let version = View::u16_le_at(body, 7)?;
+    let data_flags = View::u16_le_at(body, 9)?;
     let expected_len = match version {
         1 => 79,
         2 => 83,
@@ -1328,10 +1264,7 @@ pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> 
     {
         return None;
     }
-    let scalar = |offset: usize| {
-        let value = f32::from_le_bytes(body.get(offset..offset + 4)?.try_into().ok()?);
-        value.is_finite().then_some(value)
-    };
+    let scalar = |offset: usize| View::f32_le_at(body, offset).filter(|value| value.is_finite());
     let rgba = |offset: usize| {
         let color = [
             scalar(offset)?,
@@ -1370,8 +1303,8 @@ pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> 
 pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
     const JT_HEADER: &[u8] = b"Version ";
     let word_swapped_u64 = |bytes: &[u8]| -> Option<u64> {
-        let high = u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?);
-        let low = u32::from_le_bytes(bytes.get(4..8)?.try_into().ok()?);
+        let high = View::u32_le_at(bytes, 0)?;
+        let low = View::u32_le_at(bytes, 4)?;
         Some((u64::from(high) << 32) | u64::from(low))
     };
     container
@@ -1384,8 +1317,8 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
             let start = usize::try_from(source_offset).ok()?;
             let byte_len = usize::try_from(byte_len).ok()?;
             let payload = container.data.get(start..start.checked_add(byte_len)?)?;
-            let version = u32::from_le_bytes(payload.get(0..4)?.try_into().ok()?);
-            let declared_count = u32::from_le_bytes(payload.get(4..8)?.try_into().ok()?);
+            let version = View::u32_le_at(payload, 0)?;
+            let declared_count = View::u32_le_at(payload, 4)?;
             let row_count = usize::try_from(declared_count).ok()?;
             (row_count > 0).then_some(())?;
             let table_end = 8usize.checked_add(row_count.checked_mul(16)?)?;
@@ -1434,7 +1367,6 @@ pub fn display_jt_documents(
     container: &Container,
     indices: &[DisplayJtIndex],
 ) -> Vec<DisplayJtDocument> {
-    const VERSION_FIELD_LEN: usize = 80;
     let entries = container
         .entries
         .iter()
@@ -1473,7 +1405,7 @@ pub fn display_jt_documents(
         let Some(document) = stream.get(document_start..document_end) else {
             return Vec::new();
         };
-        let Some(version_bytes) = document.get(..VERSION_FIELD_LEN) else {
+        let Some(version_bytes) = document.get(..jt_hdr::BYTE_ORDER) else {
             return Vec::new();
         };
         if !version_bytes.starts_with(b"Version ")
@@ -1500,30 +1432,22 @@ pub fn display_jt_documents(
         else {
             return Vec::new();
         };
-        let Some(&byte_order) = document.get(80) else {
+        let Some(&byte_order) = document.get(jt_hdr::BYTE_ORDER) else {
             return Vec::new();
         };
-        if byte_order != 0 || document.get(81..85) != Some(&[0; 4]) {
+        if byte_order != 0 || document.get(jt_hdr::RESERVED..jt_hdr::TOC_OFFSET) != Some(&[0; 4]) {
             return Vec::new();
         }
-        let Some(toc_offset) = document
-            .get(85..89)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-        else {
+        let Some(toc_offset) = View::u32_le_at(document, jt_hdr::TOC_OFFSET) else {
             return Vec::new();
         };
-        let Some(lsg_segment_id) = document.get(89..105) else {
+        let Some(lsg_segment_id) = document.get(jt_hdr::LSG_SEGMENT_ID..jt_hdr::LEN) else {
             return Vec::new();
         };
         let Ok(toc_start) = usize::try_from(toc_offset) else {
             return Vec::new();
         };
-        let Some(toc_count) = document
-            .get(toc_start..toc_start.saturating_add(4))
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-        else {
+        let Some(toc_count) = View::u32_le_at(document, toc_start) else {
             return Vec::new();
         };
         let Ok(toc_count_usize) = usize::try_from(toc_count) else {
@@ -1534,7 +1458,7 @@ pub fn display_jt_documents(
         }
         let Some(toc_end) = toc_start
             .checked_add(4)
-            .and_then(|start| start.checked_add(toc_count_usize.checked_mul(28)?))
+            .and_then(|start| start.checked_add(toc_count_usize.checked_mul(jt_toc::LEN)?))
         else {
             return Vec::new();
         };
@@ -1547,10 +1471,11 @@ pub fn display_jt_documents(
             .map_or(row.id.as_str(), |(_, key)| key);
         let mut toc_entries = Vec::with_capacity(toc_count_usize);
         for ordinal in 0..toc_count_usize {
-            let offset = toc_start + 4 + ordinal * 28;
-            let bytes = &document[offset..offset + 28];
-            let segment_offset = u32::from_le_bytes(bytes[16..20].try_into().expect("fixed row"));
-            let segment_byte_len = u32::from_le_bytes(bytes[20..24].try_into().expect("fixed row"));
+            let offset = toc_start + 4 + ordinal * jt_toc::LEN;
+            let bytes = &document[offset..offset + jt_toc::LEN];
+            let segment_offset = View::u32_le_at(bytes, jt_toc::SEGMENT_OFFSET).expect("fixed row");
+            let segment_byte_len =
+                View::u32_le_at(bytes, jt_toc::SEGMENT_BYTE_LEN).expect("fixed row");
             let Some(segment_end) = usize::try_from(segment_offset)
                 .ok()
                 .and_then(|start| start.checked_add(segment_byte_len as usize))
@@ -1566,10 +1491,10 @@ pub fn display_jt_documents(
             toc_entries.push(DisplayJtTocEntry {
                 id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
                 ordinal: ordinal as u32,
-                segment_id: bytes[..16].to_vec(),
+                segment_id: bytes[jt_toc::SEGMENT_ID..jt_toc::SEGMENT_OFFSET].to_vec(),
                 segment_offset,
                 segment_byte_len,
-                attributes: bytes[24..28].to_vec(),
+                attributes: bytes[jt_toc::ATTRIBUTES..jt_toc::LEN].to_vec(),
                 source_offset: stream_source_offset + document_start as u64 + offset as u64,
             });
         }
@@ -1625,27 +1550,13 @@ pub fn display_jt_segments(
             let Some(segment_id) = segment.get(..16) else {
                 return Vec::new();
             };
-            let Some(segment_type) = segment
-                .get(16..20)
-                .and_then(|value| value.try_into().ok())
-                .map(u32::from_le_bytes)
-            else {
+            let Some(segment_type) = View::u32_le_at(segment, 16) else {
                 return Vec::new();
             };
-            let Some(header_byte_len) = segment
-                .get(20..24)
-                .and_then(|value| value.try_into().ok())
-                .map(u32::from_le_bytes)
-            else {
+            let Some(header_byte_len) = View::u32_le_at(segment, 20) else {
                 return Vec::new();
             };
-            let Some(attribute_type) = entry
-                .attributes
-                .as_slice()
-                .try_into()
-                .ok()
-                .map(u32::from_be_bytes)
-            else {
+            let Some(attribute_type) = View::u32_be_at(&entry.attributes, 0) else {
                 return Vec::new();
             };
             if segment_id != entry.segment_id
@@ -1656,11 +1567,7 @@ pub fn display_jt_segments(
             }
             let payload = &segment[24..];
             let compression = if payload.get(..4) == Some(2_u32.to_le_bytes().as_slice()) {
-                let Some(compressed_data_byte_len) = payload
-                    .get(4..8)
-                    .and_then(|value| value.try_into().ok())
-                    .map(u32::from_le_bytes)
-                else {
+                let Some(compressed_data_byte_len) = View::u32_le_at(payload, 4) else {
                     return Vec::new();
                 };
                 let Some(&algorithm) = payload.get(8) else {
@@ -1958,14 +1865,7 @@ pub fn display_jt_topology_packet_sequences(
             });
             cursor += byte_len as usize;
         }
-        let Some(hash_end) = cursor.checked_add(4) else {
-            return (Vec::new(), Vec::new(), Vec::new());
-        };
-        let Some(composite_hash) = representation
-            .get(cursor..hash_end)
-            .and_then(|value| value.try_into().ok())
-            .map(u32::from_le_bytes)
-        else {
+        let Some(composite_hash) = View::u32_le_at(representation, cursor) else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
         cursor += 4;
@@ -1975,7 +1875,7 @@ pub fn display_jt_topology_packet_sequences(
         let Some(required_header) = representation.get(cursor..required_header_end) else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
-        let vertex_bindings = u64::from_le_bytes(required_header[..8].try_into().expect("fixed"));
+        let vertex_bindings = View::u64_le_at(required_header, 0).expect("fixed");
         let quantization = &required_header[8..12];
         if quantization[0] > 24
             || quantization[1] > 13
@@ -1987,8 +1887,7 @@ pub fn display_jt_topology_packet_sequences(
         if vertex_bindings != lod_vertex_bindings {
             return (Vec::new(), Vec::new(), Vec::new());
         }
-        let topological_vertex_count =
-            u32::from_le_bytes(required_header[12..16].try_into().expect("fixed"));
+        let topological_vertex_count = View::u32_le_at(required_header, 12).expect("fixed");
         let (vertex_attribute_count, vertex_header_byte_len) = if topological_vertex_count == 0 {
             (0, 16)
         } else {
@@ -1998,10 +1897,7 @@ pub fn display_jt_topology_packet_sequences(
             let Some(attribute_bytes) = representation.get(cursor + 16..attribute_end) else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            (
-                u32::from_le_bytes(attribute_bytes.try_into().expect("fixed")),
-                20,
-            )
+            (View::u32_le_at(attribute_bytes, 0).expect("fixed"), 20)
         };
         if i32::try_from(topological_vertex_count).is_err()
             || i32::try_from(vertex_attribute_count).is_err()
@@ -2019,8 +1915,7 @@ pub fn display_jt_topology_packet_sequences(
             let Some(coordinate_header) = arrays.get(..32) else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            let unique_vertex_count =
-                u32::from_le_bytes(coordinate_header[..4].try_into().expect("fixed"));
+            let unique_vertex_count = View::u32_le_at(coordinate_header, 0).expect("fixed");
             let component_count = coordinate_header[4];
             if unique_vertex_count != topological_vertex_count || component_count != 3 {
                 return (Vec::new(), Vec::new(), Vec::new());
@@ -2029,16 +1924,8 @@ pub fn display_jt_topology_packet_sequences(
             let mut component_quantization_bits = [0; 3];
             for component in 0..3 {
                 let offset = 5 + component * 9;
-                let minimum = f32::from_le_bytes(
-                    coordinate_header[offset..offset + 4]
-                        .try_into()
-                        .expect("fixed"),
-                );
-                let maximum = f32::from_le_bytes(
-                    coordinate_header[offset + 4..offset + 8]
-                        .try_into()
-                        .expect("fixed"),
-                );
+                let minimum = View::f32_le_at(coordinate_header, offset).expect("fixed");
+                let maximum = View::f32_le_at(coordinate_header, offset + 4).expect("fixed");
                 let bits = coordinate_header[offset + 8];
                 if !minimum.is_finite()
                     || !maximum.is_finite()
@@ -2704,18 +2591,6 @@ pub fn display_jt_shape_lod_bindings(
         0x54,
     ];
     const SHAPE_IMPLEMENTATION_KEY: &str = "JT_LLPROP_SHAPEIMPL";
-    let read_u16 = |bytes: &[u8], offset: usize| {
-        bytes
-            .get(offset..offset + 2)
-            .and_then(|value| value.try_into().ok())
-            .map(u16::from_le_bytes)
-    };
-    let read_u32 = |bytes: &[u8], offset: usize| {
-        bytes
-            .get(offset..offset + 4)
-            .and_then(|value| value.try_into().ok())
-            .map(u32::from_le_bytes)
-    };
     let mut bindings = Vec::new();
     for scene_segment in segments.iter().filter(|segment| segment.segment_type == 1) {
         let Ok(start) = usize::try_from(scene_segment.source_offset) else {
@@ -2751,23 +2626,24 @@ pub fn display_jt_shape_lod_bindings(
             } else if atom.object_type_id == LATE_LOADED_PROPERTY_ATOM_TYPE
                 && atom.object_base_type == 8
             {
-                if atom.body.len() != 36 || read_u16(atom.body, 0) != Some(1) {
+                if atom.body.len() != 36 || View::u16_le_at(atom.body, 0) != Some(1) {
                     return Vec::new();
                 }
-                let Some(state_flags) = read_u32(atom.body, 2) else {
+                let Some(state_flags) = View::u32_le_at(atom.body, 2) else {
                     return Vec::new();
                 };
-                let Some(property_version) = read_u16(atom.body, 6) else {
+                let Some(property_version) = View::u16_le_at(atom.body, 6) else {
                     return Vec::new();
                 };
                 let segment_id = atom.body[8..24].to_vec();
-                let Some(segment_type) = read_u32(atom.body, 24) else {
+                let Some(segment_type) = View::u32_le_at(atom.body, 24) else {
                     return Vec::new();
                 };
-                let Some(payload_object_id) = read_u32(atom.body, 28) else {
+                let Some(payload_object_id) = View::u32_le_at(atom.body, 28) else {
                     return Vec::new();
                 };
-                let Some(reserved_value) = read_u32(atom.body, 32).filter(|value| *value != 0)
+                let Some(reserved_value) =
+                    View::u32_le_at(atom.body, 32).filter(|value| *value != 0)
                 else {
                     return Vec::new();
                 };
@@ -2785,31 +2661,28 @@ pub fn display_jt_shape_lod_bindings(
             }
         }
         let table = &tail[property_table_offset..];
-        let Some(table_version) = read_u16(table, 0) else {
+        let mut table_view = View::over_retained(table);
+        let Some(table_version) = table_view.u16_le() else {
             return Vec::new();
         };
-        let Some(table_count) = read_u32(table, 2) else {
+        let Some(table_count) = table_view.u32_le() else {
             return Vec::new();
         };
-        let mut cursor = 6usize;
         for table_ordinal in 0..table_count {
-            let Some(shape_node_object_id) = read_u32(table, cursor) else {
+            let Some(shape_node_object_id) = table_view.u32_le() else {
                 return Vec::new();
             };
-            cursor += 4;
             let mut pair_ordinal = 0u32;
             loop {
-                let Some(key_object_id) = read_u32(table, cursor) else {
+                let Some(key_object_id) = table_view.u32_le() else {
                     return Vec::new();
                 };
-                cursor += 4;
                 if key_object_id == 0 {
                     break;
                 }
-                let Some(value_object_id) = read_u32(table, cursor) else {
+                let Some(value_object_id) = table_view.u32_le() else {
                     return Vec::new();
                 };
-                cursor += 4;
                 if strings.get(&key_object_id).map(String::as_str) == Some(SHAPE_IMPLEMENTATION_KEY)
                 {
                     let Some((
@@ -2856,7 +2729,7 @@ pub fn display_jt_shape_lod_bindings(
                 pair_ordinal += 1;
             }
         }
-        if cursor != table.len() {
+        if !table_view.is_empty() {
             return Vec::new();
         }
     }

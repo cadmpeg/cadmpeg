@@ -1,4 +1,4 @@
-use super::*;
+use crate::decode::surfaces::first_instance_surface_row;
 
 fn row(offset: usize, id: u32, kind: crate::surface::SurfaceKind) -> crate::surface::SurfaceRow {
     crate::surface::SurfaceRow {

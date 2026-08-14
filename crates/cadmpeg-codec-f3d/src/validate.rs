@@ -9,6 +9,9 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
+use crate::layout::assembly_operand_path_locator as path_locator;
+use crate::layout::assembly_operand_path_wrapper as path_wrapper;
+use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::{design, history, ids, native, records};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{Check, Finding, Severity};
@@ -53,7 +56,7 @@ fn valid_assembly_operand_path_link(
     else {
         return false;
     };
-    let Ok(locator_length) = u64::try_from(design::assembly::OPERAND_PATH_LOCATOR_LENGTH) else {
+    let Ok(locator_length) = u64::try_from(path_locator::LEN) else {
         return false;
     };
     let Some(path_byte_offset) = link.locator_byte_offset.checked_add(locator_length) else {
@@ -86,7 +89,10 @@ fn valid_sketch_profile_region_selection(
     profile: &records::DesignSketchProfileOperand,
     selection: &records::DesignSketchProfileRegionSelection,
 ) -> bool {
-    let Some(expected_region_count_offset) = selection.byte_offset.checked_add(36) else {
+    let Some(expected_region_count_offset) = selection
+        .byte_offset
+        .checked_add(region_selection::REGION_COUNT as u64)
+    else {
         return false;
     };
     if profile.record_index.checked_add(3) != Some(selection.record_index)
@@ -106,7 +112,10 @@ fn valid_sketch_profile_region_selection(
     {
         return false;
     }
-    let Some(mut cursor) = selection.byte_offset.checked_add(40) else {
+    let Some(mut cursor) = selection
+        .byte_offset
+        .checked_add(region_selection::LEN as u64)
+    else {
         return false;
     };
     for (region_ordinal, region) in selection.regions.iter().enumerate() {
@@ -2529,8 +2538,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             design::assembly::operand_path_locator_offsets(scope.frame_length);
                         let first_start = paths[0].link.locator_byte_offset;
                         let second_start = paths[1].link.locator_byte_offset;
-                        let wrapper_length =
-                            u64::try_from(design::assembly::OPERAND_PATH_WRAPPER_LENGTH).ok();
+                        let wrapper_length = u64::try_from(path_wrapper::LEN).ok();
                         let envelope_ends = paths.each_ref().map(|path| {
                             wrapper_length.and_then(|length| {
                                 path.link.wrapper_byte_offset.checked_add(length)
@@ -8160,3 +8168,6 @@ fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

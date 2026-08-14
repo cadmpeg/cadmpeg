@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use cadmpeg_core::decode::View;
+
 use crate::psb::{compact_int, short_form_float};
 
 /// Counted `double_xar` dictionary stored in a model-level scalar section.
@@ -549,8 +551,7 @@ pub fn decode_model_reference_coordinate(
         return ieee8(data, offset, 0x3f);
     }
     if data.get(offset) == Some(&0xed) {
-        let raw: [u8; 8] = data.get(offset + 1..offset + 9)?.try_into().ok()?;
-        return Some((f64::from_be_bytes(raw), offset + 9));
+        return Some((View::f64_be_at(data, offset + 1)?, offset + 9));
     }
     decode_tabulated_cylinder_second_coordinate(data, offset, cache)
 }

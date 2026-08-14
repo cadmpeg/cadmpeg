@@ -3,6 +3,9 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+
+use cadmpeg_core::decode::View;
+
 use crate::native::segments::segment_om_links;
 
 /// Semantic family declared by a linked OM section's class registry.
@@ -1247,12 +1250,8 @@ pub fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsse
             let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
             let payload = container.data.get(start..start.checked_add(size)?)?;
             let (byte_order, version, first_ifd_offset) = match payload.get(..8)? {
-                [b'I', b'I', 42, 0, a, b, c, d] => {
-                    ("little_endian", 42, u32::from_le_bytes([*a, *b, *c, *d]))
-                }
-                [b'M', b'M', 0, 42, a, b, c, d] => {
-                    ("big_endian", 42, u32::from_be_bytes([*a, *b, *c, *d]))
-                }
+                [b'I', b'I', 42, 0, ..] => ("little_endian", 42, View::u32_le_at(payload, 4)?),
+                [b'M', b'M', 0, 42, ..] => ("big_endian", 42, View::u32_be_at(payload, 4)?),
                 _ => return None,
             };
             let first_ifd = usize::try_from(first_ifd_offset).ok()?;
@@ -4788,7 +4787,7 @@ mod tests {
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
         let expressions = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -4796,7 +4795,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(
             result
-                .ir
+                .ir()
                 .native
                 .namespace("nx")
                 .expect("required invariant")
@@ -4822,7 +4821,7 @@ mod tests {
             .source_table
             .starts_with("nx:om-entry-0:expression-table#"));
         let declarations = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -4837,7 +4836,7 @@ mod tests {
             Some(declarations[0].id.as_str())
         );
         let parameter = result
-            .ir
+            .ir()
             .model
             .parameters
             .iter()
@@ -4852,7 +4851,7 @@ mod tests {
             Some(&"258".to_string())
         );
         let om_records = result
-            .source_fidelity
+            .source_fidelity()
             .retained_records
             .iter()
             .filter(|record| record.id.starts_with("nx:om-section-"))
@@ -4865,7 +4864,7 @@ mod tests {
             })
         }));
         let object_records = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -4873,7 +4872,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(object_records.len(), 2);
         let headers = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -4906,7 +4905,7 @@ mod tests {
             vec![object_records[1].id.clone()]
         );
         let strings = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -4917,7 +4916,7 @@ mod tests {
         assert_eq!(strings[0].object_id, Some(0x102));
         assert_eq!(strings[0].value, "SKETCH_001");
         let references = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -4941,7 +4940,7 @@ mod tests {
             Some(&object_records[0].id)
         );
         let handles = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -4952,18 +4951,18 @@ mod tests {
         assert_eq!(handles[0].records, vec![object_records[1].id.clone()]);
         assert_eq!(handles[0].occurrence_count, 1);
         assert!(handles[0].external_records.is_empty());
-        assert_eq!(result.ir.model.features.len(), 1);
+        assert_eq!(result.ir().model.features.len(), 1);
         assert!(matches!(
-            result.ir.model.features[0].definition,
+            result.ir().model.features[0].definition,
             cadmpeg_ir::features::FeatureDefinition::TreeNode {
                 role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
                 ..
             }
         ));
-        assert_eq!(result.ir.model.features[0].suppressed, Some(false));
-        assert_eq!(result.ir.model.parameters.len(), 1);
-        assert_eq!(result.ir.model.parameters[0].expression, "120");
-        let parameter = &result.ir.model.parameters[0];
+        assert_eq!(result.ir().model.features[0].suppressed, Some(false));
+        assert_eq!(result.ir().model.parameters.len(), 1);
+        assert_eq!(result.ir().model.parameters[0].expression, "120");
+        let parameter = &result.ir().model.parameters[0];
         assert_eq!(parameter.name, expressions[0].name);
         assert!(matches!(
             parameter.value,
@@ -4972,7 +4971,7 @@ mod tests {
             )) if value == 120_f64.to_radians()
         ));
         assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
-        let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 
@@ -5023,7 +5022,7 @@ mod tests {
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
         let classes = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -5043,7 +5042,7 @@ mod tests {
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
         let fields = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -5058,7 +5057,7 @@ mod tests {
         assert!(fields[1].registry_suffix.is_empty());
         assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
         let classes = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -5079,7 +5078,7 @@ mod tests {
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
         let configurations = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -5090,16 +5089,16 @@ mod tests {
         assert!(configurations[0].is_default);
         assert_eq!(configurations[1].name, "Exploded");
         assert!(!configurations[1].is_default);
-        assert_eq!(result.ir.model.configurations.len(), 2);
-        assert_eq!(result.ir.model.configurations[0].ordinal, 0);
-        assert_eq!(result.ir.model.configurations[0].source_index, Some(0));
-        assert_eq!(result.ir.model.configurations[0].name, "Model");
-        assert!(result.ir.model.configurations[0].active.is_active());
+        assert_eq!(result.ir().model.configurations.len(), 2);
+        assert_eq!(result.ir().model.configurations[0].ordinal, 0);
+        assert_eq!(result.ir().model.configurations[0].source_index, Some(0));
+        assert_eq!(result.ir().model.configurations[0].name, "Model");
+        assert!(result.ir().model.configurations[0].active.is_active());
         assert_eq!(
-            result.ir.model.configurations[0].bodies.resolved(),
+            result.ir().model.configurations[0].bodies.resolved(),
             Some(
                 result
-                    .ir
+                    .ir()
                     .model
                     .bodies
                     .iter()
@@ -5108,12 +5107,12 @@ mod tests {
                     .as_slice()
             )
         );
-        assert_eq!(result.ir.model.configurations[1].ordinal, 1);
-        assert_eq!(result.ir.model.configurations[1].name, "Exploded");
-        assert!(result.ir.model.configurations[1].active.is_inactive());
-        assert!(result.ir.model.configurations[1].bodies.is_unresolved());
+        assert_eq!(result.ir().model.configurations[1].ordinal, 1);
+        assert_eq!(result.ir().model.configurations[1].name, "Exploded");
+        assert!(result.ir().model.configurations[1].active.is_inactive());
+        assert!(result.ir().model.configurations[1].bodies.is_unresolved());
         let uses = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -5123,11 +5122,11 @@ mod tests {
         assert_eq!(uses[0].configuration, configurations[0].id);
         assert_eq!(uses[0].name, "Model");
         assert_eq!(
-            result.ir.model.configurations[0].properties["active_attribute_use"],
+            result.ir().model.configurations[0].properties["active_attribute_use"],
             uses[0].id
         );
         let attributes = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -5139,7 +5138,7 @@ mod tests {
         let mut duplicate = attributes.clone();
         duplicate.push(attributes[0].clone());
         assert!(super::configuration_attribute_uses(&configurations, &duplicate).is_empty());
-        let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 
@@ -5151,7 +5150,7 @@ mod tests {
                 .decode(&mut cur, &DecodeOptions::default())
                 .expect("required invariant");
             let native = result
-                .ir
+                .ir()
                 .native
                 .namespace("nx")
                 .expect("required invariant")
@@ -5159,7 +5158,7 @@ mod tests {
                 .expect("required invariant");
             assert!(native[0].is_default);
             assert!(result
-                .ir
+                .ir()
                 .model
                 .configurations
                 .iter()
@@ -5182,7 +5181,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let assets = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -5217,7 +5216,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let namespace = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant");
@@ -5253,13 +5252,13 @@ mod tests {
             ]);
             let mut cur = Cursor::new(file);
             let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).expect("required invariant");
-            assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
+            assert!(result.ir().native.namespace("nx").is_none_or(|namespace| {
                 namespace
                     .arena_as::<super::Configuration>("configurations")
                     .expect("required invariant")
                     .is_empty()
             }));
-            assert!(result.ir.model.configurations.is_empty());
+            assert!(result.ir().model.configurations.is_empty());
         }
     }
 
@@ -5277,7 +5276,7 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        assert!(result.ir.model.configurations.is_empty());
+        assert!(result.ir().model.configurations.is_empty());
 
         let file = prt_with_named_payloads(&[
             ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
@@ -5288,10 +5287,10 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        assert_eq!(result.ir.model.configurations.len(), 1);
-        assert!(result.ir.model.configurations[0].active.is_inactive());
-        assert!(result.ir.model.configurations[0].bodies.is_unresolved());
-        assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
+        assert_eq!(result.ir().model.configurations.len(), 1);
+        assert!(result.ir().model.configurations[0].active.is_inactive());
+        assert!(result.ir().model.configurations[0].bodies.is_unresolved());
+        assert!(result.ir().native.namespace("nx").is_none_or(|namespace| {
             namespace
                 .arena_as::<super::PartAttribute>("part_attributes")
                 .expect("required invariant")
@@ -5305,7 +5304,7 @@ mod tests {
         let result = NxCodec
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
-        let attrs = &result.ir.source.expect("source").attributes;
+        let attrs = &result.ir().source.as_ref().expect("source").attributes;
         assert_eq!(
             attrs.get("external_reference.0").map(String::as_str),
             Some("child.prt")
@@ -5315,7 +5314,7 @@ mod tests {
             Some("nested/b.prt")
         );
         let references = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX native namespace")
@@ -5491,7 +5490,7 @@ mod tests {
         let result = NxCodec
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
-        let namespace = result.ir.native.namespace("nx").expect("NX namespace");
+        let namespace = result.ir().native.namespace("nx").expect("NX namespace");
         let tables = namespace
             .arena_as::<super::RmFastLoadObjectIdTable>("rmfastload_object_id_tables")
             .expect("RMFastLoad tables");
@@ -5499,37 +5498,37 @@ mod tests {
             .arena_as::<super::RmFastLoadObjectId>("rmfastload_object_ids")
             .expect("RMFastLoad object IDs");
 
-        assert_eq!(result.ir.model.bodies.len(), 1);
+        assert_eq!(result.ir().model.bodies.len(), 1);
         assert_eq!(tables.len(), 1);
         assert_eq!(tables[0].members.len(), 50);
         assert_eq!(object_ids.len(), 50);
         assert_eq!(object_ids[0].value, 1_000);
         assert_eq!(object_ids[49].value, 1_049);
-        assert!(result.ir.model.bodies[0].id.0.starts_with("nx:s0:"));
-        assert_eq!(result.ir.model.faces.len(), 50);
-        assert_eq!(result.ir.model.surfaces.len(), 50);
+        assert!(result.ir().model.bodies[0].id.0.starts_with("nx:s0:"));
+        assert_eq!(result.ir().model.faces.len(), 50);
+        assert_eq!(result.ir().model.surfaces.len(), 50);
         assert!(result
-            .ir
+            .ir()
             .model
             .faces
             .iter()
             .all(|face| face.id.0.starts_with("nx:s0:")));
         assert!(result
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
             .all(|surface| surface.id.0.starts_with("nx:s0:")));
         assert_eq!(
             result
-                .ir
+                .ir()
                 .source
                 .as_ref()
                 .and_then(|source| source.attributes.get("active_body_selector"))
                 .map(String::as_str),
             Some("rmfastload_object_id_membership")
         );
-        let validation = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(
             validation.findings.is_empty(),
             "findings: {:?}",

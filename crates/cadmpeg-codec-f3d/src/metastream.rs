@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared Fusion `MetaStream` segment framing.
 
-use cadmpeg_core::le::u32_at;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_hyphenated, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
@@ -109,7 +109,7 @@ pub(crate) fn primary_record_frames(
 }
 
 fn take_counted_run(bytes: &[u8], at: &mut usize, stride: usize) -> Option<()> {
-    let count = usize::try_from(u32_at(bytes, *at)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, *at)?).ok()?;
     let start = at.checked_add(4)?;
     let end = count.checked_mul(stride)?.checked_add(start)?;
     bytes.get(start..end)?;
@@ -118,18 +118,17 @@ fn take_counted_run(bytes: &[u8], at: &mut usize, stride: usize) -> Option<()> {
 }
 
 fn take_record_index(bytes: &[u8], at: &mut usize) -> Option<Vec<RecordIndexEntry>> {
-    let count = usize::try_from(u32_at(bytes, *at)?).ok()?;
+    let count = View::u32_le_at(bytes, *at)?;
     let records_at = at.checked_add(4)?;
-    let records_end = count.checked_mul(16)?.checked_add(records_at)?;
-    let raw_records = bytes.get(records_at..records_end)?;
-    let mut records = Vec::with_capacity(count);
-    for raw_record in raw_records.chunks_exact(16) {
-        records.push(RecordIndexEntry {
-            entity_id: u64::from_le_bytes(raw_record[..8].try_into().ok()?),
-            bulk_offset: u64::from_le_bytes(raw_record[8..].try_into().ok()?),
-        });
-    }
-    *at = records_end;
+    let mut view = View::over_retained(bytes);
+    view.seek(records_at)?;
+    let records = view.read_counted(u64::from(count), 16, |view| {
+        Some(RecordIndexEntry {
+            entity_id: view.u64_le()?,
+            bulk_offset: view.u64_le()?,
+        })
+    })?;
+    *at = view.position();
     Some(records)
 }
 
@@ -145,7 +144,7 @@ fn require<T>(value: Option<T>, field: &'static str, offset: usize) -> Result<T,
 
 fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
     let present_at = *at;
-    let present = require(u32_at(bytes, *at), "version-context presence", *at)?;
+    let present = require(View::u32_le_at(bytes, *at), "version-context presence", *at)?;
     *at = require(at.checked_add(4), "version-context presence", *at)?;
     match present {
         0 => Ok(()),
@@ -191,7 +190,7 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
                 });
             }
             *at = next;
-            require(u32_at(bytes, *at), "version-context revision", *at)?;
+            require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
             Ok(())
         }
@@ -213,7 +212,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     )?;
     let at = require(at.checked_add(4), "segment id", at)?;
     let (_, at) = require(lp_utf16_bounded(bytes, at, 0..=256), "asset GUID", at)?;
-    let magic = require(u32_at(bytes, at), "serializer magic", at)?;
+    let magic = require(View::u32_le_at(bytes, at), "serializer magic", at)?;
     let at = require(
         at.checked_add(if magic == 1234 { 16 } else { 8 }),
         "serializer integer group",
@@ -237,7 +236,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     let mut at = require(at.checked_add(8), "segment type code", at)?;
     require(bytes.get(..at), "segment type code", at.min(bytes.len()))?;
 
-    let count = require(u32_at(bytes, at), "type count", at)?;
+    let count = require(View::u32_le_at(bytes, at), "type count", at)?;
     at = require(at.checked_add(4), "type count", at)?;
     let mut types = Vec::new();
     for _ in 0..count {
@@ -259,7 +258,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         )?;
         at = next;
         let version_offset = at;
-        let version = require(u32_at(bytes, at), "type version", at)?;
+        let version = require(View::u32_le_at(bytes, at), "type version", at)?;
         at = require(at.checked_add(4), "type version", at)?;
         let (module, next) = require(
             lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
@@ -267,11 +266,15 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             at,
         )?;
         at = next;
-        let id_count = usize::try_from(require(u32_at(bytes, at), "type entity count", at)?)
-            .map_err(|_| ParseFailure {
-                field: "type entity count",
-                offset: at,
-            })?;
+        let id_count = usize::try_from(require(
+            View::u32_le_at(bytes, at),
+            "type entity count",
+            at,
+        )?)
+        .map_err(|_| ParseFailure {
+            field: "type entity count",
+            offset: at,
+        })?;
         let ids_at = require(at.checked_add(4), "type entity count", at)?;
         let ids_end = require(
             id_count
@@ -280,7 +283,14 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             "type entity ids",
             ids_at,
         )?;
-        let raw_ids = require(bytes.get(ids_at..ids_end), "type entity ids", ids_at)?;
+        require(bytes.get(ids_at..ids_end), "type entity ids", ids_at)?;
+        let mut id_view = View::over_retained(bytes);
+        require(id_view.seek(ids_at), "type entity ids", ids_at)?;
+        let entity_ids = require(
+            id_view.read_counted(id_count as u64, 8, View::u64_le),
+            "type entity ids",
+            ids_at,
+        )?;
         at = ids_end;
         types.push(SegmentType {
             id: String::new(),
@@ -293,15 +303,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             version,
             version_offset: version_offset as u64,
             module,
-            entity_ids: raw_ids
-                .chunks_exact(8)
-                .map(|raw| {
-                    u64::from_le_bytes(
-                        raw.try_into()
-                            .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-                    )
-                })
-                .collect(),
+            entity_ids,
             entity_id_offsets: (0..id_count)
                 .map(|index| (ids_at + index * 8) as u64)
                 .collect(),
@@ -337,7 +339,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     }
     if at < bytes.len() {
         take_version_context(bytes, &mut at)?;
-        let properties = require(u32_at(bytes, at), "property count", at)?;
+        let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
         at = require(at.checked_add(4), "property count", at)?;
         for _ in 0..properties {
             let (_, next) = require(
@@ -375,6 +377,7 @@ pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError
 #[cfg(test)]
 mod tests {
     use super::{parse, primary_record_frames, MetaStream, RecordIndexEntry};
+    use crate::test_support::design_metastream;
 
     fn lp_ascii(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -555,5 +558,93 @@ mod tests {
             primary_record_frames(&secondary_outside_primary, 14),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
+    }
+    #[test]
+    fn design_type_table_attributes_each_entry_to_its_own_type() {
+        use crate::metastream::parse;
+
+        let first = "11111111-1111-1111-1111-111111111111";
+        let second = "22222222-2222-2222-2222-222222222222";
+        let third = "33333333-3333-3333-3333-333333333333";
+        let base = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        // The middle entry is a root type: its base GUID is the empty string, so
+        // its length prefix is a four-byte zero run rather than a GUID.
+        let bytes = design_metastream(&[
+            (first, base, 3, "Fusion", &[10, 11]),
+            (second, "", 7, "MSketch", &[20]),
+            (third, second, 11, "Body", &[30, 31, 32]),
+        ]);
+        let types = parse(&bytes, "synthetic MetaStream")
+            .expect("a segment closing on its own end parses")
+            .types;
+        assert_eq!(types.len(), 3);
+
+        // Every field of an entry belongs to that entry, not to its successor.
+        assert_eq!(types[0].type_guid, first);
+        assert_eq!(types[0].base_type_guid.as_deref(), Some(base));
+        assert_eq!(types[0].version, 3);
+        assert_eq!(types[0].module, "Fusion");
+        assert_eq!(types[0].entity_ids, [10, 11]);
+
+        assert_eq!(types[1].type_guid, second);
+        assert_eq!(types[1].base_type_guid, None);
+        assert_eq!(types[1].base_type_guid_offset, None);
+        assert_eq!(types[1].version, 7);
+        assert_eq!(types[1].module, crate::records::DESIGN_MODULE_SKETCH);
+        assert_eq!(types[1].entity_ids, [20]);
+
+        assert_eq!(types[2].type_guid, third);
+        assert_eq!(types[2].base_type_guid.as_deref(), Some(second));
+        assert_eq!(types[2].version, 11);
+        assert_eq!(types[2].module, crate::records::DESIGN_MODULE_BODY);
+        assert_eq!(types[2].entity_ids, [30, 31, 32]);
+
+        // Every reported offset addresses the field it names.
+        let string_at = |offset: u64, length: usize| {
+            std::str::from_utf8(&bytes[offset as usize..offset as usize + length])
+                .expect("ASCII field")
+                .to_owned()
+        };
+        let u32_at = |offset: u64| {
+            u32::from_le_bytes(
+                bytes[offset as usize..offset as usize + 4]
+                    .try_into()
+                    .expect("4-byte field"),
+            )
+        };
+        for design_type in &types {
+            assert!(design_type.byte_offset < design_type.type_guid_offset);
+            assert_eq!(
+                string_at(design_type.type_guid_offset, 36),
+                design_type.type_guid
+            );
+            assert_eq!(u32_at(design_type.version_offset), design_type.version);
+            if let (Some(base), Some(offset)) = (
+                &design_type.base_type_guid,
+                design_type.base_type_guid_offset,
+            ) {
+                assert_eq!(&string_at(offset, 36), base);
+            }
+            for (entity_id, offset) in design_type
+                .entity_ids
+                .iter()
+                .zip(&design_type.entity_id_offsets)
+            {
+                assert_eq!(
+                    u64::from_le_bytes(
+                        bytes[*offset as usize..*offset as usize + 8]
+                            .try_into()
+                            .expect("8-byte field")
+                    ),
+                    *entity_id
+                );
+            }
+        }
+
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert!(parse(&trailing, "trailing MetaStream").is_err());
+        assert!(parse(&bytes[..bytes.len() - 1], "truncated MetaStream").is_err());
+        assert!(parse(&bytes[..bytes.len() - 4], "flag-only MetaStream").is_err());
     }
 }

@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::SubdId;
 use cadmpeg_ir::math::Point3;
@@ -38,6 +39,7 @@ enum GripVertexMarker {
 /// entry bytes remain retained in the container, and the serializer-backed
 /// Form join leaves the affected Form on native retention.
 pub(crate) fn decode(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::LossNote>), CodecError> {
     let Some(folder) = scan.design_asset_folder() else {
@@ -52,7 +54,7 @@ pub(crate) fn decode(
             .is_some_and(|ext| ext.eq_ignore_ascii_case("tsm"))
             && entry.name.starts_with(&prefix)
     }) {
-        match parse(&entry.name, scan.entry_bytes(&entry.name)?) {
+        match parse(ctx, &entry.name, scan.entry_bytes(&entry.name)?) {
             Ok(parsed) => {
                 if parsed.unknown_records != 0 {
                     losses.push(cadmpeg_ir::report::LossNote {
@@ -69,6 +71,7 @@ pub(crate) fn decode(
                 }
                 cages.push(parsed.surface);
             }
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => losses.push(cadmpeg_ir::report::LossNote {
                 code: cadmpeg_ir::report::LossKind::shared(
                     cadmpeg_ir::LossTaxonomy::GeometryNotTransferred,
@@ -205,7 +208,7 @@ fn validate_symmetry_map(
     Ok(())
 }
 
-fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
+fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| malformed(name, format!("payload is not UTF-8: {error}")))?;
     if text.lines().next() != Some("#TS0200") {
@@ -663,7 +666,7 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     }
 
     let mut crease_incidence =
-        cadmpeg_core::decode::alloc_filled(live_vertices, 0usize, "f3d subd crease incidence")?;
+        ctx.alloc_filled(live_vertices, 0usize, "f3d subd crease incidence")?;
     for edge in &crease_edges {
         let vertices = edge_ir
             .get(*edge)
@@ -734,6 +737,8 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     const QUAD_TOPOLOGY: &str = "degree 3\n\
 cap-type G1CAPS\n\
 star-smoothness 0\n\
@@ -749,6 +754,13 @@ l 6 2 5 2 0 0 0\nl 3 7 4 1 -1 0 0\n\
 l 0 4 7 3 0 0 0\nl 5 1 6 2 -1 0 0\n\
 ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
 
+    fn parse_cage(bytes: &[u8]) -> Result<super::ParsedCage, cadmpeg_core::CodecError> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
+            .expect("test decode context");
+        super::parse(&ctx, "synthetic.tsm", bytes)
+    }
+
     #[test]
     fn parses_explicit_grip_map() {
         let source = format!(
@@ -756,7 +768,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
-        let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
+        let cage = parse_cage(source.as_bytes()).expect("quad cage");
         assert_quad(&cage.surface);
     }
 
@@ -766,7 +778,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             "#TS0200\n{QUAD_TOPOLOGY}\
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
-        let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
+        let cage = parse_cage(source.as_bytes()).expect("quad cage");
         assert_quad(&cage.surface);
     }
 
@@ -777,7 +789,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              vendor-extension 1 2 3\n\
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
-        let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
+        let cage = parse_cage(source.as_bytes()).expect("quad cage");
         assert_eq!(cage.unknown_records, 1);
         assert_quad(&cage.surface);
     }
@@ -795,7 +807,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              105a vr 0 1\n105a v 1 0\n\
              tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
         );
-        let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("typed metadata");
+        let cage = parse_cage(source.as_bytes()).expect("typed metadata");
         assert_eq!(cage.unknown_records, 0);
         assert_quad(&cage.surface);
     }
@@ -809,7 +821,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n0m gv -1\n\
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n0g\n"
         );
-        let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
+        let cage = parse_cage(source.as_bytes()).expect("quad cage");
         assert_quad(&cage.surface);
     }
 
@@ -837,7 +849,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0m odd-grip-map\n0m gv -1\n0m gvp 1\n0m gvp 2\n0m gvp 3\n0m gvp 4\n\
              0g\n0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
-        let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("shifted quad cage");
+        let cage = parse_cage(source.as_bytes()).expect("shifted quad cage");
         assert_quad(&cage.surface);
     }
 
@@ -849,7 +861,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n",
             QUAD_TOPOLOGY.replace("l 5 1 6 2 -1 0 0", "l")
         );
-        let error = super::parse("synthetic.tsm", source.as_bytes()).expect_err("deleted mate");
+        let error = parse_cage(source.as_bytes()).expect_err("deleted mate");
         assert!(
             error.to_string().contains("names a deleted slot"),
             "unexpected error: {error}"

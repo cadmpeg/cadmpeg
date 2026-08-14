@@ -450,3 +450,6 @@ impl Global {
         notes
     }
 }
+
+#[cfg(test)]
+mod tests;

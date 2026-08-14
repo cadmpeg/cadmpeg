@@ -31,8 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "{} bodies, {} surfaces",
-        result.ir.model.bodies.len(),
-        result.ir.model.surfaces.len()
+        result.ir().model.bodies.len(),
+        result.ir().model.surfaces.len()
     );
     Ok(())
 }
@@ -77,10 +77,6 @@ operations, sketch record lanes, named arrangements and configurations, part
 attributes, external dependency inspection, and numeric expressions transfer.
 Coverage detail lives in the [format-support profile][support]. Byte semantics
 live in the [format notes][spec].
-
-The crate also exposes lower-level container, stream, geometry, NURBS, and
-topology modules for inspection and partial decoding. Most applications should
-use `NxCodec`.
 
 ## Documentation
 

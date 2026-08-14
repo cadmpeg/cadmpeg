@@ -2190,13 +2190,13 @@ fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static
         PropertyValue::Binary(view) => view.window(),
         PropertyValue::Clipboard { format, data } if *format == u32::MAX => {
             let bytes = data.window();
-            let header = bytes.get(..12)?;
-            let image_kind = u32::from_le_bytes(header[..4].try_into().ok()?);
-            let header_size = u16::from_le_bytes(header[4..6].try_into().ok()?);
-            let width = u16::from_le_bytes(header[6..8].try_into().ok()?) as u32;
-            let height = u16::from_le_bytes(header[8..10].try_into().ok()?) as u32;
-            let reserved = u16::from_le_bytes(header[10..12].try_into().ok()?);
-            let png = &bytes[12..];
+            let mut header = View::over_retained(bytes);
+            let image_kind = header.u32_le()?;
+            let header_size = header.u16_le()?;
+            let width = header.u16_le()? as u32;
+            let height = header.u16_le()? as u32;
+            let reserved = header.u16_le()?;
+            let png = bytes.get(12..)?;
             let png_header = png.get(..24)?;
             if image_kind != 3
                 || header_size != 8
@@ -2204,8 +2204,8 @@ fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static
                 || height == 0
                 || reserved != 0
                 || !png_header.starts_with(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR")
-                || u32::from_be_bytes(png_header[16..20].try_into().ok()?) != width
-                || u32::from_be_bytes(png_header[20..24].try_into().ok()?) != height
+                || View::u32_be_at(png, 16)? != width
+                || View::u32_be_at(png, 20)? != height
             {
                 return None;
             }
@@ -2240,70 +2240,4 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
-    use super::*;
-
-    #[test]
-    fn built_in_properties_are_selected_by_embedded_set_identity() {
-        assert_eq!(
-            built_in_property_name("Design Tracking Properties", 5),
-            Some("Part Number")
-        );
-        assert_eq!(
-            built_in_property_name("Inventor Summary Information", 17),
-            Some("Thumbnail")
-        );
-        assert!(known_property_set_fmtid("Design Tracking Properties").is_some());
-        assert!(built_in_property_name("Unknown Set", 5).is_none());
-    }
-
-    #[test]
-    fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
-        let mut projection = MetadataProjection::default();
-        projection.consider(&[0; 16], 5, Some("Part Number"), Some("P-1"), "first");
-        projection.consider(&[0; 16], 5, Some("Part Number"), Some("P-2"), "second");
-        projection.consider(&[0; 16], 29, Some("Description"), Some("Bracket"), "desc");
-        assert_eq!(projection.part_number.as_deref(), Some("P-1"));
-        assert_eq!(projection.description.as_deref(), Some("Bracket"));
-        assert_eq!(
-            projection.bom_properties.get("second").map(String::as_str),
-            Some("P-2")
-        );
-    }
-
-    #[test]
-    fn inventor_clipboard_preview_requires_matching_png_dimensions() {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(&8_u16.to_le_bytes());
-        bytes.extend_from_slice(&4_u16.to_le_bytes());
-        bytes.extend_from_slice(&5_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR");
-        bytes.extend_from_slice(&4_u32.to_be_bytes());
-        bytes.extend_from_slice(&5_u32.to_be_bytes());
-        let arena = DecodeArena::new();
-        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-            .expect("synthetic preview fits policy");
-        let value = PropertyValue::Clipboard {
-            format: u32::MAX,
-            data: root,
-        };
-        assert_eq!(
-            preview_bytes(&value).map(|(_, media)| media),
-            Some("image/png")
-        );
-
-        bytes[8..10].copy_from_slice(&6_u16.to_le_bytes());
-        let arena = DecodeArena::new();
-        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-            .expect("synthetic preview fits policy");
-        let value = PropertyValue::Clipboard {
-            format: u32::MAX,
-            data: root,
-        };
-        assert!(preview_bytes(&value).is_none());
-    }
-}
+mod tests;

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mutates container bytes, then runs detection, inspection, and decoding with
-//! the registered binary container codecs. The first input byte selects
-//! deterministic mutation and truncation strategies. Codec errors are expected;
-//! panics are failures.
+//! the registered container codecs, including STEP, IGES, and SAT. The first
+//! input byte selects deterministic mutation and truncation strategies. Codec
+//! errors are expected; panics are failures.
 
 #![no_main]
 
@@ -12,11 +12,14 @@ use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_codec_f3d::F3dCodec;
 use cadmpeg_codec_freecad::FcstdCodec;
+use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_inventor::InventorCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
+use cadmpeg_codec_sat::SatCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
+use cadmpeg_codec_step::StepCodec;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::InspectOptions;
 use libfuzzer_sys::fuzz_target;
@@ -66,6 +69,9 @@ fuzz_target!(|data: &[u8]| {
         Box::new(CreoCodec),
         Box::new(NxCodec),
         Box::new(RhinoCodec),
+        Box::new(IgesCodec),
+        Box::new(SatCodec),
+        Box::new(StepCodec::default()),
     ];
 
     for codec in codecs {

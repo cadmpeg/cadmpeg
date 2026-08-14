@@ -34,18 +34,17 @@ Spec §3.1 · layout: byte offsets · size: 64 B
 
 `directory_offset + directory_length == file_size`. The parser reads only the magic and the two directory words; the fill and flag regions are never read.
 
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 8 | `magic` | `bytes[8]` | little | spec | 0x00..0x07 magic = "V5_CFV2\0" |
+| 0 | 8 | `magic` | `bytes[8]` | little | spec | 0x00..0x07 magic = "V5_CFV2\0" · value `"V5_CFV2\u0000"` |
 | 8 | 4 | `directory_offset` | `u32` | big | spec | 0x08..0x0B directory_offset = u32 BE |
 | 12 | 4 | `directory_length` | `u32` | big | spec | 0x0C..0x0F directory_length = u32 BE |
 | 16 | 8 | `fill_ff` | `bytes[8]` | little | spec | 0x10..0x17 fill_ff = ff * 8 |
 | 24 | 32 | `fill_00` | `bytes[32]` | little | spec | 0x18..0x37 fill_00 = 00 * 32 |
 | 56 | 8 | `hdr_flags` | `bytes[8]` | little | spec | 0x38..0x3F hdr_flags = 8 raw bytes (not constant) |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-catia/src/container.rs` — The parser's magic matches offset 0x00.
 
 ## `inner_header`
 
@@ -65,6 +64,9 @@ Spec §3.4 · layout: byte offsets · size: 84 B
 
 Descriptor-relative. `k` extent structs of 20 bytes each follow at ds+0x54. The standard name form ends at the three-byte tail ds-3..ds (`00 00 00`); the legacy form starts at ds+0x10 and ends with the same UTF-16LE terminator, with zero fill through ds+0x50.
 
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 12 | 4 | `logical_stream_length` | `u32` | big | spec | ds+0x0c : logical_stream_length (u32be) |
@@ -74,10 +76,6 @@ Unstated regions:
 
 - `0..12` (12 B): The spec states no field between the descriptor start and the logical stream length at ds+0x0c.
 - `16..80` (64 B): The standard name lies before ds and ends at the fixed tail ds-3..ds. In the legacy form, ds+0x10 starts the variable-length printable UTF-16LE run; its terminator and the remaining bytes through ds+0x50 are zero.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-catia/src/container.rs` — The parser locates the extent count at the same descriptor offset.
 
 ## `extent_struct`
 
@@ -287,15 +285,14 @@ Spec §8 · layout: byte offsets · size: 4 B
 
 Header only; the payload of `YY + 8` bytes follows at +4, so the record length is `YY + 12`. Records reference each other by one-based global record ordinal into the `a9 03` stream.
 
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `family` | `bytes[2]` | little | spec | Record framing `a9 03 XX YY <payload[YY+8]>` |
 | 2 | 1 | `tag_hi` | `u8` | little | spec | `a9 03 XX YY <payload[YY+8]>` |
 | 3 | 1 | `tag_lo_length_driver` | `u8` | little | spec | `record_length = YY + 12` |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs` — The parser derives the nominal record end as `position + data[position + 3] + 12`, matching the stated `YY + 12`.
 
 ## `zero_entity_edge_stride_5e1a`
 
@@ -381,9 +378,12 @@ Spec §9 · layout: byte offsets · size: 13 B
 
 Declared size is the spec's stated stride base. The enumerated fields sum to 14 bytes, one more than the stated stride base; the mismatch is recorded below.
 
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/records.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `marker` | `bytes[3]` | little | spec | Framing `E5 0D 03 <cls> <sub> |
+| 0 | 3 | `marker` | `bytes[3]` | little | spec | Framing `E5 0D 03 <cls> <sub> · value `[229, 13, 3]` |
 | 3 | 1 | `class` | `u8` | little | spec | `E5 0D 03 <cls> <sub> <payload_size_u16le> |
 | 4 | 1 | `sub` | `u8` | little | spec | <cls> <sub> <payload_size_u16le> 00 00 00 |
 | 5 | 2 | `payload_size` | `u16` | little | spec | <payload_size_u16le> 00 00 00 <record_id_u32le> |
@@ -393,10 +393,6 @@ Declared size is the spec's stated stride base. The enumerated fields sum to 14 
 **Discrepancies:**
 
 - The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-catia/src/families/e5/records.rs` — The parser's E5 marker constant; its stride arithmetic is `pos + size + 13`, matching the stated stride and not the enumerated field total.
 
 ## `value_block_7c0b`
 
@@ -439,6 +435,9 @@ Spec §7.4 · layout: byte offsets · size: 8 B
 
 The leading byte of a colour-bearing FBB marker can set bit 7 without changing its face-row role. §5.2 gives the row's marker form as `(30|b0) 04 04 ff` at stride 8.
 
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/standard/fbb.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `marker` | `bytes[4]` | little | spec | stores that face's effective color as `marker[4] A B G R` |
@@ -446,10 +445,6 @@ The leading byte of a colour-bearing FBB marker can set bit 7 without changing i
 | 5 | 1 | `blue` | `u8` | little | spec | `marker[4] A B G R` |
 | 6 | 1 | `green` | `u8` | little | spec | `marker[4] A B G R` |
 | 7 | 1 | `red` | `u8` | little | spec | `marker[4] A B G R` |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-catia/src/families/standard/fbb.rs` — The parser reads the colour channels from the last four bytes of the eight-byte row in the stated A B G R order.
 
 ## Not tabulated
 

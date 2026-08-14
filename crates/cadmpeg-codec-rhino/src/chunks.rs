@@ -3,19 +3,24 @@
 
 use std::fmt;
 
+use cadmpeg_core::decode::View;
+
+use crate::layout::file_header;
+use crate::layout::token;
+
 /// The fixed ASCII prefix of a 3DM file header.
-pub(crate) const MAGIC: &[u8; 24] = b"3D Geometry File Format ";
+pub(crate) const MAGIC: &[u8; 24] = &file_header::MAGIC_VALUE;
 /// The end-of-file chunk typecode.
-pub(crate) const TCODE_ENDOFFILE: u32 = 0x0000_7fff;
+pub(crate) const TCODE_ENDOFFILE: u32 = token::END_OF_FILE;
 /// The short table terminator typecode.
-pub(crate) const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
+pub(crate) const TCODE_ENDOFTABLE: u32 = token::END_OF_TABLE;
 /// The legacy summary chunk typecode.
 pub(crate) const TCODE_SUMMARY: u32 = 0x0200_0013;
 const TCODE_V1_OPENNURBS_CLASS_UUID: u32 = 0x0002_fffd;
 /// The bit marking a short chunk.
-pub(crate) const TCODE_SHORT: u32 = 0x8000_0000;
+pub(crate) const TCODE_SHORT: u32 = token::TCODE_SHORT;
 /// The bit marking a CRC-bearing chunk.
-pub(crate) const TCODE_CRC: u32 = 0x0000_8000;
+pub(crate) const TCODE_CRC: u32 = token::TCODE_CRC;
 
 /// Archive versions understood by the chunk layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,14 +155,14 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
         .windows(MAGIC.len())
         .position(|window| window == MAGIC)
         .ok_or(FramingError::InvalidHeader)?;
-    let header_end = start_offset.saturating_add(32);
+    let header_end = start_offset.saturating_add(file_header::LEN);
     if bytes.len() < header_end {
         return Err(FramingError::Truncated {
             offset: bytes.len(),
             needed: header_end - bytes.len(),
         });
     }
-    let version = &bytes[start_offset + 24..header_end];
+    let version = &bytes[start_offset + file_header::ARCHIVE_VERSION..header_end];
     let first_digit = version
         .iter()
         .position(u8::is_ascii_digit)
@@ -186,35 +191,31 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BoundedReader<'a> {
     bytes: &'a [u8],
-    end: usize,
-    position: usize,
+    view: View<'a>,
 }
 
 impl<'a> BoundedReader<'a> {
     /// Creates a reader over `start..end`.
     pub(crate) fn new(bytes: &'a [u8], start: usize, end: usize) -> Result<Self, FramingError> {
-        if start > end || end > bytes.len() {
-            return Err(FramingError::OutOfBounds {
-                offset: start,
-                end,
-                bound: bytes.len(),
-            });
-        }
-        Ok(Self {
-            bytes,
-            end,
-            position: start,
-        })
+        let view =
+            View::over_retained(bytes)
+                .child(start, end)
+                .ok_or(FramingError::OutOfBounds {
+                    offset: start,
+                    end,
+                    bound: bytes.len(),
+                })?;
+        Ok(Self { bytes, view })
     }
 
     /// Returns the absolute cursor offset.
     pub(crate) fn position(&self) -> usize {
-        self.position
+        self.view.position()
     }
 
     /// Returns the absolute end offset.
     pub(crate) fn end(&self) -> usize {
-        self.end
+        self.view.end()
     }
 
     /// Returns the complete backing byte slice.
@@ -224,81 +225,67 @@ impl<'a> BoundedReader<'a> {
 
     /// Returns a reader over the unread bounded bytes.
     pub(crate) fn unread(&self) -> Result<Self, FramingError> {
-        Self::new(self.bytes, self.position, self.end)
+        Self::new(self.bytes, self.view.position(), self.view.end())
     }
 
     /// Returns the unread byte count.
     pub(crate) fn remaining(&self) -> usize {
-        self.end - self.position
+        self.view.remaining()
     }
 
     /// Skips exactly `count` bytes.
     pub(crate) fn skip(&mut self, count: usize) -> Result<(), FramingError> {
-        let end = self
-            .position
-            .checked_add(count)
-            .ok_or(FramingError::Overflow {
-                offset: self.position,
-            })?;
-        self.require(end)?;
-        self.position = end;
+        self.need(count)?;
+        self.view.skip(count).expect("length checked");
         Ok(())
     }
 
     /// Reads a byte.
     pub(crate) fn u8(&mut self) -> Result<u8, FramingError> {
-        let bytes = self.take(1)?;
-        Ok(bytes[0])
+        self.need(1)?;
+        Ok(self.view.u8().expect("length checked"))
     }
 
     /// Reads a little-endian unsigned 32-bit value.
     pub(crate) fn u32(&mut self) -> Result<u32, FramingError> {
-        let bytes = self.take(4)?;
-        Ok(u32::from_le_bytes(
-            bytes.try_into().expect("length checked"),
-        ))
+        self.need(4)?;
+        Ok(self.view.u32_le().expect("length checked"))
     }
 
     /// Reads a little-endian signed 32-bit value.
     pub(crate) fn i32(&mut self) -> Result<i32, FramingError> {
-        Ok(self.u32()? as i32)
+        self.need(4)?;
+        Ok(self.view.i32_le().expect("length checked"))
     }
 
     /// Reads a little-endian unsigned 64-bit value.
     pub(crate) fn u64(&mut self) -> Result<u64, FramingError> {
-        let bytes = self.take(8)?;
-        Ok(u64::from_le_bytes(
-            bytes.try_into().expect("length checked"),
-        ))
+        self.need(8)?;
+        Ok(self.view.u64_le().expect("length checked"))
     }
 
     /// Reads a little-endian signed 64-bit value.
     pub(crate) fn i64(&mut self) -> Result<i64, FramingError> {
-        Ok(self.u64()? as i64)
+        self.need(8)?;
+        Ok(self.view.i64_le().expect("length checked"))
     }
 
     /// Reads a little-endian signed 16-bit value.
     pub(crate) fn i16(&mut self) -> Result<i16, FramingError> {
-        let bytes = self.take(2)?;
-        Ok(i16::from_le_bytes(
-            bytes.try_into().expect("length checked"),
-        ))
+        self.need(2)?;
+        Ok(self.view.i16_le().expect("length checked"))
     }
 
     /// Reads a little-endian unsigned 16-bit value.
     pub(crate) fn u16(&mut self) -> Result<u16, FramingError> {
-        let bytes = self.take(2)?;
-        Ok(u16::from_le_bytes(
-            bytes.try_into().expect("length checked"),
-        ))
+        self.need(2)?;
+        Ok(self.view.u16_le().expect("length checked"))
     }
 
     /// Reads a little-endian IEEE-754 binary64 value.
     pub(crate) fn f64(&mut self) -> Result<f64, FramingError> {
-        let bytes = self.take(8)?;
-        Ok(f64::from_le_bytes(
-            bytes.try_into().expect("length checked"),
-        ))
+        self.need(8)?;
+        Ok(self.view.f64_le().expect("length checked"))
     }
 
     /// Reads an archive boolean encoded as one byte.
@@ -308,37 +295,32 @@ impl<'a> BoundedReader<'a> {
 
     /// Reads a little-endian IEEE-754 binary32 value.
     pub(crate) fn f32(&mut self) -> Result<f32, FramingError> {
-        let bytes = self.take(4)?;
-        Ok(f32::from_le_bytes(
-            bytes.try_into().expect("length checked"),
-        ))
+        self.need(4)?;
+        Ok(self.view.f32_le().expect("length checked"))
     }
 
     /// Returns a bounded slice and advances the cursor.
     pub(crate) fn take(&mut self, count: usize) -> Result<&'a [u8], FramingError> {
-        let end = self
-            .position
-            .checked_add(count)
-            .ok_or(FramingError::Overflow {
-                offset: self.position,
-            })?;
-        self.require(end)?;
-        let result = &self.bytes[self.position..end];
-        self.position = end;
-        Ok(result)
+        self.need(count)?;
+        Ok(self.view.take(count).expect("length checked"))
     }
 
     /// Reads a fixed-width byte array.
     pub(crate) fn array<const N: usize>(&mut self) -> Result<[u8; N], FramingError> {
-        Ok(self.take(N)?.try_into().expect("array length checked"))
+        self.need(N)?;
+        Ok(self.view.array().expect("array length checked"))
     }
 
-    fn require(&self, end: usize) -> Result<(), FramingError> {
-        if end > self.end {
+    fn need(&self, count: usize) -> Result<(), FramingError> {
+        let offset = self.view.position();
+        let end = offset
+            .checked_add(count)
+            .ok_or(FramingError::Overflow { offset })?;
+        if end > self.view.end() {
             Err(FramingError::OutOfBounds {
-                offset: self.position,
+                offset,
                 end,
-                bound: self.end,
+                bound: self.view.end(),
             })
         } else {
             Ok(())
@@ -601,12 +583,10 @@ pub(crate) fn verify_checksum_ranges(
     }
     match chunk.checksum_kind {
         ChecksumKind::Crc16 => {
-            let actual = u32::from(u16::from_le_bytes(stored.try_into().map_err(|_| {
-                FramingError::Truncated {
-                    offset: checksum.start,
-                    needed: 2,
-                }
-            })?));
+            let actual = u32::from(View::u16_le_at(stored, 0).ok_or(FramingError::Truncated {
+                offset: checksum.start,
+                needed: 2,
+            })?);
             let expected = u32::from(
                 ranges
                     .iter()
@@ -619,11 +599,10 @@ pub(crate) fn verify_checksum_ranges(
             })
         }
         ChecksumKind::Crc32 => {
-            let actual =
-                u32::from_le_bytes(stored.try_into().map_err(|_| FramingError::Truncated {
-                    offset: checksum.start,
-                    needed: 4,
-                })?);
+            let actual = View::u32_le_at(stored, 0).ok_or(FramingError::Truncated {
+                offset: checksum.start,
+                needed: 4,
+            })?;
             let mut hasher = crc32fast::Hasher::new();
             for range in ranges {
                 hasher.update(&bytes[range.clone()]);
@@ -713,18 +692,11 @@ pub(crate) fn parse_eof(
     {
         return Err(FramingError::MissingEof);
     }
+    let mut body = BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?;
     let file_size = if archive.uses_eight_byte_values() {
-        u64::from_le_bytes(
-            bytes[chunk.body.start..chunk.body.start + 8]
-                .try_into()
-                .expect("EOF width checked"),
-        )
+        body.u64()?
     } else {
-        u64::from(u32::from_le_bytes(
-            bytes[chunk.body.start..chunk.body.start + 4]
-                .try_into()
-                .expect("EOF width checked"),
-        ))
+        u64::from(body.u32()?)
     };
     Ok(Some(Eof { offset, file_size }))
 }
@@ -746,3 +718,6 @@ mod direct_range_tests {
         assert!(direct_checksum_ranges(&(10..50), &[15..30, 20..40]).is_err());
     }
 }
+
+#[cfg(test)]
+mod tests;

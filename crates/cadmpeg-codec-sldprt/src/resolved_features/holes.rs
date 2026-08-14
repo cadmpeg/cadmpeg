@@ -17,6 +17,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
     SketchInputKind,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
     Angle, FeatureDefinition, HoleBottom, HoleKind, HolePlacement, Length, Termination,
 };
@@ -157,7 +158,8 @@ fn hole_position_sketch_source(
         .filter_map(|bytes| {
             (bytes[..2] == [0x00, 0xc0]
                 && (bytes[6..12] == [0; 6] || bytes[6..12] == [0, 0, 0, 0, 0xff, 0xfe]))
-            .then(|| u32::from_le_bytes(bytes[2..6].try_into().expect("four-byte source")))
+            .then(|| View::u32_le_at(bytes, 2))
+            .flatten()
             .filter(|source| *source != 0 && *source != u32::MAX)
         })
         .collect::<HashSet<_>>();
@@ -3666,18 +3668,14 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
         if payload.get(declaration..declaration + DECLARATION.len()) != Some(DECLARATION)
             || payload.get(declaration + 267..declaration + 275) != Some(HANDLE_PAIR)
             || payload.get(declaration + 275..declaration + 279) != Some(&[0; 4])
-            || payload
-                .get(declaration + 279..declaration + 283)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(u32::from_le_bytes)
-                .is_none_or(|address| address == 0)
+            || View::u32_le_at(payload, declaration + 279).is_none_or(|address| address == 0)
             || payload.get(declaration + 283..declaration + 299) != Some(&[0; 16])
         {
             return None;
         }
         let scalar = |index: usize| {
             let offset = declaration + 299 + index * 8;
-            let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+            let value = View::f64_le_at(payload, offset)?;
             value.is_finite().then_some(value)
         };
         let depth = scalar(0)?;
@@ -3693,11 +3691,7 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
             payload.get(record_end..*offset).is_some_and(|padding| {
                 padding.iter().all(|byte| *byte == 0)
                     && (payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)
-                        || payload
-                            .get(*offset..*offset + 2)
-                            .and_then(|bytes| bytes.try_into().ok())
-                            .map(u16::from_le_bytes)
-                            .is_some_and(is_class_token))
+                        || View::u16_le_at(payload, *offset).is_some_and(is_class_token))
             })
         })?;
         (depth > 0.0 && (norm - 1.0).abs() <= 1.0e-9 && next_record < end).then_some((
@@ -4082,4 +4076,4 @@ fn compact_position_assignments(
 }
 
 #[cfg(test)]
-mod hole_axis_tests;
+mod tests;

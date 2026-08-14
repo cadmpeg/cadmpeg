@@ -148,36 +148,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let bytes = fs::read(&path)?;
         let first = FcstdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
         let second = FcstdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
-        let canonical = first.ir.to_canonical_json()?;
-        let deterministic = canonical == second.ir.to_canonical_json()?;
-        let neutral = cadmpeg_ir::validate_neutral(&first.ir, Vec::new());
-        let native = validate_native(&first.ir);
+        let canonical = first.ir().to_canonical_json()?;
+        let deterministic = canonical == second.ir().to_canonical_json()?;
+        let neutral = cadmpeg_ir::validate_neutral(first.ir(), Vec::new());
+        let native = validate_native(first.ir());
         let namespace = first
-            .ir
+            .ir()
             .native
             .namespace("fcstd")
             .ok_or("decoded fixture has no fcstd namespace")?;
         let mut first_write = Vec::new();
         FcstdCodec
             .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &first.ir,
+                ir: first.ir(),
                 fidelity: None,
             })
             .and_then(|plan| plan.write_to(&mut first_write))?;
         let mut second_write = Vec::new();
         FcstdCodec
             .plan(cadmpeg_ir::codec::EncodeInput {
-                ir: &first.ir,
+                ir: first.ir(),
                 fidelity: None,
             })
             .and_then(|plan| plan.write_to(&mut second_write))?;
         let written =
             FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
-        let semantic_round_trip =
-            semantic_fingerprint(first.ir.clone())? == semantic_fingerprint(written.ir.clone())?;
+        let semantic_round_trip = semantic_fingerprint(first.ir().clone())?
+            == semantic_fingerprint(written.ir().clone())?;
         let side_entries_preserved =
-            logical_side_entries(&first.ir)? == logical_side_entries(&written.ir)?;
-        let mut edited_ir = first.ir.clone();
+            logical_side_entries(first.ir())? == logical_side_entries(written.ir())?;
+        let mut edited_ir = first.ir().clone();
         FcstdCodec.set_property_value_attribute(
             &mut edited_ir,
             FcstdPropertyOwner::Document,
@@ -196,7 +196,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let edited =
             FcstdCodec.decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())?;
         let typed_edit_round_trip =
-            property_value_attribute(&edited.ir, "fcstd:native:document#0", "Label", 0, "value")
+            property_value_attribute(edited.ir(), "fcstd:native:document#0", "Label", 0, "value")
                 == Some("cadmpeg L9 edit".to_owned());
         namespace_version = Some(namespace.version);
         observed.native_arenas.extend(
@@ -213,7 +213,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         observed
             .document_variants
             .insert(if has_gui { "gui" } else { "headless" }.to_owned());
-        collect_native_observations(&first.ir, &mut observed);
+        collect_native_observations(first.ir(), &mut observed);
         for (name, count) in &neutral.entity_counts {
             *total_counts.entry(name.clone()).or_default() += count;
             if *count > 0 && !name.starts_with("native.") {
@@ -226,7 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             canonical_cadir_sha256: sha256_hex(canonical.as_bytes()),
             deterministic,
             blocking_losses: first
-                .report
+                .report()
                 .losses
                 .iter()
                 .filter(|loss| loss.severity >= Severity::Blocking)
@@ -240,7 +240,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .iter()
                 .filter(|finding| finding.severity >= Severity::Error)
                 .count(),
-            exact_byte_coverage: exact_byte_coverage(&first.ir),
+            exact_byte_coverage: exact_byte_coverage(first.ir()),
             write_deterministic: first_write == second_write,
             semantic_round_trip,
             side_entries_preserved,
@@ -749,7 +749,7 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         .and_then(|plan| plan.write_to(&mut second))?;
     let decoded = FcstdCodec.decode(&mut Cursor::new(&first), &DecodeOptions::default())?;
     let namespace = decoded
-        .ir
+        .ir()
         .native
         .namespace("fcstd")
         .ok_or("generated CADIR has no fcstd namespace")?;
@@ -767,7 +767,7 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
     let typed_parameters = ["Length", "Width", "Height"]
         .into_iter()
         .filter_map(|name| {
-            property_value_attribute(&decoded.ir, object_owner, name, 0, "value")
+            property_value_attribute(decoded.ir(), object_owner, name, 0, "value")
                 .map(|value| (name.to_owned(), value))
         })
         .collect();
@@ -784,7 +784,7 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
     Ok(SourceLessWriteProfile {
         generated: true,
         deterministic: first == second,
-        decodes_cleanly: validate_native(&decoded.ir).is_empty(),
+        decodes_cleanly: validate_native(decoded.ir()).is_empty(),
         object_type,
         typed_parameters,
         unsupported_target_rejected,

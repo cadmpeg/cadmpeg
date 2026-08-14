@@ -11,11 +11,12 @@ mod decode;
 mod design;
 mod external_reference;
 mod feature;
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 #[path = "fuzzing.rs"]
 pub mod fuzz;
 mod kernel;
+/// Byte-offset constants generated from `docs/layouts/inventor.toml`.
+pub(crate) mod layout;
 mod materials;
 mod native;
 mod pmdc;
@@ -90,4 +91,4 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod test_support;

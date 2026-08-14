@@ -22,17 +22,14 @@ Spec §11 · layout: byte offsets · size: 264 B
 
 Both integer byte orders are accepted when the magic and version agree, so the header states no single endianness. Two 32-bit counts follow at +264, then ordered float32 XYZ points and facets, then six float32 bounding-box limits.
 
+Parsed by:
+- `crates/cadmpeg-codec-freecad/src/application_geometry.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `magic` | `u32` | unstated | spec | The spec states outright that both byte orders are accepted for this word. |
-| 4 | 4 | `version` | `u32` | unstated | spec | The spec states outright that both byte orders are accepted for this word. |
+| 0 | 4 | `magic` | `u32` | unstated | spec | The spec states outright that both byte orders are accepted for this word. · value `2695938256` |
+| 4 | 4 | `version` | `u32` | unstated | spec | The spec states outright that both byte orders are accepted for this word. · value `65536` |
 | 8 | 256 | `information` | `bytes[256]` | unstated | spec | and a 256-byte information field |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-freecad/src/application_geometry.rs` — The parser's mesh magic matches offset 0.
-- `crates/cadmpeg-codec-freecad/src/application_geometry.rs` — The parser's mesh version matches offset 4.
-- `crates/cadmpeg-codec-freecad/src/application_geometry.rs` — The parser skips the stated 256-byte information field.
 
 ## `mesh_facet`
 
@@ -40,14 +37,13 @@ Spec §11 · layout: byte offsets · size: 24 B
 
 Six 32-bit indices. The 24-byte stride is derived from the stated field count and the record's 32-bit index width; the spec states no total.
 
+Parsed by:
+- `crates/cadmpeg-codec-freecad/src/application_geometry.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 12 | `point_indices` | `u32[3]` | little | spec | Each facet contains three zero-based point indices |
 | 12 | 12 | `neighbour_indices` | `u32[3]` | little | derived | Offset derived from the three preceding 32-bit indices. |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-freecad/src/application_geometry.rs` — The parser bounds the facet array at 24 bytes per facet, matching the derived stride.
 
 ## `point_kernel_side_entry_header`
 
@@ -71,7 +67,7 @@ Applies to `DiffuseColor`, `LineColorArray`, and `PointColorArray`. A count of o
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-freecad/src/gui.rs` — The bounded view reads the leading count and each packed-colour record as little-endian u32.
+- `crates/cadmpeg-codec-freecad/src/gui.rs` — The parser bounds each packed-colour record at 4 bytes after the little-endian count prefix.
 
 ## `link_array_side_entry_header`
 
@@ -79,13 +75,12 @@ Spec §9 · layout: byte offsets · size: 4 B
 
 Fixed prefix only. Placement records carry position plus quaternion (seven components); scale records carry three. The exact entry length selects f32 or f64 components, so no fixed element stride exists.
 
+Parsed by:
+- `crates/cadmpeg-codec-freecad/src/product.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `element_count` | `u32` | little | spec | Each side entry begins with a little-endian element count |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-freecad/src/product.rs` — The parser selects f64 or f32 components by matching the entry length, reading both little-endian.
 
 ## Not tabulated
 

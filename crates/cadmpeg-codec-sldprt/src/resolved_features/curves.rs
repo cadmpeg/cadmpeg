@@ -15,7 +15,7 @@ use super::scalars::feature_object_name;
 use super::transforms::quantize;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
@@ -362,12 +362,12 @@ pub(super) fn compact_bounded_curve_tangent(payload: &[u8], offset: usize) -> Op
         || marker_profile_curve_role(payload, detail) != Some(2)
         || payload.get(detail + 31..detail + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
         || payload.get(detail + 35..detail + 39) != Some(&[0x00, 0x00, 0x0c, 0x00])
-        || f64::from_le_bytes(payload.get(detail + 48..detail + 56)?.try_into().ok()?) != 1.0
+        || View::f64_le_at(payload, detail + 48)? != 1.0
     {
         return None;
     }
-    let u = f64::from_le_bytes(payload.get(detail + 64..detail + 72)?.try_into().ok()?);
-    let v = f64::from_le_bytes(payload.get(detail + 72..detail + 80)?.try_into().ok()?);
+    let u = View::f64_le_at(payload, detail + 64)?;
+    let v = View::f64_le_at(payload, detail + 72)?;
     (u.is_finite() && v.is_finite() && (u.hypot(v) - 1.0).abs() <= 1.0e-9).then_some([u, v])
 }
 
@@ -493,8 +493,8 @@ pub(super) fn slot_curve_reference_cells(
                     (cell[4..8] == [0xff; 4]
                         && (cell_size == 8 || cell.get(8..12) == Some(&[0; 4])))
                     .then_some((
-                        u16::from_le_bytes(cell[..2].try_into().ok()?),
-                        usize::from(u16::from_le_bytes(cell[2..4].try_into().ok()?)),
+                        View::u16_le_at(cell, 0)?,
+                        usize::from(View::u16_le_at(cell, 2)?),
                     ))
                 })
                 .collect::<Option<Vec<_>>>()?
@@ -1538,17 +1538,9 @@ pub(super) fn legacy_extended_rectangle_line_endpoints(
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        payload
-            .get(offset + relative..offset + relative + 2)?
-            .try_into()
-            .ok()
-            .map(u16::from_le_bytes)
-            .map(u32::from)
-    };
+    let endpoint = |relative: usize| View::u16_le_at(payload, offset + relative).map(u32::from);
     let endpoints = [endpoint(56)?, endpoint(58)?];
-    let terminal_state =
-        u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?);
+    let terminal_state = View::u16_le_at(payload, offset + 74)?;
     let continued = sketch_marker_prefix_at(payload, offset.saturating_add(84));
     let terminal = payload.get(offset + 72..offset + 84) == Some(&[0; 12]);
     (matches!(terminal_state, 0 | 2) && endpoints[0] != endpoints[1] && (continued || terminal))
@@ -1579,8 +1571,7 @@ pub(super) fn current_compact_rectangle_line_endpoints(
         return None;
     }
     let endpoints = one_based_u16_endpoint_pair(payload, offset, 56)?;
-    let terminal_state =
-        u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?);
+    let terminal_state = View::u16_le_at(payload, offset + 74)?;
     let continued = sketch_marker_prefix_at(payload, offset.saturating_add(84));
     let terminal = payload.get(offset + 72..offset + 84) == Some(&[0; 12]);
     (matches!(terminal_state, 0 | 2) && endpoints[0] != endpoints[1] && (continued || terminal))
@@ -1607,14 +1598,7 @@ pub(super) fn current_wide_rectangle_line_endpoints(
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        payload
-            .get(offset + relative..offset + relative + 2)?
-            .try_into()
-            .ok()
-            .map(u16::from_le_bytes)
-            .map(u32::from)
-    };
+    let endpoint = |relative: usize| View::u16_le_at(payload, offset + relative).map(u32::from);
     let endpoints = [endpoint(64)?, endpoint(66)?];
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
@@ -1825,13 +1809,11 @@ pub(super) fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> 
         return None;
     };
     let header = offset.checked_add(NAME.len())?;
-    let region_token = u16::from_le_bytes(payload.get(header..header + 2)?.try_into().ok()?);
+    let region_token = View::u16_le_at(payload, header)?;
     if region_token == 0 {
         return None;
     }
-    let count = usize::from(u16::from_le_bytes(
-        payload.get(header + 2..header + 4)?.try_into().ok()?,
-    ));
+    let count = usize::from(View::u16_le_at(payload, header + 2)?);
     if count < 3 {
         return None;
     }
@@ -1841,7 +1823,7 @@ pub(super) fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> 
     let mut entry_token = None;
     for index in 0..count {
         let entry = header.checked_add(4 + index * 12)?;
-        let token = u16::from_le_bytes(payload.get(entry..entry + 2)?.try_into().ok()?);
+        let token = View::u16_le_at(payload, entry)?;
         if !matches!(token, 0x80e1 | 0x8386 | 0xbc87)
             || entry_token.is_some_and(|existing| existing != token)
             || payload.get(entry + 4..entry + 8)? != [0xff; 4]
@@ -1850,9 +1832,7 @@ pub(super) fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> 
             return None;
         }
         entry_token = Some(token);
-        addresses.push(u16::from_le_bytes(
-            payload.get(entry + 2..entry + 4)?.try_into().ok()?,
-        ));
+        addresses.push(View::u16_le_at(payload, entry + 2)?);
     }
     let expected = (1..=u16::try_from(count).ok()?).collect::<HashSet<_>>();
     (addresses.iter().copied().collect::<HashSet<_>>() == expected).then_some(addresses)
@@ -1861,22 +1841,19 @@ pub(super) fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> 
 pub(super) fn compact_line_chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     let matches = (0..payload.len()).filter_map(|offset| {
         let bytes = payload.get(offset..)?;
-        let count = usize::from(u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?));
+        let count = usize::from(View::u16_le_at(bytes, 0)?);
         if !(3..=64).contains(&count) {
             return None;
         }
         let addresses_end = 2usize.checked_add(count.checked_mul(4)?)?;
         let trailer = bytes.get(addresses_end..addresses_end.checked_add(40)?)?;
-        if u32::from_le_bytes(trailer.get(..4)?.try_into().ok()?) != 1
+        if View::u32_le_at(trailer, 0)? != 1
             || trailer.get(4..6)? != [0, 0]
-            || u32::from_le_bytes(trailer.get(6..10)?.try_into().ok()?)
-                != u32::try_from(count + 2).ok()?
+            || View::u32_le_at(trailer, 6)? != u32::try_from(count + 2).ok()?
             || trailer.get(10..14)? != [0xff; 4]
             || trailer.get(14..22)?.iter().any(|byte| *byte != 0)
-            || u32::from_le_bytes(trailer.get(22..26)?.try_into().ok()?)
-                != u32::try_from(count + 1).ok()?
-            || u32::from_le_bytes(trailer.get(26..30)?.try_into().ok()?)
-                != u32::try_from(count + 1).ok()?
+            || View::u32_le_at(trailer, 22)? != u32::try_from(count + 1).ok()?
+            || View::u32_le_at(trailer, 26)? != u32::try_from(count + 1).ok()?
             || trailer.get(30..36)? != [0xff, 0xfe, 0xff, 0, 0, 0]
             || trailer.get(36..40)? != [0xff; 4]
         {
@@ -1885,10 +1862,7 @@ pub(super) fn compact_line_chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
         let addresses = (0..count)
             .filter_map(|index| {
                 let offset = 2 + index * 4;
-                u16::try_from(u32::from_le_bytes(
-                    bytes.get(offset..offset + 4)?.try_into().ok()?,
-                ))
-                .ok()
+                u16::try_from(View::u32_le_at(bytes, offset)?).ok()
             })
             .collect::<Vec<_>>();
         let expected = (1..=u16::try_from(count).ok()?).collect::<HashSet<_>>();

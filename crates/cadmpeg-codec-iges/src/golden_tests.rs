@@ -54,13 +54,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(mut result) => {
-            if let Some(source) = result.ir.source.as_mut() {
+            if let Some(source) = result.ir_mut().source.as_mut() {
                 elide_local_digests(&mut source.attributes);
             }
             serde_json::json!({
-                "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
-                "report": serde_json::to_value(&result.report).expect("serialize report"),
-                "source_fidelity": serde_json::to_value(&result.source_fidelity)
+                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
                     .expect("serialize source_fidelity"),
             })
         }
@@ -87,7 +87,7 @@ fn encode_snapshot(bytes: &[u8]) -> String {
     let outcome = Encoder::plan(
         &IgesEncoder::default(),
         EncodeInput {
-            ir: &decoded.ir,
+            ir: decoded.ir(),
             fidelity: None,
         },
     )

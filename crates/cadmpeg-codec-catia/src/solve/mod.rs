@@ -11,3 +11,6 @@ pub(crate) mod missing_edge;
 pub(crate) mod union_find;
 
 pub(crate) use union_find::UnionFind;
+
+#[cfg(test)]
+mod tests;

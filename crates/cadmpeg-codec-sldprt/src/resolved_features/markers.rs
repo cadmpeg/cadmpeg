@@ -25,6 +25,7 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
@@ -32,6 +33,10 @@ use cadmpeg_ir::sketches::{
     SpatialSketchId,
 };
 use std::collections::{BTreeMap, HashMap};
+
+use crate::layout::compact_legacy_code_two_profile_point as code_two;
+use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
+use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
 
 /// Project spatial sketches from their model-space marker coordinates or bounded lines.
 pub(crate) fn spatial_sketches(
@@ -271,9 +276,11 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 if prefix == SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(0)
                     && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             prefix
                 if prefix == SKETCH_MARKER
@@ -287,9 +294,11 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 if prefix == SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(1)
                     && locus == [0x05, 0x00, 0x01, 0x00]
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             prefix
                 if (prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER)
@@ -297,9 +306,11 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                     && locus == [0x04, 0x00, 0x02, 0x00]
                     && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
                     && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             prefix
                 if prefix == LEGACY_SKETCH_MARKER
@@ -325,9 +336,11 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                     && matches!(marker_native_code(payload, offset), Some(0 | 2 | 3))
                     && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
                     && marker_object_index(payload, offset).is_some()
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, false)
+                (offset.checked_add(spatial_pre::COORDINATES)?, false)
             }
             prefix
                 if prefix == LEGACY_EXTENDED_SKETCH_MARKER
@@ -352,18 +365,22 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 if prefix == LEGACY_EXTENDED_SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(1)
                     && locus == [0x04, 0x00, 0x02, 0x00]
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             prefix
                 if prefix == LEGACY_EXTENDED_SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(0)
                     && locus == [0x05, 0x00, 0x01, 0x00]
                     && marker_object_index(payload, offset).is_some()
-                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(
+                        offset + spatial_pre::COORDINATE_TAG..offset + spatial_pre::COORDINATES,
+                    ) == Some(&[0x0e, 0x00]) =>
             {
-                (offset.checked_add(66)?, true)
+                (offset.checked_add(spatial_pre::COORDINATES)?, true)
             }
             _ => return None,
         };
@@ -375,7 +392,7 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let coordinate_offset = marker_spatial_coordinate_offset(payload, offset)?;
     let coordinate = |offset: usize| {
-        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(payload, offset)?;
         (value == 0.0 || value.is_normal()).then_some(value * NATIVE_TO_IR)
     };
     Some(Point3::new(
@@ -390,9 +407,9 @@ pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
         .into_iter()
         .filter_map(|offset| {
             let point = Point3::new(
-                f64::from_le_bytes(payload.get(offset + 45..offset + 53)?.try_into().ok()?),
-                f64::from_le_bytes(payload.get(offset + 53..offset + 61)?.try_into().ok()?),
-                f64::from_le_bytes(payload.get(offset + 61..offset + 69)?.try_into().ok()?),
+                View::f64_le_at(payload, offset + 45)?,
+                View::f64_le_at(payload, offset + 53)?,
+                View::f64_le_at(payload, offset + 61)?,
             );
             [point.x, point.y, point.z]
                 .into_iter()
@@ -603,20 +620,12 @@ pub(super) fn alternate_current_curve_body(payload: &[u8], offset: usize) -> boo
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && supported_header
         && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
-        && payload
-            .get(offset + 17..offset + 21)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|code| matches!(code, 0 | 2))
+        && View::u32_le_at(payload, offset + 17).is_some_and(|code| matches!(code, 0 | 2))
         && marker_is_geometry_locus(payload, offset)
         && payload.get(offset + 29..offset + 31)
             == Some(&if role == Some(1) { [1, 0] } else { [0, 0] })
         && payload.get(offset + 31..offset + 35) == Some(&[0x00, 0x00, 0x80, 0xbf])
-        && payload
-            .get(offset + 35..offset + 39)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|state| state != 0)
+        && View::u32_le_at(payload, offset + 35).is_some_and(|state| state != 0)
         && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
         && payload.get(offset + 60..offset + 64)
             == Some(&if role == Some(1) {
@@ -637,21 +646,13 @@ pub(super) fn compact_legacy_marker_body(payload: &[u8], offset: usize) -> bool 
         && (payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
             || payload.get(offset + 5..offset + 13)
                 == Some(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]))
-        && payload
-            .get(offset + 13..offset + 17)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|code| matches!(code, 0 | 1))
+        && View::u32_le_at(payload, offset + 13).is_some_and(|code| matches!(code, 0 | 1))
         && payload.get(offset + 17..offset + 19) == Some(&[0; 2])
         && matches!(
             locus,
             Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
         )
-        && payload
-            .get(offset + 23..offset + 25)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u16::from_le_bytes)
-            .is_some_and(|role| matches!(role, 1 | 2))
+        && View::u16_le_at(payload, offset + 23).is_some_and(|role| matches!(role, 1 | 2))
         && payload.get(offset + 27..offset + 31) == Some(&[0; 4])
         && matches!(payload.get(offset + 31), Some(0x04 | 0x0c))
 }
@@ -659,21 +660,13 @@ pub(super) fn compact_legacy_marker_body(payload: &[u8], offset: usize) -> bool 
 pub(super) fn packed_legacy_marker_body(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
-        && payload
-            .get(offset + 13..offset + 17)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|code| code <= 3)
+        && View::u32_le_at(payload, offset + 13).is_some_and(|code| code <= 3)
         && payload.get(offset + 17..offset + 19) == Some(&[0; 2])
         && matches!(
             payload.get(offset + 19..offset + 23),
             Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
         )
-        && payload
-            .get(offset + 23..offset + 25)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u16::from_le_bytes)
-            .is_some_and(|role| matches!(role, 1 | 2))
+        && View::u16_le_at(payload, offset + 23).is_some_and(|role| matches!(role, 1 | 2))
         && payload.get(offset + 27..offset + 29) == Some(&[0; 2])
         && matches!(payload.get(offset + 29), Some(0x04 | 0x05 | 0x0c | 0x44))
         && payload.get(offset + 40..offset + 48) == Some(&1.0f64.to_le_bytes())
@@ -688,12 +681,7 @@ pub(super) fn marker_native_code(payload: &[u8], offset: usize) -> Option<u32> {
     } else {
         17
     };
-    Some(u32::from_le_bytes(
-        payload
-            .get(offset + relative..offset + relative + 4)?
-            .try_into()
-            .ok()?,
-    ))
+    View::u32_le_at(payload, offset + relative)
 }
 
 pub(super) fn sketch_marker_prefix_at(payload: &[u8], offset: usize) -> bool {
@@ -806,8 +794,7 @@ pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
         return None;
     };
     let start = offset.checked_add(relative)?;
-    let end = start.checked_add(4)?;
-    let id = u32::from_le_bytes(payload.get(start..end)?.try_into().ok()?);
+    let id = View::u32_le_at(payload, start)?;
     (id != u32::MAX).then_some(id)
 }
 
@@ -821,7 +808,7 @@ fn marker_state_value(payload: &[u8], offset: usize) -> Option<f64> {
         48
     };
     let offset = offset.checked_add(relative)?;
-    let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+    let value = View::f64_le_at(payload, offset)?;
     value.is_finite().then_some(value)
 }
 
@@ -925,8 +912,8 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 }
 
 pub(super) fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
-    let first = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
-    let second = f64::from_le_bytes(payload.get(offset + 8..offset + 16)?.try_into().ok()?);
+    let first = View::f64_le_at(payload, offset)?;
+    let second = View::f64_le_at(payload, offset + 8)?;
     (first.is_finite() && second.is_finite()).then_some([first, second])
 }
 
@@ -942,8 +929,8 @@ pub(super) fn extended_four_link_profile_point_coordinates(
     let cells = [78, 86].map(|relative| {
         let cell = payload.get(offset + relative..offset + relative + 8)?;
         Some((
-            u16::from_le_bytes(cell[..2].try_into().ok()?),
-            u16::from_le_bytes(cell[2..4].try_into().ok()?),
+            View::u16_le_at(cell, 0)?,
+            View::u16_le_at(cell, 2)?,
             cell[4..8] == [0xff; 4],
         ))
     });
@@ -994,14 +981,8 @@ fn legacy_extended_linked_profile_point_coordinates(
         }
         _ => false,
     };
-    let link_count = payload
-        .get(offset + 76..offset + 78)
-        .and_then(|bytes| bytes.try_into().ok())
-        .map(u16::from_le_bytes);
-    let trailer_state = payload
-        .get(offset + 134..offset + 136)
-        .and_then(|bytes| bytes.try_into().ok())
-        .map(u16::from_le_bytes);
+    let link_count = View::u16_le_at(payload, offset + 76);
+    let trailer_state = View::u16_le_at(payload, offset + 134);
     let standard_link_state = matches!(
         payload.get(offset + 74..offset + 78),
         Some([0x00 | 0x01, 0x00, 0x02 | 0x03, 0x00])
@@ -1031,12 +1012,7 @@ fn legacy_extended_linked_profile_point_coordinates(
     {
         return None;
     }
-    let identity = |relative| {
-        payload
-            .get(offset + relative..offset + relative + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-    };
+    let identity = |relative| View::u32_le_at(payload, offset + relative);
     let single_identity = payload.get(offset + 100..offset + 132) == Some(&[0; 32])
         && payload.get(offset + 132..offset + 134) == Some(&[0; 2])
         && matches!(payload.get(offset + 134..offset + 136), Some([0 | 1, 0]))
@@ -1087,8 +1063,8 @@ fn legacy_extended_linked_profile_point_coordinates(
     let cells = [78, 86].map(|relative| {
         let cell = payload.get(offset + relative..offset + relative + 8)?;
         Some((
-            u16::from_le_bytes(cell[..2].try_into().ok()?),
-            u16::from_le_bytes(cell[2..4].try_into().ok()?),
+            View::u16_le_at(cell, 0)?,
+            View::u16_le_at(cell, 2)?,
             cell[4..8] == [0xff; 4],
         ))
     });
@@ -1118,10 +1094,7 @@ fn legacy_single_incidence_profile_point_coordinates(
     offset: usize,
 ) -> Option<[f64; 2]> {
     let code = marker_native_code(payload, offset)?;
-    let link_state = payload
-        .get(offset + 76..offset + 78)
-        .and_then(|bytes| bytes.try_into().ok())
-        .map(u16::from_le_bytes)?;
+    let link_state = View::u16_le_at(payload, offset + 76)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || !matches!((code, link_state), (0 | 1, 2) | (2, 1))
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -1136,8 +1109,8 @@ fn legacy_single_incidence_profile_point_coordinates(
         return None;
     }
     let cell = payload.get(offset + 78..offset + 90)?;
-    let selector = u16::from_le_bytes(cell[..2].try_into().ok()?);
-    let identifier = u16::from_le_bytes(cell[2..4].try_into().ok()?);
+    let selector = View::u16_le_at(cell, 0)?;
+    let identifier = View::u16_le_at(cell, 2)?;
     if matches!(selector, 0 | u16::MAX)
         || matches!(identifier, 0 | u16::MAX)
         || cell[4..8] != [0xff; 4]
@@ -1146,12 +1119,7 @@ fn legacy_single_incidence_profile_point_coordinates(
     {
         return None;
     }
-    let identity = |relative| {
-        payload
-            .get(offset + relative..offset + relative + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-    };
+    let identity = |relative| View::u32_le_at(payload, offset + relative);
     let terminal_identity = payload.get(offset + 96..offset + 136) == Some(&[0; 40])
         && identity(136).is_some_and(|identity| identity != 0);
     let paired_identities = payload.get(offset + 96..offset + 128) == Some(&[0; 32])
@@ -1178,7 +1146,7 @@ pub(super) fn legacy_140_profile_point_variant_coordinates(
     offset: usize,
 ) -> Option<[f64; 2]> {
     let code = marker_native_code(payload, offset)?;
-    let link_state = u16::from_le_bytes(payload.get(offset + 76..offset + 78)?.try_into().ok()?);
+    let link_state = View::u16_le_at(payload, offset + pt_140::LINK_STATE)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || code != 1
         || !matches!(link_state, 1..=3)
@@ -1187,31 +1155,30 @@ pub(super) fn legacy_140_profile_point_variant_coordinates(
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
-        || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
+        || payload.get(offset + pt_140::STATE_VALUE..offset + pt_140::COORDINATE_TAG)
+            != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + pt_140::COORDINATE_TAG..offset + pt_140::COORDINATE_FIRST)
+            != Some(&[0x1e, 0x00])
+        || payload.get(offset + pt_140::ZERO_LINK_PREFIX..offset + pt_140::LINK_STATE)
+            != Some(&[0; 2])
     {
         return None;
     }
-    let cell = payload.get(offset + 78..offset + 90)?;
-    let selector = u16::from_le_bytes(cell[..2].try_into().ok()?);
-    let identifier = u16::from_le_bytes(cell[2..4].try_into().ok()?);
+    let cell = payload.get(offset + pt_140::INCIDENCE_CELL..offset + pt_140::LINK_TERMINATOR)?;
+    let selector = View::u16_le_at(cell, 0)?;
+    let identifier = View::u16_le_at(cell, 2)?;
     if selector == 0
         || selector == u16::MAX
         || identifier == u16::MAX
         || cell[4..8] != [0xff; 4]
         || cell[8..12] != [0; 4]
-        || payload.get(offset + 90..offset + 96) != Some(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00])
-        || !sketch_marker_prefix_at(payload, offset.checked_add(140)?)
+        || payload.get(offset + pt_140::LINK_TERMINATOR..offset + pt_140::TRAILER_PREFIX)
+            != Some(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(pt_140::LEN)?)
     {
         return None;
     }
-    let identity = |relative| {
-        payload
-            .get(offset + relative..offset + relative + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-    };
+    let identity = |relative| View::u32_le_at(payload, offset + relative);
     let valid_identity = |identity: Option<u32>| {
         identity.is_some_and(|identity| identity != 0 && identity != u32::MAX)
     };
@@ -1228,7 +1195,7 @@ pub(super) fn legacy_140_profile_point_variant_coordinates(
         && valid_identity(identity(136))
         && identity(132) != identity(136);
     (terminal || paired_at_128 || paired_at_132)
-        .then(|| finite_coordinate_pair(payload, offset + 58))?
+        .then(|| finite_coordinate_pair(payload, offset + pt_140::COORDINATE_FIRST))?
 }
 
 fn compact_legacy_linked_profile_point_coordinates(
@@ -1247,10 +1214,7 @@ fn compact_legacy_linked_profile_point_coordinates(
         || !matches!(payload.get(offset + 62..offset + 64), Some([2 | 3, 0]))
         || payload.get(offset + 80..offset + 86) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         || payload.get(offset + 86..offset + 128) != Some(&[0; 42])
-        || payload
-            .get(offset + 128..offset + 132)
-            .and_then(|identity| identity.try_into().ok())
-            .map(u32::from_le_bytes)
+        || View::u32_le_at(payload, offset + 128)
             .is_none_or(|identity| matches!(identity, 0 | u32::MAX))
         || !sketch_marker_prefix_at(payload, offset.checked_add(132)?)
     {
@@ -1260,7 +1224,7 @@ fn compact_legacy_linked_profile_point_coordinates(
         let cell = payload.get(offset + relative..offset + relative + 8)?;
         Some((
             operand_kind(cell[..2].try_into().ok()?)?,
-            u16::from_le_bytes(cell[2..4].try_into().ok()?),
+            View::u16_le_at(cell, 2)?,
             cell[4..8] == [0xff; 4],
         ))
     });
@@ -1283,31 +1247,41 @@ pub(super) fn compact_legacy_code_two_profile_point_coordinates(
 ) -> Option<[f64; 2]> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
-        || payload.get(offset + 13..offset + 17) != Some(&2u32.to_le_bytes())
-        || payload.get(offset + 17..offset + 19) != Some(&[0; 2])
-        || payload.get(offset + 19..offset + 25) != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
-        || payload.get(offset + 25..offset + 31) != Some(&[0; 6])
-        || payload.get(offset + 31..offset + 42) != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        || payload.get(offset + 42..offset + 44) != Some(&[0x1e, 0x00])
-        || payload.get(offset + 60..offset + 62) != Some(&[0; 2])
-        || payload.get(offset + 62..offset + 64) != Some(&[0x04, 0x00])
-        || payload.get(offset + 80..offset + 82) != Some(&[0; 2])
-        || payload.get(offset + 82..offset + 86) != Some(&[0xfe, 0xff, 0xff, 0xff])
-        || payload.get(offset + 86..offset + 120) != Some(&[0; 34])
-        || payload.get(offset + 120..offset + 124) != Some(&2u32.to_le_bytes())
-        || payload.get(offset + 124..offset + 128) != Some(&[0; 4])
+        || payload.get(offset + code_two::NATIVE_KIND..offset + code_two::ZERO_PREFIX)
+            != Some(&2u32.to_le_bytes())
+        || payload.get(offset + code_two::ZERO_PREFIX..offset + code_two::PROFILE_LOCUS)
+            != Some(&[0; 2])
+        || payload.get(offset + code_two::PROFILE_LOCUS..offset + code_two::ZERO_STATE)
+            != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
+        || payload.get(offset + code_two::ZERO_STATE..offset + code_two::SELECTOR) != Some(&[0; 6])
+        || payload.get(offset + code_two::SELECTOR..offset + code_two::COORDINATE_TAG)
+            != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload.get(offset + code_two::COORDINATE_TAG..offset + code_two::COORDINATE_FIRST)
+            != Some(&[0x1e, 0x00])
+        || payload.get(offset + code_two::ZERO_LINK_PREFIX..offset + code_two::OPERAND_TAG)
+            != Some(&[0; 2])
+        || payload.get(offset + code_two::OPERAND_TAG..offset + code_two::OPERAND_FIRST)
+            != Some(&[0x04, 0x00])
+        || payload.get(offset + code_two::LINK_TERMINATOR..offset + code_two::ZERO_TRAILER)
+            != Some(&[0, 0, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + code_two::ZERO_TRAILER..offset + code_two::TRAILER_KIND)
+            != Some(&[0; 34])
+        || payload.get(offset + code_two::TRAILER_KIND..offset + code_two::ZERO_IDENTITY_PREFIX)
+            != Some(&2u32.to_le_bytes())
+        || payload.get(offset + code_two::ZERO_IDENTITY_PREFIX..offset + code_two::IDENTITY)
+            != Some(&[0; 4])
         || payload
-            .get(offset + 128..offset + 132)
+            .get(offset + code_two::IDENTITY..offset + code_two::LEN)
             .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
-        || !sketch_marker_prefix_at(payload, offset.saturating_add(132))
+        || !sketch_marker_prefix_at(payload, offset.saturating_add(code_two::LEN))
     {
         return None;
     }
-    let cells = [64, 72].map(|relative| {
+    let cells = [code_two::OPERAND_FIRST, code_two::OPERAND_SECOND].map(|relative| {
         let cell = payload.get(offset + relative..offset + relative + 8)?;
         Some((
             operand_kind(cell[..2].try_into().ok()?)?,
-            u16::from_le_bytes(cell[2..4].try_into().ok()?),
+            View::u16_le_at(cell, 2)?,
             cell[4..8] == [0xff; 4],
         ))
     });
@@ -1321,7 +1295,7 @@ pub(super) fn compact_legacy_code_two_profile_point_coordinates(
     ) {
         return None;
     }
-    finite_coordinate_pair(payload, offset + 44)
+    finite_coordinate_pair(payload, offset + code_two::COORDINATE_FIRST)
 }
 
 pub(super) fn compact_legacy_embedded_geometry_coordinates(
@@ -1338,8 +1312,7 @@ pub(super) fn compact_legacy_embedded_geometry_coordinates(
         || payload.get(offset + 42..offset + 44) != Some(&[0x1e, 0x00])
         || !payload.get(offset + 60..offset + 64).is_some_and(|state| {
             state == [0; 4]
-                || (state != [0xff; 4]
-                    && u32::from_le_bytes([state[0], state[1], state[2], state[3]]) != 0)
+                || (state != [0xff; 4] && View::u32_le_at(state, 0).is_some_and(|value| value != 0))
         })
         || payload.get(offset + 64..offset + 70) != Some(&[0; 6])
         || payload.get(offset + 70..offset + 74) != Some(&[0xfe, 0xff, 0xff, 0xff])
@@ -1395,10 +1368,7 @@ fn packed_legacy_linked_profile_point_coordinates(
         (operand_accepts_marker(kind, SketchInputKind::LineOrCircle)
             && operand_accepts_marker(kind, SketchInputKind::Arc)
             && cell[4..8] == [0xff; 4])
-            .then_some((
-                u16::from_le_bytes(cell[..2].try_into().ok()?),
-                u16::from_le_bytes(cell[2..4].try_into().ok()?),
-            ))
+            .then_some((View::u16_le_at(cell, 0)?, View::u16_le_at(cell, 2)?))
     });
     let [Some((first_kind, first_id)), Some((second_kind, second_id))] = cells else {
         return None;
@@ -1426,7 +1396,7 @@ fn terminal_extended_profile_point_coordinates(payload: &[u8], offset: usize) ->
     {
         return None;
     }
-    let identity = u16::from_le_bytes(payload.get(offset + 174..offset + 176)?.try_into().ok()?);
+    let identity = View::u16_le_at(payload, offset + 174)?;
     let selector = payload.get(offset + 176..offset + 178)?;
     if identity == 0
         || identity == u16::MAX
@@ -1577,11 +1547,7 @@ pub(super) fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[
         && payload.get(offset + 120..offset + 124) == Some(&[0; 4])
         && payload.get(offset + 128..offset + 132) == Some(&2u32.to_le_bytes())
         && payload.get(offset + 132..offset + 134) == Some(&[0; 2])
-        && payload
-            .get(offset + 134..offset + 138)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
-            .is_some_and(|object| object != u32::MAX)
+        && View::u32_le_at(payload, offset + 134).is_some_and(|object| object != u32::MAX)
         && sketch_marker_prefix_at(payload, offset.checked_add(138)?)
     {
         let corner = finite_coordinate_pair(payload, offset + 58)?;
@@ -1608,7 +1574,7 @@ pub(super) fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[
 
 fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     let code = marker_native_code(payload, offset)?;
-    let handle_state = u16::from_le_bytes(payload.get(offset + 76..offset + 78)?.try_into().ok()?);
+    let handle_state = View::u16_le_at(payload, offset + 76)?;
     let current_prefix = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER);
     if !matches!((code, handle_state), (0..=2, 2 | 3)) {
         return None;
@@ -1632,8 +1598,7 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
     let line_declaration = payload.get(offset + 78..offset + 84)
         == Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
         && payload.get(offset + 84..offset + 96) == Some(b"sgLineHandle");
-    let line_handle_id =
-        u16::from_le_bytes(payload.get(offset + 96..offset + 98)?.try_into().ok()?);
+    let line_handle_id = View::u16_le_at(payload, offset + 96)?;
     let identity_bearing_tail = payload.get(offset + 124..offset + 162) == Some(&[0; 38])
         && matches!(
             (
@@ -1655,8 +1620,7 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
         && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && (payload.get(offset + 124..offset + 166) == Some(&[0; 42]) || identity_bearing_tail)
         && sketch_marker_prefix_at(payload, offset.checked_add(170)?);
-    let linked_line_handle_id =
-        u16::from_le_bytes(payload.get(offset + 108..offset + 110)?.try_into().ok()?);
+    let linked_line_handle_id = View::u16_le_at(payload, offset + 108)?;
     let linked_line_handle = payload
         .get(offset + 78..offset + 82)
         .is_some_and(|reference| reference[..2] != [0; 2] && reference[..2] != [0xff; 2])
@@ -1671,10 +1635,7 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
         && payload.get(offset + 124..offset + 166) == Some(&[0; 42])
         && payload.get(offset + 166..offset + 170) != Some(&[0; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(170)?);
-    let arc_handle_id = payload
-        .get(offset + 119..offset + 121)
-        .and_then(|bytes| bytes.try_into().ok())
-        .map(u16::from_le_bytes);
+    let arc_handle_id = View::u16_le_at(payload, offset + 119);
     let line_arc_handle = line_declaration
         && handle_state == 2
         && line_handle_id != u16::MAX
@@ -1691,10 +1652,7 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
             .get(offset + 173..offset + 177)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(177)?);
-    let padded_arc_handle_id = payload
-        .get(offset + 123..offset + 125)
-        .and_then(|bytes| bytes.try_into().ok())
-        .map(u16::from_le_bytes);
+    let padded_arc_handle_id = View::u16_le_at(payload, offset + 123);
     let padded_line_arc_handle = line_declaration
         && handle_state == 2
         && line_handle_id != u16::MAX
@@ -1797,8 +1755,7 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
         && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 124..offset + 166) == Some(&[0; 42])
         && sketch_marker_prefix_at(payload, offset.saturating_add(170));
-    let compact_declaration_tag =
-        u16::from_le_bytes(payload.get(offset + 96..offset + 98)?.try_into().ok()?);
+    let compact_declaration_tag = View::u16_le_at(payload, offset + 96)?;
     let compact_declaration_variant = matches!(
         (
             extended_prefix,
@@ -1838,8 +1795,8 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
     let cells = [78, 90].map(|relative| {
         let cell = payload.get(offset + relative..offset + relative + 12)?;
         Some((
-            u16::from_le_bytes(cell[..2].try_into().ok()?),
-            u16::from_le_bytes(cell[2..4].try_into().ok()?),
+            View::u16_le_at(cell, 0)?,
+            View::u16_le_at(cell, 2)?,
             cell[4..8] == [0xff; 4] && cell[8..12] == [0; 4],
         ))
     });
@@ -1882,10 +1839,7 @@ fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> 
         && payload.get(offset + 84..offset + 86) == Some(&2u16.to_le_bytes())
         && payload.get(offset + 110..offset + 116) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 116..offset + 158) == Some(&[0; 42])
-        && payload
-            .get(offset + 158..offset + 162)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
+        && View::u32_le_at(payload, offset + 158)
             .is_some_and(|local_id| !matches!(local_id, 0 | u32::MAX))
         && sketch_marker_prefix_at(payload, offset.checked_add(162)?)
     {
@@ -1988,7 +1942,7 @@ fn packed_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
 
 pub(crate) fn marker_object_index(payload: &[u8], offset: usize) -> Option<u32> {
     let start = offset.checked_sub(4)?;
-    let index = u32::from_le_bytes(payload.get(start..offset)?.try_into().ok()?);
+    let index = View::u32_le_at(payload, start)?;
     (index != u32::MAX).then_some(index)
 }
 
@@ -2060,10 +2014,7 @@ fn compact_geometry_locus_point_coordinates(payload: &[u8], offset: usize) -> Op
 
 fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
     let identity = |relative| {
-        payload
-            .get(offset + relative..offset + relative + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
+        View::u32_le_at(payload, offset + relative)
             .is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
     };
     let trailer = payload.get(offset + 96..offset + 138) == Some(&[0; 42])
@@ -2193,10 +2144,7 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
 
 fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> bool {
     let identity = |relative| {
-        payload
-            .get(offset + relative..offset + relative + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u32::from_le_bytes)
+        View::u32_le_at(payload, offset + relative)
             .is_some_and(|identity| identity != 0 && identity != u32::MAX)
     };
     payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
@@ -2304,12 +2252,10 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
     }
     Some((
         finite_coordinate_pair(payload, offset + 58)?,
-        [first, second].map(|cell| {
-            (
-                u16::from_le_bytes([cell[0], cell[1]]),
-                u16::from_le_bytes([cell[2], cell[3]]),
-            )
-        }),
+        [
+            (View::u16_le_at(first, 0)?, View::u16_le_at(first, 2)?),
+            (View::u16_le_at(second, 0)?, View::u16_le_at(second, 2)?),
+        ],
     ))
 }
 
@@ -2342,13 +2288,18 @@ fn additional_linked_profile_point_coordinates(payload: &[u8], offset: usize) ->
         payload.get(offset + 78..offset + 90)?,
         payload.get(offset + 90..offset + 102)?,
     ];
-    let links = cells.map(|cell| {
+    let links = [
         (
-            u16::from_le_bytes([cell[0], cell[1]]),
-            u16::from_le_bytes([cell[2], cell[3]]),
-            cell[4..8] == [0xff; 4] && cell[8..12] == [0; 4],
-        )
-    });
+            View::u16_le_at(cells[0], 0)?,
+            View::u16_le_at(cells[0], 2)?,
+            cells[0][4..8] == [0xff; 4] && cells[0][8..12] == [0; 4],
+        ),
+        (
+            View::u16_le_at(cells[1], 0)?,
+            View::u16_le_at(cells[1], 2)?,
+            cells[1][4..8] == [0xff; 4] && cells[1][8..12] == [0; 4],
+        ),
+    ];
     if !matches!(
         links,
         [(first_selector, first_id, true), (second_selector, second_id, true)]
@@ -2467,8 +2418,8 @@ fn compact_linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
     matches!(
         cells,
         [Some(first), Some(second)]
-            if is_class_token(u16::from_le_bytes([first[0], first[1]]))
-                && is_class_token(u16::from_le_bytes([second[0], second[1]]))
+            if View::u16_le_at(first, 0).is_some_and(is_class_token)
+                && View::u16_le_at(second, 0).is_some_and(is_class_token)
                 && first[..4] != second[..4]
                 && first[4..8] == [0xff; 4]
                 && second[4..8] == [0xff; 4]
@@ -2504,4 +2455,4 @@ pub(super) fn legacy_extended_profile_curve_kind(
 }
 
 #[cfg(test)]
-mod marker_tests;
+mod tests;

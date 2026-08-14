@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Siemens JT integer packet decoding used by embedded NX display models.
 
+use cadmpeg_core::decode::View;
+
 #[derive(Debug, Clone, Copy)]
 struct ProbabilityEntry {
     symbol: i32,
@@ -45,10 +47,7 @@ impl<'a> MsbBitReader<'a> {
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    bytes
-        .get(offset..offset.checked_add(4)?)
-        .and_then(|value| value.try_into().ok())
-        .map(u32::from_le_bytes)
+    View::u32_le_at(bytes, offset)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,8 +261,8 @@ pub(crate) fn decode_vertex_texture_coordinates(
     } else {
         let mut ranges = Vec::with_capacity(component_count);
         for _ in 0..component_count {
-            let minimum = f32::from_le_bytes(bytes.get(cursor..cursor + 4)?.try_into().ok()?);
-            let maximum = f32::from_le_bytes(bytes.get(cursor + 4..cursor + 8)?.try_into().ok()?);
+            let minimum = View::f32_le_at(bytes, cursor)?;
+            let maximum = View::f32_le_at(bytes, cursor + 4)?;
             let bits = *bytes.get(cursor + 8)?;
             if bits != expected_bits
                 || !minimum.is_finite()
@@ -366,9 +365,8 @@ pub(crate) fn decode_vertex_colors(
             }
         } else {
             for _ in 0..4 {
-                let minimum = f32::from_le_bytes(bytes.get(cursor..cursor + 4)?.try_into().ok()?);
-                let maximum =
-                    f32::from_le_bytes(bytes.get(cursor + 4..cursor + 8)?.try_into().ok()?);
+                let minimum = View::f32_le_at(bytes, cursor)?;
+                let maximum = View::f32_le_at(bytes, cursor + 4)?;
                 let bits = *bytes.get(cursor + 8)?;
                 if bits == 0
                     || bits > 8
@@ -597,7 +595,7 @@ pub(crate) fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usiz
 }
 
 fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<ProbabilityEntry>, usize)> {
-    let entry_count = usize::from(u16::from_be_bytes(bytes.get(..2)?.try_into().ok()?));
+    let entry_count = usize::from(View::u16_be_at(bytes, 0)?);
     let mut bits = MsbBitReader::new(bytes.get(2..)?);
     let symbol_bits = u8::try_from(bits.read(6)?).ok()?;
     let occurrence_bits = u8::try_from(bits.read(6)?).ok()?;
@@ -656,11 +654,7 @@ impl CodeBits<'_> {
         let word_index = self.bit / 32;
         let bit_index = self.bit % 32;
         let offset = word_index * 4;
-        let word = self
-            .words
-            .get(offset..offset + 4)
-            .and_then(|value| value.try_into().ok())
-            .map_or(0, u32::from_le_bytes);
+        let word = View::u32_le_at(self.words, offset).unwrap_or(0);
         self.bit += 1;
         ((word >> (31 - bit_index)) & 1) as u16
     }
@@ -882,5 +876,4 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
 }
 
 #[cfg(test)]
-#[path = "jt_tests.rs"]
 mod tests;

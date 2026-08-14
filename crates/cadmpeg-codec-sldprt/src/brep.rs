@@ -18,9 +18,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32_at as u32_be};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+
+use crate::layout::compact_analytic_header as analytic;
 
 mod attrib;
 mod blend;
@@ -78,10 +80,8 @@ pub(crate) mod tag {
 }
 
 const COMPACT_REF_COUNT: usize = 5;
-const PARTITION_MARKER_OFFSET: usize = 2 + 4 + COMPACT_REF_COUNT * 2;
-const DELTAS_REF_OFFSET: usize = 2 + 4;
 const DELTAS_REF_STRIDE: usize = 3;
-const DELTAS_MARKER_OFFSET: usize = DELTAS_REF_OFFSET + COMPACT_REF_COUNT * DELTAS_REF_STRIDE;
+const DELTAS_MARKER_OFFSET: usize = analytic::REFS + COMPACT_REF_COUNT * DELTAS_REF_STRIDE;
 
 /// f64 count for each analytic tag; `None` if the tag is not an analytic carrier.
 fn analytic_value_count(tt: u8) -> Option<usize> {
@@ -269,7 +269,7 @@ impl CarrierIndex {
 fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
     let mut candidates = Vec::with_capacity(2);
 
-    let partition_marker = hdr.checked_add(PARTITION_MARKER_OFFSET)?;
+    let partition_marker = hdr.checked_add(analytic::MARKER)?;
     if matches!(body.get(partition_marker), Some(0x2b | 0x2d)) {
         candidates.push(partition_marker);
     }
@@ -278,7 +278,7 @@ fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
     // The marker follows that fixed-width roster, so its position is not a
     // search result. The terminators distinguish this framing from arbitrary
     // marker-like bytes in the reference and ordinal fields.
-    let refs_at = hdr.checked_add(DELTAS_REF_OFFSET)?;
+    let refs_at = hdr.checked_add(analytic::REFS)?;
     let tripled_marker = hdr.checked_add(DELTAS_MARKER_OFFSET)?;
     let tripled_refs = (0..COMPACT_REF_COUNT).all(|index| {
         refs_at
@@ -303,7 +303,9 @@ fn parse_carrier_at_marker(
 ) -> Option<Carrier> {
     let values_at = marker_at.checked_add(1)?;
     let end = values_at.checked_add(n.checked_mul(8)?)?;
-    let vals = f64_run(body, values_at, n)?;
+    let mut view = View::over_retained(body);
+    view.seek(values_at)?;
+    let vals = view.read_counted(n as u64, 8, View::f64_be)?;
     if vals.iter().any(|value| !value.is_finite()) {
         return None;
     }
@@ -339,7 +341,7 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     let tag_end = off.checked_add(2)?;
     let has_ff = body.get(tag_end) == Some(&0xff);
     let hdr = tag_end.checked_add(usize::from(has_ff))?;
-    let attr = u16_be(body, hdr)?;
+    let attr = View::u16_be_at(body, hdr)?;
     let mut candidates = analytic_marker_candidates(body, hdr)?
         .into_iter()
         .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));

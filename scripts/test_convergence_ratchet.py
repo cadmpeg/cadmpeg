@@ -18,6 +18,48 @@ sys.modules[SPEC.name] = ratchet
 SPEC.loader.exec_module(ratchet)
 
 
+def _pad_lines(prefix: list[str], total_lines: int, *, trailing_newline: bool = True) -> str:
+    assert total_lines >= len(prefix)
+    lines = prefix + [f"// filler {i}" for i in range(total_lines - len(prefix))]
+    text = "\n".join(lines)
+    if trailing_newline:
+        return text + "\n"
+    return text
+
+
+def _placement_counts(root: Path) -> tuple[dict[str, int], dict[str, list[dict[str, object]]]]:
+    old_root = ratchet.ROOT
+    try:
+        ratchet.ROOT = root
+        return ratchet.measure_all()
+    finally:
+        ratchet.ROOT = old_root
+
+
+class TempRepoCase(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.old_root = ratchet.ROOT
+        self.old_ledger = ratchet.LEDGER
+        ratchet.ROOT = self.root
+        ratchet.LEDGER = self.root / "docs" / "convergence-ledger.toml"
+
+    def tearDown(self) -> None:
+        ratchet.ROOT = self.old_root
+        ratchet.LEDGER = self.old_ledger
+        self._tmp.cleanup()
+
+    def write(self, relative: str, text: str) -> Path:
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def measure(self) -> tuple[dict[str, int], dict[str, list[dict[str, object]]]]:
+        return ratchet.measure_all()
+
+
 class StripCfgTest(unittest.TestCase):
     def test_strips_cfg_test_mod_body(self) -> None:
         text = (
@@ -29,30 +71,99 @@ class StripCfgTest(unittest.TestCase):
             "fn other() { from_be_bytes(); }\n"
         )
         stripped = ratchet.strip_cfg_test_items(text)
-        self.assertEqual(ratchet.FROM_ENDIAN.findall(stripped), ["from_le_bytes", "from_be_bytes"])
+        self.assertEqual(
+            ratchet.FROM_ENDIAN.findall(stripped),
+            ["from_le_bytes", "from_be_bytes"],
+        )
 
     def test_keeps_non_test_cfg(self) -> None:
         text = "#[cfg(feature = \"x\")]\nfn f() { from_le_bytes(); }\n"
         stripped = ratchet.strip_cfg_test_items(text)
         self.assertEqual(ratchet.FROM_ENDIAN.findall(stripped), ["from_le_bytes"])
 
+    def test_elides_cfg_test_items_without_blank_lines(self) -> None:
+        text = (
+            "fn prod() {}\n"
+            "#[cfg(test)]\n"
+            "mod tests {\n"
+            "    fn t() {}\n"
+            "}\n"
+            "fn other() {}\n"
+        )
+        self.assertEqual(ratchet.elide_cfg_test_items(text), "fn prod() {}\nfn other() {}\n")
+
 
 class PatternFilters(unittest.TestCase):
-    def test_skips_use_import_for_le_at(self) -> None:
+    def _count_in_crate(self, source: str) -> int:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             src = root / "crates" / "cadmpeg-codec-demo" / "src"
             src.mkdir(parents=True)
-            (src / "lib.rs").write_text(
-                "use cadmpeg_core::le::u32_at;\nfn f(b: &[u8]) { let _ = le::u32_at(b, 0); }\n",
-                encoding="utf-8",
-            )
+            (src / "lib.rs").write_text(source, encoding="utf-8")
             old_root = ratchet.ROOT
             try:
                 ratchet.ROOT = root
-                self.assertEqual(ratchet.count_le_be_at_outside_core(), 1)
+                return ratchet.count_le_be_at_outside_core()
             finally:
                 ratchet.ROOT = old_root
+
+    def test_skips_use_import_for_le_at(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::u32_at;\n"
+                "fn f(b: &[u8]) { let _ = le::u32_at(b, 0); }\n"
+            ),
+            1,
+        )
+
+    def test_counts_aliased_imported_le_at(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::u32_at as u32_le;\n"
+                "fn f(b: &[u8]) { let _ = u32_le(b, 0); }\n"
+            ),
+            1,
+        )
+
+    def test_counts_unaliased_imported_le_at(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::u32_at;\n"
+                "fn f(b: &[u8]) { let _ = u32_at(b, 0); }\n"
+            ),
+            1,
+        )
+
+    def test_counts_brace_aliased_imports(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::{u32_at as u32_le, f64_at};\n"
+                "fn f(b: &[u8]) { u32_le(b, 0); f64_at(b, 8); }\n"
+            ),
+            2,
+        )
+
+    def test_ignores_view_methods_for_aliased_name(self) -> None:
+        self.assertEqual(
+            self._count_in_crate(
+                "use cadmpeg_core::le::u32_at as u32_le;\n"
+                "fn f(v: View, b: &[u8]) {\n"
+                "    v.u32_le();\n"
+                "    View::u32_le_at(b, 0);\n"
+                "    u32_le(b, 0);\n"
+                "}\n"
+            ),
+            1,
+        )
+
+    def test_imported_le_be_at_names_parses_alias_and_brace(self) -> None:
+        self.assertEqual(
+            ratchet.imported_le_be_at_names(
+                "use cadmpeg_core::le::u32_at as u32_le;\n"
+                "use cadmpeg_core::be::{f64_at, u16_at as u16_be};\n"
+            ),
+            frozenset({"u32_le", "f64_at", "u16_be"}),
+        )
 
     def test_excludes_loss_note_return_and_struct(self) -> None:
         text = (
@@ -63,7 +174,6 @@ class PatternFilters(unittest.TestCase):
             "    LossNote { msg: String::new() }\n"
             "}\n"
         )
-        # Inline the line filter used by the counter.
         hits = 0
         for line in text.splitlines():
             if not ratchet.LOSS_NOTE_LIT.search(line):
@@ -84,6 +194,225 @@ class PatternFilters(unittest.TestCase):
         self.assertTrue(ratchet.is_production_rs(Path("crates/c/src/decode.rs")))
 
 
+class PlacementMetrics(TempRepoCase):
+    def test_root_router_counts_but_nested_tests_do_not(self) -> None:
+        self.write(
+            "crates/demo/src/lib.rs",
+            "#[cfg(test)]\nmod tests;\nmod foo;\n",
+        )
+        self.write(
+            "crates/demo/src/foo.rs",
+            "#[cfg(test)]\nmod tests;\n",
+        )
+        self.write(
+            "crates/demo/src/tests.rs",
+            _pad_lines(["mod router_only;"], 2001),
+        )
+        self.write(
+            "crates/demo/src/foo/tests.rs",
+            _pad_lines(["fn helper() {}"], 2001),
+        )
+        counts, contributors = self.measure()
+        self.assertEqual(counts["crate_root_tests_rs"], 1)
+        debts = {item["path"]: item["debt"] for item in contributors["test_line_debt"]}
+        self.assertEqual(debts["crates/demo/src/tests.rs"], 1)
+        self.assertEqual(debts["crates/demo/src/foo/tests.rs"], 1)
+
+    def test_path_includes_follow_test_only_ancestry(self) -> None:
+        self.write("crates/demo/src/lib.rs", "")
+        self.write(
+            "crates/demo/src/tests.rs",
+            "\n".join(
+                [
+                    '#[path = "integration_tests.rs"]',
+                    "mod integration_tests;",
+                    "mod nested {",
+                    "    #[path =",
+                    '        "bytes.rs"',
+                    "    ]",
+                    "    mod bytes;",
+                    "}",
+                    "",
+                ]
+            ),
+        )
+        self.write("crates/demo/src/integration_tests.rs", "fn smoke() {}\n")
+        self.write(
+            "crates/demo/src/bytes.rs",
+            _pad_lines(["fn helper() {}"], 2001),
+        )
+        counts, contributors = self.measure()
+        self.assertEqual(counts["path_test_includes"], 2)
+        includes = {(item["path"], item["target"]) for item in contributors["path_test_includes"]}
+        self.assertEqual(
+            includes,
+            {
+                ("crates/demo/src/tests.rs", "integration_tests.rs"),
+                ("crates/demo/src/tests.rs", "bytes.rs"),
+            },
+        )
+        self.assertIn(
+            {"path": "crates/demo/src/bytes.rs", "lines": 2001, "debt": 1},
+            contributors["test_line_debt"],
+        )
+
+    def test_feature_gated_non_test_path_does_not_count(self) -> None:
+        self.write(
+            "crates/demo/src/lib.rs",
+            "\n".join(
+                [
+                    "#[cfg(feature = \"fuzzing\")]",
+                    '#[path = "fuzzing.rs"]',
+                    "pub mod fuzz;",
+                    "#[cfg(test)]",
+                    '#[path = "unit.rs"]',
+                    "mod tests;",
+                    "",
+                ]
+            ),
+        )
+        self.write("crates/demo/src/fuzzing.rs", "pub fn fuzz() {}\n")
+        self.write("crates/demo/src/unit.rs", "fn helper() {}\n")
+        counts, contributors = self.measure()
+        self.assertEqual(counts["path_test_includes"], 1)
+        self.assertEqual(
+            contributors["path_test_includes"],
+            [{"path": "crates/demo/src/lib.rs", "target": "unit.rs", "debt": 1}],
+        )
+
+    def test_semantic_dirs_integration_support_and_golden_exclusion(self) -> None:
+        self.write("crates/demo/src/lib.rs", "#[cfg(test)]\nmod golden_tests;\nmod foo;\n")
+        self.write("crates/demo/src/foo.rs", "#[cfg(test)]\nmod tests;\n")
+        self.write("crates/demo/src/foo/tests.rs", "mod parsing;\n")
+        self.write(
+            "crates/demo/src/foo/tests/parsing.rs",
+            _pad_lines(["fn parsing() {}"], 2001),
+        )
+        self.write(
+            "crates/demo/src/integration_tests.rs",
+            _pad_lines(["fn integration() {}"], 2001),
+        )
+        self.write(
+            "crates/demo/src/test_support.rs",
+            _pad_lines(["fn support() {}"], 2001),
+        )
+        self.write(
+            "crates/demo/src/golden_tests.rs",
+            _pad_lines(["fn golden() {}"], 2501),
+        )
+        counts, contributors = self.measure()
+        debts = {item["path"]: item["debt"] for item in contributors["test_line_debt"]}
+        self.assertEqual(debts["crates/demo/src/foo/tests/parsing.rs"], 1)
+        self.assertEqual(debts["crates/demo/src/integration_tests.rs"], 1)
+        self.assertEqual(debts["crates/demo/src/test_support.rs"], 1)
+        self.assertNotIn("crates/demo/src/golden_tests.rs", debts)
+        self.assertEqual(counts["test_line_debt"], 3)
+
+    def test_inline_test_module_debt_uses_module_span(self) -> None:
+        inline_module = "\n".join(
+            ["fn prod() {}", "#[cfg(test)]", "mod tests {"]
+            + [f"    // filler {i}" for i in range(1998)]
+            + ["}"]
+        )
+        self.write(
+            "crates/demo/src/lib.rs",
+            inline_module + "\n",
+        )
+        counts, contributors = self.measure()
+        self.assertEqual(counts["test_line_debt"], 1)
+        self.assertEqual(
+            contributors["test_line_debt"],
+            [
+                {
+                    "path": "crates/demo/src/lib.rs::tests",
+                    "lines": 2001,
+                    "debt": 1,
+                }
+            ],
+        )
+
+    def test_exact_boundaries_and_no_trailing_newline(self) -> None:
+        self.write("crates/demo/src/lib.rs", "mod prod;\n")
+        self.write(
+            "crates/demo/src/prod.rs",
+            _pad_lines(["fn prod() {}"], 10000),
+        )
+        self.write(
+            "crates/demo/src/test_support.rs",
+            _pad_lines(["fn helper() {}"], 2000, trailing_newline=False),
+        )
+        counts, contributors = self.measure()
+        self.assertEqual(counts["test_line_debt"], 0)
+        self.assertEqual(counts["production_line_debt"], 0)
+        self.assertEqual(contributors["test_line_debt"], [])
+        self.assertEqual(contributors["production_line_debt"], [])
+
+        self.write(
+            "crates/demo/src/prod.rs",
+            _pad_lines(["fn prod() {}"], 10001, trailing_newline=False),
+        )
+        self.write(
+            "crates/demo/src/test_support.rs",
+            _pad_lines(["fn helper() {}"], 2001, trailing_newline=False),
+        )
+        counts, contributors = self.measure()
+        self.assertEqual(counts["test_line_debt"], 1)
+        self.assertEqual(counts["production_line_debt"], 1)
+        self.assertEqual(
+            contributors["test_line_debt"],
+            [{"path": "crates/demo/src/test_support.rs", "lines": 2001, "debt": 1}],
+        )
+        self.assertEqual(
+            contributors["production_line_debt"],
+            [{"path": "crates/demo/src/prod.rs", "lines": 10001, "debt": 1}],
+        )
+
+    def test_split_reduces_debt(self) -> None:
+        self.write("crates/demo/src/lib.rs", "#[cfg(test)]\nmod tests;\n")
+        self.write(
+            "crates/demo/src/tests.rs",
+            _pad_lines(["fn all_in_one() {}"], 5000),
+        )
+        single_counts, _ = self.measure()
+
+        self.write(
+            "crates/demo/src/tests.rs",
+            "\n".join(
+                [
+                    '#[path = "part_a.rs"]',
+                    "mod part_a;",
+                    '#[path = "part_b.rs"]',
+                    "mod part_b;",
+                    "",
+                ]
+            ),
+        )
+        self.write(
+            "crates/demo/src/part_a.rs",
+            _pad_lines(["fn a() {}"], 2500),
+        )
+        self.write(
+            "crates/demo/src/part_b.rs",
+            _pad_lines(["fn b() {}"], 2500),
+        )
+        split_counts, _ = self.measure()
+        self.assertEqual(single_counts["test_line_debt"], 3000)
+        self.assertEqual(split_counts["test_line_debt"], 1000)
+
+    def test_cargo_tests_are_counted(self) -> None:
+        self.write("crates/demo/src/lib.rs", "")
+        self.write(
+            "crates/demo/tests/smoke.rs",
+            _pad_lines(["fn smoke() {}"], 2001),
+        )
+        counts, contributors = self.measure()
+        self.assertEqual(counts["test_line_debt"], 1)
+        self.assertEqual(
+            contributors["test_line_debt"],
+            [{"path": "crates/demo/tests/smoke.rs", "lines": 2001, "debt": 1}],
+        )
+
+
 def _zero_counts() -> dict[str, int]:
     return {key: 0 for key in ratchet.METRIC_KEYS}
 
@@ -94,21 +423,57 @@ def _complete_ceilings(**overrides: int) -> dict[str, int]:
     return ceilings
 
 
+def _complete_targets(**overrides: int) -> dict[str, int]:
+    targets = {key: 0 for key in ratchet.TARGET_KEYS}
+    targets.update(overrides)
+    return targets
+
+
 class LedgerRoundTrip(unittest.TestCase):
     def test_check_fails_above_ceiling(self) -> None:
         counts = _zero_counts()
         counts["from_endian_bytes"] = 2
-        failures = ratchet.check(counts, _complete_ceilings(from_endian_bytes=1))
+        failures = ratchet.check(
+            counts,
+            _complete_ceilings(from_endian_bytes=1),
+            _complete_targets(),
+        )
         self.assertEqual(failures, ["from_endian_bytes: 2 > ledger 1"])
 
     def test_check_fails_missing_ceiling(self) -> None:
         counts = _zero_counts()
         ceilings = _complete_ceilings()
         del ceilings["nonliteral_vec_repeat"]
-        failures = ratchet.check(counts, ceilings)
+        failures = ratchet.check(counts, ceilings, _complete_targets())
         self.assertEqual(
             failures, ["ledger missing ceiling for nonliteral_vec_repeat"]
         )
+
+    def test_check_fails_missing_target(self) -> None:
+        counts = _zero_counts()
+        targets = _complete_targets()
+        del targets["path_test_includes"]
+        failures = ratchet.check(counts, _complete_ceilings(), targets)
+        self.assertEqual(
+            failures, ["ledger missing target for path_test_includes"]
+        )
+
+    def test_parse_and_render_keep_targets(self) -> None:
+        text = ratchet.render_ledger(
+            "deadbeef",
+            "filter with #[path] text",
+            _complete_targets(),
+            _complete_ceilings(crate_root_tests_rs=12, path_test_includes=23),
+            {},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ledger.toml"
+            path.write_text(text, encoding="utf-8")
+            parsed = ratchet.parse_ledger(path)
+        self.assertEqual(parsed["targets"], _complete_targets())
+        self.assertEqual(parsed["ceilings"]["crate_root_tests_rs"], 12)
+        self.assertEqual(parsed["ceilings"]["path_test_includes"], 23)
+        self.assertEqual(parsed["filter"], "filter with #[path] text")
 
 
 if __name__ == "__main__":

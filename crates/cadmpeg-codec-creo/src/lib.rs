@@ -2,13 +2,19 @@
 //! Inspect and structurally decode PTC Creo Parametric and Pro/ENGINEER `.prt`
 //! files stored in the PSB container.
 //!
+//! [`CreoCodec`] is the normal public decode API. A hidden `fuzz` module
+//! exposes `()`-returning parser wrappers. It implements [`cadmpeg_ir::codec::Codec`]:
+//! it detects the `#UGC:2` PSB signature, inspects named sections, and decodes
+//! the geometry, topology, sketches, and design records supported for that
+//! layout.
+//!
 //! Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! on the cadmpeg support ladder.
 //!
 //! # Quick start
 //!
-//! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
-//! [`cadmpeg_ir::Codec::inspect`] to enumerate sections and read container diagnostics:
+//! Use [`cadmpeg_ir::Codec::inspect`] to enumerate sections and read container
+//! diagnostics:
 //!
 //! ```no_run
 //! use std::fs::File;
@@ -35,14 +41,6 @@
 //! later persistence uses a table of contents and named binary sections.
 //! Detection uses the signature because Siemens NX also uses `.prt`.
 //!
-//! [`container`] identifies legacy, ND, and DEPDB layouts, classifies sections,
-//! reads surface and curve namespace counts, and discovers typed namespace
-//! rows. [`legacy`] resolves scoped ASCII declarations, values, and array
-//! continuations.
-//! [`psb`] and [`scalar`] expose the context-independent primitive decoders.
-//! [`surface`], [`curve`], [`reference`], [`primdata`], [`feature`], and
-//! [`topology`] expose the typed structural model.
-//!
 //! # Decode scope
 //!
 //! Decode transfers complete model-space planes, selected cylinders, placed
@@ -60,22 +58,23 @@
 //! these losses.
 
 mod compress;
-pub mod container;
+pub(crate) mod container;
 pub(crate) mod coverage;
-pub mod curve;
+pub(crate) mod curve;
 pub(crate) mod datum;
 pub(crate) mod decode;
-pub mod feature;
-pub mod legacy;
+pub(crate) mod feature;
+/// Byte-offset constants generated from `docs/layouts/creo.toml`.
+pub(crate) mod layout;
+pub(crate) mod legacy;
 pub(crate) mod placement;
-pub mod primdata;
-pub mod psb;
-pub mod reference;
-pub mod scalar;
-pub mod surface;
-pub mod topology;
+pub(crate) mod primdata;
+pub(crate) mod psb;
+pub(crate) mod reference;
+pub(crate) mod scalar;
+pub(crate) mod surface;
+pub(crate) mod topology;
 
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzz;
 
@@ -123,4 +122,6 @@ impl CodecBackend for CreoCodec {
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-mod tests;
+mod integration_tests;
+#[cfg(test)]
+pub(crate) mod test_support;

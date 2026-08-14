@@ -54,14 +54,13 @@ Spec §1 · layout: byte offsets · size: 3 B
 
 The low five flag bits give the maximum code width from 9 through 16; bit 7 enables block mode and code 256 clears the dictionary. Codes are packed least significant bit first in code-width-sized byte blocks.
 
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `magic` | `bytes[2]` | — | spec | A section payload beginning `1f 9d <flags>` |
+| 0 | 2 | `magic` | `bytes[2]` | — | spec | A section payload beginning `1f 9d <flags>` · value `[31, 157]` |
 | 2 | 1 | `flags` | `u8` | — | spec | The low five flag bits give the maximum code width from 9 through 16; bit 7 enables block mode |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-creo/src/compress.rs` — The parser matches the same two magic bytes and reads the flag byte at offset 2.
 
 ## `cmnm_model_name_record`
 
@@ -69,14 +68,13 @@ Spec §1 · layout: byte offsets · size: 11 B
 
 Fixed prefix only; `hhh` bytes of ASCII name follow at +11, then trailing ASCII space padding. Exactly one record establishes model identity; an absent or repeated record leaves model identity undefined.
 
+Parsed by:
+- `crates/cadmpeg-codec-creo/src/container.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 8 | `prefix` | `bytes[8]` | — | derived | Width derived from the length of the stated literal `#- CMNM ` including its trailing space. |
+| 0 | 8 | `prefix` | `bytes[8]` | — | derived | Width derived from the length of the stated literal `#- CMNM ` including its trailing space. · value `"#- CMNM "` |
 | 8 | 3 | `name_length_hex` | `bytes[3]` | — | spec | The three ASCII hexadecimal digits give the filename byte length. |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-creo/src/container.rs` — The parser's prefix is the same eight-byte literal, and it reads the three hexadecimal digits immediately after it.
 
 ## `type24_first_coordinate_bounded_round`
 
@@ -135,7 +133,7 @@ A scalar token occupies one slot and a standalone `12` occupies one zero-valued 
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-creo/src/curve.rs` — The parser gates the pcurve endpoint body on exactly eight decoded slots.
+- `crates/cadmpeg-codec-creo/src/curve.rs` — The parser reconstructs the eight-slot pcurve endpoint body as `[f64; 8]`.
 
 ## `local_sys_support_frame`
 
@@ -152,7 +150,7 @@ Reused by plane, cylinder, cone, and torus prototypes, by curve-equation frames,
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-creo/src/scalar.rs` — The parser gates the local-system frame on exactly twelve decoded slots.
+- `crates/cadmpeg-codec-creo/src/scalar.rs` — The parser expands the local-system support frame as twelve `f64` slots.
 
 ## Not tabulated
 

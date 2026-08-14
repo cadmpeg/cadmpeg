@@ -229,3 +229,6 @@ fn drawing_parameters(properties: &[&PropertyRecord]) -> BTreeMap<String, String
         })
         .collect()
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

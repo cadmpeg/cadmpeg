@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized Creo PSB byte images.
+#![allow(clippy::unwrap_used)]
 
-use super::*;
+use std::io::Cursor;
+
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::CodecBackend;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::sketches::SketchConstraintDefinition;
+
+use crate::container::role;
+use crate::test_support::*;
+use crate::CreoCodec;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     CreoCodec
@@ -14,9 +21,9 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
-    assert!(result.ir.native.namespace("creo").is_some());
+    assert!(result.ir().native.namespace("creo").is_some());
 }
 
 fn closed_plane_brep() -> Vec<u8> {
@@ -85,8 +92,8 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
-    assert!(result.report.geometry_transferred);
-    assert!(result.ir.model.surfaces.iter().any(|surface| {
+    assert!(result.report().geometry_transferred);
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Cylinder { radius, .. } if radius == 1.0)
     }));
     assert_valid(&result);
@@ -95,15 +102,15 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
 #[test]
 fn topology_pipeline_reconstructs_a_closed_plane_intersection_solid() {
     let result = decode(closed_plane_brep());
-    assert_eq!(result.ir.model.points.len(), 4);
-    assert_eq!(result.ir.model.vertices.len(), 4);
-    assert_eq!(result.ir.model.edges.len(), 6);
-    assert_eq!(result.ir.model.faces.len(), 4);
-    assert_eq!(result.ir.model.coedges.len(), 12);
-    assert_eq!(result.ir.model.pcurves.len(), 12);
-    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 4);
+    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_eq!(result.ir().model.edges.len(), 6);
+    assert_eq!(result.ir().model.faces.len(), 4);
+    assert_eq!(result.ir().model.coedges.len(), 12);
+    assert_eq!(result.ir().model.pcurves.len(), 12);
+    assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
-        result.ir.model.bodies[0].kind,
+        result.ir().model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Solid
     );
     assert_valid(&result);
@@ -131,7 +138,7 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         ],
     ));
     let datum_feature = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -142,7 +149,7 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         FeatureDefinition::DatumPlane { .. }
     ));
     assert!(result
-        .ir
+        .ir()
         .model
         .surfaces
         .iter()
@@ -164,15 +171,20 @@ fn featdefs_pipeline_projects_mixed_sketch_entities_and_native_constraints() {
     payload.extend_from_slice(b"dimtab_ptr\0");
 
     let result = decode(build_prt("integration", &[("FeatDefs", payload)]));
-    assert_eq!(result.ir.model.sketches.len(), 1);
-    assert_eq!(result.ir.model.sketch_entities.len(), 5);
-    assert_eq!(result.ir.model.sketch_constraints.len(), 7);
-    assert!(result.ir.model.sketch_constraints.iter().any(|constraint| {
-        matches!(
-            constraint.definition,
-            SketchConstraintDefinition::Native { .. }
-        )
-    }));
+    assert_eq!(result.ir().model.sketches.len(), 1);
+    assert_eq!(result.ir().model.sketch_entities.len(), 5);
+    assert_eq!(result.ir().model.sketch_constraints.len(), 7);
+    assert!(result
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                SketchConstraintDefinition::Native { .. }
+            )
+        }));
     assert_valid(&result);
 }
 
@@ -186,7 +198,7 @@ fn featdefs_pipeline_retains_solver_relations_and_resolved_dimension_inputs() {
     payload.extend_from_slice(
         b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
           \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
-          \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+          \xe0\x01status\0\x04\xe0\x01items\0\xf8\x01\xf7\x6c\xfb\xe2\
           \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
           \xf3\xf7\x6b\xe2\
           triples_ptr\0\xf4\x04\xf8\x02\xf7\x6d\xfb\xe2\
@@ -194,7 +206,7 @@ fn featdefs_pipeline_retains_solver_relations_and_resolved_dimension_inputs() {
           \xf1\xf7\x6d\xe2\xf6\x09\x05\xe2",
     );
     let result = decode(build_prt("integration", &[("FeatDefs", payload)]));
-    let sketches = &result.ir.native.namespace("creo").unwrap().arenas["sketches"];
+    let sketches = &result.ir().native.namespace("creo").unwrap().arenas["sketches"];
     assert_eq!(sketches.len(), 1);
     let fields = sketches[0].fields();
     let headers = fields["table_headers"].as_array().unwrap();
@@ -228,11 +240,11 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
             },
         )
         .expect("container-only Creo decode");
-    assert!(result.report.container_only);
-    assert!(!result.report.geometry_transferred);
-    assert!(result.ir.model.surfaces.is_empty());
-    assert!(result.ir.model.features.is_empty());
-    assert_eq!(result.ir.native_unknowns("creo").unwrap().len(), 2);
-    assert!(!result.source_fidelity.retained_records.is_empty());
+    assert!(result.report().container_only);
+    assert!(!result.report().geometry_transferred);
+    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().model.features.is_empty());
+    assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 2);
+    assert!(!result.source_fidelity().retained_records.is_empty());
     assert_valid(&result);
 }

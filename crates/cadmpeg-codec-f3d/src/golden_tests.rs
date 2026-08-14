@@ -284,15 +284,15 @@ fn indent_block(block: &str) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
         Ok(mut result) => {
-            if let Some(source) = result.ir.source.as_mut() {
+            if let Some(source) = result.ir_mut().source.as_mut() {
                 elide_local_digests(&mut source.attributes);
             }
             let ir = result
-                .ir
+                .ir()
                 .to_canonical_json()
                 .expect("serialize canonical ir");
-            let report = serde_json::to_string_pretty(&result.report).expect("serialize report");
-            let fidelity = serde_json::to_string_pretty(&result.source_fidelity)
+            let report = serde_json::to_string_pretty(result.report()).expect("serialize report");
+            let fidelity = serde_json::to_string_pretty(result.source_fidelity())
                 .expect("serialize source_fidelity");
             let mut out = String::from("{\n");
             out.push_str("  \"ir\": ");
@@ -329,8 +329,8 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
     let outcome = match F3dCodec.plan(EncodeInput {
-        ir: &result.ir,
-        fidelity: Some(&result.source_fidelity),
+        ir: result.ir(),
+        fidelity: Some(result.source_fidelity()),
     }) {
         Ok(plan) => {
             let path = plan.write_path();
@@ -354,7 +354,7 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
 fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
-    Some(match F3dCodec.encode(&result.ir, &mut out) {
+    Some(match F3dCodec.encode(result.ir(), &mut out) {
         Ok(report) => {
             assert_eq!(
                 report.write_path,
@@ -369,16 +369,16 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
 
 fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
-    if result.ir.model.points.is_empty() {
+    if result.ir().model.points.is_empty() {
         return None;
     }
-    let mut edited = result.ir.clone();
+    let mut edited = result.ir().clone();
     edited.model.points[0].position.x += 1.0;
     let mut out = Vec::new();
     Some(
         match F3dCodec.write_preserved_with_source_fidelity(
             &edited,
-            &result.source_fidelity,
+            result.source_fidelity(),
             &mut out,
         ) {
             Ok(path) => {
@@ -485,7 +485,7 @@ fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<St
 /// under platform libm while the geometry still agrees within tolerance.
 fn generated_container_snapshot(bytes: &[u8]) -> String {
     let mut ir = match decode_result(bytes) {
-        Ok(result) => result.ir,
+        Ok(result) => result.into_parts().0,
         Err(error) => {
             let value = serde_json::json!({ "decode_error": error.to_string() });
             return serde_json::to_string_pretty(&value).expect("serialize decode error");
@@ -761,7 +761,7 @@ fn an_edit_survives_the_patch_writer() {
                         panic!("fixture `{name}`: patched output does not decode: {error}")
                     });
                     let moved = edited.model.points[0].position.x;
-                    let returned = round_trip.ir.model.points[0].position.x;
+                    let returned = round_trip.ir().model.points[0].position.x;
                     assert!(
                         (returned - moved).abs() <= 1e-9,
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
@@ -769,7 +769,7 @@ fn an_edit_survives_the_patch_writer() {
                     );
                     if let Err(mismatch) = snapshots_agree(
                         &neutral_document(edited),
-                        &neutral_document(&round_trip.ir),
+                        &neutral_document(round_trip.ir()),
                     ) {
                         panic!(
                             "fixture `{name}`: the patched container decodes to a different document: {mismatch}"

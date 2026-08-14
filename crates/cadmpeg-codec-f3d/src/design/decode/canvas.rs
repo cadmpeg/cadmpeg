@@ -7,7 +7,7 @@ use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
 use crate::records::{DesignCanvasImage, DesignParameterScope};
-use cadmpeg_core::le::{f32_at, f64_at, u32_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
@@ -142,7 +142,7 @@ fn parse_canvas_image(
         .try_into()
         .ok()?;
     let visible = geometry_prologue_visibility(&geometry_prologue)?;
-    if u32_at(bytes, after_geometry_tag)? != geometry_record_index {
+    if View::u32_le_at(bytes, after_geometry_tag)? != geometry_record_index {
         return None;
     }
 
@@ -154,7 +154,7 @@ fn parse_canvas_image(
     let (paired_geometry_class_tag, after_paired_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let paired_component_at = paired_at + 19;
-    if u32_at(bytes, after_paired_tag)? != geometry_record_index
+    if View::u32_le_at(bytes, after_paired_tag)? != geometry_record_index
         || paired_at <= geometry_at
         || bytes.get(paired_at + 11..paired_component_at)? != [0; 8]
     {
@@ -173,7 +173,7 @@ fn parse_canvas_image(
     ];
     let mut coordinates = [0.0; 8];
     for (coordinate, offset) in coordinates.iter_mut().zip(boundary_offsets) {
-        *coordinate = f64_at(bytes, offset)?;
+        *coordinate = View::f64_le_at(bytes, offset)?;
         if !coordinate.is_finite() {
             return None;
         }
@@ -219,7 +219,7 @@ fn parse_canvas_image(
     let asset_record_at = paired_at.checked_add(30)?;
     let (asset_class_tag, after_asset_tag) =
         lp_ascii_filtered(bytes, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_asset_tag)? != asset_record_index
+    if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
         || bytes.get(asset_record_at + 11..asset_record_at + 21)? != [0; 10]
     {
         return None;
@@ -268,15 +268,15 @@ fn parse_canvas_image(
 }
 
 fn decode_geometry_payload(payload: &[u8]) -> Option<(f32, Point3, Vector3, Vector3)> {
-    let opacity = f32_at(payload, 0)?;
+    let opacity = View::f32_le_at(payload, 0)?;
     if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) || payload.get(4) != Some(&0) {
         return None;
     }
     let vector = |offset| {
         Some([
-            f64_at(payload, offset)?,
-            f64_at(payload, offset + 8)?,
-            f64_at(payload, offset + 16)?,
+            View::f64_le_at(payload, offset)?,
+            View::f64_le_at(payload, offset + 8)?,
+            View::f64_le_at(payload, offset + 16)?,
         ])
     };
     let origin = vector(5)?;
@@ -304,7 +304,7 @@ fn decode_geometry_payload(payload: &[u8]) -> Option<(f32, Point3, Vector3, Vect
 }
 
 fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
-    (bytes.get(at) == Some(&1)).then(|| u32_at(bytes, at + 1))?
+    (bytes.get(at) == Some(&1)).then(|| View::u32_le_at(bytes, at + 1))?
 }
 
 pub(crate) fn valid_geometry_prologue(prologue: &[u8; 15]) -> bool {

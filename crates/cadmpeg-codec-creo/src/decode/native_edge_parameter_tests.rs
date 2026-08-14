@@ -1,4 +1,16 @@
-use super::*;
+use crate::decode::analytic::{
+    exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
+    full_periodic_nurbs_edge_parameter_range, native_pcurve_midpoint,
+    nonperiodic_conic_edge_parameter_range, nonperiodic_conic_parameter,
+    nonperiodic_nurbs_edge_parameter_range, pcurve_backed_periodic_conic_parameter_range,
+    periodic_conic_edge_parameter_range, NativePcurveCandidates,
+};
+use crate::decode::surfaces::{
+    analytic_curve_branches, curve_contains_points, select_unique_curve_candidate,
+};
+use cadmpeg_ir::geometry::{CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point3, Vector3};
 
 fn circle() -> CurveGeometry {
     CurveGeometry::Circle {

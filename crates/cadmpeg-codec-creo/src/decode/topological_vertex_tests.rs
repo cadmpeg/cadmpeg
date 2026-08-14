@@ -1,4 +1,10 @@
-use super::*;
+use crate::decode::analytic::{
+    conic_conic_intersections, incident_analytic_vertex_domain, line_conic_intersections,
+    line_line_intersection, model_points_agree,
+};
+use crate::decode::surfaces::curve_contains_points;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::math::{Point3, Vector3};
 
 fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
     CurveGeometry::Line {

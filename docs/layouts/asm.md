@@ -57,10 +57,6 @@ Fixed prefix only. The string region and the six trailing tagged metadata fields
 | 31 | 8 | `entity_count` | `u64` | little | spec | `31..39` \| little-endian u64 entity-count word |
 | 39 | 8 | `flags` | `u64` | little | spec | `39..47` \| little-endian u64 flags; bit 0 is set iff the stream carries a history partition |
 
-Cross-checked against code:
-
-- `docs/formats/asm.md` — The declared 47-byte size is the spec's own stated start of the string region.
-
 ## `asmheader_binaryfile4`
 
 Spec §1 · layout: byte offsets · size: 31 B
@@ -75,10 +71,6 @@ Fixed prefix only; the string region begins at byte 31.
 | 23 | 4 | `entity_count` | `u32` | little | spec | `23..27` \| little-endian u32 entity count |
 | 27 | 4 | `flags` | `u32` | little | spec | `27..31` \| little-endian u32 flags; bit 0 is set iff the stream carries a history partition |
 
-Cross-checked against code:
-
-- `docs/formats/asm.md` — The declared 31-byte size is the spec's own stated start of the string region.
-
 ## `acisheader_binaryfile4`
 
 Spec §1 · layout: byte offsets · size: 31 B
@@ -92,10 +84,6 @@ Fixed 32-bit ACIS prefix; the tagged string region begins at byte 31.
 | 19 | 4 | `record_count` | `u32` | little | spec | `19..23` \| little-endian u32 record count (`0` when unwritten) |
 | 23 | 4 | `entity_count` | `u32` | little | spec | `23..27` \| little-endian u32 entity count |
 | 27 | 4 | `flags` | `u32` | little | spec | `27..31` \| little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§3) |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-asm/src/acis_header.rs` — The ACIS parser uses the declared 31-byte fixed prefix.
 
 ## `body`
 

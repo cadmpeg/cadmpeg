@@ -1,0 +1,266 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(unused_imports)]
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
+
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+
+use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_ir::geometry::{
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
+};
+use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
+use cadmpeg_ir::Exactness;
+
+use crate::container;
+use crate::parasolid::{self, StreamKind};
+use crate::test_support::*;
+use crate::NxCodec;
+
+use super::*;
+
+#[test]
+fn topology_rejects_shell_with_broken_face_ownership_chain() {
+    let valid = topology_partition_stream();
+    let graph = crate::topology::Graph::parse(&valid);
+    assert_eq!(graph.body_shape_shells().len(), 1);
+
+    let mut broken = valid;
+    let face = broken
+        .windows(2)
+        .position(|window| window == [0, 14])
+        .expect("face record");
+    put_ref(&mut broken, face + 24, 99);
+    assert!(crate::topology::Graph::parse(&broken)
+        .body_shape_shells()
+        .is_empty());
+
+    let mut independent_previous = topology_partition_stream();
+    let face = independent_previous
+        .windows(2)
+        .position(|window| window == [0, 14])
+        .expect("face record");
+    put_ref(&mut independent_previous, face + 20, 99);
+    assert_eq!(
+        crate::topology::Graph::parse(&independent_previous)
+            .body_shape_shells()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn topology_retains_shell_body_identity_without_body_record() {
+    let mut stream = topology_partition_stream();
+    let body = stream
+        .windows(4)
+        .position(|window| window == [0, 12, 0, 2])
+        .expect("body record");
+    stream[body..body + 24].fill(0xff);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(12, 2).is_none());
+    assert_eq!(graph.body_shape_shells().len(), 1);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.bodies[0].id.0, "nx:s0:body#2");
+    assert_eq!(result.ir().model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn topology_accepts_cached_last_face_and_implicit_region_identity() {
+    let mut stream = topology_partition_stream();
+    let shell = stream
+        .windows(4)
+        .position(|window| window == [0, 13, 0, 3])
+        .expect("shell record");
+    put_ref(&mut stream, shell + 22, 4);
+    let region = stream
+        .windows(4)
+        .position(|window| window == [0, 19, 0, 12])
+        .expect("region record");
+    stream[region..region + 16].fill(0xff);
+    let mut second_face = record(14, 39);
+    put_ref(&mut second_face, 2, 20);
+    put_f64(&mut second_face, 10, 0.000_2);
+    put_ref(&mut second_face, 18, 1);
+    put_ref(&mut second_face, 20, 1);
+    put_ref(&mut second_face, 22, 1);
+    put_ref(&mut second_face, 24, 3);
+    put_ref(&mut second_face, 26, 6);
+    second_face[28] = b'+';
+    stream.extend(second_face);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(19, 12).is_none());
+    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_face_count(), 2);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.regions[0].id.0, "nx:s0:region#12");
+    assert_eq!(result.ir().model.faces.len(), 2);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn topology_rejects_nonreciprocal_fin_ring() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 8, 99);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.face_loop_rings(4).is_none());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.loops.is_empty());
+    assert!(result.ir().model.coedges.is_empty());
+    assert!(result.ir().model.edges.is_empty());
+
+    let mut broken_partner = topology_partition_stream();
+    let fin = broken_partner
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut broken_partner, fin + 14, 99);
+    assert!(crate::topology::Graph::parse(&broken_partner)
+        .face_loop_rings(4)
+        .is_none());
+}
+
+#[test]
+fn topology_accepts_fixed_record_envelope_escape() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    stream.insert(fin + 2, 0xff);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(
+        graph.get(17, 7).unwrap().attribute_field_offset(),
+        Some(fin + 5)
+    );
+    assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
+}
+
+#[test]
+fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
+    let mut stream = topology_partition_stream();
+    let shell = stream
+        .windows(4)
+        .position(|window| window == [0, 13, 0, 3])
+        .expect("shell record");
+    stream.insert(shell + 2, 0xff);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.get(13, 3).map(|node| node.pos), Some(shell));
+    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_face_count(), 1);
+}
+
+#[test]
+fn topology_iterates_each_record_family_in_physical_order() {
+    let mut stream = Vec::new();
+    for (xmt, x) in [(77, 0.01), (3, 0.02)] {
+        let mut point = record(29, 40);
+        put_ref(&mut point, 2, xmt);
+        put_vec3(&mut point, 16, [x, 0.0, 0.0]);
+        stream.extend(point);
+    }
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(
+        graph.of_kind(29).map(|node| node.xmt).collect::<Vec<_>>(),
+        vec![77, 3]
+    );
+}
+
+#[test]
+fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
+    let mut stream = record(14, 39);
+    put_ref(&mut stream, 2, 4);
+    stream.extend(topology_partition_stream());
+
+    let graph = crate::topology::Graph::parse(&stream);
+    let face = graph.get(14, 4).expect("valid later FACE");
+    assert!(face.pos >= 39);
+    assert!(face.face_fields().is_some());
+}
+
+#[test]
+fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
+    let mut stream = vec![0; 26];
+    stream[..7].copy_from_slice(&[0, 12, 0xff, 0xfe, 0x00, 0x02, 0x01]);
+    let mut successor = record(12, 24);
+    put_ref(&mut successor, 2, 3);
+    stream.extend_from_slice(&successor);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.of_kind(12).count(), 2);
+    assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(65_536));
+    assert_eq!(graph.at_pos(26).map(|node| node.xmt), Some(3));
+}
+
+#[test]
+fn topology_disambiguates_direct_large_index_from_escaped_compact_record() {
+    let mut stream = vec![0; 25];
+    stream[..6].copy_from_slice(&[0, 17, 0xff, 0x7f, 0x00, 0x01]);
+    for index in 0..8 {
+        put_ref(&mut stream, 6 + index * 2, 2);
+    }
+    stream[22..24].copy_from_slice(b"++");
+    stream[24] = b'+';
+
+    let mut successor = record(17, 23);
+    put_ref(&mut successor, 2, 7);
+    for index in 0..9 {
+        put_ref(&mut successor, 4 + index * 2, 2);
+    }
+    successor[22] = b'+';
+    stream.extend_from_slice(&successor);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(32_896));
+    assert_eq!(graph.at_pos(0).map(crate::topology::Node::end), Some(25));
+    assert_eq!(graph.at_pos(25).map(|node| node.xmt), Some(7));
+
+    let mut ambiguous = stream[..25].to_vec();
+    ambiguous.extend_from_slice(&[0; 5]);
+    assert!(crate::topology::Graph::parse(&ambiguous)
+        .at_pos(0)
+        .is_none());
+}
+
+#[test]
+fn topology_rejects_duplicate_fixed_record_identity() {
+    let mut first = record(29, 40);
+    put_ref(&mut first, 2, 11);
+    put_vec3(&mut first, 16, [0.01, 0.02, 0.03]);
+    let mut duplicate = record(29, 40);
+    put_ref(&mut duplicate, 2, 11);
+    put_vec3(&mut duplicate, 16, [0.04, 0.05, 0.06]);
+    first.extend(duplicate);
+
+    let graph = crate::topology::Graph::parse(&first);
+    assert!(graph.get(29, 11).is_none());
+    assert!(graph.of_kind(29).next().is_none());
+}

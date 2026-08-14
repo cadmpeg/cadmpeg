@@ -1,4 +1,4 @@
-# generated at 3ba4e05c9
+# generated at 410399168
 pub mod cadmpeg_protein
 pub enum cadmpeg_protein::PropertyValue
 pub cadmpeg_protein::PropertyValue::Boolean(bool)

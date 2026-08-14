@@ -95,7 +95,7 @@ The excluded fuzz crate uses Rust nightly and `cargo-fuzz`. The scheduled [fuzz 
 cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
 ```
 
-See [`seeds/README.md`](seeds/README.md) for seed regeneration and local fuzz-run commands.
+See [`crates/cadmpeg-fuzz/README.md`](crates/cadmpeg-fuzz/README.md) for seed regeneration and local fuzz-run commands.
 
 ---
 
@@ -108,7 +108,7 @@ See [`seeds/README.md`](seeds/README.md) for seed regeneration and local fuzz-ru
 - [ ] `cargo build --workspace` passes.
 - [ ] `cargo test-fast` and `cargo test --workspace --doc` pass.
 - [ ] `cargo test -p cadmpeg-ir --features schema --lib` passes (IR or native record type changes).
-- [ ] No CAD binaries committed outside the corpus donation pipeline or the generated fuzz seeds (see [`seeds/README.md`](seeds/README.md)).
+- [ ] No CAD binaries committed outside the corpus donation pipeline or the generated fuzz seeds (see [`crates/cadmpeg-fuzz/README.md`](crates/cadmpeg-fuzz/README.md)).
 - [ ] IR exactness is classified as `ByteExact`, `Derived`, `Inferred`, or `Unknown` accurately (decoder PRs).
 
 ---

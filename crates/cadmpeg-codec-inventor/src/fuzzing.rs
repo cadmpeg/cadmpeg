@@ -3,10 +3,17 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
+/// Desktop salvage ceilings for fuzz wrappers.
+///
+/// `DecodePolicy::service()` tightens collection and entity limits 8–16× and
+/// would silently shrink coverage. Wrappers must not copy that profile.
+fn fuzz_policy() -> DecodePolicy {
+    DecodePolicy::default()
+}
+
 fn with_source(data: &[u8], run: impl FnOnce(&DecodeContext<'_>, cadmpeg_core::decode::View<'_>)) {
     let arena = DecodeArena::new();
-    let Ok((ctx, source)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())
-    else {
+    let Ok((ctx, source)) = DecodeContext::from_root_bytes(data, &arena, &fuzz_policy()) else {
         return;
     };
     run(&ctx, source);
@@ -32,7 +39,7 @@ pub fn meta_stream(data: &[u8]) {
 pub fn record_tables(data: &[u8]) {
     let split = data.len() / 2;
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let policy = fuzz_policy();
     let Ok((ctx, source)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
         return;
     };

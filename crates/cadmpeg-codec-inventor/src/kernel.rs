@@ -10,6 +10,7 @@ use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
 
+use crate::layout::kernel_carrier_header as carrier_header;
 use crate::rse::{
     DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
 };
@@ -197,19 +198,19 @@ fn parse_carrier<'a>(
             )));
         }
     };
-    if bytes.len() < 14 + footer_len {
+    if bytes.len() < carrier_header::LEN + footer_len {
         return Err(CodecError::Malformed(
             "truncated Inventor kernel-carrier record".into(),
         ));
     }
-    let header_state = read_u32(bytes, 0, "carrier header state")?;
-    let header_kind = read_u16(bytes, 4, "carrier header kind")?;
-    let header_value = read_u32(bytes, 6, "carrier header value")?;
-    let schema = read_u32(bytes, 10, "carrier schema")?;
+    let header_state = read_u32(bytes, carrier_header::HEADER_STATE, "carrier header state")?;
+    let header_kind = read_u16(bytes, carrier_header::HEADER_KIND, "carrier header kind")?;
+    let header_value = read_u32(bytes, carrier_header::HEADER_VALUE, "carrier header value")?;
+    let schema = read_u32(bytes, carrier_header::SCHEMA, "carrier schema")?;
     let carrier_end = bytes.len() - footer_len;
-    let family = if bytes[14..carrier_end].starts_with(b"ASM BinaryFile") {
+    let family = if bytes[carrier_header::LEN..carrier_end].starts_with(b"ASM BinaryFile") {
         KernelFamily::Asm
-    } else if bytes[14..carrier_end].starts_with(b"ACIS BinaryFile") {
+    } else if bytes[carrier_header::LEN..carrier_end].starts_with(b"ACIS BinaryFile") {
         KernelFamily::Acis
     } else {
         return Err(CodecError::Malformed(
@@ -218,7 +219,10 @@ fn parse_carrier<'a>(
         ));
     };
     let carrier = payload
-        .child(payload.start() + 14, payload.start() + carrier_end)
+        .child(
+            payload.start() + carrier_header::LEN,
+            payload.start() + carrier_end,
+        )
         .ok_or_else(|| CodecError::Malformed("Inventor kernel-carrier range is invalid".into()))?;
     let mut offset = carrier_end;
     let selected_key = read_u32(bytes, offset, "carrier selected key")?;
@@ -261,7 +265,7 @@ fn parse_carrier<'a>(
         header_kind,
         header_value,
         schema,
-        carrier_offset: record_payload_offset + 14,
+        carrier_offset: record_payload_offset + carrier_header::LEN as u64,
         bytes: carrier,
         selected_key,
         enabled,
@@ -271,33 +275,18 @@ fn parse_carrier<'a>(
 }
 
 fn read_u16(bytes: &[u8], offset: usize, name: &str) -> Result<u16, CodecError> {
-    Ok(u16::from_le_bytes(
-        bytes
-            .get(offset..offset.saturating_add(2))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))?
-            .try_into()
-            .expect("two-byte slice"),
-    ))
+    View::u16_le_at(bytes, offset)
+        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
 }
 
 fn read_u32(bytes: &[u8], offset: usize, name: &str) -> Result<u32, CodecError> {
-    Ok(u32::from_le_bytes(
-        bytes
-            .get(offset..offset.saturating_add(4))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))?
-            .try_into()
-            .expect("four-byte slice"),
-    ))
+    View::u32_le_at(bytes, offset)
+        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
 }
 
 fn read_i32(bytes: &[u8], offset: usize, name: &str) -> Result<i32, CodecError> {
-    Ok(i32::from_le_bytes(
-        bytes
-            .get(offset..offset.saturating_add(4))
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))?
-            .try_into()
-            .expect("four-byte slice"),
-    ))
+    View::i32_le_at(bytes, offset)
+        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
 }
 
 #[cfg(test)]
@@ -310,7 +299,27 @@ mod tests {
     fn typed_carrier_envelope_selects_family_and_exact_footer() {
         let bytes = carrier_fixture(b"ASM BinaryFile4 synthetic", 18);
         with_view(&bytes, |view| {
+            assert_eq!(
+                u32::from_le_bytes(bytes[0..4].try_into().expect("planted header state")),
+                1
+            );
+            assert_eq!(
+                u16::from_le_bytes(bytes[4..6].try_into().expect("planted header kind")),
+                2
+            );
+            assert_eq!(
+                u32::from_le_bytes(bytes[6..10].try_into().expect("planted header value")),
+                3
+            );
+            assert_eq!(
+                u32::from_le_bytes(bytes[10..14].try_into().expect("planted schema")),
+                4
+            );
             let carrier = parse_carrier(view, "token", 7, 100, 18).expect("carrier parses");
+            assert_eq!(carrier.header_state, 1);
+            assert_eq!(carrier.header_kind, 2);
+            assert_eq!(carrier.header_value, 3);
+            assert_eq!(carrier.schema, 4);
             assert_eq!(carrier.family, KernelFamily::Asm);
             assert_eq!(carrier.bytes.window(), b"ASM BinaryFile4 synthetic");
             assert_eq!(carrier.record_ordinal, 7);
