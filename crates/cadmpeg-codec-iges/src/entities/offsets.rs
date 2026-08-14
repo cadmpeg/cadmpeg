@@ -18,32 +18,6 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn normalized(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0)
-        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
-}
-
-fn add(point: Point3, vector: Vector3, scale: f64) -> Point3 {
-    Point3::new(
-        point.x + vector.x * scale,
-        point.y + vector.y * scale,
-        point.z + vector.z * scale,
-    )
-}
-
 fn coordinate(point: Point3, index: u8) -> Option<f64> {
     match index {
         1 => Some(point.x),
@@ -180,7 +154,11 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset plane normal is not numeric"));
             continue;
         };
-        let Some(normal) = normalized(Vector3::new(x, y, z)) else {
+        let Some(normal) = {
+            let v = Vector3::new(x, y, z);
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+        } else {
             losses.push(entity_loss(
                 entry,
                 "offset plane normal is zero or non-finite",
@@ -292,10 +270,10 @@ pub(super) fn project(
                 let distance = distance * factor;
                 let geometry = match &source.geometry {
                     CurveGeometry::Line { origin, direction }
-                        if dot(normal, *direction).abs() <= 1.0e-10 =>
+                        if normal.dot(*direction).abs() <= 1.0e-10 =>
                     {
                         CurveGeometry::Line {
-                            origin: add(*origin, cross(normal, *direction), distance),
+                            origin: origin.translated(normal.cross(*direction), distance),
                             direction: *direction,
                         }
                     }
@@ -304,8 +282,8 @@ pub(super) fn project(
                         axis,
                         ref_direction,
                         radius,
-                    } if dot(normal, *axis).abs() >= 1.0 - 1.0e-10 => {
-                        let offset_radius = radius - distance * dot(normal, *axis).signum();
+                    } if normal.dot(*axis).abs() >= 1.0 - 1.0e-10 => {
+                        let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(
                                 entry,
@@ -390,7 +368,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                if dot(normal, *direction).abs() > 1.0e-10 {
+                if normal.dot(*direction).abs() > 1.0e-10 {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -406,7 +384,7 @@ pub(super) fn project(
                         / (control_range[1] - control_range[0]);
                     distances[0] + alpha * (distances[1] - distances[0])
                 };
-                let offset_direction = cross(normal, *direction);
+                let offset_direction = normal.cross(*direction);
                 let Some(source_start) = cadmpeg_ir::eval::curve_point(&source.geometry, start)
                 else {
                     losses.push(entity_loss(
@@ -423,8 +401,8 @@ pub(super) fn project(
                     continue;
                 };
                 let controls = vec![
-                    add(source_start, offset_direction, evaluate_distance(start)),
-                    add(source_end, offset_direction, evaluate_distance(end)),
+                    source_start.translated(offset_direction, evaluate_distance(start)),
+                    source_end.translated(offset_direction, evaluate_distance(end)),
                 ];
                 let law = CurveOffsetDistanceLaw::Linear {
                     basis,
@@ -504,7 +482,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                if dot(normal, *direction).abs() > 1.0e-10 {
+                if normal.dot(*direction).abs() > 1.0e-10 {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -549,7 +527,7 @@ pub(super) fn project(
                     CurveOffsetLawBasis::ArcLength => start + independent,
                     CurveOffsetLawBasis::Parameter => independent,
                 };
-                let offset_direction = cross(normal, *direction);
+                let offset_direction = normal.cross(*direction);
                 let mut controls = Vec::with_capacity(function_nurbs.control_points.len());
                 for (index, function_control) in
                     function_nurbs.control_points.iter().copied().enumerate()
@@ -575,7 +553,7 @@ pub(super) fn project(
                         controls.clear();
                         break;
                     };
-                    controls.push(add(base, offset_direction, distance));
+                    controls.push(base.translated(offset_direction, distance));
                 }
                 if controls.len() != function_nurbs.control_points.len() {
                     losses.push(entity_loss(

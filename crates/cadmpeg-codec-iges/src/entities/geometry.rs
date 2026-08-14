@@ -192,24 +192,6 @@ impl Affine {
     }
 }
 
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
-fn normalized(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0)
-        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
-}
-
 pub(crate) fn resolve_transform(
     sequence: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -333,23 +315,21 @@ pub(crate) fn resolve_transform(
             Vector3::new(values[1], values[5], values[9]),
             Vector3::new(values[2], values[6], values[10]),
         ];
-        let first = normalized(raw_columns[0])
-            .ok_or_else(|| format!("transformation D{sequence} first axis cannot be normalized"))?;
-        let second_projection = dot(first, raw_columns[1]);
-        let second_residual = Vector3::new(
-            raw_columns[1].x - first.x * second_projection,
-            raw_columns[1].y - first.y * second_projection,
-            raw_columns[1].z - first.z * second_projection,
-        );
-        let second = normalized(second_residual).ok_or_else(|| {
-            format!("transformation D{sequence} second axis cannot be normalized")
-        })?;
-        let perpendicular = cross(first, second);
-        let third = Vector3::new(
-            perpendicular.x * expected_determinant,
-            perpendicular.y * expected_determinant,
-            perpendicular.z * expected_determinant,
-        );
+        let first = {
+            let v = raw_columns[0];
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+        }
+        .ok_or_else(|| format!("transformation D{sequence} first axis cannot be normalized"))?;
+        let second_projection = first.dot(raw_columns[1]);
+        let second_residual = raw_columns[1] - first.scale(second_projection);
+        let second = {
+            let n = second_residual.norm();
+            (n.is_finite() && n > 0.0).then(|| second_residual.scale(1.0 / n))
+        }
+        .ok_or_else(|| format!("transformation D{sequence} second axis cannot be normalized"))?;
+        let perpendicular = first.cross(second);
+        let third = perpendicular.scale(expected_determinant);
         let local = Affine {
             rows: [
                 [first.x, second.x, third.x, values[3]],
@@ -527,7 +507,7 @@ pub(crate) fn project_geometry(
         if !scale_x.is_finite()
             || !scale_y.is_finite()
             || (scale_x - scale_y).abs() > scale_tolerance
-            || dot(basis_x, basis_y).abs() > scale_x * scale_y * COMPUTATION_TOLERANCE
+            || basis_x.dot(basis_y).abs() > scale_x * scale_y * COMPUTATION_TOLERANCE
         {
             losses.push(entity_loss(
                 entry,
@@ -538,15 +518,22 @@ pub(crate) fn project_geometry(
         let center = transform.point(Point3::new(values[1], values[2], values[0]));
         let start = transform.point(Point3::new(values[3], values[4], values[0]));
         let end = transform.point(Point3::new(values[5], values[6], values[0]));
-        let start_delta = Vector3::new(start.x - center.x, start.y - center.y, start.z - center.z);
-        let end_delta = Vector3::new(end.x - center.x, end.y - center.y, end.z - center.z);
+        let start_delta = start.vector_from(center);
+        let end_delta = end.vector_from(center);
         let radius = start_delta.norm();
         let end_radius = end_delta.norm();
-        let Some(ref_direction) = normalized(start_delta) else {
+        let Some(ref_direction) = {
+            let n = start_delta.norm();
+            (n.is_finite() && n > 0.0).then(|| start_delta.scale(1.0 / n))
+        } else {
             losses.push(entity_loss(entry, "arc start point equals its center"));
             continue;
         };
-        let Some(axis) = normalized(cross(basis_x, basis_y)) else {
+        let Some(axis) = {
+            let v = basis_x.cross(basis_y);
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+        } else {
             losses.push(entity_loss(entry, "arc placement collapses its plane"));
             continue;
         };
@@ -560,12 +547,16 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let Some(end_direction) = normalized(end_delta) else {
+        let Some(end_direction) = {
+            let n = end_delta.norm();
+            (n.is_finite() && n > 0.0).then(|| end_delta.scale(1.0 / n))
+        } else {
             losses.push(entity_loss(entry, "arc terminate point equals its center"));
             continue;
         };
-        let mut angle = dot(axis, cross(ref_direction, end_direction))
-            .atan2(dot(ref_direction, end_direction))
+        let mut angle = axis
+            .dot(ref_direction.cross(end_direction))
+            .atan2(ref_direction.dot(end_direction))
             .rem_euclid(std::f64::consts::TAU);
         if angularly_equal(angle, 0.0) {
             angle = std::f64::consts::TAU;
@@ -716,7 +707,7 @@ pub(crate) fn project_geometry(
         };
         let start = transform.point(Point3::new(coordinates[0], coordinates[1], coordinates[2]));
         let end = transform.point(Point3::new(coordinates[3], coordinates[4], coordinates[5]));
-        let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+        let delta = end.vector_from(start);
         let length = delta.norm();
         if !length.is_finite() || length <= 0.0 {
             losses.push(entity_loss(

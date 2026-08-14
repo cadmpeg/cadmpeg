@@ -74,6 +74,7 @@ pub(crate) mod reference;
 pub(crate) mod scalar;
 pub(crate) mod surface;
 pub(crate) mod topology;
+pub(crate) mod vecmath;
 
 #[doc(hidden)]
 pub mod fuzz;

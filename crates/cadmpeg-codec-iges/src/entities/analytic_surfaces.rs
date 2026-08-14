@@ -13,24 +13,6 @@ use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn subtract(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn scale(vector: Vector3, factor: f64) -> Vector3 {
-    Vector3::new(vector.x * factor, vector.y * factor, vector.z * factor)
-}
-
-fn normalized(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0)
-        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
-}
-
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
     record.integer(index).and_then(|value| {
         let sequence = u32::try_from(value).ok()?;
@@ -82,8 +64,12 @@ fn direction(
             "points to D{sequence}, whose direction components are not numeric"
         ));
     };
-    normalized(Vector3::new(x, y, z))
-        .ok_or_else(|| format!("points to D{sequence}, whose direction is zero or non-finite"))
+    {
+        let v = Vector3::new(x, y, z);
+        let n = v.norm();
+        (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+    }
+    .ok_or_else(|| format!("points to D{sequence}, whose direction is zero or non-finite"))
 }
 
 fn required_direction(
@@ -107,8 +93,12 @@ fn transformed_direction(
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Result<Vector3, String> {
     let direction = required_direction(record, index, role, entries, records)?;
-    normalized(transform.vector(direction))
-        .ok_or_else(|| format!("{role} collapses under the surface transformation"))
+    {
+        let v = transform.vector(direction);
+        let n = v.norm();
+        (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+    }
+    .ok_or_else(|| format!("{role} collapses under the surface transformation"))
 }
 
 fn form_reference_direction(
@@ -129,7 +119,11 @@ fn form_reference_direction(
 
 fn reference_direction(axis: Vector3, candidate: Option<Vector3>) -> Option<Vector3> {
     match candidate {
-        Some(candidate) => normalized(subtract(candidate, scale(axis, dot(axis, candidate)))),
+        Some(candidate) => {
+            let v = candidate - axis.scale(axis.dot(candidate));
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+        }
         None => Some(derive_reference_direction(axis)),
     }
 }
@@ -379,8 +373,12 @@ pub(super) fn project(
                 let axis = if entry.form == 1 {
                     transformed_direction(record, 3, "sphere axis", transform, &entries, &records)
                 } else {
-                    normalized(transform.vector(Vector3::new(0.0, 0.0, 1.0)))
-                        .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
+                    {
+                        let v = transform.vector(Vector3::new(0.0, 0.0, 1.0));
+                        let n = v.norm();
+                        (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
+                    }
+                    .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
                 };
                 let axis = match axis {
                     Ok(axis) => axis,

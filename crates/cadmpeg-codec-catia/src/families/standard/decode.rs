@@ -49,26 +49,6 @@ fn bind_consolidated_revolution_faces_and_seams(
 ) -> (usize, usize) {
     const TOLERANCE: f64 = 2e-3;
 
-    fn vector(from: Point3, to: Point3) -> Vector3 {
-        Vector3::new(to.x - from.x, to.y - from.y, to.z - from.z)
-    }
-
-    fn dot(left: Vector3, right: Vector3) -> f64 {
-        left.x * right.x + left.y * right.y + left.z * right.z
-    }
-
-    fn cross(left: Vector3, right: Vector3) -> Vector3 {
-        Vector3::new(
-            left.y * right.z - left.z * right.y,
-            left.z * right.x - left.x * right.z,
-            left.x * right.y - left.y * right.x,
-        )
-    }
-
-    fn norm(value: Vector3) -> f64 {
-        value.x.hypot(value.y).hypot(value.z)
-    }
-
     fn point_on_torus(point: Point3, geometry: &SurfaceGeometry, tolerance: f64) -> bool {
         let SurfaceGeometry::Torus {
             center,
@@ -80,14 +60,14 @@ fn bind_consolidated_revolution_faces_and_seams(
         else {
             return false;
         };
-        let offset = vector(*center, point);
-        let axial = dot(offset, *axis);
+        let offset = point.vector_from(*center);
+        let axial = offset.dot(*axis);
         let radial = Vector3::new(
             offset.x - axial * axis.x,
             offset.y - axial * axis.y,
             offset.z - axial * axis.z,
         );
-        let radial = norm(radial);
+        let radial = radial.norm();
         [
             (radial - major_radius).hypot(axial),
             (radial + major_radius).hypot(axial),
@@ -118,14 +98,14 @@ fn bind_consolidated_revolution_faces_and_seams(
         {
             return None;
         }
-        let start_offset = vector(*center, start);
-        let start_axial = dot(start_offset, *axis);
+        let start_offset = start.vector_from(*center);
+        let start_axial = start_offset.dot(*axis);
         let start_radial = Vector3::new(
             start_offset.x - start_axial * axis.x,
             start_offset.y - start_axial * axis.y,
             start_offset.z - start_axial * axis.z,
         );
-        let radial_norm = norm(start_radial);
+        let radial_norm = start_radial.norm();
         if !radial_norm.is_finite() || radial_norm == 0.0 {
             return None;
         }
@@ -140,28 +120,28 @@ fn bind_consolidated_revolution_faces_and_seams(
                 center.y + sign * major_radius * radial_direction.y,
                 center.z + sign * major_radius * radial_direction.z,
             );
-            let first = vector(circle_center, start);
-            let second = vector(circle_center, end);
-            (((norm(first) - minor_radius).abs() < TOLERANCE)
-                && ((norm(second) - minor_radius).abs() < TOLERANCE))
+            let first = start.vector_from(circle_center);
+            let second = end.vector_from(circle_center);
+            (((first.norm() - minor_radius).abs() < TOLERANCE)
+                && ((second.norm() - minor_radius).abs() < TOLERANCE))
                 .then_some((circle_center, first, second))
         });
         let (circle_center, first, second) = centers.next()?;
         if centers.next().is_some() {
             return None;
         }
-        let first_norm = norm(first);
-        let second_norm = norm(second);
-        let cosine = (dot(first, second) / (first_norm * second_norm)).clamp(-1.0, 1.0);
+        let first_norm = first.norm();
+        let second_norm = second.norm();
+        let cosine = (first.dot(second) / (first_norm * second_norm)).clamp(-1.0, 1.0);
         let sweep = cosine.acos();
         if (sweep - expected_sweep).abs() > TOLERANCE / minor_radius.max(1.0) {
             return None;
         }
-        let normal = cross(first, second);
-        let normal_norm = norm(normal);
+        let normal = first.cross(second);
+        let normal_norm = normal.norm();
         if !normal_norm.is_finite()
             || normal_norm == 0.0
-            || (dot(normal, *axis) / normal_norm).abs() > 1e-6
+            || (normal.dot(*axis) / normal_norm).abs() > 1e-6
         {
             return None;
         }

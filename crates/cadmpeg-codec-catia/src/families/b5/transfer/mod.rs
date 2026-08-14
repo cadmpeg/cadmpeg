@@ -1096,15 +1096,15 @@ fn point3(value: [f64; 3]) -> Point3 {
 }
 
 fn subtract(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [left[0] - right[0], left[1] - right[1], left[2] - right[2]]
+    (Vector3::from(left) - Vector3::from(right)).into()
 }
 
 fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
-    left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
+    Vector3::from(left).dot(Vector3::from(right))
 }
 
 fn length(value: [f64; 3]) -> f64 {
-    dot(value, value).sqrt()
+    Vector3::from(value).norm()
 }
 
 fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {

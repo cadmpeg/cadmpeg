@@ -81,15 +81,13 @@ fn similarity_transform(transform: &Transform) -> bool {
     ];
     let scale = columns[0].norm();
     let tolerance = 1.0e-10 * scale.max(1.0);
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     scale > 1.0e-12
         && columns
             .iter()
             .all(|column| (column.norm() - scale).abs() <= tolerance)
-        && dot(columns[0], columns[1]).abs() <= tolerance * scale
-        && dot(columns[0], columns[2]).abs() <= tolerance * scale
-        && dot(columns[1], columns[2]).abs() <= tolerance * scale
+        && columns[0].dot(columns[1]).abs() <= tolerance * scale
+        && columns[0].dot(columns[2]).abs() <= tolerance * scale
+        && columns[1].dot(columns[2]).abs() <= tolerance * scale
 }
 
 /// Emit or reuse a `CARTESIAN_POINT`.

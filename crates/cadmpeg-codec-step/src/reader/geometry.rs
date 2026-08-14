@@ -303,7 +303,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
-                .map(|(direction, magnitude)| scale_vector(direction, magnitude * record_scale));
+                .map(|(direction, magnitude)| direction.scale(magnitude * record_scale));
             let value2 = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions2.get(&direction).copied())
@@ -550,7 +550,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                                 // longer one. The IR ellipse is canonicalized
                                 // around its semi-major direction.
                                 (
-                                    cross(axis, reference_direction),
+                                    axis.cross(reference_direction),
                                     second_radius,
                                     first_radius,
                                 )
@@ -3287,7 +3287,7 @@ fn unresolved_unit_loss(message: impl Into<String>) -> LossNote {
 }
 
 fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
-    let projection = dot(axis, reference);
+    let projection = axis.dot(reference);
     normalize(Vector3::new(
         reference.x - projection * axis.x,
         reference.y - projection * axis.y,
@@ -3308,7 +3308,7 @@ fn curve_parameter_at_point(
     let offset =
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
-        CurveGeometry::Line { origin, direction } => Some(dot(offset(*origin), *direction)),
+        CurveGeometry::Line { origin, direction } => Some(offset(*origin).dot(*direction)),
         CurveGeometry::Circle {
             center,
             axis,
@@ -3316,8 +3316,8 @@ fn curve_parameter_at_point(
             ..
         } => {
             let radial = offset(*center);
-            let y_axis = cross(*axis, *ref_direction);
-            Some(dot(radial, y_axis).atan2(dot(radial, *ref_direction)))
+            let y_axis = axis.cross(*ref_direction);
+            Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
         }
         CurveGeometry::Ellipse {
             center,
@@ -3327,10 +3327,10 @@ fn curve_parameter_at_point(
             minor_radius,
         } => {
             let radial = offset(*center);
-            let minor_direction = cross(*axis, *major_direction);
+            let minor_direction = axis.cross(*major_direction);
             Some(
-                (dot(radial, minor_direction) / minor_radius)
-                    .atan2(dot(radial, *major_direction) / major_radius),
+                (radial.dot(minor_direction) / minor_radius)
+                    .atan2(radial.dot(*major_direction) / major_radius),
             )
         }
         CurveGeometry::Nurbs(curve) => {
@@ -3344,18 +3344,6 @@ fn curve_parameter_at_point(
         ),
         _ => None,
     }
-}
-
-fn dot(a: Vector3, b: Vector3) -> f64 {
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
 }
 
 type CompositeCurveData = (Vec<(u64, CompositeCurveSegment)>, Option<bool>);
@@ -4771,30 +4759,20 @@ fn numbers(value: &Value) -> Option<Vec<f64>> {
 
 fn normalize(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| scale_vector(vector, 1.0 / norm))
-}
-
-fn subtract_vector(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
 }
 
 fn project_axis(vector: Vector3, normal: Vector3) -> Option<Vector3> {
     let vector = normalize(vector)?;
     let normal = normalize(normal)?;
-    normalize(subtract_vector(
-        vector,
-        scale_vector(normal, dot(vector, normal)),
-    ))
+    normalize(vector - normal.scale(vector.dot(normal)))
 }
 
 fn second_project_axis(z_axis: Vector3, x_axis: Vector3, vector: Vector3) -> Option<Vector3> {
     let vector = normalize(vector)?;
     let z_axis = normalize(z_axis)?;
     let x_axis = normalize(x_axis)?;
-    let projected = subtract_vector(
-        subtract_vector(vector, scale_vector(z_axis, dot(vector, z_axis))),
-        scale_vector(x_axis, dot(vector, x_axis)),
-    );
+    let projected = (vector - z_axis.scale(vector.dot(z_axis))) - x_axis.scale(vector.dot(x_axis));
     normalize(projected)
 }
 
@@ -4964,10 +4942,6 @@ fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2,
         }
         (None, None) => Some((Point2::new(1.0, 0.0), Point2::new(0.0, 1.0))),
     }
-}
-
-fn scale_vector(vector: Vector3, scale: f64) -> Vector3 {
-    Vector3::new(vector.x * scale, vector.y * scale, vector.z * scale)
 }
 
 fn optional_direction(

@@ -11,6 +11,7 @@ use crate::surface::{
     unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
+use crate::vecmath::{add, cross, dot, normalize, scale};
 
 /// A feature's right-handed section-to-model rigid frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -371,33 +372,6 @@ fn generated_planar_section_transform(
         normal: *normal,
         offset: table.offset,
     })
-}
-
-fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
-    left[0].mul_add(right[0], left[1].mul_add(right[1], left[2] * right[2]))
-}
-
-fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [
-        left[1].mul_add(right[2], -(left[2] * right[1])),
-        left[2].mul_add(right[0], -(left[0] * right[2])),
-        left[0].mul_add(right[1], -(left[1] * right[0])),
-    ]
-}
-
-fn add(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [left[0] + right[0], left[1] + right[1], left[2] + right[2]]
-}
-
-fn scale(vector: [f64; 3], factor: f64) -> [f64; 3] {
-    vector.map(|value| value * factor)
-}
-
-fn normalize(vector: [f64; 3]) -> Option<[f64; 3]> {
-    let magnitude = vector
-        .iter()
-        .fold(0.0_f64, |norm, value| norm.hypot(*value));
-    (magnitude.is_finite() && magnitude > 1e-12).then(|| scale(vector, magnitude.recip()))
 }
 
 fn plane_equation(

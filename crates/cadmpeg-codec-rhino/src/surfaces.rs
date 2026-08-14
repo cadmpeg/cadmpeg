@@ -487,15 +487,15 @@ fn revolution_nurbs(
                 profile_point.y - axis_origin.y,
                 profile_point.z - axis_origin.z,
             );
-            let axial_length = dot(relative, axis);
-            let axial = scale_vector(axis, axial_length);
-            let radial = subtract(relative, axial);
-            let point = if dot(radial, radial) <= 1.0e-24 {
+            let axial_length = relative.dot(axis);
+            let axial = axis.scale(axial_length);
+            let radial = relative - axial;
+            let point = if radial.dot(radial) <= 1.0e-24 {
                 // A pole row is one exact axis point for every angular control point.
-                add_point_vector(axis_origin, axial)
+                axis_origin.translated(axial, 1.0)
             } else {
                 let rotated = rodrigues(radial, axis, theta);
-                add_point_vector(axis_origin, add(axial, scale_vector(rotated, radial_scale)))
+                axis_origin.translated(axial + rotated.scale(radial_scale), 1.0)
             };
             control_points.push(point);
             weights.push(profile_weight * angular_weight);
@@ -683,34 +683,11 @@ fn transpose_surface(surface: &mut NurbsSurface, offset: usize) -> Result<(), Ge
     Ok(())
 }
 
-fn scale_vector(value: Vector3, factor: f64) -> Vector3 {
-    Vector3::new(value.x * factor, value.y * factor, value.z * factor)
-}
-
-fn add(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(a.x + b.x, a.y + b.y, a.z + b.z)
-}
-
-fn subtract(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(a.x - b.x, a.y - b.y, a.z - b.z)
-}
-
-fn add_point_vector(point: Point3, vector: Vector3) -> Point3 {
-    Point3::new(point.x + vector.x, point.y + vector.y, point.z + vector.z)
-}
-
 fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     let cosine = angle.cos();
     let sine = angle.sin();
-    let cross = Vector3::new(
-        axis.y * value.z - axis.z * value.y,
-        axis.z * value.x - axis.x * value.z,
-        axis.x * value.y - axis.y * value.x,
-    );
-    add(
-        add(scale_vector(value, cosine), scale_vector(cross, sine)),
-        scale_vector(axis, dot(axis, value) * (1.0 - cosine)),
-    )
+    let cross = axis.cross(value);
+    value.scale(cosine) + cross.scale(sine) + axis.scale(axis.dot(value) * (1.0 - cosine))
 }
 
 pub(crate) fn read_nurbs_curve(
@@ -1093,10 +1070,10 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
         || (x.norm() - 1.0).abs() > 1.0e-10
         || (y.norm() - 1.0).abs() > 1.0e-10
         || (z.norm() - 1.0).abs() > 1.0e-10
-        || dot(x, y).abs() > 1.0e-10
-        || dot(x, z).abs() > 1.0e-10
-        || dot(y, z).abs() > 1.0e-10
-        || !close(cross(x, y), z)
+        || x.dot(y).abs() > 1.0e-10
+        || x.dot(z).abs() > 1.0e-10
+        || y.dot(z).abs() > 1.0e-10
+        || !close(x.cross(y), z)
     {
         return Err(error(
             offset,
@@ -1116,18 +1093,6 @@ fn scale_native_point(value: NativePoint3, scale: f64) -> Option<Point3> {
 
 fn vector(value: crate::settings::Vector3) -> Vector3 {
     Vector3::new(value.0[0], value.0[1], value.0[2])
-}
-
-fn dot(a: Vector3, b: Vector3) -> f64 {
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
 }
 
 fn close(a: Vector3, b: Vector3) -> bool {

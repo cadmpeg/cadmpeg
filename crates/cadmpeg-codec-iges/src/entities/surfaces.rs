@@ -27,37 +27,23 @@ fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
         )
     };
     let [x, y, z] = [column(0), column(1), column(2)];
-    let squared_scale = dot(x, x);
+    let squared_scale = x.dot(x);
     if !squared_scale.is_finite() || squared_scale <= 0.0 {
         return None;
     }
     let tolerance = squared_scale * 1.0e-10;
-    if (dot(y, y) - squared_scale).abs() > tolerance
-        || (dot(z, z) - squared_scale).abs() > tolerance
-        || dot(x, y).abs() > tolerance
-        || dot(x, z).abs() > tolerance
-        || dot(y, z).abs() > tolerance
+    if (y.dot(y) - squared_scale).abs() > tolerance
+        || (z.dot(z) - squared_scale).abs() > tolerance
+        || x.dot(y).abs() > tolerance
+        || x.dot(z).abs() > tolerance
+        || y.dot(z).abs() > tolerance
     {
         return None;
     }
-    let determinant = dot(x, cross(y, z));
+    let determinant = x.dot(y.cross(z));
     let determinant_tolerance = squared_scale.sqrt() * squared_scale * 1.0e-10;
     (determinant.is_finite() && determinant.abs() > determinant_tolerance)
         .then(|| determinant.signum())
-}
-
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
-fn normalized(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0)
-        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
 }
 
 fn bounded_nurbs(
@@ -75,33 +61,13 @@ fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
     Some(knots.iter().rev().map(|knot| first + last - knot).collect())
 }
 
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn subtract(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn scale(vector: Vector3, factor: f64) -> Vector3 {
-    Vector3::new(vector.x * factor, vector.y * factor, vector.z * factor)
-}
-
-fn add_point_vector(point: Point3, vector: Vector3) -> Point3 {
-    Point3::new(point.x + vector.x, point.y + vector.y, point.z + vector.z)
-}
-
 fn rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     let cosine = angle.cos();
     let sine = angle.sin();
-    let parallel = scale(axis, dot(axis, vector));
-    let perpendicular = subtract(vector, parallel);
-    let tangent = cross(axis, perpendicular);
-    Vector3::new(
-        parallel.x + cosine * perpendicular.x + sine * tangent.x,
-        parallel.y + cosine * perpendicular.y + sine * tangent.y,
-        parallel.z + cosine * perpendicular.z + sine * tangent.z,
-    )
+    let parallel = axis.scale(axis.dot(vector));
+    let perpendicular = vector - parallel;
+    let tangent = axis.cross(perpendicular);
+    parallel + perpendicular.scale(cosine) + tangent.scale(sine)
 }
 
 struct AngularBasis {
@@ -145,7 +111,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             normal,
             u_axis,
         } => Some(SurfaceGeometry::Plane {
-            origin: add_point_vector(*origin, scale(*normal, distance)),
+            origin: origin.translated(*normal, distance),
             normal: *normal,
             u_axis: *u_axis,
         }),
@@ -192,7 +158,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             ratio,
             half_angle,
         } if *ratio == 1.0 => Some(SurfaceGeometry::Cone {
-            origin: add_point_vector(*origin, scale(*axis, -distance * half_angle.sin())),
+            origin: origin.translated(*axis, -distance * half_angle.sin()),
             axis: *axis,
             ref_direction: *ref_direction,
             radius: radius + distance * half_angle.cos(),

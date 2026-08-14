@@ -4,22 +4,6 @@
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-fn add(origin: Point3, direction: Vector3, scale: f64) -> Point3 {
-    Point3::new(
-        origin.x + direction.x * scale,
-        origin.y + direction.y * scale,
-        origin.z + direction.z * scale,
-    )
-}
-
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
 fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<Vec<f64>> {
     if count == 0 || knots.len() != count.checked_add(degree)?.checked_add(1)? {
         return None;
@@ -193,16 +177,18 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
 
 pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match geometry {
-        CurveGeometry::Line { origin, direction } => Some(add(*origin, *direction, parameter)),
+        CurveGeometry::Line { origin, direction } => {
+            Some(origin.translated(*direction, parameter))
+        }
         CurveGeometry::Circle {
             center,
             axis,
             ref_direction,
             radius,
         } => {
-            let side = cross(*axis, *ref_direction);
-            let point = add(*center, *ref_direction, radius * parameter.cos());
-            Some(add(point, side, radius * parameter.sin()))
+            let side = axis.cross(*ref_direction);
+            let point = center.translated(*ref_direction, radius * parameter.cos());
+            Some(point.translated(side, radius * parameter.sin()))
         }
         CurveGeometry::Ellipse {
             center,
@@ -211,9 +197,9 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             major_radius,
             minor_radius,
         } => {
-            let minor_direction = cross(*axis, *major_direction);
-            let point = add(*center, *major_direction, major_radius * parameter.cos());
-            Some(add(point, minor_direction, minor_radius * parameter.sin()))
+            let minor_direction = axis.cross(*major_direction);
+            let point = center.translated(*major_direction, major_radius * parameter.cos());
+            Some(point.translated(minor_direction, minor_radius * parameter.sin()))
         }
         CurveGeometry::Parabola {
             vertex,
@@ -221,17 +207,9 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             major_direction,
             focal_distance,
         } => {
-            let minor_direction = cross(*axis, *major_direction);
-            let point = add(
-                *vertex,
-                *major_direction,
-                focal_distance * parameter * parameter,
-            );
-            Some(add(
-                point,
-                minor_direction,
-                2.0 * focal_distance * parameter,
-            ))
+            let minor_direction = axis.cross(*major_direction);
+            let point = vertex.translated(*major_direction, focal_distance * parameter * parameter);
+            Some(point.translated(minor_direction, 2.0 * focal_distance * parameter))
         }
         CurveGeometry::Hyperbola {
             center,
@@ -240,9 +218,9 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
             major_radius,
             minor_radius,
         } => {
-            let minor_direction = cross(*axis, *major_direction);
-            let point = add(*center, *major_direction, major_radius * parameter.cosh());
-            Some(add(point, minor_direction, minor_radius * parameter.sinh()))
+            let minor_direction = axis.cross(*major_direction);
+            let point = center.translated(*major_direction, major_radius * parameter.cosh());
+            Some(point.translated(minor_direction, minor_radius * parameter.sinh()))
         }
         CurveGeometry::Degenerate { point } => Some(*point),
         CurveGeometry::Nurbs(nurbs) => {

@@ -4,7 +4,8 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::sketch::normalized;
+use crate::vecmath::normalized;
+pub use crate::vecmath::{cross, dot};
 
 use super::planes::point_on_carrier;
 
@@ -85,18 +86,6 @@ pub struct PlaneConicEquation {
     pub u: f64,
     pub v: f64,
     pub constant: f64,
-}
-
-pub fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [
-        left[1].mul_add(right[2], -(left[2] * right[1])),
-        left[2].mul_add(right[0], -(left[0] * right[2])),
-        left[0].mul_add(right[1], -(left[1] * right[0])),
-    ]
-}
-
-pub fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
-    left[0].mul_add(right[0], left[1].mul_add(right[1], left[2] * right[2]))
 }
 
 pub fn matrix_vector(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {

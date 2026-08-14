@@ -2484,7 +2484,7 @@ fn revolution_definition(
         profile => Some(profile),
     };
     let mut axis = revolution_axis(properties)?;
-    axis.direction = unit_vector(axis.direction)?;
+    axis.direction = axis.direction.unit()?;
     let angle = || {
         scalar_named(properties, "Angle")
             .filter(|angle| angle.is_finite() && *angle > 0.0)
@@ -2808,7 +2808,7 @@ fn extrusion_definition(
         let direction_mode = integer_property(properties, "DirMode").unwrap_or(0);
         let (mut direction, direction_source) = match direction_mode {
             0 => (
-                unit_vector(raw_direction?)?,
+                raw_direction?.unit()?,
                 ExtrusionDirectionSource::Custom,
             ),
             1 => {
@@ -2817,7 +2817,7 @@ fn extrusion_definition(
                     return None;
                 }
                 (
-                    unit_vector(raw_direction?)?,
+                    raw_direction?.unit()?,
                     ExtrusionDirectionSource::Edge {
                         reference: PathRef::Native(reference.id.clone()),
                     },
@@ -2834,7 +2834,7 @@ fn extrusion_definition(
                     _ => profile_normal,
                 }?;
                 (
-                    unit_vector(normal)?,
+                    normal.unit()?,
                     ExtrusionDirectionSource::ProfileNormal,
                 )
             }
@@ -3091,18 +3091,16 @@ fn extrusion_definition(
     }
     let (mut direction, direction_source) = if use_custom {
         (
-            cadmpeg_ir::features::ExtrudeDirection::Explicit(unit_vector(vector_property(
-                properties,
-                "Direction",
-            )?)?),
+            cadmpeg_ir::features::ExtrudeDirection::Explicit(
+                vector_property(properties, "Direction")?.unit()?,
+            ),
             ExtrusionDirectionSource::Custom,
         )
     } else if let Some(reference_axis) = reference_axis {
         (
-            cadmpeg_ir::features::ExtrudeDirection::Explicit(unit_vector(vector_property(
-                properties,
-                "Direction",
-            )?)?),
+            cadmpeg_ir::features::ExtrudeDirection::Explicit(
+                vector_property(properties, "Direction")?.unit()?,
+            ),
             ExtrusionDirectionSource::Edge {
                 reference: PathRef::Native(reference_axis.id.clone()),
             },
@@ -3115,12 +3113,12 @@ fn extrusion_definition(
                 .and_then(Sketch::resolved_placement)
                 .map(|(_, normal, _)| normal)
                 .or(profile_normal)
-                .and_then(unit_vector)
+                .and_then(Vector3::unit)
                 .map_or(
                     cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
                     cadmpeg_ir::features::ExtrudeDirection::Explicit,
                 ),
-            ProfileRef::Native(_) => profile_normal.and_then(unit_vector).map_or(
+            ProfileRef::Native(_) => profile_normal.and_then(Vector3::unit).map_or(
                 cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
                 cadmpeg_ir::features::ExtrudeDirection::Explicit,
             ),
@@ -3451,7 +3449,7 @@ fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
     Some(FeatureDefinition::MirrorShape {
         source: BodySelection::Native(source.id.clone()),
         plane_origin: Point3::new(origin.x, origin.y, origin.z),
-        plane_normal: unit_vector(vector_property(properties, "Normal")?)?,
+        plane_normal: vector_property(properties, "Normal")?.unit()?,
         plane_reference,
     })
 }
@@ -3484,7 +3482,7 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
     Some(FeatureDefinition::ProjectOnSurface {
         sources: PathRef::Native(sources.id.clone()),
         support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
-        direction: unit_vector(vector_property(properties, "Direction")?)?,
+        direction: vector_property(properties, "Direction")?.unit()?,
         mode,
         height: Length(height),
         offset: Length(offset),
@@ -3907,7 +3905,7 @@ fn sweep_definition(
                 }
             }
             4 => SweepOrientation::Binormal {
-                direction: unit_vector(vector_property(properties, "Binormal")?)?,
+                direction: vector_property(properties, "Binormal")?.unit()?,
             },
             _ => return None,
         }
@@ -4161,7 +4159,7 @@ fn helical_sweep_definition(
     let construction = HelicalSweepConstruction {
         profile: profile_ref(owner, properties, sketches),
         axis_origin,
-        axis_direction: unit_vector(axis_direction)?,
+        axis_direction: axis_direction.unit()?,
         law,
         pitch: Length(scalar_named(properties, "Pitch")?),
         height: Length(scalar_named(properties, "Height")?),
@@ -4661,7 +4659,7 @@ fn axis_reference(
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<(Point3, Vector3)> {
     if let Some(direction) = vector_property(properties, name) {
-        return Some((Point3::new(0.0, 0.0, 0.0), unit_vector(direction)?));
+        return Some((Point3::new(0.0, 0.0, 0.0), direction.unit()?));
     }
     let link = property(properties, name)?.links.first()?;
     let target = link.object.as_deref()?;
@@ -4686,7 +4684,7 @@ fn axis_reference(
         },
         _ => return None,
     };
-    Some((origin, unit_vector(direction)?))
+    Some((origin, direction.unit()?))
 }
 
 fn plane_reference(
@@ -4717,18 +4715,7 @@ fn plane_reference(
         },
         _ => return None,
     };
-    Some((origin, unit_vector(normal)?))
-}
-
-fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let magnitude = (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
-    (magnitude.is_finite() && magnitude > f64::EPSILON).then(|| {
-        Vector3::new(
-            vector.x / magnitude,
-            vector.y / magnitude,
-            vector.z / magnitude,
-        )
-    })
+    Some((origin, normal.unit()?))
 }
 
 fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str> {

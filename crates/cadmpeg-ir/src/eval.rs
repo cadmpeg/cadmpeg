@@ -25,14 +25,6 @@ use crate::transform::Transform;
 use crate::CadIr;
 use cadmpeg_core::decode::alloc_filled;
 
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
-}
-
 /// Test whether two model-space points are reflections across a line carrier.
 ///
 /// The line is unbounded for the reflection operation but its two stored
@@ -81,7 +73,7 @@ pub fn spatial_points_are_reflections(
 pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) -> Option<Point2> {
     let components = |origin: Point3, axis: Vector3, reference: Vector3| {
         let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-        let transverse = cross(axis, reference);
+        let transverse = axis.cross(reference);
         (
             delta.x * reference.x + delta.y * reference.y + delta.z * reference.z,
             delta.x * transverse.x + delta.y * transverse.y + delta.z * transverse.z,
@@ -2448,7 +2440,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
             ..
         } => Some(vector_sum(&[
             (-radius * t.sin(), *ref_direction),
-            (radius * t.cos(), cross(*axis, *ref_direction)),
+            (radius * t.cos(), axis.cross(*ref_direction)),
         ])),
         CurveGeometry::Ellipse {
             axis,
@@ -2458,7 +2450,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
             ..
         } => Some(vector_sum(&[
             (-major_radius * t.sin(), *major_direction),
-            (minor_radius * t.cos(), cross(*axis, *major_direction)),
+            (minor_radius * t.cos(), axis.cross(*major_direction)),
         ])),
         CurveGeometry::Parabola {
             axis,
@@ -2467,7 +2459,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
             ..
         } => Some(vector_sum(&[
             (2.0 * focal_distance * t, *major_direction),
-            (2.0 * focal_distance, cross(*axis, *major_direction)),
+            (2.0 * focal_distance, axis.cross(*major_direction)),
         ])),
         CurveGeometry::Hyperbola {
             axis,
@@ -2477,7 +2469,7 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
             ..
         } => Some(vector_sum(&[
             (major_radius * t.sinh(), *major_direction),
-            (minor_radius * t.cosh(), cross(*axis, *major_direction)),
+            (minor_radius * t.cosh(), axis.cross(*major_direction)),
         ])),
         CurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
@@ -2519,7 +2511,7 @@ fn curve_second_derivative_inner(
             ..
         } => Some(vector_sum(&[
             (-radius * t.cos(), *ref_direction),
-            (-radius * t.sin(), cross(*axis, *ref_direction)),
+            (-radius * t.sin(), axis.cross(*ref_direction)),
         ])),
         CurveGeometry::Ellipse {
             axis,
@@ -2529,7 +2521,7 @@ fn curve_second_derivative_inner(
             ..
         } => Some(vector_sum(&[
             (-major_radius * t.cos(), *major_direction),
-            (-minor_radius * t.sin(), cross(*axis, *major_direction)),
+            (-minor_radius * t.sin(), axis.cross(*major_direction)),
         ])),
         CurveGeometry::Parabola {
             major_direction,
@@ -2544,7 +2536,7 @@ fn curve_second_derivative_inner(
             ..
         } => Some(vector_sum(&[
             (major_radius * t.cosh(), *major_direction),
-            (minor_radius * t.sinh(), cross(*axis, *major_direction)),
+            (minor_radius * t.sinh(), axis.cross(*major_direction)),
         ])),
         CurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
@@ -2772,7 +2764,7 @@ fn rotate_vector_about_axis(vector: Vector3, axis: Vector3, angle: f64) -> Vecto
     let sine = angle.sin();
     vector_sum(&[
         (cosine, vector),
-        (sine, cross(axis, vector)),
+        (sine, axis.cross(vector)),
         (axis.dot(vector) * (1.0 - cosine), axis),
     ])
 }
@@ -2822,13 +2814,13 @@ fn model_axis_revolution_partials(
     let rotated = rotate_vector_about_axis(relative, axis, angle);
     let rotated_tangent = rotate_vector_about_axis(differential.tangent, axis, angle);
     let rotated_acceleration = rotate_vector_about_axis(differential.acceleration, axis, angle);
-    let du = cross(axis, rotated);
+    let du = axis.cross(rotated);
     Some(SurfaceSecondPartials {
         point: offset(axis_origin, &[(1.0, rotated)]),
         du,
         dv: rotated_tangent,
-        duu: cross(axis, du),
-        duv: cross(axis, rotated_tangent),
+        duu: axis.cross(du),
+        duv: axis.cross(rotated_tangent),
         dvv: rotated_acceleration,
     })
 }
@@ -3318,7 +3310,7 @@ fn direct_curve_parameter_near_point(
     }
     let components = |origin: Point3, axis: Vector3, reference: Vector3| -> (f64, f64, f64) {
         let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-        let transverse = cross(axis, reference);
+        let transverse = axis.cross(reference);
         (delta.dot(reference), delta.dot(transverse), delta.dot(axis))
     };
     let parameter = match geometry {
@@ -3553,7 +3545,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             *center,
             &[
                 (radius * t.cos(), *ref_direction),
-                (radius * t.sin(), cross(*axis, *ref_direction)),
+                (radius * t.sin(), axis.cross(*ref_direction)),
             ],
         )),
         CurveGeometry::Ellipse {
@@ -3566,7 +3558,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             *center,
             &[
                 (major_radius * t.cos(), *major_direction),
-                (minor_radius * t.sin(), cross(*axis, *major_direction)),
+                (minor_radius * t.sin(), axis.cross(*major_direction)),
             ],
         )),
         CurveGeometry::Parabola {
@@ -3578,7 +3570,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             *vertex,
             &[
                 (focal_distance * t * t, *major_direction),
-                (2.0 * focal_distance * t, cross(*axis, *major_direction)),
+                (2.0 * focal_distance * t, axis.cross(*major_direction)),
             ],
         )),
         CurveGeometry::Hyperbola {
@@ -3591,7 +3583,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
             *center,
             &[
                 (major_radius * t.cosh(), *major_direction),
-                (minor_radius * t.sinh(), cross(*axis, *major_direction)),
+                (minor_radius * t.sinh(), axis.cross(*major_direction)),
             ],
         )),
         CurveGeometry::Degenerate { point } => Some(*point),
@@ -3659,7 +3651,7 @@ fn surface_second_partials_inner(
             normal,
             u_axis,
         } => {
-            let v_axis = cross(*normal, *u_axis);
+            let v_axis = normal.cross(*u_axis);
             Some(SurfaceSecondPartials {
                 point: offset(*origin, &[(u, *u_axis), (v, v_axis)]),
                 du: *u_axis,
@@ -3675,7 +3667,7 @@ fn surface_second_partials_inner(
             ref_direction,
             radius,
         } => {
-            let transverse = cross(*axis, *ref_direction);
+            let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
             Some(SurfaceSecondPartials {
@@ -3708,7 +3700,7 @@ fn surface_second_partials_inner(
             ratio,
             half_angle,
         } => {
-            let transverse = cross(*axis, *ref_direction);
+            let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
             let radial_slope = half_angle.tan();
@@ -3748,7 +3740,7 @@ fn surface_second_partials_inner(
             ref_direction,
             radius,
         } => {
-            let transverse = cross(*axis, *ref_direction);
+            let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
             let v_cosine = v.cos();
@@ -3793,7 +3785,7 @@ fn surface_second_partials_inner(
             major_radius,
             minor_radius,
         } => {
-            let transverse = cross(*axis, *ref_direction);
+            let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
             let v_cosine = v.cos();
@@ -4010,7 +4002,7 @@ pub fn model_surface_point_by_id(
                 let partials = model_surface_partials_by_id(index, source, u, v)?;
                 let du = affine_vector(*transform, partials.du);
                 let dv = affine_vector(*transform, partials.dv);
-                let normal = cross(du, dv);
+                let normal = du.cross(dv);
                 let magnitude = normal.norm();
                 evaluation.point = affine_point(*transform, evaluation.point);
                 evaluation.oriented_normal =
@@ -4071,7 +4063,7 @@ pub fn model_surface_point_by_id(
                     oriented_normal: None,
                 }),
             _ => surface_partials(&surface.geometry, u, v).map(|partials| {
-                let normal = cross(partials.du, partials.dv);
+                let normal = partials.du.cross(partials.dv);
                 let magnitude = normal.norm();
                 let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
                     Vector3::new(
@@ -4343,7 +4335,7 @@ fn offset_surface_second_partials(
     base: SurfaceSecondPartials,
     distance: f64,
 ) -> Option<SurfaceSecondPartials> {
-    let normal_vector = cross(base.du, base.dv);
+    let normal_vector = base.du.cross(base.dv);
     let normal_magnitude = normal_vector.norm();
     if !normal_magnitude.is_finite() || normal_magnitude == 0.0 || !distance.is_finite() {
         return None;
@@ -4354,12 +4346,12 @@ fn offset_surface_second_partials(
         normal_vector.z / normal_magnitude,
     );
     let normal_u_numerator = vector_sum(&[
-        (1.0, cross(base.duu, base.dv)),
-        (1.0, cross(base.du, base.duv)),
+        (1.0, base.duu.cross(base.dv)),
+        (1.0, base.du.cross(base.duv)),
     ]);
     let normal_v_numerator = vector_sum(&[
-        (1.0, cross(base.duv, base.dv)),
-        (1.0, cross(base.du, base.dvv)),
+        (1.0, base.duv.cross(base.dv)),
+        (1.0, base.du.cross(base.dvv)),
     ]);
     let unit_normal_derivative = |derivative: Vector3| {
         let normal_component =

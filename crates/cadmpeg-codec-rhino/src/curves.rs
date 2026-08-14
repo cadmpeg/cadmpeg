@@ -521,7 +521,7 @@ pub(crate) fn exact_nurbs(
                 ref_direction,
                 radius,
             } => {
-                let yaxis = cross(*axis, *ref_direction);
+                let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
                     center: *center,
                     axis: *axis,
@@ -1246,10 +1246,10 @@ fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, Geo
         && (norm_x - 1.0).abs() < CIRCLE_TOLERANCE
         && (norm_y - 1.0).abs() < CIRCLE_TOLERANCE
         && (norm_axis - 1.0).abs() < CIRCLE_TOLERANCE
-        && dot(xaxis, yaxis).abs() < CIRCLE_TOLERANCE
-        && dot(xaxis, axis).abs() < CIRCLE_TOLERANCE
-        && dot(yaxis, axis).abs() < CIRCLE_TOLERANCE
-        && close_vector(cross(xaxis, yaxis), axis, CIRCLE_TOLERANCE)
+        && xaxis.dot(yaxis).abs() < CIRCLE_TOLERANCE
+        && xaxis.dot(axis).abs() < CIRCLE_TOLERANCE
+        && yaxis.dot(axis).abs() < CIRCLE_TOLERANCE
+        && close_vector(xaxis.cross(yaxis), axis, CIRCLE_TOLERANCE)
         && close_native_point(zero, native.origin, native.xaxis, radius)
         && close_native_point(half_pi, native.origin, native.yaxis, radius)
         && close_native_point(at_pi, native.origin, negate(native.xaxis), radius))
@@ -1492,18 +1492,6 @@ fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
             "unsupported simple-geometry payload version",
         ))
     }
-}
-
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
 }
 
 fn close_vector(left: Vector3, right: Vector3, tolerance: f64) -> bool {

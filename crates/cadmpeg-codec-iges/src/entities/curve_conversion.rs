@@ -4,22 +4,6 @@
 use cadmpeg_ir::geometry::NurbsCurve;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-fn add_scaled(center: Point3, x: Vector3, x_scale: f64, y: Vector3, y_scale: f64) -> Point3 {
-    Point3::new(
-        center.x + x.x * x_scale + y.x * y_scale,
-        center.y + x.y * x_scale + y.y * y_scale,
-        center.z + x.z * x_scale + y.z * y_scale,
-    )
-}
-
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
 /// Angular slack this module allows when bounding or dividing a sweep.
 pub(super) const ANGULAR_TOLERANCE: f64 = std::f64::consts::TAU * 1.0e-12;
 
@@ -71,7 +55,7 @@ pub(crate) fn elliptical_arc_nurbs(
         return None;
     }
     let delta = delta.min(std::f64::consts::TAU);
-    let transverse = cross(axis, major_direction);
+    let transverse = axis.cross(major_direction);
     let spans = quarter_turn_spans(delta);
     let step = delta / spans as f64;
     let mut knots = Vec::with_capacity(spans * 2 + 4);
@@ -86,33 +70,27 @@ pub(crate) fn elliptical_arc_nurbs(
             return None;
         }
         if span == 0 {
-            control_points.push(add_scaled(
-                center,
-                major_direction,
-                major_radius * start.cos(),
-                transverse,
-                minor_radius * start.sin(),
-            ));
+            control_points.push(
+                center
+                    .translated(major_direction, major_radius * start.cos())
+                    .translated(transverse, minor_radius * start.sin()),
+            );
             weights.push(1.0);
             knots.extend([start, start, start]);
         } else {
             knots.extend([start, start]);
         }
-        control_points.push(add_scaled(
-            center,
-            major_direction,
-            major_radius * middle.cos() / middle_weight,
-            transverse,
-            minor_radius * middle.sin() / middle_weight,
-        ));
+        control_points.push(
+            center
+                .translated(major_direction, major_radius * middle.cos() / middle_weight)
+                .translated(transverse, minor_radius * middle.sin() / middle_weight),
+        );
         weights.push(middle_weight);
-        control_points.push(add_scaled(
-            center,
-            major_direction,
-            major_radius * end.cos(),
-            transverse,
-            minor_radius * end.sin(),
-        ));
+        control_points.push(
+            center
+                .translated(major_direction, major_radius * end.cos())
+                .translated(transverse, minor_radius * end.sin()),
+        );
         weights.push(1.0);
         if span + 1 == spans {
             knots.extend([end, end, end]);
@@ -139,28 +117,16 @@ pub(crate) fn parabolic_arc_nurbs(
     if !delta.is_finite() || delta <= 0.0 || !focal_distance.is_finite() || focal_distance <= 0.0 {
         return None;
     }
-    let transverse = cross(axis, major_direction);
-    let start_point = add_scaled(
-        vertex,
-        major_direction,
-        focal_distance * start * start,
-        transverse,
-        2.0 * focal_distance * start,
-    );
-    let middle_point = add_scaled(
-        start_point,
-        major_direction,
-        focal_distance * start * delta,
-        transverse,
-        focal_distance * delta,
-    );
-    let end_point = add_scaled(
-        vertex,
-        major_direction,
-        focal_distance * end * end,
-        transverse,
-        2.0 * focal_distance * end,
-    );
+    let transverse = axis.cross(major_direction);
+    let start_point = vertex
+        .translated(major_direction, focal_distance * start * start)
+        .translated(transverse, 2.0 * focal_distance * start);
+    let middle_point = start_point
+        .translated(major_direction, focal_distance * start * delta)
+        .translated(transverse, focal_distance * delta);
+    let end_point = vertex
+        .translated(major_direction, focal_distance * end * end)
+        .translated(transverse, 2.0 * focal_distance * end);
     [start_point, middle_point, end_point]
         .iter()
         .all(|point| {

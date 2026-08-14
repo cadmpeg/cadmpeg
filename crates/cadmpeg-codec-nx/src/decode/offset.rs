@@ -1511,19 +1511,17 @@ pub(crate) fn least_squares_step(
     dv: Vector3,
     residual: Vector3,
 ) -> Option<(f64, f64)> {
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let du_squared = dot(du, du);
-    let mixed = dot(du, dv);
-    let dv_squared = dot(dv, dv);
+    let du_squared = du.dot(du);
+    let mixed = du.dot(dv);
+    let dv_squared = dv.dot(dv);
     let determinant = du_squared * dv_squared - mixed * mixed;
     if !determinant.is_finite()
         || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
     {
         return None;
     }
-    let du_residual = dot(du, residual);
-    let dv_residual = dot(dv, residual);
+    let du_residual = du.dot(residual);
+    let dv_residual = dv.dot(residual);
     Some((
         (dv_squared * du_residual - mixed * dv_residual) / determinant,
         (du_squared * dv_residual - mixed * du_residual) / determinant,

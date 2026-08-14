@@ -984,7 +984,7 @@ fn planar_sheet_brep_payload(
         } => {
             check_frame(&surface.id.0, *origin, *normal, *u_axis, "plane")?;
             (
-                Some((*origin, *normal, *u_axis, cross(*normal, *u_axis))),
+                Some((*origin, *normal, *u_axis, normal.cross(*u_axis))),
                 None,
             )
         }
@@ -1535,7 +1535,7 @@ fn multi_face_brep_payload(
                     origin: *origin,
                     normal: *normal,
                     u_axis: *u_axis,
-                    v_axis: cross(*normal, *u_axis),
+                    v_axis: normal.cross(*u_axis),
                 });
             }
             SurfaceGeometry::Nurbs(nurbs) => {
@@ -3249,7 +3249,7 @@ fn plane_surface_payload(
     normal: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
 ) -> Vec<u8> {
-    let y = cross(normal, x);
+    let y = normal.cross(x);
     let d = -(normal.x * origin.x + normal.y * origin.y + normal.z * origin.z);
     let mut payload = vec![0x10];
     for value in [
@@ -3311,14 +3311,6 @@ fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8
         }
     }
     payload
-}
-
-fn cross(a: cadmpeg_ir::math::Vector3, b: cadmpeg_ir::math::Vector3) -> cadmpeg_ir::math::Vector3 {
-    cadmpeg_ir::math::Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
 }
 
 struct MeshPayload {

@@ -44,23 +44,14 @@ pub(crate) fn scale_point(p: [f64; 3]) -> Point3 {
     Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)
 }
 
-fn vec3(v: [f64; 3]) -> Vector3 {
-    Vector3::new(v[0], v[1], v[2])
-}
-
 pub(crate) fn norm3(v: [f64; 3]) -> f64 {
-    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+    Vector3::from(v).norm()
 }
 
 /// Return `v` normalized to unit length, or `v` unchanged if it is degenerate
 /// (validation flags a degenerate direction rather than this hiding it).
 pub(crate) fn unit(v: [f64; 3]) -> Vector3 {
-    let n = norm3(v);
-    if n > f64::EPSILON {
-        Vector3::new(v[0] / n, v[1] / n, v[2] / n)
-    } else {
-        vec3(v)
-    }
+    Vector3::from(v).unit().unwrap_or(Vector3::from(v))
 }
 
 /// Whether a record name heads an analytic surface carrier.
@@ -206,24 +197,10 @@ fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
     ];
     let basis = candidates
         .into_iter()
-        .min_by(|a, b| {
-            let a_dot = (a.x * axis.x + a.y * axis.y + a.z * axis.z).abs();
-            let b_dot = (b.x * axis.x + b.y * axis.y + b.z * axis.z).abs();
-            a_dot.total_cmp(&b_dot)
-        })
+        .min_by(|a, b| a.dot(axis).abs().total_cmp(&b.dot(axis).abs()))
         .expect("fixed candidate set is non-empty");
-    let dot = basis.x * axis.x + basis.y * axis.y + basis.z * axis.z;
-    let projected = Vector3::new(
-        basis.x - dot * axis.x,
-        basis.y - dot * axis.y,
-        basis.z - dot * axis.z,
-    );
-    let length = projected.norm();
-    Vector3::new(
-        projected.x / length,
-        projected.y / length,
-        projected.z / length,
-    )
+    let projected = basis - axis.scale(basis.dot(axis));
+    projected.scale(1.0 / projected.norm())
 }
 
 /// The vertex record's point reference. The modern layout stores the
@@ -632,8 +609,8 @@ pub(crate) fn analytic_procedural_surface(
             ..
         } => {
             let (center, normal, ref_direction, radius) = rational_four_arc_circle(directrix)?;
-            let axis = normalized_vector(*direction)?;
-            if 1.0 - dot_vector(axis, normal).abs() > 1.0e-10 {
+            let axis = direction.unit()?;
+            if 1.0 - axis.dot(normal).abs() > 1.0e-10 {
                 return None;
             }
             Some(SurfaceGeometry::Cylinder {
@@ -690,21 +667,15 @@ fn analytic_rolling_ball_surface(
             * radius
                 .max(point_vector(*first_origin, *second_origin).norm())
                 .max(1.0);
-        let first_normal = normalized_vector(*first_normal)?;
-        let second_normal = normalized_vector(*second_normal)?;
-        let support_intersection = cross_vector(first_normal, second_normal);
+        let first_normal = first_normal.unit()?;
+        let second_normal = second_normal.unit()?;
+        let support_intersection = first_normal.cross(second_normal);
         let support_intersection_norm = support_intersection.norm();
         if support_intersection_norm <= 1.0e-10
             || 1.0
-                - dot_vector(
-                    axis,
-                    Vector3::new(
-                        support_intersection.x / support_intersection_norm,
-                        support_intersection.y / support_intersection_norm,
-                        support_intersection.z / support_intersection_norm,
-                    ),
-                )
-                .abs()
+                - axis
+                    .dot(support_intersection.scale(1.0 / support_intersection_norm))
+                    .abs()
                 > 1.0e-10
         {
             return None;
@@ -713,9 +684,8 @@ fn analytic_rolling_ball_surface(
             (*first_origin, first_normal),
             (*second_origin, second_normal),
         ] {
-            if dot_vector(axis, plane_normal).abs() > 1.0e-10
-                || (dot_vector(point_vector(plane_origin, origin), plane_normal).abs() - radius)
-                    .abs()
+            if axis.dot(plane_normal).abs() > 1.0e-10
+                || (point_vector(plane_origin, origin).dot(plane_normal).abs() - radius).abs()
                     > tolerance
             {
                 return None;
@@ -753,20 +723,16 @@ fn analytic_rolling_ball_surface(
     else {
         unreachable!()
     };
-    let plane_normal = normalized_vector(*plane_normal)?;
-    let cylinder_axis = normalized_vector(*cylinder_axis)?;
+    let plane_normal = plane_normal.unit()?;
+    let cylinder_axis = cylinder_axis.unit()?;
     let scale = major_radius.max(radius).max(cylinder_radius.abs()).max(1.0);
     let tolerance = 1.0e-10 * scale;
     let center_offset = point_vector(*cylinder_origin, center);
-    let axial_offset = dot_vector(center_offset, cylinder_axis);
-    let radial_offset = Vector3::new(
-        center_offset.x - axial_offset * cylinder_axis.x,
-        center_offset.y - axial_offset * cylinder_axis.y,
-        center_offset.z - axial_offset * cylinder_axis.z,
-    );
-    if 1.0 - dot_vector(axis, plane_normal).abs() > 1.0e-10
-        || 1.0 - dot_vector(axis, cylinder_axis).abs() > 1.0e-10
-        || (dot_vector(point_vector(*plane_origin, center), plane_normal).abs() - radius).abs()
+    let axial_offset = center_offset.dot(cylinder_axis);
+    let radial_offset = center_offset - cylinder_axis.scale(axial_offset);
+    if 1.0 - axis.dot(plane_normal).abs() > 1.0e-10
+        || 1.0 - axis.dot(cylinder_axis).abs() > 1.0e-10
+        || (point_vector(*plane_origin, center).dot(plane_normal).abs() - radius).abs()
             > tolerance
         || radial_offset.norm() > tolerance
         || ((major_radius - cylinder_radius.abs()).abs() - radius).abs() > tolerance
@@ -818,28 +784,16 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
     if !extent.is_finite() || extent <= f64::EPSILON {
         return None;
     }
-    let axis = normalized_vector(point_vector(origin, farthest))?;
+    let axis = point_vector(origin, farthest).unit()?;
     let tolerance = 1.0e-10 * extent.max(1.0);
     if curve
         .control_points
         .iter()
-        .any(|point| cross_vector(axis, point_vector(origin, *point)).norm() > tolerance)
+        .any(|point| axis.cross(point_vector(origin, *point)).norm() > tolerance)
     {
         return None;
     }
     Some((origin, axis))
-}
-
-fn normalized_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    if !norm.is_finite() || norm <= f64::EPSILON {
-        return None;
-    }
-    Some(Vector3::new(
-        vector.x / norm,
-        vector.y / norm,
-        vector.z / norm,
-    ))
 }
 
 pub(crate) fn rational_four_arc_circle(
@@ -975,21 +929,17 @@ pub(crate) fn rational_four_arc_circle(
         let radial = point_vector(first_center, span[0]);
         let next = point_vector(first_center, span[2]);
         if (radial.norm() - radius).abs() > tolerance
-            || dot_vector(radial, next).abs() > tolerance * radius
+            || radial.dot(next).abs() > tolerance * radius
         {
             return None;
         }
-        let span_normal = cross_vector(radial, next);
+        let span_normal = radial.cross(next);
         let span_normal_norm = span_normal.norm();
         if span_normal_norm <= tolerance * radius {
             return None;
         }
-        let span_normal = Vector3::new(
-            span_normal.x / span_normal_norm,
-            span_normal.y / span_normal_norm,
-            span_normal.z / span_normal_norm,
-        );
-        if normal.is_some_and(|normal: Vector3| dot_vector(normal, span_normal) < 1.0 - 1.0e-10) {
+        let span_normal = span_normal.scale(1.0 / span_normal_norm);
+        if normal.is_some_and(|normal: Vector3| normal.dot(span_normal) < 1.0 - 1.0e-10) {
             return None;
         }
         normal.get_or_insert(span_normal);
@@ -997,11 +947,7 @@ pub(crate) fn rational_four_arc_circle(
     Some((
         first_center,
         normal?,
-        Vector3::new(
-            first_radial.x / radius,
-            first_radial.y / radius,
-            first_radial.z / radius,
-        ),
+        first_radial.scale(1.0 / radius),
         radius,
     ))
 }
@@ -1044,18 +990,6 @@ fn point_sum_difference(first: Point3, second: Point3, subtract: Point3) -> Poin
         first.x + second.x - subtract.x,
         first.y + second.y - subtract.y,
         first.z + second.z - subtract.z,
-    )
-}
-
-fn dot_vector(first: Vector3, second: Vector3) -> f64 {
-    first.x * second.x + first.y * second.y + first.z * second.z
-}
-
-fn cross_vector(first: Vector3, second: Vector3) -> Vector3 {
-    Vector3::new(
-        first.y * second.z - first.z * second.y,
-        first.z * second.x - first.x * second.z,
-        first.x * second.y - first.y * second.x,
     )
 }
 

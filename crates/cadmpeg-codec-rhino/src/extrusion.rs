@@ -176,7 +176,7 @@ pub(crate) fn decode(
     };
     finish_payload(data, &outer, reader, &payload_children, &mut warnings)?;
 
-    let path_delta = subtract_points(path_to, path_from);
+    let path_delta = path_to.vector_from(path_from);
     let path_length = path_delta.norm();
     if !path_length.is_finite() || path_length <= 0.0 {
         return Err(error(
@@ -184,9 +184,9 @@ pub(crate) fn decode(
             "extrusion path is not finite and distinct",
         ));
     }
-    let tangent = scale_vector(path_delta, 1.0 / path_length);
+    let tangent = path_delta.scale(1.0 / path_length);
     require_unit(up, version_offset, "extrusion up vector")?;
-    if dot(up, tangent).abs() > UNIT_TOLERANCE {
+    if up.dot(tangent).abs() > UNIT_TOLERANCE {
         return Err(error(
             version_offset,
             "extrusion up vector is not perpendicular to path",
@@ -199,15 +199,15 @@ pub(crate) fn decode(
 
     let source_boundaries = split_profiles(profile, profile_count as usize, version_offset)?;
     let xaxis = normalize(
-        cross(up, tangent),
+        up.cross(tangent),
         version_offset,
         "extrusion profile X axis",
     )?;
     let cap_origins = [
-        add_point(path_from, scale_vector(path_delta, trim[0])),
-        add_point(path_from, scale_vector(path_delta, trim[1])),
+        path_from.translated(path_delta, trim[0]),
+        path_from.translated(path_delta, trim[1]),
     ];
-    let direction = subtract_points(cap_origins[1], cap_origins[0]);
+    let direction = cap_origins[1].vector_from(cap_origins[0]);
     let mut boundaries = Vec::with_capacity(source_boundaries.len());
     let mut laterals = Vec::with_capacity(source_boundaries.len());
     let mut orientations = Vec::with_capacity(source_boundaries.len());
@@ -396,12 +396,9 @@ fn transform_local(
         ));
     }
     let local = mitered_local(Vector3::new(point.x, point.y, 0.0), miter, offset)?;
-    Ok(add_point(
-        origin,
-        add_vectors(
-            add_vectors(scale_vector(xaxis, local.x), scale_vector(yaxis, local.y)),
-            scale_vector(zaxis, local.z),
-        ),
+    Ok(origin.translated(
+        xaxis.scale(local.x) + yaxis.scale(local.y) + zaxis.scale(local.z),
+        1.0,
     ))
 }
 
@@ -417,8 +414,8 @@ fn cap_frame(
     let world_x = local_to_world_vector(local_x, xaxis, yaxis, zaxis);
     let world_y = local_to_world_vector(local_y, xaxis, yaxis, zaxis);
     let u = normalize(world_x, offset, "extrusion cap U axis")?;
-    let normal = normalize(cross(world_x, world_y), offset, "extrusion cap normal")?;
-    let v = normalize(cross(normal, u), offset, "extrusion cap V axis")?;
+    let normal = normalize(world_x.cross(world_y), offset, "extrusion cap normal")?;
+    let v = normalize(normal.cross(u), offset, "extrusion cap V axis")?;
     Ok((u, v, normal))
 }
 
@@ -430,12 +427,12 @@ fn cap_pcurve(
 ) -> Result<CapPcurve, GeometryError> {
     let mut points = Vec::with_capacity(curve.control_points.len());
     for point in &curve.control_points {
-        let delta = subtract_points(*point, origin);
-        let distance = dot(delta, frame.2);
+        let delta = point.vector_from(origin);
+        let distance = delta.dot(frame.2);
         if distance.abs() > 1.0e-8 {
             return Err(error(offset, "extrusion cap boundary is not planar"));
         }
-        points.push(Point2::new(dot(delta, frame.0), dot(delta, frame.1)));
+        points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));
     }
     Ok(CapPcurve {
         degree: curve.degree,
@@ -667,7 +664,7 @@ fn active_miter(present: bool, value: Vector3) -> Option<Vector3> {
     if !length.is_finite() || length <= 0.0 {
         return None;
     }
-    let unit = scale_vector(value, 1.0 / length);
+    let unit = value.scale(1.0 / length);
     (unit.z > MITER_Z_MINIMUM).then_some(unit)
 }
 
@@ -676,7 +673,7 @@ fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, Geome
     if !length.is_finite() || length <= 0.0 {
         return Err(error(offset, &format!("{name} is invalid")));
     }
-    Ok(scale_vector(value, 1.0 / length))
+    Ok(value.scale(1.0 / length))
 }
 
 fn scaled_point(value: crate::settings::Point3, scale: f64) -> Option<Point3> {
@@ -691,56 +688,21 @@ fn ir_vector(value: crate::settings::Vector3) -> Vector3 {
     Vector3::new(value.0[0], value.0[1], value.0[2])
 }
 
-fn add_point(point: Point3, vector: Vector3) -> Point3 {
-    Point3::new(point.x + vector.x, point.y + vector.y, point.z + vector.z)
-}
-
-fn subtract_points(a: Point3, b: Point3) -> Vector3 {
-    Vector3::new(a.x - b.x, a.y - b.y, a.z - b.z)
-}
-
-fn add_vectors(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(a.x + b.x, a.y + b.y, a.z + b.z)
-}
-
-fn scale_vector(value: Vector3, scale: f64) -> Vector3 {
-    Vector3::new(value.x * scale, value.y * scale, value.z * scale)
-}
-
 fn local_to_world_vector(
     local: Vector3,
     xaxis: Vector3,
     yaxis: Vector3,
     zaxis: Vector3,
 ) -> Vector3 {
-    add_vectors(
-        add_vectors(scale_vector(xaxis, local.x), scale_vector(yaxis, local.y)),
-        scale_vector(zaxis, local.z),
-    )
-}
-
-fn dot(a: Vector3, b: Vector3) -> f64 {
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    Vector3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
+    xaxis.scale(local.x) + yaxis.scale(local.y) + zaxis.scale(local.z)
 }
 
 fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     let cosine = angle.cos();
     let sine = angle.sin();
-    add_vectors(
-        add_vectors(
-            scale_vector(value, cosine),
-            scale_vector(cross(axis, value), sine),
-        ),
-        scale_vector(axis, dot(axis, value) * (1.0 - cosine)),
-    )
+    value.scale(cosine)
+        + axis.cross(value).scale(sine)
+        + axis.scale(axis.dot(value) * (1.0 - cosine))
 }
 
 #[cfg(test)]
