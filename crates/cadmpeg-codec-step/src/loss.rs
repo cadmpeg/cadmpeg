@@ -34,13 +34,13 @@ pub enum StepLossCode {
     MetadataStringInvalid,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
-    /// AXIS2_PLACEMENT_3D reference direction was parallel to its axis.
+    /// `AXIS2_PLACEMENT_3D` reference direction was parallel to its axis.
     PlacementReferenceInferred,
     /// Geometry records belong to representations with conflicting units.
     ConflictingRepresentationUnits,
-    /// GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has an ambiguous length measure.
+    /// `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` has an ambiguous length measure.
     UncertaintyLengthAmbiguous,
-    /// GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure.
+    /// `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` has no resolvable length measure.
     UncertaintyLengthUnresolved,
     /// The document length unit did not resolve.
     DocumentLengthUnitUnresolved,
@@ -54,7 +54,7 @@ pub enum StepLossCode {
     TopologyRootIncomplete,
     /// An oriented shell omits the derived `cfs_faces` slot.
     OrientedShellOmitsCfsFaces,
-    /// A SEAM_EDGE has no decoded pcurve on its edge curve and face surface.
+    /// A `SEAM_EDGE` has no decoded pcurve on its edge curve and face surface.
     SeamEdgePcurveUnresolved,
     /// An edge has no decoded surface or curve carrier for a pcurve.
     EdgeNoSurfaceOrCurveForPcurve,
@@ -64,13 +64,13 @@ pub enum StepLossCode {
     PcurveAssociationAmbiguous,
     /// Pcurve candidates exist but the source surface or curve is unresolved.
     PcurveCandidatesCarrierUnresolved,
-    /// A face has more than one FACE_OUTER_BOUND.
+    /// A face has more than one `FACE_OUTER_BOUND`.
     FaceMultipleOuterBounds,
     /// A source shell contains disconnected face components.
     ShellDisconnectedFaces,
     /// A NAUO has no resolved occurrence transform.
     NauoPlacementUnresolved,
-    /// A body has conflicting standalone MAPPED_ITEM placements.
+    /// A body has conflicting standalone `MAPPED_ITEM` placements.
     BodyConflictingMappedPlacements,
     /// A presentation annotation has several text carriers and no order.
     PresentationAnnotationTextUnordered,
@@ -142,7 +142,7 @@ pub enum StepLossCode {
     TopologyUnreachableFromRegion,
     /// Signed or self-intersecting analytic surfaces were normalized.
     AnalyticSurfaceNormalized,
-    /// Elliptical cone surfaces were reduced to circular CONICAL_SURFACE.
+    /// Elliptical cone surfaces were reduced to circular `CONICAL_SURFACE`.
     EllipticalConeReduced,
     /// Edges have no typed 3D curve or carry an unsupported transform.
     CurvelessEdgeOmitted,
@@ -206,7 +206,7 @@ pub enum StepLossCode {
     PassthroughRecordOmitted,
     /// Display colors had no emitted STEP item.
     DisplayColorUnstyled,
-    /// Appearance assets were reduced to STYLED_ITEM base colors.
+    /// Appearance assets were reduced to `STYLED_ITEM` base colors.
     AppearanceReducedToBaseColor,
     /// Appearance bindings carry source object or channel metadata.
     AppearanceBindingMetadataReduced,
@@ -264,6 +264,7 @@ pub enum StepLossCode {
 
 impl StepLossCode {
     /// Every code, in declaration order.
+    #[cfg(test)]
     pub const ALL: &'static [StepLossCode] = &[
         Self::ParseNoncanonicalSyntax,
         Self::DecodeWarning,

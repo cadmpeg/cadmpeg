@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -138,7 +139,7 @@ fn non_planar_base_face_is_rejected_without_an_inferred_surface() {
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29"));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::TopologyRootRejected.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
     }));
 }
@@ -225,7 +226,7 @@ fn nearly_collinear_implicit_face_is_rejected_without_a_fabricated_plane() {
     assert!(decoded.ir().model.bodies.is_empty());
     assert!(decoded.ir().model.surfaces.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::TopologyRootRejected.kind()
             && loss.message.contains("implicit face plane")
     }));
 }
@@ -510,7 +511,7 @@ fn duplicate_face_outer_bounds_are_reported_without_inventing_inner_roles() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode duplicate outer bounds");
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::SourceTopologyInvalid)
+        loss.code == StepLossCode::FaceMultipleOuterBounds.kind()
             && loss.message.contains("violates the STEP face-bound rule")
             && loss
                 .message

@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::report::LossNote;
 
+use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
 use super::StageOutcome;
-use crate::loss::StepLossCode;
 
 pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
     let mut losses = Vec::new();

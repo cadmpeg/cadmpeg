@@ -33,11 +33,11 @@ pub enum InventorLossCode {
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
     GeometryProceduralSurfaceNotTransferred,
-    /// Structurally paired RSe segments have no record semantics.
+    /// Structurally paired `RSe` segments have no record semantics.
     RseSegmentPairUntyped,
-    /// RSe metadata streams are malformed or outside the implemented envelope.
+    /// `RSe` metadata streams are malformed or outside the implemented envelope.
     RseMetadataStreamMalformed,
-    /// RSe bulk streams have invalid envelope or zlib framing.
+    /// `RSe` bulk streams have invalid envelope or zlib framing.
     RseBulkStreamMalformed,
     /// Typed assembly records are malformed or outside the implemented branch.
     AssemblyRecordMalformed,
@@ -57,7 +57,7 @@ pub enum InventorLossCode {
     ParameterGraphOpen,
     /// Sketch, entity, or constraint records have a neutral graph that is not closed.
     SketchGraphOpen,
-    /// RSe contains unpaired metadata or bulk streams.
+    /// `RSe` contains unpaired metadata or bulk streams.
     RseStreamUnpaired,
     /// OLE property-set streams are malformed.
     PropertySetStreamMalformed,
@@ -69,19 +69,19 @@ pub enum InventorLossCode {
     ProteinAssetRejected,
     /// The Protein package contains no decoded appearance assets.
     ProteinAppearanceAbsent,
-    /// PmApp document-default appearance assignments did not resolve.
+    /// `PmApp` document-default appearance assignments did not resolve.
     AppearanceDefaultUnresolved,
     /// Protein catalog asset GUIDs collide; ambiguous texture joins were refused.
     ProteinGuidAmbiguous,
     /// The Inventor Protein stream is malformed.
     ProteinStreamMalformed,
-    /// PmGraphics face appearance overrides did not resolve.
+    /// `PmGraphics` face appearance overrides did not resolve.
     AppearanceFaceOverrideUnresolved,
-    /// The UFRxDoc external-reference table is malformed.
+    /// The `UFRxDoc` external-reference table is malformed.
     UfrxTableMalformed,
-    /// An unsupported UFRxDoc schema was retained on an assembly document.
+    /// An unsupported `UFRxDoc` schema was retained on an assembly document.
     UfrxSchemaUnsupportedAssembly,
-    /// An unsupported UFRxDoc schema was retained without a typed transfer.
+    /// An unsupported `UFRxDoc` schema was retained without a typed transfer.
     UfrxSchemaUnsupported,
     /// External component references remain unresolved.
     AssemblyComponentExternal,

@@ -28,6 +28,7 @@ use zip::{CompressionMethod, ZipWriter};
 
 use crate::export::Builder;
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -57,10 +58,7 @@ fn disconnected_source_shell_is_partitioned_into_connected_ir_shells() {
         .report()
         .losses
         .iter()
-        .find(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::SourceTopologyInvalid)
-        })
+        .find(|loss| loss.code == StepLossCode::ShellDisconnectedFaces.kind())
         .expect("source topology loss");
     assert!(source_loss.message.contains("OPEN_SHELL #30"));
     assert!(source_loss
@@ -232,8 +230,11 @@ fn oriented_shell_reads_the_derived_cfs_faces_slot() {
         .bodies
         .iter()
         .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid));
-    assert!(!decoded.report().losses.iter().any(|loss| loss.code
-        == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::NoncanonicalSourceSyntax)));
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::OrientedShellOmitsCfsFaces.kind()));
 }
 
 #[test]
@@ -252,10 +253,7 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
         .report()
         .losses
         .iter()
-        .filter(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::NoncanonicalSourceSyntax)
-        })
+        .filter(|loss| loss.code == StepLossCode::OrientedShellOmitsCfsFaces.kind())
         .collect::<Vec<_>>();
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("ORIENTED_CLOSED_SHELL #33"));
@@ -490,7 +488,7 @@ fn rejected_solid_root_reports_an_error_severity_loss() {
 
     assert!(decoded.ir().model.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::TopologyRootRejected.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
     }));
 }

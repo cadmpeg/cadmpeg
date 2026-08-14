@@ -15,12 +15,13 @@ use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::index::{step_instance_id, CarrierIndex};
@@ -181,13 +182,13 @@ impl UnitScales {
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<GeometryData> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
-        losses.push(unresolved_unit_loss(
+        losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
             "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         ));
         1.0
     });
     let angle_scale = plane_angle_scale(exchange).unwrap_or_else(|| {
-        losses.push(unresolved_unit_loss(
+        losses.push(StepLossCode::DocumentAngleUnitUnresolved.note(
             "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         ));
         1.0
@@ -347,14 +348,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                             if let Some(reference) = orthogonal_reference(axis, reference) {
                                 reference
                             } else {
-                                losses.push(LossNote {
-                                    code: LossKind::shared(LossTaxonomy::CarrierAxisInferred),
-                                    severity: Severity::Warning,
-                                    message: format!(
+                                losses.push(StepLossCode::PlacementReferenceInferred.note(format!(
                                         "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
-                                    ),
-                                    provenance: None,
-                                });
+                                    )));
                                 first_projected_axis(axis)
                                     .unwrap_or(Vector3::new(1.0, 0.0, 0.0))
                             }
@@ -1779,7 +1775,7 @@ pub(super) fn associate_free_geometric_set_members(
                         losses,
                         member,
                         "geometric-set member name",
-                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                        StepLossCode::MetadataStringInvalid,
                     )
                 })
                 .filter(|name| !name.is_empty());
@@ -1853,7 +1849,7 @@ pub(super) fn associate_free_representation_members(
                         losses,
                         member,
                         "representation member name",
-                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                        StepLossCode::MetadataStringInvalid,
                     )
                 })
                 .filter(|name| !name.is_empty());
@@ -1946,7 +1942,7 @@ fn associate_presentation_carrier(
                 losses,
                 target,
                 "presentation carrier name",
-                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                StepLossCode::MetadataStringInvalid,
             )
         })
         .filter(|name| !name.is_empty());
@@ -2635,14 +2631,9 @@ fn finalize_unit_candidates(
         }
     }
     if ambiguous > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(StepLossCode::ConflictingRepresentationUnits.note(format!(
                 "{ambiguous} geometry record(s) belong to representations with conflicting {dimension} units; source-order unit selection was not applied"
-            ),
-            provenance: None,
-        });
+            )));
     }
     selected
 }
@@ -3017,24 +3008,14 @@ fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option
         return measures.first().map(|(_, value)| *value);
     }
     if measures.len() > 1 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has {} resolvable length measure(s) and {} unresolved measure(s); the linear tolerance is ambiguous",
                 measures.len(), unresolved_measure_count
-            ),
-            provenance: None,
-        });
+            )));
     } else if measures.is_empty() && unresolved_measure_count > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
+        losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved_measure_count} unresolved measure(s); the linear tolerance was not transferred"
-            ),
-            provenance: None,
-        });
+            )));
     }
     None
 }
@@ -3256,7 +3237,7 @@ fn line_parameter_scale(
                 .map(|magnitude| magnitude * length_scale)
                 .filter(|scale| scale.is_finite() && *scale > 0.0)
                 .unwrap_or_else(|| {
-                    losses.push(unresolved_unit_loss(format!(
+                    losses.push(StepLossCode::LineParameterScaleUnresolved.note(format!(
                         "LINE #{curve} parameter scale did not resolve; the document length scale was used"
                     )));
                     length_scale
@@ -3271,15 +3252,6 @@ fn line_parameter_scale(
     }
 
     resolve(exchange, curve, length_scale, losses, &mut BTreeSet::new())
-}
-
-fn unresolved_unit_loss(message: impl Into<String>) -> LossNote {
-    LossNote {
-        code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-        severity: Severity::Error,
-        message: message.into(),
-        provenance: None,
-    }
 }
 
 fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {

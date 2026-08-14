@@ -340,10 +340,12 @@ fn native_version(bytes: &[u8]) -> u32 {
 
 /// Every marker hit is tried as a block first (the CRC gate is effectively
 /// false-positive-free), then as a cache cell, then as a directory entry.
+type NativeWalk<E> = Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), E>;
+
 fn walk_native_markers<E>(
     bytes: &[u8],
     mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, E>,
-) -> Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), E> {
+) -> NativeWalk<E> {
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
@@ -420,7 +422,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 }
 
 /// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
-/// extract stay codec-local because they are SolidWorks payload semantics, not
+/// extract stay codec-local because they are `SolidWorks` payload semantics, not
 /// CFB.
 fn compound_streams<'a>(
     ctx: &DecodeContext<'a>,
@@ -533,6 +535,7 @@ impl RawBlock {
     }
 }
 
+#[derive(Clone, Copy)]
 struct BlockFrame {
     type_id: u32,
     crc: u32,
@@ -573,7 +576,7 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
 fn block_from_inflated(
     bytes: &[u8],
     off: usize,
-    frame: BlockFrame,
+    frame: &BlockFrame,
     inflated: Vec<u8>,
 ) -> Option<RawBlock> {
     if inflated.len() != frame.uncomp_sz as usize {
@@ -623,7 +626,7 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     let (frame, payload_start, payload_end) = read_block_frame(bytes, off)?;
     let payload = bytes.get(payload_start..payload_end)?;
     let inflated = inflate_bounded_probe(payload, frame.uncomp_sz as usize)?;
-    block_from_inflated(bytes, off, frame, inflated)
+    block_from_inflated(bytes, off, &frame, inflated)
 }
 
 fn try_block_budgeted<'a>(
@@ -653,7 +656,7 @@ fn try_block_budgeted<'a>(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    Ok(block_from_inflated(bytes, off, frame, inflated))
+    Ok(block_from_inflated(bytes, off, &frame, inflated))
 }
 
 /// Test a marker hit against the cache-cell relational invariant

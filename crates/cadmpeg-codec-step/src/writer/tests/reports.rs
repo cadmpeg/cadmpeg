@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -182,19 +183,19 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes representable geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::AssetNotTransferred)
+        loss.code == StepLossCode::DocumentAssetOmitted.kind()
             && loss.message.contains("1 document asset")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PmiOmitted)
+        loss.code == StepLossCode::SemanticAnnotationOmitted.kind()
             && loss.message.contains("1 semantic annotation")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::MetadataNotTransferred)
+        loss.code == StepLossCode::ProductNonPartKind.kind()
             && loss.message.contains("non-part kind")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::MetadataNotTransferred)
+        loss.code == StepLossCode::ProductBomPropertyOmitted.kind()
             && loss.message.contains("1 product BOM property")
     }));
 }
@@ -227,17 +228,15 @@ fn writer_reports_unrepresented_topology_metadata() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes topology metadata fixture");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+        loss.code == StepLossCode::PcurveUseNativeMetadata.kind()
             && loss.message.contains("1 pcurve use")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::AttributesNotTransferred)
+        loss.code == StepLossCode::CoedgeUseCurveNotRepresented.kind()
             && loss.message.contains("1 coedge-local 3D curve use")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::AttributesNotTransferred)
+        loss.code == StepLossCode::TopologyMetadataNotRepresented.kind()
             && loss.message.contains("topology metadata")
             && loss.message.contains("face tolerance=1")
             && loss.message.contains("edge tolerance=1")
@@ -288,7 +287,7 @@ fn writer_reports_root_occurrence_scale() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes unscaled geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::BodyTransformNotApplied)
+        loss.code == StepLossCode::RootOccurrencePlacementNotRepresentable.kind()
             && loss.message.contains("placement or scale")
     }));
 }
@@ -322,7 +321,7 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
     let report = write_step(&source, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode should record the topology loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::LoopNoContinuousOrdering.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("continuous vertex-to-vertex")
     }));
@@ -386,10 +385,8 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             .losses
             .iter()
             .filter(|loss| {
-                loss.code
-                    == cadmpeg_ir::LossKind::shared(
-                        cadmpeg_ir::LossTaxonomy::AttributesNotTransferred,
-                    )
+                (loss.code == StepLossCode::TessellationTriangleGroups.kind()
+                    || loss.code == StepLossCode::TessellationTextureAssignments.kind())
                     && loss.severity == cadmpeg_ir::Severity::Warning
             })
             .count(),
@@ -461,10 +458,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the product graph");
     assert!(report.losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred,
-            )
+        loss.code == StepLossCode::AssemblyOccurrenceOmittedNoParentProduct.kind()
             && loss.message.contains("local-child")
             && loss
                 .message
@@ -480,7 +474,7 @@ fn writer_reports_region_without_shells() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the remaining geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::RegionNoShellList.kind()
             && loss.message.contains("region(s) have no shell list")
     }));
 }
@@ -494,7 +488,7 @@ fn writer_reports_topology_without_an_emitted_region() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the empty shape representation");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::TopologyUnreachableFromRegion.kind()
             && loss
                 .message
                 .contains("topology not reachable from any emitted region shape item")
@@ -513,7 +507,7 @@ fn writer_reports_wire_region_without_connected_edges() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the remaining geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::WireRegionNoConnectedEdgeSet.kind()
             && loss
                 .message
                 .contains("wire region(s) had no writable connected edge set")
@@ -529,7 +523,7 @@ fn writer_reports_wire_region_with_missing_shell_record() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the remaining geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::WireRegionMissingShell.kind()
             && loss.message.contains("missing shell records")
             && loss.message.contains("missing-shell")
     }));
@@ -545,8 +539,7 @@ fn writer_reports_hidden_body_without_step_item() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the remaining geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::HiddenBodyOmitted)
-            && loss.message.contains(body.as_str())
+        loss.code == StepLossCode::HiddenBodyOmitted.kind() && loss.message.contains(body.as_str())
     }));
 }
 
@@ -570,7 +563,7 @@ fn writer_reports_dangling_appearance_binding() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the representable geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::MaterialNotTransferred)
+        loss.code == StepLossCode::AppearanceBindingMissingAsset.kind()
             && loss.message.contains(binding)
             && loss.message.contains(appearance.as_str())
     }));
@@ -609,7 +602,7 @@ fn writer_reports_appearance_without_base_color() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the representable geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::MaterialNotTransferred)
+        loss.code == StepLossCode::AppearanceBindingNoBaseColor.kind()
             && loss.message.contains(binding)
             && loss.message.contains(appearance.as_str())
     }));
@@ -659,14 +652,13 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
     )
     .expect("report mode writes reduced tessellation");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::TessellationBodyLinkUnwritable.kind()
             && loss
                 .message
                 .contains("has no writable AP242 tessellation link")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::AttributesNotTransferred)
+        loss.code == StepLossCode::TessellationMetadataReduced.kind()
             && loss.message.contains("face ownership link(s)")
             && loss.message.contains("chordal deflection")
             && loss.message.contains("data channel(s)")
@@ -680,7 +672,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(&outer_face, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the surviving faces");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::FaceNoWritableBounds.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("has no writable bounds")
     }));
@@ -694,7 +686,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(&inner_loop, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the surviving outer loop");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::FaceOmittedInnerLoop.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains("has no writable topology")
     }));
@@ -704,7 +696,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(&missing_edge, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the surviving coedges");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::LoopEdgeNotWritable.kind()
             && loss.message.contains("loop")
             && loss.message.contains("edge")
     }));
@@ -718,7 +710,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(&missing_void, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the outer shell");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::RegionOmittedVoidShell.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("omitted void shell")
     }));
@@ -754,7 +746,7 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
         .expect("report mode writes the representable sheet");
     assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+        loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains("step:data:pcurve#56")
     }));
@@ -794,7 +786,7 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         .expect("report mode writes the representable sheet");
     assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+        loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains("step:data:pcurve#56")
     }));
@@ -824,7 +816,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the representable subset");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(curve_id.as_str())
     }));
@@ -989,9 +981,9 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
         },
     )
     .expect("report-mode STEP write");
-    assert!(report.losses.iter().any(
-        |loss| loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PmiOmitted)
-    ));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == StepLossCode::PmiAnnotationNotWritten.kind()
+        || loss.code == StepLossCode::SemanticAnnotationOmitted.kind()));
     assert!(!String::from_utf8_lossy(&output).contains(".UNKNOWN_MODIFIER."));
     assert!(!String::from_utf8_lossy(&output).contains("DATUM_REFERENCE_MODIFIER_WITH_VALUE"));
 
@@ -1031,7 +1023,7 @@ fn edge_without_curve_is_reported_and_omitted() {
         .iter()
         .any(|l| l.message.contains("edge(s) have no typed 3D curve")));
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::EdgeNo3dCurve.kind()
             && loss
                 .message
                 .contains("was omitted because it has no 3D curve")
@@ -1131,7 +1123,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     );
     assert!(unknown_notes[0].message.contains("1 face(s)"));
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::TopologyNotTransferred)
+        loss.code == StepLossCode::ShellOmittedOuterFace.kind()
             && loss.message.contains("omitted face")
     }));
 }
@@ -1211,7 +1203,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode must not panic on an unwritable procedural surface");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(surface_id.as_str())
     }));
@@ -1241,7 +1233,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode must not panic on an unwritable procedural curve");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(curve_id.as_str())
     }));

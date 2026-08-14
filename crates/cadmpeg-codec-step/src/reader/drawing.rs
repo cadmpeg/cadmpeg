@@ -9,10 +9,10 @@ use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind, DrawingTarget};
 use cadmpeg_ir::report::LossNote;
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
-use crate::loss::StepLossCode;
 
 const DRAWING_ENTITIES: &[&str] = &[
     "DRAWING_DEFINITION",

@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -47,10 +48,7 @@ fn unresolvable_length_unit_reports_an_error_loss() {
                 .starts_with("the document length unit did not resolve")
         })
         .expect("unresolved length unit loss");
-    assert_eq!(
-        loss.code,
-        cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
-    );
+    assert_eq!(loss.code, StepLossCode::DocumentLengthUnitUnresolved.kind());
     assert_eq!(loss.severity, cadmpeg_ir::Severity::Error);
     assert_eq!(
         loss.message,
@@ -354,9 +352,11 @@ fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
         .expect("decode mixed uncertainty units");
 
     assert!((result.ir().tolerances.linear - 0.0508).abs() < 1e-12);
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
-    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind() }));
 }
 
 #[test]
@@ -367,9 +367,11 @@ fn decode_prefers_named_length_uncertainty_when_several_lengths_are_present() {
         .expect("decode named uncertainty");
 
     assert!((result.ir().tolerances.linear - 0.2).abs() < 1e-12);
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
-    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind() }));
 }
 
 #[test]
@@ -381,7 +383,7 @@ fn decode_reports_ambiguous_length_uncertainty() {
 
     assert_eq!(result.ir().tolerances.linear, 1e-6);
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+        loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind()
             && loss.severity == cadmpeg_ir::Severity::Warning
     }));
 }
@@ -409,7 +411,9 @@ fn decode_scales_geometry_by_its_representation_context() {
         .expect("inch point");
     assert!((metric.position.x - 10.0).abs() < 1e-12);
     assert!((inch.position.x - 25.4).abs() < 1e-12);
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
-    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));
 }

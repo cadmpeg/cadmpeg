@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -180,7 +181,7 @@ fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
         .iter()
         .any(|mesh| mesh.id == "step:tessellation:mesh#7" && mesh.body.is_none()));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
             && loss.message.contains("mesh retained as detached")
     }));
 
@@ -219,8 +220,7 @@ fn shared_tessellation_item_is_not_assigned_to_an_arbitrary_body() {
     assert!(mesh.body.is_none());
     assert!(
         decoded.report().losses.iter().any(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+            loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
                 && loss.message.contains("multiple candidate bodies")
         }),
         "{:#?}",

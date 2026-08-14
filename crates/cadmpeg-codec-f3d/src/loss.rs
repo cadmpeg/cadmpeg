@@ -32,7 +32,7 @@ pub enum F3dLossCode {
     ConfigurationParameterOverrideUnbound,
     /// Design configuration feature suppressions have no feature identity.
     ConfigurationFeatureSuppressionUnbound,
-    /// Non-root ACT component links stay source-only; product role is unresolved.
+    /// Non-root `ACT` component links stay source-only; product role is unresolved.
     ActComponentLinkUnresolved,
     /// ASM history binding work exceeded the decoder safety budget.
     HistoryBindingBudgetExceeded,
@@ -122,7 +122,7 @@ pub enum F3dLossCode {
     FaceSurfaceReferenceDangling,
     /// Faces rest on spline or procedural surfaces whose shape was not decoded.
     SurfaceShapeNotDecoded,
-    /// Faces use zero-payload mesh_surface sentinels; exact surfaces are absent.
+    /// Faces use zero-payload `mesh_surface` sentinels; exact surfaces are absent.
     MeshSurfaceSentinel,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
@@ -140,13 +140,13 @@ pub enum F3dLossCode {
     TopologyNotTransferred,
     /// No ASM BREP stream was found or selected as the document geometry stream.
     MissingGeometryStream,
-    /// An XREF path cycles through a member already on the resolution stack.
+    /// An `XREF` path cycles through a member already on the resolution stack.
     XrefCycle,
-    /// An XREF member is not present in the archive.
+    /// An `XREF` member is not present in the archive.
     XrefMemberMissing,
-    /// An XREF member failed to decode.
+    /// An `XREF` member failed to decode.
     XrefMemberUndecoded,
-    /// An XREF component's units differ from the containing document.
+    /// An `XREF` component's units differ from the containing document.
     XrefUnitsMismatch,
     /// T-spline records were retained without typed semantics.
     TsplineRecordUntyped,
@@ -158,6 +158,7 @@ pub enum F3dLossCode {
 
 impl F3dLossCode {
     /// Every code, in declaration order.
+    #[cfg(test)]
     pub const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
         Self::ConfigurationMemberUnassigned,
