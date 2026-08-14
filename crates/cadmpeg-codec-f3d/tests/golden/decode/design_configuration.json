@@ -425,8 +425,8 @@
     "losses": [
       {
         "code": {
-          "namespace": "shared",
-          "code": "material_not_transferred",
+          "namespace": "f3d",
+          "code": "material.not-transferred",
           "kind": "material_not_transferred"
         },
         "severity": "warning",
@@ -434,8 +434,8 @@
       },
       {
         "code": {
-          "namespace": "shared",
-          "code": "metadata_not_transferred",
+          "namespace": "f3d",
+          "code": "configuration.parameter-override-unbound",
           "kind": "metadata_not_transferred"
         },
         "severity": "warning",
@@ -443,8 +443,8 @@
       },
       {
         "code": {
-          "namespace": "shared",
-          "code": "metadata_not_transferred",
+          "namespace": "f3d",
+          "code": "configuration.feature-suppression-unbound",
           "kind": "metadata_not_transferred"
         },
         "severity": "warning",
