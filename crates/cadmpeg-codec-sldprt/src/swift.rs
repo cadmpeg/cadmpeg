@@ -1609,11 +1609,12 @@ fn rendered_dimensions(payload: &[u8]) -> Vec<RenderedDimension> {
             }
             let start = length_offset.checked_add(1)?;
             let end = start.checked_add(units.checked_mul(2)?)?;
-            let code_units = payload
-                .get(start..end)?
-                .chunks_exact(2)
-                .map(|pair| Some(u16::from_le_bytes(pair.try_into().ok()?)))
-                .collect::<Option<Vec<_>>>()?;
+            let slice = payload.get(start..end)?;
+            let mut view = View::over_retained(slice);
+            let mut code_units = Vec::new();
+            while let Some(unit) = view.u16_le() {
+                code_units.push(unit);
+            }
             let text = String::from_utf16(&code_units).ok()?;
             Some(rendered_dimension_literals(&text))
         })

@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::records::{
     ActEntity, ActRootComponent, DesignMaterialAssignment, LostEdgeReference, SketchCurveGeometry,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 
@@ -667,13 +668,10 @@ fn line_scalar_count(bytes: &[u8], values_at: usize) -> Result<usize, CodecError
             "sketch-line scalar offset exceeds address space".into(),
         ));
     };
-    let full_normal = bytes.get(marker_at..marker_at + 24).and_then(|bytes| {
-        Some([
-            f64::from_le_bytes(bytes[0..8].try_into().ok()?),
-            f64::from_le_bytes(bytes[8..16].try_into().ok()?),
-            f64::from_le_bytes(bytes[16..24].try_into().ok()?),
-        ])
-    });
+    let mut view = View::over_retained(bytes);
+    let full_normal = view
+        .seek(marker_at)
+        .and_then(|()| Some([view.f64_le()?, view.f64_le()?, view.f64_le()?]));
     if let Some(normal) = full_normal {
         let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
         if normal.iter().all(|value| value.is_finite()) && (length - 1.0).abs() <= 1.0e-9 {

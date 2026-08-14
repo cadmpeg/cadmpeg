@@ -1582,3 +1582,6 @@ mod color_tests {
         assert_eq!(materials[0].emissive, 0xaabb_cc00);
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

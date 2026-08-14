@@ -1,4 +1,4 @@
-use super::*;
+use crate::decode::surfaces::prototype_local_frame;
 use crate::surface::{
     SurfaceNamedParameter, SurfaceNamedValue, SurfacePrototypeFamily, SurfacePrototypeRecord,
 };

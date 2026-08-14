@@ -137,3 +137,6 @@ pub fn refs(items: &[Ref]) -> String {
     out.push(')');
     out
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

@@ -21,6 +21,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
+use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
@@ -1111,7 +1112,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
             "legacy decoder requires V1".to_string(),
         ));
     }
-    let mut offset = header.start_offset + 32;
+    let mut offset = header.start_offset + file_header::LEN;
     let comment =
         chunk_at(data, offset, data.len(), ArchiveVersion::V1, false).map_err(malformed)?;
     if comment.typecode != TCODE_COMMENT || comment.short {
@@ -1566,37 +1567,37 @@ mod tests {
     fn v1_flat_points_decode_to_neutral_points() {
         let result = decode_v1(&archive(&[[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]]))
             .expect("valid V1 point archive");
-        assert_eq!(result.ir.model.points.len(), 2);
+        assert_eq!(result.ir().model.points.len(), 2);
         assert_eq!(
-            result.ir.model.points[0].position,
+            result.ir().model.points[0].position,
             Point3::new(1.0, 2.0, 3.0)
         );
-        assert!(result.report.geometry_transferred);
+        assert!(result.report().geometry_transferred);
     }
 
     #[test]
     fn v1_legacy_face_decodes_complete_brep_topology() {
         let result = decode_v1(&legacy_face_archive()).expect("valid V1 face archive");
-        let model = &result.ir.model;
-        assert_eq!(model.bodies.len(), 1, "{:?}", result.report);
+        let model = &result.ir().model;
+        assert_eq!(model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(model.faces.len(), 1);
         assert_eq!(model.loops.len(), 1);
         assert_eq!(model.coedges.len(), 4);
         assert_eq!(model.edges.len(), 4);
         assert_eq!(model.pcurves.len(), 4);
         assert_eq!(model.surfaces.len(), 1);
-        assert_eq!(result.report.coverage["legacy_v1_breps"], 1);
-        let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+        assert_eq!(result.report().coverage["legacy_v1_breps"], 1);
+        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
 
     #[test]
     fn v1_legacy_shell_decodes_nested_faces() {
         let result = decode_v1(&legacy_shell_archive()).expect("valid V1 shell archive");
-        assert_eq!(result.ir.model.bodies.len(), 1, "{:?}", result.report);
-        assert_eq!(result.ir.model.faces.len(), 1);
-        assert_eq!(result.report.coverage["legacy_v1_breps"], 1);
-        let report = cadmpeg_ir::validate::validate_neutral(&result.ir, Vec::new());
+        assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
+        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.report().coverage["legacy_v1_breps"], 1);
+        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
 }

@@ -1,0 +1,801 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Design holes-extrude transfer unit tests.
+#![allow(unused_imports)]
+
+use crate::test_support::*;
+use crate::FcstdCodec;
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
+    InnerWireTaper, Length, PathRef, Termination,
+};
+use cadmpeg_ir::{Codec, DecodeOptions};
+use std::io::Cursor;
+
+#[test]
+pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Sketcher::SketchObject" name="Locations" id="1"/>
+ <Object type="PartDesign::Hole" name="Hole" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Locations"><Properties Count="2">
+  <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+ <Object name="Hole"><Properties Count="26">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property>
+  <Property name="BaseProfileType" type="App::PropertyInteger"><Integer value="7"/></Property>
+  <Property name="Diameter" type="App::PropertyLength"><Float value="6.8"/></Property>
+  <Property name="HoleCutType" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="HoleCutDiameter" type="App::PropertyLength"><Float value="12"/></Property>
+  <Property name="HoleCutDepth" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="HoleCutCountersinkAngle" type="App::PropertyAngle"><Float value="90"/></Property>
+  <Property name="DepthType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="DrillPoint" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="DrillPointAngle" type="App::PropertyAngle"><Float value="118"/></Property>
+  <Property name="DrillForDepth" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Tapered" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="TaperedAngle" type="App::PropertyAngle"><Float value="60"/></Property>
+  <Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="ThreadSize" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="M6"/><Enum value="M8"/></CustomEnumList></Property>
+  <Property name="ThreadClass" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="6H"/></CustomEnumList></Property>
+  <Property name="Threaded" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="ModelThread" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="CosmeticThread" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="ThreadPitch" type="App::PropertyLength"><Float value="1.25"/></Property>
+  <Property name="ThreadDiameter" type="App::PropertyLength"><Float value="8"/></Property>
+  <Property name="ThreadDirection" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="ThreadDepthType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="ThreadDepth" type="App::PropertyLength"><Float value="12"/></Property>
+  <Property name="UseCustomThreadClearance" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("hole");
+    let hole = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hole"))
+        .expect("hole feature");
+    let cadmpeg_ir::features::FeatureDefinition::Hole {
+        profile,
+        profile_filter,
+        direction,
+        kind,
+        extent,
+        bottom,
+        taper_angle,
+        specification,
+        allow_multi_profile_faces,
+        ..
+    } = &hole.definition
+    else {
+        panic!("typed hole");
+    };
+    assert!(matches!(
+        profile,
+        Some(cadmpeg_ir::features::ProfileRef::Sketch(_))
+    ));
+    assert_eq!(
+        *profile_filter,
+        Some(cadmpeg_ir::features::HoleProfileFilter {
+            points: true,
+            circles: true,
+            arcs: true,
+        })
+    );
+    assert_eq!(
+        *direction,
+        Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+    );
+    assert!(matches!(
+        kind,
+        cadmpeg_ir::features::HoleKind::Counterdrill {
+            diameter: cadmpeg_ir::features::Length(12.0),
+            entry_diameter: None,
+            depth: cadmpeg_ir::features::Length(2.0),
+            angle: cadmpeg_ir::features::Angle(angle),
+        } if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+    ));
+    assert!(matches!(
+        extent,
+        Some(cadmpeg_ir::features::Termination::ThroughAll)
+    ));
+    assert!(matches!(
+        bottom,
+        Some(cadmpeg_ir::features::HoleBottom::Angled {
+            depth_to_tip: true,
+            ..
+        })
+    ));
+    assert!(taper_angle.is_some());
+    assert_eq!(*allow_multi_profile_faces, Some(true));
+    let specification = specification.as_deref().expect("thread specification");
+    assert_eq!(specification.standard, "ISO metric");
+    assert_eq!(specification.designation.as_deref(), Some("M8"));
+    assert_eq!(specification.class.as_deref(), Some("6H"));
+    assert!(specification.threaded && specification.modeled && !specification.cosmetic);
+    assert_eq!(specification.hand, cadmpeg_ir::features::ThreadHand::Left);
+    assert!(matches!(
+        specification.depth,
+        cadmpeg_ir::features::HoleThreadDepth::Blind {
+            depth: cadmpeg_ir::features::Length(12.0)
+        }
+    ));
+    assert_eq!(hole.dependencies.len(), 1);
+    assert!(result.report().losses.is_empty());
+    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+        "{findings:#?}"
+    );
+}
+
+#[test]
+fn resolves_deprecated_fcstd_hole_cut_indices() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1" ProgramVersion="0.18R4">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Locations"/><Object type="PartDesign::Hole" name="Hole"/></Objects>
+<ObjectData Count="2">
+ <Object name="Locations"><Properties Count="0"/></Object>
+ <Object name="Hole"><Properties Count="8">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property>
+  <Property name="Diameter" type="App::PropertyLength"><Float value="4.4"/></Property>
+  <Property name="HoleCutType" type="App::PropertyEnumeration"><Integer value="5"/></Property>
+  <Property name="HoleCutDiameter" type="App::PropertyLength"><Float value="6"/></Property>
+  <Property name="HoleCutDepth" type="App::PropertyLength"><Float value="5"/></Property>
+  <Property name="DepthType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="DrillPoint" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("legacy hole");
+    let hole = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hole"))
+        .expect("hole feature");
+    assert!(matches!(
+        hole.definition,
+        FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::Counterbore {
+                diameter: cadmpeg_ir::features::Length(6.0),
+                depth: cadmpeg_ir::features::Length(5.0),
+            },
+            ..
+        }
+    ));
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
+pub(crate) fn transfers_non_default_extrusion_termination_branches() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="9">
+  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
+  <Object type="PartDesign::Pad" name="ToLast" id="2"/>
+  <Object type="PartDesign::Pad" name="ToFirst" id="3"/>
+  <Object type="PartDesign::Pad" name="ToFace" id="4"/>
+  <Object type="PartDesign::Pad" name="ToShape" id="5"/>
+  <Object type="PartDesign::Pocket" name="ThroughAll" id="6"/>
+  <Object type="PartDesign::Pad" name="Symmetric" id="7"/>
+  <Object type="Part::Extrusion" name="PartExtrusion" id="8"/>
+  <Object type="Part::Extrusion" name="NegativeProfileNormal" id="9"/>
+</Objects>
+<ObjectData Count="9">
+  <Object name="Sketch"><Properties Count="0"/></Object>
+  <Object name="ToLast"><Properties Count="2">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  </Properties></Object>
+  <Object name="ToFirst"><Properties Count="2">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  </Properties></Object>
+  <Object name="ToFace"><Properties Count="3">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+    <Property name="UpToFace" type="App::PropertyLinkSub"><LinkSub value="PartExtrusion" count="1"><Sub value="Face1"/></LinkSub></Property>
+  </Properties></Object>
+  <Object name="ToShape"><Properties Count="3">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="5"/></Property>
+    <Property name="UpToShape" type="App::PropertyLinkSub"><LinkSub value="PartExtrusion" count="1"><Sub value="Face2"/></LinkSub></Property>
+  </Properties></Object>
+  <Object name="ThroughAll"><Properties Count="2">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  </Properties></Object>
+  <Object name="Symmetric"><Properties Count="5">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Length" type="App::PropertyLength"><Float value="12"/></Property>
+    <Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="TaperAngle" type="App::PropertyAngle"><Float value="5"/></Property>
+  </Properties></Object>
+  <Object name="PartExtrusion"><Properties Count="12">
+    <Property name="Base" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="2" z="0"/></Property>
+    <Property name="LengthFwd" type="App::PropertyLength"><Float value="7"/></Property>
+    <Property name="LengthRev" type="App::PropertyLength"><Float value="3"/></Property>
+    <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
+    <Property name="TaperAngleRev" type="App::PropertyAngle"><Float value="4"/></Property>
+    <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+    <Property name="DirLink" type="App::PropertyLinkSub"><LinkSub value="Sketch" count="1"><Sub value="Edge1"/></LinkSub></Property>
+    <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property>
+    <Property name="FaceMakerMode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
+    <Property name="InnerWireTaper" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  </Properties></Object>
+  <Object name="NegativeProfileNormal"><Properties Count="6">
+    <Property name="Base" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+    <Property name="LengthFwd" type="App::PropertyLength"><Float value="5"/></Property>
+    <Property name="LengthRev" type="App::PropertyLength"><Float value="-1"/></Property>
+    <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
+  </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("extrusion termination branches");
+    let definition = |name: &str| {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    assert!(matches!(
+        definition("ToLast"),
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToLast,
+                    ..
+                }
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("ToFirst"),
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFirst,
+                    ..
+                }
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("ToFace"),
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace { .. },
+                    ..
+                }
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("ToShape"),
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToShape { .. },
+                    ..
+                }
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("ThroughAll"),
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ThroughAll,
+                    ..
+                }
+            },
+            op: BooleanOp::Cut,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("Symmetric"),
+        FeatureDefinition::Extrude {
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            extent: ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length },
+                    draft: Some(Angle(draft)),
+                    ..
+                }
+            },
+            ..
+        } if direction.z == -1.0 && length.0 == 12.0 && (*draft - 5_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(matches!(
+        definition("PartExtrusion"),
+        FeatureDefinition::Extrude {
+            profile: _,
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind { length: first },
+                    draft: Some(Angle(draft)),
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind { length: second },
+                    draft: Some(Angle(reverse_draft)),
+                    ..
+                },
+            },
+            direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
+            solid: Some(true),
+            face_maker: Some(face_maker),
+            inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
+            op: BooleanOp::NewBody,
+            ..
+        } if direction.y == 1.0 && first.0 == 7.0 && second.0 == 3.0
+            && (*draft - 2_f64.to_radians()).abs() < 1e-12
+            && (*reverse_draft - 4_f64.to_radians()).abs() < 1e-12
+            && reference.ends_with(":DirLink")
+            && face_maker.class == "Part::FaceMakerUnified" && face_maker.mode == Some(4)
+    ));
+    assert!(matches!(
+        definition("NegativeProfileNormal"),
+        FeatureDefinition::Extrude {
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length },
+                    ..
+                }
+            },
+            direction_source: Some(ExtrusionDirectionSource::ProfileNormal),
+            ..
+        } if direction.z == -1.0 && length.0 == 5.0
+    ));
+}
+
+#[test]
+fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Part2DObjectPython" name="Profile"/><Object type="PartDesign::Pocket" name="Pocket"/></Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0.7071067811865476" Q2="0" Q3="0.7071067811865476"/></Property></Properties></Object>
+ <Object name="Pocket"><Properties Count="3"><Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("non-sketch profile extrusion");
+    let pocket = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pocket"))
+        .expect("pocket feature");
+    assert!(matches!(
+        &pocket.definition,
+        FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Native(_),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        } if (direction.x - 1.0).abs() < 1.0e-12
+            && direction.y.abs() < 1.0e-12
+            && direction.z.abs() < 1.0e-12
+    ));
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn transfers_part_extrusion_symmetric_direction_magnitude() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Extrusion" name="Extrusion" id="2"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Extrusion"><Properties Count="6">
+  <Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="0" z="12"/></Property>
+  <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="TaperAngle" type="App::PropertyAngle"><Float value="3"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("symmetric Part extrusion");
+    let definition = &result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Extrusion"))
+        .expect("extrusion")
+        .definition;
+    assert!(matches!(
+        definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind { length },
+                    draft: Some(cadmpeg_ir::features::Angle(draft)),
+                    ..
+                }
+            },
+            direction_source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
+            solid: Some(false),
+            ..
+        } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="PartDesign::Pad" name="Pad" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Pad"><Properties Count="4">
+ <Property name="Sketch" type="App::PropertyLink"><Link value=""/></Property>
+ <Property name="Length" type="App::PropertyLength"><Float value="5"/></Property>
+ <Property name="Midplane" type="App::PropertyBool"><Bool value="false"/></Property>
+ <Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("linkless pad");
+    let definition = &result.ir().model.features[0].definition;
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            extent: ExtrudeExtent::OneSided { .. },
+            ..
+        } if profile.ends_with(":Sketch")
+    ));
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn transfers_partdesign_mixed_extrusion_side_controls() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5">
+ <Object type="Part::Box" name="Target" id="2"/>
+ <Object type="PartDesign::Pad" name="Mixed" id="3"/>
+ <Object type="PartDesign::Pocket" name="Symmetric" id="4"/>
+ <Object type="PartDesign::Pad" name="LegacyTwoLengths" id="5"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+</Objects>
+<ObjectData Count="5">
+ <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Target"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Mixed"><Properties Count="15">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="SideType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="-5"/></Property>
+  <Property name="Type2" type="App::PropertyEnumeration"><Integer value="5"/></Property>
+  <Property name="UpToShape2" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Target" sub="Face2"/></LinkSubList></Property>
+  <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
+  <Property name="UseCustomVector" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
+  <Property name="TaperAngle2" type="App::PropertyAngle"><Float value="-3"/></Property>
+  <Property name="Offset" type="App::PropertyDistance"><Float value="1"/></Property>
+  <Property name="Offset2" type="App::PropertyDistance"><Float value="-2"/></Property>
+  <Property name="AlongSketchNormal" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Symmetric"><Properties Count="4">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="SideType" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Offset" type="App::PropertyDistance"><Float value="0.5"/></Property>
+ </Properties></Object>
+ <Object name="LegacyTwoLengths"><Properties Count="4">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="4"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="6"/></Property>
+  <Property name="Length2" type="App::PropertyLength"><Float value="2"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("mixed extrusion controls");
+    let definition = |name: &str| {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    assert!(matches!(
+        definition("Mixed"),
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind { length: Length(-5.0) },
+                    draft: Some(Angle(first_draft)),
+                    offset: Some(Length(1.0)),
+                },
+                second: ExtrudeSide {
+                    termination: Termination::ToShape { .. },
+                    draft: Some(Angle(second_draft)),
+                    offset: Some(Length(-2.0)),
+                },
+            },
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
+            length_along_profile_normal: Some(false),
+            allow_multi_profile_faces: Some(true),
+            ..
+        } if direction.y == 1.0
+            && reference.ends_with(":ReferenceAxis")
+            && (*first_draft - 2_f64.to_radians()).abs() < 1e-12
+            && (*second_draft + 3_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(matches!(
+        definition("Symmetric"),
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::ThroughAll,
+                    offset: Some(Length(0.5)),
+                    ..
+                }
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("LegacyTwoLengths"),
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.0)
+                    },
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(2.0)
+                    },
+                    ..
+                },
+            },
+            ..
+        }
+    ));
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn transfers_sketch_pad_and_pocket_design_history() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4" Dependencies="1">
+  <ObjectDeps Name="Body" Count="0"/>
+  <ObjectDeps Name="Sketch" Count="0"/>
+  <ObjectDeps Name="Pad" Count="1"><Dep Name="Sketch"/></ObjectDeps>
+  <ObjectDeps Name="Pocket" Count="2"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
+  <Object type="PartDesign::Body" name="Body" id="1"/>
+  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
+  <Object type="PartDesign::Pad" name="Pad" id="2"/>
+  <Object type="PartDesign::Pocket" name="Pocket" id="3"/>
+</Objects>
+<ObjectData Count="4">
+  <Object name="Body"><Properties Count="2">
+    <Property name="Group" type="App::PropertyLinkList"><LinkList count="3"><Link value="Sketch"/><Link value="Pad"/><Link value="Pocket"/></LinkList></Property>
+    <Property name="Tip" type="App::PropertyLink"><Link value="Pocket"/></Property>
+  </Properties></Object>
+  <Object name="Sketch"><Properties Count="3">
+    <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
+      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="10" EndY="0"/><Construction value="0"/></Geometry>
+      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="0" EndX="10" EndY="5"/><Construction value="0"/></Geometry>
+      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="5" EndX="0" EndY="5"/><Construction value="0"/></Geometry>
+      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="5" EndX="0" EndY="0"/><Construction value="0"/></Geometry>
+    </GeometryList></Property>
+    <Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="2">
+      <Constrain Type="2" First="0" FirstPos="0"/>
+      <Constrain Name="Width" Type="7" Value="10" IsDriving="1" First="0" FirstPos="1" Second="1" SecondPos="1"/>
+    </ConstraintList></Property>
+    <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property>
+  </Properties></Object>
+  <Object name="Pad"><Properties Count="2">
+    <Property name="Sketch" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+  </Properties></Object>
+  <Object name="Pocket"><Properties Count="4">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Length" type="App::PropertyLength"><Float value="2.5"/></Property>
+    <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Pad.Length / 4"/></ExpressionEngine></Property>
+  </Properties></Object>
+</ObjectData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("design history");
+    assert_eq!(result.ir().model.sketches.len(), 1);
+    assert_eq!(result.ir().model.sketch_entities.len(), 4);
+    assert_eq!(result.ir().model.sketches[0].profiles.len(), 1);
+    assert_eq!(result.ir().model.sketches[0].profiles[0].len(), 4);
+    let (origin, normal, _) = result.ir().model.sketches[0]
+        .resolved_placement()
+        .expect("resolved sketch placement");
+    assert_eq!(origin.x, 1.0);
+    assert!((normal.y + 1.0).abs() < 1e-12);
+    assert_eq!(result.ir().model.features.len(), 4);
+    assert_eq!(result.ir().model.sketch_constraints.len(), 2);
+    assert_eq!(result.ir().model.parameters.len(), 3);
+    assert!(result
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                cadmpeg_ir::sketches::SketchConstraintDefinition::Horizontal { .. }
+            )
+        }));
+    assert!(result
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+            )
+        }));
+    let pad = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pad"))
+        .expect("pad");
+    let pocket = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pocket"))
+        .expect("pocket");
+    let body = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Body"))
+        .expect("body");
+    assert_eq!(pad.parent.as_ref(), Some(&body.id));
+    assert_eq!(pocket.parent.as_ref(), Some(&body.id));
+    assert_eq!(
+        body.source_properties.get("Tip").map(String::as_str),
+        Some("fcstd:native:object#Pocket")
+    );
+    assert_eq!(pocket.suppressed, Some(true));
+    assert_eq!(
+        pocket
+            .source_properties
+            .get("Suppressed")
+            .map(String::as_str),
+        Some("true")
+    );
+    let pocket_length = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.owner.as_ref() == Some(&pocket.id) && parameter.name == "Length"
+        })
+        .expect("pocket length");
+    assert_eq!(pocket_length.expression, "Pad.Length / 4");
+    assert_eq!(pocket_length.dependencies.len(), 1);
+    assert!(matches!(
+        pad.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Sketch(_),
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(10.0)
+                    },
+                    ..
+                }
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            ..
+        }
+    ));
+    assert!(matches!(
+        pocket.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Blind {
+                        length: cadmpeg_ir::features::Length(2.5)
+                    },
+                    ..
+                }
+            },
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }
+    ));
+    let native_findings = crate::validate_native(result.ir());
+    assert!(native_findings.is_empty(), "{native_findings:#?}");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let design_findings = validation
+        .findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .entity
+                .as_deref()
+                .is_some_and(|entity| entity.starts_with("fcstd:design:"))
+        })
+        .collect::<Vec<_>>();
+    assert!(design_findings.is_empty(), "{design_findings:#?}");
+}

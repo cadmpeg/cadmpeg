@@ -3,7 +3,8 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+
+include!("../seed_paths.rs");
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
@@ -21,9 +22,9 @@ fn main() {
 }
 
 fn replace(directory: &str, seeds: &[(&str, Vec<u8>)]) {
-    let path = Path::new(directory);
-    fs::create_dir_all(path).expect("required invariant");
-    for entry in fs::read_dir(path).expect("required invariant") {
+    let path = seed_dir(directory);
+    fs::create_dir_all(&path).expect("required invariant");
+    for entry in fs::read_dir(&path).expect("required invariant") {
         let entry = entry.expect("required invariant").path();
         if entry.is_dir() {
             fs::remove_dir_all(entry).expect("required invariant");
@@ -37,8 +38,8 @@ fn replace(directory: &str, seeds: &[(&str, Vec<u8>)]) {
 }
 
 fn write_seed(directory: &str, name: &str, bytes: &[u8]) {
-    let path = Path::new(directory);
-    fs::create_dir_all(path).expect("required invariant");
+    let path = seed_dir(directory);
+    fs::create_dir_all(&path).expect("required invariant");
     fs::write(path.join(name), bytes).expect("required invariant");
 }
 

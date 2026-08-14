@@ -515,3 +515,6 @@ pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
         ),
     ]
 }
+
+#[cfg(test)]
+mod tests;

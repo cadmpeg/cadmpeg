@@ -4,7 +4,7 @@
 //! class-`0xc8` planes, `0xff` edge-use records, and cylinder/cone/torus
 //! analytic surface carriers.
 
-use cadmpeg_core::le::{u16_at as u16_le, u32_at as u32_le};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
@@ -58,7 +58,7 @@ struct E5Record {
     size: usize,
 }
 
-const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
+const MARKER: &[u8; 3] = &crate::layout::token::E5_RECORD_FAMILY;
 
 fn e5_records(data: &[u8]) -> Vec<E5Record> {
     debug_assert_eq!(MARKER, crate::container::E5_MARKER);
@@ -66,7 +66,7 @@ fn e5_records(data: &[u8]) -> Vec<E5Record> {
         .into_iter()
         .filter_map(|range| {
             let pos = range.start;
-            let size = u16_le(data, pos + 5).map(usize::from)?;
+            let size = View::u16_le_at(data, pos + 5).map(usize::from)?;
             Some(E5Record {
                 pos,
                 end: range.end,
@@ -186,7 +186,7 @@ pub fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
         }
         out.push(E5Plane {
             pos,
-            record_id: u32_le(data, pos + 9).unwrap_or(0),
+            record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
             origin,
             #[cfg(test)]
             u_range: [bounds[0], bounds[1]],
@@ -280,7 +280,7 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
         if let Some((geometry, uv_scale)) = decoded {
             out.push(E5Surface {
                 pos,
-                record_id: u32_le(data, pos + 9).unwrap_or(0),
+                record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
                 geometry,
                 uv_scale,
             });
@@ -329,7 +329,7 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     match *bytes.get(at)? {
         0x38 => Some((u32_le_24(bytes, at + 1)?, at + 4)),
-        0x18 => Some((u16_le(bytes, at + 1)? as u32, at + 3)),
+        0x18 => Some((View::u16_le_at(bytes, at + 1)? as u32, at + 3)),
         0x10 => Some((u32::from(*bytes.get(at + 1)?) << 8, at + 2)),
         0x08 => Some((*bytes.get(at + 1)? as u32, at + 2)),
         byte if byte >= 0x80 => Some(((byte - 0x80) as u32, at + 1)),

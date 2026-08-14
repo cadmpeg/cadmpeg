@@ -28,6 +28,8 @@ seeds use one directory per target:
 ```sh
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz \
   f3d_container crates/cadmpeg-fuzz/seeds/f3d_container
+cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz \
+  f3d_asm_header crates/cadmpeg-fuzz/seeds/f3d_asm_header
 ```
 
 `cargo-fuzz` stores discovered failures under
@@ -39,9 +41,27 @@ cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz \
   f3d_container crates/cadmpeg-fuzz/artifacts/f3d_container/<artifact>
 ```
 
-Reduce and classify crash artifacts before promoting them into `seeds/`. Seed
-files should be small inputs that reach a distinct parser state. Keep each seed
-in the directory named for its target.
+Reduce and classify crash artifacts before promoting them into
+`crates/cadmpeg-fuzz/seeds/<target>/` or a codec unit test. Seed files should
+be small inputs that reach a distinct parser state. Keep each seed in the
+directory named for its target.
+
+A reduced `crash-*` or `oom-*` input becomes a regression only when a codec
+unit test feeds those bytes through the same public entry the harness used
+(`detect` / `inspect` / `decode`, or the `::fuzz` wrapper). The artifact
+directory stays gitignored; the unit test is the gate.
+
+Container and end-to-end harnesses use `DecodeOptions::default()` (desktop
+salvage ceilings). A declared-count allocation that exceeds remaining input is
+a parser bug under that profile. The nightly smoke job passes
+`-rss_limit_mb=2048`; an OOM on a tens-of-bytes input is not a policy-legal
+result.
+
+Checked-in dictionaries live under `dictionaries/`. `cargo-fuzz` does not load
+them by itself. Pass `-dict=crates/cadmpeg-fuzz/dictionaries/<target>.dict`
+after `--` when a target-specific file exists, or the format-prefix file
+(`step.dict`, `iges.dict`, `sat.dict`) for the text formats. The nightly smoke
+job does this.
 
 ## Targets
 
@@ -56,6 +76,7 @@ decoding:
 - `nx_container`
 - `rhino_container`
 - `iges_container`
+- `sat_container`
 
 Native writing and replay:
 
@@ -67,7 +88,7 @@ Native writing and replay:
   source-less planning, topology synthesis, unsupported-native rejection,
   inspection, semantic re-decode, validation, and byte-exact replay.
 
-Focused parser coverage:
+Focused parser coverage. Focused codec parser targets import `::fuzz` only.
 
 - Kernel: `acis_header`
 - F3D: `f3d_asm_header`, `f3d_sab_frame`, `f3d_nurbs_surfaces`,
@@ -92,6 +113,8 @@ Focused parser coverage:
   `rhino_polyedge`
 - FCStd: `fcstd_xml`, `fcstd_gui`, `fcstd_brep`, `fcstd_element_map`,
   `fcstd_auxiliary`
+- IGES: `iges_cards`, `iges_global`, `iges_directory`, `iges_parameters` go
+  through `cadmpeg_codec_iges::fuzz`
 
 IR and STEP:
 
@@ -115,7 +138,7 @@ IR and STEP:
   degenerate geometry present in the document.
 - `decode_pipeline_mutated` uses the first byte to mutate the remaining
   container bytes, then runs F3D, Inventor, FreeCAD, SolidWorks, CATIA, Creo,
-  NX, and Rhino detection, inspection, and decoding.
+  NX, Rhino, IGES, SAT, and STEP detection, inspection, and decoding.
 
 Every harness treats a panic, abort, sanitizer finding, or libFuzzer timeout as
 a failure. Parse and validation errors are expected results for malformed
@@ -124,38 +147,52 @@ contract is robustness, not input acceptance.
 
 ## Seed maintenance
 
-Write submodule seeds from the repository root into the root `seeds/` tree:
+Checked-in seeds live in one tree: `crates/cadmpeg-fuzz/seeds/<target>/`.
+Generators resolve that tree (and the FCStd donated fixture) from
+`CARGO_MANIFEST_DIR`, so the current working directory does not change the
+output path.
+
+All files in the tree are synthesized by the generators under `src/bin/`.
+They contain no bytes carved from CAD application output, vendor samples,
+customer files, or other third-party CAD files. They are parser inputs, not
+public CAD corpus files. JSON seeds, malformed inputs, empty inputs, and
+truncated inputs are not CAD container files. Public CAD fixtures enter the
+repository only through the [corpus donation process](../../corpus/README.md).
+
+Run any generator from the repository root:
 
 ```sh
 cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_submodule_seeds
-```
-
-Write the remaining generators from the fuzz crate into its `seeds/` tree:
-
-```sh
-cd crates/cadmpeg-fuzz
-cargo +nightly run --bin generate_all_seeds
-cargo +nightly run --bin generate_fcstd_seeds
-cargo +nightly run --bin generate_rhino_seeds
-cargo +nightly run --bin generate_iges_seeds
+cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_all_seeds
+cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_seeds
+cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_comprehensive_seeds
+cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_fcstd_seeds
+cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_rhino_seeds
+cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_iges_seeds
 ```
 
 `generate_all_seeds` writes container and IR seeds, then derives deterministic
 truncation, byte-flip, and oversized-length mutants. `generate_submodule_seeds`
-writes focused parser inputs. `generate_iges_seeds` writes valid IGES 5.3 point
+writes focused parser inputs, including CATIA catalog/graph/topology, Creo
+datum/scalar, NX OM/deltas/intersection/topology, and Rhino
+cage/hatch/polyedge. `generate_iges_seeds` writes valid IGES 5.3 point
 and trimmed-sheet seeds for `iges_container`. `generate_all_seeds` writes
 version-selecting IR seeds for `iges_writer`.
-
-Narrower maintenance generators:
-
-```sh
-cargo +nightly run --bin generate_seeds
-cargo +nightly run --bin generate_comprehensive_seeds
-```
 
 `generate_seeds` writes only the F3D container corpus.
 `generate_comprehensive_seeds` leaves F3D unchanged and writes deeper
 SolidWorks, CATIA, Creo, and NX container fixtures.
+
+The generators overlap for some container targets. Later commands can replace
+base files written by earlier commands, while target-specific files remain.
+`generate_all_seeds` owns the IR seeds and creates mutations only from the
+base files present when that binary runs. It appends:
+
+- `.mut_trunc` for a 50 percent truncation.
+- `.mut_flip` for one inverted byte at the midpoint.
+- `.mut_lenmax` for four `0xff` bytes at the quarter-length offset.
+
+Files shorter than 32 bytes do not receive generated mutations.
 
 Seed generation overwrites files with matching names and may add deterministic
 mutants. Review the resulting diff before keeping regenerated data.
@@ -168,9 +205,13 @@ manifest entry is not runnable through `cargo fuzz run`.
 
 Keep the harness deterministic for a given byte sequence. Return early when an
 input cannot reach the operation under test. Leave expected parse errors as
-ordinary results. Put reusable structural inputs in `seeds/<target>/`;
-libFuzzer can mutate them into malformed cases.
+ordinary results. Put reusable structural inputs in
+`crates/cadmpeg-fuzz/seeds/<target>/`; libFuzzer can mutate them into
+malformed cases.
 
 `cargo fuzz list --fuzz-dir crates/cadmpeg-fuzz` also prints the seed
 generator binaries because this package declares them as bins. They are Cargo
-utilities, not fuzz targets.
+utilities, not fuzz targets. The nightly smoke job skips bins that have no
+matching `fuzz_targets/<name>.rs` file, continues after a failing target, loads
+a dictionary when one exists, and caches `corpus/` between runs (capped at
+1 GiB).

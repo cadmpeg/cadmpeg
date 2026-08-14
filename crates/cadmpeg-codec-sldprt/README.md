@@ -28,15 +28,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "{} bodies, {} faces, {} diagnostics",
-        decoded.ir.model.bodies.len(),
-        decoded.ir.model.faces.len(),
-        decoded.report.losses.len(),
+        decoded.ir().model.bodies.len(),
+        decoded.ir().model.faces.len(),
+        decoded.report().losses.len(),
     );
     Ok(())
 }
 ```
 
-Read `decoded.report` before trusting geometry. A successful call can return a
+Read `decoded.report()` before trusting geometry. A successful call can return a
 partial model with warnings. Unsupported surface and curve carriers retain
 their topology as opaque geometry linked to preserved source bytes. If no
 Parasolid body stream produces a graph, the result contains container metadata
@@ -87,13 +87,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.sldprt")?;
     let decoded = SldprtCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    // Edit supported fields in decoded.ir.
+    // Edit supported fields in decoded.ir().
 
     let mut output = File::create("part-edited.sldprt")?;
     SldprtCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &decoded.ir,
-            fidelity: Some(&decoded.source_fidelity),
+            ir: &decoded.ir(),
+            fidelity: Some(&decoded.source_fidelity()),
         })?
         .write_to(&mut output)?;
     Ok(())

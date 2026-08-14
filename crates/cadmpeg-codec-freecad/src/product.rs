@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::brep::ShapePayloadRecord;
+use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{JointRecord, ObjectRecord, ProductNodeRecord, PropertyRecord};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -494,15 +495,15 @@ fn parse_placement_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<[[f64; 4]; 4]>, CodecError> {
-    let Some(bytes) = side_bytes(properties, "PlacementList", entries)? else {
+    let Some(view) = side_bytes(properties, "PlacementList", entries)? else {
         return Ok(Vec::new());
     };
-    let (count, width) = list_layout(bytes, 7, "PlacementList")?;
+    let (count, width) = list_layout(view, 7, "PlacementList")?;
     (0..count)
         .map(|index| {
-            let offset = 4 + index * width * 7;
+            let offset = link_array::LEN + index * width * 7;
             let values = (0..7)
-                .map(|component| read_real(bytes, offset + component * width, width))
+                .map(|component| read_real(view, offset + component * width, width))
                 .collect::<Vec<_>>();
             placement_components(&values).ok_or_else(|| {
                 CodecError::Malformed("PlacementList contains a zero quaternion".into())
@@ -515,17 +516,17 @@ fn parse_vector_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
-    let Some(bytes) = side_bytes(properties, "ScaleList", entries)? else {
+    let Some(view) = side_bytes(properties, "ScaleList", entries)? else {
         return Ok(Vec::new());
     };
-    let (count, width) = list_layout(bytes, 3, "ScaleList")?;
+    let (count, width) = list_layout(view, 3, "ScaleList")?;
     (0..count)
         .map(|index| {
-            let offset = 4 + index * width * 3;
+            let offset = link_array::LEN + index * width * 3;
             Ok([
-                read_real(bytes, offset, width),
-                read_real(bytes, offset + width, width),
-                read_real(bytes, offset + 2 * width, width),
+                read_real(view, offset, width),
+                read_real(view, offset + width, width),
+                read_real(view, offset + 2 * width, width),
             ])
         })
         .collect()
@@ -534,49 +535,58 @@ fn parse_vector_list(
 fn side_bytes<'a>(
     properties: &[&PropertyRecord],
     name: &str,
-    entries: &'a BTreeMap<String, View<'a>>,
-) -> Result<Option<&'a [u8]>, CodecError> {
+    entries: &BTreeMap<String, View<'a>>,
+) -> Result<Option<View<'a>>, CodecError> {
     let Some(property) = properties.iter().find(|property| property.name == name) else {
         return Ok(None);
     };
     let Some(entry) = property.side_entries.first() else {
         return Ok(None);
     };
-    entries
-        .get(entry)
-        .map(|view| Some(view.window()))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{property_id} references missing {entry}",
-                property_id = property.id
-            ))
-        })
+    entries.get(entry).copied().map(Some).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{property_id} references missing {entry}",
+            property_id = property.id
+        ))
+    })
 }
 
-fn list_layout(bytes: &[u8], components: usize, name: &str) -> Result<(usize, usize), CodecError> {
-    if bytes.len() < 4 {
+fn list_layout(
+    view: View<'_>,
+    components: usize,
+    name: &str,
+) -> Result<(usize, usize), CodecError> {
+    let len = view.end().saturating_sub(view.start());
+    if len < link_array::LEN {
         return Err(CodecError::Malformed(format!("{name} is truncated")));
     }
-    let count = u32::from_le_bytes(bytes[..4].try_into().expect("four-byte count")) as usize;
-    let double_len = 4_usize.saturating_add(count.saturating_mul(components).saturating_mul(8));
-    let float_len = 4_usize.saturating_add(count.saturating_mul(components).saturating_mul(4));
-    if bytes.len() == double_len {
+    let mut head = view;
+    head.seek(view.start()).expect("window start");
+    let count = head.u32_le().expect("four-byte count") as usize;
+    let double_len =
+        link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(8));
+    let float_len =
+        link_array::LEN.saturating_add(count.saturating_mul(components).saturating_mul(4));
+    if len == double_len {
         Ok((count, 8))
-    } else if bytes.len() == float_len {
+    } else if len == float_len {
         Ok((count, 4))
     } else {
         Err(CodecError::Malformed(format!(
-            "{name} count {count} does not match {} bytes",
-            bytes.len()
+            "{name} count {count} does not match {len} bytes"
         )))
     }
 }
 
-fn read_real(bytes: &[u8], offset: usize, width: usize) -> f64 {
+fn read_real(view: View<'_>, offset: usize, width: usize) -> f64 {
+    let mut cursor = view;
+    cursor
+        .seek(view.start().saturating_add(offset))
+        .expect("bounded real");
     if width == 8 {
-        f64::from_le_bytes(bytes[offset..offset + 8].try_into().expect("bounded f64"))
+        cursor.f64_le().expect("bounded f64")
     } else {
-        f32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("bounded f32")) as f64
+        cursor.f32_le().expect("bounded f32") as f64
     }
 }
 
@@ -726,3 +736,6 @@ fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
         [0.0, 0.0, 0.0, 1.0],
     ])
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

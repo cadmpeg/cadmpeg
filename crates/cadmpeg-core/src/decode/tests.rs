@@ -207,6 +207,27 @@ fn every_session_dimension_refuses_and_fuses() {
 }
 
 #[test]
+fn tiny_resource_limits_refuse_entities_and_materialized_bytes() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_entities = 1);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    assert!(matches!(
+        ctx.charge_entities(2, "entities"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+    ));
+
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_materialized_bytes = 1);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    assert!(matches!(
+        ctx.reserve_scoped(2, "materialize", None),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+    ));
+}
+
+#[test]
 fn alloc_filled_charges_collection_items_and_reserves() {
     let arena = DecodeArena::new();
     let policy = policy_with(|limits| limits.max_collection_items = 1);

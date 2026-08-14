@@ -18,6 +18,8 @@ pub mod brep;
 pub mod edit;
 pub mod ids;
 pub mod kernel_header;
+/// Byte-offset constants generated from `docs/layouts/asm.toml`.
+pub(crate) mod layout;
 pub mod nurbs;
 pub mod sab;
 pub mod sat;

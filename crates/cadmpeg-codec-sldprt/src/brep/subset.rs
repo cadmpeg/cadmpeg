@@ -4,7 +4,9 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::{f64_be, u16_be, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
+use cadmpeg_core::decode::View;
+
+use super::{Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
@@ -140,10 +142,10 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<Carrier> {
         if !matches!(bytes.get(marker_at), Some(0x2b | 0x2d)) {
             continue;
         }
-        let Some(attr) = u16_be(bytes, header) else {
+        let Some(attr) = View::u16_be_at(bytes, header) else {
             continue;
         };
-        let Some(source_attr) = u16_be(bytes, marker_at + 1) else {
+        let Some(source_attr) = View::u16_be_at(bytes, marker_at + 1) else {
             continue;
         };
         let Some(source) = carriers.curve(source_attr) else {
@@ -153,7 +155,7 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<Carrier> {
             continue;
         };
         let values = (0..8)
-            .map(|index| f64_be(bytes, marker_at + 3 + index * 8))
+            .map(|index| View::f64_be_at(bytes, marker_at + 3 + index * 8))
             .collect::<Option<Vec<_>>>();
         let Some(values) = values.filter(|values| values.iter().all(|value| value.is_finite()))
         else {

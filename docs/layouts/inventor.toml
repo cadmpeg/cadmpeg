@@ -3,7 +3,7 @@ schema = 1
 format = "inventor"
 spec = "docs/formats/inventor.md"
 endianness = "little"
-note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein, UFRxDoc, and kernel-carrier envelope."
+note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein stream envelope, UFRxDoc, and kernel-carrier envelope. The Protein page format is tabulated in `docs/layouts/protein.toml`."
 
 [[record]]
 name = "pm_dc_content_header"
@@ -589,6 +589,7 @@ anchor = "a u32-counted UTF-16LE note"
 
 [[record]]
 name = "bulk_envelope"
+parsed_by = "crates/cadmpeg-codec-inventor/src/rse.rs"
 kind = "byte"
 section = "4"
 anchor = "A `B<token>` stream starts with"
@@ -608,10 +609,8 @@ type = "u16"
 source = "spec"
 anchor = "a u16 form"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-inventor/src/rse.rs"
-contains = "let header = bytes"
-note = "The bulk parser reads the 18-byte fixed envelope before the exact zlib member."
+
+
 
 [[record]]
 name = "meta_body_prefix"
@@ -710,6 +709,7 @@ kind = "byte"
 section = "7"
 anchor = "The root `Protein` stream starts with"
 size = 4
+note = "Inventor compound-stream envelope around a Protein ZIP. The Protein page format is tabulated in `docs/layouts/protein.toml`."
 
 [[record.field]]
 name = "payload_len"

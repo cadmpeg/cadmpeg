@@ -13,7 +13,7 @@
 //! per vertex followed by corner overrides selected by a delta-coded position
 //! stream.
 
-use cadmpeg_core::le::{u16_at, u32_at, u64_at};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 /// Container magic.
@@ -711,11 +711,12 @@ fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecErro
     let count = match tag {
         0x80..=0x8f => usize::from(tag & 0x0f),
         0xde => {
-            let raw = bytes
-                .get(at..at + 2)
-                .ok_or_else(|| malformed("paramesh name table is truncated"))?;
+            let count = usize::from(
+                View::u16_be_at(bytes, at)
+                    .ok_or_else(|| malformed("paramesh name table is truncated"))?,
+            );
             at += 2;
-            usize::from(u16::from_be_bytes([raw[0], raw[1]]))
+            count
         }
         _ => return Err(malformed("paramesh name table is not a MessagePack map")),
     };
@@ -828,7 +829,7 @@ fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)
 /// count, the two LZMA1 property bytes, and the raw LZMA1 stream.
 fn inflate_stream(body: &[u8]) -> Result<MeshStream, CodecError> {
     let descriptor_count = usize::from(
-        u16_at(body, 0).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?,
+        View::u16_le_at(body, 0).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?,
     );
     let at = descriptor_count
         .checked_add(2)
@@ -838,7 +839,7 @@ fn inflate_stream(body: &[u8]) -> Result<MeshStream, CodecError> {
             .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?,
     )?;
     let declared =
-        u32_at(body, at).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
+        View::u32_le_at(body, at).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
     if declared > MAX_STREAM_BYTES {
         return Err(malformed(format!(
             "paramesh stream declares {declared} bytes, above the {MAX_STREAM_BYTES}-byte limit"
@@ -1098,7 +1099,7 @@ fn decode_vertices(stream: &[u8]) -> Result<Vec<[f64; 3]>, CodecError> {
     for triple in stream.chunks_exact(12) {
         let mut point = [0.0f64; 3];
         for (value, raw) in point.iter_mut().zip(triple.chunks_exact(4)) {
-            let component = f32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
+            let component = View::f32_le_at(raw, 0).expect("chunks_exact(4)");
             if !component.is_finite() {
                 return Err(malformed("paramesh vertex coordinate is not finite"));
             }
@@ -1129,7 +1130,7 @@ fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, Cod
     let deltas = stream
         .chunks_exact(4)
         .take(values - 1)
-        .map(|raw| i64::from(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])))
+        .map(|raw| i64::from(View::i32_le_at(raw, 0).expect("chunks_exact(4)")))
         .collect::<Vec<_>>();
     let mut relative = 0i64;
     let mut minimum = 0i64;
@@ -1194,16 +1195,13 @@ fn decode_terminal_delta_values(stream: &[u8]) -> Result<Vec<u32>, CodecError> {
 
     let value_count = stream.len() / 4;
     let terminal_at = (value_count - 1) * 4;
-    let terminal_raw = &stream[terminal_at..terminal_at + 4];
-    let terminal = i64::from(u32::from_le_bytes([
-        terminal_raw[0],
-        terminal_raw[1],
-        terminal_raw[2],
-        terminal_raw[3],
-    ]));
+    let terminal = i64::from(
+        View::u32_le_at(stream, terminal_at)
+            .expect("terminal word is inside a 4-byte-aligned stream"),
+    );
     let mut delta_total = 0i64;
     for raw in stream[..terminal_at].chunks_exact(4) {
-        let delta = i64::from(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]));
+        let delta = i64::from(View::i32_le_at(raw, 0).expect("chunks_exact(4)"));
         delta_total = delta_total
             .checked_add(delta)
             .ok_or_else(|| malformed("paramesh terminal-delta accumulation overflows"))?;
@@ -1218,7 +1216,7 @@ fn decode_terminal_delta_values(stream: &[u8]) -> Result<Vec<u32>, CodecError> {
             .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?,
     );
     for raw in stream[..terminal_at].chunks_exact(4) {
-        let delta = i64::from(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]));
+        let delta = i64::from(View::i32_le_at(raw, 0).expect("chunks_exact(4)"));
         current = current
             .checked_add(delta)
             .ok_or_else(|| malformed("paramesh terminal-delta value overflows"))?;
@@ -1353,8 +1351,8 @@ fn decode_corner_normals(
         .chunks_exact(PACKED_DIRECTION_BYTES as usize)
     {
         table.push(decode_packed_direction([
-            f32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]),
-            f32::from_le_bytes([raw[4], raw[5], raw[6], raw[7]]),
+            View::f32_le_at(raw, 0).expect("packed-direction chunks_exact(8)"),
+            View::f32_le_at(raw, 4).expect("packed-direction chunks_exact(8)"),
         ])?);
     }
 
@@ -1477,12 +1475,12 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
     if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
         return Err(malformed("paramesh container has no magic"));
     }
-    match u32_at(bytes, MAGIC.len()) {
+    match View::u32_le_at(bytes, MAGIC.len()) {
         Some(VERSION) => {}
         _ => return Err(malformed("paramesh container declares an unknown version")),
     }
     let protobuf_count = usize::try_from(
-        u64_at(bytes, PROTOBUF_COUNT_AT)
+        View::u64_le_at(bytes, PROTOBUF_COUNT_AT)
             .ok_or_else(|| malformed("paramesh container is truncated"))?,
     )
     .map_err(|_| malformed("paramesh protobuf message is out of range"))?;
@@ -1499,11 +1497,12 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
     let mut streams = Vec::new();
     while at < bytes.len() {
         let body_count = usize::try_from(
-            u64_at(bytes, at).ok_or_else(|| malformed("paramesh chunk header is truncated"))?,
+            View::u64_le_at(bytes, at)
+                .ok_or_else(|| malformed("paramesh chunk header is truncated"))?,
         )
         .map_err(|_| malformed("paramesh chunk is out of range"))?;
-        let kind =
-            u32_at(bytes, at + 8).ok_or_else(|| malformed("paramesh chunk header is truncated"))?;
+        let kind = View::u32_le_at(bytes, at + 8)
+            .ok_or_else(|| malformed("paramesh chunk header is truncated"))?;
         let body_at = at
             .checked_add(12)
             .ok_or_else(|| malformed("paramesh chunk is out of range"))?;

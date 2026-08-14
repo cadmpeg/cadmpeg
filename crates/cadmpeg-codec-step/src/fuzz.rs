@@ -1,4 +1,4 @@
-//! Feature-gated entry points for focused parser fuzzing.
+//! Hidden entry points for focused parser fuzzing.
 
 /// Exercise STEP lexical scanning.
 pub fn lex(data: &[u8]) {
@@ -8,4 +8,32 @@ pub fn lex(data: &[u8]) {
 /// Exercise STEP entity parsing.
 pub fn parse(data: &[u8]) {
     let _ = crate::parse::parse(data);
+}
+
+/// Entity count for the parse benchmark; hides the typed exchange.
+#[doc(hidden)]
+pub fn parse_entity_count(data: &[u8]) -> Option<usize> {
+    crate::parse::parse(data)
+        .ok()
+        .map(|(exchange, _)| exchange.records.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::CadIr;
+
+    #[test]
+    fn wrappers_accept_empty() {
+        super::lex(&[]);
+        super::parse(&[]);
+    }
+
+    #[test]
+    fn wrappers_accept_exported_document() {
+        let source = crate::test_support::export(&CadIr::empty(Units::default()));
+        super::lex(source.as_bytes());
+        super::parse(source.as_bytes());
+        assert!(super::parse_entity_count(source.as_bytes()).is_some());
+    }
 }

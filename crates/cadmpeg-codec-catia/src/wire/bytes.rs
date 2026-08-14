@@ -6,20 +6,23 @@
 //! fixed-size `f64` array reads.
 
 use super::cursor::Cursor;
-use cadmpeg_core::le::{f64_at, u16_at as u16_le};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<f64>> {
     if !bytes.len().is_multiple_of(8) {
         return None;
     }
-    bytes
-        .chunks_exact(8)
-        .map(|bytes| {
-            let value = f64::from_le_bytes(bytes.try_into().ok()?);
-            value.is_finite().then_some(value)
-        })
-        .collect()
+    let mut view = View::over_retained(bytes);
+    let mut values = Vec::with_capacity(bytes.len() / 8);
+    while !view.is_empty() {
+        let value = view.f64_le()?;
+        if !value.is_finite() {
+            return None;
+        }
+        values.push(value);
+    }
+    Some(values)
 }
 
 pub(crate) fn read_f64_array<const N: usize>(data: &[u8], start: usize) -> Option<[f64; N]> {
@@ -31,7 +34,7 @@ pub(crate) fn read_f64_array<const N: usize>(data: &[u8], start: usize) -> Optio
 }
 
 pub(crate) fn f64_le(bytes: &[u8], at: usize) -> Option<f64> {
-    let value = f64_at(bytes, at)?;
+    let value = View::f64_le_at(bytes, at)?;
     value.is_finite().then_some(value)
 }
 
@@ -69,7 +72,7 @@ pub(crate) fn compact_int(bytes: &[u8], at: &mut usize) -> Option<u32> {
 
 pub(crate) fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     if bytes.get(*at) == Some(&0x0a) {
-        let value = u32::from(u16_le(bytes, *at + 1)?);
+        let value = u32::from(View::u16_le_at(bytes, *at + 1)?);
         *at += 3;
         Some(value)
     } else {
@@ -85,7 +88,7 @@ pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
             Some(value)
         }
         0x0a => {
-            let value = u32::from(u16_le(bytes, *at + 1)?);
+            let value = u32::from(View::u16_le_at(bytes, *at + 1)?);
             *at += 3;
             Some(value)
         }

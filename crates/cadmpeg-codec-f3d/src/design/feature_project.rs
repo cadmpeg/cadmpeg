@@ -22,6 +22,8 @@ use crate::ids::{
     self, native_stream, neutral_feature_id, neutral_parameter_id, neutral_sketch_id,
     neutral_spatial_sketch_id,
 };
+use crate::layout::coil_long_scope_fixed_prologue as coil_long;
+use crate::layout::form_compact_one_cage_list as form_cage;
 use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
@@ -33,7 +35,7 @@ use crate::records::{
     DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
 };
-use cadmpeg_core::le::{u32_at, u64_at as read_u64};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -3736,23 +3738,32 @@ fn legacy_form_cage_count(
     scope_record_index: u32,
 ) -> Option<usize> {
     for (start, paired) in records.frames(record_index) {
-        if paired.checked_sub(start)? != 100
-            || bytes.get(start + 11..start + 21)? != [0; 10]
-            || bytes.get(start + 21) != Some(&1)
-            || read_u64(bytes, start + 22)? != u64::from(scope_record_index)
-            || bytes.get(start + 30..start + 32)? != [0; 2]
+        if paired.checked_sub(start)? != form_cage::LEN
+            || bytes.get(start + form_cage::ZERO_RUN_10..start + form_cage::OWNER_MARKER)?
+                != [0; 10]
+            || bytes.get(start + form_cage::OWNER_MARKER) != Some(&1)
+            || View::u64_le_at(bytes, start + form_cage::OWNER_SCOPE_RECORD_INDEX)?
+                != u64::from(scope_record_index)
+            || bytes.get(start + form_cage::ZERO_RUN_2..start + form_cage::CAGE_COUNT)? != [0; 2]
         {
             continue;
         }
-        let count = usize::try_from(u32_at(bytes, start + 32)?).ok()?;
+        let count = usize::try_from(View::u32_le_at(bytes, start + form_cage::CAGE_COUNT)?).ok()?;
         if count != 1 {
             continue;
         }
-        let member = start + 36;
-        if bytes.get(member) != Some(&1) || bytes.get(member + 9..member + 13)? != [0, 0, 0xfc, 0] {
+        let member = start + form_cage::MEMBER_MARKER;
+        if bytes.get(member) != Some(&1)
+            || bytes.get(start + form_cage::MEMBER_ZERO..start + form_cage::MEMBER_FLAGS + 2)?
+                != [0, 0, 0xfc, 0]
+        {
             continue;
         }
-        let object = u32::try_from(read_u64(bytes, member + 1)?).ok()?;
+        let object = u32::try_from(View::u64_le_at(
+            bytes,
+            start + form_cage::CAGE_OBJECT_RECORD_INDEX,
+        )?)
+        .ok()?;
         if records.offsets(object).is_empty() {
             continue;
         }
@@ -3774,15 +3785,15 @@ fn form_cage_objects(
     let [(offset, paired)] = frames.as_slice() else {
         return None;
     };
-    if read_u64(bytes, offset + 7)? != record_index as u64
+    if View::u64_le_at(bytes, offset + 7)? != record_index as u64
         || bytes.get(offset + 15..offset + 21)? != [0; 6]
         || bytes.get(offset + 21) != Some(&1)
-        || read_u64(bytes, offset + 22)? != scope_record_index as u64
+        || View::u64_le_at(bytes, offset + 22)? != scope_record_index as u64
         || bytes.get(offset + 30..offset + 32)? != [0, 0]
     {
         return None;
     }
-    let count = usize::try_from(u32_at(bytes, offset + 32)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, offset + 32)?).ok()?;
     if paired.checked_sub(*offset)? != 88usize.checked_add(11usize.checked_mul(count)?)? {
         return None;
     }
@@ -3792,7 +3803,7 @@ fn form_cage_objects(
         if bytes.get(cursor) != Some(&1) {
             return None;
         }
-        objects.push(u32::try_from(read_u64(bytes, cursor + 1)?).ok()?);
+        objects.push(u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?);
         if bytes.get(cursor + 9..cursor + 11)? != [0, 0] {
             return None;
         }
@@ -3816,7 +3827,7 @@ fn form_cage_surface(
     {
         return None;
     }
-    let first_wrapper = u32::try_from(read_u64(bytes, object_at + 190)?).ok()?;
+    let first_wrapper = u32::try_from(View::u64_le_at(bytes, object_at + 190)?).ok()?;
     let [first_at] = records.offsets(first_wrapper) else {
         return None;
     };
@@ -3828,7 +3839,7 @@ fn form_cage_surface(
     {
         return None;
     }
-    let second_wrapper = u32::try_from(read_u64(bytes, first_at + 22)?).ok()?;
+    let second_wrapper = u32::try_from(View::u64_le_at(bytes, first_at + 22)?).ok()?;
     let [second_at] = records.offsets(second_wrapper) else {
         return None;
     };
@@ -3838,7 +3849,7 @@ fn form_cage_surface(
     {
         return None;
     }
-    let carrier = u32::try_from(read_u64(bytes, second_at + 21)?).ok()?;
+    let carrier = u32::try_from(View::u64_le_at(bytes, second_at + 21)?).ok()?;
     let carrier_frames = records.frames(carrier).collect::<Vec<_>>();
     let [(carrier_at, carrier_paired)] = carrier_frames.as_slice() else {
         return None;
@@ -3847,12 +3858,12 @@ fn form_cage_surface(
         || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
         || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
         || bytes.get(carrier_at + 317) != Some(&1)
-        || read_u64(bytes, carrier_at + 318)? != scope_record as u64
+        || View::u64_le_at(bytes, carrier_at + 318)? != scope_record as u64
         || bytes.get(carrier_at + 339) != Some(&1)
     {
         return None;
     }
-    u32::try_from(read_u64(bytes, carrier_at + 340)?).ok()
+    u32::try_from(View::u64_le_at(bytes, carrier_at + 340)?).ok()
 }
 
 fn form_cage_serializers(
@@ -3882,8 +3893,8 @@ fn form_cage_serializers(
             {
                 continue;
             }
-            let Some(surface) =
-                read_u64(bytes, after_name + 1).and_then(|surface| u32::try_from(surface).ok())
+            let Some(surface) = View::u64_le_at(bytes, after_name + 1)
+                .and_then(|surface| u32::try_from(surface).ok())
             else {
                 continue;
             };
@@ -3894,220 +3905,6 @@ fn form_cage_serializers(
         }
     }
     serializers
-}
-
-#[cfg(test)]
-mod form_tests {
-    #![allow(clippy::trivially_copy_pass_by_ref)]
-
-    fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
-        let mut frame = vec![0; length];
-        frame[..4].copy_from_slice(&3u32.to_le_bytes());
-        frame[4..7].copy_from_slice(class);
-        frame[7..11].copy_from_slice(&record_index.to_le_bytes());
-        frame
-    }
-
-    #[test]
-    fn reads_owned_cage_objects() {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"402");
-        bytes.extend_from_slice(&2196u64.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-        bytes.push(1);
-        bytes.extend_from_slice(&2190u64.to_le_bytes());
-        bytes.extend_from_slice(&[0; 2]);
-        bytes.extend_from_slice(&2u32.to_le_bytes());
-        for reference in [8300u64, 8303] {
-            bytes.push(1);
-            bytes.extend_from_slice(&reference.to_le_bytes());
-            bytes.extend_from_slice(&[0; 2]);
-        }
-        bytes.resize(110, 0);
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"264");
-        bytes.extend_from_slice(&2196u64.to_le_bytes());
-        assert_eq!(
-            super::form_cage_objects(
-                &bytes,
-                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
-                2196,
-                2190,
-            ),
-            Some(vec![8300, 8303])
-        );
-        let mut alternate_pair = bytes.clone();
-        alternate_pair[110 + 4..110 + 7].copy_from_slice(b"258");
-        assert_eq!(
-            super::form_cage_objects(
-                &alternate_pair,
-                &crate::design::decode::sketch::IndexedRecordOffsets::build(&alternate_pair),
-                2196,
-                2190,
-            ),
-            Some(vec![8300, 8303])
-        );
-
-        let mut empty = Vec::new();
-        empty.extend_from_slice(&3u32.to_le_bytes());
-        empty.extend_from_slice(b"402");
-        empty.extend_from_slice(&2196u64.to_le_bytes());
-        empty.extend_from_slice(&[0; 6]);
-        empty.push(1);
-        empty.extend_from_slice(&2190u64.to_le_bytes());
-        empty.extend_from_slice(&[0; 2]);
-        empty.extend_from_slice(&0u32.to_le_bytes());
-        empty.resize(88, 0);
-        empty.extend_from_slice(&3u32.to_le_bytes());
-        empty.extend_from_slice(b"264");
-        empty.extend_from_slice(&2196u64.to_le_bytes());
-        assert_eq!(
-            super::form_cage_objects(
-                &empty,
-                &crate::design::decode::sketch::IndexedRecordOffsets::build(&empty),
-                2196,
-                2190,
-            ),
-            Some(Vec::new())
-        );
-    }
-
-    #[test]
-    fn resolves_cage_surface_through_owned_object_chain() {
-        let mut object = indexed_frame(b"301", 8300, 200);
-        object[189] = 1;
-        object[190..198].copy_from_slice(&8301u64.to_le_bytes());
-        let mut first_wrapper = indexed_frame(b"373", 8301, 33);
-        first_wrapper[21] = 1;
-        first_wrapper[22..30].copy_from_slice(&8302u64.to_le_bytes());
-        let mut second_wrapper = indexed_frame(b"362", 8302, 29);
-        second_wrapper[21..29].copy_from_slice(&8303u64.to_le_bytes());
-        let mut carrier = indexed_frame(b"457", 8303, 665);
-        carrier[317] = 1;
-        carrier[318..326].copy_from_slice(&2190u64.to_le_bytes());
-        carrier[339] = 1;
-        carrier[340..348].copy_from_slice(&8304u64.to_le_bytes());
-        let paired = indexed_frame(b"264", 8303, 15);
-        let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
-        assert_eq!(
-            super::form_cage_surface(
-                &bytes,
-                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
-                8300,
-                2190,
-            ),
-            Some(8304)
-        );
-        assert_eq!(
-            super::form_cage_surface(
-                &bytes,
-                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
-                8300,
-                2191,
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn serializer_joins_surface_to_exact_cage_entry_name() {
-        let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
-        for class in [b"315", b"446"] {
-            let mut serializer = indexed_frame(class, 8305, 132);
-            serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-            for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
-                let at = 25 + ordinal * 2;
-                serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
-            }
-            serializer[121] = 1;
-            serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
-            let following = indexed_frame(b"457", 8306, 15);
-            let bytes = [serializer, following].concat();
-            assert_eq!(
-                super::form_cage_serializers(
-                    &bytes,
-                    &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
-                )
-                .get(&8304),
-                Some(&Some(entry_name.into()))
-            );
-        }
-    }
-
-    #[test]
-    fn reads_compact_form_one_cage_envelope() {
-        let mut list = indexed_frame(b"355", 205, 100);
-        list[21] = 1;
-        list[22..30].copy_from_slice(&201u64.to_le_bytes());
-        list[32..36].copy_from_slice(&1u32.to_le_bytes());
-        list[36] = 1;
-        list[37..45].copy_from_slice(&971u64.to_le_bytes());
-        list[47..49].copy_from_slice(&[0xfc, 0]);
-        let paired = indexed_frame(b"262", 205, 15);
-        let object = indexed_frame(b"325", 971, 15);
-        let bytes = [list, paired, object].concat();
-        assert_eq!(
-            super::legacy_form_cage_count(
-                &bytes,
-                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
-                205,
-                201,
-            ),
-            Some(1)
-        );
-    }
-
-    #[test]
-    fn retains_parameter_when_owner_frame_has_no_scope_binding() {
-        let parameter = crate::records::DesignParameter {
-            id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
-            byte_offset: 0,
-            class_tag: "301".into(),
-            record_index: 7,
-            family_discriminator: None,
-            family_discriminator_offset: None,
-            source_ordinal: 0,
-            owner_record_index: Some(8),
-            expression: "12.5 mm".into(),
-            expression_offset: 0,
-            source_kind: "AlongDistance".into(),
-            source_kind_offset: 0,
-            kind: crate::records::DesignParameterKind::Feature,
-            unit: Some("mm".into()),
-            unit_offset: Some(0),
-            name: "distance".into(),
-            name_offset: 0,
-            evaluated_value: 1.25,
-            evaluated_value_offset: 0,
-        };
-        let scope = crate::records::DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#9",
-            "Unsupported",
-            9,
-        );
-
-        let (_, parameters) =
-            super::project_parameter_design(&[parameter], &[], &[scope], &[], &[], &[], &[], &[]);
-
-        let [parameter] = parameters.as_slice() else {
-            panic!("expected one retained parameter");
-        };
-        assert_eq!(parameter.owner, None);
-        assert_eq!(
-            parameter
-                .properties
-                .get("owner_record_index")
-                .map(String::as_str),
-            Some("8")
-        );
-        assert_eq!(
-            parameter.value,
-            Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(12.5)
-            ))
-        );
-    }
 }
 
 fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {
@@ -5509,118 +5306,6 @@ pub(crate) fn project_mirror(
             plane_normal,
         },
     })
-}
-
-#[cfg(test)]
-mod mirror_projection_tests {
-    use super::project_mirror;
-    use crate::records::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-        DesignMirrorConstruction, DesignParameterScope,
-    };
-    use cadmpeg_ir::features::{
-        BodySelection, FaceSelection, FeatureDefinition, PatternKind, PatternSeed,
-    };
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    fn group(
-        scope_record_index: u32,
-        record_index: u32,
-        role: u64,
-    ) -> DesignConstructionOperandGroup {
-        DesignConstructionOperandGroup {
-            id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
-            scope_record_index,
-            scope_reference_ordinal: 0,
-            record_index,
-            byte_offset: 0,
-            class_tag: "282".into(),
-            members: vec![record_index + 1],
-            lost_edge_references: Vec::new(),
-            member_offsets: vec![0],
-            frame: DesignConstructionOperandGroupFrame {
-                member_count_offset: 0,
-                auxiliary_record_indices: Vec::new(),
-                auxiliary_record_offsets: Vec::new(),
-                auxiliary_paths: Vec::new(),
-                trailing_record_indices: Vec::new(),
-                trailing_record_offsets: Vec::new(),
-                trailing_transforms: Vec::new(),
-                trailing_dual_transforms: Vec::new(),
-                trailing_flags: Vec::new(),
-                opaque_index: 1,
-                opaque_index_offset: 0,
-                opaque_scalar: 0.0,
-                opaque_scalar_offset: 0,
-                variant: false,
-            },
-            role,
-            extrude_role: None,
-            extrude_face_role: None,
-            role_offset: 0,
-            paired_class_tag: "261".into(),
-            paired_byte_offset: 0,
-        }
-    }
-
-    fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
-        let mut scope =
-            DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#10", "Mirror", 10);
-        scope.mirror_construction = Some(DesignMirrorConstruction {
-            count: 2,
-            count_record_index: 11,
-            count_offset: 0,
-            stitch_tolerance: 0.001,
-            stitch_tolerance_record_index: 12,
-            stitch_tolerance_offset: 0,
-            seed_group_record_index,
-            plane_group_record_index: 30,
-            seed_feature_scope_record_index: None,
-            seed_feature_reference_offset: None,
-            plane_scope_record_index: None,
-            plane_reference_offset: None,
-            plane_selection_record_index: None,
-            plane_origin: Some(Point3::new(0.0, 0.0, 0.0)),
-            plane_normal: Some(Vector3::new(0.0, 0.0, 1.0)),
-        });
-        scope
-    }
-
-    #[test]
-    fn mirror_seed_role_selects_body_or_face_semantics() {
-        let body_scope = mirror_scope(20);
-        let body_groups = [
-            group(10, 20, 0x0000_0008_0000_0000),
-            group(10, 30, 0x0000_0005_0000_0000),
-        ];
-        let FeatureDefinition::Pattern { seeds, pattern } =
-            project_mirror(&body_scope, &body_groups, &[], &[]).expect("body mirror")
-        else {
-            panic!("mirror projects a pattern");
-        };
-        assert!(matches!(pattern, PatternKind::Mirror { .. }));
-        assert!(matches!(
-            seeds.as_slice(),
-            [PatternSeed::Bodies(BodySelection::Native(native))]
-                if native == "f3d:Design/BulkStream.dat:group#20"
-        ));
-
-        let face_scope = mirror_scope(40);
-        let face_groups = [
-            group(10, 40, 0x0000_0004_0000_0000),
-            group(10, 30, 0x0000_0005_0000_0000),
-        ];
-        let FeatureDefinition::Pattern { seeds, .. } =
-            project_mirror(&face_scope, &face_groups, &[], &[]).expect("face mirror")
-        else {
-            panic!("mirror projects a pattern");
-        };
-        assert!(matches!(
-            seeds.as_slice(),
-            [PatternSeed::Faces(FaceSelection::Native(native))]
-                if native == "f3d:Design/BulkStream.dat:group#40"
-        ));
-    }
 }
 
 pub(crate) fn project_fixed_sweep(
@@ -7182,7 +6867,9 @@ fn project_coil(
         // Boolean target and must not suppress the typed result.
         None
     } else {
-        let expected_role = if scope.coil_operation_offset == scope.byte_offset.checked_add(22) {
+        let expected_role = if scope.coil_operation_offset
+            == scope.byte_offset.checked_add(coil_long::OPERATION as u64)
+        {
             0x0000_0004_0000_0000
         } else {
             0x0000_0008_0000_0000
@@ -7250,89 +6937,4 @@ fn project_coil(
 }
 
 #[cfg(test)]
-mod coil_projection_tests {
-    use super::project_coil;
-    use crate::records::{
-        DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCoilTransform,
-        DesignExtrudeOperation, DesignParameter, DesignParameterKind, DesignParameterScope,
-    };
-    use cadmpeg_ir::features::{CoilPlacement, FeatureDefinition};
-
-    fn parameter(
-        record_index: u32,
-        source_kind: &str,
-        unit: Option<&str>,
-        value: f64,
-    ) -> DesignParameter {
-        DesignParameter {
-            id: format!("f3d:Design/BulkStream.dat:parameter#{record_index}"),
-            byte_offset: 0,
-            class_tag: "000".into(),
-            record_index,
-            family_discriminator: None,
-            family_discriminator_offset: None,
-            source_ordinal: 0,
-            owner_record_index: None,
-            expression: value.to_string(),
-            expression_offset: 0,
-            source_kind: source_kind.into(),
-            source_kind_offset: 0,
-            kind: DesignParameterKind::Feature,
-            unit: unit.map(str::to_owned),
-            unit_offset: None,
-            name: source_kind.into(),
-            name_offset: 0,
-            evaluated_value: value,
-            evaluated_value_offset: 0,
-        }
-    }
-
-    #[test]
-    fn long_coil_matrix_projects_as_explicit_placement() {
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#40",
-            "CoilPrimitive",
-            40,
-        );
-        scope.coil_operation = Some(DesignExtrudeOperation::NewBody);
-        scope.coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
-        scope.coil_section = Some(DesignCoilSection::Circular);
-        scope.coil_section_placement = Some(DesignCoilSectionPlacement::Inside);
-        scope.coil_clockwise = Some(false);
-        scope.coil_transform = Some(DesignCoilTransform {
-            transform: [
-                [1.0, 0.0, 0.0, 1.25],
-                [0.0, 1.0, 0.0, -2.5],
-                [0.0, 0.0, 1.0, 3.75],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            transform_offset: 77,
-        });
-        let parameters = [
-            parameter(1, "Diameter", Some("cm"), 2.0),
-            parameter(2, "SectionSize", Some("cm"), 0.2),
-            parameter(3, "TaperAngle", Some("rad"), 0.0),
-            parameter(4, "Revolutions", None, 3.0),
-            parameter(5, "Height", Some("cm"), 1.5),
-        ];
-        let owned = parameters
-            .iter()
-            .enumerate()
-            .map(|(ordinal, parameter)| (ordinal as u32, parameter))
-            .collect::<Vec<_>>();
-
-        let FeatureDefinition::Coil { construction, .. } =
-            project_coil(&scope, &owned, &[]).expect("typed long Coil")
-        else {
-            panic!("expected Coil definition")
-        };
-        assert_eq!(
-            construction.placement,
-            CoilPlacement::Explicit {
-                origin: cadmpeg_ir::math::Point3::new(12.5, -25.0, 37.5),
-                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                radial: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            }
-        );
-    }
-}
+mod tests;

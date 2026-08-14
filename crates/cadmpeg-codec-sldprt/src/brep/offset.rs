@@ -3,7 +3,11 @@
 
 use std::collections::HashMap;
 
-use super::{f64_be, u16_be, LEN_TO_MM};
+use cadmpeg_core::decode::View;
+
+use super::LEN_TO_MM;
+
+use crate::layout::offset_surface_00_3c as offset_surf;
 
 const TAG: [u8; 2] = [0x00, 0x3c];
 const COMMON_REFERENCE_COUNT: usize = 5;
@@ -27,18 +31,22 @@ fn parse_payload(
 ) -> Option<OffsetCarrier> {
     let discriminator = *body.get(tail)?;
     matches!(discriminator, b'V' | b'I' | b'U').then_some(())?;
-    match body.get(tail + 1)? {
+    match body.get(tail + (offset_surf::TRUE_OFFSET - offset_surf::DISCRIMINATOR))? {
         0 | 1 => {}
         _ => return None,
     }
-    let support_at = tail.checked_add(2)?;
-    let support = u16_be(body, support_at)?;
+    let support_at = tail.checked_add(offset_surf::SUPPORT - offset_surf::DISCRIMINATOR)?;
+    let support = View::u16_be_at(body, support_at)?;
     (support > 1).then_some(())?;
     if tripled_support && body.get(support_at + 2) != Some(&1) {
         return None;
     }
-    let distance_at = support_at + if tripled_support { 3 } else { 2 };
-    let distance = f64_be(body, distance_at)? * LEN_TO_MM;
+    let distance_at = if tripled_support {
+        support_at + 3
+    } else {
+        tail + (offset_surf::DISTANCE - offset_surf::DISCRIMINATOR)
+    };
+    let distance = View::f64_be_at(body, distance_at)? * LEN_TO_MM;
     distance.is_finite().then_some(OffsetCarrier {
         support,
         distance,
@@ -52,11 +60,11 @@ fn parse_at(body: &[u8], offset: usize) -> Option<(u16, OffsetCarrier)> {
     if body.get(header) == Some(&0xff) {
         header += 1;
     }
-    let attr = u16_be(body, header)?;
+    let attr = View::u16_be_at(body, header + offset_surf::ATTR)?;
     (attr > 1).then_some(())?;
 
-    let references = header.checked_add(6)?;
-    let partition_marker = references.checked_add(COMMON_REFERENCE_COUNT * 2)?;
+    let references = header.checked_add(offset_surf::REFS)?;
+    let partition_marker = header.checked_add(offset_surf::MARKER)?;
     let partition = matches!(body.get(partition_marker), Some(0x2b | 0x2d))
         .then(|| parse_payload(body, partition_marker + 1, false, offset))
         .flatten();

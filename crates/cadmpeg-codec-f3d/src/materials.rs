@@ -14,13 +14,15 @@ use std::io::{Cursor, Write};
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::topology::Color;
+use cadmpeg_protein::{
+    CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
+};
 
 use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
 use crate::container::{role, ContainerScan};
@@ -28,9 +30,6 @@ use crate::design::presentation::{
     visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
     MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
 };
-
-const PAGE_SIZE: usize = 0x88;
-const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
 /// the null GUID names neither.
@@ -173,22 +172,22 @@ fn page_logical(logical: &[u8]) -> Result<Vec<u8>, CodecError> {
     let first = logical.len().min(PAGE_SIZE - 4);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&logical[..first]);
-    bytes.resize(16 + PAGE_SIZE, 0);
+    bytes.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
     let mut rest = &logical[first..];
     while rest.len() > PAGE_SIZE - 8 {
         bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(b"\x80\x00\x00\x00");
+        bytes.extend_from_slice(CONTINUATION_MARKER);
         bytes.extend_from_slice(&rest[..PAGE_SIZE - 8]);
         rest = &rest[PAGE_SIZE - 8..];
     }
     if !rest.is_empty() {
-        bytes.extend_from_slice(&[0xff; 4]);
+        bytes.extend_from_slice(TERMINAL_MARKER);
         let length = u16::try_from(rest.len())
             .map_err(|_| CodecError::Malformed("Protein tail page exceeds u16::MAX".into()))?;
         bytes.extend_from_slice(&length.to_le_bytes());
         bytes.extend_from_slice(&0u16.to_le_bytes());
         bytes.extend_from_slice(rest);
-        let end = 16 + (bytes.len() - 16).next_multiple_of(PAGE_SIZE);
+        let end = STREAM_HEADER_LEN + (bytes.len() - STREAM_HEADER_LEN).next_multiple_of(PAGE_SIZE);
         bytes.resize(end, 0);
     }
     Ok(bytes)
@@ -421,22 +420,24 @@ fn patch_logical_f64(
 
 fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
     let mut logical_start = 0usize;
-    for (index, page) in bytes.get(16..)?.chunks_exact(PAGE_SIZE).enumerate() {
+    for (index, page) in bytes
+        .get(STREAM_HEADER_LEN..)?
+        .chunks_exact(PAGE_SIZE)
+        .enumerate()
+    {
         let (physical_in_page, length) = if page.get(4..8) == Some(RECORD_MARKER) {
             (4, PAGE_SIZE - 4)
-        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00") {
+        } else if page.get(4..8) == Some(CONTINUATION_MARKER) {
             (8, PAGE_SIZE - 8)
-        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff") {
-            (
-                8,
-                u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize,
-            )
+        } else if page.get(0..4) == Some(TERMINAL_MARKER) {
+            (8, View::u16_le_at(page, 4)? as usize)
         } else {
             return None;
         };
         if logical_offset < logical_start + length {
             return Some(
-                16 + index * PAGE_SIZE + physical_in_page + logical_offset - logical_start,
+                STREAM_HEADER_LEN + index * PAGE_SIZE + physical_in_page + logical_offset
+                    - logical_start,
             );
         }
         logical_start += length;
@@ -1100,7 +1101,7 @@ fn legacy_face_appearance_assignments(
             continue;
         };
         let mut cursor = marker_at + marker_len;
-        let Some(optional_name_count) = u32_at(bytes, cursor) else {
+        let Some(optional_name_count) = View::u32_le_at(bytes, cursor) else {
             continue;
         };
         if optional_name_count == 0 {
@@ -1140,7 +1141,7 @@ fn legacy_face_appearance_assignments(
 /// Decode the normalized RGBA carrier of a legacy face assignment.
 fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
     let raw = bytes.get(offset..offset + 4 * size_of::<f32>())?;
-    let component = |at: usize| Some(f32::from_le_bytes(raw.get(at..at + 4)?.try_into().ok()?));
+    let component = |at: usize| View::f32_le_at(raw, at);
     let color = Color {
         r: component(0)?,
         g: component(4)?,
@@ -1514,23 +1515,17 @@ fn decode_design_object_types(
                 position += 1;
                 continue;
             }
-            let Some(count_bytes) = bytes.get(after_type..after_type + 4) else {
+            let Some(count) = View::u32_le_at(bytes, after_type).map(|n| n as usize) else {
                 break;
             };
-            let count = u32::from_le_bytes(count_bytes.try_into().expect(
-                "invariant: count_bytes is a 4-byte slice from bytes.get(range) of length 4",
-            )) as usize;
             if count > 200 || after_type + 4 + count * 8 > bytes.len() {
                 position += 1;
                 continue;
             }
             for id_bytes in bytes[after_type + 4..after_type + 4 + count * 8].chunks_exact(8) {
                 out.insert(
-                    u64::from_le_bytes(
-                        id_bytes
-                            .try_into()
-                            .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-                    ),
+                    View::u64_le_at(id_bytes, 0)
+                        .expect("invariant: chunks_exact(8) yields 8-byte slices"),
                     object_type.clone(),
                 );
             }
@@ -1569,11 +1564,9 @@ fn decode_act_channels(
                 position += 1;
                 continue;
             }
-            let count = u32::from_le_bytes(
-                header[14..18]
-                    .try_into()
-                    .expect("invariant: header is an 18-byte slice, so header[14..18] is 4 bytes"),
-            ) as usize;
+            let count = View::u32_le_at(header, 14)
+                .expect("invariant: header is an 18-byte slice, so offset 14 is a 4-byte field")
+                as usize;
             if !(1..=8).contains(&count) {
                 position += 1;
                 continue;
@@ -1636,7 +1629,7 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
 /// Decode one LP-UTF16 string at `offset`, validating unit by unit so a
 /// non-string byte window bails out before allocating.
 fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let count = usize::try_from(u32_at(bytes, offset)?).ok()?;
+    let count = usize::try_from(View::u32_le_at(bytes, offset)?).ok()?;
     if !(2..=256).contains(&count) {
         return None;
     }
@@ -1646,7 +1639,7 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     for unit in char::decode_utf16(
         payload
             .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]])),
+            .map(|pair| View::u16_le_at(pair, 0).expect("chunks_exact(2)")),
     ) {
         let ch = unit.ok()?;
         if ch.is_control() {
@@ -1708,11 +1701,9 @@ fn definition_catalog<'a>(
         let mut strings = Vec::new();
         let mut position = *start + marker.len();
         while position + 4 <= end && strings.len() < 8 {
-            let length = u32::from_le_bytes(
-                bytes[position..position + 4]
-                    .try_into()
-                    .expect("invariant: bytes[position..position+4] is a 4-byte slice"),
-            ) as usize;
+            let length = View::u32_le_at(bytes, position)
+                .expect("invariant: position + 4 <= end <= bytes.len()")
+                as usize;
             if (1..=200).contains(&length) && position + 4 + length <= end {
                 let raw = &bytes[position + 4..position + 4 + length];
                 if raw.iter().all(|byte| (0x20..=0x7e).contains(byte)) {
@@ -1738,7 +1729,7 @@ fn definition_catalog<'a>(
     Ok(out)
 }
 
-fn nested_entry<'a>(
+pub(crate) fn nested_entry<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
     suffix: &str,
@@ -1836,13 +1827,9 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
 }
 
 fn fixed_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {
-    let Some(raw) = bytes
-        .get(offset..offset + 8)
-        .and_then(|raw| raw.try_into().ok())
-    else {
+    let Some(value) = View::f64_le_at(bytes, offset) else {
         return;
     };
-    let value = f64::from_le_bytes(raw);
     if value.is_finite() {
         out.insert(name.to_owned(), value);
     }
@@ -1858,7 +1845,7 @@ fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
     let mut values = [0.0; 4];
     for (ordinal, value) in values.iter_mut().enumerate() {
         let at = offset + ordinal * 8;
-        *value = f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?);
+        *value = View::f64_le_at(bytes, at)?;
     }
     decoded_color(values)
 }
@@ -1868,20 +1855,13 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
     match record.get(slot) {
         Some(0) => Some(0),
         Some(1) if slot + 6 <= record.len() => {
-            let count = u32::from_le_bytes(
-                record[slot + 2..slot + 6]
-                    .try_into()
-                    .expect("invariant: record[slot+2..slot+6] is a 4-byte slice"),
-            ) as usize;
+            let count = View::u32_le_at(record, slot + 2)? as usize;
             if count > 8 {
                 return None;
             }
             let mut position = slot + 6;
             for _ in 0..count {
-                let length_bytes = record.get(position..position + 4)?;
-                let length = u32::from_le_bytes(length_bytes.try_into().expect(
-                    "invariant: length_bytes is a 4-byte slice from bytes.get(range) of length 4",
-                )) as usize;
+                let length = View::u32_le_at(record, position)? as usize;
                 position += 4;
                 record.get(position..position + length)?;
                 position += length;
@@ -1901,382 +1881,4 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
 }
 
 #[cfg(test)]
-mod tests {
-    fn raw_body_map_pair(
-        asm_key_offset: usize,
-        entity_suffix: u64,
-    ) -> crate::design::decode::body::BodyBinding {
-        crate::design::decode::body::BodyBinding {
-            blob_name: "BREP.synthetic.smbh".into(),
-            blob_name_offset: asm_key_offset + 32,
-            pair_count: 2,
-            pair_ordinal: 0,
-            asm_key: 7,
-            asm_key_offset,
-            entity_suffix,
-            entity_suffix_offset: asm_key_offset + 8,
-        }
-    }
-
-    fn resolved_body_binding(
-        stream: &str,
-        asm_key_offset: u64,
-        entity_suffix: u64,
-        blob_name: &str,
-        body: &str,
-    ) -> crate::records::DesignBodyBinding {
-        crate::records::DesignBodyBinding {
-            id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
-            stream: stream.into(),
-            pair_count: 1,
-            pair_ordinal: 0,
-            asm_body_key: 7,
-            asm_body_key_offset: asm_key_offset,
-            entity_suffix,
-            entity_suffix_offset: asm_key_offset + 8,
-            blob_name: blob_name.into(),
-            blob_name_offset: asm_key_offset + 32,
-            body: Some(cadmpeg_ir::ids::BodyId(body.into())),
-        }
-    }
-
-    #[test]
-    fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
-        let body_map = [raw_body_map_pair(25, 100), raw_body_map_pair(41, 100)];
-        let Err(error) = super::unique_body_map_pair(&body_map, 100, "material assignment") else {
-            panic!("one Design entity must not select two map pairs")
-        };
-        assert!(error
-            .to_string()
-            .contains("matches multiple body-map pairs"));
-    }
-
-    #[test]
-    fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
-        let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-        let first = resolved_body_binding(
-            stream,
-            25,
-            100,
-            "BREP.first.smbh",
-            "f3d:brep/first/brep:entity#1",
-        );
-        let second_body = cadmpeg_ir::ids::BodyId("f3d:brep/second/brep:entity#1".into());
-        let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", &second_body.0);
-        let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
-        let visual_guid = "11111111-2222-3333-4444-555555555555";
-        let appearance = cadmpeg_ir::appearance::Appearance {
-            id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#second".into()),
-            name: None,
-            asset_guid: Some(visual_guid.into()),
-            library_id: None,
-            visual_guid: Some(visual_guid.into()),
-            physical_token: None,
-            schema: None,
-            category: None,
-            base_color: None,
-            properties: std::collections::BTreeMap::new(),
-            textures: Vec::new(),
-        };
-        let assignment = crate::records::DesignMaterialAssignment {
-            id: owner,
-            asm_body_key: 7,
-            asm_body_key_offset: 125,
-            entity_suffix: 200,
-            entity_suffix_offset: 133,
-            entity_id: "0_200".into(),
-            entity_id_offset: 500,
-            visual_guid: visual_guid.into(),
-            visual_guid_offset: 600,
-            physical_token: None,
-            physical_token_offset: None,
-            visual_preset: None,
-            visual_preset_offset: None,
-        };
-        let projected = super::bind_bodies(
-            &[appearance],
-            &[assignment],
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-            &[first, second],
-        )
-        .expect("blob-qualified material binding");
-        let [binding] = projected.as_slice() else {
-            panic!("one appearance binding expected")
-        };
-        assert_eq!(
-            binding.target,
-            cadmpeg_ir::appearance::AppearanceTarget::Body(second_body)
-        );
-    }
-
-    #[test]
-    fn presetless_assignment_matches_only_its_visual_guid() {
-        let appearance_guid = "11111111-2222-3333-4444-555555555555";
-        let mut appearance = cadmpeg_ir::appearance::Appearance {
-            id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#catalog".into()),
-            name: None,
-            asset_guid: Some(appearance_guid.into()),
-            library_id: None,
-            visual_guid: Some(appearance_guid.into()),
-            physical_token: None,
-            schema: None,
-            category: None,
-            base_color: None,
-            properties: std::collections::BTreeMap::new(),
-            textures: Vec::new(),
-        };
-        let mut assignment = crate::records::DesignMaterialAssignment {
-            id: "f3d:design:material-assignment#1".into(),
-            asm_body_key: 7,
-            asm_body_key_offset: 25,
-            entity_suffix: 100,
-            entity_suffix_offset: 33,
-            entity_id: "0_100".into(),
-            entity_id_offset: 500,
-            visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
-            visual_guid_offset: 600,
-            physical_token: None,
-            physical_token_offset: None,
-            visual_preset: None,
-            visual_preset_offset: None,
-        };
-
-        assert!(
-            super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
-                .expect("valid preset-less assignment")
-                .is_none()
-        );
-
-        assignment.visual_guid = appearance_guid.into();
-        assert!(
-            super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
-                .expect("exact visual-token assignment")
-                .is_some()
-        );
-
-        assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
-        assignment.visual_preset = Some("Prism-017".into());
-        appearance.name = Some("Prism-017".into());
-        assert!(
-            super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
-                .expect("present preset-name fallback")
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn complete_visual_token_selects_one_revision_record() {
-        let base_token = "11111111-2222-3333-4444-555555555555";
-        let revised_token = "11111111-2222-3333-4444-555555555555_Post2015";
-        let appearance = |id: &str, token: &str| cadmpeg_ir::appearance::Appearance {
-            id: cadmpeg_ir::ids::AppearanceId(id.into()),
-            name: None,
-            asset_guid: Some(token.into()),
-            library_id: None,
-            visual_guid: Some(token.into()),
-            physical_token: None,
-            schema: None,
-            category: None,
-            base_color: None,
-            properties: std::collections::BTreeMap::new(),
-            textures: Vec::new(),
-        };
-        let appearances = [
-            appearance("f3d:appearance#base", base_token),
-            appearance("f3d:appearance#revised", revised_token),
-        ];
-
-        let selected = super::appearance_for_visual_token(&appearances, revised_token, None)
-            .expect("unique complete visual token")
-            .expect("revised appearance exists");
-        assert_eq!(selected.id.as_str(), "f3d:appearance#revised");
-
-        let duplicates = [
-            appearance("f3d:appearance#first", revised_token),
-            appearance("f3d:appearance#second", revised_token),
-        ];
-        assert!(matches!(
-            super::appearance_for_visual_token(&duplicates, revised_token, None),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn visual_preset_fallback_requires_one_record() {
-        let appearance = |id: &str| cadmpeg_ir::appearance::Appearance {
-            id: cadmpeg_ir::ids::AppearanceId(id.into()),
-            name: Some("Prism-017".into()),
-            asset_guid: None,
-            library_id: None,
-            visual_guid: None,
-            physical_token: None,
-            schema: None,
-            category: None,
-            base_color: None,
-            properties: std::collections::BTreeMap::new(),
-            textures: Vec::new(),
-        };
-        let appearances = [
-            appearance("f3d:appearance#first"),
-            appearance("f3d:appearance#second"),
-        ];
-
-        assert!(matches!(
-            super::appearance_for_visual_token(
-                &appearances,
-                "11111111-2222-3333-4444-555555555555",
-                Some("Prism-017"),
-            ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-
-    #[test]
-    fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
-        let mut record = vec![0; 120];
-        record[102] = 2;
-        assert_eq!(super::generic_connection_delta(&record, 0), None);
-
-        record[102] = 1;
-        record[104..108].copy_from_slice(&1u32.to_le_bytes());
-        record[108..112].copy_from_slice(&16u32.to_le_bytes());
-        assert_eq!(super::generic_connection_delta(&record, 0), None);
-    }
-
-    fn distance_record(unit: u32, value: f64) -> cadmpeg_protein::DecodedRecord {
-        cadmpeg_protein::DecodedRecord {
-            ordinal: 0,
-            logical_offset: 0,
-            schema: "TestSchema".into(),
-            guid: String::new(),
-            base: String::new(),
-            asset_lib_id: String::new(),
-            properties: std::collections::BTreeMap::from([(
-                "test_Depth".to_owned(),
-                cadmpeg_protein::DecodedProperty {
-                    value_offset: 0,
-                    value: cadmpeg_protein::PropertyValue::Distance { unit, value },
-                    connections: Vec::new(),
-                },
-            )]),
-        }
-    }
-
-    #[test]
-    fn decoded_color_requires_finite_normalized_channels() {
-        assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
-        for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
-            assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
-        }
-    }
-
-    /// The three length tags of the Distance quantity class each convert to
-    /// the IR's millimetres. `0x200e` is millimetre, not centimetre.
-    #[test]
-    fn distance_tags_convert_to_millimetres() {
-        for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)]
-        {
-            let record = distance_record(unit, value);
-            assert_eq!(super::distance_property(&record, "Depth"), Some(expected));
-        }
-    }
-
-    #[test]
-    fn schema_primary_colour_wins_over_rival_colour_members() {
-        for (schema, primary_id) in [
-            ("GenericSchema", "generic_diffuse"),
-            ("MetalSchema", "metal_color"),
-            ("MetallicPaintSchema", "metallicpaint_base_color"),
-            ("PlasticVinylSchema", "plasticvinyl_color"),
-            ("PrismLayeredSchema", "layered_diffuse"),
-            ("PrismMetalSchema", "metal_f0"),
-            ("PrismOpaqueSchema", "opaque_albedo"),
-            ("PrismTransparentSchema", "transparent_color"),
-            ("PrismWoodSchema", "surface_albedo"),
-        ] {
-            let mut properties = std::collections::BTreeMap::from([
-                color_property("common_Tint_color", [0.75, 0.75, 0.75, 1.0]),
-                color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
-                (
-                    "common_Tint_toggle".to_owned(),
-                    cadmpeg_protein::DecodedProperty {
-                        value_offset: 0,
-                        value: cadmpeg_protein::PropertyValue::Boolean(false),
-                        connections: Vec::new(),
-                    },
-                ),
-            ]);
-            properties.insert(
-                primary_id.to_owned(),
-                cadmpeg_protein::DecodedProperty {
-                    value_offset: 0,
-                    value: cadmpeg_protein::PropertyValue::Color([0.125, 0.25, 0.375, 1.0]),
-                    connections: Vec::new(),
-                },
-            );
-            let record = appearance_record(schema, properties);
-            assert_eq!(
-                super::appearance_base_color(&record).map(|color| color.g),
-                Some(0.25),
-                "{schema} selects {primary_id}"
-            );
-        }
-    }
-
-    #[test]
-    fn enabled_common_tint_replaces_the_schema_primary_colour() {
-        let mut properties = std::collections::BTreeMap::from([
-            color_property("opaque_albedo", [0.125, 0.25, 0.375, 1.0]),
-            color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
-            color_property("common_Tint_color", [0.75, 0.625, 0.5, 1.0]),
-        ]);
-        properties.insert(
-            "common_Tint_toggle".to_owned(),
-            cadmpeg_protein::DecodedProperty {
-                value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::Boolean(true),
-                connections: Vec::new(),
-            },
-        );
-        let record = appearance_record("PrismOpaqueSchema", properties);
-        assert_eq!(
-            super::appearance_base_color(&record).map(|color| color.g),
-            Some(0.625)
-        );
-    }
-
-    fn color_property(id: &str, color: [f64; 4]) -> (String, cadmpeg_protein::DecodedProperty) {
-        (
-            id.to_owned(),
-            cadmpeg_protein::DecodedProperty {
-                value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::Color(color),
-                connections: Vec::new(),
-            },
-        )
-    }
-
-    fn appearance_record(
-        schema: &str,
-        properties: std::collections::BTreeMap<String, cadmpeg_protein::DecodedProperty>,
-    ) -> cadmpeg_protein::DecodedRecord {
-        cadmpeg_protein::DecodedRecord {
-            ordinal: 0,
-            logical_offset: 0,
-            schema: schema.to_owned(),
-            guid: "11111111-2222-3333-4444-555555555555".to_owned(),
-            base: "Prism-001".to_owned(),
-            asset_lib_id: String::new(),
-            properties,
-        }
-    }
-
-    /// A Distance whose tag names a quantity other than length has no
-    /// millimetre reading and must not be silently taken as one.
-    #[test]
-    fn a_non_length_distance_tag_yields_no_value() {
-        let record = distance_record(0x0002_1008, 1.0);
-        assert_eq!(super::distance_property(&record, "Depth"), None);
-    }
-}
+mod tests;

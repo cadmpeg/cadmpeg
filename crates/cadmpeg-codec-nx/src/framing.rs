@@ -7,6 +7,29 @@
 //! field validity gates after framing.
 #![deny(clippy::disallowed_methods)]
 
+use cadmpeg_core::decode::View;
+
+use crate::layout::analytic_common_header as analytic;
+use crate::layout::circle_payload as circle;
+use crate::layout::cone_payload as cone;
+use crate::layout::cylinder_payload as cylinder;
+use crate::layout::edge_node as edge;
+use crate::layout::ellipse_payload as ellipse;
+use crate::layout::face_node as face;
+use crate::layout::fin_node as fin;
+use crate::layout::intersection_type_38 as intersection;
+use crate::layout::line_payload as line;
+use crate::layout::loop_node;
+use crate::layout::offset_surf_payload as offset_surf;
+use crate::layout::plane_payload as plane;
+use crate::layout::point_node as point;
+use crate::layout::shell_node as shell;
+use crate::layout::sp_curve_payload as sp_curve;
+use crate::layout::sphere_payload as sphere;
+use crate::layout::torus_payload as torus;
+use crate::layout::trimmed_curve_payload as trimmed;
+use crate::layout::vertex_node as vertex;
+
 /// One structurally complete fixed-record interpretation.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FixedRecordFrame {
@@ -89,12 +112,14 @@ pub(crate) fn read_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> O
 /// Decode the compact and extended XMT forms. The extended form uses a negative
 /// signed remainder followed by a quotient: `quotient * 32767 + remainder`.
 pub(crate) fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
-    let first = i16::from_be_bytes([*stream.get(at)?, *stream.get(at + 1)?]);
+    let mut view = View::over_retained(stream);
+    view.seek(at)?;
+    let first = view.i16_be()?;
     if first >= 0 {
         return Some((first as u32, 0));
     }
     let remainder = first.unsigned_abs();
-    let quotient = u16::from_be_bytes([*stream.get(at + 2)?, *stream.get(at + 3)?]);
+    let quotient = view.u16_be()?;
     let value = u32::from(quotient) * 32_767 + u32::from(remainder);
     Some((value, 2))
 }
@@ -111,7 +136,7 @@ pub(crate) fn read_xmt_width(stream: &[u8], at: usize) -> Option<(u32, usize)> {
 
 fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Option<usize> {
     if kind == 14 {
-        let mut at = pos + 8 + header_shift;
+        let mut at = pos + face::ATTRIBUTES + header_shift;
         let start = at;
         read_and_advance(stream, &mut at)?;
         at += 8;
@@ -121,7 +146,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
         return Some(at - start - 31);
     }
     if kind == 16 {
-        let mut at = pos + 8 + header_shift;
+        let mut at = pos + edge::ATTRIBUTES + header_shift;
         let start = at;
         read_and_advance(stream, &mut at)?;
         at += 8;
@@ -129,11 +154,11 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
         return Some(at - start - 24);
     }
     let (offset, before, trailing_bytes, after) = match kind {
-        13 => (8, 8, 0, 0),
-        15 => (8, 4, 0, 0),
-        17 => (4, 9, 1, 0),
-        18 => (8, 5, 8, 1),
-        29 => (8, 4, 24, 0),
+        13 => (shell::ATTRIBUTES, 8, 0, 0),
+        15 => (loop_node::ATTRIBUTES, 4, 0, 0),
+        17 => (fin::ATTRIBUTES, 9, 1, 0),
+        18 => (vertex::ATTRIBUTES, 5, 8, 1),
+        29 => (point::ATTRIBUTES, 4, 24, 0),
         _ => (0, 0, 0, 0),
     };
     if before != 0 {
@@ -152,7 +177,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
     if !compact_kind {
         return Some(0);
     }
-    let mut at = pos + 8 + header_shift;
+    let mut at = pos + analytic::ATTRIBUTES + header_shift;
     let start = at;
     read_sequence_at(stream, &mut at, 5)?;
     matches!(stream.get(at), Some(b'+' | b'-')).then_some(())?;
@@ -196,28 +221,29 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
 
 pub(crate) fn fixed_len(kind: u8) -> Option<usize> {
     Some(match kind {
-        12 | 13 => 24,
-        14 => 39,
-        15 => 16,
-        16 => 32,
-        17 => 23,
-        18 => 28,
+        12 => 24,
+        13 => shell::LEN,
+        14 => face::LEN,
+        15 => loop_node::LEN,
+        16 => edge::LEN,
+        17 => fin::LEN,
+        18 => vertex::LEN,
         19 => 16,
-        29 => 40,
-        30 => 67,
-        31 => 99,
-        32 => 107,
-        38 => 31,
-        50 => 91,
-        51 => 99,
-        52 => 115,
-        53 => 99,
-        54 => 107,
+        29 => point::LEN,
+        30 => line::LEN,
+        31 => circle::LEN,
+        32 => ellipse::LEN,
+        38 => intersection::LEN,
+        50 => plane::LEN,
+        51 => cylinder::LEN,
+        52 => cone::LEN,
+        53 => sphere::LEN,
+        54 => torus::LEN,
         56 => 66,
-        60 => 31,
+        60 => offset_surf::LEN,
         124 | 134 => 23,
-        133 => 85,
-        137 => 33,
+        133 => trimmed::LEN,
+        137 => sp_curve::LEN,
         _ => return None,
     })
 }

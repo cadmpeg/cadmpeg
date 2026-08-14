@@ -10,12 +10,17 @@ mod directory;
 mod entities;
 mod global;
 mod graph;
-mod layout;
+/// Byte-offset constants generated from `docs/layouts/iges.toml`.
+pub(crate) mod layout;
 mod native;
 mod parameter;
 mod profile;
 mod reader;
+mod representation;
 mod writer;
+
+#[doc(hidden)]
+pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
@@ -79,7 +84,7 @@ impl CodecBackend for IgesCodec {
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
-        layout::confidence(prefix)
+        representation::confidence(prefix)
     }
 
     fn inspect_impl(
@@ -88,17 +93,17 @@ impl CodecBackend for IgesCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
-        match layout::classify(&mut reader)? {
-            representation @ (layout::Representation::CompressedAscii
-            | layout::Representation::Binary) => {
-                return Ok(layout::unsupported_summary(representation));
+        match representation::classify(&mut reader)? {
+            representation @ (representation::Representation::CompressedAscii
+            | representation::Representation::Binary) => {
+                return Ok(representation::unsupported_summary(representation));
             }
-            layout::Representation::Unknown => {
+            representation::Representation::Unknown => {
                 return Err(CodecError::WrongFormat(
                     "unrecognized IGES representation".into(),
                 ));
             }
-            layout::Representation::FixedAscii => {}
+            representation::Representation::FixedAscii => {}
         }
         ctx.charge_work(root.window().len() as u64, "iges_inspect_card_scan")?;
         let _scan_storage = ctx.reserve_scoped(
@@ -131,8 +136,8 @@ impl CodecBackend for IgesCodec {
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         let mut source = Cursor::new(root.window());
-        match layout::classify(&mut source)? {
-            layout::Representation::FixedAscii => reader::decode(
+        match representation::classify(&mut source)? {
+            representation::Representation::FixedAscii => reader::decode(
                 root.window(),
                 DecodeOptions {
                     container_only: ctx.container_only(),
@@ -140,9 +145,11 @@ impl CodecBackend for IgesCodec {
                 },
                 ctx,
             ),
-            representation @ (layout::Representation::CompressedAscii
-            | layout::Representation::Binary) => Err(layout::unsupported_error(representation)),
-            layout::Representation::Unknown => Err(CodecError::WrongFormat(
+            representation @ (representation::Representation::CompressedAscii
+            | representation::Representation::Binary) => {
+                Err(representation::unsupported_error(representation))
+            }
+            representation::Representation::Unknown => Err(CodecError::WrongFormat(
                 "unrecognized IGES representation".into(),
             )),
         }
@@ -176,6 +183,6 @@ impl Encoder for IgesEncoder {
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-mod tests;
+mod integration_tests;
 #[cfg(test)]
-mod write_roundtrip_tests;
+pub(crate) mod test_support;

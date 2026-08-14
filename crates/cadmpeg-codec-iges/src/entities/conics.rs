@@ -6,6 +6,7 @@ use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -107,6 +108,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> ConicProjection {
     let records = parameters
         .iter()
@@ -170,6 +172,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -422,3 +425,6 @@ pub(super) fn project(
         wire_edges,
     }
 }
+
+#[cfg(test)]
+mod tests;

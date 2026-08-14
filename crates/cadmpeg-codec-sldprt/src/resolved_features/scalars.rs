@@ -6,6 +6,9 @@ use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
 };
+use cadmpeg_core::decode::View;
+
+use crate::layout::feature_input_operand_cell12 as operand_cell;
 
 pub(crate) fn named_scalars(
     payload: &[u8],
@@ -18,19 +21,9 @@ pub(crate) fn named_scalars(
         .filter_map(|name| {
             let name_offset = usize::try_from(name.offset).ok()?;
             let value_offset = scalar_value_offset(payload, name_offset, &name.value)?;
-            let value = f64::from_le_bytes(
-                payload
-                    .get(value_offset..value_offset + 8)?
-                    .try_into()
-                    .ok()?,
-            );
+            let value = View::f64_le_at(payload, value_offset)?;
             let trailer_offset = value_offset.checked_add(8)?;
-            let object_id = u32::from_le_bytes(
-                payload
-                    .get(trailer_offset + 3..trailer_offset + 7)?
-                    .try_into()
-                    .ok()?,
-            );
+            let object_id = View::u32_le_at(payload, trailer_offset + 3)?;
             let role = scalar_role(payload, trailer_offset);
             let operands = scalar_operands(payload, trailer_offset, parent);
             let entity_indices = operands
@@ -140,7 +133,7 @@ fn scalar_operands(
                     offset: offset as u64,
                     reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
                     kind,
-                    entity_index: u16::from_le_bytes([cell[2], cell[3]]),
+                    entity_index: View::u16_le_at(cell, 2)?,
                     entity_ref: None,
                 })
             })
@@ -151,20 +144,25 @@ fn scalar_operands(
     } else {
         35
     };
-    [first, first + 12]
+    [first, first + operand_cell::LEN]
         .into_iter()
         .filter_map(|relative| {
             let offset = trailer_offset.checked_add(relative)?;
-            let cell = payload.get(offset..offset + 12)?;
-            if cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
+            let cell = payload.get(offset..offset + operand_cell::LEN)?;
+            if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
+                || cell[operand_cell::ZERO_TRAILER..operand_cell::LEN] != [0; 4]
+            {
                 return None;
             }
-            let kind = operand_kind([cell[0], cell[1]])?;
+            let kind = operand_kind([
+                cell[operand_cell::CLASS_TOKEN],
+                cell[operand_cell::CLASS_TOKEN + 1],
+            ])?;
             Some(FeatureInputOperand {
                 offset: offset as u64,
                 reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
                 kind,
-                entity_index: u16::from_le_bytes([cell[2], cell[3]]),
+                entity_index: View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
                 entity_ref: None,
             })
         })

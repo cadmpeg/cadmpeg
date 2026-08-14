@@ -1,0 +1,415 @@
+// SPDX-License-Identifier: Apache-2.0
+//! STEP geometry, pcurve, NURBS, unit, replica, and trim tests.
+
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
+#![allow(unused_imports)]
+
+use std::fmt::Write as _;
+use std::io::Cursor;
+
+use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::eval::{
+    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
+};
+use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{LengthUnit, Units};
+use cadmpeg_ir::CadIr;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
+
+use crate::ids::StepIdentity;
+use crate::test_support::{decode_inline, export};
+use crate::{
+    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
+};
+
+#[test]
+fn unresolvable_length_unit_reports_an_error_loss() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('unresolvable length unit'),'2;1');FILE_NAME('unit','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));#4=CARTESIAN_POINT('',(1.,2.,3.));#5=SHAPE_REPRESENTATION('',(#4),#3);ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode bare named length unit");
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.message
+                .starts_with("the document length unit did not resolve")
+        })
+        .expect("unresolved length unit loss");
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+    );
+    assert_eq!(loss.severity, cadmpeg_ir::Severity::Error);
+    assert_eq!(
+        loss.message,
+        "the document length unit did not resolve; coordinates are unscaled and reported as millimetres"
+    );
+}
+
+#[test]
+pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
+    let bytes = include_bytes!("../../../../tests/fixtures/ap242_geometry.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode typed STEP geometry");
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    let placed = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.0 == "step:data:point#3")
+        .unwrap();
+    assert_eq!(placed.position.x, 1.0);
+    assert_eq!(placed.position.y, 2.0);
+    assert_eq!(placed.position.z, 3.0);
+    assert_eq!(result.ir().model.curves.len(), 9);
+    assert!(result.ir().model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#45"
+            && matches!(curve.geometry, CurveGeometry::Composite { .. })
+    }));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Line { origin, direction }
+            if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0
+                && direction.x == 0.0 && direction.y == 0.0 && direction.z == 1.0
+    )));
+    assert!(!result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51")));
+    assert!(result
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .any(|curve| matches!(
+            curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range: [start, end],
+                ..
+            } if start == 0.0 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        )));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Ellipse { major_radius, minor_radius, .. }
+            if major_radius == 6.0 && minor_radius == 2.0
+    )));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        &curve.geometry,
+        CurveGeometry::Nurbs(nurbs)
+            if nurbs.degree == 2
+                && nurbs.knots == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                && nurbs.weights.as_deref() == Some(&[1.0, 0.5, 1.0][..])
+    )));
+    assert_eq!(result.ir().model.surfaces.len(), 10);
+    assert!(result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Curve(_)
+        )));
+    assert!(result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Surface(_)
+        )));
+    assert!(result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Point(_)
+        )));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("STYLED_ITEM #43")));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("STYLED_ITEM #52")));
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding.source_entity_id.as_deref() == Some("#47"))
+            .count(),
+        2
+    );
+    assert!(result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            &binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Source { source_id } if source_id == "#6"
+        )));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        &curve.geometry,
+        CurveGeometry::Nurbs(nurbs)
+            if curve.id.as_str() == "step:data:curve#48"
+                && nurbs.degree == 1
+                && nurbs.knots == [0.0, 0.0, 1.0, 2.0, 2.0]
+    )));
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Plane { origin, normal, .. }
+            if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
+    )));
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        &surface.geometry,
+        SurfaceGeometry::Nurbs(nurbs)
+            if nurbs.u_degree == 1
+                && nurbs.v_degree == 1
+                && nurbs.u_count == 2
+                && nurbs.v_count == 2
+                && nurbs.u_knots == [0.0, 0.0, 1.0, 1.0]
+                && nurbs.v_knots == [0.0, 0.0, 1.0, 1.0]
+                && nurbs.weights.as_deref() == Some(&[1.0, 1.0, 1.0, 0.75][..])
+    )));
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cylinder { radius, .. } if radius == 5.0
+    )));
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cone { radius, ratio, half_angle, .. }
+            if radius == 5.0 && ratio == 1.0 && half_angle == 0.25
+    )));
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Sphere { radius, .. } if radius == 5.0
+    )));
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Torus { major_radius, minor_radius, .. }
+            if major_radius == 8.0 && minor_radius == 2.0
+    )));
+    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        CurveGeometry::Circle { center, radius, .. }
+            if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
+    )));
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.procedural_curves.len(), 3);
+    let cartesian_trim = result
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:construction:trimmed_curve#29")
+        .expect("Cartesian trimmed curve");
+    assert!(matches!(
+        cartesian_trim.definition,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+            parameter_range: [start, end],
+            ..
+        } if start == 0.0 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+    ));
+    let (source, parameter_range) = result
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find_map(|curve| match &curve.definition {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                source,
+                parameter_range,
+                ..
+            } => Some((source, *parameter_range)),
+            _ => None,
+        })
+        .expect("trimmed curve was not retained as a subset construction");
+    assert_eq!(source.as_str(), "step:data:curve#8");
+    assert_eq!(parameter_range, [0.0, std::f64::consts::FRAC_PI_2]);
+    assert!(result
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .any(|curve| matches!(
+            curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset {
+                distance: 1.0,
+                self_intersect: None,
+                ..
+            }
+        )));
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
+    assert!(result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::DegenerateTorus {
+                select_outer: true
+            }
+        )));
+    assert!(result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { direction, .. }
+                if direction.z == 2.0
+        )));
+    assert!(result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution { axis_direction, .. }
+                if axis_direction.z == 1.0
+        )));
+    assert!(result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset {
+                distance: 0.5,
+                self_intersect: Some(false),
+                ..
+            }
+        )));
+}
+
+#[test]
+pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
+    let bytes = include_bytes!("../../../../tests/fixtures/ap242_degree_cone.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode degree cone");
+
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cone { radius, half_angle, .. }
+            if radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
+    )));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(
+        validation
+            .findings
+            .iter()
+            .all(|finding| finding.check != cadmpeg_ir::Check::CarrierReachability),
+        "{:#?}",
+        validation.findings
+    );
+}
+
+#[test]
+pub(crate) fn decode_resolves_conversion_units_and_linear_uncertainty() {
+    let bytes = include_bytes!("../../../../tests/fixtures/ap242_conversion_units.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode conversion-based units");
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.points[0].position.x, 50.8);
+    assert!((result.ir().tolerances.linear - 0.0254).abs() < 1e-12);
+}
+
+#[test]
+fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
+    let source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('mixed uncertainty'),'2;1');\nFILE_NAME('mixed-uncertainty','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);\n#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));\n#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#5=UNCERTAINTY_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.5),#4,'angle_accuracy','');\n#6=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.002),#3,'distance_accuracy_value','');\n#7=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#5,#6)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3,#4)) REPRESENTATION_CONTEXT('model','3D'));\n#8=CARTESIAN_POINT('two inches',(2.,0.,0.));\n#9=SHAPE_REPRESENTATION('construction points',(#8),#7);\nENDSEC;\nEND-ISO-10303-21;\n";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode mixed uncertainty units");
+
+    assert!((result.ir().tolerances.linear - 0.0508).abs() < 1e-12);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+    }));
+}
+
+#[test]
+fn decode_prefers_named_length_uncertainty_when_several_lengths_are_present() {
+    let source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('named uncertainty'),'2;1');\nFILE_NAME('named-uncertainty','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'manufacturing_accuracy','');\n#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');\n#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2,#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('model','3D'));\n#6=CARTESIAN_POINT('point',(1.,0.,0.));\n#7=SHAPE_REPRESENTATION('construction points',(#6),#5);\nENDSEC;\nEND-ISO-10303-21;\n";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode named uncertainty");
+
+    assert!((result.ir().tolerances.linear - 0.2).abs() < 1e-12);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+    }));
+}
+
+#[test]
+fn decode_reports_ambiguous_length_uncertainty() {
+    let source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ambiguous uncertainty'),'2;1');\nFILE_NAME('ambiguous-uncertainty','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'first_accuracy','');\n#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'second_accuracy','');\n#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2,#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('model','3D'));\n#6=CARTESIAN_POINT('point',(1.,0.,0.));\n#7=SHAPE_REPRESENTATION('construction points',(#6),#5);\nENDSEC;\nEND-ISO-10303-21;\n";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode ambiguous uncertainty");
+
+    assert_eq!(result.ir().tolerances.linear, 1e-6);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+            && loss.severity == cadmpeg_ir::Severity::Warning
+    }));
+}
+
+#[test]
+fn decode_scales_geometry_by_its_representation_context() {
+    let source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('per representation units'),'2;1');\nFILE_NAME('per-representation-units','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);\n#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));\n#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('metric','3D'));\n#6=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3,#4)) REPRESENTATION_CONTEXT('inch','3D'));\n#7=CARTESIAN_POINT('metric point',(10.,0.,0.));\n#8=CARTESIAN_POINT('inch point',(1.,0.,0.));\n#9=SHAPE_REPRESENTATION('metric representation',(#7),#5);\n#10=SHAPE_REPRESENTATION('inch representation',(#8),#6);\nENDSEC;\nEND-ISO-10303-21;\n";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode per-representation units");
+
+    let metric = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#7")
+        .expect("metric point");
+    let inch = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#8")
+        .expect("inch point");
+    assert!((metric.position.x - 10.0).abs() < 1e-12);
+    assert!((inch.position.x - 25.4).abs() < 1e-12);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred)
+    }));
+}

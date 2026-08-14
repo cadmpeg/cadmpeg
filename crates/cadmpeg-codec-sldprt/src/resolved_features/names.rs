@@ -5,6 +5,7 @@ use crate::classification::native_object_class;
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputName, FeatureInputOperandKind,
 };
+use cadmpeg_core::decode::View;
 
 pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> String {
     match kind {
@@ -34,17 +35,16 @@ pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName
             }
             let start = offset + NAME_MARKER.len() + 1;
             let end = start.checked_add(length.checked_mul(2)?)?;
-            let units = payload
-                .get(start..end)?
-                .chunks_exact(2)
-                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-                .collect::<Vec<_>>();
+            let slice = payload.get(start..end)?;
+            let mut view = View::over_retained(slice);
+            let mut units = Vec::new();
+            while let Some(unit) = view.u16_le() {
+                units.push(unit);
+            }
             let value = String::from_utf16(&units).ok()?;
-            let object_id = end.checked_add(8).and_then(|offset| {
-                Some(u32::from_le_bytes(
-                    payload.get(offset..offset + 4)?.try_into().ok()?,
-                ))
-            });
+            let object_id = end
+                .checked_add(8)
+                .and_then(|offset| View::u32_le_at(payload, offset));
             (!value.chars().any(char::is_control)).then_some((offset, object_id, value))
         })
         .enumerate()
@@ -70,9 +70,7 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
         .enumerate()
         .filter(|(_, window)| *window == CLASS_MARKER)
         .find_map(|(offset, _)| {
-            let length = usize::from(u16::from_le_bytes(
-                payload.get(offset + 4..offset + 6)?.try_into().ok()?,
-            ));
+            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
             if !(1..=128).contains(&length) {
                 return None;
             }
@@ -81,12 +79,7 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
                 return None;
             }
             let token_offset = offset + 6 + length;
-            let token = u16::from_le_bytes(
-                payload
-                    .get(token_offset..token_offset + 2)?
-                    .try_into()
-                    .ok()?,
-            );
+            let token = View::u16_le_at(payload, token_offset)?;
             if !is_class_token(token) {
                 return None;
             }
@@ -105,9 +98,7 @@ pub(crate) fn class_declarations(payload: &[u8], parent: &str) -> Vec<FeatureInp
         .enumerate()
         .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
         .filter_map(|offset| {
-            let length = usize::from(u16::from_le_bytes(
-                payload.get(offset + 4..offset + 6)?.try_into().ok()?,
-            ));
+            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
             if !(1..=128).contains(&length) {
                 return None;
             }

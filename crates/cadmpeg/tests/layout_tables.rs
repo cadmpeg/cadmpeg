@@ -19,6 +19,14 @@
 //! * `[[record.code]]` cross-checks assert a literal substring is present in a
 //!   named source file, which is how a table claims agreement with a parser.
 //!
+//! After validation the test emits one `src/layout.rs` per mapped table: a
+//! module of `usize` offset constants per byte-layout record, a `*_VALUE`
+//! constant for each field that declares `value`, and a `token` module of tag
+//! constants. Records that declare a `[[record.discrepancy]]` are listed in a
+//! comment and omitted. `UPDATE_LAYOUT_CODE=1` rewrites the checked-in files;
+//! a table edit without regeneration fails the byte-for-byte comparison.
+//! Parsing functions are not generated.
+//!
 //! `layout_validator_rejects_broken_tables` runs the same validator over
 //! broken fixtures in `tests/fixtures/layout-invalid/`.
 
@@ -26,13 +34,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
 /// Every format directory the workspace ships a codec or spec for.
 const EXPECTED_FORMATS: &[&str] = &[
-    "asm", "catia", "creo", "f3d", "freecad", "iges", "inventor", "nx", "rhino", "sldprt", "step",
+    "asm", "catia", "creo", "f3d", "freecad", "iges", "inventor", "nx", "protein", "rhino",
+    "sldprt", "step",
 ];
 
 // ---------------------------------------------------------------------------
@@ -109,6 +118,9 @@ struct Record {
     endianness: Option<String>,
     #[serde(default)]
     note: String,
+    /// Parser source paths. A locator, not a substring check.
+    #[serde(default, deserialize_with = "deserialize_one_or_many")]
+    parsed_by: Vec<String>,
     #[serde(default, rename = "field")]
     fields: Vec<Field>,
     #[serde(default, rename = "gap")]
@@ -148,6 +160,9 @@ struct Field {
     anchor: String,
     #[serde(default)]
     note: String,
+    /// Constant contents the specification states for this field.
+    #[serde(default)]
+    value: Option<toml::Value>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -194,13 +209,262 @@ enum DiscrepancyKind {
 }
 
 /// A literal substring that must be present in a source file. This is how a
-/// table claims a parser agrees with it.
+/// table claims a parser agrees with it on a fact the emitter cannot express.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CodeCheck {
     path: String,
     contains: String,
     note: String,
+}
+
+fn deserialize_one_or_many<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct OneOrMany;
+
+    impl<'de> serde::de::Visitor<'de> for OneOrMany {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a path string or an array of paths")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(vec![value.to_string()])
+        }
+
+        fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+            Ok(vec![value])
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut out = Vec::new();
+            while let Some(item) = seq.next_element()? {
+                out.push(item);
+            }
+            Ok(out)
+        }
+    }
+
+    deserializer.deserialize_any(OneOrMany)
+}
+
+/// True when `path` names a test module rather than a parser.
+fn is_test_source_path(path: &str) -> bool {
+    Path::new(path).components().any(|component| match component {
+        Component::Normal(name) => name == "tests",
+        _ => false,
+    })
+}
+
+/// A token tag that can be emitted as a Rust constant.
+#[derive(Debug)]
+enum TokenConst {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    Bytes(Vec<u8>),
+}
+
+/// Parse a token `tag` into a typed constant. Ranges such as `00..7f` are omitted.
+fn parse_token_tag(tag: &str) -> Option<TokenConst> {
+    if tag.contains("..") {
+        return None;
+    }
+    let compact = tag.trim();
+    if let Some(hex) = compact
+        .strip_prefix("0x")
+        .or_else(|| compact.strip_prefix("0X"))
+    {
+        let hex = hex.replace('_', "");
+        let value = u64::from_str_radix(&hex, 16).ok()?;
+        return Some(match hex.len() {
+            1 | 2 => TokenConst::U8(u8::try_from(value).ok()?),
+            3 | 4 => TokenConst::U16(u16::try_from(value).ok()?),
+            5..=8 => TokenConst::U32(u32::try_from(value).ok()?),
+            9..=16 => TokenConst::U64(value),
+            _ => return None,
+        });
+    }
+    let parts: Vec<&str> = compact.split_whitespace().collect();
+    if parts.len() > 1
+        && parts
+            .iter()
+            .all(|part| part.len() == 2 && part.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        let bytes = parts
+            .iter()
+            .map(|part| u8::from_str_radix(part, 16).ok())
+            .collect::<Option<Vec<u8>>>()?;
+        return Some(TokenConst::Bytes(bytes));
+    }
+    if let Ok(value) = compact.parse::<u64>() {
+        return Some(if value <= u64::from(u8::MAX) {
+            TokenConst::U8(value as u8)
+        } else if value <= u64::from(u16::MAX) {
+            TokenConst::U16(value as u16)
+        } else if value <= u64::from(u32::MAX) {
+            TokenConst::U32(value as u32)
+        } else {
+            TokenConst::U64(value)
+        });
+    }
+    if !tag.is_empty() && tag.bytes().all(|b| (0x20..=0x7e).contains(&b)) {
+        return Some(TokenConst::Bytes(tag.as_bytes().to_vec()));
+    }
+    None
+}
+
+fn token_const_name(name: &str) -> Option<String> {
+    let ident: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_")
+        .to_ascii_uppercase();
+    if ident.is_empty() || ident.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(ident)
+}
+
+fn rust_hex(value: u64, digits: usize) -> String {
+    let raw = format!("{value:0digits$x}");
+    let mut parts = Vec::new();
+    let mut rest = raw.as_str();
+    while rest.len() > 4 {
+        let split = rest.len() - 4;
+        parts.push(&rest[split..]);
+        rest = &rest[..split];
+    }
+    parts.push(rest);
+    parts.reverse();
+    format!("0x{}", parts.join("_"))
+}
+
+fn rust_byte_array(bytes: &[u8]) -> String {
+    let ascii_ok = bytes
+        .iter()
+        .all(|&b| b == 0 || (0x20..=0x7e).contains(&b));
+    let has_letter = bytes.iter().any(|&b| b.is_ascii_alphabetic());
+    if ascii_ok && has_letter {
+        let mut out = String::from("*b\"");
+        for &b in bytes {
+            match b {
+                0 => out.push_str("\\0"),
+                b'\\' => out.push_str("\\\\"),
+                b'"' => out.push_str("\\\""),
+                _ => out.push(b as char),
+            }
+        }
+        out.push('"');
+        return out;
+    }
+    let parts: Vec<String> = bytes.iter().map(|b| format!("0x{b:02x}")).collect();
+    format!("[{}]", parts.join(", "))
+}
+
+fn rust_token_ty(value: &TokenConst) -> String {
+    match value {
+        TokenConst::U8(_) => "u8".to_string(),
+        TokenConst::U16(_) => "u16".to_string(),
+        TokenConst::U32(_) => "u32".to_string(),
+        TokenConst::U64(_) => "u64".to_string(),
+        TokenConst::Bytes(bytes) => format!("[u8; {}]", bytes.len()),
+    }
+}
+
+/// Decode a field `value` against its declared type. `width` is the byte width.
+fn decode_field_value(
+    raw: &toml::Value,
+    ty: &str,
+    width: Option<u64>,
+) -> Result<String, String> {
+    let element = ty.split_once('[').map_or(ty, |(head, _)| head);
+    if matches!(
+        element,
+        "cstring" | "lp_ascii" | "lp_utf16" | "token_stream" | "subrecord" | "array" | "text"
+    ) {
+        return Err("value is not valid on a variable-length type".to_string());
+    }
+    if element == "bytes" {
+        let Some(len) = width else {
+            return Err("value on `bytes` needs a fixed width".to_string());
+        };
+        let bytes = match raw {
+            toml::Value::String(text) => text.as_bytes().to_vec(),
+            toml::Value::Array(items) => items
+                .iter()
+                .map(|item| {
+                    let n = item
+                        .as_integer()
+                        .ok_or_else(|| format!("byte value entry is not an integer: {item}"))?;
+                    u8::try_from(n).map_err(|_| format!("byte value {n} is out of 0..=255"))
+                })
+                .collect::<Result<Vec<u8>, _>>()?,
+            _ => return Err("bytes value must be a string or an array of integers".to_string()),
+        };
+        if u64::try_from(bytes.len()).unwrap_or(u64::MAX) != len {
+            return Err(format!(
+                "value is {} bytes, type `{ty}` is {len} bytes",
+                bytes.len()
+            ));
+        }
+        return Ok(format!("[u8; {len}] = {}", rust_byte_array(&bytes)));
+    }
+    match element {
+        "u8" | "enum8" | "bool8" | "char" => {
+            let n = raw
+                .as_integer()
+                .ok_or_else(|| "integer value required".to_string())?;
+            let v = u8::try_from(n).map_err(|_| format!("value {n} does not fit `{ty}`"))?;
+            Ok(format!("u8 = {v}"))
+        }
+        "u16" => {
+            let n = raw
+                .as_integer()
+                .ok_or_else(|| "integer value required".to_string())?;
+            let v = u16::try_from(n).map_err(|_| format!("value {n} does not fit `{ty}`"))?;
+            Ok(format!("u16 = {}", rust_hex(u64::from(v), 4)))
+        }
+        "u32" => {
+            let n = raw
+                .as_integer()
+                .ok_or_else(|| "integer value required".to_string())?;
+            let v = u32::try_from(n).map_err(|_| format!("value {n} does not fit `{ty}`"))?;
+            Ok(format!("u32 = {}", rust_hex(u64::from(v), 8)))
+        }
+        "u64" => {
+            let n = raw
+                .as_integer()
+                .ok_or_else(|| "integer value required".to_string())?;
+            let v = u64::try_from(n).map_err(|_| format!("value {n} does not fit `{ty}`"))?;
+            Ok(format!("u64 = {}", rust_hex(v, 16)))
+        }
+        "i8" | "i16" | "i32" | "i64" => {
+            let n = raw
+                .as_integer()
+                .ok_or_else(|| "integer value required".to_string())?;
+            Ok(format!("{element} = {n}"))
+        }
+        "f32" | "f64" => {
+            let n = raw
+                .as_float()
+                .or_else(|| raw.as_integer().map(|i| i as f64))
+                .ok_or_else(|| "float value required".to_string())?;
+            Ok(format!("{element} = {n}"))
+        }
+        _ => Err(format!("value is not supported on type `{ty}`")),
+    }
 }
 
 /// A part of a format that has no tabulatable layout, with the reason.
@@ -465,6 +729,7 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
 
     // Token inventories.
     let mut seen_tags = BTreeSet::new();
+    let mut seen_token_consts = BTreeSet::new();
     for token in &file.tokens {
         if !seen_tags.insert(token.tag.clone()) {
             push(
@@ -477,6 +742,25 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
                 &mut errors,
                 format!("{where_file}: token `{}` has an empty name", token.tag),
             );
+        }
+        if parse_token_tag(&token.tag).is_some() {
+            match token_const_name(&token.name) {
+                None => push(
+                    &mut errors,
+                    format!(
+                        "{where_file}: token `{}` name `{}` is not a Rust constant",
+                        token.tag, token.name
+                    ),
+                ),
+                Some(ident) => {
+                    if !seen_token_consts.insert(ident.clone()) {
+                        push(
+                            &mut errors,
+                            format!("{where_file}: duplicate token constant `{ident}`"),
+                        );
+                    }
+                }
+            }
         }
         check_anchor(
             ctx,
@@ -526,6 +810,25 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
             &mut errors,
         );
 
+        for path in &record.parsed_by {
+            if path.trim().is_empty() {
+                push(&mut errors, format!("{at}: empty `parsed_by` path"));
+                continue;
+            }
+            if is_test_source_path(path) {
+                push(
+                    &mut errors,
+                    format!("{at}: `parsed_by` names a test path `{path}`"),
+                );
+            }
+            if !ctx.root.join(path).is_file() {
+                push(
+                    &mut errors,
+                    format!("{at}: `parsed_by` path does not exist: {path}"),
+                );
+            }
+        }
+
         let mut field_names = BTreeSet::new();
         for field in &record.fields {
             let at = format!("{at}, field `{}`", field.name);
@@ -554,6 +857,11 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
                     continue;
                 }
             };
+            if let Some(raw) = &field.value {
+                if let Err(message) = decode_field_value(raw, &field.ty, width) {
+                    push(&mut errors, format!("{at}: {message}"));
+                }
+            }
 
             // Endianness: field override, then record, then file default.
             if is_multibyte_scalar(&field.ty) {
@@ -644,6 +952,15 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
         }
 
         for check in &record.code {
+            if is_test_source_path(&check.path) {
+                push(
+                    &mut errors,
+                    format!(
+                        "{at}: code check path `{}` names a test file",
+                        check.path
+                    ),
+                );
+            }
             let path = ctx.root.join(&check.path);
             match read_text(&path) {
                 Err(e) => push(
@@ -930,6 +1247,12 @@ fn render(file: &LayoutFile) -> String {
         if !record.note.trim().is_empty() {
             let _ = writeln!(out, "\n{}", record.note.trim());
         }
+        if !record.parsed_by.is_empty() {
+            let _ = writeln!(out, "\nParsed by:");
+            for path in &record.parsed_by {
+                let _ = writeln!(out, "- `{path}`");
+            }
+        }
         let _ = writeln!(out);
         match record.kind {
             RecordKind::Byte => {
@@ -969,11 +1292,14 @@ fn render(file: &LayoutFile) -> String {
                 Source::Derived => "derived",
                 Source::Code => "code",
             };
-            let meaning = if field.note.trim().is_empty() {
+            let mut meaning = if field.note.trim().is_empty() {
                 cell(&field.anchor)
             } else {
                 cell(&field.note)
             };
+            if let Some(raw) = &field.value {
+                meaning.push_str(&format!(" · value `{raw}`"));
+            }
             match record.kind {
                 RecordKind::Byte => {
                     let offset = field.offset.unwrap_or(0);
@@ -1071,6 +1397,321 @@ fn cell(text: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Generated layout constants
+// ---------------------------------------------------------------------------
+
+/// Table stem → generated Rust path, repo-relative. `step` is absent because
+/// it has no byte-layout records.
+const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
+    ("asm", "crates/cadmpeg-asm/src/layout.rs"),
+    ("catia", "crates/cadmpeg-codec-catia/src/layout.rs"),
+    ("creo", "crates/cadmpeg-codec-creo/src/layout.rs"),
+    ("f3d", "crates/cadmpeg-codec-f3d/src/layout.rs"),
+    ("freecad", "crates/cadmpeg-codec-freecad/src/layout.rs"),
+    ("iges", "crates/cadmpeg-codec-iges/src/layout.rs"),
+    ("inventor", "crates/cadmpeg-codec-inventor/src/layout.rs"),
+    ("nx", "crates/cadmpeg-codec-nx/src/layout.rs"),
+    ("protein", "crates/cadmpeg-protein/src/layout.rs"),
+    ("rhino", "crates/cadmpeg-codec-rhino/src/layout.rs"),
+    ("sldprt", "crates/cadmpeg-codec-sldprt/src/layout.rs"),
+];
+
+const RUST_KEYWORDS: &[&str] = &[
+    "Self", "abstract", "as", "async", "await", "become", "box", "break", "const", "continue",
+    "crate", "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "if", "impl",
+    "in", "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+    "return", "self", "static", "struct", "super", "trait", "true", "try", "type", "typeof",
+    "union", "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
+];
+
+fn is_snake_case(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    let mut prev_underscore = false;
+    for c in chars {
+        if c == '_' {
+            if prev_underscore {
+                return false;
+            }
+            prev_underscore = true;
+            continue;
+        }
+        if !c.is_ascii_lowercase() && !c.is_ascii_digit() {
+            return false;
+        }
+        prev_underscore = false;
+    }
+    !prev_underscore
+}
+
+fn check_ident(kind: &str, name: &str, at: &str, errors: &mut Vec<String>) {
+    if !is_snake_case(name) {
+        errors.push(format!("{at}: {kind} `{name}` is not snake_case"));
+    }
+    if RUST_KEYWORDS.contains(&name) {
+        errors.push(format!("{at}: {kind} `{name}` is a Rust keyword"));
+    }
+}
+
+fn resolved_endian<'a>(
+    file: &'a LayoutFile,
+    record: &'a Record,
+    field: &'a Field,
+) -> Option<&'a str> {
+    field
+        .endianness
+        .as_deref()
+        .or(record.endianness.as_deref())
+        .or(file.endianness.as_deref())
+}
+
+fn endian_phrase(endian: Option<&str>) -> Option<&'static str> {
+    match endian {
+        Some("little") => Some("little-endian"),
+        Some("big") => Some("big-endian"),
+        Some("unstated") => Some("endianness unstated"),
+        _ => None,
+    }
+}
+
+fn fence_text(text: &str) -> String {
+    normalize(text).replace("```", "'''")
+}
+
+/// Turn one validated table into the checked-in `layout.rs` source.
+fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
+    let mut errors = Vec::new();
+    let mut omitted = Vec::new();
+    let mut modules = String::new();
+
+    for record in &file.records {
+        let at = format!("{}: record `{}`", file.format, record.name);
+        if record.kind != RecordKind::Byte {
+            continue;
+        }
+        if !record.discrepancies.is_empty() {
+            let kinds: Vec<&str> = record
+                .discrepancies
+                .iter()
+                .map(|d| match d.kind {
+                    DiscrepancyKind::SizeMismatch => "size_mismatch",
+                    DiscrepancyKind::Overlap => "overlap",
+                })
+                .collect();
+            let note = record
+                .discrepancies
+                .first()
+                .map(|d| fence_text(&d.note))
+                .unwrap_or_default();
+            omitted.push(format!(
+                "// - `{}` ({}): {note}",
+                record.name,
+                kinds.join(", ")
+            ));
+            continue;
+        }
+
+        check_ident("record", &record.name, &at, &mut errors);
+        let mut seen = BTreeSet::new();
+        let mut fields_out = String::new();
+        for field in &record.fields {
+            let at = format!("{at}, field `{}`", field.name);
+            if field.name == "len" {
+                errors.push(format!(
+                    "{at}: field name `len` collides with the record length constant `LEN`"
+                ));
+            }
+            if !is_snake_case(&field.name) {
+                errors.push(format!("{at}: field `{}` is not snake_case", field.name));
+            }
+            let const_name = field.name.to_ascii_uppercase();
+            if !seen.insert(const_name.clone()) {
+                errors.push(format!("{at}: constant `{const_name}` already emitted"));
+            }
+            let Some(offset) = field.offset else {
+                errors.push(format!("{at}: byte field has no offset"));
+                continue;
+            };
+            let ty_part = if is_multibyte_scalar(&field.ty) {
+                match endian_phrase(resolved_endian(file, record, field)) {
+                    Some(endian) => format!("`{}`, {endian}", field.ty),
+                    None => format!("`{}`", field.ty),
+                }
+            } else {
+                format!("`{}`", field.ty)
+            };
+            let _ = writeln!(
+                fields_out,
+                "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
+                field.name, record.section
+            );
+            let _ = writeln!(
+                fields_out,
+                "    pub(crate) const {const_name}: usize = {offset};"
+            );
+            if let Some(raw) = &field.value {
+                let value_name = format!("{const_name}_VALUE");
+                if !seen.insert(value_name.clone()) {
+                    errors.push(format!("{at}: constant `{value_name}` already emitted"));
+                }
+                let custom: BTreeMap<String, u64> = file
+                    .types
+                    .iter()
+                    .map(|t| (t.name.clone(), t.bytes))
+                    .collect();
+                let width = type_width(&field.ty, &custom).ok().flatten();
+                match decode_field_value(raw, &field.ty, width) {
+                    Ok(binding) => {
+                        let _ = writeln!(
+                            fields_out,
+                            "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
+                            field.name, field.ty, record.section
+                        );
+                        let _ = writeln!(
+                            fields_out,
+                            "    pub(crate) const {value_name}: {binding};"
+                        );
+                    }
+                    Err(message) => errors.push(format!("{at}: {message}")),
+                }
+            }
+        }
+
+        let _ = writeln!(
+            modules,
+            "/// Byte offsets for the `{}` record.",
+            record.name
+        );
+        let _ = writeln!(modules, "///");
+        match record.size {
+            Some(size) => {
+                let _ = writeln!(
+                    modules,
+                    "/// Spec §{}. Record length {size} B.",
+                    record.section
+                );
+            }
+            None => {
+                let _ = writeln!(modules, "/// Spec §{}.", record.section);
+            }
+        }
+        if !record.note.trim().is_empty() {
+            let _ = writeln!(modules, "///");
+            let _ = writeln!(modules, "/// ```text");
+            let _ = writeln!(modules, "/// {}", fence_text(&record.note));
+            let _ = writeln!(modules, "/// ```");
+        }
+        let _ = writeln!(modules, "pub(crate) mod {} {{", record.name);
+        if let Some(size) = record.size {
+            let _ = writeln!(
+                modules,
+                "    /// Record length in bytes. Spec §{}.",
+                record.section
+            );
+            let _ = writeln!(modules, "    pub(crate) const LEN: usize = {size};");
+        }
+        modules.push_str(&fields_out);
+        let _ = writeln!(modules, "}}");
+        let _ = writeln!(modules);
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let mut token_mod = String::new();
+    let mut token_consts: Vec<(String, TokenConst, &TokenDecl)> = Vec::new();
+    for token in &file.tokens {
+        let Some(value) = parse_token_tag(&token.tag) else {
+            continue;
+        };
+        let Some(name) = token_const_name(&token.name) else {
+            continue;
+        };
+        token_consts.push((name, value, token));
+    }
+    if !token_consts.is_empty() {
+        let _ = writeln!(token_mod, "/// Tag constants from the table inventory.");
+        let _ = writeln!(token_mod, "pub(crate) mod token {{");
+        for (name, value, token) in &token_consts {
+            let _ = writeln!(
+                token_mod,
+                "    /// `{}` (`{}`). Spec §{}.",
+                token.name, token.tag, token.section
+            );
+            match value {
+                TokenConst::Bytes(bytes) => {
+                    let _ = writeln!(
+                        token_mod,
+                        "    pub(crate) const {name}: [u8; {}] = {};",
+                        bytes.len(),
+                        rust_byte_array(bytes)
+                    );
+                }
+                other => {
+                    let _ = writeln!(
+                        token_mod,
+                        "    pub(crate) const {name}: {} = {};",
+                        rust_token_ty(other),
+                        match other {
+                            TokenConst::U8(v) => format!("{v}"),
+                            TokenConst::U16(v) => rust_hex(u64::from(*v), 4),
+                            TokenConst::U32(v) => rust_hex(u64::from(*v), 8),
+                            TokenConst::U64(v) => rust_hex(*v, 16),
+                            TokenConst::Bytes(_) => unreachable!(),
+                        }
+                    );
+                }
+            }
+        }
+        let _ = writeln!(token_mod, "}}");
+        let _ = writeln!(token_mod);
+    }
+
+    let mut out = String::new();
+    let _ = writeln!(out, "// SPDX-License-Identifier: Apache-2.0");
+    let _ = writeln!(
+        out,
+        "//! Byte-offset and value constants generated from `docs/layouts/{}.toml`.",
+        file.format
+    );
+    let _ = writeln!(out, "//!");
+    let _ = writeln!(out, "//! Do not edit by hand. Regenerate with:");
+    let _ = writeln!(
+        out,
+        "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`."
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "#![allow(dead_code)] // Not every generated constant is referenced yet."
+    );
+    let _ = writeln!(out);
+    if !omitted.is_empty() {
+        let _ = writeln!(
+            out,
+            "// Records omitted because the table declares a contradiction."
+        );
+        let _ = writeln!(out, "//");
+        for line in &omitted {
+            let _ = writeln!(out, "{line}");
+        }
+        let _ = writeln!(out);
+    }
+    out.push_str(&token_mod);
+    out.push_str(modules.trim_end());
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1095,6 +1736,14 @@ fn layout_files(dir: &Path) -> Vec<PathBuf> {
 fn parse(path: &Path) -> LayoutFile {
     let text = read_text(path).unwrap();
     toml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+#[test]
+fn ascii_token_tags_keep_trailing_spaces() {
+    match parse_token_tag("FINJPL  ") {
+        Some(TokenConst::Bytes(bytes)) => assert_eq!(bytes, b"FINJPL  "),
+        other => panic!("expected eight-byte ASCII tag, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1150,6 +1799,9 @@ fn layout_validator_rejects_broken_tables() {
         ("column-hole.toml", "uncovered columns"),
         ("failed-code-check.toml", "code check failed"),
         ("slot-with-offset.toml", "must not state `offset`"),
+        ("value-width-mismatch.toml", "value is 2 bytes"),
+        ("parsed-by-missing.toml", "`parsed_by` path does not exist"),
+        ("code-check-in-tests.toml", "names a test file"),
     ];
     let root = repo_root();
     let dir = root.join("crates/cadmpeg/tests/fixtures/layout-invalid");
@@ -1206,6 +1858,90 @@ fn rendered_layout_pages_match_the_tables() {
         stale.is_empty(),
         "rendered layout pages are stale: {}\n\
          regenerate with `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`",
+        stale.join(", ")
+    );
+}
+
+#[test]
+fn every_byte_layout_table_has_a_generated_file() {
+    let root = repo_root();
+    let mapped: BTreeSet<&str> = GENERATED_LAYOUT_RS
+        .iter()
+        .map(|(format, _)| *format)
+        .collect();
+    for path in layout_files(&root.join("docs/layouts")) {
+        let file = parse(&path);
+        let has_byte = file
+            .records
+            .iter()
+            .any(|record| record.kind == RecordKind::Byte);
+        if has_byte {
+            assert!(
+                mapped.contains(file.format.as_str()),
+                "{} has a byte-layout record but is missing from GENERATED_LAYOUT_RS",
+                file.format
+            );
+        } else {
+            assert!(
+                !mapped.contains(file.format.as_str()),
+                "{} has no byte-layout record and must not appear in GENERATED_LAYOUT_RS",
+                file.format
+            );
+        }
+    }
+}
+
+#[test]
+fn generated_layout_code_matches_the_tables() {
+    let root = repo_root();
+    let update = std::env::var_os("UPDATE_LAYOUT_CODE").is_some();
+    let mut stale = Vec::new();
+    let mut emit_errors = Vec::new();
+    for (format, relative) in GENERATED_LAYOUT_RS {
+        let table = root.join("docs/layouts").join(format!("{format}.toml"));
+        let file = parse(&table);
+        assert_eq!(
+            file.format,
+            *format,
+            "{}: format must match the mapping key",
+            table.display()
+        );
+        let rendered = match emit_layout_rs(&file) {
+            Ok(rendered) => rendered,
+            Err(errors) => {
+                emit_errors.extend(errors);
+                continue;
+            }
+        };
+        if *format == "sldprt" {
+            assert!(
+                rendered.contains("`chart_00_28`"),
+                "sldprt layout.rs must list the discrepant chart record as omitted"
+            );
+            assert!(
+                !rendered.contains("mod chart_00_28"),
+                "sldprt layout.rs must not emit constants for a discrepant record"
+            );
+        }
+        let target = root.join(relative);
+        if update {
+            std::fs::write(&target, &rendered).unwrap();
+            continue;
+        }
+        let current = read_text(&target).unwrap_or_default();
+        if current != rendered {
+            stale.push((*relative).to_string());
+        }
+    }
+    assert!(
+        emit_errors.is_empty(),
+        "layout constant emitter rejected a table:\n  {}",
+        emit_errors.join("\n  ")
+    );
+    assert!(
+        stale.is_empty(),
+        "generated layout.rs files are stale: {}\n\
+         regenerate with `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`",
         stale.join(", ")
     );
 }

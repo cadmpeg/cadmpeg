@@ -1,20 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record-decoder tests for the `a5a8` family over synthetic byte fixtures.
 
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use crate::tests::{
-    a5_freeform_curve_stream, a5_freeform_curve_stream_with_count, a5_guide_curve_stream,
-    a5_guide_curve_stream_with_count, a5_pcurve_stream, a5_pcurve_stream_with_count,
-    a5_rational_surface_stream, a5_surface_extrapolated_short_tail, a5_surface_extrapolated_tail,
-    a5_surface_short_tail, a5_surface_stream, a5_surface_stream_with_tail, a5_surface_tail,
-    a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream, a8_elided_surface_stream,
-    a8_freeform_curve_stream, a8_freeform_curve_stream_with_count, a8_inline_tail_surface_stream,
-    a8_pcurve_stream, a8_pcurve_stream_with_count, a8_rational_surface_stream, a8_surface_stream,
-    a8_surface_stream_with_u_count, a8_surface_tail, le_f64,
-};
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
+
+use crate::test_support::*;
+use crate::variant::Variant;
+use crate::CatiaCodec;
 
 #[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
@@ -1222,4 +1219,163 @@ fn a5_nurbs_curve_parser_rejects_broken_frame_invariants() {
             "offset {offset}"
         );
     }
+}
+
+#[test]
+fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
+    let file = object_main_catpart(&a8_elided_surface_stream());
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points.len(), 9);
+    assert_eq!(surface.control_points[8], Point3::new(8.0, 2.0, 2.0));
+}
+
+#[test]
+fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
+    let stream = a8_elided_surface_stream_with_native_vertex_chain();
+    let graph = crate::families::b5::graph::parse(&stream).expect("generated A8 topology");
+    assert!(graph.complete);
+    assert_eq!(graph.faces.len(), 1);
+    assert_eq!(graph.loops.len(), 1);
+    assert_eq!(graph.pcurves.len(), 3);
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.logical_vertex_refs, [600, 601, 602]);
+    assert_eq!(
+        graph.logical_vertex_points,
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    );
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode elided A8 surface topology");
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[8], Point3::new(1.0, 1.0, 0.0));
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().model.pcurves.len(), 3);
+    assert!(result.report().losses.iter().all(|loss| {
+        !matches!(
+            loss.code.category(),
+            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+        ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_object_stream_does_not_promote_unbound_a8_pcurve() {
+    let file = object_main_catpart(&a8_pcurve_stream());
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode unbound object-stream pcurve");
+    assert!(decoded.ir().model.pcurves.is_empty());
+    assert!(!decoded.ir().native_unknowns("catia").unwrap().is_empty());
+}
+
+#[test]
+fn decode_object_stream_transfers_a8_rolling_ball_jet() {
+    let file = object_main_catpart(&a8_freeform_curve_stream());
+    assert_eq!(
+        crate::container::scan_bytes(file.clone()).variant,
+        Variant::FloatPackedInnerNoFbb
+    );
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode rolling-ball object stream");
+    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
+        panic!("one rolling-ball construction");
+    };
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
+        degree,
+        knots,
+        multiplicities,
+        sites,
+    } = &procedural.definition
+    else {
+        panic!("rolling-ball jet");
+    };
+    assert_eq!(*degree, 5);
+    assert_eq!(knots, &[0.0, 1.0]);
+    assert_eq!(multiplicities, &[6, 6]);
+    assert_eq!(sites.len(), 2);
+    assert_eq!(sites[1].first_limit, Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(sites[1].angle, std::f64::consts::FRAC_PI_2);
+    let provenance = &decoded.source_fidelity().annotations.provenance[&procedural.id.0];
+    assert_eq!(
+        decoded.source_fidelity().annotations.streams[provenance.stream as usize],
+        "catia:object_stream_a8_03_32"
+    );
+    let tag = provenance
+        .tag
+        .as_deref()
+        .expect("rolling-ball provenance tag");
+    assert!(tag.contains("object_id:12345678"));
+    assert!(tag.contains("multiplicities:[6, 6]"));
+    assert_eq!(
+        decoded.ir().model.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| (source.format.as_str(), source.object_id.as_str())),
+        Some(("catia", "cgm-surface:12345678"))
+    );
+}
+
+#[test]
+fn decode_float_packed_stream_transfers_a8_nurbs() {
+    assert_eq!(
+        crate::container::scan_bytes(a8_catpart()).variant,
+        Variant::FloatPackedInnerNoFbb
+    );
+    let mut cur = Cursor::new(a8_catpart());
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Nurbs(_)
+    ));
+    assert_eq!(
+        result.ir().model.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| (source.format.as_str(), source.object_id.as_str())),
+        Some(("catia", "cgm-surface:decafbad"))
+    );
+}
+
+#[test]
+fn decode_inner_no_directory_transfers_a8_nurbs() {
+    assert_eq!(
+        crate::container::scan_bytes(inner_no_directory_a8_catpart()).variant,
+        Variant::InnerNoDirectory
+    );
+    let mut cur = Cursor::new(inner_no_directory_a8_catpart());
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        result.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Nurbs(_)
+    ));
+    assert_eq!(
+        result.ir().model.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| (source.format.as_str(), source.object_id.as_str())),
+        Some(("catia", "cgm-surface:decafbad"))
+    );
 }

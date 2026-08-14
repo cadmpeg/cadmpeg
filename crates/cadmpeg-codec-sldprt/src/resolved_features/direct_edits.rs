@@ -6,6 +6,7 @@ use super::axes::{
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
 
@@ -30,7 +31,7 @@ pub(super) fn move_body_translation_record(
         return None;
     }
     let scalar = |offset: usize| {
-        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+        let value = View::f64_le_at(payload, offset)?;
         value.is_finite().then_some(value)
     };
     let mut candidates = Vec::new();
@@ -38,7 +39,7 @@ pub(super) fn move_body_translation_record(
         let Some(bytes) = payload.get(selection_offset..selection_offset + 4) else {
             continue;
         };
-        let count = u32::from_le_bytes(bytes.try_into().expect("four-byte body count")) as usize;
+        let count = View::u32_le_at(bytes, 0).expect("four-byte body count") as usize;
         if !(1..=4096).contains(&count) {
             continue;
         }
@@ -99,10 +100,11 @@ pub(super) fn move_body_translation_record(
         let Some(ids) = payload.get(ids_start..ids_end) else {
             continue;
         };
-        let local_body_ids = ids
-            .chunks_exact(4)
-            .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte body identity")))
-            .collect::<Vec<_>>();
+        let mut view = View::over_retained(ids);
+        let mut local_body_ids = Vec::new();
+        while let Some(id) = view.u32_le() {
+            local_body_ids.push(id);
+        }
         if local_body_ids.contains(&0) {
             continue;
         }

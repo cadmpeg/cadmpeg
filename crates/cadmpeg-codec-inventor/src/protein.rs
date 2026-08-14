@@ -6,6 +6,8 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+use crate::layout::protein_header;
+
 #[derive(Debug)]
 pub(crate) enum ProteinState<'a> {
     Absent,
@@ -76,27 +78,24 @@ fn parse_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: cadmpeg_core::decode::View<'a>,
 ) -> Result<ParsedProtein<'a>, CodecError> {
-    let header = source
-        .window()
-        .get(..4)
-        .ok_or_else(|| CodecError::Malformed("truncated Inventor Protein length".into()))?;
-    let declared_len = u32::from_le_bytes(header.try_into().expect("four-byte header"));
+    let mut header = source;
+    let declared_len = header.req_u32_le()?;
     if declared_len == 0 {
-        if source.window().len() != 4 {
+        if source.window().len() != protein_header::LEN {
             return Err(CodecError::Malformed(
                 "empty Inventor Protein stream has trailing bytes".into(),
             ));
         }
         return Ok(ParsedProtein::Empty);
     }
-    let payload_len = source.window().len().saturating_sub(4);
+    let payload_len = source.window().len().saturating_sub(protein_header::LEN);
     if declared_len as usize != payload_len {
         return Err(CodecError::Malformed(format!(
             "Inventor Protein declares {declared_len} bytes but stores {payload_len}"
         )));
     }
     let payload = source
-        .child(source.start() + 4, source.end())
+        .child(source.start() + protein_header::LEN, source.end())
         .ok_or_else(|| CodecError::Malformed("Inventor Protein payload range is invalid".into()))?;
     let archive = ArchiveSnapshot::new(payload)?;
     for entry in archive.entries() {
@@ -113,7 +112,6 @@ fn parse_stream<'a>(
     })
 }
 
-#[cfg(feature = "fuzzing")]
 pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
     let _ = parse_stream(ctx, source);
 }
@@ -177,24 +175,42 @@ mod tests {
     use std::io::Write as _;
 
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_protein::{
+        CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
+    };
     use zip::write::SimpleFileOptions;
 
     use super::*;
 
     #[test]
     fn protein_distinguishes_empty_and_exact_package() {
-        with_stream(&0_u32.to_le_bytes(), |ctx, root| {
+        let empty = 0_u32.to_le_bytes();
+        assert_eq!(empty.len(), 4);
+        with_stream(&empty, |ctx, root| {
+            assert_eq!(root.window().len(), 4);
+            assert_eq!(
+                u32::from_le_bytes(root.window().try_into().expect("empty payload length")),
+                0
+            );
             assert!(matches!(parse_stream(ctx, root), Ok(ParsedProtein::Empty)));
         });
         let zip = zip_fixture("Schemas/ExampleSchema.xml");
         let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
         bytes.extend_from_slice(&zip);
+        assert_eq!(
+            u32::from_le_bytes(bytes[..4].try_into().expect("planted payload length")),
+            zip.len() as u32
+        );
         with_stream(&bytes, |ctx, root| {
-            let ParsedProtein::Package { archive, .. } =
-                parse_stream(ctx, root).expect("synthetic Protein package parses")
+            let ParsedProtein::Package {
+                declared_len,
+                archive,
+                ..
+            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
             else {
                 panic!("package state")
             };
+            assert_eq!(declared_len, zip.len() as u32);
             assert_eq!(archive.entries().len(), 1);
         });
     }
@@ -316,26 +332,27 @@ mod tests {
     }
 
     fn paged_instance(record: &[u8]) -> Vec<u8> {
-        const PAGE_SIZE: usize = 0x88;
         const BODY_SIZE: usize = PAGE_SIZE - 8;
         let mut bytes = (PAGE_SIZE as u32).to_le_bytes().to_vec();
-        bytes.resize(16, 0);
+        bytes.resize(STREAM_HEADER_LEN, 0);
         let mut chunks = record.chunks(BODY_SIZE).peekable();
         let first = chunks.next().expect("record is nonempty");
-        bytes.extend_from_slice(&[0, 0, 0, 0, 0x80, 0, 1, 0]);
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        bytes.extend_from_slice(RECORD_MARKER);
         bytes.extend_from_slice(first);
-        bytes.resize(16 + PAGE_SIZE, 0);
+        bytes.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
         while let Some(chunk) = chunks.next() {
             if chunks.peek().is_some() {
-                bytes.extend_from_slice(&[0, 0, 0, 0, 0x80, 0, 0, 0]);
+                bytes.extend_from_slice(&[0, 0, 0, 0]);
+                bytes.extend_from_slice(CONTINUATION_MARKER);
             } else {
-                bytes.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+                bytes.extend_from_slice(TERMINAL_MARKER);
                 bytes.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
                 bytes.extend_from_slice(&[0, 0]);
             }
             bytes.extend_from_slice(chunk);
-            let page_bytes = bytes.len() - 16;
-            let next_page = 16 + page_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE;
+            let page_bytes = bytes.len() - STREAM_HEADER_LEN;
+            let next_page = STREAM_HEADER_LEN + page_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE;
             bytes.resize(next_page, 0);
         }
         bytes

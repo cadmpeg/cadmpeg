@@ -2,17 +2,19 @@
 //! `DisplayLists` descriptor tables.
 
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::le::u32_at as u32_le;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
 use cadmpeg_ir::topology::Sense;
 use std::collections::HashMap;
 
+use crate::layout::display_lists_compact_face_header as compact_face;
+use crate::layout::display_lists_extended_face_header as extended_face;
+use crate::layout::display_lists_scene_source_binding as scene_src;
+
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
-const SCENE_SOURCE_MARKER: &[u8] = &[
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00,
-];
+const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Summary {
@@ -40,9 +42,7 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         .enumerate()
         .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
         .filter_map(|offset| {
-            let length = usize::from(u16::from_le_bytes(
-                payload.get(offset + 4..offset + 6)?.try_into().ok()?,
-            ));
+            let length = usize::from(View::u16_le_at(payload, offset + 4)?);
             if !(1..=128).contains(&length) {
                 return None;
             }
@@ -79,10 +79,10 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
                 .map_or(payload.len(), |(offset, _)| *offset);
             let records = &payload[start..end];
             records
-                .windows(SCENE_SOURCE_MARKER.len() + 4)
+                .windows(scene_src::LEN)
                 .filter_map(|window| {
                     (window.starts_with(SCENE_SOURCE_MARKER))
-                        .then(|| u32_le(window, 12))
+                        .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
                         .flatten()
                         .filter(|source| *source != 0)
                         .map(|source| (source, class.clone()))
@@ -141,7 +141,7 @@ pub(crate) fn auxiliary_channels_are_consistent(
     let stored_list_c = c
         .data
         .chunks_exact(4)
-        .map(|bytes| usize::try_from(u32::from_le_bytes(bytes.try_into().ok()?)).ok())
+        .map(|bytes| usize::try_from(View::u32_le_at(bytes, 0)?).ok())
         .collect::<Option<Vec<_>>>();
     let counts = (usize::try_from(b.count).ok(), usize::try_from(d.count).ok());
     let payload_lengths = channels.iter().all(|channel| {
@@ -156,7 +156,7 @@ pub(crate) fn auxiliary_channels_are_consistent(
         && stored_list_c.as_deref() == Some(list_c.as_slice())
         && b.data
             .chunks_exact(4)
-            .all(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte chunk")).is_finite())
+            .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
 
 fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
@@ -165,10 +165,10 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     let mut normals = Vec::new();
     let mut channels = Vec::new();
     for index in 0..6 {
-        let item_size = u32_le(bytes, at)? as usize;
-        let kind = u32_le(bytes, at + 4)?;
-        let flags = u32_le(bytes, at + 8)?;
-        let count = u32_le(bytes, at + 12)? as usize;
+        let item_size = View::u32_le_at(bytes, at)? as usize;
+        let kind = View::u32_le_at(bytes, at + 4)?;
+        let flags = View::u32_le_at(bytes, at + 8)?;
+        let count = View::u32_le_at(bytes, at + 12)? as usize;
         let data = at + 16;
         let end = data.checked_add(item_size.checked_mul(count)?)?;
         if end > bytes.len() {
@@ -185,15 +185,14 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         });
         if index == 0 && item_size == 4 && kind == 8 {
             strips = (0..count)
-                .map(|i| u32_le(bytes, data + i * 4).map(|v| v as usize))
+                .map(|i| View::u32_le_at(bytes, data + i * 4).map(|v| v as usize))
                 .collect::<Option<Vec<_>>>()?;
         } else if index == 1 && item_size == 12 && kind == 100 {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
-                    bytes
-                        .get(at..at + 4)
-                        .map(|v| f32::from_le_bytes([v[0], v[1], v[2], v[3]]) as f64)
+                    View::f32_le_at(bytes, at)
+                        .map(f64::from)
                         .filter(|value| value.is_finite())
                 };
                 vertices.push(Point3::new(
@@ -206,9 +205,8 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
-                    bytes
-                        .get(at..at + 4)
-                        .map(|v| f32::from_le_bytes([v[0], v[1], v[2], v[3]]) as f64)
+                    View::f32_le_at(bytes, at)
+                        .map(f64::from)
                         .filter(|value| value.is_finite())
                 };
                 normals.push(Vector3::new(read(p)?, read(p + 4)?, read(p + 8)?));
@@ -270,9 +268,10 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
         return Vec::new();
     };
     let end = marker + MARKER.len();
-    let (Some(triangle_count), Some(strip_count)) =
-        (u32_le(payload, end), u32_le(payload, end + 4))
-    else {
+    let (Some(triangle_count), Some(strip_count)) = (
+        View::u32_le_at(payload, end + compact_face::TRIANGLE_COUNT),
+        View::u32_le_at(payload, end + compact_face::STRIP_COUNT),
+    ) else {
         return Vec::new();
     };
     let meshes = parse_table_sequence(payload, end + descriptor_table_offset(payload, end));
@@ -292,17 +291,17 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
 /// fixed 32-byte extension. A compact table begins with item
 /// size 4 at the same position, so it cannot satisfy the extension grammar.
 fn descriptor_table_offset(payload: &[u8], at: usize) -> usize {
-    let extended = u32_le(payload, at + 8) == Some(1)
-        && u32_le(payload, at + 12) == Some(0)
-        && u32_le(payload, at + 16) == Some(0)
-        && u32_le(payload, at + 20).is_some_and(|token| token != 0)
+    let extended = View::u32_le_at(payload, at + extended_face::FORM) == Some(1)
+        && View::u32_le_at(payload, at + extended_face::ZERO_AT_12) == Some(0)
+        && View::u32_le_at(payload, at + extended_face::ZERO_AT_16) == Some(0)
+        && View::u32_le_at(payload, at + extended_face::FORM_TOKEN).is_some_and(|token| token != 0)
         && payload
-            .get(at + 24..at + 40)
+            .get(at + extended_face::ZERO_TAIL..at + extended_face::LEN)
             .is_some_and(|tail| tail.iter().all(|byte| *byte == 0));
     if extended {
-        40
+        extended_face::LEN
     } else {
-        8
+        compact_face::LEN
     }
 }
 
@@ -837,402 +836,4 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use cadmpeg_ir::geometry::{Curve, Surface};
-    use cadmpeg_ir::ids::{
-        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
-        VertexId,
-    };
-    use cadmpeg_ir::tessellation::Tessellation;
-    use cadmpeg_ir::topology::{
-        Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Shell, Vertex,
-    };
-
-    fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend(item_size.to_le_bytes());
-        out.extend(kind.to_le_bytes());
-        out.extend(2_u32.to_le_bytes());
-        out.extend(count.to_le_bytes());
-        out.extend(data);
-        out
-    }
-
-    fn table() -> Vec<u8> {
-        let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());
-        let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-            .into_iter()
-            .flat_map(f32::to_le_bytes)
-            .collect::<Vec<_>>();
-        out.extend(descriptor(12, 100, 3, &positions));
-        out.extend(descriptor(12, 100, 3, &[0; 36]));
-        out.extend(descriptor(4, 8, 4, &[0; 16]));
-        out.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
-        out.extend(descriptor(1, 8, 4, &[0; 4]));
-        out
-    }
-
-    fn class(payload: &mut Vec<u8>, name: &str, sources: &[u32]) {
-        payload.extend_from_slice(CLASS_MARKER);
-        payload.extend_from_slice(&(name.len() as u16).to_le_bytes());
-        payload.extend_from_slice(name.as_bytes());
-        for source in sources {
-            payload.extend_from_slice(SCENE_SOURCE_MARKER);
-            payload.extend_from_slice(&source.to_le_bytes());
-        }
-    }
-
-    #[test]
-    fn scene_objects_carry_history_source_identity() {
-        let mut payload = Vec::new();
-        class(&mut payload, "moAmbientLight_c", &[12]);
-        class(&mut payload, "moDirectionLight_c", &[30, 32]);
-        class(&mut payload, "moVisualProperties_c", &[99]);
-        class(&mut payload, "moPointLight_c", &[21]);
-        class(&mut payload, "moSpotLight_c", &[20]);
-
-        assert_eq!(
-            scene_classes(&payload),
-            vec![
-                (12, "moAmbientLight_c".into()),
-                (30, "moDirectionLight_c".into()),
-                (32, "moDirectionLight_c".into()),
-                (21, "moPointLight_c".into()),
-                (20, "moSpotLight_c".into()),
-            ]
-        );
-    }
-
-    #[test]
-    fn anonymous_scene_object_counts_do_not_create_source_bindings() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(CLASS_MARKER);
-        let class = b"moDirectionLight_c";
-        payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
-        payload.extend_from_slice(class);
-        for name in ["UnNamed", "Another"] {
-            payload.extend_from_slice(&1_u32.to_le_bytes());
-            payload.extend_from_slice(&[0xff, 0xfe, 0xff, 7]);
-            for byte in name.bytes() {
-                payload.extend_from_slice(&[byte, 0]);
-            }
-            payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
-        }
-
-        assert!(scene_classes(&payload).is_empty());
-    }
-
-    #[test]
-    fn compact_face_tessellation_header_places_table_at_plus_8() {
-        let mut payload = Vec::new();
-        payload.extend(1_u32.to_le_bytes());
-        payload.extend(1_u32.to_le_bytes());
-        payload.extend(table());
-        assert_eq!(descriptor_table_offset(&payload, 0), 8);
-        assert!(parse_table_sequence(&payload, 8).is_some());
-    }
-
-    #[test]
-    fn extended_face_tessellation_header_places_table_at_plus_40() {
-        let mut payload = Vec::new();
-        for word in [1_u32, 1, 1, 0, 0, 0x0020_1296, 0, 0, 0, 0] {
-            payload.extend(word.to_le_bytes());
-        }
-        payload.extend(table());
-        assert_eq!(descriptor_table_offset(&payload, 0), 40);
-        assert!(parse_table_sequence(&payload, 40).is_some());
-    }
-
-    #[test]
-    fn incomplete_extended_header_does_not_shift_the_table() {
-        let mut payload = Vec::new();
-        for word in [1_u32, 1, 1, 0, 0, 0, 0, 0, 0, 0] {
-            payload.extend(word.to_le_bytes());
-        }
-        payload.extend(table());
-        assert_eq!(descriptor_table_offset(&payload, 0), 8);
-    }
-
-    #[test]
-    fn inconsistent_auxiliary_count_invalidates_the_table() {
-        let mut payload = table();
-        let list_b_count = 20 + 52 + 52 + 12;
-        payload[list_b_count..list_b_count + 4].copy_from_slice(&3_u32.to_le_bytes());
-        assert!(parse_table(&payload, 0).is_none());
-    }
-
-    #[test]
-    fn analytic_surface_residuals_measure_normal_distance() {
-        let plane = SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 2.0),
-            normal: Vector3::new(0.0, 0.0, 2.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        };
-        let cylinder = SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 2.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 3.0,
-        };
-        let sphere = SurfaceGeometry::Sphere {
-            center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 4.0,
-        };
-        let torus = SurfaceGeometry::Torus {
-            center: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            major_radius: 5.0,
-            minor_radius: 2.0,
-        };
-
-        for (surface, point, displaced) in [
-            (
-                &plane,
-                Point3::new(3.0, 4.0, 2.0),
-                Point3::new(3.0, 4.0, 2.5),
-            ),
-            (
-                &cylinder,
-                Point3::new(3.0, 0.0, 7.0),
-                Point3::new(3.5, 0.0, 7.0),
-            ),
-            (
-                &sphere,
-                Point3::new(5.0, 2.0, 3.0),
-                Point3::new(5.5, 2.0, 3.0),
-            ),
-            (
-                &torus,
-                Point3::new(7.0, 0.0, 0.0),
-                Point3::new(7.5, 0.0, 0.0),
-            ),
-        ] {
-            assert_eq!(analytic_surface_residual(surface, point), Some(0.0));
-            assert!(analytic_surface_residual(surface, displaced)
-                .is_some_and(|residual| residual > 0.0));
-        }
-    }
-
-    fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) -> FaceId {
-        let face_id = FaceId(format!("face-{name}"));
-        let loop_id = LoopId(format!("loop-{name}"));
-        let surface_id = SurfaceId(format!("surface-{name}"));
-        model.surfaces.push(Surface {
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            source_object: None,
-        });
-        let corners = [
-            Point3::new(x, -1.0, 0.0),
-            Point3::new(x + 2.0, -1.0, 0.0),
-            Point3::new(x + 2.0, 1.0, 0.0),
-            Point3::new(x, 1.0, 0.0),
-        ];
-        let coedge_ids = (0..4)
-            .map(|index| CoedgeId(format!("coedge-{name}-{index}")))
-            .collect::<Vec<_>>();
-        for (index, corner) in corners.iter().copied().enumerate() {
-            let point_id = PointId(format!("point-{name}-{index}"));
-            let vertex_id = VertexId(format!("vertex-{name}-{index}"));
-            model.points.push(Point {
-                id: point_id.clone(),
-                position: corner,
-                source_object: None,
-            });
-            model.vertices.push(Vertex {
-                id: vertex_id,
-                point: point_id,
-                tolerance: None,
-            });
-        }
-        for (index, origin) in corners.iter().copied().enumerate() {
-            let next = (index + 1) % 4;
-            let curve_id = CurveId(format!("curve-{name}-{index}"));
-            let edge_id = EdgeId(format!("edge-{name}-{index}"));
-            let direction = corners[next].vector_from(origin).unit().unwrap();
-            model.curves.push(Curve {
-                id: curve_id.clone(),
-                geometry: CurveGeometry::Line { origin, direction },
-                source_object: None,
-            });
-            model.edges.push(Edge {
-                id: edge_id.clone(),
-                curve: Some(curve_id),
-                start: VertexId(format!("vertex-{name}-{index}")),
-                end: VertexId(format!("vertex-{name}-{next}")),
-                param_range: None,
-                tolerance: None,
-            });
-            model.coedges.push(Coedge {
-                id: coedge_ids[index].clone(),
-                owner_loop: loop_id.clone(),
-                edge: edge_id,
-                next: coedge_ids[next].clone(),
-                previous: coedge_ids[(index + 3) % 4].clone(),
-                radial_next: coedge_ids[index].clone(),
-                sense: Sense::Forward,
-                pcurves: Vec::new(),
-                use_curve: None,
-                use_curve_parameter_range: None,
-            });
-        }
-        model.loops.push(Loop {
-            id: loop_id.clone(),
-            face: face_id.clone(),
-            boundary_role: LoopBoundaryRole::Outer,
-            coedges: coedge_ids,
-            vertex_uses: Vec::new(),
-        });
-        model.faces.push(Face {
-            id: face_id.clone(),
-            shell: ShellId("shell".into()),
-            surface: surface_id,
-            sense: Sense::Forward,
-            loops: vec![loop_id],
-            name: None,
-            color: None,
-            tolerance: None,
-        });
-        face_id
-    }
-
-    #[test]
-    fn bounded_planar_trim_selects_between_coincident_supports() {
-        let mut model = cadmpeg_ir::document::Model {
-            bodies: vec![Body {
-                id: BodyId("body".into()),
-                kind: BodyKind::Solid,
-                regions: vec![RegionId("region".into())],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            }],
-            regions: vec![Region {
-                id: RegionId("region".into()),
-                body: BodyId("body".into()),
-                shells: vec![ShellId("shell".into())],
-            }],
-            shells: vec![Shell {
-                id: ShellId("shell".into()),
-                region: RegionId("region".into()),
-                faces: Vec::new(),
-                wire_edges: Vec::new(),
-                free_vertices: Vec::new(),
-            }],
-            ..Default::default()
-        };
-        let first = add_square_face(&mut model, "first", -4.0);
-        let second = add_square_face(&mut model, "second", 2.0);
-        model.shells[0].faces = vec![first.clone(), second.clone()];
-        model.tessellations.push(Tessellation {
-            id: "mesh".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
-                Point3::new(2.25, -0.75, 0.0),
-                Point3::new(3.75, -0.75, 0.0),
-                Point3::new(3.0, 0.75, 0.0),
-            ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
-
-        assert_eq!(assign_unique_analytic_owners(&mut model), vec!["mesh"]);
-        assert_eq!(model.tessellations[0].faces, vec![second]);
-        assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
-
-        model
-            .faces
-            .iter_mut()
-            .find(|face| face.id == first)
-            .unwrap()
-            .loops
-            .clear();
-        model.tessellations[0].body = None;
-        model.tessellations[0].faces.clear();
-        assert!(assign_unique_analytic_owners(&mut model).is_empty());
-        assert!(model.tessellations[0].faces.is_empty());
-    }
-
-    #[test]
-    fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
-        let trim = PlanarTrim {
-            frame: PlaneFrame {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-                v_axis: Vector3::new(0.0, 1.0, 0.0),
-            },
-            outer: vec![
-                Point2::new(-3.0, -3.0),
-                Point2::new(3.0, -3.0),
-                Point2::new(3.0, 3.0),
-                Point2::new(-3.0, 3.0),
-            ],
-            holes: vec![CircularHole {
-                center: Point2::new(0.0, 0.0),
-                radius: 1.0,
-            }],
-        };
-        let mesh = |vertices, triangle| Tessellation {
-            id: "mesh".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices,
-            triangles: vec![triangle],
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
-            feature_edges: Vec::new(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        };
-        let boundary_chord = mesh(
-            vec![
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(2.0, 2.0, 0.0),
-            ],
-            [0, 1, 2],
-        );
-        let crossing = mesh(
-            vec![
-                Point3::new(-2.0, 0.0, 0.0),
-                Point3::new(2.0, 0.0, 0.0),
-                Point3::new(0.0, 2.0, 0.0),
-            ],
-            [0, 1, 2],
-        );
-
-        assert!(trim.contains_mesh(
-            &boundary_chord,
-            cadmpeg_ir::transform::Transform::identity(),
-            1.0e-9
-        ));
-        assert!(!trim.contains_mesh(
-            &crossing,
-            cadmpeg_ir::transform::Transform::identity(),
-            1.0e-9
-        ));
-    }
-}
+mod tests;

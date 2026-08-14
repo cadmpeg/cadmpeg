@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record-decoder tests for the `e5` family over synthetic byte fixtures.
 
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use crate::tests::{
-    append_e5_record, e5_circle_stream, e5_plane_stream, e5_plane_stream_with_transform_scalars,
-    e5_torus_stream, e5_uv_line_payload, le_f32, le_f64,
-};
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::SurfaceGeometry;
+
+use crate::test_support::*;
+use crate::variant::Variant;
+use crate::CatiaCodec;
 
 #[test]
 fn e5_circle_parser_reads_framed_carrier() {
@@ -378,4 +381,121 @@ fn e5_vertices_concatenate_a_complete_split_roster() {
         vertices.iter().map(|point| point.x).collect::<Vec<_>>(),
         vec![1.0, 2.0, 3.0, 4.0]
     );
+}
+
+#[test]
+fn decode_e5_stream_transfers_circle_carrier() {
+    let scan = crate::container::scan_bytes(e5_catpart());
+    assert_eq!(scan.variant, Variant::E5Stream);
+    let mut cur = Cursor::new(e5_catpart());
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 2);
+    assert!(result.ir().model.edges.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+    }));
+    assert!(matches!(
+        result.ir().model.curves[0].geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
+    ));
+    assert!(result.ir().native_unknowns("catia").unwrap()[0]
+        .links
+        .contains(&"catia:e5:surf#0".to_string()));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_e5_stream_transfers_reference_closed_torus_topology() {
+    let stream = e5_torus_topology_stream();
+    crate::families::e5::graph::parse_topology(&stream).expect("generated E5 topology");
+    let file = object_main_catpart(&stream);
+    assert_eq!(
+        crate::container::scan_bytes(file.clone()).variant,
+        Variant::E5Stream
+    );
+
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(
+        result.ir().model.loops[0].boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
+    assert_eq!(result.ir().model.coedges.len(), 4);
+    assert_eq!(result.ir().model.edges.len(), 4);
+    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_eq!(result.ir().model.pcurves.len(), 4);
+    assert_eq!(result.ir().model.curves.len(), 4);
+    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert!(matches!(
+        result.ir().model.procedural_curves[0].definition,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+            family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
+            ..
+        }
+    ));
+    assert!(result
+        .ir()
+        .model
+        .edges
+        .iter()
+        .all(|edge| edge.curve.is_some() && edge.param_range.is_some()));
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.category() != cadmpeg_ir::report::LossCategory::Topology
+            || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.message.contains("two trailing orientation signs")
+    }));
+
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_e5_stream_binds_file_level_vertex_run() {
+    let mut stream = e5_torus_topology_stream();
+    let vertex_start = stream
+        .windows(3)
+        .position(|bytes| bytes == [0x05, 0x08, 0x01])
+        .expect("E5 vertex run");
+    let vertex_bytes = stream
+        .drain(vertex_start..vertex_start + 4 * 15)
+        .collect::<Vec<_>>();
+
+    stream.extend_from_slice(b"FINJPL  ");
+    stream.extend_from_slice(&0x0000_0080u32.to_be_bytes());
+    stream.extend_from_slice(&vertex_bytes);
+    let file = object_main_catpart(&stream);
+    let vertex_file_start = file
+        .windows(vertex_bytes.len())
+        .position(|bytes| bytes == vertex_bytes)
+        .expect("file-level E5 vertex run");
+
+    let record_range = crate::container::e5_record_stream(&file).expect("coherent E5 walk");
+    assert!(!record_range.contains(&vertex_file_start));
+    assert!(crate::families::e5::records::e5_vertices(&file[record_range], 4).is_empty());
+    assert_eq!(crate::families::e5::records::e5_vertices(&file, 4).len(), 4);
+    let scan = crate::container::scan_bytes(file.clone());
+    assert_eq!(scan.variant, Variant::E5Stream);
+
+    let result = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("E5 decode");
+    assert_eq!(result.ir().model.points.len(), 4);
+    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 4);
 }

@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Deliberately broken layout table: a pin names a test file.
+# `crates/cadmpeg/tests/layout_tables.rs` asserts the validator rejects it.
+schema = 1
+format = "rhino"
+spec = "docs/formats/rhino_3dm.md"
+endianness = "little"
+
+[[record]]
+name = "file_header"
+kind = "byte"
+section = "2"
+anchor = "The 32-byte start section begins at the first matching magic sequence within"
+size = 32
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[24]"
+source = "spec"
+anchor = "bytes 0..23   ASCII \"3D Geometry File Format \""
+
+[[record.field]]
+name = "archive_version"
+offset = 24
+type = "bytes[8]"
+source = "spec"
+anchor = "bytes 24..31  right-justified decimal archive version"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks/tests/framing.rs"
+contains = "parsed.next_offset, long_v2::LEN"
+note = "Invented on purpose: pins must name a parser, not a test."

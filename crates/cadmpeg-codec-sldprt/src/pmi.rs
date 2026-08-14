@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::Exactness;
@@ -55,439 +56,7 @@ fn neutral_parameter_is_count(
 }
 
 #[cfg(test)]
-mod tests {
-    use cadmpeg_ir::features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-        ParameterValue, PmiDimensionSubtype,
-    };
-
-    use super::*;
-
-    fn dimension(subtype: &str, value: f64) -> PmiDimension {
-        PmiDimension {
-            id: "dimension".into(),
-            parent: "block".into(),
-            offset: 0,
-            guid: "guid".into(),
-            cad_text: "D1@Pattern1".into(),
-            item_count: 1,
-            subtype: subtype.into(),
-            value,
-            value_offset: 0,
-            precision: 0,
-            precision_offset: 0,
-            display_text: None,
-            display_text_offset: None,
-            basic: false,
-            basic_offset: 0,
-            inspection: false,
-            inspection_offset: 0,
-            reference_only: false,
-            reference_only_offset: 0,
-        }
-    }
-
-    fn named_feature(id: &str, name: &str) -> Feature {
-        Feature {
-            id: FeatureId(id.into()),
-            ordinal: 0,
-            name: Some(name.into()),
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::StoredGeometry,
-            native_ref: None,
-        }
-    }
-
-    #[test]
-    fn empty_subtype_requires_established_count_semantics() {
-        let record = dimension("", 2.0);
-        assert_eq!(
-            dimension_subtype(&record, false),
-            PmiDimensionSubtype::Native(String::new())
-        );
-        assert_eq!(dimension_subtype(&record, true), PmiDimensionSubtype::Count);
-        assert_eq!(
-            dimension_subtype(&dimension("", 2.5), true),
-            PmiDimensionSubtype::Native(String::new())
-        );
-    }
-
-    #[test]
-    fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
-        use std::collections::BTreeMap;
-
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length, PatternKind};
-
-        let feature = Feature {
-            id: FeatureId("pattern".into()),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::Pattern {
-                seeds: Vec::new(),
-                pattern: PatternKind::Linear {
-                    direction: None,
-                    spacing: Length(10.0),
-                    count: 2,
-                    second: None,
-                },
-            },
-            native_ref: None,
-        };
-
-        assert!(neutral_parameter_is_count(&feature, "D1", None));
-        assert!(neutral_parameter_is_count(&feature, "D2", None));
-        assert!(!neutral_parameter_is_count(&feature, "D3", None));
-    }
-
-    #[test]
-    fn explicit_keywords_dimension_precedes_pmi_value() {
-        let owner = FeatureId("feature".into());
-        let feature = named_feature("feature", "Pattern1");
-        let mut parameters = vec![DesignParameter {
-            id: ParameterId("keywords-parameter".into()),
-            owner: Some(owner),
-            ordinal: 0,
-            name: "D1".into(),
-            expression: "12mm".into(),
-            display: None,
-            value: Some(ParameterValue::Length(Length(12.0))),
-            dependencies: Vec::new(),
-            properties: BTreeMap::new(),
-            pmi: None,
-            native_ref: Some("keywords-dimension".into()),
-        }];
-        let record = dimension("Linear", 0.034);
-
-        apply_to_parameters(&mut parameters, &[feature], &[record]);
-
-        let parameter = &parameters[0];
-        assert_eq!(parameter.expression, "12mm");
-        assert_eq!(parameter.display, None);
-        assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
-        assert_eq!(parameter.native_ref.as_deref(), Some("keywords-dimension"));
-        assert_eq!(
-            parameter.pmi.as_ref().map(|pmi| &pmi.subtype),
-            Some(&PmiDimensionSubtype::Linear)
-        );
-        assert_eq!(
-            parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()),
-            Some("dimension")
-        );
-    }
-
-    #[test]
-    fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
-        let feature = named_feature("feature", "Pattern1");
-        let first = dimension("Linear", 0.034);
-        let mut second = dimension("Linear", 0.035);
-        second.id = "dimension-2".into();
-        second.guid = "guid-2".into();
-        let mut parameters = Vec::new();
-
-        apply_to_parameters(&mut parameters, &[feature], &[first, second]);
-
-        assert!(parameters.is_empty());
-    }
-
-    #[test]
-    fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
-        let feature = named_feature("feature", "Pattern1");
-        let canonical = dimension("Linear", 0.034);
-        let mut alias = canonical.clone();
-        alias.id = "dimension-2".into();
-        alias.guid = "guid-2".into();
-        let mut parameters = Vec::new();
-
-        apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]);
-
-        let [parameter] = parameters.as_slice() else {
-            panic!("one PMI-backed parameter");
-        };
-        assert_eq!(parameter.expression, "34mm");
-        assert_eq!(
-            parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()),
-            Some("dimension")
-        );
-    }
-
-    #[test]
-    fn conflicting_pmi_metadata_do_not_enrich_history() {
-        use crate::records::FeatureHistory;
-
-        let mut history = vec![FeatureHistory {
-            id: "history".into(),
-            part_name: None,
-            properties: BTreeMap::new(),
-            content: Vec::new(),
-            configurations: Vec::new(),
-            features: vec![crate::records::Feature {
-                id: "feature".into(),
-                parent: "history".into(),
-                xml_tag: "Feature".into(),
-                tree_parent: None,
-                source_id: None,
-                parent_source_id: None,
-                ordinal: 0,
-                name: "Pattern1".into(),
-                kind: "StoredGeometry".into(),
-                input_class: None,
-                suppressed: false,
-                parameters: BTreeMap::new(),
-                dimension_properties: BTreeMap::new(),
-                properties: BTreeMap::new(),
-                text: None,
-                content: Vec::new(),
-            }],
-        }];
-        let first = dimension("Linear", 0.034);
-        let mut second = first.clone();
-        second.id = "dimension-2".into();
-        second.guid = "guid-2".into();
-        second.basic = true;
-
-        enrich_history_parameters(&mut history, &[first, second]);
-
-        assert!(history[0].features[0].parameters.is_empty());
-    }
-
-    fn fixstr(bytes: &mut Vec<u8>, value: &str) {
-        assert!(value.len() < 32);
-        bytes.push(0xa0 | value.len() as u8);
-        bytes.extend_from_slice(value.as_bytes());
-    }
-
-    fn push_array_header(bytes: &mut Vec<u8>, len: usize) {
-        if len < 16 {
-            bytes.push(0x90 | len as u8);
-        } else {
-            bytes.push(0xdc);
-            bytes.extend_from_slice(&(len as u16).to_be_bytes());
-        }
-    }
-
-    fn push_map_header(bytes: &mut Vec<u8>, len: usize) {
-        bytes.push(0x80 | len as u8);
-    }
-
-    fn dim_sem_item(bytes: &mut Vec<u8>, subtype: &str, value: f64) {
-        bytes.push(0x87);
-        fixstr(bytes, "class");
-        fixstr(bytes, "DimSemData");
-        fixstr(bytes, "dimSubType");
-        fixstr(bytes, subtype);
-        fixstr(bytes, "isBasic");
-        bytes.push(0xc3);
-        fixstr(bytes, "isInspection");
-        bytes.push(0xc2);
-        fixstr(bytes, "isReferenceOnly");
-        bytes.push(0xc3);
-        fixstr(bytes, "valPrecision");
-        bytes.push(3);
-        fixstr(bytes, "value");
-        bytes.push(0xcb);
-        bytes.extend_from_slice(&value.to_be_bytes());
-    }
-
-    fn fixture_payload(
-        cad_text: &str,
-        guid: &str,
-        items: &[(&str, f64)],
-        display_text: &str,
-        reorder_and_extra_key: bool,
-        key_like_in_dim_text: bool,
-        truncate_after_dim_items_key: bool,
-    ) -> Vec<u8> {
-        assert_eq!(guid.len(), 36);
-        let mut payload = b"unqlite".to_vec();
-        payload.extend_from_slice(&[0; 57]);
-        payload.extend_from_slice(guid.as_bytes());
-        let outer_len = if reorder_and_extra_key { 8 } else { 7 };
-        push_map_header(&mut payload, outer_len);
-        if reorder_and_extra_key {
-            fixstr(&mut payload, "cadText");
-            fixstr(&mut payload, cad_text);
-            fixstr(&mut payload, "extraKey");
-            fixstr(&mut payload, "ignored");
-            fixstr(&mut payload, "annoType");
-            payload.push(1);
-        } else {
-            fixstr(&mut payload, "annoType");
-            payload.push(1);
-            fixstr(&mut payload, "cadText");
-            fixstr(&mut payload, cad_text);
-        }
-        fixstr(&mut payload, "dimItems");
-        if truncate_after_dim_items_key {
-            push_array_header(&mut payload, 1);
-            return payload;
-        }
-        push_array_header(&mut payload, items.len());
-        for (subtype, value) in items {
-            dim_sem_item(&mut payload, subtype, *value);
-        }
-        fixstr(&mut payload, "dimText");
-        if key_like_in_dim_text {
-            fixstr(&mut payload, "cadText");
-        } else {
-            fixstr(&mut payload, display_text);
-        }
-        fixstr(&mut payload, "dimType");
-        payload.push(0);
-        fixstr(&mut payload, "iDString");
-        fixstr(&mut payload, "native-id");
-        fixstr(&mut payload, "reserved");
-        payload.push(0xc0);
-        payload
-    }
-
-    #[test]
-    fn parses_array16_dim_items() {
-        let items = vec![("Linear", 0.025); 16];
-        let payload = fixture_payload(
-            "D1@Sketch1",
-            "01234567-89ab-cdef-0123-456789abcdef",
-            &items,
-            "25.000 mm",
-            false,
-            false,
-            false,
-        );
-        let mut losses = Vec::new();
-        let records = parse_payload(&payload, &mut losses);
-        assert!(losses.is_empty(), "{losses:?}");
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].item_count, 16);
-        assert_eq!(records[0].value, 0.025);
-    }
-
-    #[test]
-    fn parses_reordered_map_with_extra_key() {
-        let payload = fixture_payload(
-            "D1@Sketch1",
-            "01234567-89ab-cdef-0123-456789abcdef",
-            &[("Linear", 0.025)],
-            "25.000 mm",
-            true,
-            false,
-            false,
-        );
-        let mut losses = Vec::new();
-        let records = parse_payload(&payload, &mut losses);
-        assert!(losses.is_empty(), "{losses:?}");
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].cad_text, "D1@Sketch1");
-    }
-
-    #[test]
-    fn key_like_string_inside_value_does_not_steal_field_spans() {
-        let payload = fixture_payload(
-            "D1@Sketch1",
-            "01234567-89ab-cdef-0123-456789abcdef",
-            &[("Linear", 0.025)],
-            "25.000 mm",
-            false,
-            true,
-            false,
-        );
-        let mut losses = Vec::new();
-        let records = parse_payload(&payload, &mut losses);
-        assert!(losses.is_empty(), "{losses:?}");
-        let [record] = records.as_slice() else {
-            panic!("one record");
-        };
-        assert_eq!(record.display_text.as_deref(), Some("cadText"));
-        assert_eq!(record.cad_text, "D1@Sketch1");
-        let text_off = record.display_text_offset.expect("display text offset") as usize;
-        assert_eq!(&payload[text_off..text_off + 7], b"cadText");
-    }
-
-    #[test]
-    fn malformed_pmi_map_emits_attributed_loss() {
-        let payload = fixture_payload(
-            "D1@Sketch1",
-            "01234567-89ab-cdef-0123-456789abcdef",
-            &[("Linear", 0.025)],
-            "25.000 mm",
-            false,
-            false,
-            true,
-        );
-        let mut losses = Vec::new();
-        let records = parse_payload(&payload, &mut losses);
-        assert!(records.is_empty());
-        assert_eq!(losses.len(), 1);
-        assert!(
-            losses[0]
-                .message
-                .contains("01234567-89ab-cdef-0123-456789abcdef"),
-            "{}",
-            losses[0].message
-        );
-        assert!(
-            losses[0].message.contains("failed to parse"),
-            "{}",
-            losses[0].message
-        );
-    }
-
-    #[test]
-    fn patch_payload_offsets_round_trip_through_reparse() {
-        let payload = fixture_payload(
-            "D1@Sketch1",
-            "01234567-89ab-cdef-0123-456789abcdef",
-            &[("Linear", 0.025)],
-            "25.000 mm",
-            false,
-            false,
-            false,
-        );
-        let mut losses = Vec::new();
-        let records = parse_payload(&payload, &mut losses);
-        assert!(losses.is_empty(), "{losses:?}");
-        let [record] = records.as_slice() else {
-            panic!("one record");
-        };
-        let mut patched = payload.clone();
-        let start = record.value_offset as usize;
-        let edited = 0.05_f64;
-        patched[start..start + 8].copy_from_slice(&edited.to_be_bytes());
-        patched[record.precision_offset as usize] = 4;
-        patched[record.basic_offset as usize] = 0xc2;
-        patched[record.inspection_offset as usize] = 0xc3;
-        patched[record.reference_only_offset as usize] = 0xc2;
-        let text_off = record.display_text_offset.expect("display text") as usize;
-        patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
-        let mut again_losses = Vec::new();
-        let again = parse_payload(&patched, &mut again_losses);
-        assert!(again_losses.is_empty(), "{again_losses:?}");
-        let [edited_record] = again.as_slice() else {
-            panic!("one edited record");
-        };
-        assert_eq!(edited_record.value, 0.05);
-        assert_eq!(edited_record.precision, 4);
-        assert!(!edited_record.basic);
-        assert!(edited_record.inspection);
-        assert!(!edited_record.reference_only);
-        assert_eq!(edited_record.display_text.as_deref(), Some("50.000 mm"));
-        assert_eq!(edited_record.value_offset, record.value_offset);
-        assert_eq!(edited_record.precision_offset, record.precision_offset);
-    }
-}
+mod tests;
 
 /// Return whether two retained records encode the same semantic dimension.
 ///
@@ -940,7 +509,6 @@ pub(crate) fn dimensions(
 ///
 /// Used by focused tests and the `sldprt_pmi` fuzz target. Parent/section are
 /// placeholders; production decode supplies real block identities.
-#[cfg(any(test, feature = "fuzzing"))]
 pub(crate) fn parse_payload(payload: &[u8], losses: &mut Vec<LossNote>) -> Vec<PmiDimension> {
     let mut annotations = Annotations::default();
     let mut records = Vec::new();
@@ -1466,23 +1034,26 @@ fn take_u8(bytes: &[u8], cursor: &mut usize) -> Option<u8> {
 }
 
 fn take_u16(bytes: &[u8], cursor: &mut usize) -> Option<u16> {
-    let end = cursor.checked_add(2)?;
-    let value = u16::from_be_bytes(bytes.get(*cursor..end)?.try_into().ok()?);
-    *cursor = end;
+    let mut view = View::over_retained(bytes);
+    view.seek(*cursor)?;
+    let value = view.u16_be()?;
+    *cursor = view.position();
     Some(value)
 }
 
 fn take_u32(bytes: &[u8], cursor: &mut usize) -> Option<u32> {
-    let end = cursor.checked_add(4)?;
-    let value = u32::from_be_bytes(bytes.get(*cursor..end)?.try_into().ok()?);
-    *cursor = end;
+    let mut view = View::over_retained(bytes);
+    view.seek(*cursor)?;
+    let value = view.u32_be()?;
+    *cursor = view.position();
     Some(value)
 }
 
 fn take_u64(bytes: &[u8], cursor: &mut usize) -> Option<u64> {
-    let end = cursor.checked_add(8)?;
-    let value = u64::from_be_bytes(bytes.get(*cursor..end)?.try_into().ok()?);
-    *cursor = end;
+    let mut view = View::over_retained(bytes);
+    view.seek(*cursor)?;
+    let value = view.u64_be()?;
+    *cursor = view.position();
     Some(value)
 }
 

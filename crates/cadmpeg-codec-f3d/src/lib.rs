@@ -22,7 +22,7 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.f3d")?;
 //! let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
-//! for loss in &result.report.losses {
+//! for loss in &result.report().losses {
 //!     eprintln!("{:?}: {}", loss.severity, loss.message);
 //! }
 //! # Ok(())
@@ -43,12 +43,12 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.f3d")?;
 //! let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
-//! // Edit supported fields in result.ir.
+//! // Edit supported fields in result.ir().
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
 //!     .plan(cadmpeg_ir::codec::EncodeInput {
-//!         ir: &result.ir,
-//!         fidelity: Some(&result.source_fidelity),
+//!         ir: result.ir(),
+//!         fidelity: Some(result.source_fidelity()),
 //!     })?
 //!     .write_to(&mut output)?;
 //! # Ok(())
@@ -92,6 +92,8 @@ pub(crate) mod f3z;
 pub(crate) mod history;
 mod history_records;
 mod ids;
+/// Byte-offset constants generated from `docs/layouts/f3d.toml`.
+pub(crate) mod layout;
 mod manifest;
 pub(crate) mod materials;
 mod metastream;
@@ -287,4 +289,12 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod test_support;
+#[cfg(test)]
+pub(crate) use cadmpeg_core::decode::InspectOptions;
+#[cfg(test)]
+pub(crate) use test_support::*;
+#[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
+mod integration_tests;

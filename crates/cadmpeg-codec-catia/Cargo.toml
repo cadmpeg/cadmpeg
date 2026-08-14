@@ -24,8 +24,6 @@ categories = ["encoding", "parser-implementations", "graphics"]
 # derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
 # generating them costs 22% of this crate tree's compile time.
 schema = ["dep:schemars", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
-# Exposes the `fuzz` facade of `()`-returning parser wrappers for `cadmpeg-fuzz`.
-fuzzing = []
 
 [dependencies]
 cadmpeg-core.workspace = true

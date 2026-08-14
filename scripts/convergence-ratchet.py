@@ -5,7 +5,10 @@
 Patterns (production filter — see ``docs/convergence-ledger.toml``):
 
 * ``from_le_bytes`` / ``from_be_bytes`` in ``crates/cadmpeg-codec-*/src``
-* ``le::*_at`` / ``be::*_at`` call sites outside ``cadmpeg-core`` (not ``use`` lines)
+* ``le::*_at`` / ``be::*_at`` call sites outside ``cadmpeg-core`` (not ``use``
+  lines), including calls through names imported from those modules
+  (``use cadmpeg_core::le::u32_at as u32_le`` then ``u32_le(...)``). Method
+  calls (``view.u32_le()``, ``View::u32_le_at``) are not this pattern.
 * ``CodecError::Malformed(format!`` (multiline-aware)
 * ``LossNote {`` struct literals (not ``-> LossNote {`` or the struct definition)
 * bare ``1e-6`` / ``1e-9`` / ``1e-10`` / ``1e-12`` in ``crates/**/src``
@@ -33,7 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "docs" / "convergence-ledger.toml"
 
-METRIC_KEYS = (
+LEGACY_METRIC_KEYS = (
     "from_endian_bytes",
     "le_be_at_outside_core",
     "codec_error_malformed_format",
@@ -42,8 +45,36 @@ METRIC_KEYS = (
     "nonliteral_vec_repeat",
 )
 
+PLACEMENT_KEYS = (
+    "crate_root_tests_rs",
+    "path_test_includes",
+    "test_line_debt",
+    "production_line_debt",
+)
+
+TARGET_KEYS = PLACEMENT_KEYS
+METRIC_KEYS = LEGACY_METRIC_KEYS + PLACEMENT_KEYS
+
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 LE_BE_AT = re.compile(r"\b(?:le|be)::[A-Za-z_][A-Za-z0-9_]*_at\b")
+USE_LE_BE = re.compile(r"(?:pub(?:\([^)]*\))?\s+)?use\s+cadmpeg_core::(?:le|be)::([^;]+);")
+# Names in cadmpeg_core::{le,be} that end in `_at`. Used when a glob import
+# would otherwise hide every helper behind `*`.
+LE_BE_AT_HELPERS = (
+    "u16_at",
+    "i16_at",
+    "u32_at",
+    "i32_at",
+    "u64_at",
+    "i64_at",
+    "f32_at",
+    "f64_at",
+    "f64s_at",
+    "vec3_at",
+    "int_at",
+    "lp_u32_bytes_at",
+    "utf16le_at",
+)
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
 LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
 LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
@@ -53,11 +84,20 @@ BARE_TOLERANCE = re.compile(r"(?<![0-9A-Za-z_.])1[eE]-(?:6|9|10|12)\b")
 VEC_REPEAT = re.compile(r"vec!\s*\[(?:[^\];]|;)*;\s*([^\]]+)\]", re.MULTILINE)
 VEC_REPEAT_LITERAL = re.compile(r"^(?:0x[0-9a-fA-F]+|\d+)$")
 CFG_TEST_ATTR = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
+CFG_ATTR = re.compile(r"#\s*\[\s*cfg\s*\((.*)\)\s*\]\s*$", re.DOTALL)
+PATH_ATTR = re.compile(r'#\s*\[\s*path\s*=\s*"([^"]+)"\s*\]\s*$', re.DOTALL)
+MOD_DECL = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*(;|\{)"
+)
 
 FILTER_DESCRIPTION = (
-    "production .rs under crates/**/src; exclude tests/ and benches/ path segments; "
-    "exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items "
-    "and their brace bodies when the attribute immediately precedes the item"
+    "legacy metrics: production .rs under crates/**/src via is_production_rs; "
+    "exclude tests/ and benches/ path segments; exclude files named tests.rs or "
+    "*test*.rs; strip cfg(test)-attributed items with blank-preserving elision. "
+    "Placement metrics: scan crates/**/*.rs by ownership, structural entry "
+    "points, standard mod resolution, and test-only #[path] ancestry; "
+    "golden_tests files stay out of test-line debt. production_line_debt "
+    "reuses is_production_rs and elides cfg(test) items without blank placeholders."
 )
 
 
@@ -119,6 +159,38 @@ def strip_cfg_test_items(text: str) -> str:
     return "".join(out)
 
 
+def elide_cfg_test_items(text: str) -> str:
+    """Remove cfg(test) items and their bodies without leaving blank lines."""
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].lstrip()
+        if not stripped.startswith("#["):
+            out.append(lines[i])
+            i += 1
+            continue
+        attrs: list[str] = []
+        start = i
+        while i < len(lines):
+            stripped = lines[i].lstrip()
+            if stripped.startswith("#["):
+                attr, i = collect_attribute(lines, i)
+                attrs.append(attr)
+                continue
+            if is_trivia_line(stripped):
+                i += 1
+                continue
+            break
+        if not any(attr_is_test_cfg(attr) for attr in attrs):
+            out.extend(lines[start:i])
+            continue
+        if i >= len(lines):
+            break
+        i = skip_item(lines, i)
+    return "".join(out)
+
+
 def iter_src_files(glob: str) -> list[Path]:
     return sorted(p for p in ROOT.glob(glob) if is_production_rs(p))
 
@@ -131,17 +203,65 @@ def count_from_endian_bytes() -> int:
     return total
 
 
+def _use_spec_at_names(spec: str) -> set[str]:
+    """Local names bound to a ``*_at`` helper in one ``use cadmpeg_core::{le,be}`` spec."""
+    spec = re.sub(r"\s+", " ", spec).strip()
+    if spec == "*":
+        return set(LE_BE_AT_HELPERS)
+    items = (
+        [part.strip() for part in spec[1:-1].split(",") if part.strip()]
+        if spec.startswith("{") and spec.endswith("}")
+        else [spec]
+    )
+    names: set[str] = set()
+    for item in items:
+        if item == "*":
+            names.update(LE_BE_AT_HELPERS)
+            continue
+        if " as " in item:
+            orig, local = (part.strip() for part in item.split(" as ", 1))
+        else:
+            orig = local = item
+        if orig.endswith("_at"):
+            names.add(local)
+    return names
+
+
+def imported_le_be_at_names(code: str) -> frozenset[str]:
+    """Local identifiers that bind ``cadmpeg_core::{le,be}::* _at`` helpers."""
+    names: set[str] = set()
+    for match in USE_LE_BE.finditer(code):
+        names.update(_use_spec_at_names(match.group(1)))
+    return frozenset(names)
+
+
+def _imported_at_call_re(names: frozenset[str]) -> re.Pattern[str] | None:
+    if not names:
+        return None
+    pattern = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+    # Reject `view.u32_le(` and `View::u32_le_at(` / `le::u32_at(` (the last is
+    # counted by LE_BE_AT). Bare `u32_le(` / `u32_at(` from an import counts.
+    return re.compile(rf"(?<![:.\w])(?:{pattern})\s*\(")
+
+
 def count_le_be_at_outside_core() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
         if "cadmpeg-core" in path.parts:
             continue
         text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
-        for line in text.splitlines():
-            code = line.split("//", 1)[0]
-            if code.lstrip().startswith("use "):
+        stripped_lines = [line.split("//", 1)[0] for line in text.splitlines()]
+        code = "\n".join(stripped_lines)
+        imported_calls = _imported_at_call_re(imported_le_be_at_names(code))
+        for line in stripped_lines:
+            stripped = line.lstrip()
+            if stripped.startswith("use ") or re.match(
+                r"pub(?:\([^)]*\))?\s+use\s+", stripped
+            ):
                 continue
-            total += len(LE_BE_AT.findall(code))
+            total += len(LE_BE_AT.findall(line))
+            if imported_calls is not None:
+                total += len(imported_calls.findall(line))
     return total
 
 
@@ -187,8 +307,360 @@ def count_nonliteral_vec_repeat() -> int:
     return total
 
 
-def measure() -> dict[str, int]:
-    return {
+def relative_path(path: Path) -> str:
+    return path.resolve().relative_to(ROOT.resolve()).as_posix()
+
+
+def line_count(data: str) -> int:
+    if not data:
+        return 0
+    return data.count("\n") + (0 if data.endswith("\n") else 1)
+
+
+def debt_over_limit(lines: int, limit: int) -> int:
+    return max(0, lines - limit)
+
+
+def is_crate_root_tests_rs(path: Path) -> bool:
+    rel = path.resolve().relative_to(ROOT.resolve())
+    return (
+        len(rel.parts) == 4
+        and rel.parts[0] == "crates"
+        and rel.parts[2] == "src"
+        and rel.parts[3] == "tests.rs"
+    )
+
+
+def structural_test_kind(path: Path) -> str | None:
+    rel = path.resolve().relative_to(ROOT.resolve())
+    parts = rel.parts
+    if is_crate_root_tests_rs(path):
+        return "test"
+    if path.name == "golden_tests.rs" or "golden_tests" in parts[:-1]:
+        return "golden"
+    if path.name == "integration_tests.rs" or "integration_tests" in parts[:-1]:
+        return "test"
+    if path.name == "test_support.rs" or "test_support" in parts[:-1]:
+        return "test"
+    if "tests" in parts[:-1]:
+        return "test"
+    return None
+
+
+def child_module_dir(path: Path) -> Path:
+    if path.name in {"lib.rs", "main.rs", "mod.rs"}:
+        return path.parent
+    return path.parent / path.stem
+
+
+def is_trivia_line(stripped: str) -> bool:
+    return (
+        not stripped
+        or stripped.startswith("//")
+        or stripped.startswith("/*")
+        or stripped.startswith("*")
+    )
+
+
+def collect_attribute(lines: list[str], start: int) -> tuple[str, int]:
+    depth = 0
+    pieces: list[str] = []
+    i = start
+    while i < len(lines):
+        line = lines[i]
+        pieces.append(line)
+        for ch in line:
+            if ch == "[":
+                depth += 1
+            elif ch == "]":
+                depth -= 1
+        i += 1
+        if depth <= 0:
+            break
+    return "".join(pieces), i
+
+
+def attr_is_test_cfg(attr: str) -> bool:
+    match = CFG_ATTR.match(attr.strip())
+    if match is None:
+        return False
+    body = re.sub(r'"(?:\\.|[^"\\])*"', '""', match.group(1))
+    return re.search(r"(?<![\w:])test(?![\w:])", body) is not None
+
+
+def path_attr_target(attr: str) -> str | None:
+    match = PATH_ATTR.match(attr.strip())
+    return match.group(1) if match is not None else None
+
+
+def skip_item(lines: list[str], start: int) -> int:
+    saw_brace = False
+    depth = 0
+    i = start
+    while i < len(lines):
+        for ch in lines[i]:
+            if ch == "{":
+                depth += 1
+                saw_brace = True
+            elif ch == "}":
+                if saw_brace:
+                    depth -= 1
+            elif ch == ";" and not saw_brace:
+                return i + 1
+        i += 1
+        if saw_brace and depth <= 0:
+            return i
+    return i
+
+
+def find_matching_brace_end(lines: list[str], start: int) -> int:
+    saw_brace = False
+    depth = 0
+    for i in range(start, len(lines)):
+        for ch in lines[i]:
+            if ch == "{":
+                depth += 1
+                saw_brace = True
+            elif ch == "}":
+                if saw_brace:
+                    depth -= 1
+            if saw_brace and depth == 0:
+                return i
+    return len(lines) - 1
+
+
+def resolve_module_target(
+    current_file: Path, child_dir: Path, module_name: str, explicit_path: str | None
+) -> Path | None:
+    if explicit_path is not None:
+        candidate = (current_file.parent / explicit_path).resolve()
+        return candidate if candidate.is_file() else None
+    for candidate in (
+        child_dir / f"{module_name}.rs",
+        child_dir / module_name / "mod.rs",
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def empty_contributors() -> dict[str, list[dict[str, object]]]:
+    return {key: [] for key in PLACEMENT_KEYS}
+
+
+def scan_block(
+    text: str,
+    file_path: Path,
+    child_dir: Path,
+    file_test_only: bool,
+    parent_module_test_only: bool,
+    inside_counted_inline: bool,
+    module_prefix: str,
+    contributors: dict[str, list[dict[str, object]]],
+    scanned_test_files: set[Path],
+    scanned_prod_files: set[Path],
+    known_test_files: set[Path],
+    counted_test_files: set[Path],
+) -> None:
+    lines = text.splitlines(keepends=True)
+    i = 0
+    pending_attrs: list[str] = []
+    pending_start = 0
+    while i < len(lines):
+        stripped = lines[i].lstrip()
+        if stripped.startswith("#["):
+            if not pending_attrs:
+                pending_start = i
+            attr, i = collect_attribute(lines, i)
+            pending_attrs.append(attr)
+            continue
+        if is_trivia_line(stripped):
+            i += 1
+            continue
+        match = MOD_DECL.match(lines[i])
+        if match is None:
+            pending_attrs = []
+            i += 1
+            continue
+        module_name, marker = match.groups()
+        attrs = pending_attrs
+        attr_start = pending_start if pending_attrs else i
+        pending_attrs = []
+        explicit_path = None
+        module_has_test_cfg = False
+        for attr in attrs:
+            explicit_path = path_attr_target(attr) or explicit_path
+            module_has_test_cfg = module_has_test_cfg or attr_is_test_cfg(attr)
+        module_test_only = (
+            file_test_only or parent_module_test_only or module_has_test_cfg
+        )
+        if explicit_path is not None and module_test_only:
+            contributors["path_test_includes"].append(
+                {
+                    "path": relative_path(file_path),
+                    "target": explicit_path,
+                    "debt": 1,
+                }
+            )
+        if marker == ";":
+            target = resolve_module_target(file_path, child_dir, module_name, explicit_path)
+            if target is not None:
+                target_kind = structural_test_kind(target)
+                if module_test_only or target_kind is not None:
+                    scan_test_file(
+                        target,
+                        contributors,
+                        scanned_test_files,
+                        scanned_prod_files,
+                        known_test_files,
+                        counted_test_files,
+                    )
+            i += 1
+            continue
+        end = find_matching_brace_end(lines, i)
+        block_text = "".join(lines[i : end + 1])
+        open_index = block_text.find("{")
+        close_index = block_text.rfind("}")
+        body = (
+            block_text[open_index + 1 : close_index]
+            if open_index >= 0 and close_index > open_index
+            else ""
+        )
+        nested_inside_counted = inside_counted_inline
+        if module_test_only and not file_test_only and not inside_counted_inline:
+            inline_text = "".join(lines[attr_start : end + 1])
+            lines_in_module = line_count(inline_text)
+            debt = debt_over_limit(lines_in_module, 2000)
+            if debt > 0:
+                contributors["test_line_debt"].append(
+                    {
+                        "path": f"{relative_path(file_path)}::{module_prefix}{module_name}",
+                        "lines": lines_in_module,
+                        "debt": debt,
+                    }
+                )
+            nested_inside_counted = True
+        scan_block(
+            body,
+            file_path,
+            child_dir / module_name,
+            file_test_only,
+            module_test_only,
+            nested_inside_counted,
+            f"{module_prefix}{module_name}::",
+            contributors,
+            scanned_test_files,
+            scanned_prod_files,
+            known_test_files,
+            counted_test_files,
+        )
+        i = end + 1
+
+
+def scan_test_file(
+    path: Path,
+    contributors: dict[str, list[dict[str, object]]],
+    scanned_test_files: set[Path],
+    scanned_prod_files: set[Path],
+    known_test_files: set[Path],
+    counted_test_files: set[Path],
+) -> None:
+    path = path.resolve()
+    if path in scanned_test_files:
+        return
+    scanned_test_files.add(path)
+    known_test_files.add(path)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if path not in counted_test_files and structural_test_kind(path) != "golden":
+        counted_test_files.add(path)
+        lines_in_file = line_count(text)
+        debt = debt_over_limit(lines_in_file, 2000)
+        if debt > 0:
+            contributors["test_line_debt"].append(
+                {
+                    "path": relative_path(path),
+                    "lines": lines_in_file,
+                    "debt": debt,
+                }
+            )
+    scan_block(
+        text,
+        path,
+        child_module_dir(path),
+        True,
+        False,
+        False,
+        "",
+        contributors,
+        scanned_test_files,
+        scanned_prod_files,
+        known_test_files,
+        counted_test_files,
+    )
+
+
+def collect_placement_contributors() -> dict[str, list[dict[str, object]]]:
+    contributors = empty_contributors()
+    all_rs = sorted(ROOT.glob("crates/**/*.rs"))
+    for path in all_rs:
+        if is_crate_root_tests_rs(path):
+            contributors["crate_root_tests_rs"].append(
+                {"path": relative_path(path), "debt": 1}
+            )
+    scanned_test_files: set[Path] = set()
+    scanned_prod_files: set[Path] = set()
+    known_test_files: set[Path] = set()
+    counted_test_files: set[Path] = set()
+    for path in all_rs:
+        if structural_test_kind(path) is not None:
+            scan_test_file(
+                path,
+                contributors,
+                scanned_test_files,
+                scanned_prod_files,
+                known_test_files,
+                counted_test_files,
+            )
+    for path in all_rs:
+        if not is_production_rs(path) or path.resolve() in known_test_files:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        scanned_prod_files.add(path.resolve())
+        scan_block(
+            text,
+            path.resolve(),
+            child_module_dir(path.resolve()),
+            False,
+            False,
+            False,
+            "",
+            contributors,
+            scanned_test_files,
+            scanned_prod_files,
+            known_test_files,
+            counted_test_files,
+        )
+    for path in iter_src_files("crates/**/*.rs"):
+        text = elide_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        lines_in_file = line_count(text)
+        debt = debt_over_limit(lines_in_file, 10000)
+        if debt > 0:
+            contributors["production_line_debt"].append(
+                {
+                    "path": relative_path(path),
+                    "lines": lines_in_file,
+                    "debt": debt,
+                }
+            )
+    for key in PLACEMENT_KEYS:
+        contributors[key].sort(
+            key=lambda item: (str(item["path"]), str(item.get("target", "")))
+        )
+    return contributors
+
+
+def measure_all() -> tuple[dict[str, int], dict[str, list[dict[str, object]]]]:
+    counts = {
         "from_endian_bytes": count_from_endian_bytes(),
         "le_be_at_outside_core": count_le_be_at_outside_core(),
         "codec_error_malformed_format": count_malformed_format(),
@@ -196,15 +668,58 @@ def measure() -> dict[str, int]:
         "bare_tolerance_literals": count_bare_tolerances(),
         "nonliteral_vec_repeat": count_nonliteral_vec_repeat(),
     }
+    contributors = collect_placement_contributors()
+    counts.update(
+        {
+            "crate_root_tests_rs": len(contributors["crate_root_tests_rs"]),
+            "path_test_includes": len(contributors["path_test_includes"]),
+            "test_line_debt": sum(
+                int(item["debt"]) for item in contributors["test_line_debt"]
+            ),
+            "production_line_debt": sum(
+                int(item["debt"]) for item in contributors["production_line_debt"]
+            ),
+        }
+    )
+    return counts, contributors
+
+
+def measure() -> dict[str, int]:
+    counts, _ = measure_all()
+    return counts
+
+
+def strip_toml_comment(raw: str) -> str:
+    """Strip TOML comments while preserving ``#`` inside quoted strings."""
+    in_string = False
+    escaped = False
+    out: list[str] = []
+    for ch in raw:
+        if escaped:
+            out.append(ch)
+            escaped = False
+            continue
+        if ch == "\\" and in_string:
+            out.append(ch)
+            escaped = True
+            continue
+        if ch == '"':
+            out.append(ch)
+            in_string = not in_string
+            continue
+        if ch == "#" and not in_string:
+            break
+        out.append(ch)
+    return "".join(out)
 
 
 def parse_ledger(path: Path) -> dict[str, object]:
     """Minimal TOML reader for the ledger shape used here."""
     text = path.read_text(encoding="utf-8")
-    data: dict[str, object] = {"ceilings": {}, "reasons": {}}
+    data: dict[str, object] = {"targets": {}, "ceilings": {}, "reasons": {}}
     section: str | None = None
     for raw in text.splitlines():
-        line = raw.split("#", 1)[0].strip()
+        line = strip_toml_comment(raw).strip()
         if not line:
             continue
         if line.startswith("[") and line.endswith("]"):
@@ -227,6 +742,10 @@ def parse_ledger(path: Path) -> dict[str, object]:
             cast = data["ceilings"]
             assert isinstance(cast, dict)
             cast[key] = parsed
+        elif section == "targets":
+            cast = data["targets"]
+            assert isinstance(cast, dict)
+            cast[key] = parsed
         elif section == "reasons":
             cast = data["reasons"]
             assert isinstance(cast, dict)
@@ -237,6 +756,7 @@ def parse_ledger(path: Path) -> dict[str, object]:
 def render_ledger(
     measured_at: str,
     filter_description: str,
+    targets: dict[str, int],
     ceilings: dict[str, int],
     reasons: dict[str, str],
 ) -> str:
@@ -247,8 +767,16 @@ def render_ledger(
         f'measured_at = "{measured_at}"',
         f'filter = "{filter_description}"',
         "",
-        "[ceilings]",
+        "[targets]",
     ]
+    for key in TARGET_KEYS:
+        lines.append(f"{key} = {targets[key]}")
+    lines.extend(
+        [
+            "",
+        "[ceilings]",
+        ]
+    )
     for key in METRIC_KEYS:
         lines.append(f"{key} = {ceilings[key]}")
     if reasons:
@@ -270,7 +798,9 @@ def git_head() -> str:
     )
 
 
-def check(counts: dict[str, int], ceilings: dict[str, int]) -> list[str]:
+def check(
+    counts: dict[str, int], ceilings: dict[str, int], targets: dict[str, int]
+) -> list[str]:
     failures: list[str] = []
     for key in METRIC_KEYS:
         if key not in ceilings:
@@ -280,6 +810,9 @@ def check(counts: dict[str, int], ceilings: dict[str, int]) -> list[str]:
         value = counts[key]
         if value > ceiling:
             failures.append(f"{key}: {value} > ledger {ceiling}")
+    for key in TARGET_KEYS:
+        if key not in targets:
+            failures.append(f"ledger missing target for {key}")
     return failures
 
 
@@ -298,6 +831,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     ledger = parse_ledger(LEDGER)
+    targets_raw = ledger.get("targets")
+    if not isinstance(targets_raw, dict):
+        print("error: ledger has no [targets] table", file=sys.stderr)
+        return 2
+    targets = {str(k): int(v) for k, v in targets_raw.items()}  # type: ignore[arg-type]
     ceilings_raw = ledger.get("ceilings")
     if not isinstance(ceilings_raw, dict):
         print("error: ledger has no [ceilings] table", file=sys.stderr)
@@ -310,8 +848,8 @@ def main(argv: list[str] | None = None) -> int:
         else {}
     )
 
-    counts = measure()
-    failures = check(counts, ceilings)
+    counts, contributors = measure_all()
+    failures = check(counts, ceilings, targets)
 
     if args.update:
         if failures:
@@ -337,7 +875,7 @@ def main(argv: list[str] | None = None) -> int:
             if counts[key] == ceilings.get(key)
         }
         LEDGER.write_text(
-            render_ledger(git_head(), FILTER_DESCRIPTION, counts, kept_reasons),
+            render_ledger(git_head(), FILTER_DESCRIPTION, targets, counts, kept_reasons),
             encoding="utf-8",
         )
         if args.json:
@@ -346,7 +884,11 @@ def main(argv: list[str] | None = None) -> int:
                     {
                         "status": "updated",
                         "counts": counts,
+                        "ceilings": counts,
                         "previous_ceilings": ceilings,
+                        "targets": targets,
+                        "failures": [],
+                        "contributors": contributors,
                     },
                     indent=2,
                     sort_keys=True,
@@ -354,9 +896,27 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             for key in METRIC_KEYS:
+                if key in LEGACY_METRIC_KEYS:
+                    prev = ceilings.get(key)
+                    marker = "" if prev == counts[key] else f" (was {prev})"
+                    print(f"{key}\t{counts[key]}{marker}")
+                    continue
                 prev = ceilings.get(key)
                 marker = "" if prev == counts[key] else f" (was {prev})"
-                print(f"{key}\t{counts[key]}{marker}")
+                print(
+                    f"{key}\t{counts[key]}\t(ceiling {counts[key]}, target {targets[key]}){marker}"
+                )
+                for item in contributors[key]:
+                    if key in {"test_line_debt", "production_line_debt"}:
+                        print(
+                            f"  {item['path']}\tdebt {item['debt']}\tlines {item['lines']}"
+                        )
+                    elif key == "path_test_includes":
+                        print(
+                            f"  {item['path']}\tdebt {item['debt']}\ttarget {item['target']}"
+                        )
+                    else:
+                        print(f"  {item['path']}\tdebt {item['debt']}")
             print(f"updated {LEDGER.relative_to(ROOT)}", file=sys.stderr)
         return 0
 
@@ -368,15 +928,32 @@ def main(argv: list[str] | None = None) -> int:
                     "status": status,
                     "counts": counts,
                     "ceilings": ceilings,
+                    "targets": targets,
                     "failures": failures,
+                    "contributors": contributors,
                 },
                 indent=2,
                 sort_keys=True,
             )
         )
     else:
-        for key in METRIC_KEYS:
+        for key in LEGACY_METRIC_KEYS:
             print(f"{key}\t{counts[key]}\t(ceiling {ceilings.get(key, '?')})")
+        for key in PLACEMENT_KEYS:
+            print(
+                f"{key}\t{counts[key]}\t(ceiling {ceilings.get(key, '?')}, target {targets.get(key, '?')})"
+            )
+            for item in contributors[key]:
+                if key in {"test_line_debt", "production_line_debt"}:
+                    print(
+                        f"  {item['path']}\tdebt {item['debt']}\tlines {item['lines']}"
+                    )
+                elif key == "path_test_includes":
+                    print(
+                        f"  {item['path']}\tdebt {item['debt']}\ttarget {item['target']}"
+                    )
+                else:
+                    print(f"  {item['path']}\tdebt {item['debt']}")
         for failure in failures:
             print(f"error: {failure}", file=sys.stderr)
     return 0 if not failures else 1

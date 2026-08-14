@@ -18,6 +18,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
@@ -777,8 +778,8 @@ pub(super) fn compact_radial_circle_index(payload: &[u8], offset: usize) -> Opti
     {
         return None;
     }
-    let first = u16::from_le_bytes(payload.get(offset + 56..offset + 58)?.try_into().ok()?);
-    let second = u16::from_le_bytes(payload.get(offset + 58..offset + 60)?.try_into().ok()?);
+    let first = View::u16_le_at(payload, offset + 56)?;
+    let second = View::u16_le_at(payload, offset + 58)?;
     (first == second).then_some(usize::from(first))
 }
 
@@ -829,9 +830,7 @@ pub(super) fn extended_terminal_repeated_radial_circle_index(
     {
         return None;
     }
-    Some(usize::from(u16::from_le_bytes(
-        payload.get(offset + 56..offset + 58)?.try_into().ok()?,
-    )))
+    Some(usize::from(View::u16_le_at(payload, offset + 56)?))
 }
 
 pub(super) fn terminal_repeated_radial_circle_pairs<'a>(
@@ -890,11 +889,7 @@ pub(super) fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Opt
         && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 80..offset + 84) == Some(&1u32.to_le_bytes());
     supported.then(|| {
-        usize::from(u16::from_le_bytes(
-            payload[offset + 64..offset + 66]
-                .try_into()
-                .expect("guarded two-byte radial index"),
-        ))
+        usize::from(View::u16_le_at(payload, offset + 64).expect("guarded two-byte radial index"))
     })
 }
 

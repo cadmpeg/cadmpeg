@@ -14,6 +14,7 @@ use crate::chunks::{
     FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
+use crate::layout::file_header;
 use crate::objects::{
     degraded_object_record, parse_object_record, resolve_identities, ObjectDescriptor,
 };
@@ -336,7 +337,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
     let header = parse_header(data).map_err(framing_error)?;
     let archive = header.archive_version;
     let archive_start = header.start_offset;
-    let comment_offset = archive_start + 32;
+    let comment_offset = archive_start + file_header::LEN;
     let comment = parse_record(data, comment_offset, data.len(), archive)?;
     if comment.typecode != TCODE_COMMENT || comment.short {
         return Err(CodecError::Malformed(
@@ -722,3 +723,6 @@ pub(crate) fn decode(
         crate::mesh::MeshExpand::new(ctx, root),
     ))
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

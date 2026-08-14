@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C0B` value blocks.
 
-use cadmpeg_core::le::u32_at as u32_le;
+use cadmpeg_core::decode::View;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::layout::value_block_7c0b as value_block;
 
 /// One exact `7C0B` value block immediately preceding a schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,8 +117,8 @@ pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
             continue;
         }
         let declared_end = pos
-            .checked_add(2)
-            .and_then(|length_offset| u32_le(bytes, length_offset))
+            .checked_add(value_block::DECLARED_LEN)
+            .and_then(|length_offset| View::u32_le_at(bytes, length_offset))
             .and_then(|length| usize::try_from(length).ok())
             .and_then(|length| pos.checked_add(length))
             .and_then(|terminator| terminator.checked_add(1));
@@ -135,8 +137,9 @@ pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
 }
 
 fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
-    let declared_len = usize::try_from(u32_le(bytes, pos + 2)?).ok()?;
-    if declared_len < 6 {
+    let declared_len =
+        usize::try_from(View::u32_le_at(bytes, pos + value_block::DECLARED_LEN)?).ok()?;
+    if declared_len < value_block::LEN {
         return None;
     }
     let terminator = pos.checked_add(declared_len)?;
@@ -148,8 +151,8 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
         pos,
         declared_len,
         total_len: declared_len + 1,
-        payload: bytes[pos + 6..terminator].to_vec(),
-        fields: tokenize(&bytes[pos + 6..terminator]),
+        payload: bytes[pos + value_block::LEN..terminator].to_vec(),
+        fields: tokenize(&bytes[pos + value_block::LEN..terminator]),
     })
 }
 
@@ -159,11 +162,7 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
     while at < payload.len() {
         let offset = at;
         if payload.get(at..at + 2) == Some(&[0x87, 0xe6]) && at + 10 <= payload.len() {
-            let bits = u64::from_le_bytes(
-                payload[at + 2..at + 10]
-                    .try_into()
-                    .expect("checked binary64 extent"),
-            );
+            let bits = View::u64_le_at(payload, at + 2).expect("checked binary64 extent");
             fields.push(ValueField::Binary64 { bits, offset });
             at += 10;
         } else if payload.get(at) == Some(&0x87)
@@ -212,11 +211,9 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 at += 1;
             }
         } else if payload.get(at) == Some(&0xe5) && at + 5 <= payload.len() {
-            let len = usize::try_from(u32::from_le_bytes(
-                payload[at + 1..at + 5]
-                    .try_into()
-                    .expect("checked byte-string length extent"),
-            ))
+            let len = usize::try_from(
+                View::u32_le_at(payload, at + 1).expect("checked byte-string length extent"),
+            )
             .ok();
             let end = len.and_then(|len| at.checked_add(5)?.checked_add(len));
             if let Some(end) = end.filter(|end| *end <= payload.len()) {
@@ -234,11 +231,7 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
             }
         } else if payload.get(at) == Some(&0x32) && at + 5 <= payload.len() {
             fields.push(ValueField::SchemaSelector {
-                ordinal: u32::from_le_bytes(
-                    payload[at + 1..at + 5]
-                        .try_into()
-                        .expect("checked schema-reference extent"),
-                ),
+                ordinal: View::u32_le_at(payload, at + 1).expect("checked schema-reference extent"),
                 offset,
             });
             at += 5;
@@ -278,118 +271,4 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn typed_payloads_hide_embedded_schema_marker_bytes() {
-        let payload = [
-            0x32, 5, 0, 0, 0, 0x87, 0xe6, 0, 0, 0, 0, 0, 0x32, 0, 0, 0x8e, 0xea, 0x84, 0x32, 1, 2,
-            0x87, 0xe8,
-        ];
-        assert_eq!(
-            tokenize(&payload),
-            vec![
-                ValueField::SchemaSelector {
-                    ordinal: 5,
-                    offset: 0,
-                },
-                ValueField::Binary64 {
-                    bits: 0x0000_3200_0000_0000,
-                    offset: 5,
-                },
-                ValueField::Inline {
-                    code: 0xea,
-                    bytes: vec![0x32, 1, 2],
-                    offset: 15,
-                },
-                ValueField::Marker {
-                    code: 0xe8,
-                    offset: 21,
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn length_framed_byte_strings_hide_marker_shaped_payload_bytes() {
-        let payload = [0xe5, 5, 0, 0, 0, 0x32, 0xe8, 0x37, 0xfe, 0x80, 0xfe];
-        assert_eq!(
-            tokenize(&payload),
-            vec![
-                ValueField::ByteString {
-                    bytes: vec![0x32, 0xe8, 0x37, 0xfe, 0x80],
-                    offset: 0,
-                },
-                ValueField::Terminator { offset: 10 },
-            ]
-        );
-    }
-
-    #[test]
-    fn truncated_length_framed_byte_string_is_not_assigned() {
-        let fields = tokenize(&[0xe5, 5, 0, 0, 0, 1]);
-        assert!(matches!(
-            fields.first(),
-            Some(ValueField::Literal {
-                value: 0xe5,
-                offset: 0
-            })
-        ));
-        assert!(fields
-            .iter()
-            .all(|field| !matches!(field, ValueField::ByteString { .. })));
-    }
-
-    #[test]
-    fn truncated_multi_byte_forms_remain_literal() {
-        assert_eq!(
-            tokenize(&[0x8e, 0xef, 0x84, 1]),
-            vec![
-                ValueField::Literal {
-                    value: 0x8e,
-                    offset: 0,
-                },
-                ValueField::Literal {
-                    value: 0xef,
-                    offset: 1,
-                },
-                ValueField::Atom {
-                    value: 4,
-                    width: 1,
-                    offset: 2,
-                },
-                ValueField::Literal {
-                    value: 1,
-                    offset: 3,
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn untagged_value_opcodes_and_terminators_remain_distinct() {
-        assert_eq!(
-            tokenize(&[0xe6, 0xe7, 0xe8, 0xe9, 0xfe]),
-            vec![
-                ValueField::Opcode {
-                    code: 0xe6,
-                    offset: 0,
-                },
-                ValueField::Opcode {
-                    code: 0xe7,
-                    offset: 1,
-                },
-                ValueField::Opcode {
-                    code: 0xe8,
-                    offset: 2,
-                },
-                ValueField::Opcode {
-                    code: 0xe9,
-                    offset: 3,
-                },
-                ValueField::Terminator { offset: 4 },
-            ]
-        );
-    }
-}
+mod tests;

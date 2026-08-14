@@ -1,4 +1,4 @@
-# generated at 3ba4e05c9
+# generated at 31894f1dc
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -561,15 +561,15 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::codec::DecodeOptions
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::codec::DecodeOptions
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::codec::DecodeOptions
 #[non_exhaustive] pub struct cadmpeg_ir::codec::DecodeResult
-pub cadmpeg_ir::codec::DecodeResult::ir: cadmpeg_ir::document::CadIr
-pub cadmpeg_ir::codec::DecodeResult::report: cadmpeg_ir::report::DecodeReport
-pub cadmpeg_ir::codec::DecodeResult::source_fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> &mut cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
+pub fn cadmpeg_ir::codec::DecodeResult::report_mut(&mut self) -> &mut cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
+pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> &mut cadmpeg_ir::source_fidelity::SourceFidelity
 impl core::clone::Clone for cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::clone(&self) -> cadmpeg_ir::codec::DecodeResult
 impl core::cmp::PartialEq for cadmpeg_ir::codec::DecodeResult
@@ -16738,15 +16738,15 @@ impl core::marker::UnsafeUnpin for cadmpeg_ir::report::DecodeReport
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::report::DecodeReport
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::report::DecodeReport
 #[non_exhaustive] pub struct cadmpeg_ir::DecodeResult
-pub cadmpeg_ir::DecodeResult::ir: cadmpeg_ir::document::CadIr
-pub cadmpeg_ir::DecodeResult::report: cadmpeg_ir::report::DecodeReport
-pub cadmpeg_ir::DecodeResult::source_fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 impl cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::into_parts(self) -> (cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity)
 pub fn cadmpeg_ir::codec::DecodeResult::ir(&self) -> &cadmpeg_ir::document::CadIr
+pub fn cadmpeg_ir::codec::DecodeResult::ir_mut(&mut self) -> &mut cadmpeg_ir::document::CadIr
 pub fn cadmpeg_ir::codec::DecodeResult::new(cadmpeg_ir::document::CadIr, cadmpeg_ir::report::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::codec::DecodeResult::report(&self) -> &cadmpeg_ir::report::DecodeReport
+pub fn cadmpeg_ir::codec::DecodeResult::report_mut(&mut self) -> &mut cadmpeg_ir::report::DecodeReport
 pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity(&self) -> &cadmpeg_ir::source_fidelity::SourceFidelity
+pub fn cadmpeg_ir::codec::DecodeResult::source_fidelity_mut(&mut self) -> &mut cadmpeg_ir::source_fidelity::SourceFidelity
 impl core::clone::Clone for cadmpeg_ir::codec::DecodeResult
 pub fn cadmpeg_ir::codec::DecodeResult::clone(&self) -> cadmpeg_ir::codec::DecodeResult
 impl core::cmp::PartialEq for cadmpeg_ir::codec::DecodeResult

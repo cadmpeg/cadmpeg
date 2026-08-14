@@ -2,7 +2,7 @@
 //!
 //! Reconstructs face/edge incidence from serialized boundary domains.
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
 use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
@@ -138,19 +138,29 @@ pub(crate) fn prune_incidence_choices(
     {
         return None;
     }
-    let mut face_edges = vec![Vec::new(); face_count];
+    let mut face_edges = alloc_filled(face_count, Vec::new(), "catia_incidence_face_edges").ok()?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for face in unique_faces(faces) {
             face_edges[face].push(edge);
         }
     }
-    let mut fixed = vec![false; choices.len()];
-    let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
+    let mut fixed = alloc_filled(choices.len(), false, "catia_incidence_fixed_edges").ok()?;
+    let mut degrees = alloc_filled(
+        face_count,
+        BTreeMap::<usize, u8>::new(),
+        "catia_incidence_degrees",
+    )
+    .ok()?;
     let mut edge_supports = choices
         .iter()
         .map(|pairs| choice_points(pairs))
         .collect::<Vec<_>>();
-    let mut supports = vec![BTreeMap::<usize, u32>::new(); face_count];
+    let mut supports = alloc_filled(
+        face_count,
+        BTreeMap::<usize, u32>::new(),
+        "catia_incidence_supports",
+    )
+    .ok()?;
     for (edge, points) in edge_supports.iter().enumerate() {
         for face in unique_faces(edge_faces[edge]) {
             for &point in points {
@@ -486,10 +496,22 @@ pub(crate) fn order_incidence_components_by_constraints(
     if component_by_edge.len() != components.iter().map(Vec::len).sum::<usize>() {
         return None;
     }
-    let mut incoming = vec![0usize; components.len()];
-    let mut outgoing = vec![Vec::<usize>::new(); components.len()];
-    let mut local_incoming = vec![0usize; choices.len()];
-    let mut local_outgoing = vec![Vec::<usize>::new(); choices.len()];
+    let mut incoming =
+        alloc_filled(components.len(), 0usize, "catia_incidence_component_in").ok()?;
+    let mut outgoing = alloc_filled(
+        components.len(),
+        Vec::<usize>::new(),
+        "catia_incidence_component_out",
+    )
+    .ok()?;
+    let mut local_incoming =
+        alloc_filled(choices.len(), 0usize, "catia_incidence_local_in").ok()?;
+    let mut local_outgoing = alloc_filled(
+        choices.len(),
+        Vec::<usize>::new(),
+        "catia_incidence_local_out",
+    )
+    .ok()?;
     let mut add_dependency = |target_edge: usize, prerequisite_edge: usize| {
         let (Some(&target_component), Some(&prerequisite_component)) = (
             component_by_edge.get(&target_edge),
@@ -658,15 +680,41 @@ pub(crate) struct PreparedFaceFactors {
     active: Option<Vec<Vec<u64>>>,
 }
 
-fn full_configuration_mask(len: usize) -> Vec<u64> {
-    let mut mask = vec![u64::MAX; len.div_ceil(u64::BITS as usize)];
+fn full_configuration_mask(len: usize) -> Option<Vec<u64>> {
+    let mut mask = alloc_filled(
+        len.div_ceil(u64::BITS as usize),
+        u64::MAX,
+        "catia_face_config_full_mask",
+    )
+    .ok()?;
     if let Some(last) = mask.last_mut() {
         let remainder = len % u64::BITS as usize;
         if remainder != 0 {
             *last = (1 << remainder) - 1;
         }
     }
-    mask
+    Some(mask)
+}
+
+fn set_mask_bit<K: Eq + std::hash::Hash>(
+    map: &mut HashMap<K, Vec<u64>>,
+    key: K,
+    word: usize,
+    bit: u64,
+    word_count: usize,
+    operation: &'static str,
+) -> Option<()> {
+    match map.entry(key) {
+        std::collections::hash_map::Entry::Occupied(mut occupied) => {
+            occupied.get_mut()[word] |= bit;
+        }
+        std::collections::hash_map::Entry::Vacant(vacant) => {
+            let mut mask = alloc_filled(word_count, 0u64, operation).ok()?;
+            mask[word] |= bit;
+            vacant.insert(mask);
+        }
+    }
+    Some(())
 }
 
 fn configuration_mask_contains(mask: &[u64], index: usize) -> bool {
@@ -701,16 +749,29 @@ impl FaceFactorGraph {
                 let word = configuration / u64::BITS as usize;
                 let bit = 1 << (configuration % u64::BITS as usize);
                 for &(edge, pair) in candidate {
-                    present.entry(edge).or_insert_with(|| vec![0; word_count])[word] |= bit;
-                    matching
-                        .entry((edge, pair))
-                        .or_insert_with(|| vec![0; word_count])[word] |= bit;
+                    set_mask_bit(
+                        &mut present,
+                        edge,
+                        word,
+                        bit,
+                        word_count,
+                        "catia_face_config_present",
+                    )?;
+                    set_mask_bit(
+                        &mut matching,
+                        (edge, pair),
+                        word,
+                        bit,
+                        word_count,
+                        "catia_face_config_matching",
+                    )?;
                 }
             }
             right_indexes.push((present, matching));
         }
         let mut arcs = Vec::new();
-        let mut incoming = vec![Vec::new(); domains.len()];
+        let mut incoming =
+            alloc_filled(domains.len(), Vec::new(), "catia_face_factor_incoming").ok()?;
         for left in 0..domains.len() {
             for right in 0..domains.len() {
                 if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
@@ -723,7 +784,7 @@ impl FaceFactorGraph {
                     if !budget.charge_by(candidate.len().saturating_add(word_count).max(1)) {
                         return None;
                     }
-                    let mut compatible = full_configuration_mask(domains[right].len());
+                    let mut compatible = full_configuration_mask(domains[right].len())?;
                     for &(edge, pair) in candidate {
                         let Some(edge_present) = present.get(&edge) else {
                             continue;
@@ -752,7 +813,7 @@ impl FaceFactorGraph {
         })
     }
 
-    fn full_state(&self) -> Vec<Vec<u64>> {
+    fn full_state(&self) -> Option<Vec<Vec<u64>>> {
         self.domain_lengths
             .iter()
             .map(|length| full_configuration_mask(*length))
@@ -942,7 +1003,10 @@ pub(crate) fn prune_face_configuration_support(
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
-    let mut neighbors = vec![Vec::new(); domains.len()];
+    let Ok(mut neighbors) = alloc_filled(domains.len(), Vec::new(), "catia_face_config_neighbors")
+    else {
+        return true;
+    };
     let mut queue = VecDeque::new();
     for left in 0..domains.len() {
         for right in 0..domains.len() {
@@ -963,10 +1027,27 @@ pub(crate) fn prune_face_configuration_support(
             let word = configuration / u64::BITS as usize;
             let bit = 1 << (configuration % u64::BITS as usize);
             for &(edge, pair) in candidate {
-                present.entry(edge).or_insert_with(|| vec![0; word_count])[word] |= bit;
-                matching
-                    .entry((edge, pair))
-                    .or_insert_with(|| vec![0; word_count])[word] |= bit;
+                if set_mask_bit(
+                    &mut present,
+                    edge,
+                    word,
+                    bit,
+                    word_count,
+                    "catia_face_config_present",
+                )
+                .is_none()
+                    || set_mask_bit(
+                        &mut matching,
+                        (edge, pair),
+                        word,
+                        bit,
+                        word_count,
+                        "catia_face_config_matching",
+                    )
+                    .is_none()
+                {
+                    return true;
+                }
             }
         }
         let mut keep = Vec::with_capacity(domains[left].len());
@@ -974,7 +1055,10 @@ pub(crate) fn prune_face_configuration_support(
             if !budget.charge_by(candidate.len().saturating_add(word_count).max(1)) {
                 return true;
             }
-            let mut viable = vec![u64::MAX; word_count];
+            let Ok(mut viable) = alloc_filled(word_count, u64::MAX, "catia_face_config_viable")
+            else {
+                return true;
+            };
             if let Some(last) = viable.last_mut() {
                 let remainder = domains[right].len() % u64::BITS as usize;
                 if remainder != 0 {
@@ -1023,7 +1107,9 @@ pub(crate) fn prune_face_configuration_singleton_support(
     let Some(graph) = FaceFactorGraph::compile(domains, budget) else {
         return true;
     };
-    let mut active = graph.full_state();
+    let Some(mut active) = graph.full_state() else {
+        return true;
+    };
     let active_clone_work = active.iter().map(Vec::len).sum::<usize>().max(1);
     match graph.propagate_all(&mut active, budget) {
         Some(true) => {}
@@ -1119,7 +1205,10 @@ pub(crate) fn prune_ordered_face_endpoint_support(
             {
                 continue;
             }
-            let selected = vec![None; choices.len()];
+            let Ok(selected) = alloc_filled(choices.len(), None, "catia_ordered_face_selection")
+            else {
+                return true;
+            };
             let Some(configurations) =
                 mesh_face_endpoint_configurations(assignments, choices, &selected, budget)
             else {
@@ -1261,7 +1350,7 @@ pub(crate) fn prepare_face_configuration_domains(
     active: &[bool],
 ) -> Option<PreparedFaceFactors> {
     let assignments = assignments?;
-    let mut domains = vec![None; assignments.len()];
+    let mut domains = alloc_filled(assignments.len(), None, "catia_face_factor_domains").ok()?;
     for (face, domain) in assignments.iter().enumerate() {
         let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
             continue;
@@ -1317,9 +1406,10 @@ pub(crate) fn prepare_face_configuration_domains(
     }
     let graph_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let graph = FaceFactorGraph::compile(&configurations, &graph_budget);
-    let active = graph.as_ref().map(FaceFactorGraph::full_state);
-    let mut factor_by_face = vec![None; domains.len()];
-    let mut factors_by_edge = vec![Vec::new(); choices.len()];
+    let active = graph.as_ref().and_then(FaceFactorGraph::full_state);
+    let mut factor_by_face = alloc_filled(domains.len(), None, "catia_face_factor_by_face").ok()?;
+    let mut factors_by_edge =
+        alloc_filled(choices.len(), Vec::new(), "catia_face_factors_by_edge").ok()?;
     for (factor, &face) in retained_faces.iter().enumerate() {
         factor_by_face[face] = Some(factor);
         let mut edges = configurations[factor]
@@ -3067,18 +3157,15 @@ pub(crate) fn deferred_boundary_assignment(
         .iter()
         .map(|cycles| cycles.iter().map(Option::is_some).collect::<Vec<_>>())
         .collect::<Vec<_>>();
-    let mut matched_mesh = vec![None; incidence.len()];
+    let mut matched_mesh = alloc_filled(incidence.len(), None, "catia_deferred_match").ok()?;
     for mesh in 0..domain.cycles.len() {
-        if !augment_cycle_matching(
-            mesh,
-            &boolean_compatible,
-            &mut vec![false; incidence.len()],
-            &mut matched_mesh,
-        ) {
+        let mut visited = alloc_filled(incidence.len(), false, "catia_deferred_visit").ok()?;
+        if !augment_cycle_matching(mesh, &boolean_compatible, &mut visited, &mut matched_mesh) {
             return None;
         }
     }
-    let mut boundaries = vec![None; domain.cycles.len()];
+    let mut boundaries =
+        alloc_filled(domain.cycles.len(), None, "catia_deferred_boundaries").ok()?;
     for (incidence, mesh) in matched_mesh.into_iter().enumerate() {
         let mesh = mesh?;
         boundaries[mesh].clone_from(&compatible[mesh][incidence]);
@@ -3118,14 +3205,16 @@ pub(crate) fn deferred_boundary_closes(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    let mut matched_mesh = vec![None; incidence.len()];
+    let Ok(mut matched_mesh) = alloc_filled(incidence.len(), None, "catia_deferred_close_match")
+    else {
+        return false;
+    };
     (0..domain.cycles.len()).all(|mesh| {
-        augment_cycle_matching(
-            mesh,
-            &compatible,
-            &mut vec![false; incidence.len()],
-            &mut matched_mesh,
-        )
+        let Ok(mut visited) = alloc_filled(incidence.len(), false, "catia_deferred_close_visit")
+        else {
+            return false;
+        };
+        augment_cycle_matching(mesh, &compatible, &mut visited, &mut matched_mesh)
     })
 }
 

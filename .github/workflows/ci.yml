@@ -68,6 +68,29 @@ jobs:
           python3 -m unittest -v scripts/test_convergence_ratchet.py
           python3 scripts/convergence-ratchet.py
 
+      - name: Golden coverage floors
+        # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may only
+        # rise when fixtures are added; they must never silently fall.
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
+          python3 scripts/check-golden-coverage-floors.py
+
+      - name: Public API ledger
+        # Parse docs/public-api-ledger.toml and confirm snapshot files exist.
+        # Does not install cargo-public-api; regenerate snapshots locally.
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts/test_check_public_api_ledger.py
+          python3 scripts/check-public-api-ledger.py
+
+      - name: Fuzz parser imports
+        # Focused NX/Creo harnesses must import ::fuzz, not parser modules.
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts/test_check_fuzz_parser_imports.py
+          python3 scripts/check-fuzz-parser-imports.py
+
       - name: Format check
         run: cargo fmt --all --check
 
@@ -112,6 +135,15 @@ jobs:
 
       - name: Convergence ratchet unit tests
         run: python3 -m unittest -v scripts/test_convergence_ratchet.py
+
+      - name: Golden coverage floor unit tests
+        run: python3 -m unittest -v scripts/test_check_golden_coverage_floors.py
+
+      - name: Public API ledger unit tests
+        run: python3 -m unittest -v scripts/test_check_public_api_ledger.py
+
+      - name: Fuzz parser import unit tests
+        run: python3 -m unittest -v scripts/test_check_fuzz_parser_imports.py
 
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this

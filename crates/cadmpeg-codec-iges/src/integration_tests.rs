@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized IGES 5.3 card streams.
+#![allow(clippy::unwrap_used)]
 
 use super::*;
-use cadmpeg_ir::codec::CodecBackend;
+use cadmpeg_ir::codec::{Codec, CodecBackend};
+
+use crate::test_support::*;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
@@ -12,9 +15,9 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
-    assert!(result.ir.native.namespace("iges").is_some());
+    assert!(result.ir().native.namespace("iges").is_some());
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -35,19 +38,19 @@ enum ExpectedArena {
 
 fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> usize {
     match arena {
-        ExpectedArena::ModelBodies => result.ir.model.bodies.len(),
-        ExpectedArena::ModelCoedges => result.ir.model.coedges.len(),
-        ExpectedArena::ModelCurves => result.ir.model.curves.len(),
-        ExpectedArena::ModelLoops => result.ir.model.loops.len(),
-        ExpectedArena::ModelPoints => result.ir.model.points.len(),
-        ExpectedArena::ModelPcurves => result.ir.model.pcurves.len(),
-        ExpectedArena::ModelProceduralCurves => result.ir.model.procedural_curves.len(),
-        ExpectedArena::ModelProceduralSurfaces => result.ir.model.procedural_surfaces.len(),
-        ExpectedArena::ModelRegions => result.ir.model.regions.len(),
-        ExpectedArena::ModelShells => result.ir.model.shells.len(),
-        ExpectedArena::ModelSurfaces => result.ir.model.surfaces.len(),
+        ExpectedArena::ModelBodies => result.ir().model.bodies.len(),
+        ExpectedArena::ModelCoedges => result.ir().model.coedges.len(),
+        ExpectedArena::ModelCurves => result.ir().model.curves.len(),
+        ExpectedArena::ModelLoops => result.ir().model.loops.len(),
+        ExpectedArena::ModelPoints => result.ir().model.points.len(),
+        ExpectedArena::ModelPcurves => result.ir().model.pcurves.len(),
+        ExpectedArena::ModelProceduralCurves => result.ir().model.procedural_curves.len(),
+        ExpectedArena::ModelProceduralSurfaces => result.ir().model.procedural_surfaces.len(),
+        ExpectedArena::ModelRegions => result.ir().model.regions.len(),
+        ExpectedArena::ModelShells => result.ir().model.shells.len(),
+        ExpectedArena::ModelSurfaces => result.ir().model.surfaces.len(),
         ExpectedArena::Native(name) => result
-            .ir
+            .ir()
             .native
             .namespace("iges")
             .and_then(|namespace| namespace.arenas.get(name))
@@ -58,84 +61,84 @@ fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -
 fn arena_ids(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> Vec<&str> {
     match arena {
         ExpectedArena::ModelBodies => result
-            .ir
+            .ir()
             .model
             .bodies
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelCoedges => result
-            .ir
+            .ir()
             .model
             .coedges
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelCurves => result
-            .ir
+            .ir()
             .model
             .curves
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelLoops => result
-            .ir
+            .ir()
             .model
             .loops
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelPoints => result
-            .ir
+            .ir()
             .model
             .points
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelPcurves => result
-            .ir
+            .ir()
             .model
             .pcurves
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelProceduralCurves => result
-            .ir
+            .ir()
             .model
             .procedural_curves
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelProceduralSurfaces => result
-            .ir
+            .ir()
             .model
             .procedural_surfaces
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelRegions => result
-            .ir
+            .ir()
             .model
             .regions
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelShells => result
-            .ir
+            .ir()
             .model
             .shells
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::ModelSurfaces => result
-            .ir
+            .ir()
             .model
             .surfaces
             .iter()
             .map(|item| item.id.0.as_str())
             .collect(),
         ExpectedArena::Native(name) => result
-            .ir
+            .ir()
             .native
             .namespace("iges")
             .and_then(|namespace| namespace.arenas.get(name))
@@ -762,4 +765,93 @@ fn metadata_pipeline_composes_properties_attributes_associativity_and_native_own
             ExpectedArena::Native("associativities"),
         ),
     ]);
+}
+
+#[test]
+fn repeated_decode_is_canonical() {
+    let bytes = explicit_tetrahedron_solid_with_boolean_file();
+    let first = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let second = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        first.ir().to_canonical_json().unwrap(),
+        second.ir().to_canonical_json().unwrap()
+    );
+    assert_eq!(
+        serde_json::to_vec(first.report()).unwrap(),
+        serde_json::to_vec(second.report()).unwrap()
+    );
+    assert_eq!(first.source_fidelity(), second.source_fidelity());
+}
+
+#[test]
+fn cumulative_l8_domain_fixtures_validate_without_loss() {
+    let (void_solid, _, _, _) = explicit_void_solid_file();
+    let fixtures = [
+        ("point", point_file()),
+        (
+            "conic",
+            conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
+        ),
+        ("nurbs-curve", rational_nurbs_curve_file()),
+        ("spline-surface", parametric_spline_surface_file()),
+        ("revolution", surface_of_revolution_file()),
+        ("trimmed-sheet", trimmed_plane_with_inner_loop_file()),
+        (
+            "manifold-solid",
+            explicit_tetrahedron_solid_with_boolean_file(),
+        ),
+        ("void-solid", void_solid),
+        (
+            "non-manifold-shell",
+            explicit_non_manifold_open_shell_file(),
+        ),
+        ("appearance", colored_explicit_vertex_loop_file()),
+        ("csg", primitive_solids_file()),
+        ("solid-assembly", solid_assembly_file()),
+        ("subfigures", nested_subfigure_file()),
+        ("network", connected_network_subfigure_file()),
+        ("external-references", external_reference_forms_file()),
+        ("attribute-definitions", attribute_definition_forms_file()),
+        ("attribute-instances", attribute_instance_forms_file()),
+        ("properties", variable_schema_property_forms_file()),
+        ("views", view_visibility_forms_file()),
+        ("drawing", drawing_with_properties_file()),
+        ("text", text_annotation_file()),
+        ("dimensions", dimension_forms_file()),
+        ("symbols", symbol_and_sectioned_area_file()),
+        ("associativity", bounded_associativity_forms_file()),
+        ("text-font", text_font_definition_file()),
+        ("units-data", units_data_file()),
+    ];
+
+    for (name, bytes) in fixtures {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert!(
+            result.report().losses.is_empty(),
+            "{name}: {:#?}",
+            result.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral_with_source_fidelity(
+            result.ir(),
+            result.source_fidelity(),
+            Vec::new(),
+        );
+        assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
+    }
 }

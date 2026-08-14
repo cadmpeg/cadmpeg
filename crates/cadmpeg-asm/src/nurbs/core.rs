@@ -19,6 +19,7 @@ use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::toks::take_knot_table as knots;
+use cadmpeg_core::decode::alloc_filled;
 
 /// Read `count` control points of `cp_dims` doubles each, scaling positions to
 /// millimetres. Token-space counterpart of [`read_control_points`].
@@ -82,8 +83,12 @@ pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsS
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
     let (flat, flat_w) = control_points(&mut cur, n_poles_u * n_poles_v, cp_dims)?;
-    let mut grid = vec![Point3::new(0.0, 0.0, 0.0); n_poles_u * n_poles_v];
-    let mut weights = flat_w.as_ref().map(|_| vec![0.0f64; n_poles_u * n_poles_v]);
+    let pole_count = n_poles_u * n_poles_v;
+    let mut grid = alloc_filled(pole_count, Point3::new(0.0, 0.0, 0.0), "asm_nurbs_poles").ok()?;
+    let mut weights = match &flat_w {
+        Some(_) => Some(alloc_filled(pole_count, 0.0f64, "asm_nurbs_weights").ok()?),
+        None => None,
+    };
     for v in 0..n_poles_v {
         for u in 0..n_poles_u {
             let file_idx = v * n_poles_u + u;
@@ -305,8 +310,13 @@ pub(crate) fn decode_surface_block(
     let control_value_offsets = (0..n_poles_u * n_poles_v * cp_dims)
         .map(|ordinal| control_start + ordinal * 9 + 1)
         .collect();
-    let mut control_points = vec![Point3::new(0.0, 0.0, 0.0); n_poles_u * n_poles_v];
-    let mut weights = flat_w.as_ref().map(|_| vec![0.0f64; n_poles_u * n_poles_v]);
+    let pole_count = n_poles_u * n_poles_v;
+    let mut control_points =
+        alloc_filled(pole_count, Point3::new(0.0, 0.0, 0.0), "asm_nurbs_poles").ok()?;
+    let mut weights = match &flat_w {
+        Some(_) => Some(alloc_filled(pole_count, 0.0f64, "asm_nurbs_weights").ok()?),
+        None => None,
+    };
     for v in 0..n_poles_v {
         for u in 0..n_poles_u {
             let file_idx = v * n_poles_u + u;

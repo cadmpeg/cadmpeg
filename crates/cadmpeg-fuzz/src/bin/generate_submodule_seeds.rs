@@ -3,7 +3,8 @@
 
 use std::fs;
 use std::io::Write as _;
-use std::path::Path;
+
+include!("../seed_paths.rs");
 
 fn main() {
     generate_acis_header_seed();
@@ -13,6 +14,7 @@ fn main() {
     generate_creo_submodule_seeds();
     generate_nx_submodule_seeds();
     generate_inventor_submodule_seeds();
+    generate_rhino_submodule_seeds();
     println!("All sub-module seeds generated.");
 }
 
@@ -34,8 +36,8 @@ fn generate_acis_header_seed() {
 }
 
 fn write_seed(dir: &str, name: &str, data: &[u8]) {
-    let path = Path::new(dir);
-    fs::create_dir_all(path).expect("required invariant");
+    let path = seed_dir(dir);
+    fs::create_dir_all(&path).expect("required invariant");
     fs::write(path.join(name), data).expect("required invariant");
     println!("  {}/{} ({} bytes)", dir, name, data.len());
 }
@@ -288,6 +290,41 @@ fn generate_catia_submodule_seeds() {
         0x01, 0x00, 0x00, 0x00, // directory count
     ];
     write_seed("seeds/catia_container_dir", "minimal", &container_dir);
+
+    let catalog_entries = ["CATCatalogManager", "catalogManager", "catalogLinks", ""];
+    let mut catalog = vec![0x7c, 0x02, 0, 0, 0, 0];
+    catalog.push(0x80 + u8::try_from(catalog_entries.len() + 1).expect("prefix count"));
+    for entry in catalog_entries {
+        catalog.push(u8::try_from(entry.len() + 1).expect("short catalog entry"));
+        catalog.extend_from_slice(entry.as_bytes());
+    }
+    let catalog_len = u32::try_from(catalog.len()).expect("catalog length");
+    catalog[2..6].copy_from_slice(&catalog_len.to_le_bytes());
+    write_seed("seeds/catia_catalog", "minimal", &catalog);
+
+    let mut value_block = vec![0x7c, 0x0b, 0, 0, 0, 0, 0x32, 1, 0, 0, 0];
+    let value_len = u32::try_from(value_block.len()).expect("value-block length");
+    value_block[2..6].copy_from_slice(&value_len.to_le_bytes());
+    value_block.push(0xfe);
+    write_seed("seeds/catia_value_block", "minimal", &value_block);
+
+    let record_body = [0x04, 0x01, 0x82];
+    let mut object_record = vec![0x7c, 0x09];
+    object_record.extend_from_slice(&(6_u32 + record_body.len() as u32).to_le_bytes());
+    object_record.extend_from_slice(&record_body);
+    let mut object_graph = vec![0x7c, 0x08];
+    object_graph.extend_from_slice(&(6_u32 + object_record.len() as u32).to_le_bytes());
+    object_graph.extend_from_slice(&object_record);
+    write_seed("seeds/catia_object_graph", "minimal", &object_graph);
+
+    let mut topology = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
+    for handle in [1u16, 10, 11, 12, 13, 14, 15, 16, 17, 10] {
+        topology.extend_from_slice(&handle.to_be_bytes());
+    }
+    topology.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
+    write_seed("seeds/catia_topology", "minimal", &topology);
+
+    write_seed("seeds/catia_e5_orientation", "minimal", &e5);
 }
 
 // ============================================================================
@@ -334,6 +371,9 @@ fn generate_creo_submodule_seeds() {
         0x00, 0x00, 0x00, 0x00, // prototype type
     ];
     write_seed("seeds/creo_curve_prototypes", "minimal", &curve_protos);
+
+    write_seed("seeds/creo_datum", "minimal", &surface_rows);
+    write_seed("seeds/creo_scalar", "minimal", &compact_int);
 }
 
 // ============================================================================
@@ -387,6 +427,21 @@ fn generate_nx_submodule_seeds() {
         0x03, 0x00, 0x00, 0x00, // degree
     ];
     write_seed("seeds/nx_nurbs_curves", "minimal", &nurbs_curves);
+
+    let mut om = b"\x04\x01\x0eNX \x00hostglobalvariables".to_vec();
+    om.extend_from_slice(&[0x00, 0x01, 0xff]);
+    write_seed("seeds/nx_om", "minimal", &om);
+
+    write_seed(
+        "seeds/nx_deltas",
+        "minimal",
+        &[0x00, 0x1e, 0x01, 0x00, 0x00, 0x00],
+    );
+    write_seed("seeds/nx_topology", "minimal", &[0x00, 0x0c, 0x00, 0x00]);
+
+    let mut intersection = vec![0x00, 0x28];
+    intersection.extend_from_slice(&[0; 52]);
+    write_seed("seeds/nx_intersection", "minimal", &intersection);
 }
 
 // ============================================================================
@@ -397,7 +452,11 @@ fn generate_inventor_submodule_seeds() {
     let cfb = synthetic_cfb_seed();
     write_seed("seeds/inventor_codec", "minimal", &cfb);
     write_seed("seeds/compound_snapshot", "minimal", &cfb);
-    write_seed("seeds/inventor_database", "minimal", &synthetic_database_seed());
+    write_seed(
+        "seeds/inventor_database",
+        "minimal",
+        &synthetic_database_seed(),
+    );
 
     let metadata_body = synthetic_meta_table_body();
     let mut metadata = Vec::new();
@@ -436,12 +495,55 @@ fn generate_inventor_submodule_seeds() {
         "minimal",
         &synthetic_property_set_seed(),
     );
-    write_seed("seeds/inventor_protein_envelope", "empty", &0_u32.to_le_bytes());
     write_seed(
-        "seeds/protein_decode",
-        "malformed_page",
-        &[0; 304],
+        "seeds/inventor_protein_envelope",
+        "empty",
+        &0_u32.to_le_bytes(),
     );
+    write_seed("seeds/protein_decode", "malformed_page", &[0; 304]);
+}
+
+fn generate_rhino_submodule_seeds() {
+    let cage_body = {
+        let mut body = Vec::new();
+        for value in [1_i32, 0, 1, 0, 2, 2, 2, 2, 2, 2] {
+            body.extend_from_slice(&value.to_le_bytes());
+        }
+        body
+    };
+    let mut cage = vec![0];
+    cage.extend(rhino_crc_chunk(0x4000_0000, &cage_body));
+    write_seed("seeds/rhino_cage", "minimal", &cage);
+
+    let mut hatch_body = Vec::new();
+    for _ in 0..12 {
+        hatch_body.extend_from_slice(&0.0_f64.to_le_bytes());
+    }
+    let mut hatch = vec![0];
+    hatch.extend(rhino_crc_chunk(0x4000_0000, &hatch_body));
+    write_seed("seeds/rhino_hatch", "minimal", &hatch);
+
+    let mut polyedge_body = vec![0x10];
+    for value in [1_i32, 0, 0] {
+        polyedge_body.extend_from_slice(&value.to_le_bytes());
+    }
+    polyedge_body.extend_from_slice(&[0; 48]);
+    polyedge_body.extend_from_slice(&2_i32.to_le_bytes());
+    polyedge_body.extend_from_slice(&0.0_f64.to_le_bytes());
+    polyedge_body.extend_from_slice(&10.0_f64.to_le_bytes());
+    let mut polyedge = vec![0];
+    polyedge.extend(rhino_crc_chunk(0x4000_0000, &polyedge_body));
+    write_seed("seeds/rhino_polyedge", "minimal", &polyedge);
+}
+
+fn rhino_crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
+    let mut with_crc = body.to_vec();
+    with_crc.extend(crc32fast::hash(body).to_le_bytes());
+    let mut bytes = (typecode | 0x8000).to_le_bytes().to_vec();
+    let len = i32::try_from(with_crc.len()).expect("rhino seed chunk fits i32");
+    bytes.extend_from_slice(&len.to_le_bytes());
+    bytes.extend(with_crc);
+    bytes
 }
 
 fn synthetic_cfb_seed() -> Vec<u8> {
@@ -523,8 +625,8 @@ fn synthetic_meta_table_body() -> Vec<u8> {
     push_counted(&mut body, &[], 28);
     push_u32(&mut body, 1);
     body.extend_from_slice(&[
-        0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6,
-        0x47, 0xb5,
+        0x5c, 0x59, 0x45, 0xf6, 0xd5, 0x11, 0x33, 0x13, 0x10, 0x00, 0x60, 0xa6, 0xbb, 0xa6, 0x47,
+        0xb5,
     ]);
     push_u16(&mut body, 1);
     push_u32(&mut body, 2);
@@ -625,7 +727,11 @@ fn directory_entry(
         name_offset += 2;
     }
     entry[name_offset..name_offset + 2].copy_from_slice(&0_u16.to_le_bytes());
-    entry[64..66].copy_from_slice(&u16::try_from(name_offset + 2).expect("short name").to_le_bytes());
+    entry[64..66].copy_from_slice(
+        &u16::try_from(name_offset + 2)
+            .expect("short name")
+            .to_le_bytes(),
+    );
     entry[66] = object_type;
     entry[67] = 1;
     entry[68..72].copy_from_slice(&left.to_le_bytes());

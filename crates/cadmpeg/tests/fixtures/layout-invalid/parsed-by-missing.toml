@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Deliberately broken layout table: `parsed_by` names a path that does not exist.
+# `crates/cadmpeg/tests/layout_tables.rs` asserts the validator rejects it.
+schema = 1
+format = "f3d"
+spec = "docs/formats/f3d.md"
+endianness = "little"
+
+[[record]]
+name = "asmheader_binaryfile8"
+kind = "byte"
+section = "3"
+anchor = "`BinaryFile8` header layout"
+parsed_by = "crates/cadmpeg-asm/src/does_not_exist.rs"
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "`0..15` | magic `ASM BinaryFile8`"

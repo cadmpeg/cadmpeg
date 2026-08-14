@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::NurbsCurve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -572,11 +573,8 @@ fn patch_asm_geometry(
                     }
                 }
                 let ratio = minor_radius / major_radius;
-                let old_ratio = f64::from_le_bytes(
-                    bytes[fields[3] + 1..fields[3] + 9]
-                        .try_into()
-                        .expect("framed ellipse ratio has eight payload bytes"),
-                );
+                let old_ratio = View::f64_le_at(bytes, fields[3] + 1)
+                    .expect("framed ellipse ratio has eight payload bytes");
                 let signed_ratio = if old_ratio.is_sign_negative() {
                     -ratio
                 } else {
@@ -711,16 +709,10 @@ fn patch_asm_geometry(
                     asm_edits.required_payload_field(bytes, record, field_indices[5], 0x06)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[6], 0x06)?,
                 ];
-                let old_sine = f64::from_le_bytes(
-                    bytes[fields[4] + 1..fields[4] + 9]
-                        .try_into()
-                        .expect("framed cone sine has eight payload bytes"),
-                );
-                let old_cosine = f64::from_le_bytes(
-                    bytes[fields[5] + 1..fields[5] + 9]
-                        .try_into()
-                        .expect("framed cone cosine has eight payload bytes"),
-                );
+                let old_sine = View::f64_le_at(bytes, fields[4] + 1)
+                    .expect("framed cone sine has eight payload bytes");
+                let old_cosine = View::f64_le_at(bytes, fields[5] + 1)
+                    .expect("framed cone cosine has eight payload bytes");
                 let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
                 let cosine_sign = if old_cosine < 0.0 { -1.0 } else { 1.0 };
                 let native_axis = if *half_angle > 0.0 && sine_sign * cosine_sign < 0.0 {

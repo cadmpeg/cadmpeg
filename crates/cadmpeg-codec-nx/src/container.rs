@@ -8,12 +8,17 @@
 
 use std::borrow::Cow;
 
-use cadmpeg_core::decode::bounded_len;
-use cadmpeg_core::le::{u32_at as u32_le, u64_at as u64_le};
+use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 
+use crate::layout::directory_entry as dir_entry;
+use crate::layout::directory_file_payload as file_payload;
+use crate::layout::extrefstream_handle_set_record as handle_set;
+use crate::layout::splmsstr_header as splmsstr;
+use crate::layout::ug_part_segment_index_row as index_row;
+
 /// The eight-byte signature used to identify an SPLMSSTR container.
-pub const MAGIC: &[u8; 8] = b"SPLMSSTR";
+pub const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
 
 /// A directory entry from the `HEADER` or `FOOTER` region.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,20 +197,25 @@ impl Container<'_> {
         let (offset, size) = entry.file_span?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let payload = self.data.get(offset..offset.checked_add(size)?)?;
-        let row_one = payload.get(12..24)?;
-        let type_code = u32_le(row_one, 0)?;
-        let subtype_code = u32_le(row_one, 4)?;
-        let byte_len = usize::try_from(u32_le(row_one, 8)?).ok()?;
-        if type_code != 1 || subtype_code != 1 || !(24..=payload.len()).contains(&byte_len) {
+        let row_one = payload.get(index_row::LEN..index_row::LEN * 2)?;
+        let type_code = View::u32_le_at(row_one, index_row::TYPE_CODE)?;
+        let subtype_code = View::u32_le_at(row_one, index_row::SUBTYPE_CODE)?;
+        let byte_len = usize::try_from(View::u32_le_at(row_one, index_row::VALUE)?).ok()?;
+        if type_code != 1
+            || subtype_code != 1
+            || !(index_row::LEN * 2..=payload.len()).contains(&byte_len)
+        {
             return None;
         }
-        let complete_len = byte_len / 12 * 12;
+        let complete_len = byte_len / index_row::LEN * index_row::LEN;
         let rows = payload[..complete_len]
-            .chunks_exact(12)
+            .chunks_exact(index_row::LEN)
             .map(|row| SegmentIndexRow {
-                type_code: u32_le(row, 0).expect("complete segment-index row"),
-                subtype_code: u32_le(row, 4).expect("complete segment-index row"),
-                value: u32_le(row, 8).expect("complete segment-index row"),
+                type_code: View::u32_le_at(row, index_row::TYPE_CODE)
+                    .expect("complete segment-index row"),
+                subtype_code: View::u32_le_at(row, index_row::SUBTYPE_CODE)
+                    .expect("complete segment-index row"),
+                value: View::u32_le_at(row, index_row::VALUE).expect("complete segment-index row"),
             })
             .collect();
         Some((
@@ -248,7 +258,7 @@ impl Container<'_> {
                 let Some(wrapper) = payload.get(relative..) else {
                     continue;
                 };
-                let Some(wrapper_word) = u32_le(wrapper, 0) else {
+                let Some(wrapper_word) = View::u32_le_at(wrapper, 0) else {
                     continue;
                 };
                 let extension = (wrapper_word & 0x3fff_ffff) as usize;
@@ -415,7 +425,7 @@ impl Container<'_> {
         // product record. The first complete span is the table boundary.
         let (count_offset, count, ids_start, ids_end) =
             (search_start..bytes.len().saturating_sub(3)).find_map(|count_offset| {
-                let count = usize::try_from(u32_le(bytes, count_offset)?).ok()?;
+                let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
                 let id_bytes = count.checked_mul(4)?;
                 let ids_start = count_offset.checked_add(4)?;
                 let ids_end = ids_start.checked_add(id_bytes)?;
@@ -434,7 +444,8 @@ impl Container<'_> {
                 let raw = <[u8; 4]>::try_from(word)
                     .expect("invariant: chunks_exact(4) yields four-byte slices");
                 RmFastLoadObjectId {
-                    value: u32::from_le_bytes(raw),
+                    value: View::u32_le_at(bytes, ids_start + ordinal * 4)
+                        .expect("invariant: chunks_exact(4) yields four-byte slices"),
                     offset: ids_start + ordinal * 4,
                     raw,
                 }
@@ -486,14 +497,13 @@ pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(u
         .rev()
         .find_map(|marker| {
             (payload[marker] == 1).then_some(())?;
-            let count = u32_le(payload, marker + 1)? as usize;
+            let count = View::u32_le_at(payload, marker + 1)? as usize;
             let mut pos = marker + 5;
             // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
             let count = bounded_len(count as u64, 3, payload.len().saturating_sub(pos))?;
             let mut out = Vec::with_capacity(count);
             for _ in 0..count {
-                let raw_length = payload.get(pos..pos + 2)?;
-                let length = usize::from(u16::from_le_bytes([raw_length[0], raw_length[1]]));
+                let length = usize::from(View::u16_le_at(payload, pos)?);
                 let string_offset = pos + 2;
                 pos = string_offset.checked_add(length)?;
                 let raw = payload.get(string_offset..pos)?;
@@ -512,14 +522,16 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
     };
     let parse_record = |record_id, offset, end| -> Option<ExtrefRecord> {
         let bytes = payload.get(offset..end)?;
-        (bytes.get(..4) == Some(&[1, 0, 0, 0]) && bytes.get(6) == Some(&1)).then_some(())?;
-        let declared_count = u16::from_be_bytes(bytes.get(4..6)?.try_into().ok()?);
+        (bytes.get(..handle_set::N) == Some(&[1, 0, 0, 0])
+            && bytes.get(handle_set::MARKER_A) == Some(&1))
+        .then_some(())?;
+        let declared_count = View::u16_be_at(bytes, handle_set::N)?;
         let mut id_slots = [0; 4];
         for (slot, value) in id_slots.iter_mut().enumerate() {
-            *value = u32::from_le_bytes(bytes.get(7 + slot * 4..11 + slot * 4)?.try_into().ok()?);
+            *value = View::u32_le_at(bytes, handle_set::ID_SLOTS + slot * 4)?;
         }
-        (bytes.get(23) == Some(&1)).then_some(())?;
-        let count = usize::from(*bytes.get(24)?);
+        (bytes.get(handle_set::MARKER_B) == Some(&1)).then_some(())?;
+        let count = usize::from(*bytes.get(handle_set::COUNT)?);
         (count >= 2).then_some(())?;
         let handle_token_count = count - 1;
         let prefix_byte_len = 26usize.checked_add(handle_token_count.checked_mul(5)?)?;
@@ -527,11 +539,9 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
             .then_some(())?;
         let mut handles = Vec::with_capacity(handle_token_count);
         for handle_index in 0..handle_token_count {
-            let token = 25 + handle_index * 5;
+            let token = handle_set::LEN + handle_index * 5;
             (bytes.get(token) == Some(&0xe0)).then_some(())?;
-            handles.push(u32::from_be_bytes(
-                bytes.get(token + 1..token + 5)?.try_into().ok()?,
-            ));
+            handles.push(View::u32_be_at(bytes, token + 1)?);
         }
         let closing_duplicate = handle_token_count >= 2
             && handles[handle_token_count - 1] == handles[handle_token_count - 2];
@@ -573,13 +583,13 @@ pub(crate) fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefInde
     let mut record_ids = std::collections::BTreeSet::new();
     let mut at = 25usize;
     loop {
-        let record_id = u32_le(payload, at)?;
+        let record_id = View::u32_le_at(payload, at)?;
         at += 4;
         if record_id == 0 {
             break;
         }
         record_ids.insert(record_id).then_some(())?;
-        let offset = u32_le(payload, at)?;
+        let offset = View::u32_le_at(payload, at)?;
         at += 4;
         let offset = offset as usize;
         if offset >= string_table {
@@ -622,16 +632,9 @@ pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32
     let mut at = 0usize;
     while at + 9 <= bytes.len() {
         if bytes[at] == 0xe0 && bytes[at + 5] & 0xf0 == 0xc0 {
-            let handle = u32::from_be_bytes(
-                bytes[at + 1..at + 5]
-                    .try_into()
-                    .expect("four-byte persistent handle"),
-            );
-            let tagged_reference = u32::from_be_bytes(
-                bytes[at + 5..at + 9]
-                    .try_into()
-                    .expect("four-byte tagged reference"),
-            ) & 0x0fff_ffff;
+            let handle = View::u32_be_at(bytes, at + 1).expect("four-byte persistent handle");
+            let tagged_reference =
+                View::u32_be_at(bytes, at + 5).expect("four-byte tagged reference") & 0x0fff_ffff;
             pairs.push((at, handle, tagged_reference));
             at += 9;
         } else {
@@ -692,9 +695,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
             "missing SPLMSSTR magic".to_string(),
         ));
     }
-    let version = data.get(8).copied().unwrap_or(0);
-    let file_tag = u24_le(&data, 9);
-    let footer_offset = u48_le(&data, 0x11);
+    let version = data.get(splmsstr::VERSION_TAG).copied().unwrap_or(0);
+    let file_tag = u24_le(&data, splmsstr::FILE_TAG);
+    let footer_offset = u48_le(&data, splmsstr::FOOTER_OFFSET);
     let fo = usize::try_from(footer_offset)
         .map_err(|_| CodecError::Malformed("FOOTER offset exceeds address space".to_string()))?;
     if fo > data.len() {
@@ -707,8 +710,13 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         .checked_sub(4)
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
-    let (header_entry_count, mut entries, header_end) =
-        directory_region(&data, 0x19, *b"HEADER", Region::Header, fo)?;
+    let (header_entry_count, mut entries, header_end) = directory_region(
+        &data,
+        splmsstr::HEADER_MARKER,
+        *b"HEADER",
+        Region::Header,
+        fo,
+    )?;
     let (footer_entry_count, footer_entries, footer_end) =
         directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
     entries.extend(footer_entries);
@@ -773,7 +781,7 @@ fn directory_region(
             String::from_utf8_lossy(&marker)
         )));
     }
-    let count = u32_le(data, count_offset)
+    let count = View::u32_le_at(data, count_offset)
         .ok_or_else(|| CodecError::Malformed("truncated directory entry count".to_string()))?;
     let capacity = usize::try_from(count)
         .map_err(|_| CodecError::Malformed("directory entry count exceeds address space".into()))?;
@@ -808,11 +816,11 @@ fn directory_region(
 /// of printable ASCII beginning `/Root`, then a 16-byte payload. Returns the entry
 /// and the offset just past its payload.
 fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)> {
-    let name_len = u32_le(data, o)? as usize;
+    let name_len = View::u32_le_at(data, o)? as usize;
     if !(6..=128).contains(&name_len) {
         return None;
     }
-    let name_start = o + 4;
+    let name_start = o + dir_entry::LEN;
     let name_end = name_start + name_len;
     let raw = data.get(name_start..name_end)?;
     if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
@@ -821,7 +829,10 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
     let name = String::from_utf8_lossy(raw).into_owned();
     let payload = name_end;
     // Interpret the 16-byte payload as a file span when it lands within the file.
-    let file_span = match (u64_le(data, payload), u64_le(data, payload + 8)) {
+    let file_span = match (
+        View::u64_le_at(data, payload),
+        View::u64_le_at(data, payload + file_payload::SIZE),
+    ) {
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);
             match end {
@@ -837,6 +848,9 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
             region,
             file_span,
         },
-        payload + 16,
+        payload + file_payload::LEN,
     ))
 }
+
+#[cfg(test)]
+mod tests;

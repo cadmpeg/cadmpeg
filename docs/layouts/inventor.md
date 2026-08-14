@@ -7,7 +7,7 @@
 Source of truth: [`docs/formats/inventor.md`](../../docs/formats/inventor.md).
 Table source: `docs/layouts/inventor.toml`.
 
-Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein, UFRxDoc, and kernel-carrier envelope.
+Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein stream envelope, UFRxDoc, and kernel-carrier envelope. The Protein page format is tabulated in `docs/layouts/protein.toml`.
 
 ## `pm_dc_content_header`
 
@@ -206,14 +206,13 @@ Spec §2 · layout: byte offsets · size: 56 B
 
 Spec §4 · layout: byte offsets · size: 18 B
 
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/rse.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 16 | `prefix` | `bytes[16]` | little | spec | a 16-byte prefix |
 | 16 | 2 | `form` | `u16` | little | spec | a u16 form |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-inventor/src/rse.rs` — The bulk parser reads the 18-byte fixed envelope before the exact zlib member.
 
 ## `meta_body_prefix`
 
@@ -249,6 +248,8 @@ Spec §5 · layout: byte offsets · size: 14 B
 ## `protein_header`
 
 Spec §7 · layout: byte offsets · size: 4 B
+
+Inventor compound-stream envelope around a Protein ZIP. The Protein page format is tabulated in `docs/layouts/protein.toml`.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

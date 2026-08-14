@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use std::io::Cursor;
+
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
 use super::*;
-use cadmpeg_ir::codec::CodecBackend;
+use crate::test_support::*;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     NxCodec
@@ -11,9 +17,9 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
-    assert!(result.ir.native.namespace("nx").is_some());
+    assert!(result.ir().native.namespace("nx").is_some());
 }
 
 #[test]
@@ -35,8 +41,8 @@ fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() 
         .any(|note| note.contains("SCH_TEST_1_9999")));
 
     let result = decode(bytes);
-    assert!(result.report.geometry_transferred);
-    assert!(!result.source_fidelity.retained_records.is_empty());
+    assert!(result.report().geometry_transferred);
+    assert!(!result.source_fidelity().retained_records.is_empty());
     assert_valid(&result);
 }
 
@@ -53,9 +59,9 @@ fn analytic_topology_pipeline_covers_every_supported_quadric_and_conic_family() 
     ];
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
-        assert!(result.report.geometry_transferred);
-        assert!(!result.ir.model.faces.is_empty());
-        assert!(!result.ir.model.surfaces.is_empty());
+        assert!(result.report().geometry_transferred);
+        assert!(!result.ir().model.faces.is_empty());
+        assert!(!result.ir().model.surfaces.is_empty());
         assert_valid(&result);
     }
 }
@@ -76,20 +82,20 @@ fn freeform_pipeline_binds_nurbs_pcurves_offsets_blends_and_intersections() {
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
         saw_nurbs |= result
-            .ir
+            .ir()
             .model
             .curves
             .iter()
             .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_)))
             || result
-                .ir
+                .ir()
                 .model
                 .surfaces
                 .iter()
                 .any(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
-        saw_pcurve |= !result.ir.model.pcurves.is_empty();
-        saw_procedural_surface |= !result.ir.model.procedural_surfaces.is_empty();
-        saw_procedural_curve |= !result.ir.model.procedural_curves.is_empty();
+        saw_pcurve |= !result.ir().model.pcurves.is_empty();
+        saw_procedural_surface |= !result.ir().model.procedural_surfaces.is_empty();
+        saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();
         assert_valid(&result);
     }
     assert!(saw_nurbs);
@@ -113,9 +119,9 @@ fn deltas_pipeline_replaces_geometry_without_discarding_partition_topology() {
     ];
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
-        assert!(result.report.geometry_transferred);
-        assert_eq!(result.ir.model.bodies.len(), 1);
-        assert_eq!(result.ir.model.faces.len(), 1);
+        assert!(result.report().geometry_transferred);
+        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().model.faces.len(), 1);
         assert_valid(&result);
     }
 }
@@ -142,7 +148,7 @@ fn display_jt_pipeline_decodes_mesh_scene_lod_and_property_streams() {
             ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
             ("/Root/UG_PART/DisplayJT", jt),
         ]));
-        let namespace = result.ir.native.namespace("nx").unwrap();
+        let namespace = result.ir().native.namespace("nx").unwrap();
         assert!(!namespace.arenas[expected_arena].is_empty());
         assert_valid(&result);
     }
@@ -151,9 +157,9 @@ fn display_jt_pipeline_decodes_mesh_scene_lod_and_property_streams() {
 #[test]
 fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
     let result = decode(composed_feature_history_prt());
-    assert!(!result.ir.model.features.is_empty());
+    assert!(!result.ir().model.features.is_empty());
     let mut ordinals = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -161,7 +167,7 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
         .collect::<Vec<_>>();
     ordinals.sort_unstable();
     assert_eq!(ordinals, (0..ordinals.len() as u64).collect::<Vec<_>>());
-    let namespace = result.ir.native.namespace("nx").unwrap();
+    let namespace = result.ir().native.namespace("nx").unwrap();
     assert!(!namespace.arenas["feature_operation_records"].is_empty());
     assert!(!namespace.arenas["feature_input_blocks"].is_empty());
 
@@ -178,7 +184,7 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
             })
             .expect("operation label");
         result
-            .ir
+            .ir()
             .model
             .features
             .iter()
@@ -249,7 +255,7 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
 fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
     let result = decode(offset_store_primary_body_lineage_prt());
     let older = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -259,7 +265,7 @@ fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
         })
         .expect("older offset-store writer");
     let newer = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -298,7 +304,7 @@ fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
             "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
         )),
     );
-    assert_eq!(result.ir.model.feature_result_topologies.len(), 2);
+    assert_eq!(result.ir().model.feature_result_topologies.len(), 2);
     assert_valid(&result);
 }
 
@@ -306,7 +312,7 @@ fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
 fn boolean_target_history_attaches_the_target_writer_dependency() {
     let result = decode(boolean_target_body_lineage_prt());
     let older = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -316,7 +322,7 @@ fn boolean_target_history_attaches_the_target_writer_dependency() {
         })
         .expect("Boolean target writer");
     let oldest = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -326,7 +332,7 @@ fn boolean_target_history_attaches_the_target_writer_dependency() {
         })
         .expect("oldest native body writer");
     let followup = result
-        .ir
+        .ir()
         .model
         .features
         .iter()
@@ -344,15 +350,15 @@ fn boolean_target_history_attaches_the_target_writer_dependency() {
         followup.dependencies.as_slice(),
         std::slice::from_ref(&older.id)
     );
-    assert_eq!(result.ir.model.feature_result_topologies.len(), 3);
+    assert_eq!(result.ir().model.feature_result_topologies.len(), 3);
     assert_valid(&result);
 }
 
 #[test]
 fn document_pipeline_retains_configurations_attributes_external_links_and_opaque_assets() {
     let document = decode(prt_with_arrangements());
-    assert_eq!(document.ir.model.attributes.len(), 1);
-    assert_eq!(document.ir.model.configurations.len(), 2);
+    assert_eq!(document.ir().model.attributes.len(), 1);
+    assert_eq!(document.ir().model.configurations.len(), 2);
     assert_valid(&document);
 
     let opaque = decode(prt_with_named_payloads(&[
@@ -360,9 +366,18 @@ fn document_pipeline_retains_configurations_attributes_external_links_and_opaque
         ("/Root/ExternalReferences", external_reference_stream()),
         ("/Root/vendor/private", b"opaque application state".to_vec()),
     ]));
-    assert!(!opaque.ir.native_unknowns("nx").unwrap().is_empty());
-    assert!(opaque.report.losses.iter().any(|loss| {
+    assert!(!opaque.ir().native_unknowns("nx").unwrap().is_empty());
+    assert!(opaque.report().losses.iter().any(|loss| {
         loss.message.contains("ExternalReferences") || loss.message.contains("vendor/private")
     }));
     assert_valid(&opaque);
+}
+
+#[test]
+fn detect_high_on_magic() {
+    assert_eq!(NxCodec.detect(MAGIC), Confidence::High);
+    assert_eq!(NxCodec.detect(&single_part_prt()), Confidence::High);
+    assert_eq!(NxCodec.detect(b"PK\x03\x04 not nx"), Confidence::No);
+    // A Creo/Granite .prt shares the extension but not the magic.
+    assert_eq!(NxCodec.detect(b"\xe0\x02\xff\xfeGRANITE"), Confidence::No);
 }

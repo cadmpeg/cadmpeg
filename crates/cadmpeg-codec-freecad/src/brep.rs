@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -733,7 +733,7 @@ fn census_surface(
     increment(counts, family);
 }
 
-fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
+pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let topology_version = if text.contains("CASCADE Topology V1, (c) Matra-Datavision") {
@@ -831,7 +831,7 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     })
 }
 
-fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
+pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
@@ -1969,17 +1969,27 @@ fn parse_binary_curve2d(
 }
 
 struct BinaryCursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
+    view: View<'a>,
 }
 
 impl<'a> BinaryCursor<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
+        Self {
+            view: View::over_retained(bytes),
+        }
     }
 
     fn remaining(&self) -> usize {
-        self.bytes.len() - self.offset
+        self.view.remaining()
+    }
+
+    fn unread(&self) -> &'a [u8] {
+        let rel = self.view.position().saturating_sub(self.view.start());
+        self.view.window().get(rel..).unwrap_or_default()
+    }
+
+    fn truncated(label: &str) -> CodecError {
+        CodecError::Malformed(format!("truncated {label}"))
     }
 
     /// Clamps a declared element count to what the unread bytes can hold.
@@ -1992,23 +2002,11 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
-        let end = self
-            .offset
-            .checked_add(count)
-            .ok_or_else(|| CodecError::Malformed(format!("{label} offset overflow")))?;
-        let bytes = self
-            .bytes
-            .get(self.offset..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
-        self.offset = end;
-        Ok(bytes)
+        self.view.take(count).ok_or_else(|| Self::truncated(label))
     }
 
     fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
-        let tail = self
-            .bytes
-            .get(self.offset..)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
+        let tail = self.unread();
         let length = tail
             .iter()
             .position(|byte| *byte == b'\n')
@@ -2039,7 +2037,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, label)?[0])
+        self.view.u8().ok_or_else(|| Self::truncated(label))
     }
 
     fn bool(&mut self, label: &str) -> Result<bool, CodecError> {
@@ -2053,15 +2051,11 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn u16(&mut self, label: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(
-            self.take(2, label)?.try_into().expect("two-byte slice"),
-        ))
+        self.view.u16_le().ok_or_else(|| Self::truncated(label))
     }
 
     fn i32(&mut self, label: &str) -> Result<i32, CodecError> {
-        Ok(i32::from_le_bytes(
-            self.take(4, label)?.try_into().expect("four-byte slice"),
-        ))
+        self.view.i32_le().ok_or_else(|| Self::truncated(label))
     }
 
     fn count(&mut self, label: &str) -> Result<usize, CodecError> {
@@ -2073,7 +2067,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
-        let value = f64::from_le_bytes(self.take(8, label)?.try_into().expect("eight-byte slice"));
+        let value = self.view.f64_le().ok_or_else(|| Self::truncated(label))?;
         value
             .is_finite()
             .then_some(value)
@@ -2081,7 +2075,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
-        let value = f32::from_le_bytes(self.take(4, label)?.try_into().expect("four-byte slice"));
+        let value = self.view.f32_le().ok_or_else(|| Self::truncated(label))?;
         value
             .is_finite()
             .then_some(value)
@@ -3761,8 +3755,12 @@ impl<'a> TokenCursor<'a> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::test_support::*;
+    use crate::FcstdCodec;
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use std::io::Cursor;
 
     #[test]
     fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
@@ -4187,5 +4185,136 @@ mod tests {
             .expect_err("out-of-order table")
             .to_string()
             .contains("out of order"));
+    }
+
+    #[test]
+    pub(crate) fn transfers_recursive_exact_parameter_curve_geometry() {
+        let source = crate::brep::TextCurve2d::Offset {
+            distance: 0.25,
+            basis: Box::new(crate::brep::TextCurve2d::Trimmed {
+                parameter_range: [0.0, std::f64::consts::PI],
+                basis: Box::new(crate::brep::TextCurve2d::Circle {
+                    center: cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                    x_axis: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    y_axis: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                    radius: 3.0,
+                }),
+            }),
+        };
+        let cadmpeg_ir::geometry::PcurveGeometry::Offset { distance, basis } =
+            crate::topology_transfer::pcurve_geometry(&source)
+        else {
+            panic!("expected offset pcurve");
+        };
+        assert_eq!(distance, 0.25);
+        assert!(matches!(
+            basis.as_ref(),
+            cadmpeg_ir::geometry::PcurveGeometry::Trimmed { basis, .. }
+                if matches!(basis.as_ref(), cadmpeg_ir::geometry::PcurveGeometry::Circle { radius: 3.0, .. })
+        ));
+    }
+
+    #[test]
+    pub(crate) fn transfers_binary_exact_curve_and_surface_carriers() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.bin"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+        let mut brep =
+            b"\nOpen CASCADE Topology V3 (c)\nLocations 0\nCurve2ds 0\nCurves 1\n".to_vec();
+        brep.push(1);
+        for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0] {
+            brep.extend_from_slice(&value.to_le_bytes());
+        }
+        brep.extend_from_slice(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n");
+        brep.push(1);
+        for value in [
+            0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+        ] {
+            brep.extend_from_slice(&value.to_le_bytes());
+        }
+        brep.extend_from_slice(b"Triangulations 1\n");
+        brep.extend_from_slice(&3_i32.to_le_bytes());
+        brep.extend_from_slice(&1_i32.to_le_bytes());
+        brep.push(0);
+        for value in [0.01_f64, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            brep.extend_from_slice(&value.to_le_bytes());
+        }
+        for node in [1_i32, 2, 3] {
+            brep.extend_from_slice(&node.to_le_bytes());
+        }
+        brep.extend_from_slice(b"TShapes 7\n");
+        let flags = |brep: &mut Vec<u8>| brep.extend_from_slice(&[1, 0, 0, 1, 0, 0, 0]);
+        let child = |brep: &mut Vec<u8>, orientation: u8, reverse_index: i32| {
+            brep.push(orientation);
+            brep.extend_from_slice(&reverse_index.to_le_bytes());
+            brep.extend_from_slice(&0_i32.to_le_bytes());
+        };
+        brep.push(7);
+        brep.extend_from_slice(&0.001_f64.to_le_bytes());
+        for value in [0.0_f64, 0.0, 0.0] {
+            brep.extend_from_slice(&value.to_le_bytes());
+        }
+        brep.push(0);
+        flags(&mut brep);
+        brep.push(b'*');
+        brep.push(6);
+        brep.extend_from_slice(&0.001_f64.to_le_bytes());
+        brep.extend_from_slice(&[1, 1, 1, 0]);
+        flags(&mut brep);
+        child(&mut brep, 0, 7);
+        child(&mut brep, 1, 7);
+        brep.push(b'*');
+        brep.push(5);
+        flags(&mut brep);
+        child(&mut brep, 0, 6);
+        brep.push(b'*');
+        brep.push(4);
+        brep.push(0);
+        brep.extend_from_slice(&0.001_f64.to_le_bytes());
+        brep.extend_from_slice(&1_i32.to_le_bytes());
+        brep.extend_from_slice(&0_i32.to_le_bytes());
+        brep.push(2);
+        brep.extend_from_slice(&1_i32.to_le_bytes());
+        flags(&mut brep);
+        child(&mut brep, 0, 5);
+        brep.push(b'*');
+        for (kind, reverse_index) in [(3_u8, 4_i32), (2, 3), (0, 2)] {
+            brep.push(kind);
+            flags(&mut brep);
+            child(&mut brep, 0, reverse_index);
+            brep.push(b'*');
+        }
+        brep.extend_from_slice(&7_i32.to_le_bytes());
+        brep.extend_from_slice(&0_i32.to_le_bytes());
+        brep.extend_from_slice(&0_i32.to_le_bytes());
+        let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.bin", &brep)]);
+        let result = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("binary curve carrier");
+        assert_eq!(result.ir().model.curves.len(), 1);
+        assert!(matches!(
+            result.ir().model.curves[0].geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Line { .. }
+        ));
+        assert_eq!(result.ir().model.surfaces.len(), 1);
+        assert!(matches!(
+            result.ir().model.surfaces[0].geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
+        ));
+        assert_eq!(result.ir().model.tessellations.len(), 1);
+        assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(
+            result.ir().model.tessellations[0].body.as_ref(),
+            Some(&result.ir().model.bodies[0].id)
+        );
+        assert_eq!(
+            result.ir().model.tessellations[0].faces,
+            [result.ir().model.faces[0].id.clone()]
+        );
+        assert_eq!(result.ir().model.coedges.len(), 1);
+        assert!(result.report().geometry_transferred);
     }
 }

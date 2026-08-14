@@ -2,10 +2,12 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read Siemens NX `.prt` files into [`cadmpeg_ir::document::CadIr`].
 //!
-//! The codec recognizes the `SPLMSSTR` container signature, extracts compressed
-//! Parasolid neutral-binary streams from the canonical part payload, and decodes
-//! supported geometry and topology. Detection uses file content because NX and
-//! Creo share the `.prt` extension.
+//! [`NxCodec`] is the normal public decode API. A hidden `fuzz` module
+//! exposes `()`-returning parser wrappers. The codec recognizes the `SPLMSSTR`
+//! container signature, extracts compressed Parasolid neutral-binary streams
+//! from the canonical part payload, and decodes supported geometry and
+//! topology. Detection uses file content because NX and Creo share the `.prt`
+//! extension.
 //!
 //! Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! for selected or terminal-lineage-resolved body images; L2 for unresolved
@@ -26,8 +28,8 @@
 //! let mut input = File::open("part.prt")?;
 //! let result = NxCodec.decode(&mut input, &DecodeOptions::default())?;
 //!
-//! println!("{} bodies", result.ir.model.bodies.len());
-//! for loss in &result.report.losses {
+//! println!("{} bodies", result.ir().model.bodies.len());
+//! for loss in &result.report().losses {
 //!     println!("{:?}: {}", loss.severity, loss.message);
 //! }
 //! # Ok(())
@@ -64,37 +66,34 @@
 //! JT coordinates and triangle connectivity transfer as canonical tessellations.
 //! Complete design history, assembly occurrence placement, material and appearance
 //! assignment and `.prt` writing are not supported.
-//! Part attributes transfer as document attributes. The public submodules
-//! expose the lower-level container, stream, geometry, NURBS, intersection, and
-//! topology decoders. The object-model extraction and attachment tier (record
-//! families, feature semantics, and IR writing) is crate-internal and reached
-//! only through the decode entry point. Applications that need a complete IR
-//! entry point should use [`NxCodec`].
+//! Part attributes transfer as document attributes. The object-model extraction
+//! and attachment tier (record families, feature semantics, and IR writing) is
+//! crate-internal and reached only through the decode entry point.
 
-pub mod container;
-#[allow(dead_code)] // Internal orchestration remains behind the codec facade.
+pub(crate) mod container;
 pub(crate) mod decode;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz access.
 pub(crate) mod deltas;
-#[allow(dead_code)] // Internal evaluation is reached by selected decode paths.
 pub(crate) mod evaluation;
 mod framing;
-pub mod geometry;
-pub mod intersection;
+pub(crate) mod geometry;
+pub(crate) mod intersection;
 mod jt;
 mod jt_topology;
+/// Byte-offset constants generated from `docs/layouts/nx.toml`.
+pub(crate) mod layout;
 pub(crate) mod native;
-pub mod nurbs;
-#[allow(dead_code)] // Object-model parsing is reached through decode and fuzz.
+pub(crate) mod nurbs;
 pub(crate) mod om;
-#[allow(dead_code)] // Object-model token parsing is an internal dependency.
 pub(crate) mod om_tokens;
-pub mod parasolid;
-pub mod topology;
+pub(crate) mod parasolid;
+pub(crate) mod topology;
+mod vec3_at;
 
-#[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzz;
+
+#[doc(hidden)]
+pub use evaluation::{saved_body_census_evidence, BodyCensusEvidence};
 
 use std::collections::BTreeMap;
 
@@ -294,6 +293,8 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
 }
 
 #[cfg(test)]
-pub(crate) mod test_support;
+mod golden_tests;
 #[cfg(test)]
-mod tests;
+mod integration_tests;
+#[cfg(test)]
+pub(crate) mod test_support;

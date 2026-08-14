@@ -1,0 +1,181 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
+#![allow(unused_imports)]
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
+    SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
+};
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::CadIr;
+
+use crate::test_support::*;
+use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+#[derive(Debug)]
+struct ShortReader {
+    inner: Cursor<Vec<u8>>,
+    maximum_read: usize,
+}
+
+impl Read for ShortReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let length = buffer.len().min(self.maximum_read);
+        self.inner.read(&mut buffer[..length])
+    }
+}
+
+impl Seek for ShortReader {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(position)
+    }
+}
+
+#[test]
+fn fixed_ascii_detection_requires_two_consistent_cards() {
+    let mut valid = card(b"generated fixture", b'S', 1);
+    valid.extend(card(b"", b'G', 1));
+    assert_eq!(IgesCodec.detect(&valid), Confidence::High);
+
+    assert_eq!(IgesCodec.detect(&valid[..81]), Confidence::No);
+
+    let mut arbitrary = vec![b'x'; 72];
+    arbitrary.extend_from_slice(b"S      1\nsecond line\n");
+    assert_eq!(IgesCodec.detect(&arbitrary), Confidence::No);
+}
+
+#[test]
+fn fixed_ascii_detection_allows_eight_bit_data_fields() {
+    let mut valid = card(b"generated fixture", b'S', 1);
+    valid.extend(card(&[0x80, 0xff], b'G', 1));
+
+    assert_eq!(IgesCodec.detect(&valid), Confidence::High);
+}
+
+#[test]
+fn representation_classification_fills_its_prefix_across_short_reads() {
+    let bytes = point_file();
+    let mut reader = ShortReader {
+        inner: Cursor::new(bytes),
+        maximum_read: 7,
+    };
+
+    assert_eq!(
+        crate::representation::classify(&mut reader).unwrap(),
+        crate::representation::Representation::FixedAscii
+    );
+    assert_eq!(reader.stream_position().unwrap(), 0);
+}
+
+#[test]
+fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
+    let mut compressed = vec![b' '; 80];
+    compressed[72] = b'C';
+    assert_eq!(IgesCodec.detect(&compressed), Confidence::High);
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(compressed.clone()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(summary.container_kind, "compressed-ascii");
+    assert_eq!(
+        IgesCodec
+            .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "not implemented yet: IGES Compressed ASCII representation decode"
+    );
+
+    let mut binary = vec![0_u8; 80];
+    binary[0] = b'B';
+    binary[1..5].copy_from_slice(&75_u32.to_be_bytes());
+    for (offset, identifier) in [
+        (11, b'B'),
+        (16, b'S'),
+        (21, b'G'),
+        (26, b'D'),
+        (31, b'P'),
+        (36, b'T'),
+    ] {
+        binary[offset] = identifier;
+    }
+    binary[72] = b'B';
+    binary[73..79].fill(b'0');
+    binary[79] = b'1';
+    assert_eq!(IgesCodec.detect(&binary), Confidence::High);
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(binary.clone()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(summary.container_kind, "binary");
+    assert_eq!(
+        IgesCodec
+            .decode(&mut Cursor::new(binary), &DecodeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "not implemented yet: IGES Binary representation decode"
+    );
+}
+
+#[test]
+fn representation_detection_rejects_malformed_flag_constants() {
+    let mut compressed = vec![b' '; 80];
+    compressed[72] = b'C';
+    compressed[4] = b'\n';
+    assert_eq!(IgesCodec.detect(&compressed), Confidence::No);
+
+    let mut binary = vec![0_u8; 80];
+    binary[0] = b'B';
+    binary[1..5].copy_from_slice(&75_u32.to_be_bytes());
+    for (offset, identifier) in [
+        (11, b'B'),
+        (16, b'S'),
+        (21, b'G'),
+        (26, b'D'),
+        (31, b'P'),
+        (36, b'T'),
+    ] {
+        binary[offset] = identifier;
+    }
+    binary[72] = b'B';
+    binary[73..79].fill(b' ');
+    binary[79] = b'1';
+
+    for offset in [11, 16, 21, 26, 31, 36, 72, 79] {
+        let mut malformed = binary.clone();
+        malformed[offset] ^= 1;
+        assert_eq!(
+            IgesCodec.detect(&malformed),
+            Confidence::No,
+            "offset {offset}"
+        );
+    }
+
+    let mut little_endian_count = binary.clone();
+    little_endian_count[1..5].copy_from_slice(&75_u32.to_le_bytes());
+    assert_eq!(IgesCodec.detect(&little_endian_count), Confidence::No);
+
+    let mut malformed_tail = binary;
+    malformed_tail[75] = b'X';
+    assert_eq!(IgesCodec.detect(&malformed_tail), Confidence::No);
+}

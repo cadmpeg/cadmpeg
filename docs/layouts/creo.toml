@@ -27,6 +27,7 @@ statement, so those fields carry `unstated`.
 
 [[record]]
 name = "unix_compress_header"
+parsed_by = "crates/cadmpeg-codec-creo/src/container.rs"
 kind = "byte"
 section = "1"
 anchor = "A section payload beginning `1f 9d <flags>` uses Unix `compress` LZW framing."
@@ -39,6 +40,7 @@ offset = 0
 type = "bytes[2]"
 source = "spec"
 anchor = "A section payload beginning `1f 9d <flags>`"
+value = [0x1f, 0x9d]
 
 [[record.field]]
 name = "flags"
@@ -47,13 +49,10 @@ type = "u8"
 source = "spec"
 anchor = "The low five flag bits give the maximum code width from 9 through 16; bit 7 enables block mode"
 
-[[record.code]]
-path = "crates/cadmpeg-codec-creo/src/compress.rs"
-contains = "0x1f, 0x9d"
-note = "The parser matches the same two magic bytes and reads the flag byte at offset 2."
 
 [[record]]
 name = "cmnm_model_name_record"
+parsed_by = "crates/cadmpeg-codec-creo/src/container.rs"
 kind = "byte"
 section = "1"
 anchor = "`hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after those bytes is not part of the name."
@@ -67,6 +66,7 @@ type = "bytes[8]"
 source = "derived"
 anchor = "The header record `#- CMNM <hhh><name>` stores the native model filename."
 note = "Width derived from the length of the stated literal `#- CMNM ` including its trailing space."
+value = "#- CMNM "
 
 [[record.field]]
 name = "name_length_hex"
@@ -75,10 +75,6 @@ type = "bytes[3]"
 source = "spec"
 anchor = "The three ASCII hexadecimal digits give the filename byte length."
 
-[[record.code]]
-path = "crates/cadmpeg-codec-creo/src/container.rs"
-contains = "b\"#- CMNM \""
-note = "The parser's prefix is the same eight-byte literal, and it reads the three hexadecimal digits immediately after it."
 
 # --- §3.2 The two records with stated byte offsets --------------------------
 
@@ -143,7 +139,7 @@ note = "Bytes 2 through 7. The specification states no field between the `4c b7`
 
 [[record.code]]
 path = "crates/cadmpeg-codec-creo/src/surface.rs"
-contains = "is_type24_first_coordinate_round_body"
+contains = "self.body.get(..2) == Some(&[0x4c, 0xb7])"
 note = "The parser gates on length 50, the `4c b7` opener, `0x12` at 15, and `0x18` at 49, matching every stated offset."
 
 [[record]]
@@ -199,7 +195,7 @@ anchor = "The body ends with `f7 19`."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-creo/src/surface.rs"
-contains = "is_type24_segmented_first_coordinate_round_body"
+contains = "Some(&[0x70, 0xbf, 0xe3, 0x4f, 0x05, 0x11, 0x10])"
 note = "The parser gates on length 56, `0x18` at 0, the seven-byte literal at 9..16, and `f7 19` at 54..56, matching every stated range."
 
 # --- §2 PSB primitive encoding ----------------------------------------------
@@ -386,8 +382,8 @@ note = "The specification states no byte order for this lane."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-creo/src/curve.rs"
-contains = "values.len() == 8"
-note = "The parser gates the pcurve endpoint body on exactly eight decoded slots."
+contains = "fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]>"
+note = "The parser reconstructs the eight-slot pcurve endpoint body as `[f64; 8]`."
 
 [[record]]
 name = "local_sys_support_frame"
@@ -430,8 +426,8 @@ note = "The specification states no byte order for this lane."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-creo/src/scalar.rs"
-contains = "values.len() == 12"
-note = "The parser gates the local-system frame on exactly twelve decoded slots."
+contains = "pub fn decode_explicit_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]>"
+note = "The parser expands the local-system support frame as twelve `f64` slots."
 
 # --- Not tabulated -----------------------------------------------------------
 

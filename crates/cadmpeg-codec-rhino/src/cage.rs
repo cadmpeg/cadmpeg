@@ -265,7 +265,7 @@ pub(crate) fn decode_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::archive_test_support::crc_chunk;
+    use crate::test_support::crc_chunk;
 
     fn rational_cage_body() -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();

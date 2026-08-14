@@ -680,7 +680,7 @@ mod tests {
         let result = NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
-        let namespace = result.ir.native.namespace("nx").expect("NX namespace");
+        let namespace = result.ir().native.namespace("nx").expect("NX namespace");
         assert_eq!(namespace.version, 189);
         let rows = namespace
             .arena_as::<super::SegmentIndexRow>("segment_index_rows")
@@ -699,7 +699,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let links = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -723,7 +723,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let bindings = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -748,7 +748,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let bindings = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant")
@@ -772,7 +772,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let namespace = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("required invariant");
@@ -801,7 +801,7 @@ mod tests {
                 .decode(&mut Cursor::new(file), &DecodeOptions::default())
                 .expect("required invariant");
             let links = result
-                .ir
+                .ir()
                 .native
                 .namespace("nx")
                 .expect("required invariant")
@@ -849,7 +849,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let links = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")
@@ -886,7 +886,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let links = result
-            .ir
+            .ir()
             .native
             .namespace("nx")
             .expect("NX namespace")

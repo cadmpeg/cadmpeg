@@ -1,0 +1,425 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
+#![allow(unused_imports)]
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
+    SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
+};
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::CadIr;
+
+use crate::test_support::*;
+use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+#[test]
+fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
+    for (end_x, decoded) in [("1.000999", true), ("1.001001", false)] {
+        let edge = format!("110,0,0,0,{end_x},0,0;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(explicit_multi_pcurve_loop_file_with_first_edge(&edge)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.0 == "iges:model:body#D27"),
+            decoded,
+            "{end_x}"
+        );
+        assert_eq!(
+            result.report().losses.iter().any(|loss| loss
+                .message
+                .contains("edge curve endpoints disagree with the vertex-list points")),
+            !decoded,
+            "{end_x}"
+        );
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn decode_builds_a_vertex_only_pole_loop() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_vertex_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let loop_ = result
+        .ir()
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id.0 == "iges:model:loop#D11:D7")
+        .unwrap_or_else(|| {
+            panic!(
+                "loops={:#?} losses={:#?}",
+                result.ir().model.loops,
+                result.report().losses
+            )
+        });
+    assert!(loop_.coedges.is_empty());
+    assert_eq!(loop_.vertex_uses.len(), 1);
+    assert_eq!(loop_.vertex_uses[0].vertex.0, "iges:model:vertex#D11:D5:1");
+    assert!(loop_.vertex_uses[0].after.is_none());
+    assert!(loop_.vertex_uses[0].pcurves.is_empty());
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_preserves_a_face_with_no_explicit_outer_loop() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_vertex_loop_file_with_outer_flag(false)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let loop_ = result
+        .ir()
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id.0 == "iges:model:loop#D11:D7")
+        .unwrap();
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_builds_a_solid_with_an_oriented_void_shell() {
+    let (bytes, solid_sequence, outer_sequence, void_sequence) = explicit_void_solid_file();
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let body = result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == format!("iges:model:body#D{solid_sequence}"))
+        .unwrap();
+    assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid);
+    let region = result
+        .ir()
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id == body.regions[0])
+        .unwrap();
+    assert_eq!(region.shells.len(), 2);
+    assert_eq!(
+        region.shells[0].0,
+        format!("iges:model:shell#D{solid_sequence}:D{outer_sequence}")
+    );
+    assert_eq!(
+        region.shells[1].0,
+        format!("iges:model:shell#D{solid_sequence}:D{void_sequence}")
+    );
+    let void_shell = result
+        .ir()
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == region.shells[1])
+        .unwrap();
+    for face_id in &void_shell.faces {
+        let face = result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == *face_id)
+            .unwrap();
+        assert_eq!(face.sense, cadmpeg_ir::topology::Sense::Reversed);
+    }
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file_with_options(false, true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.id.0 != "iges:model:body#D55"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message
+            == "IGES entity type 186 form 0 was not projected: closed shell does not use every edge exactly twice with opposite senses"
+    }));
+    assert_eq!(
+        result.ir().native.namespace("iges").unwrap().arenas["entities"].len(),
+        28
+    );
+}
+
+#[test]
+fn decode_applies_manifold_solid_placement_at_body_scope_once() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file_with_transform(true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let body = result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "iges:model:body#D55")
+        .unwrap();
+    assert_eq!(
+        body.transform.as_ref().unwrap().rows,
+        [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+    let points = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .filter(|point| point.id.0.starts_with("iges:model:point#D55:"))
+        .map(|point| point.position)
+        .collect::<Vec<_>>();
+    assert!(points.contains(&cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)));
+    assert!(points.contains(&cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)));
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_builds_a_connected_manifold_tetrahedron() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let body = result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "iges:model:body#D55")
+        .unwrap();
+    assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid);
+    let region = result
+        .ir()
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id == body.regions[0])
+        .unwrap();
+    assert_eq!(region.shells.len(), 1);
+    let shell = result
+        .ir()
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == region.shells[0])
+        .unwrap();
+    assert_eq!(shell.faces.len(), 4);
+    let solid_edges = result
+        .ir()
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.id.0.starts_with("iges:model:edge#D55:"))
+        .collect::<Vec<_>>();
+    assert_eq!(solid_edges.len(), 6);
+    for edge in solid_edges {
+        let uses = result
+            .ir()
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id)
+            .collect::<Vec<_>>();
+        assert_eq!(uses.len(), 2);
+        assert_ne!(uses[0].sense, uses[1].sense);
+        assert_eq!(uses[0].radial_next, uses[1].id);
+        assert_eq!(uses[1].radial_next, uses[0].id);
+    }
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_builds_shared_explicit_open_shell_topology() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let body = result
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "iges:model:body#D23")
+        .unwrap();
+    assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Sheet);
+    let shell = result
+        .ir()
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id.0 == "iges:model:shell#D23")
+        .unwrap();
+    assert_eq!(shell.faces.len(), 1);
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id == shell.faces[0])
+        .unwrap();
+    let loop_ = result
+        .ir()
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
+    assert_eq!(loop_.coedges.len(), 4);
+    let explicit_edges = result
+        .ir()
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.id.0.starts_with("iges:model:edge#D23:"))
+        .collect::<Vec<_>>();
+    assert_eq!(explicit_edges.len(), 4);
+    assert_eq!(
+        explicit_edges
+            .iter()
+            .flat_map(|edge| [&edge.start, &edge.end])
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        4
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_preserves_a_three_use_non_manifold_radial_ring() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let edge = result
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.0 == "iges:model:edge#D37:D23:1")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    let uses = result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == edge.id)
+        .collect::<Vec<_>>();
+    assert_eq!(uses.len(), 3);
+    let by_id = uses
+        .iter()
+        .map(|coedge| (&coedge.id, *coedge))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut current = uses[0];
+    let mut visited = std::collections::BTreeSet::new();
+    for _ in 0..3 {
+        assert!(visited.insert(current.id.clone()));
+        current = by_id[&current.radial_next];
+    }
+    assert_eq!(current.id, uses[0].id);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}

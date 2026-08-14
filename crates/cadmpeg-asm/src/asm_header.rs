@@ -22,21 +22,12 @@
 //! `resnor`) follow the strings, then the SAB record stream.
 
 use crate::kernel_header::{read_string_region, KernelHeader};
-use cadmpeg_core::le::u32_at;
-use cadmpeg_core::le::u64_at as read_le_u64;
+use crate::layout::asmheader_binaryfile4 as bf4;
+use crate::layout::asmheader_binaryfile8 as bf8;
+use cadmpeg_core::decode::View;
 
 /// The ASM magic prefix common to both widths.
 const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
-
-/// Byte offset at which the three `0x07`-tagged product strings begin in a
-/// `BinaryFile8` header: directly after the save-format version at 15, the zero
-/// region at 19..31, and the little-endian u64 entity-count and flags words at
-/// 31 and 39.
-const BF8_STRING_REGION_START: usize = 47;
-
-/// Byte offset at which the string region begins in a `BinaryFile4` header:
-/// directly after the 15-byte magic and four little-endian u32 words.
-const BF4_STRING_REGION_START: usize = 31;
 
 /// Returns `true` if `bytes` begins with an ASM `BinaryFile` magic: the
 /// 15-byte prefix `ASM BinaryFile4` or `ASM BinaryFile8`. Byte 15 is the
@@ -56,8 +47,8 @@ pub fn stream_ref_width(bytes: &[u8]) -> usize {
 /// when the width is unrecognized.
 fn string_region_start(bytes: &[u8]) -> Option<usize> {
     match bytes[14] {
-        b'8' => Some(BF8_STRING_REGION_START),
-        b'4' => Some(BF4_STRING_REGION_START),
+        b'8' => Some(bf8::LEN),
+        b'4' => Some(bf4::LEN),
         _ => None,
     }
 }
@@ -86,15 +77,15 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
 
     match width {
         8 => {
-            header.save_format_version = u32_at(bytes, 15);
-            header.entity_count = read_le_u64(bytes, 31);
-            header.flags = read_le_u64(bytes, 39);
+            header.save_format_version = View::u32_le_at(bytes, bf8::SAVE_FORMAT_VERSION);
+            header.entity_count = View::u64_le_at(bytes, bf8::ENTITY_COUNT);
+            header.flags = View::u64_le_at(bytes, bf8::FLAGS);
         }
         4 => {
-            header.save_format_version = u32_at(bytes, 15);
-            header.record_count = u32_at(bytes, 19);
-            header.entity_count = u32_at(bytes, 23).map(u64::from);
-            header.flags = u32_at(bytes, 27).map(u64::from);
+            header.save_format_version = View::u32_le_at(bytes, bf4::SAVE_FORMAT_VERSION);
+            header.record_count = View::u32_le_at(bytes, bf4::RECORD_COUNT);
+            header.entity_count = View::u32_le_at(bytes, bf4::ENTITY_COUNT).map(u64::from);
+            header.flags = View::u32_le_at(bytes, bf4::FLAGS).map(u64::from);
         }
         _ => return Some(header),
     }

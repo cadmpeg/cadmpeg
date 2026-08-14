@@ -226,7 +226,7 @@ impl FcstdDocumentBuilder {
         let bytes = self.archive_bytes()?;
         FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .map(|result| result.ir)
+            .map(|result| result.into_parts().0)
     }
 
     fn archive_bytes(self) -> Result<Vec<u8>, CodecError> {
@@ -393,3 +393,6 @@ fn valid_identifier(value: &str, role: &str) -> Result<(), CodecError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

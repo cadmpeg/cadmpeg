@@ -21,7 +21,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{f64_be, u16_be};
+use cadmpeg_core::decode::View;
+
+use crate::layout::world_point as world_pt;
 
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
@@ -49,7 +51,7 @@ pub struct Record {
 fn refs_be(buf: &[u8], at: usize, count: usize) -> Option<Vec<u16>> {
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
-        out.push(u16_be(buf, at + 2 * i)?);
+        out.push(View::u16_be_at(buf, at + 2 * i)?);
     }
     Some(out)
 }
@@ -61,7 +63,7 @@ fn refs_tripled(buf: &[u8], at: usize, count: usize) -> Option<Vec<u16>> {
         if buf.get(p + 2) != Some(&1) {
             return None;
         }
-        out.push(u16_be(buf, p)?);
+        out.push(View::u16_be_at(buf, p)?);
     }
     Some(out)
 }
@@ -79,7 +81,7 @@ fn body_start(buf: &[u8], off: usize, tag_lo: u8) -> Option<usize> {
 }
 
 fn attr_at(buf: &[u8], p: usize) -> Option<u16> {
-    let a = u16_be(buf, p)?;
+    let a = View::u16_be_at(buf, p)?;
     if a == 0 {
         None
     } else {
@@ -95,7 +97,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         let attr = attr_at(buf, p)?;
-        let owner = u16_be(buf, p + 6)?;
+        let owner = View::u16_be_at(buf, p + 6)?;
         let refs = refs_tripled(buf, p + 17, 5)?;
         let marker = *buf.get(p + 32)?;
         if marker != 0x2b && marker != 0x2d {
@@ -115,7 +117,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
         return None;
     }
     let attr = attr_at(buf, p)?;
-    let owner = u16_be(buf, p + 6)?;
+    let owner = View::u16_be_at(buf, p + 6)?;
     let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
     let (refs, marker) = if tripled {
         (refs_tripled(buf, p + 16, 5)?, *buf.get(p + 31)?)
@@ -211,7 +213,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
                 if !matches {
                     break;
                 }
-                let Some(reference) = u16_be(buf, reference_at) else {
+                let Some(reference) = View::u16_be_at(buf, reference_at) else {
                     break;
                 };
                 decoded.push(reference);
@@ -303,15 +305,15 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
 /// three big-endian f64 (metres) at body+14.
 fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
     let p = body_start(buf, off, 0x1d)?;
-    if p + 38 > buf.len() {
+    if p + world_pt::LEN > buf.len() {
         return None;
     }
     let attr = attr_at(buf, p)?;
     let (refs, xyz_at) = if prefixed {
         let mut refs = Vec::new();
-        let mut cursor = p + 6;
+        let mut cursor = p + world_pt::REFS;
         while buf.get(cursor + 2) == Some(&1) && refs.len() < 16 {
-            refs.push(u16_be(buf, cursor)?);
+            refs.push(View::u16_be_at(buf, cursor)?);
             cursor += 3;
         }
         if refs.is_empty() {
@@ -319,14 +321,14 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
         }
         (refs, cursor)
     } else {
-        (refs_be(buf, p + 6, 4)?, p + 14)
+        (refs_be(buf, p + world_pt::REFS, 4)?, p + world_pt::XYZ)
     };
     if refs.first().is_none_or(|reference| *reference > 1) {
         return None;
     }
-    let x = f64_be(buf, xyz_at)?;
-    let y = f64_be(buf, xyz_at + 8)?;
-    let z = f64_be(buf, xyz_at + 16)?;
+    let x = View::f64_be_at(buf, xyz_at)?;
+    let y = View::f64_be_at(buf, xyz_at + 8)?;
+    let z = View::f64_be_at(buf, xyz_at + 16)?;
     for v in [x, y, z] {
         // Reject exponent-poisoned reads from a misaligned candidate: real part
         // coordinates in metres sit well under this cap.

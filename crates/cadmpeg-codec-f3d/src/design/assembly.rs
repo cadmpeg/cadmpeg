@@ -42,12 +42,6 @@ pub(crate) const fn operand_path_locator_offsets(frame_length: u64) -> Option<[u
     }
 }
 
-/// Fixed byte length of an assembly operand-path locator record.
-pub(crate) const OPERAND_PATH_LOCATOR_LENGTH: usize = 190;
-
-/// Fixed byte length of an assembly operand-path wrapper record.
-pub(crate) const OPERAND_PATH_WRAPPER_LENGTH: usize = 37;
-
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
 pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],

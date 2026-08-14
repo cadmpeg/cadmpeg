@@ -416,55 +416,50 @@ fn require(actual: u32, expected: u32, field: &str) -> Result<(), CodecError> {
 
 struct Cursor<'a> {
     source: View<'a>,
-    position: usize,
 }
 
 impl<'a> Cursor<'a> {
     const fn new(source: View<'a>) -> Self {
-        Self {
-            source,
-            position: 0,
-        }
+        Self { source }
     }
 
-    fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        let end = self
-            .position
-            .checked_add(len)
-            .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} range overflows")))?;
-        let bytes = self
+    fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
+        Ok(self
             .source
-            .window()
-            .get(self.position..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {field}")))?;
-        self.position = end;
-        Ok(bytes)
+            .req_take(len)
+            .map_err(|error| error.during(field))?)
     }
 
-    fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, field)?[0])
+    fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
+        Ok(self.source.req_u8().map_err(|error| error.during(field))?)
     }
 
-    fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(
-            self.take(2, field)?.try_into().expect("two-byte field"),
-        ))
+    fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
+        Ok(self
+            .source
+            .req_u16_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(
-            self.take(4, field)?.try_into().expect("four-byte field"),
-        ))
+    fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
+        Ok(self
+            .source
+            .req_u32_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    fn i32(&mut self, field: &str) -> Result<i32, CodecError> {
-        Ok(i32::from_le_bytes(
-            self.take(4, field)?.try_into().expect("four-byte field"),
-        ))
+    fn i32(&mut self, field: &'static str) -> Result<i32, CodecError> {
+        Ok(self
+            .source
+            .req_i32_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
-        let value = f64::from_le_bytes(self.take(8, field)?.try_into().expect("eight-byte field"));
+    fn f64(&mut self, field: &'static str) -> Result<f64, CodecError> {
+        let value = self
+            .source
+            .req_f64_le()
+            .map_err(|error| error.during(field))?;
         if !value.is_finite() {
             return Err(CodecError::Malformed(format!(
                 "Inventor {field} is not finite"
@@ -473,7 +468,7 @@ impl<'a> Cursor<'a> {
         Ok(value)
     }
 
-    fn count32(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
+    fn count32(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
         let value = usize::try_from(self.u32(field)?)
             .map_err(|_| CodecError::Malformed(format!("Inventor {field} is too large")))?;
         if value > maximum {
@@ -487,7 +482,7 @@ impl<'a> Cursor<'a> {
     fn utf16(
         &mut self,
         ctx: &DecodeContext<'_>,
-        field: &str,
+        field: &'static str,
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
@@ -495,23 +490,22 @@ impl<'a> Cursor<'a> {
             .checked_mul(2)
             .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} length overflows")))?;
         ctx.charge_retained(len as u64, "retain Inventor assembly string", None)?;
-        let units = self
-            .take(len, field)?
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
+        let mut view = View::over_retained(self.take(len, field)?);
+        let mut units = Vec::with_capacity(count);
+        for _ in 0..count {
+            units.push(view.req_u16_le().map_err(|error| error.during(field))?);
+        }
         String::from_utf16(&units)
             .map_err(|_| CodecError::Malformed(format!("Inventor {field} is not UTF-16")))
     }
 
     fn transform(&mut self) -> Result<CompactTransform, CodecError> {
-        let prefixed = self
-            .source
-            .window()
-            .get(self.position..self.position.saturating_add(4))
-            == Some(0x0000_0203_u32.to_le_bytes().as_slice());
+        let mut peek = self.source;
+        let prefixed = peek.u32_le() == Some(0x0000_0203);
         if prefixed {
-            self.position += 4;
+            self.source.skip(4).ok_or_else(|| {
+                CodecError::Malformed("truncated Inventor placement transform prefix".into())
+            })?;
         }
         let set = self.u16("placement transform set mask")?;
         let zero = self.u16("placement transform zero mask")?;
@@ -537,12 +531,14 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    fn remaining(&mut self, field: &str) -> Result<View<'a>, CodecError> {
+    fn remaining(&mut self, field: &'static str) -> Result<View<'a>, CodecError> {
         let view = self
             .source
-            .child(self.source.start() + self.position, self.source.end())
+            .child(self.source.position(), self.source.end())
             .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} range is invalid")))?;
-        self.position = self.source.window().len();
+        self.source
+            .seek(self.source.end())
+            .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} range is invalid")))?;
         Ok(view)
     }
 }

@@ -2,8 +2,46 @@
 //! Record shadow-layer structs and their `ContainerScan` mappers, moved
 //! verbatim from `decode.rs`.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use cadmpeg_ir::hash::sha256_hex;
+use serde::Serialize;
+
+use crate::container::ContainerScan;
+
+use super::coverage::{
+    source_section, surface_family, surface_named_parameter_record, surface_prototype_family_name,
+    surface_variant,
+};
+use super::curve_expressions::curve_expression_record_id;
+use super::expanded::{affected_kind, extent_source, half_edge_ref};
+use super::feature_history::replayed_torus_minor_radius;
+use super::native_records::{
+    CreoConeHalfAngleOverride, CreoCurveExpressionAssignment, CreoCurveExpressionEquation,
+    CreoCurveExpressionLine, CreoCurveExpressionLocalSystem, CreoCurveExpressionSolveBlock,
+    CreoCurveParameterOpaqueSpan, CreoCurveParameterReference, CreoCurveParameterScalar,
+    CreoFcCurveCoordinateToken, CreoFcCurveOpaqueSpan, CreoFeatureFieldValue,
+    CreoFeatureOperationState, CreoFeatureOutline, CreoFeatureParameterFrame, CreoHalfEdgeRef,
+    CreoPlaneEnvelope, CreoPositionalConeFrame, CreoPositionalCylinderFrame,
+    CreoPositionalTorusFrame, CreoSketchBoundedCurveSegment, CreoSketchCenteredLineSegment,
+    CreoSketchCircleSegment, CreoSketchConicSegment, CreoSketchDimension,
+    CreoSketchDimensionReference, CreoSketchDimensionReferenceTable, CreoSketchEquation,
+    CreoSketchOpaqueSegment, CreoSketchOrderRow, CreoSketchPointSegment,
+    CreoSketchReferenceLineSegment, CreoSketchReferencePlane, CreoSketchRelation,
+    CreoSketchRelationTriple, CreoSketchSavedEntity, CreoSketchSection3d,
+    CreoSketchSectionOrientation, CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp,
+    CreoSketchSkampItem, CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex,
+    CreoSketchVariable, CreoSurfaceParameterOpaqueSpan, CreoSurfaceParameterScalarFrame,
+    CreoSurfaceParameterSlot, CreoTabulatedCylinderFrame, CreoTorusOutlineFrame,
+    CreoTorusRadiusOverrides, CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
+};
+use super::sketch::{
+    resolved_section_coordinates, resolved_section_radii, resolved_section_scalar_values,
+};
+use super::sketch_ids::{
+    binary_flag_value, feature_definition_has_sketch_design, feature_definition_record_id,
+    feature_sketch_record_id_in_scan, sketch_table_headers,
+};
 
 #[derive(Serialize)]
 pub(super) struct CreoSketchRecord {
@@ -2469,4 +2507,18 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
             offset: definition.offset,
         })
         .collect()
+}
+
+pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {
+    let record = scan.framing.family_table?;
+    let (pointer_kind, table_entity_id) = match record.pointer {
+        crate::container::FamilyTablePointer::Null => ("null", None),
+        crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
+    };
+    Some(CreoFamilyTableRecord {
+        id: "creo:family_info:driver_table#root",
+        pointer_kind,
+        table_entity_id,
+        offset: record.offset,
+    })
 }

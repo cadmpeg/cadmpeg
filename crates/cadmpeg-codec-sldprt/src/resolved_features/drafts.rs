@@ -9,14 +9,15 @@ use super::selections::{
 };
 use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
 
-const PLANE_REFERENCE_HEADER_LEN: usize = 94;
+use crate::layout::draft_aligned_direction_frame as aligned_dir;
+use crate::layout::draft_compact_selection_prefix as compact_sel;
+use crate::layout::draft_extended_direction_frame as extended_dir;
+use crate::layout::draft_plane_reference_prefix as draft_plane;
+
 const DIRECTION_FRAME_PREFIX_LEN: usize = 24;
-const ALIGNED_DIRECTION_FRAME_LEN: usize = 120;
-const ALIGNED_DIRECTION_OFFSET: usize = 96;
-const EXTENDED_DIRECTION_FRAME_LEN: usize = 153;
-const EXTENDED_DIRECTION_OFFSET: usize = 129;
 const MAX_PATH_CELLS: usize = 65;
 
 #[derive(Clone, Debug)]
@@ -67,7 +68,7 @@ fn declared_draft_operands(
 ) -> Option<DraftOperands> {
     let token = unique_declared_plane_reference_token(lane)?;
     let end = object_end.min(lane.native_payload.len());
-    let final_record_start = end.checked_sub(PLANE_REFERENCE_HEADER_LEN + 18)?;
+    let final_record_start = end.checked_sub(draft_plane::LEN)?;
     let records = (object_start..=final_record_start)
         .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token.as_slice()))
         .filter_map(|offset| draft_plane_reference_at(&lane.native_payload, offset, end))
@@ -151,24 +152,24 @@ fn compact_draft_selection_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<(u8, Vec<Vec<FeatureInputComponentPathEntry>>, usize)> {
-    let header = marker.checked_sub(12)?;
-    usize::try_from(u32::from_le_bytes(
-        payload.get(header..header + 4)?.try_into().ok()?,
-    ))
-    .ok()
-    .filter(|count| (1..=MAX_PATH_CELLS).contains(count))?;
-    let role_bytes = payload.get(header + 4..header + 8)?;
+    let header = marker.checked_sub(compact_sel::COMPONENT_MARKER)?;
+    usize::try_from(View::u32_le_at(payload, header + compact_sel::CELL_FIELD)?)
+        .ok()
+        .filter(|count| (1..=MAX_PATH_CELLS).contains(count))?;
+    let role_bytes =
+        payload.get(header + compact_sel::SELECTION_ROLE..header + compact_sel::SELECTOR)?;
     let role = is_component_vector_selector(role_bytes).then(|| match role_bytes[1] {
         2 => 2,
         3 => 3,
         _ => unreachable!("component-vector selector helper validated role"),
     })?;
     if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..marker + 18)? != [0, 0]
+        || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..header + compact_sel::LEN)?
+            != [0, 0]
     {
         return None;
     }
-    let mut cursor = marker + 18;
+    let mut cursor = header + compact_sel::LEN;
     let mut paths = Vec::new();
     loop {
         let candidates = (1..=MAX_PATH_CELLS)
@@ -220,9 +221,8 @@ fn unique_declared_plane_reference_token(lane: &FeatureInputLane) -> Option<[u8;
         let body = usize::try_from(class.offset)
             .ok()?
             .checked_add(6 + class.name.len())?;
-        let token: [u8; 2] = lane.native_payload.get(body..body + 2)?.try_into().ok()?;
-        let value = u16::from_le_bytes(token);
-        is_class_token(value).then_some(token)
+        let value = View::u16_le_at(&lane.native_payload, body)?;
+        is_class_token(value).then_some(value.to_le_bytes())
     });
     let first = tokens.next()?;
     tokens.all(|token| token == first).then_some(first)
@@ -233,64 +233,61 @@ fn draft_plane_reference_at(
     offset: usize,
     object_end: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>, usize)> {
-    let header = payload.get(offset..offset.checked_add(PLANE_REFERENCE_HEADER_LEN)?)?;
-    if offset + PLANE_REFERENCE_HEADER_LEN > object_end
-        || !header[2..4]
-            .try_into()
-            .ok()
-            .map(u16::from_le_bytes)
-            .is_some_and(is_class_token)
-        || header[4..8] != 2u32.to_le_bytes()
-        || !matches!(&header[8..11], [0 | 0x40, 0, 0])
-        || header[11..15] == [0; 4]
-        || header[11..15] != header[15..19]
+    let header = payload.get(offset..offset.checked_add(draft_plane::COMPONENT_MARKER)?)?;
+    if offset + draft_plane::COMPONENT_MARKER > object_end
+        || !View::u16_le_at(header, draft_plane::CHILD_TOKEN).is_some_and(is_class_token)
+        || header[draft_plane::FORM..draft_plane::WRAPPER_FLAGS] != 2u32.to_le_bytes()
+        || !matches!(
+            &header[draft_plane::WRAPPER_FLAGS..draft_plane::IDENTITY],
+            [0 | 0x40, 0, 0]
+        )
+        || header[draft_plane::IDENTITY..draft_plane::IDENTITY_COPY] == [0; 4]
+        || header[draft_plane::IDENTITY..draft_plane::IDENTITY_COPY]
+            != header[draft_plane::IDENTITY_COPY..draft_plane::IDENTITY_COPY + 4]
         || header[19..47] != [0; 28]
-        || header[47..63] != [0xff; 16]
+        || header[draft_plane::SENTINEL..draft_plane::SENTINEL + 16] != [0xff; 16]
         || header[63..72] != [0; 9]
-        || !header[72..74]
-            .try_into()
-            .ok()
-            .map(u16::from_le_bytes)
-            .is_some_and(is_class_token)
-        || header[78..82] != [0; 4]
-        || !is_component_vector_selector(&header[86..90])
+        || !View::u16_le_at(header, draft_plane::INSTANCE_TOKEN).is_some_and(is_class_token)
+        || header[draft_plane::ZERO_AT_78..draft_plane::CELL_COUNT] != [0; 4]
+        || !is_component_vector_selector(&header[draft_plane::PATH_KIND..draft_plane::SELECTOR])
     {
         return None;
     }
-    usize::try_from(u32::from_le_bytes(header[82..86].try_into().ok()?))
+    usize::try_from(View::u32_le_at(header, draft_plane::CELL_COUNT)?)
         .ok()
         .filter(|count| (2..=MAX_PATH_CELLS).contains(count))?;
-    let marker = offset + PLANE_REFERENCE_HEADER_LEN;
+    let marker = offset + draft_plane::COMPONENT_MARKER;
     if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..marker + 18)? != [0, 0]
+        || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..offset + draft_plane::LEN)?
+            != [0, 0]
     {
         return None;
     }
     let components = component_vector_path_at(payload, marker)?;
-    let path_start = marker.checked_add(18)?;
+    let path_start = offset.checked_add(draft_plane::LEN)?;
     (path_start <= object_end).then_some((offset, components, path_start))
 }
 
 fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Vector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let final_frame_start = end
-        .checked_sub(ALIGNED_DIRECTION_FRAME_LEN)
+        .checked_sub(aligned_dir::LEN)
         .filter(|end| *end >= start)?;
     let mut candidates = (start..=final_frame_start)
         .filter(|offset| payload.get(*offset..*offset + HANDLES.len()) == Some(HANDLES.as_slice()))
         .filter_map(|offset| {
             let frame = payload.get(offset..end)?;
-            if frame[8..12] != [0; 4]
-                || frame[12..16] == [0; 4]
+            if frame[aligned_dir::ZERO_AT_8..aligned_dir::ADDRESS] != [0; 4]
+                || frame[aligned_dir::ADDRESS..aligned_dir::ADDRESS + 4] == [0; 4]
                 || frame[16..DIRECTION_FRAME_PREFIX_LEN] != [0; 8]
             {
                 return None;
             }
             let scalar = |relative: usize| {
-                let value = f64::from_le_bytes(frame.get(relative..relative + 8)?.try_into().ok()?);
+                let value = View::f64_le_at(frame, relative)?;
                 value.is_finite().then_some(value)
             };
-            if !(DIRECTION_FRAME_PREFIX_LEN..ALIGNED_DIRECTION_FRAME_LEN)
+            if !(DIRECTION_FRAME_PREFIX_LEN..aligned_dir::LEN)
                 .step_by(8)
                 .all(|relative| scalar(relative).is_some())
             {
@@ -305,10 +302,10 @@ fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Ve
                 let norm = direction.norm();
                 ((norm - 1.0).abs() <= 1.0e-9).then_some(canonical_unit_direction(direction))
             };
-            direction_at(ALIGNED_DIRECTION_OFFSET).or_else(|| {
-                (frame.len() >= EXTENDED_DIRECTION_FRAME_LEN
-                    && frame[ALIGNED_DIRECTION_FRAME_LEN..EXTENDED_DIRECTION_OFFSET] == [0; 9])
-                    .then(|| direction_at(EXTENDED_DIRECTION_OFFSET))
+            direction_at(aligned_dir::PULL_DIRECTION).or_else(|| {
+                (frame.len() >= extended_dir::LEN
+                    && frame[aligned_dir::LEN..extended_dir::PULL_DIRECTION] == [0; 9])
+                    .then(|| direction_at(extended_dir::PULL_DIRECTION))
                     .flatten()
             })
         })
@@ -467,7 +464,7 @@ mod tests {
         let end = payload.len();
         assert_eq!(
             end - frame,
-            EXTENDED_DIRECTION_FRAME_LEN,
+            extended_dir::LEN,
             "named fields define the fixed frame length"
         );
         assert_eq!(

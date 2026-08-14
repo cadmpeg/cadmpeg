@@ -1,7 +1,16 @@
-use super::*;
+use crate::decode::analytic::{
+    agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
+    analytic_curve_plane, dot, envelope_reconciled_plane_candidate,
+    frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates,
+    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
+    PlaneCandidate, PlaneChart, PlaneEquation,
+};
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]
 fn topology_boundary_points_define_one_plane() {

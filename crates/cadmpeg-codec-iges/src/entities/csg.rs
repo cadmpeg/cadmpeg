@@ -7,6 +7,7 @@ use super::geometry::{
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::CadIr;
@@ -115,6 +116,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Projection {
     let records = parameters
         .iter()
@@ -144,6 +146,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_err()
         {
@@ -333,6 +336,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_err()
         {
@@ -447,6 +451,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_err()
         {
@@ -495,6 +500,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
+            ctx,
         )
         .is_err()
         {
@@ -514,3 +520,6 @@ pub(super) fn project(
         losses,
     }
 }
+
+#[cfg(test)]
+mod tests;

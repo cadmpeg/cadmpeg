@@ -7,7 +7,7 @@ use crate::nurbs::reader::{
 };
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
-use cadmpeg_core::le::f64_at as read_f64;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 
 /// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.
@@ -129,19 +129,19 @@ pub(crate) fn decode_pcurve_block_with_end(
         if *b.get(pos)? != 0x06 {
             return None;
         }
-        let u = read_f64(b, pos + 1)?;
+        let u = View::f64_le_at(b, pos + 1)?;
         pos += 9;
         if *b.get(pos)? != 0x06 {
             return None;
         }
-        let v = read_f64(b, pos + 1)?;
+        let v = View::f64_le_at(b, pos + 1)?;
         pos += 9;
         control_points.push(Point2::new(u, v));
         if let Some(weights) = weights.as_mut() {
             if *b.get(pos)? != 0x06 {
                 return None;
             }
-            weights.push(read_f64(b, pos + 1)?);
+            weights.push(View::f64_le_at(b, pos + 1)?);
             pos += 9;
         }
     }

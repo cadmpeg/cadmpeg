@@ -4,7 +4,8 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+
+include!("../seed_paths.rs");
 
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
@@ -31,8 +32,8 @@ fn generate_f3d_seeds() {
 // ============================================================================
 
 fn generate_sldprt_seeds() {
-    let dir = Path::new("seeds/sldprt_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    let dir = seed_dir("seeds/sldprt_container");
+    fs::create_dir_all(&dir).expect("required invariant");
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -778,8 +779,8 @@ mod sldprt {
 // ============================================================================
 
 fn generate_catia_seeds() {
-    let dir = Path::new("seeds/catia_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    let dir = seed_dir("seeds/catia_container");
+    fs::create_dir_all(&dir).expect("required invariant");
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -1015,8 +1016,8 @@ mod catia {
 // ============================================================================
 
 fn generate_creo_seeds() {
-    let dir = Path::new("seeds/creo_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    let dir = seed_dir("seeds/creo_container");
+    fs::create_dir_all(&dir).expect("required invariant");
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -1103,8 +1104,8 @@ mod creo {
 // ============================================================================
 
 fn generate_nx_seeds() {
-    let dir = Path::new("seeds/nx_container");
-    fs::create_dir_all(dir).expect("required invariant");
+    let dir = seed_dir("seeds/nx_container");
+    fs::create_dir_all(&dir).expect("required invariant");
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
