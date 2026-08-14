@@ -1,0 +1,415 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Skamp incidence, symmetry, and fixed-coordinate helpers.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::super::sketch_transfer::{
+    active_complete_section_skamps, section_saved_entity, section_skamp_is_line,
+    section_skamp_is_point, unique_centered_line_segment, unique_circle_segment,
+    unique_point_segment, unique_reference_line_segment,
+};
+
+pub(crate) fn section_line_fixed_coordinate(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<usize> {
+    let segment = unique_section_skamp_segment(definition, segment.external_id)?;
+    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    section_line_entity_fixed_coordinate(definition, segment.external_id)
+}
+
+pub(crate) fn section_line_entity_fixed_coordinate(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> Option<usize> {
+    let mut adjacency = BTreeMap::<u32, Vec<(u32, usize)>>::new();
+    for skamp in active_complete_section_skamps(definition) {
+        let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
+            (5 | 7, [first, second]) if first.sense == 0 && second.sense == 0 => {
+                ((skamp.kind == 5) as usize, first, second)
+            }
+            _ => continue,
+        };
+        if !section_skamp_is_line(definition, first) || !section_skamp_is_line(definition, second) {
+            continue;
+        }
+        adjacency
+            .entry(first.entity_id)
+            .or_default()
+            .push((second.entity_id, parity));
+        adjacency
+            .entry(second.entity_id)
+            .or_default()
+            .push((first.entity_id, parity));
+    }
+    let mut parities = BTreeMap::from([(entity_id, 0usize)]);
+    let mut pending = std::collections::VecDeque::from([entity_id]);
+    while let Some(entity_id) = pending.pop_front() {
+        let parity = parities[&entity_id];
+        for &(neighbor, edge_parity) in adjacency.get(&entity_id).into_iter().flatten() {
+            let neighbor_parity = parity ^ edge_parity;
+            match parities.get(&neighbor) {
+                Some(stored) if *stored != neighbor_parity => return None,
+                Some(_) => {}
+                None => {
+                    parities.insert(neighbor, neighbor_parity);
+                    pending.push_back(neighbor);
+                }
+            }
+        }
+    }
+    let mut coordinates = BTreeSet::new();
+    for (entity_id, parity) in parities {
+        coordinates.extend(
+            section_line_direct_fixed_coordinates(definition, entity_id)
+                .into_iter()
+                .map(|coordinate| coordinate ^ parity),
+        );
+    }
+    coordinates
+        .first()
+        .copied()
+        .filter(|_| coordinates.len() == 1)
+}
+
+pub(crate) fn section_line_direct_fixed_coordinates(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> BTreeSet<usize> {
+    let mut coordinates = unique_section_skamp_segment(definition, entity_id)
+        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .and_then(|segment| segment.vertical_horizontal)
+        .and_then(|selector| match selector {
+            0 => Some(0),
+            1 => Some(1),
+            _ => None,
+        })
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    coordinates.extend(
+        unique_reference_line_segment(definition, entity_id)
+            .and_then(|segment| segment.vertical_horizontal)
+            .and_then(|selector| match selector {
+                0 => Some(0),
+                1 => Some(1),
+                _ => None,
+            }),
+    );
+    coordinates.extend(
+        active_complete_section_skamps(definition).filter_map(|skamp| {
+            match (skamp.kind, skamp.items.as_slice()) {
+                (1, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(1),
+                (2, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(0),
+                _ => None,
+            }
+        }),
+    );
+    if let Some(crate::feature::FeatureSavedEntity::Line(line)) =
+        section_saved_entity(definition, entity_id)
+    {
+        let [[Some(x0), Some(y0), _], [Some(x1), Some(y1), _]] = line.endpoints else {
+            return coordinates;
+        };
+        let scale = [x0, y0, x1, y1]
+            .into_iter()
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        let tolerance = 1e-9 * scale;
+        match [(x0 - x1).abs() <= tolerance, (y0 - y1).abs() <= tolerance] {
+            [true, false] => {
+                coordinates.insert(0);
+            }
+            [false, true] => {
+                coordinates.insert(1);
+            }
+            _ => {}
+        }
+    }
+    coordinates
+}
+
+pub(crate) fn section_skamp_point_on_line(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(u32, u32, usize)> {
+    let [first, second] = skamp.items.as_slice() else {
+        return None;
+    };
+    let pair = match skamp.kind {
+        3 => [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(line_item, point_item)| {
+                let line = unique_section_skamp_segment(definition, line_item.entity_id)?;
+                (line_item.sense == 0 && line.kind == crate::feature::FeatureSegmentKind::Line)
+                    .then_some((
+                        line,
+                        section_skamp_selected_point_id(definition, point_item)?,
+                    ))
+            }),
+        9 => [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(line_item, point_item)| {
+                let line = unique_section_skamp_segment(definition, line_item.entity_id)?;
+                let point = unique_section_skamp_segment(definition, point_item.entity_id)?;
+                (line_item.sense == 0
+                    && point_item.sense == 0
+                    && line.kind == crate::feature::FeatureSegmentKind::Line
+                    && point.kind == crate::feature::FeatureSegmentKind::Point)
+                    .then_some((line, point.point_ids[0]))
+            }),
+        _ => None,
+    }?;
+    let coordinate = section_line_fixed_coordinate(definition, pair.0)?;
+    Some((pair.0.point_ids[0], pair.1, coordinate))
+}
+
+pub(crate) fn section_skamp_saved_point_on_line(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(u32, usize, f64)> {
+    let [first, second] = skamp.items.as_slice() else {
+        return None;
+    };
+    let (line_item, point_id) = match skamp.kind {
+        3 => [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(line_item, point_item)| {
+                if line_item.sense != 0 {
+                    return None;
+                }
+                Some((
+                    line_item,
+                    section_skamp_selected_point_id(definition, point_item)?,
+                ))
+            }),
+        9 => [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(line_item, point_item)| {
+                if line_item.sense != 0
+                    || point_item.sense != 0
+                    || !section_skamp_is_point(definition, point_item)
+                {
+                    return None;
+                }
+                Some((
+                    line_item,
+                    unique_section_skamp_segment(definition, point_item.entity_id)?.point_ids[0],
+                ))
+            }),
+        _ => None,
+    }?;
+    if definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .any(|segment| segment.external_id == line_item.entity_id)
+    {
+        return None;
+    }
+    let crate::feature::FeatureSavedEntity::Line(line) =
+        section_saved_entity(definition, line_item.entity_id)?
+    else {
+        return None;
+    };
+    let coordinate = section_line_entity_fixed_coordinate(definition, line_item.entity_id)?;
+    Some((
+        point_id,
+        coordinate,
+        saved_line_fixed_coordinate_value(line, coordinate)?,
+    ))
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SectionSymmetryAxis {
+    Point(u32),
+    Value(f64),
+}
+
+pub(crate) fn section_skamp_axis_symmetry(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(
+    SectionSymmetryAxis,
+    SectionPointSource,
+    SectionPointSource,
+    usize,
+)> {
+    let (14, [axis_item, first_item, second_item]) = (skamp.kind, skamp.items.as_slice()) else {
+        return None;
+    };
+    (axis_item.sense == 0 && section_skamp_is_line(definition, axis_item)).then_some(())?;
+    let coordinate = section_line_entity_fixed_coordinate(definition, axis_item.entity_id)?;
+    let axis = if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id)
+    {
+        SectionSymmetryAxis::Point(segment.point_ids[0])
+    } else {
+        let crate::feature::FeatureSavedEntity::Line(line) =
+            section_saved_entity(definition, axis_item.entity_id)?
+        else {
+            return None;
+        };
+        SectionSymmetryAxis::Value(saved_line_fixed_coordinate_value(line, coordinate)?)
+    };
+    Some((
+        axis,
+        section_skamp_selected_point(definition, first_item)?,
+        section_skamp_selected_point(definition, second_item)?,
+        coordinate,
+    ))
+}
+
+pub(crate) fn section_skamp_point_symmetry(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(u32, SectionPointSource, SectionPointSource)> {
+    let (14, [center, first, second]) = (skamp.kind, skamp.items.as_slice()) else {
+        return None;
+    };
+    Some((
+        section_skamp_point_entity_id(definition, center)?,
+        section_skamp_selected_point(definition, first)?,
+        section_skamp_selected_point(definition, second)?,
+    ))
+}
+
+pub(crate) fn saved_line_fixed_coordinate_value(
+    line: &crate::feature::FeatureSavedLine,
+    coordinate: usize,
+) -> Option<f64> {
+    let [Some(first), Some(second)] =
+        [line.endpoints[0][coordinate], line.endpoints[1][coordinate]]
+    else {
+        return None;
+    };
+    let scale = first.abs().max(second.abs()).max(1.0);
+    ((first - second).abs() <= 1e-9 * scale).then_some(first)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SectionPointSource {
+    Point(u32),
+    Value([f64; 2]),
+}
+
+pub(crate) fn unique_section_skamp_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureSegment> {
+    definition.segments.as_ref()?.segment(external_id)
+}
+
+pub(crate) fn unique_decoded_section_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureSegment> {
+    let segments = definition.segments.as_ref()?;
+    let segment = segments
+        .rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
+}
+
+pub(crate) fn section_segment_rows(
+    definition: &crate::feature::FeatureDefinition,
+) -> &[crate::feature::FeatureSegment] {
+    definition
+        .segments
+        .as_ref()
+        .map_or(&[], |table| table.rows.as_slice())
+}
+
+pub(crate) fn complete_section_segment_rows(
+    definition: &crate::feature::FeatureDefinition,
+) -> &[crate::feature::FeatureSegment] {
+    definition
+        .segments
+        .as_ref()
+        .filter(|table| table.is_complete())
+        .map_or(&[], |table| table.rows.as_slice())
+}
+
+pub(crate) fn section_skamp_point_entity_id(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<u32> {
+    if let Some(point) = unique_point_segment(definition, item.entity_id) {
+        return (item.sense == 0).then_some(point.point_id);
+    }
+    let segment = unique_section_skamp_segment(definition, item.entity_id)?;
+    (item.sense == 0 && segment.kind == crate::feature::FeatureSegmentKind::Point)
+        .then_some(segment.point_ids[0])
+}
+
+pub(crate) fn section_skamp_selected_point_id(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<u32> {
+    if let Some(segment) = unique_centered_line_segment(definition, item.entity_id) {
+        return match item.sense {
+            2 => Some(0),
+            3 => Some(1),
+            4 => Some(segment.center_id),
+            _ => None,
+        };
+    }
+    if let Some(point) = unique_point_segment(definition, item.entity_id) {
+        return matches!(item.sense, 0 | 4).then_some(point.point_id);
+    }
+    if let Some(circle) = unique_circle_segment(definition, item.entity_id) {
+        return (item.sense == 4).then_some(circle.center_id);
+    }
+    let segment = unique_section_skamp_segment(definition, item.entity_id)?;
+    if segment.kind == crate::feature::FeatureSegmentKind::Point {
+        return matches!(item.sense, 0 | 4).then_some(segment.point_ids[0]);
+    }
+    match item.sense {
+        2 => Some(segment.point_ids[0]),
+        3 => Some(segment.point_ids[1]),
+        4 => segment.center_id,
+        _ => None,
+    }
+}
+
+pub(crate) fn section_skamp_selected_point(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SectionPointSource> {
+    section_skamp_selected_point_id(definition, item)
+        .map(SectionPointSource::Point)
+        .or_else(|| saved_section_point(definition, item).map(SectionPointSource::Value))
+}
+
+pub(crate) fn saved_section_point(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<[f64; 2]> {
+    if definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .any(|segment| segment.external_id == item.entity_id)
+    {
+        return None;
+    }
+    let coordinates = match (
+        section_saved_entity(definition, item.entity_id)?,
+        item.sense,
+    ) {
+        (crate::feature::FeatureSavedEntity::Line(line), 2) => line.endpoints[0],
+        (crate::feature::FeatureSavedEntity::Line(line), 3) => line.endpoints[1],
+        (crate::feature::FeatureSavedEntity::Arc(arc), 2) => arc.endpoints[0],
+        (crate::feature::FeatureSavedEntity::Arc(arc), 3) => arc.endpoints[1],
+        (crate::feature::FeatureSavedEntity::Arc(arc), 4) => arc.center,
+        (crate::feature::FeatureSavedEntity::Circle(circle), 4) => circle.center,
+        (crate::feature::FeatureSavedEntity::Conic(conic), 4) => {
+            let frame = conic.local_system?;
+            [Some(frame[9]), Some(frame[10]), Some(frame[11])]
+        }
+        _ => return None,
+    };
+    let [Some(u), Some(v), _] = coordinates else {
+        return None;
+    };
+    (u.is_finite() && v.is_finite()).then_some([u, v])
+}
