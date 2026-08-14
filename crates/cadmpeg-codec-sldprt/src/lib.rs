@@ -103,7 +103,6 @@ pub(crate) mod container;
 pub(crate) mod decode;
 mod feature_schema;
 #[doc(hidden)]
-#[path = "fuzzing.rs"]
 pub mod fuzz;
 mod history;
 /// Byte-offset constants generated from `docs/layouts/sldprt.toml`.
