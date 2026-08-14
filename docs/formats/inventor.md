@@ -2,6 +2,8 @@
 
 This specification defines the byte semantics of the supported Autodesk Inventor IPT/IAM envelope. Multi-byte integers are little-endian unless a section states otherwise.
 
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/inventor.md`](../layouts/inventor.md), generated from `docs/layouts/inventor.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+
 ## 1. Compound container
 
 An IPT or IAM document is a Compound File Binary container. The container follows the CFB sector, FAT, DIFAT, mini-FAT, directory, and sibling-tree rules. The directory contains the `RSeStorage` storage. A positive format identification also requires a structurally reached `RSeStorage/RSeSegInfo` stream or a stream at `RSeStorage/V<n>/RSeDb`, where `<n>` is one or more decimal digits.
