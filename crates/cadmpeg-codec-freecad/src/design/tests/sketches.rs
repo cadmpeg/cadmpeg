@@ -100,6 +100,25 @@ fn rejects_malformed_sketch_record_counts() {
 }
 
 #[test]
+fn rejects_declared_geometry_with_the_wrong_carrier_tag() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1">
+<Geometry type="Part::GeomLineSegment"><Circle CenterX="0" CenterY="0" Radius="1"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("carrier mismatch");
+    assert!(error.to_string().contains("declares Part::GeomLineSegment"));
+    assert!(error.to_string().contains("expected <LineSegment>"));
+}
+
+#[test]
 fn rejects_malformed_constraint_operand_lists() {
     for document in [
         r#"<Document SchemaVersion="4" FileVersion="1">

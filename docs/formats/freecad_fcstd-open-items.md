@@ -219,24 +219,23 @@ refuse with an explicit loss. Do not source-order a cycle and silently discard i
 **Note.** Native retention and the blocking feature.cyclic-history loss are a safety improvement.
 They do not establish the neutral relation. Reopened after the history closure.
 
-### DP-07. Sketch geometry carrier tag and runtime name are not cross-checked
+### DP-07. Legacy point carrier provenance
 
-**Question.** Must a Geometry element's declared runtime name agree with its sole eligible carrier
-child tag before neutral geometry dispatch?
+**Question.** Does any FreeCAD producer version write a declared `Part::GeomPoint` with a `Point`
+carrier instead of the current `GeomPoint` carrier?
 
-**Known.** PropertyGeometryList.cpp writes the Geometry type attribute from the geometry runtime
-type and serializes the geometry value beneath that element. The specification requires exact
-runtime dispatch and native retention for unknown or conflicting carriers.
+**Known.** `PropertyGeometryList::Save` writes the `Geometry` type attribute from the geometry
+runtime type. `GeomPoint::Save` writes `GeomPoint`; the other registered geometry writers use the
+carrier tags recorded in the specification.
 
-**Conflict.** design.rs:1073-1117 accepts one non-metadata child, takes the Geometry type
-attribute in preference to the child tag, and passes that child's attributes to the selected
-geometry parser. It does not reject a known type paired with a different child tag.
+**Need.** Establish a producer source path or independent witness for the historical `Point` tag,
+including the producer version and its value grammar.
 
-**Need.** Validate the runtime-name and carrier-tag pair before semantic parsing. Retain a
-conflicting pair as native or reject it.
+**Conflict.** The decoder accepts `Point` as a compatibility carrier for `Part::GeomPoint`, but no
+producer evidence for that alias is recorded.
 
-**Note.** A Geometry declared as Part::GeomLineSegment with one Circle child can be parsed through
-the line path when its attributes are parseable; the child grammar does not protect the dispatch.
+**Note.** This pass settled the current producer runtime-name/carrier-tag mapping and rejects a
+registered name paired with another known carrier. The historical point alias remains open.
 
 ### DP-08. Sketch placement silently defaults incomplete components
 

@@ -1085,6 +1085,39 @@ fn sketch_carrier<'a, 'input>(
     carriers.next().is_none().then_some(carrier)
 }
 
+fn validate_sketch_carrier(
+    kind: &str,
+    carrier: &roxmltree::Node<'_, '_>,
+    ordinal: usize,
+) -> Result<(), CodecError> {
+    let Some(expected) = (match kind {
+        "Part::GeomLine" => Some("GeomLine"),
+        "Part::GeomLineSegment" => Some("LineSegment"),
+        "Part::GeomCircle" => Some("Circle"),
+        "Part::GeomArcOfCircle" => Some("ArcOfCircle"),
+        "Part::GeomEllipse" => Some("Ellipse"),
+        "Part::GeomArcOfEllipse" => Some("ArcOfEllipse"),
+        "Part::GeomHyperbola" => Some("Hyperbola"),
+        "Part::GeomArcOfHyperbola" => Some("ArcOfHyperbola"),
+        "Part::GeomParabola" => Some("Parabola"),
+        "Part::GeomArcOfParabola" => Some("ArcOfParabola"),
+        "Part::GeomPoint" => Some("GeomPoint"),
+        "Part::GeomBSplineCurve" => Some("BSplineCurve"),
+        _ => None,
+    }) else {
+        return Ok(());
+    };
+    if carrier.tag_name().name() == expected
+        || (kind == "Part::GeomPoint" && carrier.tag_name().name() == "Point")
+    {
+        return Ok(());
+    }
+    Err(CodecError::Malformed(format!(
+        "sketch Geometry record {ordinal} declares {kind} but carries <{}>, expected <{expected}>",
+        carrier.tag_name().name()
+    )))
+}
+
 fn parse_sketch(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
@@ -1102,6 +1135,9 @@ fn parse_sketch(
             .enumerate()
         {
             let carrier = sketch_carrier(node);
+            if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
+                validate_sketch_carrier(kind, carrier, index + 1)?;
+            }
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
@@ -1150,6 +1186,9 @@ fn parse_sketch(
             .enumerate()
         {
             let carrier = sketch_carrier(node);
+            if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
+                validate_sketch_carrier(kind, carrier, external_index + 1)?;
+            }
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
