@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use super::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -135,4 +136,28 @@ fn parameter_card_count_must_equal_the_owned_contiguous_range() {
             .unwrap_err();
         assert!(error.to_string().contains(expected), "{error}");
     }
+}
+
+#[test]
+fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
+    let token_count: usize = 4096;
+    let mut tokens = (0..token_count)
+        .map(|_| Token {
+            value: TokenValue::Integer(0),
+            span: 0..0,
+        })
+        .collect::<Vec<_>>();
+    for index in (1..token_count.saturating_sub(2)).step_by(2) {
+        tokens[index].value = TokenValue::Integer(0);
+        tokens[index + 1].value = TokenValue::Integer((token_count - index - 3) as i64);
+    }
+    let record = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens,
+        comment: Vec::new(),
+    };
+
+    assert!(trailing_pointer_groups(&record, &BTreeMap::new()).is_none());
 }

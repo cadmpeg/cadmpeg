@@ -9,7 +9,8 @@ use crate::entities::structure::array_base_type;
 use crate::global::{Global, RealPrecision};
 use crate::graph::{ParameterResolver, ReferenceEdge};
 use crate::parameter::{
-    trailing_pointer_group_candidates, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
+    earliest_pointer_group_with_associations, trailing_pointer_groups, ParameterRecord, Token,
+    TokenValue,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -1365,12 +1366,8 @@ pub(crate) fn store(
             let invalid_trailing = (trailing.is_none()
                 && required_back_pointer_members.contains(&entry.sequence))
             .then(|| {
-                parameters.and_then(|record| {
-                    trailing_pointer_group_candidates(record, &entries)
-                        .into_iter()
-                        .filter(|groups| !groups.association_pointers.is_empty())
-                        .min_by_key(|groups| groups.token_start)
-                })
+                parameters
+                    .and_then(|record| earliest_pointer_group_with_associations(record, &entries))
             })
             .flatten();
             let edge_trailing = trailing.as_ref().or(invalid_trailing.as_ref());

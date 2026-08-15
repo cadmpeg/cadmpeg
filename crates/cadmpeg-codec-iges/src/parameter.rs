@@ -154,91 +154,169 @@ pub(crate) fn trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TrailingPointerGroups> {
-    trailing_pointer_group_candidates(record, directory)
-        .into_iter()
-        .filter(|groups| groups.fully_valid)
-        .min_by_key(|groups| groups.token_start)
+    let association_invalid = invalid_pointer_prefix(record, directory, true);
+    let property_invalid = invalid_pointer_prefix(record, directory, false);
+    (1..record.tokens.len()).find_map(|association_count_index| {
+        let candidate = pointer_group_candidate(record, association_count_index)?;
+        let associations_valid = association_invalid[candidate.association_start]
+            == association_invalid[candidate.property_count_index];
+        let property_start = candidate.property_count_index.checked_add(1)?;
+        let properties_valid =
+            property_invalid[property_start] == property_invalid[record.tokens.len()];
+        (associations_valid && properties_valid)
+            .then(|| groups_for_candidate(record, directory, candidate, true))
+            .flatten()
+    })
 }
 
-pub(crate) fn trailing_pointer_group_candidates(
+pub(crate) fn earliest_pointer_group_with_associations(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-) -> Vec<TrailingPointerGroups> {
-    (1..record.tokens.len())
-        .filter_map(|association_count_index| {
-            let association_count = record
-                .integer(association_count_index)
-                .and_then(|value| usize::try_from(value).ok())?;
-            let association_start = association_count_index.checked_add(1)?;
-            let property_count_index = association_start.checked_add(association_count)?;
-            let property_count = record
-                .integer(property_count_index)
-                .and_then(|value| usize::try_from(value).ok())?;
-            if association_count == 0 && property_count == 0 {
-                return None;
-            }
-            let end = property_count_index
-                .checked_add(1)?
-                .checked_add(property_count)?;
-            if end != record.tokens.len() {
-                return None;
-            }
-            let association_pointers = (0..association_count)
-                .map(|index| {
-                    let token_index = association_start + index;
-                    Some(TrailingPointer {
-                        token_index,
-                        raw_pointer: record.integer(token_index)?,
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let property_pointers = (0..property_count)
-                .map(|index| {
-                    let token_index = property_count_index + 1 + index;
-                    Some(TrailingPointer {
-                        token_index,
-                        raw_pointer: record.integer(token_index)?,
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let associations = association_pointers
-                .iter()
-                .filter_map(|pointer| {
-                    u32::try_from(pointer.raw_pointer)
-                        .ok()
-                        .filter(|sequence| sequence % 2 == 1)
-                        .filter(|sequence| {
-                            directory
-                                .get(sequence)
-                                .is_some_and(|entry| matches!(entry.entity_type, 212 | 312 | 402))
-                        })
-                })
-                .collect::<Vec<_>>();
-            let properties = property_pointers
-                .iter()
-                .filter_map(|pointer| {
-                    u32::try_from(pointer.raw_pointer)
-                        .ok()
-                        .filter(|sequence| sequence % 2 == 1)
-                        .filter(|sequence| {
-                            directory.get(sequence).is_some_and(|entry| {
-                                matches!(entry.entity_type, 316 | 322 | 406 | 422)
-                            })
-                        })
-                })
-                .collect::<Vec<_>>();
-            let fully_valid = associations.len() == association_pointers.len()
-                && properties.len() == property_pointers.len();
-            Some(TrailingPointerGroups {
-                token_start: association_count_index,
-                associations,
-                properties,
-                association_pointers,
-                property_pointers,
-                fully_valid,
+) -> Option<TrailingPointerGroups> {
+    (1..record.tokens.len()).find_map(|association_count_index| {
+        let candidate = pointer_group_candidate(record, association_count_index)?;
+        (candidate.association_count > 0)
+            .then(|| groups_for_candidate(record, directory, candidate, false))
+            .flatten()
+    })
+}
+
+#[derive(Clone, Copy)]
+struct PointerGroupCandidate {
+    token_start: usize,
+    association_count: usize,
+    association_start: usize,
+    property_count_index: usize,
+    property_count: usize,
+}
+
+fn pointer_group_candidate(
+    record: &ParameterRecord,
+    association_count_index: usize,
+) -> Option<PointerGroupCandidate> {
+    let association_count = record
+        .integer(association_count_index)
+        .and_then(|value| usize::try_from(value).ok())?;
+    let association_start = association_count_index.checked_add(1)?;
+    let property_count_index = association_start.checked_add(association_count)?;
+    let property_count = record
+        .integer(property_count_index)
+        .and_then(|value| usize::try_from(value).ok())?;
+    if association_count == 0 && property_count == 0 {
+        return None;
+    }
+    let property_start = property_count_index.checked_add(1)?;
+    let end = property_start.checked_add(property_count)?;
+    if end != record.tokens.len()
+        || !(association_start..property_count_index).all(|index| record.integer(index).is_some())
+        || !(property_start..end).all(|index| record.integer(index).is_some())
+    {
+        return None;
+    }
+    Some(PointerGroupCandidate {
+        token_start: association_count_index,
+        association_count,
+        association_start,
+        property_count_index,
+        property_count,
+    })
+}
+
+fn pointer_is_valid(
+    record: &ParameterRecord,
+    index: usize,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    association: bool,
+) -> bool {
+    let Some(sequence) = record
+        .integer(index)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|sequence| sequence % 2 == 1)
+    else {
+        return false;
+    };
+    directory.get(&sequence).is_some_and(|entry| {
+        if association {
+            matches!(entry.entity_type, 212 | 312 | 402)
+        } else {
+            matches!(entry.entity_type, 316 | 322 | 406 | 422)
+        }
+    })
+}
+
+fn invalid_pointer_prefix(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    association: bool,
+) -> Vec<usize> {
+    let mut prefix = Vec::with_capacity(record.tokens.len() + 1);
+    prefix.push(0);
+    for index in 0..record.tokens.len() {
+        prefix.push(
+            prefix[index] + usize::from(!pointer_is_valid(record, index, directory, association)),
+        );
+    }
+    prefix
+}
+
+fn groups_for_candidate(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    candidate: PointerGroupCandidate,
+    fully_valid: bool,
+) -> Option<TrailingPointerGroups> {
+    let association_pointers = (candidate.association_start..candidate.property_count_index)
+        .map(|token_index| {
+            Some(TrailingPointer {
+                token_index,
+                raw_pointer: record.integer(token_index)?,
             })
         })
-        .collect()
+        .collect::<Option<Vec<_>>>()?;
+    let property_start = candidate.property_count_index.checked_add(1)?;
+    let property_end = property_start.checked_add(candidate.property_count)?;
+    let property_pointers = (property_start..property_end)
+        .map(|token_index| {
+            Some(TrailingPointer {
+                token_index,
+                raw_pointer: record.integer(token_index)?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let associations = association_pointers
+        .iter()
+        .filter_map(|pointer| {
+            u32::try_from(pointer.raw_pointer)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+                .filter(|sequence| {
+                    directory
+                        .get(sequence)
+                        .is_some_and(|entry| matches!(entry.entity_type, 212 | 312 | 402))
+                })
+        })
+        .collect();
+    let properties = property_pointers
+        .iter()
+        .filter_map(|pointer| {
+            u32::try_from(pointer.raw_pointer)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+                .filter(|sequence| {
+                    directory
+                        .get(sequence)
+                        .is_some_and(|entry| matches!(entry.entity_type, 316 | 322 | 406 | 422))
+                })
+        })
+        .collect();
+    Some(TrailingPointerGroups {
+        token_start: candidate.token_start,
+        associations,
+        properties,
+        association_pointers,
+        property_pointers,
+        fully_valid,
+    })
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
