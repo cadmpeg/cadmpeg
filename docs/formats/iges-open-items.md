@@ -563,11 +563,11 @@ from a conformant file.
 
 **Question.** What does FreeCAD acceptance prove about a generated file?
 
-**Known.** `scripts/prepare-iges-freecad-golden.py` materializes the checked-in writer profile. `scripts/verify-iges-freecad.py` imports each file, refuses an import that gives no object or whose shapes are null or invalid, and can require a complete manifest of topology counts, bounding-box coordinates, and scalar measures with explicit tolerances. `scripts/iges-freecad-expectations.json` covers finite points, curves, trimmed surfaces, and B-rep solids; unbounded analytic surfaces use topology counts only.
+**Known.** `scripts/prepare-iges-freecad-golden.py` materializes either the exact geometry manifest or every checked-in golden with a successful writer output. `scripts/prepare-iges-freecad-edited.py` creates one edited neutral point document. `scripts/verify-iges-freecad.py` imports each file, refuses an import that gives no object unless the broad writer pass explicitly allows presentation-only emptiness, and refuses shapes that are null or invalid. The exact pass requires a complete manifest of topology counts, bounding-box coordinates, and scalar measures with explicit tolerances. `scripts/iges-freecad-expectations.json` covers finite points, curves, trimmed surfaces, and B-rep solids; unbounded analytic surfaces use topology counts only. The workflow runs both passes.
 
 **Note.** `.github/workflows/iges-freecad.yml` runs the gate on pull requests, main pushes, scheduled runs, and manual dispatch, then uploads the report. The script still needs an external FreeCAD runtime, and no result artifact is committed to the repository.
 
-**Need.** Require one successful workflow run for the complete writable geometry profile and retain its report artifact as evidence. Expand the manifest when the writable profile grows.
+**Need.** Require one successful workflow run for the complete writable geometry profile and retain both report artifacts as evidence. Expand the exact manifest when a geometry profile grows and keep the broad pass aligned with every successful writer output.
 
 ### EV-03. The fixture builders and the decoder share one author
 

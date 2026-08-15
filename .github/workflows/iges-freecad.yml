@@ -42,6 +42,12 @@ jobs:
       - name: Install FreeCAD command line importer
         run: sudo snap install freecad --channel=stable
 
+      - name: Test IGES acceptance harnesses
+        run: |
+          python3 -m unittest -v \
+            scripts/test_prepare_iges_freecad_golden.py \
+            scripts/test_prepare_iges_freecad_edited.py
+
       - name: Build IGES production binary
         run: cargo build -q --release -p cadmpeg --no-default-features --features iges
 
@@ -52,11 +58,29 @@ jobs:
           python3 scripts/prepare-iges-freecad-golden.py \
             --output-dir "$HOME/side2/tmp/iges-l9/freecad"
 
+      - name: Materialize every writable output
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/side2/tmp/iges-l9/freecad-all"
+          python3 scripts/prepare-iges-freecad-golden.py \
+            --all-writable \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+          python3 scripts/prepare-iges-freecad-edited.py \
+            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+
       - name: Run independent FreeCAD geometry gate
         env:
           CADMPEG_IGES_INPUT_DIR: /home/runner/side2/tmp/iges-l9/freecad
           CADMPEG_IGES_EXPECTATIONS: ${{ github.workspace }}/scripts/iges-freecad-expectations.json
           CADMPEG_IGES_REPORT: /home/runner/side2/tmp/iges-l9/freecad-report.json
+        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
+
+      - name: Run independent FreeCAD writer gate
+        env:
+          CADMPEG_IGES_INPUT_DIR: /home/runner/side2/tmp/iges-l9/freecad-all
+          CADMPEG_IGES_ALLOW_EMPTY: "1"
+          CADMPEG_IGES_REPORT: /home/runner/side2/tmp/iges-l9/freecad-all-report.json
         run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
 
       - name: Upload FreeCAD acceptance report
