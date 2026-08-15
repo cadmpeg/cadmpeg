@@ -299,6 +299,10 @@ locus from the sketch root point. The persisted endpoint-one selector of an isol
 to the point entity, not to a nonexistent curve endpoint. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
 remain explicit native relations rather than being guessed.
+`ElementIds` and `ElementPositions`, when present, are complete comma- or whitespace-separated
+integer lists with equal lengths. Legacy `First`/`Second`/`Third` fields require their matching
+`*Pos` field, and each supplied value must be an integer. Malformed or incomplete operand fields
+are invalid rather than partially decoded.
 
 An expression binding is retained independently from its target property's cached scalar. The
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property

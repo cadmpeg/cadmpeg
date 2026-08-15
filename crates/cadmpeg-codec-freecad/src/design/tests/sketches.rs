@@ -100,6 +100,32 @@ fn rejects_malformed_sketch_record_counts() {
 }
 
 #[test]
+fn rejects_malformed_constraint_operand_lists() {
+    for document in [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomPoint"><Point X="0" Y="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1"><Constrain Type="20" ElementIds="0 bad" ElementPositions="0 0"/></ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomPoint"><Point X="0" Y="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1"><Constrain Type="20" First="0" FirstPos="invalid"/></ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#,
+    ] {
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("malformed constraint operand list");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn retains_unknown_and_ambiguous_sketch_carriers_as_native() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>

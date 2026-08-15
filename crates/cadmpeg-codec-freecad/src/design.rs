@@ -1954,30 +1954,50 @@ fn sketch_axis(locus: &SketchLocus) -> Option<SketchAxis> {
 }
 
 fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>, &'static str> {
-    let ids = node
-        .attribute("ElementIds")
-        .map(split_ints)
-        .unwrap_or_default();
-    let positions = node
-        .attribute("ElementPositions")
-        .map(split_ints)
-        .unwrap_or_default();
-    if node.attribute("ElementIds").is_some() || node.attribute("ElementPositions").is_some() {
-        if ids.len() != positions.len() {
-            return Err("ElementIds and ElementPositions counts differ");
+    match (
+        node.attribute("ElementIds"),
+        node.attribute("ElementPositions"),
+    ) {
+        (Some(ids), Some(positions)) => {
+            let ids = split_ints(ids)?;
+            let positions = split_ints(positions)?;
+            if ids.len() != positions.len() {
+                return Err("ElementIds and ElementPositions counts differ");
+            }
+            return Ok(ids
+                .into_iter()
+                .zip(positions)
+                .filter(|(entity, _)| *entity != -2000)
+                .collect());
         }
-        return Ok(ids
-            .into_iter()
-            .zip(positions)
-            .filter(|(entity, _)| *entity != -2000)
-            .collect());
+        (Some(_), None) | (None, Some(_)) => {
+            return Err("ElementIds and ElementPositions must both be present");
+        }
+        (None, None) => {}
     }
-    Ok(["First", "Second", "Third"]
-        .into_iter()
-        .zip(["FirstPos", "SecondPos", "ThirdPos"])
-        .filter_map(|(entity, position)| Some((int_attr(node, entity)?, int_attr(node, position)?)))
-        .filter(|(entity, _)| *entity != -2000)
-        .collect())
+    let mut operands = Vec::new();
+    for (entity_name, position_name) in [
+        ("First", "FirstPos"),
+        ("Second", "SecondPos"),
+        ("Third", "ThirdPos"),
+    ] {
+        match (node.attribute(entity_name), node.attribute(position_name)) {
+            (None, None) => {}
+            (Some(entity), Some(position)) => {
+                let entity = entity
+                    .parse::<i64>()
+                    .map_err(|_| "constraint entity is not an integer")?;
+                let position = position
+                    .parse::<i64>()
+                    .map_err(|_| "constraint position is not an integer")?;
+                if entity != -2000 {
+                    operands.push((entity, position));
+                }
+            }
+            _ => return Err("constraint entity and position must both be present"),
+        }
+    }
+    Ok(operands)
 }
 
 fn validate_declared_count(
@@ -2015,11 +2035,23 @@ fn validate_declared_count(
     Ok(())
 }
 
-fn split_ints(value: &str) -> Vec<i64> {
-    value
-        .split(|character: char| character == ',' || character.is_ascii_whitespace())
-        .filter_map(|part| part.parse().ok())
-        .collect()
+fn split_ints(value: &str) -> Result<Vec<i64>, &'static str> {
+    if value.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut values = Vec::new();
+    for group in value.split(',') {
+        if group.trim().is_empty() {
+            return Err("constraint integer list has an empty item");
+        }
+        for part in group.split_ascii_whitespace() {
+            values.push(
+                part.parse::<i64>()
+                    .map_err(|_| "constraint integer list has an invalid integer")?,
+            );
+        }
+    }
+    Ok(values)
 }
 
 fn int_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<i64> {
