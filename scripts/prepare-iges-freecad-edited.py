@@ -43,6 +43,11 @@ def parse_args() -> argparse.Namespace:
         default="5.3",
         help="IGES target version (default: 5.3)",
     )
+    parser.add_argument(
+        "--output-name",
+        default="edited_point.igs",
+        help="output filename within --output-dir (default: edited_point.igs)",
+    )
     return parser.parse_args()
 
 
@@ -87,6 +92,12 @@ def main() -> None:
     input_path = args.input.expanduser().resolve()
     if not input_path.is_file():
         raise SystemExit(f"input fixture does not exist: {input_path}")
+    output_name = Path(args.output_name)
+    if output_name.name != args.output_name or output_name.suffix.lower() not in {
+        ".igs",
+        ".iges",
+    }:
+        raise SystemExit(f"invalid output filename: {args.output_name}")
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -119,8 +130,8 @@ def main() -> None:
         edited = scratch / "edited.cadir.json"
         edited.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
-        output = output_dir / "edited_point.igs"
-        convert_report = output_dir / "edited_point.convert.report.json"
+        output = output_dir / output_name
+        convert_report = output_dir / f"{output.stem}.convert.report.json"
         run(
             [
                 args.cadmpeg,

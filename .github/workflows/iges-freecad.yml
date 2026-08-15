@@ -67,6 +67,18 @@ jobs:
             --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
           python3 scripts/prepare-iges-freecad-edited.py \
             --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --iges-target 5.1 \
+            --output-name edited_point_v51.igs \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+          python3 scripts/prepare-iges-freecad-edited.py \
+            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --iges-target 5.2 \
+            --output-name edited_point_v52.igs \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+          python3 scripts/prepare-iges-freecad-edited.py \
+            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --iges-target 5.3 \
+            --output-name edited_point_v53.igs \
             --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
 
       - name: Run independent FreeCAD geometry gate

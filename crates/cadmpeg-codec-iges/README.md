@@ -72,11 +72,11 @@ CADMPEG_IGES_REPORT="$HOME/side2/tmp/iges-l9/freecad-report.json" \
 FreeCADCmd scripts/verify-iges-freecad.py
 ```
 
-The CI FreeCAD job also materializes every successful writer golden with
-`--all-writable` and imports one edited neutral point document. Its broad pass
-allows an empty import for presentation-only output but rejects null or
-invalid shapes; the exact geometry pass keeps the topology and measure
-expectations above.
+The CI FreeCAD job also materializes every successful writer golden and imports
+one edited neutral point document at each target version. Its broad pass allows
+an empty import for presentation-only output but rejects null or invalid
+shapes; the exact geometry pass keeps the topology and measure expectations
+above.
 
 ## Data model
 
