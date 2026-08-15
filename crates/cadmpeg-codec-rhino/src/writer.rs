@@ -2422,6 +2422,13 @@ fn validate_brep_pcurve_ownership(
 ) -> Result<(), CodecError> {
     let mut owned = std::collections::BTreeSet::new();
     for coedge in coedges {
+        if coedge.pcurves.len() > 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "coedge {} has {} pcurve uses; Rhino stores one trim C2 carrier",
+                coedge.id.0,
+                coedge.pcurves.len()
+            )));
+        }
         for pcurve_use in &coedge.pcurves {
             let id = &pcurve_use.pcurve;
             if !owned.insert(id.0.clone()) {

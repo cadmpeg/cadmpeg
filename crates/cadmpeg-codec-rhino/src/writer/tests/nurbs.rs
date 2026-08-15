@@ -211,6 +211,56 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
 }
 
 #[test]
+fn multiple_pcurve_uses_are_rejected_before_output() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    let first: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#first".into();
+    let second: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#second".into();
+    for (id, origin) in [
+        (first.clone(), cadmpeg_ir::math::Point2::new(0.0, 0.0)),
+        (second.clone(), cadmpeg_ir::math::Point2::new(0.0, 1.0)),
+    ] {
+        ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+            id,
+            geometry: cadmpeg_ir::geometry::PcurveGeometry::Line {
+                origin,
+                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: Some([0.0, 2.0]),
+            fit_tolerance: None,
+        });
+    }
+    ir.model.coedges[0].pcurves = vec![
+        cadmpeg_ir::topology::PcurveUse {
+            pcurve: first,
+            isoparametric: None,
+            parameter_range: None,
+        },
+        cadmpeg_ir::topology::PcurveUse {
+            pcurve: second,
+            isoparametric: None,
+            parameter_range: None,
+        },
+    ];
+
+    let mut output = vec![0xaa];
+    let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("expected error");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert_eq!(output, [0xaa]);
+}
+
+#[test]
 fn explicit_line_pcurve_round_trips_as_native_c2() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),

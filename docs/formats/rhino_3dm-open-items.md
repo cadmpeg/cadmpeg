@@ -214,24 +214,3 @@ future suffix, with its field order, boundary, and typed admission rule.
 
 **Note.** Narrowed 2026-08-16. Suffix preservation is settled; future suffix
 field semantics remain open.
-
-### SW-10. Writer first-pcurve selection
-
-**Question.** When a neutral coedge has multiple ordered pcurve uses, which
-use-selection or rejection rule should the transfer writer apply before the
-single native C2 slot is written?
-
-**Known.** `writer.rs:2419-2443` allows multiple pcurve uses on one coedge.
-The native `ON_BrepTrim` record has one `m_c2i` and one proxy domain, as shown
-by `opennurbs_brep.h` and `ON_BrepTrim::Write`/`Read` in
-`opennurbs_brep_io.cpp`. `writer.rs:2332-2338`, `writer.rs:2450-2456`, and
-`writer.rs:2481-2489` currently select only the first use for geometry,
-tolerance, and NURBS validation.
-
-**Need.** A Rhino transfer writer rule or an independent witness with more than
-one pcurve use and differing carrier/range, followed by either a source-backed
-selection rule or an explicit writer rejection/loss rule. The rule must
-preserve the selected range and geometry semantics.
-
-**Note.** Narrowed 2026-08-16. OpenNURBS settles the one-slot capacity, but not
-the Rhino transfer policy for choosing among multiple neutral uses.
