@@ -313,8 +313,12 @@ current levels require those matrices and representative fixtures.
 - A transferred feature receives a structural `parent` only when its exact
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral
-  history links. Structural parent transfer does not assign operation
-  dependencies.
+  history links. A payload reference from one transferred feature's design
+  object to a different transferred feature with an earlier feature ordinal
+  transfers one structural dependency in first relation order, deduplicated by
+  target. Storage selectors, unresolved targets, self-links, and forward
+  targets do not establish dependencies. This link does not assign an
+  operation role.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node with the design object's first-field byte offset as its source
@@ -324,8 +328,9 @@ current levels require those matrices and representative fixtures.
   classes `EdgeFillet`, `Prism_ThickThin1`, `Prism_ThickThin2`,
   `Revol_ThickThin1`, and `Sweep_ThickThin1` transfer opaque native operation
   nodes with source order, identity, and structural parent linkage. Their
-  operands, profiles, directions, extents, outputs, dependencies, and typed
-  parameter roles remain unresolved; this slice does not raise the CATIA score.
+  operands, profiles, directions, extents, outputs, operation-specific
+  dependency roles, and typed parameter roles remain unresolved; this slice
+  does not raise the CATIA score.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.

@@ -9,7 +9,10 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
-use crate::native::{CatiaDesignObject, CatiaEntityRecord, CatiaNative, CatiaObjectRecord};
+use crate::native::{
+    CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaEntityRecord, CatiaNative,
+    CatiaObjectRecord,
+};
 use crate::object_graph::{HeadToken, PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -146,6 +149,68 @@ impl DesignFeatureTransfer {
             };
             if feature_parent_chain_is_acyclic(&feature.id, &parents) {
                 feature.parent = Some(parent.clone());
+            }
+        }
+    }
+
+    /// Bind exact payload references to earlier transferred features as
+    /// structural dependencies. Storage selectors, unresolved targets,
+    /// self-links, and forward targets do not establish history edges.
+    pub(crate) fn assign_feature_dependencies(&self, ir: &mut CadIr, native: &CatiaNative) {
+        let design_objects = native
+            .design_objects
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<HashMap<_, _>>();
+        let feature_ordinals = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (feature.id.clone(), feature.ordinal))
+            .collect::<HashMap<_, _>>();
+        let mut dependencies_by_feature = HashMap::<FeatureId, Vec<FeatureId>>::new();
+
+        for feature in &ir.model.features {
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                continue;
+            };
+            let Some(object) = design_objects.get(native_ref) else {
+                continue;
+            };
+            let mut seen = feature.dependencies.iter().cloned().collect::<HashSet<_>>();
+            for relation in &object.relations {
+                if !matches!(
+                    &relation.source,
+                    CatiaDesignObjectRelationSource::Payload { .. }
+                ) {
+                    continue;
+                }
+                let Some(target_object) = relation.target_design_object.as_deref() else {
+                    continue;
+                };
+                let Some(target) = self.feature_ids.get(target_object) else {
+                    continue;
+                };
+                if target == &feature.id || seen.contains(target) {
+                    continue;
+                }
+                let Some(target_ordinal) = feature_ordinals.get(target) else {
+                    continue;
+                };
+                if *target_ordinal >= feature.ordinal {
+                    continue;
+                }
+                seen.insert(target.clone());
+                dependencies_by_feature
+                    .entry(feature.id.clone())
+                    .or_default()
+                    .push(target.clone());
+            }
+        }
+
+        for feature in &mut ir.model.features {
+            if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
+                feature.dependencies.extend(dependencies);
             }
         }
     }
@@ -462,6 +527,7 @@ pub(crate) fn transfer_design_features(
     }
 
     transfer.assign_feature_parents(ir, native);
+    transfer.assign_feature_dependencies(ir, native);
     transfer
 }
 

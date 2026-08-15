@@ -10,9 +10,11 @@ use cadmpeg_ir::units::Units;
 use std::io::Cursor;
 
 use crate::native::{
-    CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaEntityEvaluation,
-    CatiaEntityEvaluationEncoding, CatiaEntityRecord, CatiaEntitySchemaValue,
-    CatiaEntitySuffixPayload, CatiaEntitySuffixSchemaValue, CatiaObjectGraph, CatiaObjectOwner,
+    CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaDesignObjectRelation,
+    CatiaDesignObjectRelationSource, CatiaEntityEvaluation, CatiaEntityEvaluationEncoding,
+    CatiaEntityRecord, CatiaEntitySchemaValue, CatiaEntitySuffixPayload,
+    CatiaEntitySuffixSchemaValue, CatiaObjectGraph, CatiaObjectOwner,
+    CatiaObjectRecordReferenceSource,
 };
 use crate::object_graph::ObjectPayload;
 use crate::test_support::*;
@@ -54,6 +56,27 @@ fn feature(id: &str, native_ref: &str) -> Feature {
         definition: FeatureDefinition::StoredGeometry,
         native_ref: Some(native_ref.to_string()),
     }
+}
+
+fn payload_relation(target_object: &str, payload_offset: u64) -> CatiaDesignObjectRelation {
+    CatiaDesignObjectRelation {
+        source_field: "source-field".to_string(),
+        source_class: None,
+        source: CatiaDesignObjectRelationSource::Payload {
+            payload_offset,
+            container: CatiaObjectRecordReferenceSource::Field,
+        },
+        target_entity_id: payload_offset as u32,
+        target_field: "target-field".to_string(),
+        target_class: None,
+        target_design_object: Some(target_object.to_string()),
+    }
+}
+
+fn storage_relation(target_object: &str) -> CatiaDesignObjectRelation {
+    let mut relation = payload_relation(target_object, 0);
+    relation.source = CatiaDesignObjectRelationSource::Storage;
+    relation
 }
 
 fn native_operation_object(
@@ -434,6 +457,88 @@ fn omits_all_parents_in_an_owner_cycle() {
         .features
         .iter()
         .all(|feature| feature.parent.is_none()));
+}
+
+#[test]
+fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
+    let mut source = design_object("source-object", None);
+    let mut unresolved = payload_relation("unresolved-object", 6);
+    unresolved.target_design_object = None;
+    source.relations = vec![
+        payload_relation("first-object", 0),
+        payload_relation("first-object", 1),
+        payload_relation("second-object", 2),
+        payload_relation("forward-object", 3),
+        storage_relation("storage-object"),
+        payload_relation("source-object", 5),
+        unresolved,
+    ];
+    let native = CatiaNative {
+        design_objects: vec![
+            design_object("first-object", None),
+            design_object("second-object", None),
+            design_object("forward-object", None),
+            design_object("storage-object", None),
+            source,
+        ],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty(Units::default());
+    for (id, native_ref, ordinal) in [
+        ("first-feature", "first-object", 10),
+        ("second-feature", "second-object", 15),
+        ("source-feature", "source-object", 20),
+        ("forward-feature", "forward-object", 30),
+        ("storage-feature", "storage-object", 5),
+    ] {
+        let mut item = feature(id, native_ref);
+        item.ordinal = ordinal;
+        ir.model.features.push(item);
+    }
+    let transfer = DesignFeatureTransfer {
+        feature_ids: HashMap::from([
+            ("first-object".to_string(), FeatureId::from("first-feature")),
+            (
+                "second-object".to_string(),
+                FeatureId::from("second-feature"),
+            ),
+            (
+                "source-object".to_string(),
+                FeatureId::from("source-feature"),
+            ),
+            (
+                "forward-object".to_string(),
+                FeatureId::from("forward-feature"),
+            ),
+            (
+                "storage-object".to_string(),
+                FeatureId::from("storage-feature"),
+            ),
+        ]),
+        ..DesignFeatureTransfer::default()
+    };
+
+    transfer.assign_feature_dependencies(&mut ir, &native);
+
+    let source = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id == FeatureId::from("source-feature"))
+        .unwrap();
+    assert_eq!(
+        source.dependencies,
+        [
+            FeatureId::from("first-feature"),
+            FeatureId::from("second-feature")
+        ]
+    );
+    assert!(ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.id != FeatureId::from("source-feature"))
+        .all(|feature| feature.dependencies.is_empty()));
 }
 
 #[test]
