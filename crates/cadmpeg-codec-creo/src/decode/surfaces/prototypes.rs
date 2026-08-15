@@ -112,7 +112,8 @@ pub(in super::super) fn prototype_local_frame(
     let second = second_candidates.next()?;
     second_candidates.next().is_none().then_some(())?;
     let axis = normalized(cross(reference, second))?;
-    let origin = slots[9..12].try_into().ok()?;
+    let origin: [f64; 3] = slots[9..12].try_into().ok()?;
+    origin.into_iter().all(f64::is_finite).then_some(())?;
     Some((origin, axis, reference))
 }
 

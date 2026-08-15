@@ -84,3 +84,42 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
     assert_eq!(major_radius, 0.499_999_999_999_999_94);
     assert_eq!(minor_radius, 0.249_999_999_951_747_04);
 }
+
+#[test]
+fn prototype_local_frame_rejects_nonfinite_origin() {
+    let record = crate::surface::SurfacePrototypeRecord {
+        declared_family: "torus".to_string(),
+        family: crate::surface::SurfacePrototypeFamily::Torus,
+        parameters: vec![crate::surface::SurfaceNamedParameter {
+            name: "local_sys".to_string(),
+            value: crate::surface::SurfaceNamedValue::ScalarArray {
+                dimensions: 4,
+                count: 3,
+                values: [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    f64::NAN,
+                    0.0,
+                    0.0,
+                ]
+                .into_iter()
+                .map(Some)
+                .collect(),
+                tokens: Vec::new(),
+            },
+            body: Vec::new(),
+            offset: 0,
+            value_offset: 0,
+        }],
+        offset: 0,
+    };
+
+    assert_eq!(super::prototype_local_frame(&record), None);
+}
