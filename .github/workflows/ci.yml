@@ -132,13 +132,16 @@ jobs:
 
       - name: Bounded IGES decode and validation gate
         # Give every synthesized IGES fixture independent decode and CADIR
-        # validation deadlines under the unattended resource profile.
+        # validation deadlines under the unattended resource profile. Use the
+        # production profile so the deadline measures codec behavior rather
+        # than an unoptimized debug binary.
         run: |
           set -euo pipefail
           mkdir -p "$HOME/side2/tmp/iges-l9"
+          cargo build -q --release -p cadmpeg --no-default-features --features iges
           python3 scripts/verify-iges-bounded.py \
             crates/cadmpeg-codec-iges/tests/golden/fixtures \
-            --cadmpeg target/debug/cadmpeg \
+            --cadmpeg target/release/cadmpeg \
             --limits service \
             --timeout 30 \
             --report "$HOME/side2/tmp/iges-l9/iges-bounded-report.json"
