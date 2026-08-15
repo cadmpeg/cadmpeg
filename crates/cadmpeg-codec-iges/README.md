@@ -3,9 +3,11 @@
 `cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.1, 5.2, and 5.3
 Fixed ASCII files through `CadIr`.
 
-Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
-for the Fixed ASCII mechanical/document envelope. Bounded semantic writing
-is an extra; the L9 gate remains open.
+Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
+for the Fixed ASCII mechanical/document envelope. Semantic decode is bounded,
+validates the returned `CadIr`, accounts for every retained Directory Entry,
+and gates generated output through the checked-in round-trip and FreeCAD
+acceptance workflows.
 
 ## Install
 

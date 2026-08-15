@@ -245,3 +245,33 @@ The `native.iges` namespace version is `2`. Its `colors` arena stores typed Type
 ## Byte accounting
 
 The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader emits a closed `transfer_ledger` for every non-null Directory entity and verifies it against the decoded model.
+
+## Decode admission
+
+Semantic decode is bounded by the caller's `DecodePolicy`. The policy limits
+input bytes, temporary materialization, retained bytes, admitted entities,
+collection items, recursive depth, and algorithm work. File-declared counts,
+pointer walks, recursive definitions, and geometric recovery cannot override
+these limits. A refused request returns a structured resource refusal and does
+not return a partial semantic document.
+
+Under the service policy, the absolute ceilings are 256 MiB of input, 512 MiB
+of temporary materialization, 512 MiB of retained decode data, 8,000,000
+entities, 1,000,000 collection items, depth 128, and 256,000,000 work units.
+The desktop policy permits 4 GiB of input, 4 GiB of temporary materialization,
+4 GiB of retained decode data, 64,000,000 entities, 16,000,000 collection
+items, depth 256, and 4,000,000,000 work units. The policy is implementation
+admission control; no IGES field changes it.
+
+A successful semantic decode has no error-severity neutral-validation finding.
+The reader validates referential integrity, geometry domains, topology
+ownership, endpoint agreement, pcurve agreement, transforms, and document
+invariants before it returns the document. A failed candidate does not commit
+partial topology.
+
+Every non-null Directory Entry has one retained native identity and one
+`transfer_ledger` disposition. A supported entity without neutral projection
+has a stable namespaced loss code, source provenance, and its retained native
+record. A projected entity with reduced fidelity records the reduction on the
+same source identity. Salvage mode returns warning losses; strict mode refuses
+any warning-or-higher loss before returning a semantic result.

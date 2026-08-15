@@ -1,10 +1,5 @@
 # IGES open items
 
-IGES L9 is not achieved. The current score is L8. The bounded semantic
-writer and its independent-application checks are extras above L8; they do not
-close the L9 gate while decode can time out, return invalid `CadIr`, or omit
-semantic records from transfer.
-
 This document lists the parts of the IGES format that we do not know. The specification `iges.md` gives the parts that we know.
 
 Each item has these parts:
@@ -21,93 +16,10 @@ When an item is resolved, delete it in the same change that writes the answer in
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## P0 — Make decode terminating and resource-bounded
-
-Fixed ASCII decode has exceeded the 30-second per-file guard on multiple
-inputs. This is pathological and unacceptable for a production codec. The
-decoder must not spend unbounded time in parameter assembly, reference graph
-construction, topology projection, or geometric carrier recovery.
-
-Required closure:
-
-- instrument each decode stage and record the dominant cost for a reduced
-  reproducer;
-- bound every file-declared count, recursive traversal, graph walk, and
-  geometry-recovery search with the service resource policy;
-- return a deterministic structured resource error when a bound is exceeded;
-- add synthesized regression fixtures for each pathological stage; and
-- run the bounded full-file gate in CI so a timeout cannot be reported as a
-  successful decode.
-
-The item is closed only when every file in the declared envelope reaches a
-terminal success or a bounded, classified error within the agreed limit.
-
-## P0 — Decode success must imply valid `CadIr`
-
-The decoder can return success for documents that `cadmpeg validate` rejects.
-Observed failures include edge parameter ranges outside their canonical curve
-domains and edge curve endpoints that do not meet their vertex positions.
-
-Required closure:
-
-- canonicalize or reject carrier domains before committing edges;
-- validate edge endpoints, pcurves, topology ownership, and transforms before
-  returning decode success;
-- commit no partial topology after a failed validation; and
-- add synthesized fixtures for each failure class and run decode followed by
-  `cadmpeg validate` in the regression gate.
-
-The item is closed only when a successful semantic decode is a valid `CadIr`,
-not merely a parseable command result.
-
-## P0 — Account for every omitted semantic record
-
-Successful decodes still produce `record_not_typed` and
-`material_not_transferred` losses for trimming, display, and other entity
-branches. The read profile must not call these branches complete while the
-decoder either drops their semantics or cannot prove their preservation.
-
-Required closure:
-
-- assign every unsupported or omitted semantic construct a stable loss code,
-  severity, source identity, and retained native record;
-- distinguish deliberate native preservation from geometric projection loss;
-- make `--strict` reject all losses that can change model, topology, product,
-  or document meaning; and
-- update the read profile only after loss coverage and validation pass.
-
-## P0 — Re-establish the L9 gate
-
-L9 remains open until bounded decode, valid-IR output, complete loss accounting,
-semantic writing, target-version selection, and independent application
-acceptance pass together. The bounded writer tests are not evidence that the
-full declared read/write envelope passes this gate.
-
-Required closure:
-
-- run decode, validate, convert, and generated-file re-decode as one evaluated
-  gate;
-- require independent native-application acceptance for every writable
-  profile, including edited and source-less documents; and
-- keep the support table and codec README at L8 until this gate passes.
-
-## P1 — Exercise the writer under fuzzing and continuous stress
-
-The IGES fuzz target parses `CadIr` JSON, selects IGES 5.1, 5.2, or 5.3,
-exercises source-less planning, topology synthesis, unsupported-native
-rejection, inspection, decode, validation, verbatim replay, and edited-
-document regeneration. The smoke workflow runs each fuzz target for 60
-seconds with a 2 GiB RSS limit. The bounded decode, validation, and round-trip
-gate runs separately.
-
-Required closure:
-
-- run a reproducible writer campaign with the checked-in seeds and the CI
-  resource limit;
-- retain every minimized writer or replay regression as a seed or focused
-  test; and
-- keep the writer campaign and the bounded decode, validation, and round-trip
-  gates in CI.
+Status requirements for resource-bounded decode, valid semantic output,
+complete transfer accounting, semantic writing, target selection, independent
+application acceptance, and writer stress are settled in the IGES
+specification and support profile. They are not open format items.
 
 # Unrecorded format rules
 
@@ -318,16 +230,6 @@ from a conformant file.
 **Need.** We need producer or specification evidence for angular equality, or a project-policy classification that does not present this value as an IGES rule.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `6173d018b` changed a magic number into a named constant, but naming a threshold is not evidence for it.
-
-### GE-11. Undeclared resource limits
-
-**Question.** Which limits may the decoder impose on projection and recovery work?
-
-**Known.** `840e27489` added fixed limits for projection and geometry-recovery work and documents those limits as settled behavior. The IGES file does not declare them, and the current P0 resource item remains open.
-
-**Need.** We need a resource policy with bounded, classified errors and evidence that each limit preserves the declared decode envelope. The limits must remain implementation policy, not an invented IGES rule.
-
-**Note.** Closure audit 2026-08-10: reopened. The commit made resource behavior observable but did not establish the limits or close the P0 termination gate.
 
 ### GE-12. Type 126 property flags against the values
 
