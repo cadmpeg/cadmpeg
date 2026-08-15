@@ -180,16 +180,6 @@ the same producer-source audit or an independent witness.
 
 **Note.** Reopened because the closure treats an unread suffix as opaque without establishing whether the known prefix remains admissible.
 
-### IC-04. Quadrilateral triangulation diagonal
-
-**Question.** Which diagonal does the neutral reader use for a quadrilateral mesh face?
-
-**Known.** `mesh.rs:466-489` compares the two geometric diagonals and selects diagonal `0-2` on equality. Section 12.2 says to use the shorter diagonal. The local test exercises one unequal case but does not establish the source rule or the equal-diagonal tie.
-
-**Need.** Provide an independent source rule for the diagonal calculation and tie case, then keep the derived exactness and `mesh.quad-topology-triangulated` loss contract aligned with that rule.
-
-**Note.** Reopened because the closure fixed the neutral loss accounting but promoted one local geometric rule without an independent operand for equal diagonals.
-
 ### SW-02. Duplicate singleton metadata selection
 
 **Question.** Which metadata record owns a singleton property or setting when the file contains more than one?

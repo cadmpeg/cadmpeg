@@ -1864,7 +1864,8 @@ The stored width is 1, 2, or 4. Writers select 1 when vertex count is below
 256, 2 when it is below 65536, and 4 otherwise. Readers use the stored width.
 Indices are little-endian unsigned values. A triangle is `[v0,v1,v2,v2]`; a
 quad is `[v0,v1,v2,v3]`. Neutral triangulation splits a quad along its shorter
-geometric diagonal. A repeated quad vertex is removed before triangulation.
+geometric diagonal; equal diagonals select `0-2`. A repeated quad vertex is
+removed before triangulation.
 Quad topology is not preserved in the neutral tessellation: every four-vertex
 face is transferred as two triangles, and the transfer is derived.
 
