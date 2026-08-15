@@ -78,14 +78,14 @@ fn blank_directory_status_defaults_to_zero_fields() {
 }
 
 #[test]
-fn zero_padded_directory_status_supplies_four_two_digit_fields() {
+fn eight_digit_directory_status_supplies_four_two_digit_fields() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
                 entity_type: 116,
                 form: 0,
                 label: "STATUS".into(),
-                status: "00000201",
+                status: "01020304",
                 parameters: "116,1,2,3,0;".into(),
             }])),
             &DecodeOptions::default(),
@@ -93,10 +93,10 @@ fn zero_padded_directory_status_supplies_four_two_digit_fields() {
         .unwrap();
     let entity = &result.ir().native.namespace("iges").unwrap().arenas["entities"][0];
 
-    assert_eq!(entity.fields()["blank_status"], 0);
-    assert_eq!(entity.fields()["subordinate_status"], 0);
-    assert_eq!(entity.fields()["use_flag"], 2);
-    assert_eq!(entity.fields()["hierarchy_status"], 1);
+    assert_eq!(entity.fields()["blank_status"], 1);
+    assert_eq!(entity.fields()["subordinate_status"], 2);
+    assert_eq!(entity.fields()["use_flag"], 3);
+    assert_eq!(entity.fields()["hierarchy_status"], 4);
 }
 
 #[test]

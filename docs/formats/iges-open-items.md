@@ -129,16 +129,6 @@ from a conformant file.
 
 **Note.** Reopened by the 2026-08-16 audit. The code and synthetic tests implement a conservative project recovery policy, but the rule that one malformed definition invalidates every root inference is not established from the IGES specification or from an exporter-authored witness file.
 
-### DR-09. The Directory status field accepts blank or eight digits and nothing between
-
-**Question.** Must the Directory status number be zero-padded to eight digits?
-
-**Known.** `directory.rs:92-115` accepts an all-blank field or exactly eight ASCII digits. It rejects right-justified digits with leading blanks, while `directory.rs:81-90` accepts trimmed decimal integers in other fixed fields. The Directory Entry section of `iges.md` describes an eight-character status number and blank defaults.
-
-**Need.** We need the required rendering and blank-field rule from the IGES specification. A wrong choice rejects a complete file when a producer uses conventional right alignment.
-
-**Note.** Reopened by the 2026-08-16 audit. The closure added behavior and tests, but did not settle the status subfield rendering or leading-blank semantics from the IGES specification.
-
 ### DR-10. Two fixed defaults in the Type 406 Form 30 native record
 
 **Question.** What are the defaults of the Type 406 Form 30 character-set and witness-line-angle fields, and in which unit is the angle native?
