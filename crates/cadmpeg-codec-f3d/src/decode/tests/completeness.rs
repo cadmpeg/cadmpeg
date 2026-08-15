@@ -54,6 +54,34 @@ fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
 }
 
 #[test]
+fn product_feature_definitions_require_neutral_reference_ids() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::JointId;
+
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::InsertComponent {
+            occurrence: OccurrenceId("model:occurrence#component".into()),
+        }
+    ));
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::AssemblyJoint {
+            joint: JointId("model:joint#assembly".into()),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::InsertComponent {
+            occurrence: OccurrenceId(String::new()),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::AssemblyJoint {
+            joint: JointId(String::new()),
+        }
+    ));
+}
+
+#[test]
 fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     use cadmpeg_ir::features::{
         AxisAngle, BodySelection, BooleanOp, FaceMotion, FaceSelection, FeatureDefinition, Length,

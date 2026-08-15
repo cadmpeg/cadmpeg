@@ -730,6 +730,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !base_feature_body_selection_is_resolved(bodies)
         }
         FeatureDefinition::InsertBodies { bodies } => !body_selection_is_resolved(bodies),
+        FeatureDefinition::InsertComponent { occurrence } => occurrence.0.is_empty(),
+        FeatureDefinition::AssemblyJoint { joint } => joint.0.is_empty(),
         FeatureDefinition::Shell {
             bodies,
             removed_faces,

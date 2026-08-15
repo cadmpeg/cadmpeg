@@ -173,11 +173,14 @@ fn project_axial_operands(
             DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index } => {
                 let target_scope =
                     unique_scope(scopes, stream, *scope_record_index, "JointOrigin")?;
-                let feature = unique_feature(features, &target_scope.id)?;
-                if !matches!(
-                    feature.definition,
-                    FeatureDefinition::DatumCoordinateSystem { .. }
-                ) {
+                if let Some(feature) = unique_feature(features, &target_scope.id) {
+                    if !matches!(
+                        feature.definition,
+                        FeatureDefinition::DatumCoordinateSystem { .. }
+                    ) {
+                        return None;
+                    }
+                } else if target_scope.joint_origin_transform.is_none() {
                     return None;
                 }
                 Some(JointOperand {
@@ -390,6 +393,13 @@ mod tests {
             "JointOrigin",
             80,
         );
+        let mut origin_scope = origin_scope;
+        origin_scope.joint_origin_transform = Some([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]);
         let occurrence = OccurrenceId("test:model:occurrence#component".into());
         let features = [
             feature(
@@ -446,6 +456,15 @@ mod tests {
             operands[1].object.as_deref(),
             Some(crate::ids::neutral_feature_id(&origin_scope).0.as_str())
         );
+
+        let unlisted_operands = super::project_axial_operands(
+            &targets,
+            "f3d:Design/BulkStream.dat",
+            &scopes,
+            &features[..1],
+        )
+        .expect("frame-resolved unlisted root JointOrigin");
+        assert_eq!(unlisted_operands[1].object, operands[1].object);
     }
 
     #[test]
