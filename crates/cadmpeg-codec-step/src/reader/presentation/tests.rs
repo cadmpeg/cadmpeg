@@ -26,8 +26,11 @@ ENDSEC;END-ISO-10303-21;",
         0,
     )
     .expect("surface color");
-    assert_eq!(color.2.r, 1.0);
-    assert_eq!(color.2.b, 0.0);
+    let ColorResolution::Candidate(color) = color else {
+        panic!("expected one surface color");
+    };
+    assert_eq!(color.color.r, 1.0);
+    assert_eq!(color.color.b, 0.0);
 }
 
 use std::fmt::Write as _;
@@ -500,6 +503,34 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn equal_precedence_style_colors_do_not_select_by_source_order() {
+    let source = "#1=COLOUR_RGB('red',1.,0.,0.);
+#2=COLOUR_RGB('blue',0.,0.,1.);
+#3=SURFACE_STYLE_RENDERING(#1,$,$,$,$,$);
+#4=SURFACE_STYLE_RENDERING(#2,$,$,$,$,$);
+#5=PRESENTATION_STYLE_ASSIGNMENT((#3,#4));
+#6=STYLED_ITEM('',(#5),#7);
+#7=(ADVANCED_FACE() FACE_SURFACE());";
+    let reordered = source.replace("(#3,#4)", "(#4,#3)");
+
+    for input in [source, reordered.as_str()] {
+        let result = decode_inline(input);
+        assert!(result.ir().model.appearance_bindings.is_empty());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::ConflictingScalarColors.kind()
+                && loss.message.contains("STYLED_ITEM #6")
+                && loss.message.contains("equal-precedence")
+        }));
+        assert!(result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .all(|face| face.color.is_none()));
+    }
 }
 
 #[test]

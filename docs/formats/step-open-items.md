@@ -1100,16 +1100,6 @@ QA audit: reopened after reviewing closing commit cbbbe401b. The closing commit 
 
 **Note.** Reordering the same two relations can change the occurrence transform without changing the represented usage. The current code silently selects one candidate.
 
-### AP-09. Multiple same-domain style assignments
-
-**Question.** How does one STYLED_ITEM select among multiple valid same-domain style assignments?
-
-**Known.** crates/cadmpeg-codec-step/src/reader/presentation.rs:271-350 flattens style references and calls find_color with find_map. In presentation.rs:1168-1198, equal side rank and equal alpha keep the first recursive candidate. The specification says source order does not select a scalar color, but this path has no conflict loss for distinct equal-rank colors within one style graph.
-
-**Need.** We need an independent file with two same-domain, equal-precedence colors on one styled item and a reordered copy, plus the source rule for conflicting assignments.
-
-**Note.** Reordering the style references can change the neutral scalar color while both source colors remain valid. The current AP-05 policy does not cover this inner assignment set.
-
 ### AP-10. Multiple surface transparency properties
 
 **Question.** How does a surface style select transparency when one

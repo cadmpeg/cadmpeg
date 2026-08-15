@@ -334,26 +334,24 @@ pub(super) fn decode(
                 contexts.join(", ")
             )));
         }
-        let color = effective_style_references
-            .iter()
-            .copied()
-            .find_map(|reference| {
-                find_color(
-                    reference,
-                    exchange,
-                    domain,
-                    &mut active,
-                    &mut color_cache,
-                    &mut losses,
-                    0,
-                )
-            });
+        let color =
+            combine_color_resolutions(effective_style_references.iter().copied().filter_map(
+                |reference| {
+                    find_color(
+                        reference,
+                        exchange,
+                        domain,
+                        &mut active,
+                        &mut color_cache,
+                        &mut losses,
+                        0,
+                    )
+                },
+            ));
         let color = color.or_else(|| {
             matches!(domain, StyleDomain::Curve | StyleDomain::Point).then(|| {
-                effective_style_references
-                    .iter()
-                    .copied()
-                    .find_map(|reference| {
+                combine_color_resolutions(effective_style_references.iter().copied().filter_map(
+                    |reference| {
                         find_color(
                             reference,
                             exchange,
@@ -363,20 +361,36 @@ pub(super) fn decode(
                             &mut losses,
                             0,
                         )
-                    })
+                    },
+                ))
             })?
         });
-        let Some((_, color_id, color, name)) = color else {
-            let mut visited = BTreeSet::new();
-            if unresolved_context_style_ids.is_empty()
-                && !contains_null_style(parts.styles, exchange, &mut visited, 0)
-            {
-                warnings.push(format!(
-                    "STYLED_ITEM #{style_id} has no resolved surface color"
-                ));
+        let color = match color {
+            Some(ColorResolution::Candidate(candidate)) => candidate,
+            Some(ColorResolution::Ambiguous { .. }) => {
+                losses.push(StepLossCode::ConflictingScalarColors.note(format!(
+                    "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
+                )));
+                continue;
             }
-            continue;
+            None => {
+                let mut visited = BTreeSet::new();
+                if unresolved_context_style_ids.is_empty()
+                    && !contains_null_style(parts.styles, exchange, &mut visited, 0)
+                {
+                    warnings.push(format!(
+                        "STYLED_ITEM #{style_id} has no resolved surface color"
+                    ));
+                }
+                continue;
+            }
         };
+        let ColorCandidate {
+            id: color_id,
+            color,
+            name,
+            ..
+        } = color;
         let appearance_id = appearance_ids
             .entry((color_id, color.a.to_bits()))
             .or_insert_with(|| {
@@ -1025,7 +1039,92 @@ fn style_depth(
     result
 }
 
-type CachedColor = Option<(u8, u64, Color, Option<String>)>;
+#[derive(Clone)]
+struct ColorCandidate {
+    rank: u8,
+    id: u64,
+    color: Color,
+    name: Option<String>,
+}
+
+#[derive(Clone)]
+enum ColorResolution {
+    Candidate(ColorCandidate),
+    Ambiguous { rank: u8, alpha: f32 },
+}
+
+type CachedColor = Option<ColorResolution>;
+
+impl ColorResolution {
+    fn priority(&self) -> (u8, f32) {
+        match self {
+            Self::Candidate(candidate) => (candidate.rank, candidate.color.a),
+            Self::Ambiguous { rank, alpha } => (*rank, *alpha),
+        }
+    }
+
+    fn with_min_rank(self, rank: u8) -> Self {
+        match self {
+            Self::Candidate(mut candidate) => {
+                candidate.rank = candidate.rank.max(rank);
+                Self::Candidate(candidate)
+            }
+            Self::Ambiguous {
+                rank: candidate_rank,
+                alpha,
+            } => Self::Ambiguous {
+                rank: candidate_rank.max(rank),
+                alpha,
+            },
+        }
+    }
+}
+
+fn combine_color_resolutions(
+    resolutions: impl IntoIterator<Item = ColorResolution>,
+) -> CachedColor {
+    let mut best_priority = None;
+    let mut best = None;
+    let mut ambiguous = false;
+    for resolution in resolutions {
+        let priority = resolution.priority();
+        let replace = best_priority.is_none_or(|current: (u8, f32)| {
+            priority.0 > current.0 || (priority.0 == current.0 && priority.1 < current.1)
+        });
+        if replace {
+            let is_ambiguous = matches!(&resolution, ColorResolution::Ambiguous { .. });
+            best_priority = Some(priority);
+            best = match resolution {
+                ColorResolution::Candidate(candidate) => Some(candidate),
+                ColorResolution::Ambiguous { .. } => None,
+            };
+            ambiguous = is_ambiguous;
+            continue;
+        }
+        if best_priority == Some(priority) {
+            match resolution {
+                ColorResolution::Candidate(candidate) => {
+                    let Some(current) = best.as_mut() else {
+                        ambiguous = true;
+                        continue;
+                    };
+                    if current.color != candidate.color {
+                        ambiguous = true;
+                    } else if candidate.id < current.id {
+                        *current = candidate;
+                    }
+                }
+                ColorResolution::Ambiguous { .. } => ambiguous = true,
+            }
+        }
+    }
+    let (rank, alpha) = best_priority?;
+    if ambiguous {
+        Some(ColorResolution::Ambiguous { rank, alpha })
+    } else {
+        best.map(ColorResolution::Candidate)
+    }
+}
 
 fn find_color(
     id: u64,
@@ -1124,16 +1223,16 @@ fn find_color(
                         .find(|partial| partial.name == "COLOUR_SPECIFICATION")
                         .and_then(|partial| partial.parameters.first())
                 };
-                Some((
-                    side_rank,
+                Some(ColorResolution::Candidate(ColorCandidate {
+                    rank: side_rank,
                     id,
-                    Color {
+                    color: Color {
                         r: r as f32,
                         g: g as f32,
                         b: b as f32,
                         a: 1.0,
                     },
-                    name_value.and_then(|value| {
+                    name: name_value.and_then(|value| {
                         decode_text(
                             exchange,
                             value,
@@ -1143,7 +1242,7 @@ fn find_color(
                             StepLossCode::AttributeStringInvalid,
                         )
                     }),
-                ))
+                }))
             }
             Some("DRAUGHTING_PRE_DEFINED_COLOUR") => {
                 let name_value = if record.partials.len() == 1 {
@@ -1163,45 +1262,45 @@ fn find_color(
                     "predefined colour name",
                     StepLossCode::AttributeStringInvalid,
                 )?;
-                predefined(&name).map(|color| (side_rank, id, color, Some(name)))
+                predefined(&name).map(|color| {
+                    ColorResolution::Candidate(ColorCandidate {
+                        rank: side_rank,
+                        id,
+                        color,
+                        name: Some(name),
+                    })
+                })
             }
-            _ => {
-                let mut best = None;
-                for reference in record
+            _ => combine_color_resolutions(
+                record
                     .partials
                     .iter()
                     .flat_map(|partial| partial.parameters.iter())
                     .flat_map(references)
-                {
-                    let Some(mut candidate) = find_color(
-                        reference,
-                        exchange,
-                        domain,
-                        active,
-                        cache,
-                        losses,
-                        depth + 1,
-                    ) else {
-                        continue;
-                    };
-                    candidate.0 = candidate.0.max(side_rank);
-                    if best
-                        .as_ref()
-                        .is_none_or(|current: &(u8, u64, Color, Option<String>)| {
-                            candidate.0 > current.0
-                                || (candidate.0 == current.0 && candidate.2.a < current.2.a)
-                        })
-                    {
-                        best = Some(candidate);
-                    }
-                }
-                best
-            }
+                    .filter_map(|reference| {
+                        find_color(
+                            reference,
+                            exchange,
+                            domain,
+                            active,
+                            cache,
+                            losses,
+                            depth + 1,
+                        )
+                    })
+                    .map(|candidate| candidate.with_min_rank(side_rank)),
+            ),
         }
     })();
     if let Some(transparency) = transparency {
-        if let Some((_, _, color, _)) = result.as_mut() {
-            color.a = (1.0 - transparency) as f32;
+        match result.as_mut() {
+            Some(ColorResolution::Candidate(candidate)) => {
+                candidate.color.a = (1.0 - transparency) as f32;
+            }
+            Some(ColorResolution::Ambiguous { alpha, .. }) => {
+                *alpha = (1.0 - transparency) as f32;
+            }
+            None => {}
         }
     }
     active.remove(&id);
