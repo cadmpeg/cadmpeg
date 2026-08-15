@@ -1803,6 +1803,10 @@ i32 loop index
 f64 tolerance[2]
 ```
 
+Each stored tolerance is a finite nonnegative value or an explicit unset
+sentinel. The unset sentinels are `-1.23432101234321e308` and
+`+1.23432101234321e308`.
+
 When archive version is at least 3 and writer version is at least 200206180:
 
 ```

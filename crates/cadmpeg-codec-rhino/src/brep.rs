@@ -1471,7 +1471,10 @@ fn finite_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
 }
 
 fn finite_tolerance(value: f64, label: &str) -> Result<(), GeometryError> {
-    if !(value == ON_UNSET_VALUE || value.is_finite() && value >= 0.0) {
+    if !(value == ON_UNSET_VALUE
+        || value == ON_UNSET_NEGATIVE_VALUE
+        || value.is_finite() && value >= 0.0)
+    {
         return Err(error(0, &format!("{label} is invalid")));
     }
     Ok(())
@@ -1968,6 +1971,13 @@ mod tests {
             assert_eq!(range, 0..bytes.len());
             assert_eq!(trims[0].legacy_tolerances, [0.0, 0.0]);
         }
+    }
+
+    #[test]
+    fn tolerance_accepts_explicit_signed_unset_values() {
+        assert!(finite_tolerance(ON_UNSET_VALUE, "tolerance").is_ok());
+        assert!(finite_tolerance(ON_UNSET_NEGATIVE_VALUE, "tolerance").is_ok());
+        assert!(finite_tolerance(-1.0, "tolerance").is_err());
     }
 
     #[test]
