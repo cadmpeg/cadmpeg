@@ -314,15 +314,19 @@ cells, and overlapping merged ranges are validated.
 ## 9. Product structure
 
 The native `product_nodes` arena retains groups, parts, link groups, and placed link objects exactly
-as application records. CADIR components separate reusable definitions from occurrences. Ordered
-container membership resolves to component or occurrence ids, and each link-array element becomes
-its own occurrence with a stable array index, scale, local transform, and transform resolved through
-its containing components exactly once. Local prototypes resolve to component ids; cross-document
-links keep the document token and target object without attempting to open the document. Missing
-local targets, invalid array counts, non-finite transforms, and container cycles are validation
-errors; external targets remain intentionally unresolved. The native graph retains every direct
-container membership. When multiple containers name the same object, the first container in source
-order supplies the single parent required by the neutral occurrence graph.
+as application records. Product dispatch uses the exact runtime registry: `Assembly::AssemblyObject`
+and `App::Part` are parts, `App::DocumentObjectGroup` is a group, `App::LinkGroup` is a link group,
+and `App::Link` and `App::LinkElement` are occurrences. Other runtime types remain native and do
+not enter the product arena. CADIR components separate reusable definitions from occurrences.
+Ordered container membership resolves to component or occurrence ids, and each link-array element
+becomes its own occurrence with a stable array index, scale, local transform, and transform
+resolved through its containing components exactly once. Local prototypes resolve to component ids;
+cross-document links keep the document token and target object without attempting to open the
+document. Missing local targets, invalid array counts, non-finite transforms, and container cycles
+are validation errors; external targets remain intentionally unresolved. The native graph retains
+every direct container membership, while neutral admission requires each member to have at most one
+distinct parent container. Overlapping parent containers are refused instead of selecting by source
+order. Product record identities are unique by object identity; duplicate records are invalid.
 
 The exact source attribute distinguishes an external file path from a document identity. Neutral
 references keep that path or identity separately from the target object and mark resolution as
@@ -334,6 +338,8 @@ Neutral validation recomposes every component and occurrence world matrix from i
 and local matrix and rejects any mismatch, including finite but stale or double-applied transforms.
 For nested links, `prototype_transform` records the linked placement chain selected by
 `LinkTransform`; the evaluated occurrence is container × local × prototype, each exactly once.
+The chain resolves each local product target through its unique product record. A local target with
+no product record contributes its persisted `LinkPlacement` or `Placement` matrix directly.
 Prototype cycles are invalid in both the native and neutral product graphs.
 Component identity keeps the stable source object name separately from its user-visible label,
 description, part number, and additional named BOM fields. Generated BOM spreadsheets remain

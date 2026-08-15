@@ -100,6 +100,21 @@ pub(crate) fn transfer(
     Ok(output)
 }
 
+fn product_record_index(
+    records: &[ProductNodeRecord],
+) -> Result<HashMap<&str, &ProductNodeRecord>, CodecError> {
+    let mut index = HashMap::with_capacity(records.len());
+    for record in records {
+        if index.insert(record.object.as_str(), record).is_some() {
+            return Err(CodecError::Malformed(format!(
+                "product object {} has duplicate product records",
+                record.object
+            )));
+        }
+    }
+    Ok(index)
+}
+
 /// Project the lossless native product records into reusable definitions and placed uses.
 pub(crate) fn transfer_neutral(
     ctx: &DecodeContext<'_>,
@@ -110,6 +125,7 @@ pub(crate) fn transfer_neutral(
     payloads: &[ShapePayloadRecord],
     bodies: &[Body],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), CodecError> {
+    let record_by_object = product_record_index(records)?;
     let mut component_objects = records
         .iter()
         .filter(|record| record.kind != "occurrence")
@@ -166,7 +182,20 @@ pub(crate) fn transfer_neutral(
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records.iter().filter(|record| record.kind != "occurrence") {
         for member in &record.members {
-            parent_by_object.entry(member).or_insert(&record.object);
+            let member = member.as_str();
+            match parent_by_object.entry(member) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(&record.object);
+                }
+                std::collections::hash_map::Entry::Occupied(entry)
+                    if *entry.get() != record.object.as_str() =>
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "product member {member} has multiple parent containers"
+                    )));
+                }
+                std::collections::hash_map::Entry::Occupied(_) => {}
+            }
         }
     }
 
@@ -186,7 +215,7 @@ pub(crate) fn transfer_neutral(
             let prototype_transform = linked_prototype_transform(
                 ctx,
                 record,
-                records,
+                &record_by_object,
                 &placements_by_object,
                 &mut Vec::new(),
             )?;
@@ -251,10 +280,6 @@ pub(crate) fn transfer_neutral(
         }
     }
 
-    let record_by_object = records
-        .iter()
-        .map(|record| (record.object.as_str(), record))
-        .collect::<HashMap<_, _>>();
     let object_by_id = objects
         .iter()
         .map(|object| (object.id.as_str(), object))
@@ -373,7 +398,7 @@ pub(crate) fn transfer_neutral(
 fn linked_prototype_transform(
     ctx: &DecodeContext<'_>,
     record: &ProductNodeRecord,
-    records: &[ProductNodeRecord],
+    records: &HashMap<&str, &ProductNodeRecord>,
     placements: &HashMap<&str, [[f64; 4]; 4]>,
     stack: &mut Vec<String>,
 ) -> Result<[[f64; 4]; 4], CodecError> {
@@ -391,9 +416,7 @@ fn linked_prototype_transform(
         )));
     }
     stack.push(record.object.clone());
-    let target_record = records
-        .iter()
-        .find(|candidate| candidate.object == prototype);
+    let target_record = records.get(prototype).copied();
     let placement = target_record
         .and_then(|target| target.local_transform)
         .or_else(|| placements.get(prototype).copied())
@@ -591,18 +614,12 @@ fn read_real(view: View<'_>, offset: usize, width: usize) -> f64 {
 }
 
 fn product_kind(kind: &str) -> Option<&'static str> {
-    if kind.contains("AssemblyObject") {
-        Some("part")
-    } else if kind.contains("LinkGroup") {
-        Some("link_group")
-    } else if kind.contains("App::Link") {
-        Some("occurrence")
-    } else if kind.contains("App::Part") {
-        Some("part")
-    } else if kind.contains("Group") {
-        Some("group")
-    } else {
-        None
+    match kind {
+        "Assembly::AssemblyObject" | "App::Part" => Some("part"),
+        "App::DocumentObjectGroup" => Some("group"),
+        "App::LinkGroup" => Some("link_group"),
+        "App::Link" | "App::LinkElement" => Some("occurrence"),
+        _ => None,
     }
 }
 

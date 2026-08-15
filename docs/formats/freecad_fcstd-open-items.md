@@ -27,7 +27,6 @@ These items have a Conflict part and need a decision.
 - XT-03. Non-manifold radial order
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
-- PR-01. Product membership and record identity selection
 - AT-01. Attachment frame carrier precedence
 - JN-01. Joint kind and enumeration carrier selection
 
@@ -176,23 +175,7 @@ rejection prevents a source-order choice but does not resolve the legal cardinal
 
 **Note.** Commit `e024f02dd` added ambiguity handling and a scale formula, but the boundary still rests on an uncited constant. Exact and synthetic ambiguous cases do not verify the numeric boundary.
 
-## 6. Product structure
-
-### PR-01. Product membership and record identity selection
-
-**Question.** What cardinality and precedence rules govern repeated product records, overlapping container membership, and linked prototype records?
-
-**Known.** Product records retain object identity, source order, members, prototypes, and transforms. Neutral occurrences need one parent and one resolved prototype transform.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/product.rs:165-170` uses `or_insert` and assigns the first container as parent. `:253-256` builds `record_by_object` without duplicate rejection, so the last duplicate wins. `:393-400` resolves the first matching prototype record. `product_kind` at `:580-594` uses ordered substrings. These choices can disagree for the same object.
-
-**Need.** We must establish the producer cardinality and precedence for container membership, product records, prototype links, and runtime types. Ambiguous records must be rejected or retained without a source-order choice.
-
-**Note.** The first/last choices and their inconsistent maps are direct; the valid FreeCAD cardinalities are not established.
-
-## 7. Semantic annotations
-
-## 8. Attachment and assembly
+## 6. Attachment and assembly
 
 ### AT-01. Attachment frame carrier precedence
 

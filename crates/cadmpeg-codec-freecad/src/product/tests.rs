@@ -4,7 +4,7 @@
 #![allow(unused_imports)]
 
 use crate::native;
-use crate::product::product_cycle_nodes;
+use crate::product::{product_cycle_nodes, product_kind, product_record_index};
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -188,7 +188,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
-fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
+fn rejects_overlapping_product_membership_for_neutral_projection() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object type="App::Part" name="First"/><Object type="App::Part" name="Second"/><Object type="Part::Feature" name="Member"/></Objects>
 <ObjectData Count="3">
@@ -196,40 +196,45 @@ fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
  <Object name="Second"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
  <Object name="Member"><Properties Count="0"/></Object>
 </ObjectData></Document>"#;
-    let result = FcstdCodec
+    let error = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[("Document.xml", document)])),
             &DecodeOptions::default(),
         )
-        .expect("overlapping product membership");
-    let nodes = result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .expect("native namespace")
-        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
-        .expect("product nodes");
-    let member_id = "fcstd:native:object#Member";
-    assert_eq!(
-        nodes
-            .iter()
-            .filter(|node| node.members.iter().any(|member| member == member_id))
-            .count(),
-        2
-    );
-    let member = result
-        .ir()
-        .model
-        .occurrences
-        .iter()
-        .find(|occurrence| occurrence.native_ref.as_deref() == Some(member_id))
-        .expect("member occurrence");
+        .expect_err("overlapping product membership");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn product_runtime_dispatch_requires_exact_registered_types() {
+    for (runtime_type, expected) in [
+        ("Assembly::AssemblyObject", Some("part")),
+        ("App::Part", Some("part")),
+        ("App::DocumentObjectGroup", Some("group")),
+        ("App::LinkGroup", Some("link_group")),
+        ("App::Link", Some("occurrence")),
+        ("App::LinkElement", Some("occurrence")),
+    ] {
+        assert_eq!(product_kind(runtime_type), expected, "{runtime_type}");
+    }
+    for runtime_type in [
+        "Vendor::AssemblyObject",
+        "Vendor::LinkGroup",
+        "App::LinkPython",
+        "App::DocumentObjectGroupPython",
+        "Assembly::AssemblyObjectExtension",
+    ] {
+        assert_eq!(product_kind(runtime_type), None, "{runtime_type}");
+    }
+}
+
+#[test]
+fn product_record_identity_rejects_duplicates() {
+    let records = [node("A", &[]), node("A", &[])];
     assert!(matches!(
-        &member.parent,
-        cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
-            if occurrence.0.contains("First")
+        product_record_index(&records),
+        Err(cadmpeg_core::CodecError::Malformed(_))
     ));
-    assert_valid_document(result.ir());
 }
 
 #[test]
