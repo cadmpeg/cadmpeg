@@ -124,27 +124,31 @@ pub fn decode_parameter_scopes(
                 let frame = start
                     .zip(end)
                     .and_then(|(start, end)| bytes.get(start..end));
-                let matches = frame
-                    .into_iter()
-                    .flat_map(|frame| {
-                        entities.iter().filter_map(|entity| {
-                            if native_stream(&entity.id) != Some(stream.as_str())
-                                || !entity.in_sketch_module()
-                                || entity.entity_suffix > u64::from(u32::MAX)
-                            {
-                                return None;
+                let mut matches = Vec::new();
+                if let Some(frame) = frame {
+                    // One pass over the frame: the first offset of every
+                    // marked reference (a one byte, a u32 suffix, six zero
+                    // bytes), then each eligible entity looks its suffix up.
+                    let mut first_at: HashMap<u32, usize> = HashMap::new();
+                    for at in memchr::memchr_iter(1, frame) {
+                        if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
+                            if let Some(suffix) = View::u32_le_at(frame, at + 1) {
+                                first_at.entry(suffix).or_insert(at);
                             }
-                            let mut pattern = [0; 11];
-                            pattern[0] = 1;
-                            pattern[1..5]
-                                .copy_from_slice(&(entity.entity_suffix as u32).to_le_bytes());
-                            frame
-                                .windows(pattern.len())
-                                .position(|window| window == pattern)
-                                .map(|offset| (entity, offset + 1))
-                        })
-                    })
-                    .collect::<Vec<_>>();
+                        }
+                    }
+                    for entity in entities {
+                        if native_stream(&entity.id) != Some(stream.as_str())
+                            || !entity.in_sketch_module()
+                            || entity.entity_suffix > u64::from(u32::MAX)
+                        {
+                            continue;
+                        }
+                        if let Some(at) = first_at.get(&(entity.entity_suffix as u32)) {
+                            matches.push((entity, at + 1));
+                        }
+                    }
+                }
                 if let [(entity, relative_offset)] = matches.as_slice() {
                     scope.entity_id = Some(entity.entity_id.clone());
                     scope.entity_suffix = Some(entity.entity_suffix);
@@ -227,8 +231,8 @@ pub fn decode_parameter_scopes(
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..]);
     }
-    out.sort_by_key(|scope| scope.id.clone());
-    out.dedup_by_key(|scope| scope.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out.dedup_by(|a, b| a.id == b.id);
     Ok(out)
 }
 
@@ -2250,7 +2254,11 @@ fn exact_rectangular_pattern_instances(
             }
         }
     }
-    runs.sort_by_key(|run| run.iter().map(|(_, offset)| *offset).collect::<Vec<_>>());
+    runs.sort_by(|a, b| {
+        a.iter()
+            .map(|(_, offset)| *offset)
+            .cmp(b.iter().map(|(_, offset)| *offset))
+    });
     runs.dedup_by(|left, right| left == right);
     let [run] = runs.as_slice() else {
         return None;
@@ -2270,8 +2278,30 @@ fn exact_rigid_transform_candidates(
     start: usize,
     end: usize,
 ) -> Option<Vec<TransformCandidate>> {
+    /// The single byte image of `1.0_f64`, the last lane of a rigid
+    /// transform's fixed `0 0 0 1` bottom row.
+    const ONE_F64_LE: [u8; 8] = [0, 0, 0, 0, 0, 0, 0xF0, 0x3F];
+    let last_exclusive = end.checked_sub(127)?;
+    if start >= last_exclusive || end > bytes.len() {
+        // An exhaustive scan over this range finds nothing or aborts on its
+        // first out-of-bounds sixteen-lane read.
+        return None;
+    }
     let mut candidates = Vec::new();
-    for offset in start..end.checked_sub(127)? {
+    // A valid transform carries exactly `1.0` at lane fifteen and a zero of
+    // either sign at lanes twelve to fourteen. Locate the fixed `1.0` image
+    // (it cannot overlap itself, so every occurrence surfaces) and read the
+    // full sixteen-lane frame only at surviving offsets.
+    for hit in memchr::memmem::find_iter(&bytes[start + 120..end], &ONE_F64_LE) {
+        let offset = start + hit;
+        let zero_lanes_valid = (0..3).all(|lane| {
+            let at = offset + 96 + lane * 8;
+            bytes[at..at + 7].iter().all(|byte| *byte == 0)
+                && (bytes[at + 7] == 0 || bytes[at + 7] == 0x80)
+        });
+        if !zero_lanes_valid {
+            continue;
+        }
         let values = f64s_at(bytes, offset, 16)?;
         let mut transform = [[0.0; 4]; 4];
         for (ordinal, value) in values.into_iter().enumerate() {
@@ -2636,10 +2666,7 @@ pub fn bind_mirror_constructions(
         let Some(stream) = native_stream(&scopes[index].id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -6236,6 +6263,7 @@ fn exact_coil_face_selection(
     };
     let face = parse_face_operand(
         bytes,
+        &IndexedRecordOffsets::build(bytes),
         scope,
         0,
         None,

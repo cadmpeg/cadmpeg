@@ -10,6 +10,7 @@ use crate::design::decode::dimension_frames::{
 use crate::design::decode::scopes::payload_prologue;
 use crate::design::decode::sketch::{
     indexed_record_index, next_indexed_record_offset, next_indexed_record_offset_with_index,
+    IndexedRecordOffsets,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -63,6 +64,19 @@ pub fn decode_edge_operands(
             ))
         })
         .collect::<HashSet<_>>();
+    let mut stream_offsets: HashMap<&str, Vec<u64>> = HashMap::new();
+    for header in record_headers {
+        if let Some(stream) = native_stream(&header.id) {
+            stream_offsets
+                .entry(stream)
+                .or_default()
+                .push(header.byte_offset);
+        }
+    }
+    for offsets in stream_offsets.values_mut() {
+        offsets.sort_unstable();
+    }
+    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -100,13 +114,13 @@ pub fn decode_edge_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream)
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
@@ -123,25 +137,29 @@ pub fn decode_edge_operands(
                 header.record_index,
             ));
             let terminal_group_limit = terminal_group_member.then(|| {
-                record_headers
-                    .iter()
-                    .filter(|candidate| {
-                        native_stream(&candidate.id) == Some(stream)
-                            && candidate.byte_offset > header.byte_offset
+                stream_offsets
+                    .get(stream)
+                    .and_then(|offsets| {
+                        let at = offsets.partition_point(|offset| *offset <= header.byte_offset);
+                        offsets.get(at).copied()
                     })
-                    .map(|candidate| candidate.byte_offset)
-                    .min()
                     .unwrap_or_else(|| u64::try_from(bytes.len()).unwrap_or(u64::MAX))
             });
-            let Some(operand) =
-                parse_edge_operand(bytes, scope, ordinal, header, recipes, terminal_group_limit)
-            else {
+            let Some(operand) = parse_edge_operand(
+                bytes,
+                records,
+                scope,
+                ordinal,
+                header,
+                recipes,
+                terminal_group_limit,
+            ) else {
                 continue;
             };
             out.push(operand);
         }
     }
-    out.sort_by_key(|operand| operand.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -175,18 +193,19 @@ pub fn bind_work_point_input_carriers(
             ))
         })
         .collect::<HashMap<_, _>>();
+    let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
         let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, &stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream.clone())
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let scope_record_index = scope.record_index;
         let Some(construction) = &mut scope.work_point_construction else {
             continue;
@@ -209,7 +228,7 @@ pub fn bind_work_point_input_carriers(
             let Some(header) = headers.get(&(stream.clone(), input.record_index)) else {
                 continue;
             };
-            if let Some(recipe) = parse_vertex_recipe(bytes, &stream, header, recipes) {
+            if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
                 input.carrier = Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                     recipe,
                 }));
@@ -276,19 +295,20 @@ pub fn bind_work_plane_constructions(
             ))
         })
         .collect::<HashMap<_, _>>();
+    let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
         scope.work_plane_construction = None;
         let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, &stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream.clone())
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let [placement_record_index, first, second, third, extra_offset] =
             scope.reference_members.as_slice()
         else {
@@ -322,6 +342,7 @@ pub fn bind_work_plane_constructions(
             .map(|record_index| {
                 parse_vertex_recipe(
                     bytes,
+                    records,
                     &stream,
                     headers.get(&(stream.clone(), *record_index))?,
                     recipes,
@@ -436,10 +457,7 @@ pub fn decode_edge_identity_operands(
         }) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -482,7 +500,7 @@ pub fn decode_edge_identity_operands(
             });
         }
     }
-    out.sort_by_key(|operand| operand.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -504,6 +522,7 @@ pub fn decode_face_operands(
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
     let mut seen = HashSet::new();
+    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -570,13 +589,13 @@ pub fn decode_face_operands(
         {
             continue;
         }
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream)
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         for (group_member_index, record_index) in group.members.iter().enumerate() {
             if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
@@ -607,6 +626,7 @@ pub fn decode_face_operands(
                 });
             if let Some(operand) = parse_face_operand(
                 bytes,
+                records,
                 scope,
                 group.scope_reference_ordinal,
                 Some((group.record_index, group_member_ordinal)),
@@ -632,13 +652,13 @@ pub fn decode_face_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream)
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
             if !seen.insert((stream, scope.record_index, record_index)) {
                 continue;
@@ -650,6 +670,7 @@ pub fn decode_face_operands(
             };
             if let Some(operand) = parse_face_operand(
                 bytes,
+                records,
                 scope,
                 scope_reference_ordinal,
                 None,
@@ -661,7 +682,7 @@ pub fn decode_face_operands(
             }
         }
     }
-    out.sort_by_key(|operand| operand.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -821,10 +842,7 @@ pub fn bind_sketch_profiles(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -870,10 +888,7 @@ pub fn decode_extrude_selection_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -891,7 +906,7 @@ pub fn decode_extrude_selection_groups(
             }
         }
     }
-    out.sort_by_key(|group| group.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -944,10 +959,7 @@ pub fn decode_construction_operand_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -975,7 +987,7 @@ pub fn decode_construction_operand_groups(
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
-    out.sort_by_key(|group| group.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1182,7 +1194,7 @@ pub fn decode_fillet_radius_groups(
             tangency_weight_parameter_record_index: Some(weights[0].record_index),
         });
     }
-    out.sort_by_key(|group| group.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     out
 }
 
@@ -1470,10 +1482,7 @@ pub fn bind_construction_operand_trailing_records(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1534,10 +1543,7 @@ pub fn bind_construction_operand_paths(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1717,10 +1723,7 @@ pub fn decode_construction_operand_identities(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let Some(trailing_record_index) = group.frame.trailing_record_indices.first() else {
@@ -1740,7 +1743,7 @@ pub fn decode_construction_operand_identities(
             out.push(identity);
         }
     }
-    out.sort_by_key(|identity| identity.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|left, right| left.id == right.id);
     Ok(out)
 }
@@ -2098,10 +2101,7 @@ pub fn decode_extrude_selection_members(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2120,7 +2120,7 @@ pub fn decode_extrude_selection_members(
             }
         }
     }
-    out.sort_by_key(|member| member.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -2139,10 +2139,7 @@ pub fn decode_entity_selection_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2161,7 +2158,7 @@ pub fn decode_entity_selection_operands(
             }
         }
     }
-    out.sort_by_key(|operand| operand.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -2418,10 +2415,7 @@ pub fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2457,10 +2451,7 @@ pub fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2514,7 +2505,7 @@ pub fn decode_body_recipe_operands(
             }
         }
     }
-    out.sort_by_key(|operand| operand.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     let mut owner_counts = HashMap::new();
     for operand in &out {
         *owner_counts.entry(operand.id.clone()).or_insert(0_u32) += 1;
@@ -3288,12 +3279,14 @@ enum RecipeOperandTerminator {
 /// Parse one exact persistent vertex-recipe envelope.
 pub(crate) fn parse_vertex_recipe(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignVertexRecipe> {
     let parsed = parse_recipe_operand(
         bytes,
+        records,
         stream,
         header,
         recipes,
@@ -3324,6 +3317,7 @@ pub(crate) fn parse_vertex_recipe(
 /// Parse the indexed-record envelope shared by topology recipe operands.
 fn parse_recipe_operand(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
@@ -3337,16 +3331,14 @@ fn parse_recipe_operand(
     let mut offsets = Vec::with_capacity(5);
     let mut position = start.checked_add(11)?;
     for record_index in (0..4).map(|delta| header.record_index.checked_add(delta)) {
-        let offset = next_indexed_record_offset_with_index(bytes, position, record_index?)?;
+        let offset = records.first_at_or_after(position, record_index?)?;
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
     offsets.push(match terminator {
-        RecipeOperandTerminator::RecordDelta(delta) => next_indexed_record_offset_with_index(
-            bytes,
-            position,
-            header.record_index.checked_add(delta)?,
-        )?,
+        RecipeOperandTerminator::RecordDelta(delta) => {
+            records.first_at_or_after(position, header.record_index.checked_add(delta)?)?
+        }
         RecipeOperandTerminator::NextIndexedAfterRecipe { limit } => {
             let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
             let recipe = recipes
@@ -3442,6 +3434,7 @@ fn parse_recipe_operand(
 
 pub(crate) fn parse_edge_operand(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
@@ -3452,6 +3445,7 @@ pub(crate) fn parse_edge_operand(
     let stream = native_stream(&scope.id)?;
     let parsed = parse_recipe_operand(
         bytes,
+        records,
         stream,
         header,
         recipes,
@@ -3462,6 +3456,7 @@ pub(crate) fn parse_edge_operand(
         let limit = terminal_group_limit?;
         parse_recipe_operand(
             bytes,
+            records,
             stream,
             header,
             recipes,
@@ -3898,8 +3893,13 @@ fn edge_recipe_topology_triplet(
     })
 }
 
+// One indexed-offset view rides along with the seven framing inputs the
+// parse already required; bundling them would touch every caller for no
+// structural gain.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn parse_face_operand(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     group_ownership: Option<(u32, u32)>,
@@ -3911,7 +3911,7 @@ pub(crate) fn parse_face_operand(
     let mut offsets = Vec::with_capacity(5);
     let mut position = start.checked_add(11)?;
     for record_index in (0..4).map(|delta| header.record_index.checked_add(delta)) {
-        let offset = next_indexed_record_offset_with_index(bytes, position, record_index?)?;
+        let offset = records.first_at_or_after(position, record_index?)?;
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }

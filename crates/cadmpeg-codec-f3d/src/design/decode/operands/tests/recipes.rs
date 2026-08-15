@@ -433,6 +433,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
 
     let mut edge_operand = parse_edge_operand(
         &bytes,
+        &IndexedRecordOffsets::build(&bytes),
         &scope,
         0,
         &record,
@@ -451,6 +452,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     work_point_scope.kind = "WorkPoint".into();
     let work_point_operand = parse_edge_operand(
         &bytes,
+        &IndexedRecordOffsets::build(&bytes),
         &work_point_scope,
         0,
         &record,
@@ -464,6 +466,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     sweep_scope.kind = "Sweep".into();
     let sweep_operand = parse_edge_operand(
         &bytes,
+        &IndexedRecordOffsets::build(&bytes),
         &sweep_scope,
         0,
         &record,
@@ -476,6 +479,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         parse_edge_operand(
             &bytes,
+            &IndexedRecordOffsets::build(&bytes),
             &scope,
             0,
             &record,
@@ -487,6 +491,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         parse_edge_operand(
             &bytes,
+            &IndexedRecordOffsets::build(&bytes),
             &scope,
             0,
             &record,
@@ -497,6 +502,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let terminal_group_operand = parse_edge_operand(
         &bytes,
+        &IndexedRecordOffsets::build(&bytes),
         &scope,
         0,
         &record,
@@ -539,6 +545,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     };
     let parsed_vertex = parse_vertex_recipe(
         &vertex_bytes,
+        &IndexedRecordOffsets::build(&vertex_bytes),
         crate::ids::native_stream(&scope.id).expect("scope stream"),
         &vertex_header,
         std::slice::from_ref(&vertex_recipe),
@@ -1358,6 +1365,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_recipe.record_index_offset = Some(face_recipe_record_at + 8);
     let mut operand = parse_face_operand(
         &face_bytes,
+        &IndexedRecordOffsets::build(&face_bytes),
         &face_scope,
         0,
         None,
@@ -1381,6 +1389,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_bytes[face_program_at + 4..face_program_at + 8].copy_from_slice(&0i32.to_le_bytes());
     let zero_prelude = parse_face_operand(
         &face_bytes,
+        &IndexedRecordOffsets::build(&face_bytes),
         &face_scope,
         0,
         None,
@@ -1427,6 +1436,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let prelude = parse_face_operand(
         &prelude_bytes,
+        &IndexedRecordOffsets::build(&prelude_bytes),
         &face_scope,
         0,
         None,
@@ -1445,6 +1455,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let enclosing_limit = header(&mut face_bytes, *b"306", 105);
     let bounded = parse_face_operand(
         &face_bytes,
+        &IndexedRecordOffsets::build(&face_bytes),
         &face_scope,
         0,
         None,
@@ -1474,6 +1485,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     compact_recipe.record_index_offset = Some(compact_record_at + 8);
     let compact = parse_face_operand(
         &compact_bytes,
+        &IndexedRecordOffsets::build(&compact_bytes),
         &face_scope,
         0,
         None,
@@ -1493,6 +1505,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     header(&mut compact_bytes, *b"306", 104);
     let terminal = parse_face_operand(
         &compact_bytes,
+        &IndexedRecordOffsets::build(&compact_bytes),
         &face_scope,
         0,
         None,
