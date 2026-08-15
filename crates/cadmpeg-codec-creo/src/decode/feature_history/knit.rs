@@ -249,7 +249,13 @@ pub(in super::super) fn draft_neutral_plane_selection(
     ) else {
         return FaceSelection::Unresolved;
     };
-    if !table.surface_ids.contains(&entry.entity_id) {
+    if table
+        .surface_ids
+        .iter()
+        .filter(|surface_id| **surface_id == entry.entity_id)
+        .count()
+        != 1
+    {
         return FaceSelection::Unresolved;
     }
     let Some(surface) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
@@ -525,3 +531,6 @@ pub(in super::super) fn emit_feature_result_topologies(
     }
     emitted
 }
+
+#[cfg(test)]
+mod tests;
