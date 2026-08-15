@@ -1169,7 +1169,7 @@ fn plan_e5_boundary(
             continue;
         }
         let Some(context) = e5_occurrence_intersection_context(sides) else {
-            if let Some(side) = sides.first() {
+            if let [side] = sides.as_slice() {
                 surface_curve_plan
                     .entry(edge_ref)
                     .or_insert_with(|| side.clone());
@@ -2867,6 +2867,120 @@ mod route_tests {
         let plan = plan_e5_boundary(&topology, &surfaces, &points).expect("boundary plan");
         assert!(plan.intersection_plan.is_empty());
         assert!(plan.edge_curve_plan.is_empty());
+    }
+
+    #[test]
+    fn intersection_side_planning_does_not_select_a_conflicting_side() {
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 100,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            uv_scale: [1.0, 1.0],
+        };
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: vec![
+                E5Face {
+                    record_id: 1,
+                    surface: 100,
+                    trailer_sign: 1,
+                    loops: vec![E5Loop {
+                        record_id: 2,
+                        surface: 100,
+                        pcurves: vec![20],
+                        edge_uses: vec![200],
+                        reversed: vec![false],
+                        oriented_members: Some(vec![E5OrientedMember {
+                            serialized_index: 0,
+                            reversed: false,
+                        }]),
+                        outer: Some(true),
+                        orientation_signs: Vec::new(),
+                        orientation_hint: None,
+                    }],
+                },
+                E5Face {
+                    record_id: 3,
+                    surface: 100,
+                    trailer_sign: 1,
+                    loops: vec![E5Loop {
+                        record_id: 4,
+                        surface: 100,
+                        pcurves: vec![21],
+                        edge_uses: vec![200],
+                        reversed: vec![false],
+                        oriented_members: Some(vec![E5OrientedMember {
+                            serialized_index: 0,
+                            reversed: false,
+                        }]),
+                        outer: Some(true),
+                        orientation_signs: Vec::new(),
+                        orientation_hint: None,
+                    }],
+                },
+            ],
+            edges: BTreeMap::from([(
+                200,
+                E5Edge {
+                    record_id: 200,
+                    support: 300,
+                    start_vertex: 400,
+                    end_vertex: 401,
+                    parameter_start: 500,
+                    parameter_end: 501,
+                    tail: Vec::new(),
+                },
+            )]),
+            pcurves: BTreeMap::from([
+                (
+                    20,
+                    E5Pcurve::Line {
+                        surface: 100,
+                        origin: [0.0, 0.0],
+                        direction: [1.0, 0.0],
+                        range: [0.0, 1.0],
+                    },
+                ),
+                (
+                    21,
+                    E5Pcurve::Circle {
+                        surface: 100,
+                        center: [0.5, 0.0],
+                        codes: [0, 0],
+                        radius: 0.5,
+                        range: [0.0, std::f64::consts::FRAC_PI_2],
+                        tail: [0.0, 0.0],
+                    },
+                ),
+            ]),
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::from([(
+                300,
+                E5CurveSupport {
+                    record_id: 300,
+                    intersection: true,
+                    pcurves: vec![20, 21],
+                    mode: 0,
+                    range: [0.0, 1.0],
+                    tail: Vec::new(),
+                },
+            )]),
+            vertex_refs: vec![400, 401],
+        };
+        let surfaces = HashMap::from([(100, (SurfaceId("surface".to_string()), &surface))]);
+        let points = HashMap::from([
+            (400, Point3::new(0.0, 0.0, 0.0)),
+            (401, Point3::new(1.0, 0.0, 0.0)),
+        ]);
+
+        let plan = plan_e5_boundary(&topology, &surfaces, &points).expect("boundary plan");
+        assert!(plan.intersection_plan.is_empty());
+        assert!(!plan.surface_curve_plan.contains_key(&200));
+        assert!(!plan.edge_curve_plan.contains_key(&200));
     }
 
     #[test]

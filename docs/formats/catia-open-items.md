@@ -728,11 +728,9 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Question.** Which intersection side is authoritative when an E5 edge has zero, one, or conflicting occurrence-side candidates?
 
-**Known.** An exact two-side intersection context requires exactly two sides with matching parameter ranges. The decoder retains a single resolved side as a surface curve when the context is absent.
+**Known.** An exact two-side intersection context requires exactly two sides with matching parameter ranges. When no such context exists, the decoder retains a surface curve only for exactly one resolved side. Multiple sides with no exact context remain unbound; source order does not select one.
 
 **Need.** We must distinguish a valid one-sided construction from multiple or conflicting sides before selecting an edge carrier.
-
-**Note.** Added by the 2026-08-10 hostile sweep. At `crates/cadmpeg-codec-catia/src/families/e5/decode.rs:1172-1182`, any failed two-side context falls back to `sides.first()`. If three sides exist, or two sides have conflicting ranges, source order selects one and discards the others. The exact two-side helper and range checks are counter-evidence only for the accepted case; they do not justify the first-side fallback.
 
 ## 7. FBB-only and float-packed variants
 
