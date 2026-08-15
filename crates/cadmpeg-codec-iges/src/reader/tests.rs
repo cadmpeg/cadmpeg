@@ -72,6 +72,20 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         ResourceDimension::Entities,
         "iges_geometry_primitives",
     );
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_entities = 1;
+    let error = IgesCodec
+        .decode(&mut Cursor::new(point_file()), &options)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Entities
+                && limit.context.operation == "iges_native_entities"
+    ));
     assert_refusal(
         |limits| limits.max_collection_items = 0,
         ResourceDimension::CollectionItems,

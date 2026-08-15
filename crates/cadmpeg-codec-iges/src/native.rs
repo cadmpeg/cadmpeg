@@ -4420,6 +4420,52 @@ pub(crate) fn store(
             .cloned()
             .unwrap_or_default();
     }
+    let native_entity_count = [
+        cards.len(),
+        entities.len(),
+        directions.len(),
+        transforms.len(),
+        copious_data.len(),
+        colors.len(),
+        display_attributes.len(),
+        line_fonts.len(),
+        text_templates.len(),
+        text_fonts.len(),
+        definition_levels.len(),
+        primitive_solids.len(),
+        procedural_solids.len(),
+        boolean_trees.len(),
+        selected_components.len(),
+        solid_assemblies.len(),
+        solid_instances.len(),
+        subfigure_definitions.len(),
+        subfigure_instances.len(),
+        network_definitions.len(),
+        network_instances.len(),
+        connect_points.len(),
+        rectangular_arrays.len(),
+        circular_arrays.len(),
+        external_references.len(),
+        groups.len(),
+        associativities.len(),
+        attribute_table_definitions.len(),
+        attribute_table_instances.len(),
+        product_properties.len(),
+        properties.len(),
+        units_data.len(),
+        views.len(),
+        view_visibility.len(),
+        segmented_visibility.len(),
+        drawings.len(),
+        annotations.len(),
+        product_occurrences.len(),
+        product_occurrence_expansion.len(),
+    ]
+    .into_iter()
+    .fold(0_u64, |total, count| total.saturating_add(count as u64));
+    if let Some(ctx) = ctx {
+        ctx.charge_entities(native_entity_count, "iges_native_entities")?;
+    }
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena_from("cards", cards)?;
