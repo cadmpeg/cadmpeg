@@ -415,6 +415,20 @@ fn budgeted_dependency_admission_matches_one_shot_records() {
     assert!(!budget.exhausted());
 }
 
+#[test]
+fn indexed_population_selection_preserves_records_and_census() {
+    let topology = crate::test_support::b5_closed_triangle_stream();
+    let expected = select_object_stream_population(std::slice::from_ref(&topology), None);
+    let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
+    let actual = select_object_stream_population(std::slice::from_ref(&topology), Some(&budget));
+
+    assert!(actual.selected);
+    assert!(!actual.exhausted);
+    assert_eq!(actual.source, expected.source);
+    assert_eq!(actual.records, expected.records);
+    assert_eq!(actual.census_records, expected.census_records);
+}
+
 fn a8_class21_test_payload() -> Vec<u8> {
     let mut payload = vec![0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x09, 0x01];
     for value in [10.0f64, 20.0] {

@@ -16,8 +16,10 @@ use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are
 use crate::wire;
 
 /// Maximum frame-index, record-materialization, census, and graph-selection
-/// operations admitted for one free-form object population.
-pub(crate) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 1_000_000;
+/// operations admitted for one free-form object population. The allowance
+/// covers one indexed-frame pass, topology materialization, dependency
+/// closure, and one bounded graph-resolution pass.
+pub(crate) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 2_000_000;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
@@ -654,6 +656,8 @@ pub(crate) struct ObjectFrame {
     pub(crate) object_id: u32,
 }
 
+type DependencyCandidates = HashMap<u32, Option<ObjectFrame>>;
+
 /// A resolved `b5 03 5f` face node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5Face {
@@ -948,29 +952,34 @@ pub(crate) fn parse_from_records_budgeted(
         .filter_map(parse_offset_surface_fields)
         .collect::<Vec<_>>();
     let mut extrusion_surfaces = BTreeMap::<u32, B5ExtrusionSurface>::new();
-    loop {
-        if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
-            return None;
-        }
-        let mut changed = false;
-        for record in records {
-            if extrusion_surfaces.contains_key(&record.object_id) {
-                continue;
+    let has_extrusion_candidates = records
+        .iter()
+        .any(|record| record.family == 0xb5 && record.class == 0x2c);
+    if has_extrusion_candidates {
+        loop {
+            if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
+                return None;
             }
-            let Some(extrusion) = parse_extrusion_surface_with_context(
-                record,
-                &by_id,
-                &object_stream_pcurves,
-                &offset_constructions,
-                &extrusion_surfaces,
-            ) else {
-                continue;
-            };
-            extrusion_surfaces.insert(record.object_id, extrusion);
-            changed = true;
-        }
-        if !changed {
-            break;
+            let mut changed = false;
+            for record in records {
+                if extrusion_surfaces.contains_key(&record.object_id) {
+                    continue;
+                }
+                let Some(extrusion) = parse_extrusion_surface_with_context(
+                    record,
+                    &by_id,
+                    &object_stream_pcurves,
+                    &offset_constructions,
+                    &extrusion_surfaces,
+                ) else {
+                    continue;
+                };
+                extrusion_surfaces.insert(record.object_id, extrusion);
+                changed = true;
+            }
+            if !changed {
+                break;
+            }
         }
     }
     let extrusion_pcurves = extrusion_surfaces
@@ -985,81 +994,89 @@ pub(crate) fn parse_from_records_budgeted(
         .collect::<HashSet<_>>();
     let mut offset_surfaces = BTreeMap::new();
     let mut supported_surfaces = BTreeMap::new();
-    loop {
-        if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
-            return None;
-        }
-        let mut changed =
-            resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
-        for record in records {
-            let Some(offset) = parse_offset_surface(record, &surfaces, &extrusion_surfaces, &by_id)
-            else {
-                continue;
-            };
-            let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned() {
-                carrier
-            } else {
-                let Some(record) = by_id.get(&offset.carrier_surface) else {
+    let has_surface_fixpoint_candidates = !offset_constructions.is_empty()
+        || records.iter().any(|record| {
+            record.family == 0xb5 && matches!(record.class, 0x2e | 0x30 | 0x37 | 0x38 | 0x3b)
+        });
+    if has_surface_fixpoint_candidates {
+        loop {
+            if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
+                return None;
+            }
+            let mut changed =
+                resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
+            for record in records {
+                let Some(offset) =
+                    parse_offset_surface(record, &surfaces, &extrusion_surfaces, &by_id)
+                else {
                     continue;
                 };
-                B5Surface::Unknown {
-                    family: record.family,
-                    class: record.class,
-                    payload: record.payload.clone(),
+                let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned()
+                {
+                    carrier
+                } else {
+                    let Some(record) = by_id.get(&offset.carrier_surface) else {
+                        continue;
+                    };
+                    B5Surface::Unknown {
+                        family: record.family,
+                        class: record.class,
+                        payload: record.payload.clone(),
+                    }
+                };
+                let before = surfaces.get(&record.object_id).cloned();
+                if !merge_surface_candidate(
+                    &mut surfaces,
+                    &mut conflicting_surfaces,
+                    offset.carrier_surface,
+                    carrier.clone(),
+                ) || !merge_surface_candidate(
+                    &mut surfaces,
+                    &mut conflicting_surfaces,
+                    record.object_id,
+                    carrier,
+                ) {
+                    continue;
                 }
-            };
-            let before = surfaces.get(&record.object_id).cloned();
-            if !merge_surface_candidate(
-                &mut surfaces,
-                &mut conflicting_surfaces,
-                offset.carrier_surface,
-                carrier.clone(),
-            ) || !merge_surface_candidate(
-                &mut surfaces,
-                &mut conflicting_surfaces,
-                record.object_id,
-                carrier,
-            ) {
-                continue;
-            }
-            let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
-            let metadata_changed = offset_surfaces.get(&record.object_id) != Some(&offset);
-            offset_surfaces.insert(record.object_id, offset);
-            changed |= surface_changed || metadata_changed;
-        }
-        for record in records {
-            let Some(construction) = parse_supported_surface(record) else {
-                continue;
-            };
-            let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
-                continue;
-            };
-            let parameters_match_carrier =
-                supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
-            let before = surfaces.get(&record.object_id).cloned();
-            if merge_surface_candidate(
-                &mut surfaces,
-                &mut conflicting_surfaces,
-                record.object_id,
-                carrier,
-            ) && parameters_match_carrier
-                && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
-                && construction
-                    .support_surfaces
-                    .iter()
-                    .all(|surface| surfaces.contains_key(surface))
-            {
                 let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
-                let metadata_changed =
-                    supported_surfaces.get(&record.object_id) != Some(&construction);
-                supported_surfaces.insert(record.object_id, construction);
+                let metadata_changed = offset_surfaces.get(&record.object_id) != Some(&offset);
+                offset_surfaces.insert(record.object_id, offset);
                 changed |= surface_changed || metadata_changed;
             }
-        }
-        changed |=
-            resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
-        if !changed {
-            break;
+            for record in records {
+                let Some(construction) = parse_supported_surface(record) else {
+                    continue;
+                };
+                let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
+                    continue;
+                };
+                let parameters_match_carrier =
+                    supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
+                let before = surfaces.get(&record.object_id).cloned();
+                if merge_surface_candidate(
+                    &mut surfaces,
+                    &mut conflicting_surfaces,
+                    record.object_id,
+                    carrier,
+                ) && parameters_match_carrier
+                    && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
+                    && construction
+                        .support_surfaces
+                        .iter()
+                        .all(|surface| surfaces.contains_key(surface))
+                {
+                    let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
+                    let metadata_changed =
+                        supported_surfaces.get(&record.object_id) != Some(&construction);
+                    supported_surfaces.insert(record.object_id, construction);
+                    changed |= surface_changed || metadata_changed;
+                }
+            }
+            changed |=
+                resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
+            if !changed {
+                break;
+            }
         }
     }
     offset_surfaces.retain(|object_id, offset| {
@@ -4472,8 +4489,41 @@ pub(crate) fn records_from_frames_budgeted(
     budget: Option<&WorkBudget<'_>>,
 ) -> Vec<B5Record> {
     let (mut records, candidates) = framed_records_and_dependency_candidates(bytes, frames, budget);
+    admit_dependency_records(bytes, &mut records, &candidates, budget)
+}
+
+/// Materialize one already-indexed topology population.
+///
+/// The caller has already charged the frame index. This path charges each
+/// topology record as it is materialized, then charges each admitted
+/// dependency in the existing closure fixpoint.
+fn records_from_indexed_frames_budgeted(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Vec<B5Record>> {
+    let (mut records, candidates) =
+        indexed_topology_records_and_dependency_candidates(bytes, frames, budget)?;
+    let records = admit_dependency_records(bytes, &mut records, &candidates, budget);
+    if budget.is_some_and(WorkBudget::exhausted) {
+        None
+    } else {
+        Some(records)
+    }
+}
+
+fn admit_dependency_records(
+    bytes: &[u8],
+    records: &mut Vec<B5Record>,
+    candidates: &DependencyCandidates,
+    budget: Option<&WorkBudget<'_>>,
+) -> Vec<B5Record> {
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
-    let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
+    let mut pending: HashSet<u32> = records
+        .iter()
+        .flat_map(record_references)
+        .filter(|object_id| candidates.get(object_id).is_some_and(Option::is_some))
+        .collect();
     let mut admitted = HashSet::new();
     loop {
         pending.retain(|object_id| !existing.contains(object_id) && !admitted.contains(object_id));
@@ -4499,11 +4549,15 @@ pub(crate) fn records_from_frames_budgeted(
         pending.clear();
         for candidate in found {
             admitted.insert(candidate.object_id);
-            pending.extend(record_references(&candidate));
+            pending.extend(
+                record_references(&candidate)
+                    .into_iter()
+                    .filter(|object_id| candidates.get(object_id).is_some_and(Option::is_some)),
+            );
             records.push(candidate);
         }
     }
-    records
+    std::mem::take(records)
 }
 
 /// Build the topology records and the exact dependency index in one frame
@@ -4513,14 +4567,14 @@ fn framed_records_and_dependency_candidates(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> (Vec<B5Record>, HashMap<u32, Option<ObjectFrame>>) {
+) -> (Vec<B5Record>, DependencyCandidates) {
     if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
         return (Vec::new(), HashMap::new());
     }
 
     let mut records = Vec::<(usize, B5Record)>::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
-    let mut candidates = HashMap::<u32, Option<ObjectFrame>>::new();
+    let mut candidates = DependencyCandidates::new();
     for frame in frames {
         let Some(record) = record_from_frame(bytes, frame) else {
             continue;
@@ -4563,6 +4617,62 @@ fn framed_records_and_dependency_candidates(
         records.into_iter().map(|(_, record)| record).collect(),
         candidates,
     )
+}
+
+/// Build topology records and dependency candidates from an existing frame
+/// index without charging a second frame walk. Candidate identity conflicts
+/// remain ambiguous until the dependency is requested.
+fn indexed_topology_records_and_dependency_candidates(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<(Vec<B5Record>, DependencyCandidates)> {
+    let mut records = Vec::<(usize, B5Record)>::new();
+    let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
+    let mut candidates = DependencyCandidates::new();
+    for frame in frames {
+        if is_reference_dependency_class(frame.family, frame.class) {
+            candidates
+                .entry(frame.object_id)
+                .and_modify(|slot| {
+                    if slot
+                        .as_ref()
+                        .is_some_and(|existing| !same_object_frame(bytes, existing, frame))
+                    {
+                        *slot = None;
+                    }
+                })
+                .or_insert(Some(*frame));
+        }
+        if !((frame.family == 0xb5 && is_topology_class(frame.class))
+            || (frame.family == 0xa8 && matches!(frame.class, 0x34 | 0x62)))
+        {
+            continue;
+        }
+        if budget.is_some_and(|budget| !budget.charge()) {
+            return None;
+        }
+        let record = record_from_frame(bytes, frame)?;
+        if seen
+            .get(&frame.object_id)
+            .is_some_and(|(seen_class, seen_payload)| {
+                *seen_class == record.class && *seen_payload == record.payload
+            })
+        {
+            continue;
+        }
+        seen.insert(frame.object_id, (record.class, record.payload.clone()));
+        records.push((frame.end, record));
+    }
+    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
+        left_end
+            .cmp(right_end)
+            .then_with(|| right.offset.cmp(&left.offset))
+    });
+    Some((
+        records.into_iter().map(|(_, record)| record).collect(),
+        candidates,
+    ))
 }
 
 fn same_object_frame(bytes: &[u8], left: &ObjectFrame, right: &ObjectFrame) -> bool {
@@ -4809,8 +4919,8 @@ pub(crate) struct ObjectStreamSelection {
 struct IndexedObjectRun {
     stream_index: usize,
     range: Range<usize>,
-    frames: Vec<ObjectFrame>,
-    records: Vec<B5Record>,
+    frame_range: Range<usize>,
+    topology: bool,
 }
 
 /// Select one topology-root population, or one unrooted run when it is the
@@ -4833,44 +4943,39 @@ pub(crate) fn select_object_stream_population(
         selected: false,
         exhausted: true,
     };
+    let mut stream_frames = Vec::with_capacity(streams.len());
     let mut runs = Vec::new();
     for (stream_index, (stream, ranges)) in streams.iter().zip(stream_ranges).enumerate() {
         let frames = object_stream_frames(stream);
         if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
             return exhausted();
         }
+        let mut frame_cursor = 0;
         for range in ranges {
-            let run_frames = frames
+            while frame_cursor < frames.len() && frames[frame_cursor].start < range.start {
+                frame_cursor += 1;
+            }
+            let frame_start = frame_cursor;
+            while frame_cursor < frames.len() && frames[frame_cursor].end <= range.end {
+                frame_cursor += 1;
+            }
+            let frame_range = frame_start..frame_cursor;
+            let topology = frames[frame_range.clone()]
                 .iter()
-                .copied()
-                .filter(|frame| frame.start >= range.start && frame.end <= range.end)
-                .collect::<Vec<_>>();
-            // Reserve run indexing before any frame payload is cloned.
-            if budget.is_some_and(|budget| !budget.charge_by(run_frames.len())) {
-                return exhausted();
-            }
-            let records = records_from_frames_budgeted(stream, &run_frames, budget);
-            // Census and population selection each inspect every admitted
-            // typed record.
-            if budget.is_some_and(|budget| !budget.charge_by(records.len().saturating_mul(2))) {
-                return exhausted();
-            }
+                .any(|frame| frame.family == 0xb5 && matches!(frame.class, 0x5f | 0x62));
             runs.push(IndexedObjectRun {
                 stream_index,
                 range,
-                frames: run_frames,
-                records,
+                frame_range,
+                topology,
             });
         }
+        stream_frames.push(frames);
     }
     let topology_runs = runs
         .iter()
         .enumerate()
-        .filter(|(_, run)| {
-            run.records
-                .iter()
-                .any(|record| matches!(record.class, 0x5f | 0x62))
-        })
+        .filter(|(_, run)| run.topology)
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let selected_run = match topology_runs.as_slice() {
@@ -4878,11 +4983,16 @@ pub(crate) fn select_object_stream_population(
         [] if runs.len() == 1 => Some((0, false)),
         _ => None,
     };
-    let census_records = runs
-        .iter()
-        .flat_map(|run| run.records.iter().cloned())
-        .collect::<Vec<_>>();
     let Some((selected_index, topology)) = selected_run else {
+        let mut census_records = Vec::new();
+        for run in &runs {
+            let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
+            let records = records_from_frames_budgeted(&streams[run.stream_index], frames, budget);
+            if budget.is_some_and(WorkBudget::exhausted) {
+                return exhausted();
+            }
+            census_records.extend(records);
+        }
         return ObjectStreamSelection {
             source: Vec::new(),
             frames: Vec::new(),
@@ -4895,9 +5005,26 @@ pub(crate) fn select_object_stream_population(
     };
     let selected = &runs[selected_index];
     let selected_stream = &streams[selected.stream_index];
+    let selected_frames = &stream_frames[selected.stream_index][selected.frame_range.clone()];
+    let Some(selected_records) =
+        records_from_indexed_frames_budgeted(selected_stream, selected_frames, budget)
+    else {
+        return exhausted();
+    };
+    let mut census_records = selected_records.clone();
+    for (index, run) in runs.iter().enumerate() {
+        if index == selected_index {
+            continue;
+        }
+        let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
+        let records = records_from_frames_budgeted(&streams[run.stream_index], frames, budget);
+        if budget.is_some_and(WorkBudget::exhausted) {
+            return exhausted();
+        }
+        census_records.extend(records);
+    }
     let mut source = selected_stream[selected.range.clone()].to_vec();
-    let mut frames = selected
-        .frames
+    let mut frames = selected_frames
         .iter()
         .copied()
         .map(|mut frame| {
@@ -4906,8 +5033,7 @@ pub(crate) fn select_object_stream_population(
             frame
         })
         .collect::<Vec<_>>();
-    let mut records = selected
-        .records
+    let mut records = selected_records
         .iter()
         .cloned()
         .map(|mut record| {
@@ -4916,9 +5042,8 @@ pub(crate) fn select_object_stream_population(
         })
         .collect::<Vec<_>>();
     if topology {
-        let referenced = topology_surface_references(&selected.records);
-        let owned_ids = selected
-            .records
+        let referenced = topology_surface_references(&selected_records);
+        let owned_ids = selected_records
             .iter()
             .map(|record| record.object_id)
             .collect::<HashSet<_>>();
@@ -4960,9 +5085,10 @@ pub(crate) fn select_object_stream_population(
         for index in isolated {
             let run = &runs[index];
             let stream = &streams[run.stream_index];
+            let run_frames = &stream_frames[run.stream_index][run.frame_range.clone()];
             let destination = source.len();
             source.extend_from_slice(&stream[run.range.clone()]);
-            frames.extend(run.frames.iter().copied().map(|mut frame| {
+            frames.extend(run_frames.iter().copied().map(|mut frame| {
                 frame.start = destination + frame.start - run.range.start;
                 frame.end = destination + frame.end - run.range.start;
                 frame
