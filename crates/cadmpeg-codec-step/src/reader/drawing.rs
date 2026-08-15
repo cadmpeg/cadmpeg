@@ -12,6 +12,7 @@ use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::representation;
 use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
 
 const DRAWING_ENTITIES: &[&str] = &[
@@ -222,21 +223,11 @@ fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> &'a [Value] {
         name,
         "DRAUGHTING_MODEL" | "PRESENTATION_VIEW" | "DRAWING_SHEET_REVISION"
     ) {
-        if let Some(parameters) = representation_parameters(record) {
+        if let Some(parameters) = representation::parameters(record) {
             return parameters;
         }
     }
     direct.unwrap_or_default()
-}
-
-fn representation_parameters(record: &RawRecord) -> Option<&[Value]> {
-    record.partials.iter().find_map(|partial| {
-        if partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION") {
-            (!partial.parameters.is_empty()).then_some(partial.parameters.as_slice())
-        } else {
-            None
-        }
-    })
 }
 
 fn parameter_key(name: &str, index: usize) -> String {
@@ -581,7 +572,7 @@ fn collect_wrapper_targets(
         collect_wrapper_targets(plane, target_identities, exchange, active, identities)
     } else if let Some(representation) = mapped_representation(record, exchange) {
         if let Some(record) = exchange.records.get(&representation) {
-            if let Some(items) = representation_items(record) {
+            if let Some(items) = representation::items(record) {
                 let mut cyclic = false;
                 for item in items {
                     cyclic |= collect_wrapper_targets(
@@ -623,16 +614,6 @@ fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64>
         })
         .and_then(|partial| partial.parameters.get(1))
         .and_then(value_reference)
-}
-
-fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    representation_parameters(record)
-        .and_then(|parameters| parameters.get(1))
-        .and_then(|value| match value {
-            Value::List(values) => Some(values),
-            _ => None,
-        })
-        .map(|items| items.iter().filter_map(value_reference).collect())
 }
 
 fn collect_references(value: &Value, output: &mut Vec<u64>) {

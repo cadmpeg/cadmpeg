@@ -767,7 +767,7 @@ fn occurrence_placements(
             let Some(record) = exchange.records.get(&representation) else {
                 continue;
             };
-            let Some(items) = representation_items(record) else {
+            let Some(items) = super::representation::items(record) else {
                 continue;
             };
             for item_id in items {
@@ -827,7 +827,7 @@ fn occurrence_placements(
             let Some(record) = exchange.records.get(&parent_representation) else {
                 continue;
             };
-            let Some(items) = representation_items(record) else {
+            let Some(items) = super::representation::items(record) else {
                 continue;
             };
             for item_id in items {
@@ -929,7 +929,7 @@ fn infer_parent_representation_placements(
             let Some(record) = exchange.records.get(&representation) else {
                 continue;
             };
-            let Some(items) = representation_items(record) else {
+            let Some(items) = super::representation::items(record) else {
                 continue;
             };
             for item_id in items {
@@ -1204,18 +1204,6 @@ fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Optio
     record.partial(name)?.parameters.get(index)
 }
 
-fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    record
-        .partials
-        .iter()
-        .find(|partial| {
-            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
-        })
-        .and_then(|partial| partial.parameters.get(1))
-        .and_then(ValueExt::list)
-        .map(|items| items.iter().filter_map(ValueExt::reference).collect())
-}
-
 trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
@@ -1230,19 +1218,11 @@ impl RecordExt for RawRecord {
 }
 trait ValueExt {
     fn reference(&self) -> Option<u64>;
-    fn list(&self) -> Option<&[Value]>;
 }
 impl ValueExt for Value {
     fn reference(&self) -> Option<u64> {
         if let Value::Reference(id) = self {
             Some(*id)
-        } else {
-            None
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        if let Value::List(values) = self {
-            Some(values)
         } else {
             None
         }

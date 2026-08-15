@@ -504,7 +504,7 @@ fn context_dependent_styles_transfer_for_matching_contexts() {
 #2=PRESENTATION_STYLE_ASSIGNMENT((#1));
 #3=REPRESENTATION_CONTEXT('model','3D');
 #4=CARTESIAN_POINT('styled point',(0.,0.,0.));
-#5=SHAPE_REPRESENTATION('context',(#4),#3);
+#5=(CHARACTERIZED_REPRESENTATION() REPRESENTATION('context',(#4),#3) SHAPE_REPRESENTATION());
 #6=PRESENTATION_STYLE_BY_CONTEXT((#2),#5);
 #7=STYLED_ITEM('',(#6),#4);
 #8=COLOUR_RGB('blue',0.,0.,1.);
@@ -534,6 +534,40 @@ fn context_dependent_styles_transfer_for_matching_contexts() {
             record.id.0 == "step:data:presentation_style_by_context#6"
                 || record.id.0 == "step:data:presentation_style_by_context#10"
         }));
+}
+
+#[test]
+fn complex_representation_invisibility_reaches_surface_body() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#39=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#38),#2);",
+        "#39=(CHARACTERIZED_REPRESENTATION() REPRESENTATION('',(#38),#2) MANIFOLD_SURFACE_SHAPE_REPRESENTATION());",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#91=INVISIBILITY((#39));\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex representation invisibility");
+
+    let body = decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "step:data:body#38")
+        .expect("surface body");
+    assert_eq!(body.visible, Some(false));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #91 targets unsupported item #39")
+    }));
 }
 
 #[test]

@@ -517,20 +517,9 @@ fn collect_invisible_body_ids(
             .filter_map(ValueExt::reference)
             .collect::<Vec<_>>()
     } else if record.partials.iter().any(|partial| {
-        partial.name == "REPRESENTATION" || partial.name == "PRESENTATION_REPRESENTATION"
+        partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
     }) {
-        record
-            .partials
-            .iter()
-            .find(|partial| {
-                partial.name == "REPRESENTATION" || partial.name == "PRESENTATION_REPRESENTATION"
-            })
-            .and_then(|partial| partial.parameters.get(1))
-            .and_then(ValueExt::list)
-            .into_iter()
-            .flatten()
-            .filter_map(ValueExt::reference)
-            .collect::<Vec<_>>()
+        super::representation::items(record).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -898,7 +887,7 @@ fn presentation_style_assignments(record: &RawRecord) -> Vec<u64> {
 fn presentation_context_items(exchange: &Exchange) -> BTreeMap<u64, BTreeSet<u64>> {
     let mut context_items = BTreeMap::<u64, BTreeSet<u64>>::new();
     for (&representation_id, record) in &exchange.records {
-        let Some(items) = representation_items(record) else {
+        let Some(items) = super::representation::items(record) else {
             continue;
         };
         context_items
@@ -912,27 +901,8 @@ fn presentation_context_items(exchange: &Exchange) -> BTreeMap<u64, BTreeSet<u64
     context_items
 }
 
-fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    record
-        .partials
-        .iter()
-        .find(|partial| {
-            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
-        })
-        .and_then(|partial| partial.parameters.get(1))
-        .and_then(ValueExt::list)
-        .map(|items| items.iter().filter_map(ValueExt::reference).collect())
-}
-
 fn representation_context(record: &RawRecord) -> Option<u64> {
-    record
-        .partials
-        .iter()
-        .find(|partial| {
-            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
-        })
-        .and_then(|partial| partial.parameters.get(2))
-        .and_then(ValueExt::reference)
+    super::representation::context(record)
 }
 
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {

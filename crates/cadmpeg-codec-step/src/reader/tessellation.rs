@@ -74,7 +74,7 @@ pub(super) fn decode(
         if !has_entity(record, "TESSELLATED_SHAPE_REPRESENTATION") {
             continue;
         }
-        let Some(items) = representation_items(record) else {
+        let Some(items) = super::representation::items(record) else {
             continue;
         };
         let bodies = super::topology::representation_bodies(
@@ -373,18 +373,6 @@ fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyData) -> BTr
             .unwrap_or_default(),
         _ => BTreeSet::new(),
     }
-}
-
-fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    record
-        .partials
-        .iter()
-        .find(|partial| {
-            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
-        })
-        .and_then(|partial| partial.parameters.get(1))
-        .and_then(ValueExt::list)
-        .map(|items| items.iter().filter_map(ValueExt::reference).collect())
 }
 
 fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {

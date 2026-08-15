@@ -25,6 +25,7 @@ mod index;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
+mod representation;
 pub(crate) mod tessellation;
 pub(crate) mod topology;
 mod validation;
