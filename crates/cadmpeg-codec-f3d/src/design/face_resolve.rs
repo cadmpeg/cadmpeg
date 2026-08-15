@@ -66,10 +66,14 @@ pub(crate) fn resolved_explicit_bounded_face_group(
         if matches.next().is_some() {
             return None;
         }
-        let candidate_faces = explicit_bounded_face_candidates(operand)?;
+        let candidate_faces = if operand.resolved_face_slots.is_empty() {
+            explicit_bounded_face_candidates(operand)?
+        } else {
+            resolved_face_operand(operand)?
+        };
         for face in candidate_faces {
-            if !faces.contains(face) {
-                faces.push(face.clone());
+            if !faces.contains(&face) {
+                faces.push(face);
             }
         }
     }
@@ -899,17 +903,52 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
 
 fn explicit_bounded_face_candidates(
     operand: &DesignFaceOperand,
-) -> Option<&[cadmpeg_ir::ids::FaceId]> {
-    (operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
-        && operand.resolved_face_slots.is_empty()
-        && !operand.candidate_faces.is_empty()
-        && operand.unreferenced_candidate_faces.is_empty()
-        && operand.alternate_selector_candidate_faces.is_empty()
-        && operand.preceding_candidate_faces.is_empty()
-        && operand.changed_candidate_faces.is_empty()
-        && operand.historical_support_contexts.is_empty()
-        && complete_counted_face_recipe(operand).is_some())
-    .then_some(operand.candidate_faces.as_slice())
+) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+        || !operand.resolved_face_slots.is_empty()
+        || !operand.alternate_selector_candidate_faces.is_empty()
+        || !operand.historical_support_contexts.is_empty()
+        || complete_counted_face_recipe(operand).is_none()
+    {
+        return None;
+    }
+    if !operand.candidate_faces.is_empty() && operand.unreferenced_candidate_faces.is_empty() {
+        return Some(operand.candidate_faces.clone());
+    }
+
+    let alternate_references = operand
+        .recipe_references
+        .iter()
+        .filter(|reference| !reference.alternate_selector_faces.is_empty())
+        .map(|reference| reference.design_reference)
+        .collect::<HashSet<_>>();
+    let candidate_set = operand.candidate_faces.iter().collect::<HashSet<_>>();
+    let mut lanes = HashMap::<i64, Vec<cadmpeg_ir::ids::FaceId>>::new();
+    for reference in &operand.recipe_references {
+        if alternate_references.contains(&reference.design_reference) {
+            continue;
+        }
+        for face in &reference.candidate_faces {
+            if candidate_set.is_empty() || candidate_set.contains(face) {
+                let lane = lanes.entry(reference.design_reference).or_default();
+                if !lane.contains(face) {
+                    lane.push(face.clone());
+                }
+            }
+        }
+    }
+    let mut lanes = lanes
+        .into_values()
+        .filter(|lane| !lane.is_empty())
+        .collect::<Vec<_>>();
+    for lane in &mut lanes {
+        lane.sort_by(|left, right| left.0.cmp(&right.0));
+    }
+    lanes.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+    let [lane, next @ ..] = lanes.as_slice() else {
+        return None;
+    };
+    (next.first().is_none_or(|other| other.len() < lane.len())).then(|| lane.clone())
 }
 
 fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
@@ -1612,7 +1651,24 @@ mod tests {
                 native: group.id.clone(),
             })
         );
-        operand.unreferenced_candidate_faces.push(face(30));
+
+        operand.candidate_faces.clear();
+        operand.recipe_references = vec![
+            reference(10, "selected-a", 201),
+            reference(20, "selected-b", 201),
+            reference(30, "context", 202),
+        ];
+        assert_eq!(
+            resolved_explicit_bounded_face_group(&group, &[operand.clone()]),
+            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+                faces: vec![face(10), face(20)],
+                native: group.id.clone(),
+            })
+        );
+        operand.recipe_references.pop();
+        operand.recipe_references[0]
+            .alternate_selector_faces
+            .push(face(30));
         assert!(resolved_explicit_bounded_face_group(&group, &[operand]).is_none());
     }
 
