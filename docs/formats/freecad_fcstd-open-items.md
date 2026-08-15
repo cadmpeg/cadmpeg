@@ -20,7 +20,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 These items have a Conflict part and need a decision.
 
-- PT-02. Element-map position to neutral-occurrence order
 - XT-03. Non-manifold radial order
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
@@ -79,21 +78,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** The opaque/native fallback in `6d9430a69` is not semantic evidence. The item remains open for any unregistered GUI type; no FreeCAD source or independent files establish that the type has no neutral meaning.
 
-## 3. Persistent topology identity
-
-### PT-02. Element-map position to neutral-occurrence order
-
-**Question.** What exact relation connects each final element-map name position to neutral topology occurrences, including repeated placed roots?
-
-**Known.** Persistent names and source topology indices must bind to each placed neutral occurrence. Transient table indices do not constitute persistent identity.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/topology_transfer.rs:1535-1581` reconstructs a source index with a custom depth-first walk and `or_insert_with`. It does not read an element-map index or cite a FreeCAD/OCCT enumeration rule. Repeated or equal transformed occurrences can collapse to the first key and later traversal changes the assigned index.
-
-**Need.** We must establish the B-rep indexed-map enumeration rule and carry that index through exact-topology transfer. Repeated placements must bind by placement plus source index, not by an inferred traversal.
-
-**Note.** Commit `cfdcda41e` replaced the earlier modulo join and passed repeated-root synthetic tests. The tests verify the new internal walk, not the producer's indexed-map order. The specification now promotes that walk to settled behavior without independent evidence.
-
-## 4. Exact-topology transfer
+## 3. Exact-topology transfer
 
 ### XT-03. Non-manifold radial order
 
@@ -107,7 +92,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** Commit `63d07acec` changed the neutral fallback and stated that the source has no radial order. No producer source or independent non-manifold witness was cited.
 
-## 5. Design projection
+## 4. Design projection
 
 ### DP-02. Sketch profile seed order
 

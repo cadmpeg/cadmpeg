@@ -1565,21 +1565,19 @@ fn source_topology_indices(
         TextShapeKind::CompSolid,
         TextShapeKind::Compound,
     ] {
+        let mut next_index = 1;
         for root in tables.roots {
-            let mut seen = HashSet::new();
-            let mut next_index = 1;
             let mut stack = vec![(root.clone(), Transform::identity())];
             while let Some((shape_use, parent)) = stack.pop() {
                 let transform = parent.compose(tables.location(shape_use.location));
                 let shape = &tables.tshapes[shape_use.shape - 1];
                 if shape.kind == target {
                     let key = SourceOccurrenceKey::new(shape_use.shape, transform);
-                    if seen.insert(key.clone()) {
-                        indices.entry((target, key)).or_insert_with(|| {
-                            let index = next_index;
-                            next_index += 1;
-                            index
-                        });
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        indices.entry((target, key))
+                    {
+                        entry.insert(next_index);
+                        next_index += 1;
                     }
                     continue;
                 }

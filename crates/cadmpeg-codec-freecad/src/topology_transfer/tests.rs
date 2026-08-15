@@ -48,6 +48,64 @@ fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
 }
 
 #[test]
+fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
+    let mut translated = Transform::identity();
+    translated.rows[0][3] = 10.0;
+    let locations = [TextLocation {
+        factors: Vec::new(),
+        transform: translated,
+    }];
+    let tshapes = [TextTShape {
+        index: 1,
+        kind: TextShapeKind::Edge,
+        geometry: TextTShapeGeometry::Empty,
+        flags: [false; 7],
+        children: Vec::new(),
+    }];
+    let roots = [
+        TextShapeUse {
+            shape: 1,
+            orientation: TextOrientation::Forward,
+            location: 0,
+        },
+        TextShapeUse {
+            shape: 1,
+            orientation: TextOrientation::Reversed,
+            location: 0,
+        },
+        TextShapeUse {
+            shape: 1,
+            orientation: TextOrientation::Forward,
+            location: 1,
+        },
+    ];
+    let tables = Tables {
+        locations: &locations,
+        curve2ds: &[],
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &tshapes,
+        triangulations: &[],
+        roots: &roots,
+    };
+
+    let indices = source_topology_indices(tables);
+
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Edge,
+            SourceOccurrenceKey::new(1, Transform::identity()),
+        )),
+        Some(&1)
+    );
+    assert_eq!(
+        indices.get(&(TextShapeKind::Edge, SourceOccurrenceKey::new(1, translated),)),
+        Some(&2)
+    );
+}
+
+#[test]
 fn endpoint_selection_requires_unique_oriented_direct_children() {
     let children = [
         TextShapeUse {
