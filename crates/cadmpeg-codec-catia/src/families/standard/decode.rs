@@ -3689,8 +3689,23 @@ fn attach_standard_topology(
         })
         .collect::<Vec<_>>();
     let mut mesh_search_exhausted = false;
+    let native_fbb_topology = if fbb_only {
+        native_endpoint_pairs.as_ref().and_then(|pairs| {
+            fbb::parse_fbb_endpoints_with_edge_classes(
+                spine,
+                &edge_faces,
+                pairs,
+                Some(&edge_classes),
+            )
+        })
+    } else {
+        None
+    };
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
+    } else if let Some(topology) = native_fbb_topology {
+        let point_assignment = (0..ir.model.points.len()).collect();
+        (topology, point_assignment)
     } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
         fbb::parse_standard_endpoints_with_edge_classes(
             spine,

@@ -386,6 +386,11 @@ current levels require those matrices and representative fixtures.
   closure, endpoint resolution, and distinct reconstructed topology. Bounded
   search exhaustion is partitioned into quotient preparation, incidence
   enumeration, and endpoint resolution.
+- FBB-only groups with one exact native endpoint pair for every edge row can
+  close topology directly from their two counted edge tables and counted vertex
+  table. This path reuses the existing face-incidence and edge-class quotient,
+  does not infer endpoint identities from trim order, and falls through to the
+  bounded mesh solver when the direct closure is not complete.
 - The standard face spine admits both unflagged `30 04 04 ff` and flagged
   `b0 04 04 ff` rows. Standard edge-table handle width is selected uniquely
   from one, two, or three bytes by landing on the complete counted vertex

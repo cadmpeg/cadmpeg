@@ -351,6 +351,45 @@ pub fn parse_standard_port_endpoint_candidates(
     )
 }
 
+/// Reconstruct an FBB-only topology from one exact endpoint pair per edge row.
+///
+/// The FBB-only carrier uses its own two-table delimiter walk rather than the
+/// standard edge-table grammar. Those counted tables provide the physical edge
+/// rows and the counted vertex table provides the coordinate population. When
+/// the native endpoint registry has already selected every pair, face
+/// incidence can be closed directly. This path does not infer endpoint
+/// identities from trim order.
+#[must_use]
+pub(crate) fn parse_fbb_endpoints_with_edge_classes(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[[usize; 2]],
+    edge_classes: Option<&[usize]>,
+) -> Option<StandardTopology> {
+    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, _, vertex_header, _) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    if edge_rows.len() != edge_faces.len()
+        || edge_rows.len() != edge_points.len()
+        || edge_classes.is_some_and(|classes| classes.len() != edge_rows.len())
+        || edge_points
+            .iter()
+            .flatten()
+            .any(|point| *point >= vertex_points.len())
+    {
+        return None;
+    }
+    reconstruct_incidence_with_edge_classes_and_mesh(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        edge_points,
+        face_count,
+        edge_classes,
+        Some(bytes),
+    )
+}
+
 pub(crate) fn parse_fbb_edge_tables(
     bytes: &[u8],
     position: usize,
@@ -1148,6 +1187,57 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         });
     }
     Some(Boundary { coedges })
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::parse_fbb_endpoints_with_edge_classes;
+
+    fn synthetic_fbb_triangle() -> Vec<u8> {
+        let mut bytes = vec![0x01, 0x41, 0x01, 0xff];
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&[0, 1, 2]);
+
+        bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0]);
+        bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0]);
+
+        bytes.extend_from_slice(&[0x01, 0x01, 0x03]);
+        for handles in [[0, 1], [1, 2], [2, 0]] {
+            bytes.extend_from_slice(&[0x02, 0x02]);
+            bytes.extend_from_slice(&handles);
+        }
+        bytes.extend_from_slice(&[
+            0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x02, 0x00, 0x10, 0x24, 0x04,
+            0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x06, 0x03,
+        ]);
+        for point in [[0.0_f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+            bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+            for coordinate in point {
+                bytes.extend_from_slice(&coordinate.to_le_bytes());
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn fbb_endpoint_reconstruction_uses_the_native_edge_pairs() {
+        let bytes = synthetic_fbb_triangle();
+        let topology = parse_fbb_endpoints_with_edge_classes(
+            &bytes,
+            &[[0, 1], [0, 1], [0, 1]],
+            &[[0, 1], [1, 2], [0, 2]],
+            Some(&[0, 1, 2]),
+        )
+        .expect("native endpoint pairs close the FBB face");
+
+        assert_eq!(topology.face_count(), 2);
+        assert_eq!(topology.edge_rows().len(), 3);
+        assert_eq!(
+            topology.vertex_points(),
+            &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        );
+        assert_eq!(topology.edge_vertices(), Some(vec![[0, 1], [1, 2], [0, 2]]));
+    }
 }
 
 #[cfg(test)]
