@@ -28,8 +28,6 @@ These items have a Conflict part and need a decision.
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
 - PR-01. Product membership and record identity selection
-- SA-01. Runtime-type to annotation-kind mapping
-- SA-02. Annotation scalar and position property selection
 - AT-01. Attachment frame carrier precedence
 - JN-01. Joint kind and enumeration carrier selection
 
@@ -193,30 +191,6 @@ rejection prevents a source-order choice but does not resolve the legal cardinal
 **Note.** The first/last choices and their inconsistent maps are direct; the valid FreeCAD cardinalities are not established.
 
 ## 7. Semantic annotations
-
-### SA-01. Runtime-type to annotation-kind mapping
-
-**Question.** Which exact application runtime types represent dimensions, geometric tolerances, datums, balloons, leaders, symbols, and text annotations?
-
-**Known.** The native annotation record retains the exact runtime type. The neutral arena requires separate semantic kinds.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/annotation.rs:162-220` now uses an exact core registry and keeps other types native. The registry is supported by positive fixture cases, but no exhaustive FreeCAD source or inheritance rule establishes that every unlisted type is non-semantic.
-
-**Need.** We must define an exact or inheritance-aware runtime-type registry and its kind mapping. Unknown application annotation types must remain native until their semantic family is established.
-
-**Note.** Commit `57371f57d` added exact negative tests and a real TechDraw fixture, but positive coverage of listed types does not verify registry completeness. The former substring guess was narrowed, not proven exhaustive.
-
-### SA-02. Annotation scalar and position property selection
-
-**Question.** Which property carries the semantic scalar and position for each annotation runtime type?
-
-**Known.** The native property graph retains every named value independently. A neutral semantic annotation has one optional scalar and one optional position.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/annotation.rs:243-311` selects the first available property in the fixed scalar order `Value`, `Measurement`, `Distance`, `Angle`, and selects `Position` before an `X`/`Y` pair. Duplicate same-named properties and values are not rejected.
-
-**Need.** We must map scalar and position carriers by runtime type and reject contradictory duplicate carriers. The decoder must not use property-name priority as semantic dispatch.
-
-**Note.** Commit `57371f57d` improved runtime-type filtering but retained first-property and first-value selection. The exact property registry and precedence remain unverified.
 
 ## 8. Attachment and assembly
 

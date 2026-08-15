@@ -9,7 +9,9 @@ use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind, SemanticAnnotationTarget,
 };
 
-use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord};
+use crate::native::{
+    DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord, ValueRecord,
+};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -127,7 +129,10 @@ pub(crate) fn transfer_neutral(
                 .map(|(role, references)| (role.clone(), references.iter().map(target).collect()))
                 .collect(),
             value: None,
-            format: schema.format.and_then(|name| string_property(&owned, name)),
+            format: match schema.format {
+                Some(name) => string_property(&owned, name)?,
+                None => None,
+            },
             position: annotation_position(&owned, schema.position)?,
             parameters: record.parameters.clone(),
             assets: record
@@ -244,10 +249,16 @@ fn optional_scalar_property(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<f64>, CodecError> {
-    let Some(property) = properties.iter().find(|property| property.name == name) else {
+    let Some(property) = unique_property(properties, name)? else {
         return Ok(None);
     };
-    scalar_property(properties, name).map(Some).ok_or_else(|| {
+    let Some(value) = unique_value(property)? else {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} has no scalar value",
+            property.id
+        )));
+    };
+    scalar_value(value).map(Some).ok_or_else(|| {
         CodecError::Malformed(format!(
             "annotation property {} is not a scalar",
             property.id
@@ -259,10 +270,16 @@ fn optional_vector_property(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    let Some(property) = properties.iter().find(|property| property.name == name) else {
+    let Some(property) = unique_property(properties, name)? else {
         return Ok(None);
     };
-    vector_property(properties, name).map(Some).ok_or_else(|| {
+    let Some(value) = unique_value(property)? else {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} has no vector value",
+            property.id
+        )));
+    };
+    vector_value(value).map(Some).ok_or_else(|| {
         CodecError::Malformed(format!(
             "annotation property {} is not a vector",
             property.id
@@ -270,43 +287,65 @@ fn optional_vector_property(
     })
 }
 
-fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
-    property_attribute(properties, name, &["value", "Value"])?
-        .parse()
-        .ok()
+fn string_property(
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<String>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(None);
+    };
+    let Some(value) = unique_value(property)? else {
+        return Ok(None);
+    };
+    Ok(property_attribute(value, &["value", "Value", "string", "String"]).map(str::to_owned))
 }
 
-fn string_property(properties: &[&PropertyRecord], name: &str) -> Option<String> {
-    property_attribute(properties, name, &["value", "Value", "string", "String"]).map(str::to_owned)
-}
-
-fn property_attribute<'a>(
+fn unique_property<'a>(
     properties: &[&'a PropertyRecord],
     name: &str,
-    attributes: &[&str],
-) -> Option<&'a str> {
-    let value = properties
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let mut matches = properties
         .iter()
-        .find(|property| property.name == name)?
-        .values
-        .first()?;
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {name} occurs more than once"
+        )));
+    }
+    Ok(Some(property))
+}
+
+fn unique_value(property: &PropertyRecord) -> Result<Option<&ValueRecord>, CodecError> {
+    match property.values.as_slice() {
+        [] => Ok(None),
+        [value] => Ok(Some(value)),
+        _ => Err(CodecError::Malformed(format!(
+            "annotation property {} has multiple values",
+            property.id
+        ))),
+    }
+}
+
+fn property_attribute<'a>(value: &'a ValueRecord, attributes: &[&str]) -> Option<&'a str> {
     attributes
         .iter()
         .find_map(|attribute| value.attributes.get(*attribute).map(String::as_str))
         .or(value.text.as_deref())
 }
 
-fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<[f64; 3]> {
-    let attributes = &properties
-        .iter()
-        .find(|property| property.name == name)?
-        .values
-        .first()?
-        .attributes;
+fn scalar_value(value: &ValueRecord) -> Option<f64> {
+    property_attribute(value, &["value", "Value"])?.parse().ok()
+}
+
+fn vector_value(value: &ValueRecord) -> Option<[f64; 3]> {
     Some([
-        attributes.get("valueX")?.parse().ok()?,
-        attributes.get("valueY")?.parse().ok()?,
-        attributes.get("valueZ")?.parse().ok()?,
+        value.attributes.get("valueX")?.parse().ok()?,
+        value.attributes.get("valueY")?.parse().ok()?,
+        value.attributes.get("valueZ")?.parse().ok()?,
     ])
 }
 
@@ -422,6 +461,43 @@ pub(crate) mod tests {
             cadmpeg_core::CodecError::Malformed(message)
                 if message.contains("position requires both X and Y")
         ));
+    }
+
+    #[test]
+    fn rejects_duplicate_annotation_carrier_properties_and_values() {
+        let documents = [
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="3">
+<Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="10"/><Float value="11"/></Property>
+<Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="4">
+<Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="11"/></Property>
+<Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects>
+<ObjectData Count="1"><Object name="Dimension"><Properties Count="3">
+<Property name="FormatSpec" type="App::PropertyString"><String value="A"/><String value="B"/></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+<Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        ];
+        for document in documents {
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
     }
 
     #[test]

@@ -585,6 +585,10 @@ annotation text uses `Text`, rich annotation text uses `AnnoText`, balloon text 
 symbol text uses `TailText`, and dimension display text and format use `FormatSpec`. A persisted
 TechDraw dimension has no scalar measurement property; its measurement is computed from its
 references, so decode does not select `Value`, `Measurement`, `Distance`, or `Angle` by name.
+Each registered position or format carrier has at most one property with that name and exactly one
+root value when present. Duplicate named carriers or duplicate root values are invalid. Text-list
+carriers retain all ordered text values; this cardinality rule applies only to scalar, vector, and
+format carriers.
 Records retain source order, exact runtime classification, role-grouped references, subelement
 selectors, fallback parameters, and resolved assets. Local drawing targets resolve to neutral
 drawing identities; external document/object pairs remain explicit.
