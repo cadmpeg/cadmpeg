@@ -45,16 +45,236 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
+### PH-03. The boundary between entity parameters and trailing pointer groups
+
+**Question.** Where does an entity's own parameter list stop and its trailing pointer groups start?
+
+**Known.** `parameter.rs:172-184` collects structurally closed candidates and accepts a fully valid boundary only when exactly one candidate remains. `parameter.rs:231-242` orders candidates by token start. `native.rs:1460-1463` stores no trailing groups when multiple fully valid candidates exist, and `native.rs:1527-1551` then emits no association or property links. `reader.rs:217-225` reports ambiguity only for required Type 402 Form 1 and 14 routes. The Parameter Data section of `iges.md` states that the earliest target-valid suffix is selected.
+
+**Need.** The implementation must select the documented earliest valid suffix or retain every candidate and emit an attributed ambiguity for every affected entity. A normal entity with two fully valid suffix shapes currently loses its links without a loss.
+
+**Note.** Reopened by the 2026-08-16 audit. The specification now states an earliest-suffix rule, but the selection branch rejects multiple fully valid candidates. The existing ambiguity test preserves the contradictory behavior, and ordinary entities have no ambiguity loss.
+
+### PH-04. A physical line longer than 80 bytes
+
+**Question.** How does a physical line with more than 80 payload bytes divide into records?
+
+**Known.** `card.rs:162-208` checks the first 80 bytes of an overlong pre-Terminate line, emits a fixed card when its header is `T`, and retains the bytes after column 80 as an unsequenced physical record; a non-`T` header is malformed. The Physical representation section of `iges.md` states the fixed 80-byte rule and permits an opaque remainder only after Terminate.
+
+**Need.** We need the fixed-record division rule for overlong input, including the status of an overlong Terminate line. The rule must distinguish a valid card with a post-Terminate remainder from a malformed pre-Terminate line.
+
+**Note.** Reopened by the 2026-08-16 audit. The code, tests, and specification settle one project behavior together. No independent format or producer evidence establishes the accepted overlong-Terminate case.
+
+### PH-05. Disagreement between the declared and actual Parameter Data card count
+
+**Question.** Is the Directory Entry card count or the set of back-pointers authoritative?
+
+**Known.** `parameter.rs:484-545` groups Parameter Data cards by their back-pointer, checks the declared start and contiguous range, and requires the owned-card count to equal the Directory count. The Parameter Data section of `iges.md` states the same exact-range rule. A count/back-pointer disagreement is refused in both directions.
+
+**Need.** We need the authority rule for both directions of count disagreement. If the format permits recovery in either direction, the decoder must retain the unused cards or the missing-card condition with an attributed loss.
+
+**Note.** Reopened by the 2026-08-16 audit. The equality policy is implemented and documented, but the closure changed code, tests, and specification without independent format or producer evidence for count authority.
+
 ## 2. Global metadata
+
+### GL-01. Global defaults, and defaults applied to unparseable fields
+
+**Question.** Which Global fields have defaults, what are they, and what does an unparseable Global field mean?
+
+**Known.** `global.rs:302-329` applies defaults only to omitted values, while malformed supplied values fail conversion. `global.rs:373-455` defines required fields, defaults, and numeric validation. The Global section of `iges.md` records the complete default table and the malformed-value rule.
+
+**Need.** We need an external Global-field default table and a rule that separates an omitted field from a malformed field. A wrong units or scale default changes every model coordinate and tolerance.
+
+**Note.** Reopened by the 2026-08-16 audit. The current table is internally consistent, but the closure promoted project defaults and generated fixtures without independent evidence for the complete table and malformed-field behavior.
+
+### GL-02. The units-name comparison rule
+
+**Question.** How is the Global units name compared with the standard unit codes?
+
+**Known.** `global.rs:496-509` uses an exact, case-sensitive byte match and accepts `IN`, `INCH`, `MM`, `FT`, `MI`, `M`, `KM`, `MIL`, `UM`, `CM`, and `UIN`. `global.rs:420-427` refuses units flag `3` when the name is not in that set. The Global section of `iges.md` records this list and its use.
+
+**Need.** We need the standard comparison rule and the complete alias set. A rejected spelling removes the length factor used by geometry and topology projection.
+
+**Note.** Reopened by the 2026-08-16 audit. The current list is explicit, but the closure did not establish the repository's exact padding, case, or alias policy from an independent format or producer source.
+
+### GL-03. A missing or zero Global minimum resolution
+
+**Question.** What does an absent, zero, or negative Global minimum resolution mean?
+
+**Known.** `global.rs:441-445` requires a finite nonnegative value; `global.rs:532-537` converts it to model units. The Global section of `iges.md` assigns zero the exact-coincidence meaning, while geometry and topology consumers use the value for their own checks.
+
+**Need.** We need the meaning of zero or omission and one behavior across the codec. Loss messages must identify an invalid resolution, not report a geometry disagreement caused by a missing field.
+
+**Note.** Reopened by the 2026-08-16 audit. The closure validates one project interpretation and documents it, but supplies no independent source for positivity, zero semantics, or the cross-consumer policy.
+
+### GL-04. Byte encoding of Global Hollerith values
+
+**Question.** What character encoding do Global Hollerith values use?
+
+**Known.** `global.rs:90-101` rejects non-ASCII and control bytes in Hollerith payloads. `global.rs:562-571` exposes selected values only after UTF-8 conversion; raw source bytes remain in the retained source image. The Global section of `iges.md` states the counted-byte rule but does not identify a character-set authority for all Global text fields.
+
+**Need.** We need the permitted character set and a retention rule for non-UTF-8 values. Raw-byte preservation does not decide whether a producer's byte sequence is valid IGES text.
+
+**Note.** Reopened by the 2026-08-16 audit. Raw-byte retention and tests establish storage behavior, not the format character-set rule.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
+### DR-04. One malformed subfigure definition blocks every inferred occurrence root
+
+**Question.** How is a top-level product instance identified when a subfigure definition is malformed?
+
+**Known.** `native.rs:4421-4455` retains a Type 308 or 320 definition with an empty or filtered member list and records its sequence as malformed. `native.rs:4525-4543` suppresses all Type 408 and 420 root inference when any definition is malformed. `reader.rs:201-207` reports `occurrence.root-inference-blocked`; tests in `entities/structure/tests.rs:1282-1356` assert the suppression. The Product structure section of `iges.md` states the all-or-nothing root rule.
+
+**Need.** We need a source rule for per-member recovery or for blocking root inference after a malformed definition. The decoder must not fabricate occurrences or silently discard valid independent roots.
+
+**Note.** Reopened by the 2026-08-16 audit. The code and synthetic tests implement a conservative project recovery policy, but no format or producer evidence establishes that one malformed definition invalidates every root inference.
+
+### DR-09. The Directory status field accepts blank or eight digits and nothing between
+
+**Question.** Must the Directory status number be zero-padded to eight digits?
+
+**Known.** `directory.rs:92-115` accepts an all-blank field or exactly eight ASCII digits. It rejects right-justified digits with leading blanks, while `directory.rs:81-90` accepts trimmed decimal integers in other fixed fields. The Directory Entry section of `iges.md` describes an eight-character status number and blank defaults.
+
+**Need.** We need the required rendering and blank-field rule from the format source. A wrong choice rejects a complete file when a producer uses conventional right alignment.
+
+**Note.** Reopened by the 2026-08-16 audit. The closure added behavior and tests, but no independent source settles the status subfield rendering or leading-blank semantics.
+
+### DR-10. Two fixed defaults in the Type 406 Form 30 native record
+
+**Question.** What are the defaults of the Type 406 Form 30 character-set and witness-line-angle fields, and in which unit is the angle native?
+
+**Known.** `native.rs:3463-3475` stores the declared values and supplies character set `1` and `FRAC_PI_2` when those fields are omitted. The Appearance section of `iges.md` records the same defaults and radians as the angle unit.
+
+**Need.** We need the two defaults and the native unit of the angle field. An injected value must remain distinguishable from an explicit value.
+
+**Note.** Reopened by the 2026-08-16 audit. The native record now preserves declared and effective values, but the fixture and same-change specification do not prove the defaults or angle unit.
+
+### DR-16. Native counted records retain partial prefixes after a malformed nested count
+
+**Question.** What native list state is exposed after a nested counted sequence stops before its declared width?
+
+**Known.** `parameter.rs:148-156` returns `None` when a fixed-width count does not fit the remaining tokens. In contrast, `native.rs:2623-2648` pushes a Type 302 class before breaking on an invalid item count, `native.rs:3062-3133` pushes a Type 322 descriptor before breaking on an invalid value count, and `native.rs:3257-3346` clamps Type 406 list counts and can retain partial independent-variable lists. `entities/structure.rs:1265-1308` and its Type 322 validation report some parent losses, but the native records have no per-list malformed state.
+
+**Need.** An incomplete nested list must be empty or carry an explicit malformed state. A valid first item followed by an oversized declared count must not look like a complete shorter list to native consumers.
+
+**Note.** New finding from the 2026-08-16 hostile count sweep. The current specification requires an incomplete counted list to be empty and forbids sibling reinterpretation, but native projection exposes partial prefixes or clamped empty lists.
+
 ## 4. Geometry carriers and tolerances
+
+### GE-07. The curve parameter-domain convention
+
+**Question.** Which parameter domain does each supported curve entity provide?
+
+**Known.** `entities/offsets.rs:82-116` maps Type 100 from endpoint angles, Type 110 Form 0 to `[0, 1]`, Type 130 from its declared bounds, and Types 102, 106, 112, and 126 to entity-defined neutral intervals. The Geometry section of `iges.md` records the same domains and fallbacks.
+
+**Need.** We need the parameter-domain rule for every supported curve form, including open, closed, and unbounded cases, and evidence for every fallback and affine mapping.
+
+**Note.** Reopened by the 2026-08-16 audit. The centralized mapping and coverage tests do not verify the mapping against an independent format source or producer output.
+
+### GE-08. Type 106 duplicate points and closure
+
+**Question.** Which duplicate-point and closure patterns are valid in a Type 106 entity?
+
+**Known.** `entities/copious.rs:58-128` rejects coincident non-endpoint points for Form 63 and treats only the first and last points as an allowed duplicate pair. `entities/copious.rs:310-327` reports losses for endpoint disagreement and forbidden duplicates using Global minimum resolution. The Geometry section of `iges.md` states the same policy.
+
+**Need.** We need the Type 106 form rules for duplicate points and closed paths, including the tolerance and whether source order must be retained.
+
+**Note.** Reopened by the 2026-08-16 audit. The closure made the path policy internally consistent, but consistency with generated fixtures is not independent conformance evidence.
+
+### GE-09. Type 104 endpoints are not independently authoritative
+
+**Question.** Must Type 104 endpoint coordinates agree with the conic parameters, and what tolerance applies?
+
+**Known.** `entities/conics.rs:384-413` evaluates the coefficient-derived carrier at its selected parameter range and compares both declared endpoints against it using Global minimum resolution. The Geometry section of `iges.md` makes the endpoint agreement rule part of admission.
+
+**Need.** We need the source authority between the analytic coefficients and endpoint fields, and the tolerance for disagreement.
+
+**Note.** Reopened by the 2026-08-16 audit. Endpoint validation is implemented, but no independent evidence establishes the authority or tolerance.
+
+### GE-12. Type 126 property flags against the values
+
+**Question.** Which Type 126 representation flags are authoritative when they disagree with the values?
+
+**Known.** `entities/geometry.rs:1075-1086` validates the four flags, `entities/geometry.rs:1153-1163` compares the polynomial flag with weights, and `entities/geometry.rs:1252-1301` compares the planar flag and normal with the control-point geometry. The current specification records these precedence and rejection rules.
+
+**Need.** We need the precedence of flags, values, and derived ranges for every Type 126 form, plus the required behavior for inconsistent records.
+
+**Note.** Reopened by the 2026-08-16 audit. The consistency checks improve failure reporting, but they do not establish which fields are authoritative in a conformant file.
 
 ## 5. Surfaces and topology
 
+### TP-04. The Type 140 offset sign uses a per-kind representative normal
+
+**Question.** Which normal determines the sign of a Type 140 offset indicator?
+
+**Known.** `entities/surfaces.rs:185-210` evaluates a support-surface normal at the bounded midpoint and uses `(0, 0)` when complete bounds are unavailable. `entities/surfaces.rs:1181-1193` refuses an indicator that does not agree with that normal. The Topology section of `iges.md` states this representative-parameter rule.
+
+**Need.** We need the source rule for the offset sign and a representative point that is valid for bounded, unbounded, and varying-normal surfaces.
+
+**Note.** Reopened by the 2026-08-16 audit. The implementation, documentation, and fixtures changed together; no independent evidence establishes midpoint selection or the `(0, 0)` fallback.
+
+### TP-06. Type 180 Form 1 requires a direct Type 186 operand
+
+**Question.** Does a Type 180 Form 1 Boolean tree accept a Type 186 solid directly, or through a complete operand subtree?
+
+**Known.** `entities/csg.rs:70-123` recursively validates Type 180 operands and requires `has_direct_brep` to match Form 1; a Form 1 accepts a direct Type 186 term in addition to the admitted primitive and Type 430 terms. `entities/csg.rs:360-441` validates postfix structure, recursion, and cycles. The Primitive solids section of `iges.md` records the direct-operand rule.
+
+**Need.** We need the operand rule for Boolean subtrees and the treatment of nested or malformed operands from the format source or independent producer files.
+
+**Note.** Reopened by the 2026-08-16 audit. The recursive interpretation is internally consistent, but the source rule remains unverified.
+
 ## 6. Product structure, annotation, and presentation
 
+### PS-05. Type 420 and Type 320 use different type-flag optionality
+
+**Question.** Does the Type 420 type flag have a default, and may a non-integer token satisfy it?
+
+**Known.** `entities/structure.rs:1959-1961` accepts an omitted Type 420 flag as `0` and rejects a supplied non-integer token; `entities/structure.rs:1876-1879` requires the corresponding Type 320 flag to be an integer in `0..=2`. `entities/structure/tests.rs:1417-1449` tests wrong-typed flags. The current specification records the Type 420 default.
+
+**Need.** We need the default, token type, and allowed values for both fields, with one consistent malformed-token policy.
+
+**Note.** Reopened by the 2026-08-16 audit. The local behavior is now explicit and tested, but the closure did not establish the format rule for the differing optionality.
+
+### PS-06. Type 402 Form 5 requires a non-null leader pointer
+
+**Question.** May a Type 402 Form 5 label placement have no leader?
+
+**Known.** `entities/structure.rs:288-297` requires a valid Type 214 pointer for every Form 5 placement. `entities/structure/tests.rs:874-890` rejects a label display without a leader, and the Product structure section of `iges.md` states the non-null requirement.
+
+**Need.** We need the nullability of the Form 5 leader field from the format source or independent producer files.
+
+**Note.** Reopened by the 2026-08-16 audit. The requirement and fixture coverage are explicit, but no independent evidence establishes it.
+
+### PS-07. Type 406 Form 33 requires a file-global unique identity
+
+**Question.** Must a Type 406 Form 33 sheet identifier be unique across the file?
+
+**Known.** `entities/structure.rs:1021-1056` requires the `(number, name)` pair to occur once in the file, requires one Type 404 owner, and requires one sheet property on that owner. `entities/drawing/tests.rs:83-89` rejects duplicate drawing sheet IDs. The Appearance section of `iges.md` states the same identity scope.
+
+**Need.** We need the identity scope and duplicate behavior from the format source or independent producer evidence.
+
+**Note.** Reopened by the 2026-08-16 audit. The file-global rule and duplicate test are project decisions without independent evidence for that scope.
+
+### PS-08. Type 406 Form 6 requires an ordered layer pair
+
+**Question.** Must the Type 406 Form 6 layer numbers be in ascending order?
+
+**Known.** `entities/structure.rs:298-310` requires nonnegative lower and upper values with `upper >= lower`; the property test rejects a descending pair. The Appearance section of `iges.md` calls the pair ordered.
+
+**Need.** We need the field definitions and order rule for the Form 6 layer pair.
+
+**Note.** Reopened by the 2026-08-16 audit. The check and fixture establish implementation behavior, but no independent source establishes the ordering requirement.
+
 ## 7. Write path
+
+### WR-10. Fixed protocol constants with no complete source mapping
+
+**Question.** What are the correct `PREF`, creation-method, and hierarchy values for generated records?
+
+**Known.** `writer.rs:39-47` fixes frame and pcurve protocol values, and `writer.rs:2502-2506` and `writer.rs:2688-2697` emits them for Type 141 and Type 142. The writer also emits fixed Directory status strings at `writer.rs:1240-1575` and `writer.rs:3870-4505`; the Topology section of `iges.md` records the output constants.
+
+**Need.** We need the correct value for each field and independent evidence for the Type 504 hierarchy difference and each Type 141/142 protocol value.
+
+**Note.** Reopened by the 2026-08-16 audit. The constants are explicit and deterministic, but the closure recorded them as settled without a complete external format or producer mapping.
 
 ## 8. Evidence
