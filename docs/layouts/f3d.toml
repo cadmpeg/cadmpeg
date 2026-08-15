@@ -321,6 +321,173 @@ type = "u32"
 source = "spec"
 anchor = "`u32 local_ordinal`"
 
+[[record]]
+name = "scale_modern_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A modern uniform `Scale` or `Maßstab` scope has a 303-byte token-independent frame"
+size = 79
+note = "Offsets are relative to the modern Scale scope's primary indexed header. The ordered-reference tail continues after this fixed operation prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "scope has a 303-byte token-independent frame"
+
+[[record.gap]]
+offset = 11
+size = 9
+note = "The modern fixed operation fields begin at primary-header offset 20."
+
+[[record.field]]
+name = "factor_kind"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "Primary-header offset 20 stores u32 factor kind `1`"
+
+[[record.gap]]
+offset = 24
+size = 1
+note = "Modern primary-header byte 24 is zero."
+
+[[record.field]]
+name = "factor"
+offset = 25
+type = "f64"
+source = "spec"
+anchor = "the positive finite f64 at offset 25 is the uniform scale factor"
+
+[[record.field]]
+name = "center_reference"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked references at offsets 33 and 44 name the fifth ordered reference"
+
+[[record.field]]
+name = "factor_reference"
+offset = 44
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked references at offsets 33 and 44 name the fifth ordered reference and the first ordered reference"
+
+[[record.field]]
+name = "factor_tail_one"
+offset = 55
+type = "u32"
+source = "spec"
+anchor = "Offset 55 stores u32 `1`"
+
+[[record.gap]]
+offset = 59
+size = 1
+note = "Modern primary-header byte 59 is zero."
+
+[[record.field]]
+name = "body_group_one"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "offsets 60 and 64 each store u32 `1`"
+
+[[record.field]]
+name = "body_group_kind"
+offset = 64
+type = "u32"
+source = "spec"
+anchor = "offsets 60 and 64 each store u32 `1`"
+
+[[record.field]]
+name = "body_group_marker"
+offset = 68
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked reference at offset 68 names the second ordered reference"
+
+[[record]]
+name = "scale_legacy_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A legacy English `Scale` scope has a 307-byte frame with five ordered references or a 318-byte frame with six ordered references"
+size = 75
+note = "Offsets are relative to the legacy Scale scope's primary indexed header. The frame tail carries the ordered-reference members."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "legacy English `Scale` scope has a 307-byte frame"
+
+[[record.gap]]
+offset = 11
+size = 5
+note = "The legacy fixed operation prefix retains five bytes before the zero run at offsets 16 through 20."
+
+[[record.gap]]
+offset = 16
+size = 5
+note = "Primary-header offsets 16 through 20 are zero."
+
+[[record.field]]
+name = "factor"
+offset = 21
+type = "f64"
+source = "spec"
+anchor = "the positive finite f64 uniform factor at offset 21"
+
+[[record.field]]
+name = "center_reference"
+offset = 29
+type = "bytes[11]"
+source = "spec"
+anchor = "marked references at offsets 29, 40, and 64 naming the final"
+
+[[record.field]]
+name = "factor_reference"
+offset = 40
+type = "bytes[11]"
+source = "spec"
+anchor = "marked references at offsets 29, 40, and 64 naming the final, first, and second ordered references"
+
+[[record.field]]
+name = "factor_kind"
+offset = 51
+type = "u32"
+source = "spec"
+anchor = "Offset 51 stores u32 `1`"
+
+[[record.field]]
+name = "zero_byte"
+offset = 55
+type = "u8"
+source = "spec"
+anchor = "byte 55 is zero"
+
+[[record.field]]
+name = "tail_one"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "offsets 56 and 60 each store u32 `1`"
+
+[[record.field]]
+name = "body_group_one"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "offsets 56 and 60 each store u32 `1`"
+
+[[record.field]]
+name = "body_group_reference"
+offset = 64
+type = "bytes[11]"
+source = "spec"
+anchor = "marked references at offsets 29, 40, and 64 naming the final, first, and second ordered references"
+
 
 [[record]]
 name = "design_body_map_prefix_10"

@@ -23,6 +23,7 @@ mod named_empty_label;
 mod named_variable_tail;
 mod pattern;
 mod prelude;
+mod scale;
 mod surfaces;
 mod thread;
 mod work_point;

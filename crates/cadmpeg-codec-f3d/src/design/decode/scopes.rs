@@ -182,7 +182,7 @@ pub fn decode_parameter_scopes(
                 exact_solid_primitive(bytes, &records, &scope, parameter_owners);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
             scope.move_operation = exact_move_operation(bytes, &records, &scope);
-            scope.scale_operation = exact_scale_operation(bytes, &scope);
+            scope.scale_operation = exact_scale_operation(bytes, &records, &scope, &stream_types);
             scope.surface_extend_operation =
                 exact_surface_extend_operation(bytes, &records, &scope);
             scope.surface_offset_operation =
@@ -3820,39 +3820,85 @@ pub(crate) fn exact_move_operation(
 
 pub(crate) fn exact_scale_operation(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignScaleOperation> {
-    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Scale)
-        || parameter_scope_payload_length(scope) != Some(303)
-    {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Scale) {
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let [factor_record_index, body_group_record_index, _, _, center_record_index] =
-        scope.reference_members.as_slice()
-    else {
-        return None;
-    };
-    if View::u32_le_at(bytes, start + 20)? != 1
-        || bytes.get(start + 24) != Some(&0)
-        || marked_record_reference(bytes, start + 33)? != *center_record_index
-        || marked_record_reference(bytes, start + 44)? != *factor_record_index
-        || View::u32_le_at(bytes, start + 55)? != 1
-        || bytes.get(start + 59) != Some(&0)
-        || View::u32_le_at(bytes, start + 60)? != 1
-        || View::u32_le_at(bytes, start + 64)? != 1
-        || marked_record_reference(bytes, start + 68)? != *body_group_record_index
-    {
-        return None;
-    }
-    let uniform_factor_offset = start + 25;
+    let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
+        if parameter_scope_payload_length(scope) == Some(303) && scope.reference_members.len() == 5
+        {
+            let [factor_record_index, body_group_record_index, _, _, center_record_index] =
+                scope.reference_members.as_slice()
+            else {
+                return None;
+            };
+            if View::u32_le_at(bytes, start + 20)? != 1
+                || bytes.get(start + 24) != Some(&0)
+                || marked_record_reference(bytes, start + 33)? != *center_record_index
+                || marked_record_reference(bytes, start + 44)? != *factor_record_index
+                || View::u32_le_at(bytes, start + 55)? != 1
+                || bytes.get(start + 59) != Some(&0)
+                || View::u32_le_at(bytes, start + 60)? != 1
+                || View::u32_le_at(bytes, start + 64)? != 1
+                || marked_record_reference(bytes, start + 68)? != *body_group_record_index
+            {
+                return None;
+            }
+            (
+                *body_group_record_index,
+                *center_record_index,
+                start + 25,
+                None,
+            )
+        } else if scope.kind == "Scale"
+            && matches!(scope.reference_members.len(), 5 | 6)
+            && scope.frame_length
+                == 307 + u64::try_from(scope.reference_members.len().saturating_sub(5)).ok()? * 11
+        {
+            let [factor_record_index, body_group_record_index, .., center_record_index] =
+                scope.reference_members.as_slice()
+            else {
+                return None;
+            };
+            if bytes.get(start + 16..start + 21)? != [0; 5]
+                || marked_record_reference(bytes, start + 29)? != *center_record_index
+                || marked_record_reference(bytes, start + 40)? != *factor_record_index
+                || View::u32_le_at(bytes, start + 51)? != 1
+                || bytes.get(start + 55) != Some(&0)
+                || View::u32_le_at(bytes, start + 56)? != 1
+                || View::u32_le_at(bytes, start + 60)? != 1
+                || marked_record_reference(bytes, start + 64)? != *body_group_record_index
+            {
+                return None;
+            }
+            let point = exact_point_data_construction(
+                bytes,
+                records,
+                std::slice::from_ref(center_record_index),
+                stream_types,
+            )?;
+            (
+                *body_group_record_index,
+                *center_record_index,
+                start + 21,
+                Some((point.position, point.position_offset)),
+            )
+        } else {
+            return None;
+        };
     let uniform_factor = View::f64_le_at(bytes, uniform_factor_offset)?;
     if !uniform_factor.is_finite() || uniform_factor <= 0.0 {
         return None;
     }
     Some(DesignScaleOperation {
-        body_group_record_index: *body_group_record_index,
-        center_record_index: *center_record_index,
+        body_group_record_index,
+        center_record_index,
+        center_position: center.map(|(position, _)| position),
+        center_position_offset: center.map(|(_, offset)| offset),
         uniform_factor,
         uniform_factor_offset: uniform_factor_offset as u64,
     })
@@ -4700,8 +4746,17 @@ pub(crate) fn exact_work_point_construction(
     if scope.kind != "WorkPoint" {
         return None;
     }
+    exact_point_data_construction(bytes, records, &scope.reference_members, stream_types)
+}
+
+fn exact_point_data_construction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    point_record_indices: &[u32],
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignWorkPointConstruction> {
     let mut candidates = Vec::new();
-    for record_index in &scope.reference_members {
+    for record_index in point_record_indices {
         for (start, paired) in records.frames(*record_index) {
             let Some((_class_tag, after_tag)) =
                 lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)

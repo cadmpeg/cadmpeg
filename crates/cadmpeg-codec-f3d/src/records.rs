@@ -3013,6 +3013,13 @@ pub struct DesignScaleOperation {
     pub body_group_record_index: u32,
     /// Native reference selecting the fixed scale center.
     pub center_record_index: u32,
+    /// Explicit center position carried by legacy point-data centers, in source
+    /// model centimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub center_position: Option<[f64; 3]>,
+    /// Byte offset of the explicit center position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub center_position_offset: Option<u64>,
     /// Positive uniform scale factor.
     pub uniform_factor: f64,
     /// Byte offset of `uniform_factor`.

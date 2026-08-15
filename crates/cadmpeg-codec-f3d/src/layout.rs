@@ -146,6 +146,66 @@ pub(crate) mod design_parameter_owner_prefix {
     pub(crate) const LOCAL_ORDINAL: usize = 35;
 }
 
+/// Byte offsets for the `scale_modern_operation_prefix` record.
+///
+/// Spec §3.1. Record length 79 B.
+///
+/// ```text
+/// Offsets are relative to the modern Scale scope's primary indexed header. The ordered-reference tail continues after this fixed operation prefix.
+/// ```
+pub(crate) mod scale_modern_operation_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 79;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `factor_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FACTOR_KIND: usize = 20;
+    /// Offset of `factor` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const FACTOR: usize = 25;
+    /// Offset of `center_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CENTER_REFERENCE: usize = 33;
+    /// Offset of `factor_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FACTOR_REFERENCE: usize = 44;
+    /// Offset of `factor_tail_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FACTOR_TAIL_ONE: usize = 55;
+    /// Offset of `body_group_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_GROUP_ONE: usize = 60;
+    /// Offset of `body_group_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_GROUP_KIND: usize = 64;
+    /// Offset of `body_group_marker` (`bytes[11]`). Spec §3.1.
+    pub(crate) const BODY_GROUP_MARKER: usize = 68;
+}
+
+/// Byte offsets for the `scale_legacy_operation_prefix` record.
+///
+/// Spec §3.1. Record length 75 B.
+///
+/// ```text
+/// Offsets are relative to the legacy Scale scope's primary indexed header. The frame tail carries the ordered-reference members.
+/// ```
+pub(crate) mod scale_legacy_operation_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 75;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `factor` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const FACTOR: usize = 21;
+    /// Offset of `center_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CENTER_REFERENCE: usize = 29;
+    /// Offset of `factor_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FACTOR_REFERENCE: usize = 40;
+    /// Offset of `factor_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FACTOR_KIND: usize = 51;
+    /// Offset of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE: usize = 55;
+    /// Offset of `tail_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TAIL_ONE: usize = 56;
+    /// Offset of `body_group_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_GROUP_ONE: usize = 60;
+    /// Offset of `body_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const BODY_GROUP_REFERENCE: usize = 64;
+}
+
 /// Byte offsets for the `design_body_map_prefix_10` record.
 ///
 /// Spec §3.1. Record length 25 B.

@@ -921,10 +921,21 @@ pub fn project_parameter_design_with_edge_identities(
                                     cadmpeg_ir::features::BodySelection::Native(group.id.clone())
                                 },
                             ),
-                            center: Some(cadmpeg_ir::features::ScaleCenter::Native(format!(
-                                "{native_scope}:design-record#{}",
-                                operation.center_record_index
-                            ))),
+                            center: Some(operation.center_position.map_or_else(
+                                || {
+                                    cadmpeg_ir::features::ScaleCenter::Native(format!(
+                                        "{native_scope}:design-record#{}",
+                                        operation.center_record_index
+                                    ))
+                                },
+                                |position| {
+                                    cadmpeg_ir::features::ScaleCenter::Point(Point3::new(
+                                        position[0] * 10.0,
+                                        position[1] * 10.0,
+                                        position[2] * 10.0,
+                                    ))
+                                },
+                            )),
                             factors: cadmpeg_ir::features::ScaleFactors {
                                 uniform: Some(operation.uniform_factor),
                                 x: None,

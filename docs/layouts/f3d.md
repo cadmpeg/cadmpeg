@@ -125,6 +125,53 @@ Parsed by:
 | 29 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
 | 35 | 4 | `local_ordinal` | `u32` | little | spec | `u32 local_ordinal` |
 
+## `scale_modern_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 79 B
+
+Offsets are relative to the modern Scale scope's primary indexed header. The ordered-reference tail continues after this fixed operation prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | scope has a 303-byte token-independent frame |
+| 20 | 4 | `factor_kind` | `u32` | little | spec | Primary-header offset 20 stores u32 factor kind `1` |
+| 25 | 8 | `factor` | `f64` | little | spec | the positive finite f64 at offset 25 is the uniform scale factor |
+| 33 | 11 | `center_reference` | `bytes[11]` | little | spec | The marked references at offsets 33 and 44 name the fifth ordered reference |
+| 44 | 11 | `factor_reference` | `bytes[11]` | little | spec | The marked references at offsets 33 and 44 name the fifth ordered reference and the first ordered reference |
+| 55 | 4 | `factor_tail_one` | `u32` | little | spec | Offset 55 stores u32 `1` |
+| 60 | 4 | `body_group_one` | `u32` | little | spec | offsets 60 and 64 each store u32 `1` |
+| 64 | 4 | `body_group_kind` | `u32` | little | spec | offsets 60 and 64 each store u32 `1` |
+| 68 | 11 | `body_group_marker` | `bytes[11]` | little | spec | the marked reference at offset 68 names the second ordered reference |
+
+Unstated regions:
+
+- `11..20` (9 B): The modern fixed operation fields begin at primary-header offset 20.
+- `24..25` (1 B): Modern primary-header byte 24 is zero.
+- `59..60` (1 B): Modern primary-header byte 59 is zero.
+
+## `scale_legacy_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 75 B
+
+Offsets are relative to the legacy Scale scope's primary indexed header. The frame tail carries the ordered-reference members.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | legacy English `Scale` scope has a 307-byte frame |
+| 21 | 8 | `factor` | `f64` | little | spec | the positive finite f64 uniform factor at offset 21 |
+| 29 | 11 | `center_reference` | `bytes[11]` | little | spec | marked references at offsets 29, 40, and 64 naming the final |
+| 40 | 11 | `factor_reference` | `bytes[11]` | little | spec | marked references at offsets 29, 40, and 64 naming the final, first, and second ordered references |
+| 51 | 4 | `factor_kind` | `u32` | little | spec | Offset 51 stores u32 `1` |
+| 55 | 1 | `zero_byte` | `u8` | little | spec | byte 55 is zero |
+| 56 | 4 | `tail_one` | `u32` | little | spec | offsets 56 and 60 each store u32 `1` |
+| 60 | 4 | `body_group_one` | `u32` | little | spec | offsets 56 and 60 each store u32 `1` |
+| 64 | 11 | `body_group_reference` | `bytes[11]` | little | spec | marked references at offsets 29, 40, and 64 naming the final, first, and second ordered references |
+
+Unstated regions:
+
+- `11..16` (5 B): The legacy fixed operation prefix retains five bytes before the zero run at offsets 16 through 20.
+- `16..21` (5 B): Primary-header offsets 16 through 20 are zero.
+
 ## `design_body_map_prefix_10`
 
 Spec §3.1 · layout: byte offsets · size: 25 B

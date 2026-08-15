@@ -64,6 +64,42 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
+fn dispatcher_projects_scale_point_center_in_neutral_units() {
+    let mut scale = DesignParameterScope::empty("f3d:native:parameter-scope#4", "Scale", 4);
+    scale.scale_operation = Some(DesignScaleOperation {
+        body_group_record_index: 5,
+        center_record_index: 6,
+        center_position: Some([1.25, -2.5, 3.75]),
+        center_position_offset: Some(40),
+        uniform_factor: 2.5,
+        uniform_factor_offset: 20,
+    });
+
+    let (features, _) = project_parameter_design(&[], &[], &[scale], &[], &[], &[], &[], &[]);
+    let FeatureDefinition::Scale {
+        bodies,
+        center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
+        factors,
+    } = &features[0].definition
+    else {
+        panic!("scale feature with explicit center");
+    };
+    assert!(matches!(
+        bodies,
+        cadmpeg_ir::features::BodySelection::Unresolved
+    ));
+    for (actual, expected) in [center.x, center.y, center.z]
+        .into_iter()
+        .zip([12.5, -25.0, 37.5])
+    {
+        assert!((actual - expected).abs() < f64::EPSILON);
+    }
+    assert!(factors
+        .uniform
+        .is_some_and(|uniform| (uniform - 2.5).abs() < f64::EPSILON));
+}
+
+#[test]
 fn dispatcher_projects_referenced_work_plane_frame() {
     let mut referenced =
         DesignParameterScope::empty("f3d:native:parameter-scope#10", "WorkPlane", 10);

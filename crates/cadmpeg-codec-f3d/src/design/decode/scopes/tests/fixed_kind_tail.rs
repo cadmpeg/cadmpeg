@@ -817,11 +817,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     scale_scope.kind = "Maßstab".into();
     scale_scope.frame_length = 317;
     scale_scope.reference_members = vec![101, 102, 103, 104, 105];
+    let scale_records = IndexedRecordOffsets::build(&bytes);
     assert_eq!(
-        exact_scale_operation(&bytes, &scale_scope),
+        exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
             center_record_index: 105,
+            center_position: None,
+            center_position_offset: None,
             uniform_factor: 1.5,
             uniform_factor_offset: (scale_at + 25) as u64,
         })
