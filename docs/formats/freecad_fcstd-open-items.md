@@ -25,7 +25,6 @@ These items have a Conflict part and need a decision.
 - PT-02. Element-map position to neutral-occurrence order
 - PT-03. Element-map carrier and owner selection
 - XT-03. Non-manifold radial order
-- DP-01. Forward declared dependencies
 - DP-02. Sketch profile seed order
 - DP-03. Sketch profile junction ambiguity and tolerance
 - PR-01. Product membership and record identity selection
@@ -154,18 +153,6 @@ rejection prevents a source-order choice but does not resolve the legal cardinal
 **Note.** Commit `63d07acec` changed the neutral fallback and stated that the source has no radial order. No producer source or independent non-manifold witness was cited.
 
 ## 5. Design projection
-
-### DP-01. Forward declared dependencies
-
-**Question.** Can a declared `ObjectDeps` target appear later than its dependent object in source order?
-
-**Known.** Declared dependencies and earlier link-property operands form the feature dependency graph. The earlier-source restriction applies to link operands, not declared dependencies.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/design.rs:380-400` filters every dependency by the target feature ordinal being earlier than the consumer. A declared forward dependency remains native but disappears from the neutral feature graph.
-
-**Need.** The decoder must preserve every resolved declared feature dependency. It must apply the earlier-source rule only to link-property operands.
-
-**Note.** The specification in commit `cc7953ac4` says forward declared dependencies are legal, but the current filter still drops them. This is a direct implementation/spec conflict.
 
 ### DP-02. Sketch profile seed order
 

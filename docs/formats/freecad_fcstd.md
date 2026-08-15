@@ -690,8 +690,10 @@ feature dependencies are the stable union of all declared object dependencies an
 link-property operands in source order. PartDesign body dependency records describe structural
 membership and do not duplicate the body's neutral child relations. Body membership comes from the
 current `Group` link list or the legacy `Model` link list. A declared dependency can
-target a later declaration. Neutral feature ordinals use a stable dependency order and use source
-order as the tie-break rule. Forward profile, base-feature, and pattern-seed links also precede
+target a later declaration. Declared dependency identities are resolved before neutral ordinal
+assignment; their source declaration order does not filter them. Neutral feature ordinals use a
+stable dependency order and use source order as the tie-break rule. Forward profile, base-feature,
+and pattern-seed links also precede
 their consumers. Body child lists are structural membership, not body inputs. If the native graph
 contains a dependency or parent cycle, the native graph retains it. The neutral graph uses the
 stable maximal subset whose targets precede their consumers.
