@@ -541,6 +541,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::SketchBlockDefinition { sketch } => sketch.is_none(),
         FeatureDefinition::SketchBlockInstance { block, .. } => block.is_none(),
         FeatureDefinition::Form { cages } => cages.is_empty(),
+        FeatureDefinition::BaseFeature { bodies } | FeatureDefinition::InsertBodies { bodies } => {
+            !body_selection_is_resolved(bodies)
+        }
         FeatureDefinition::Block {
             dimensions,
             placement,

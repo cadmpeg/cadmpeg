@@ -826,6 +826,30 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
 }
 
 #[test]
+fn body_copy_features_require_resolved_body_selection() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+
+    let resolved = BodySelection::Resolved {
+        bodies: vec![BodyId("body:result".into())],
+        native: "native:body-selection".into(),
+    };
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::BaseFeature {
+            bodies: resolved.clone(),
+        }
+    ));
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::InsertBodies { bodies: resolved }
+    ));
+
+    let unresolved = BodySelection::Native("native:body-selection".into());
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::BaseFeature { bodies: unresolved }
+    ));
+}
+
+#[test]
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty(Default::default());
     let mut native = F3dNative::default();
