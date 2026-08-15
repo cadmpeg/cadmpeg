@@ -4340,6 +4340,9 @@ fn positional_skamp_item_array_has_valid_boundary(
     if payload.get(cursor) == Some(&0xe2) {
         return Some(());
     }
+    if positional_skamp_following_table_header(payload, cursor, end, item_table_class).is_some() {
+        return Some(());
+    }
     payload
         .get(cursor)
         .is_some_and(|byte| *byte == 0xe0)
@@ -4350,18 +4353,45 @@ fn positional_skamp_item_array_has_valid_boundary(
             };
             (payload.get(cursor + 2) == Some(&psb::token::ENTITY_REF)).then_some(())?;
             let (_, after_table_class) = psb::reference_id(payload, cursor + 3).ok()?;
-            (after_table_class < end
-                && payload.get(after_table_class) == Some(&psb::token::ARRAY_OPEN))
-            .then_some(())?;
-            let (_, after_count) = psb::compact_int(payload, after_table_class + 1);
-            (after_count < end && payload.get(after_count) == Some(&psb::token::ENTITY_REF))
-                .then_some(())?;
-            let (_, after_next_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
-            (after_next_table_class + 2 <= end
-                && payload.get(after_next_table_class..after_next_table_class + 2)
-                    == Some(&[0xfb, 0xe2]))
-            .then_some(())
+            (after_table_class <= end).then_some(())?;
+            if payload.get(after_table_class) == Some(&psb::token::ARRAY_OPEN) {
+                let (_, after_count) = psb::compact_int(payload, after_table_class + 1);
+                (after_count < end && payload.get(after_count) == Some(&psb::token::ENTITY_REF))
+                    .then_some(())?;
+                let (_, after_next_table_class) =
+                    psb::reference_id(payload, after_count + 1).ok()?;
+                (after_next_table_class + 2 <= end
+                    && payload.get(after_next_table_class..after_next_table_class + 2)
+                        == Some(&[0xfb, 0xe2]))
+                .then_some(())
+            } else {
+                payload
+                    .get(after_table_class)
+                    .is_some_and(|byte| matches!(byte, 0xe0..=0xe3))
+                    .then_some(())
+            }
         })
+}
+
+fn positional_skamp_following_table_header(
+    payload: &[u8],
+    cursor: usize,
+    end: usize,
+    item_table_class: &[u8],
+) -> Option<()> {
+    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (_, after_count) = psb::compact_int(payload, cursor + 1);
+    (after_count < end && payload.get(after_count) == Some(&psb::token::ENTITY_REF))
+        .then_some(())?;
+    let reference_start = after_count + 1;
+    let (_, after_table_class) = psb::reference_id(payload, reference_start).ok()?;
+    let table_class = payload.get(after_count..after_table_class)?;
+    (table_class != item_table_class
+        && after_table_class + 2 <= end
+        && payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2]))
+    .then_some(())?;
+    let (_, after_row_class) = psb::reference_id(payload, after_table_class + 3).ok()?;
+    (after_row_class <= end).then_some(())
 }
 
 pub(crate) fn feature_relation_triples(

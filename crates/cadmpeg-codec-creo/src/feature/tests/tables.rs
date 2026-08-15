@@ -699,6 +699,30 @@ fn positional_skamp_table_accepts_a_following_table_wrapper_boundary() {
 }
 
 #[test]
+fn positional_skamp_table_accepts_a_following_table_header_boundary() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
+            \xf8\x02\xf7\x64\xfb\xe2\xf7\x65";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 1);
+    assert_eq!(skamps[0].items[0].entity_id, 6);
+}
+
+#[test]
+fn positional_skamp_table_accepts_a_following_wrapper_body_boundary() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
+            \xf4\x04\xf7\x64\xe1\xe1\xe3";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 1);
+    assert_eq!(skamps[0].items[0].entity_id, 6);
+}
+
+#[test]
 fn positional_skamp_table_skips_row_auxiliary_frames() {
     let payload = b"\xf8\x03\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
