@@ -548,6 +548,152 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
 }
 
 #[test]
+fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
+    let component_edge_name = "moCompEdge_c";
+    let edge_ref_name = "moEdgeRef_c";
+    let component_edge_offset = 40;
+    let component_edge_body = component_edge_offset + 6 + component_edge_name.len();
+    let edge_ref_offset = component_edge_body + 64;
+    let edge_ref_body = edge_ref_offset + 6 + edge_ref_name.len();
+    let mut payload = vec![0; edge_ref_body];
+    payload[component_edge_offset..component_edge_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[component_edge_offset + 4..component_edge_offset + 6]
+        .copy_from_slice(&(component_edge_name.len() as u16).to_le_bytes());
+    payload[component_edge_offset + 6..component_edge_body]
+        .copy_from_slice(component_edge_name.as_bytes());
+    payload[component_edge_body..component_edge_body + 9]
+        .copy_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0]);
+    payload[component_edge_body + 9..component_edge_body + 13]
+        .copy_from_slice(&102u32.to_le_bytes());
+    payload[component_edge_body + 13..component_edge_body + 17]
+        .copy_from_slice(&102u32.to_le_bytes());
+    payload[edge_ref_offset..edge_ref_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[edge_ref_offset + 4..edge_ref_offset + 6]
+        .copy_from_slice(&(edge_ref_name.len() as u16).to_le_bytes());
+    payload[edge_ref_offset + 6..edge_ref_body].copy_from_slice(edge_ref_name.as_bytes());
+    payload.extend(4u32.to_le_bytes());
+    payload.extend([0, 2, 0, 0]);
+    payload.extend([0; 4]);
+    let marker = payload.len();
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0; 2]);
+    let signature = [0x35, 0x80, 0x38, 0, 0x1c, 0, 0, 0, 0x3a, 0x44, 0x97, 0x61];
+    for local_id in [3u32, 4, 4, 4] {
+        payload.extend(0x803e_u16.to_le_bytes());
+        payload.extend([0; 2]);
+        payload.extend(signature);
+        payload.extend(local_id.to_le_bytes());
+    }
+
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![
+            FeatureInputClass {
+                id: "component-edge".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: component_edge_offset as u64,
+                name: component_edge_name.into(),
+                role: FeatureInputClassRole::Reference,
+            },
+            FeatureInputClass {
+                id: "edge-ref".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: edge_ref_offset as u64,
+                name: edge_ref_name.into(),
+                role: FeatureInputClassRole::Reference,
+            },
+        ],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let references = cosmetic_thread_component_references(&lane, 0, lane.native_payload.len());
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].0, marker);
+    assert_eq!(
+        references[0]
+            .1
+            .iter()
+            .map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [Some(3), Some(4), Some(4), Some(4)]
+    );
+}
+
+#[test]
+fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_child() {
+    let component_token_offset = 40;
+    let component_body = component_token_offset + 2;
+    let edge_ref_token_offset = component_body + 70;
+    let edge_ref_body = edge_ref_token_offset + 2;
+    let mut payload = vec![0; edge_ref_body];
+    payload[component_token_offset..component_token_offset + 2]
+        .copy_from_slice(&0x82e6_u16.to_le_bytes());
+    payload[component_body..component_body + 9]
+        .copy_from_slice(&[0x37, 0x81, 0x02, 0, 0, 0, 0, 0, 0]);
+    payload[component_body + 9..component_body + 13].copy_from_slice(&103u32.to_le_bytes());
+    payload[component_body + 13..component_body + 17].copy_from_slice(&103u32.to_le_bytes());
+    payload[edge_ref_token_offset..edge_ref_token_offset + 2]
+        .copy_from_slice(&0x82e9_u16.to_le_bytes());
+    payload.resize(edge_ref_body + 8, 0);
+    payload[edge_ref_body..edge_ref_body + 8].copy_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0]);
+    payload.extend(4u32.to_le_bytes());
+    payload.extend([0, 2, 0, 0]);
+    payload.extend([0; 4]);
+    let marker = payload.len();
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0; 2]);
+    let signature = [0x35, 0x80, 0x38, 0, 0x1c, 0, 0, 0, 0x3a, 0x44, 0x97, 0x61];
+    for local_id in [3u32, 4, 4, 4] {
+        payload.extend(0x803e_u16.to_le_bytes());
+        payload.extend([0; 2]);
+        payload.extend(signature);
+        payload.extend(local_id.to_le_bytes());
+    }
+
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let references = cosmetic_thread_component_references(&lane, 0, lane.native_payload.len());
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].0, marker);
+    assert_eq!(
+        references[0]
+            .1
+            .iter()
+            .map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        [Some(3), Some(4), Some(4), Some(4)]
+    );
+}
+
+#[test]
 fn component_face_reference_accepts_both_nested_body_flags() {
     let body_offset = 30;
     let nested_marker =

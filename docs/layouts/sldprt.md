@@ -10,9 +10,9 @@ Table source: `docs/layouts/sldprt.toml`.
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
 inventory (§4), the entity common header (§5), the class-root directory (§6),
 and the Parasolid geometry carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
-layouts in prose; the fixed-offset profile, sketch-input, and reference-plane
-layouts are tabulated below, and the remaining layouts are listed under "Not
-tabulated" with a coverage note.
+layouts in prose; the fixed-offset profile, sketch-input, reference-plane, and
+cosmetic-thread carrier layouts are tabulated below, and the remaining layouts
+are listed under "Not tabulated" with a coverage note.
 
 Endianness is stated per lane: §1 container words are little-endian, §4-§7
 Parasolid payload words are big-endian. Where a §1 field states no endianness
@@ -1328,6 +1328,35 @@ Parsed by:
 Unstated regions:
 
 - `8..84` (76 B): The nested `moFaceRef_c` class declaration occupies a variable position before the component marker.
+
+## `cosmetic_thread_component_edge_wrapper_prefix`
+
+Spec §2 · layout: byte offsets · size: 17 B
+
+Offsets begin at the component-edge body. The compact edge-selection vector or the immediate edge-reference child follows this fixed wrapper prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `inner_class_token` | `u16` | little | spec | inner high-bit u16 class token at body +0 |
+| 2 | 7 | `wrapper_flags` | `bytes[7]` | little | spec | byte `02` at +2, zero bytes at +3..+8 · value `[2, 0, 0, 0, 0, 0, 0]` |
+| 9 | 4 | `component_count` | `u32` | little | spec | equal nonzero little-endian u32 component counts at +9 and +13 |
+| 13 | 4 | `component_count_copy` | `u32` | little | spec | equal nonzero little-endian u32 component counts at +9 and +13 |
+
+## `cosmetic_thread_repeated_edge_ref_prefix`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+Offsets begin at the body opened by the repeated edge-reference class token.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `prefix` | `bytes[8]` | little | spec | `01 00 00 00 00 00 00 00` · value `[1, 0, 0, 0, 0, 0, 0, 0]` |
 
 ## `display_lists_scene_source_binding`
 

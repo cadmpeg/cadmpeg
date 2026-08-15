@@ -7,9 +7,9 @@ note = """
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
 inventory (§4), the entity common header (§5), the class-root directory (§6),
 and the Parasolid geometry carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
-layouts in prose; the fixed-offset profile, sketch-input, and reference-plane
-layouts are tabulated below, and the remaining layouts are listed under "Not
-tabulated" with a coverage note.
+layouts in prose; the fixed-offset profile, sketch-input, reference-plane, and
+cosmetic-thread carrier layouts are tabulated below, and the remaining layouts
+are listed under "Not tabulated" with a coverage note.
 
 Endianness is stated per lane: §1 container words are little-endian, §4-§7
 Parasolid payload words are big-endian. Where a §1 field states no endianness
@@ -4986,6 +4986,63 @@ offset = 100
 type = "u16"
 source = "spec"
 anchor = "zero marker tail at `+100..+101`"
+
+[[record]]
+name = "cosmetic_thread_component_edge_wrapper_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs"
+kind = "byte"
+section = "2"
+anchor = "a fixed component-edge wrapper prefix of 17 bytes"
+size = 17
+endianness = "little"
+note = "Offsets begin at the component-edge body. The compact edge-selection vector or the immediate edge-reference child follows this fixed wrapper prefix."
+
+[[record.field]]
+name = "inner_class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "inner high-bit u16 class token at body +0"
+
+[[record.field]]
+name = "wrapper_flags"
+offset = 2
+type = "bytes[7]"
+source = "spec"
+anchor = "byte `02` at +2, zero bytes at +3..+8"
+value = [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+[[record.field]]
+name = "component_count"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "equal nonzero little-endian u32 component counts at +9 and +13"
+
+[[record.field]]
+name = "component_count_copy"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "equal nonzero little-endian u32 component counts at +9 and +13"
+
+[[record]]
+name = "cosmetic_thread_repeated_edge_ref_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs"
+kind = "byte"
+section = "2"
+anchor = "A repeated `moEdgeRef_c` child body begins with `01 00 00 00 00 00 00 00`"
+size = 8
+endianness = "little"
+note = "Offsets begin at the body opened by the repeated edge-reference class token."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "`01 00 00 00 00 00 00 00`"
+value = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
 
 [[record]]
 name = "display_lists_scene_source_binding"

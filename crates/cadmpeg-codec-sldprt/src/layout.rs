@@ -1713,6 +1713,44 @@ pub(crate) mod component_face_nested_reference_prefix {
     pub(crate) const MARKER_TAIL: usize = 100;
 }
 
+/// Byte offsets for the `cosmetic_thread_component_edge_wrapper_prefix` record.
+///
+/// Spec §2. Record length 17 B.
+///
+/// ```text
+/// Offsets begin at the component-edge body. The compact edge-selection vector or the immediate edge-reference child follows this fixed wrapper prefix.
+/// ```
+pub(crate) mod cosmetic_thread_component_edge_wrapper_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 17;
+    /// Offset of `inner_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const INNER_CLASS_TOKEN: usize = 0;
+    /// Offset of `wrapper_flags` (`bytes[7]`). Spec §2.
+    pub(crate) const WRAPPER_FLAGS: usize = 2;
+    /// Stated value of `wrapper_flags` (`bytes[7]`). Spec §2.
+    pub(crate) const WRAPPER_FLAGS_VALUE: [u8; 7] = [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `component_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const COMPONENT_COUNT: usize = 9;
+    /// Offset of `component_count_copy` (`u32`, little-endian). Spec §2.
+    pub(crate) const COMPONENT_COUNT_COPY: usize = 13;
+}
+
+/// Byte offsets for the `cosmetic_thread_repeated_edge_ref_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// Offsets begin at the body opened by the repeated edge-reference class token.
+/// ```
+pub(crate) mod cosmetic_thread_repeated_edge_ref_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const PREFIX: usize = 0;
+    /// Stated value of `prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const PREFIX_VALUE: [u8; 8] = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
 /// Byte offsets for the `display_lists_scene_source_binding` record.
 ///
 /// Spec §8. Record length 16 B.

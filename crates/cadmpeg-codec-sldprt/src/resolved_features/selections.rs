@@ -24,9 +24,16 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
 };
 use cadmpeg_core::decode::{bounded_len, View};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
-use crate::layout::component_face_nested_reference_prefix as nested_face;
+use crate::layout::{
+    component_face_nested_reference_prefix as nested_face,
+    cosmetic_thread_component_edge_wrapper_prefix as component_edge,
+    cosmetic_thread_repeated_edge_ref_prefix as repeated_edge_ref,
+};
 
 pub(super) fn compact_body_selections(
     histories: &[crate::records::FeatureHistory],
@@ -532,23 +539,42 @@ pub(super) fn compact_surface_selections(
                         .map(|ids| (marker, ids))
                 })
                 .collect(),
-            NativeClassKind::CosmeticThread => cosmetic_thread_cylinder_references(
-                feature,
-                lane,
-                start,
-                end,
-                &cylinder_reference_tokens,
-            )
-            .into_iter()
-            .chain(cosmetic_thread_component_references(lane, start, end))
-            .chain(lane.classes.iter().filter_map(|class| {
-                let offset = usize::try_from(class.offset).ok()?;
-                (class.name == "moCompFace_c" && (start..end).contains(&offset))
-                    .then(|| offset.checked_add(6 + class.name.len()))
-                    .flatten()
-                    .and_then(|body| component_face_reference_at(&lane.native_payload, body))
-            }))
-            .collect(),
+            NativeClassKind::CosmeticThread => {
+                let cylinder_references = cosmetic_thread_cylinder_references(
+                    feature,
+                    lane,
+                    start,
+                    end,
+                    &cylinder_reference_tokens,
+                );
+                let component_face_references = lane
+                    .classes
+                    .iter()
+                    .filter_map(|class| {
+                        let offset = usize::try_from(class.offset).ok()?;
+                        (class.name == "moCompFace_c" && (start..end).contains(&offset))
+                            .then(|| offset.checked_add(6 + class.name.len()))
+                            .flatten()
+                            .and_then(|body| {
+                                component_face_reference_at(&lane.native_payload, body)
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                // The component edge is a fallback carrier. Some objects serialize
+                // both forms for one support; admitting both would fail the
+                // single-selection invariant even though a canonical carrier is
+                // already authoritative.
+                let component_references = (cylinder_references.is_empty()
+                    && component_face_references.is_empty())
+                .then(|| cosmetic_thread_component_references(lane, start, end))
+                .into_iter()
+                .flatten();
+                cylinder_references
+                    .into_iter()
+                    .chain(component_references)
+                    .chain(component_face_references)
+                    .collect()
+            }
             NativeClassKind::MirrorPattern => (start.saturating_add(12)
                 ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
                 .filter(|marker| {
@@ -910,40 +936,71 @@ pub(super) fn cosmetic_thread_cylinder_references(
         .collect()
 }
 
-/// Decode direct component-edge references owned by a cosmetic-thread object.
+/// Decode component-edge references owned by a cosmetic-thread object.
 ///
 /// Some native lanes carry the selected cylindrical support as a `moCompEdge_c`
 /// child instead of wrapping the same component path in `moCylinderRef_w`.
-/// Restrict the scan to that child class and keep the normal single-candidate
-/// check in `compact_surface_selections`; unrelated compact vectors in the
-/// thread's other children must not become face selections.
+/// The component edge can be a declared class or a repeated class-token
+/// instance. It can own the vector directly or through its immediate
+/// `moEdgeRef_c` child. Restrict both scans to that wrapper and keep the normal
+/// single-candidate check in `compact_surface_selections`; unrelated compact
+/// vectors in the thread's other children must not become face selections.
 pub(super) fn cosmetic_thread_component_references(
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
 ) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    let mut class_ranges = lane
+    let mut classes = lane
         .classes
         .iter()
-        .filter(|class| class.name == "moCompEdge_c")
         .filter_map(|class| {
             let class_offset = usize::try_from(class.offset).ok()?;
-            if !(object_start..object_end).contains(&class_offset) {
-                return None;
-            }
-            let body = class_offset.checked_add(6 + class.name.len())?;
-            let next_class = lane
-                .classes
-                .iter()
-                .filter_map(|candidate| usize::try_from(candidate.offset).ok())
-                .filter(|offset| *offset > class_offset && *offset < object_end)
-                .min()
-                .unwrap_or(object_end);
-            (body < next_class).then_some(body..next_class)
+            (object_start..object_end)
+                .contains(&class_offset)
+                .then_some((class_offset, class))
         })
         .collect::<Vec<_>>();
-    class_ranges.sort_by_key(|range| range.start);
+    classes.sort_unstable_by_key(|(offset, _)| *offset);
 
+    let mut class_ranges = Vec::<Range<usize>>::new();
+    for (index, &(class_offset, class)) in classes.iter().enumerate() {
+        if class.name != "moCompEdge_c" {
+            continue;
+        }
+        let Some(body) = class_offset.checked_add(6 + class.name.len()) else {
+            continue;
+        };
+        let direct_end = classes
+            .get(index + 1)
+            .map_or(object_end, |(offset, _)| *offset);
+        if body >= direct_end {
+            continue;
+        }
+        class_ranges.push(body..direct_end);
+
+        let Some((edge_ref_offset, edge_ref)) = classes.get(index + 1) else {
+            continue;
+        };
+        if edge_ref.name != "moEdgeRef_c"
+            || !cosmetic_thread_component_edge_wrapper_at(&lane.native_payload, body)
+        {
+            continue;
+        }
+        let Some(edge_ref_body) = edge_ref_offset.checked_add(6 + edge_ref.name.len()) else {
+            continue;
+        };
+        let edge_ref_end = classes
+            .get(index + 2)
+            .map_or(object_end, |(offset, _)| *offset);
+        if edge_ref_body < edge_ref_end {
+            class_ranges.push(edge_ref_body..edge_ref_end);
+        }
+    }
+    class_ranges.extend(cosmetic_thread_repeated_component_edge_ranges(
+        &lane.native_payload,
+        object_start,
+        object_end,
+    ));
     let mut references = class_ranges
         .into_iter()
         .flat_map(|range| {
@@ -961,6 +1018,69 @@ pub(super) fn cosmetic_thread_component_references(
     references.sort_by_key(|(marker, _)| *marker);
     references.dedup_by_key(|(marker, _)| *marker);
     references
+}
+
+fn cosmetic_thread_repeated_component_edge_ranges(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+) -> Vec<Range<usize>> {
+    let end = object_end.min(payload.len());
+    let Some(last_token) = end.checked_sub(2 + component_edge::LEN) else {
+        return Vec::new();
+    };
+    if object_start > last_token {
+        return Vec::new();
+    }
+    let mut ranges = Vec::new();
+    for token_offset in object_start..=last_token {
+        if !View::u16_le_at(payload, token_offset).is_some_and(is_class_token)
+            || !cosmetic_thread_component_edge_wrapper_at(payload, token_offset + 2)
+        {
+            continue;
+        }
+        let body = token_offset + 2;
+        let child_start = body + component_edge::COMPONENT_COUNT;
+        let Some(last_child) = end.checked_sub(2 + repeated_edge_ref::LEN) else {
+            continue;
+        };
+        let child_token = if child_start <= last_child {
+            (child_start..=last_child).find(|offset| {
+                View::u16_le_at(payload, *offset).is_some_and(is_class_token)
+                    && payload.get(*offset + 2..*offset + 2 + repeated_edge_ref::LEN)
+                        == Some(repeated_edge_ref::PREFIX_VALUE.as_slice())
+            })
+        } else {
+            None
+        };
+        if let Some(edge_ref_token) = child_token {
+            ranges.push(edge_ref_token + 2..end);
+        } else {
+            ranges.push(body..end);
+        }
+    }
+    ranges
+}
+
+fn cosmetic_thread_component_edge_wrapper_at(payload: &[u8], body: usize) -> bool {
+    let Some(flags_start) = body.checked_add(component_edge::WRAPPER_FLAGS) else {
+        return false;
+    };
+    let Some(flags_end) = body.checked_add(component_edge::COMPONENT_COUNT) else {
+        return false;
+    };
+    let Some(class_token) = View::u16_le_at(payload, body + component_edge::INNER_CLASS_TOKEN)
+    else {
+        return false;
+    };
+    let Some(count) = View::u32_le_at(payload, body + component_edge::COMPONENT_COUNT) else {
+        return false;
+    };
+    is_class_token(class_token)
+        && payload.get(flags_start..flags_end)
+            == Some(component_edge::WRAPPER_FLAGS_VALUE.as_slice())
+        && count != 0
+        && View::u32_le_at(payload, body + component_edge::COMPONENT_COUNT_COPY) == Some(count)
 }
 
 pub(super) fn cosmetic_thread_cylinder_marker_reference(
