@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+use cadmpeg_ir::codec::Encoder;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -86,6 +87,53 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
     assert!((generated_minimum_resolution(&ir) - expected).abs() <= f64::EPSILON * 64.0);
+}
+
+#[test]
+fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.points.push(Point {
+        id: PointId("point#global-profile".into()),
+        source_object: None,
+        position: Point3::new(123.0, -4.0, 5.0),
+    });
+
+    let plan = crate::IgesEncoder::default()
+        .plan(EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .expect("NURBS curve has a supported semantic writer profile");
+    let mut written = Vec::new();
+    plan.write_to(&mut written)
+        .expect("generated IGES bytes are writable");
+    let scan = crate::card::scan(&written).expect("generated IGES cards scan");
+    let global = crate::global::parse(&scan).expect("generated Global record parses");
+    assert_eq!(
+        global.sender_product().as_deref(),
+        Some(WRITER_SENDER_PRODUCT)
+    );
+    assert_eq!(
+        global.native_file_name().as_deref(),
+        Some(WRITER_NATIVE_FILE_NAME)
+    );
+    assert_eq!(global.units_flag(), WRITER_UNITS_FLAG);
+    assert_eq!(global.units_name().as_deref(), Some(WRITER_UNITS_NAME));
+    assert_eq!(global.version(), "5.3");
+    assert!((global.minimum_resolution_mm() - 0.01).abs() <= f64::EPSILON * 64.0);
+    assert!((global.maximum_coordinate_mm() - 123.0).abs() <= f64::EPSILON * 64.0);
+
+    let global_text = scan
+        .lines
+        .iter()
+        .filter(|line| line.section == Some(crate::card::Section::Global))
+        .flat_map(|line| line.payload.iter().take(72).copied())
+        .collect::<Vec<_>>();
+    let global_text = String::from_utf8(global_text).expect("generated Global record is ASCII");
+    assert!(global_text.starts_with(
+        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
+    ));
+    assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
 }
 
 #[test]

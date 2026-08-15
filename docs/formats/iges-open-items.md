@@ -57,16 +57,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-04. Global fields are a fixed string
-
-**Question.** Which Global values must a generated file compute from the model?
-
-**Known.** `writer.rs:4822-4835` writes fixed sender, file, author, organization, timestamp, resolution, and coordinate metadata. The current documentation records this as writer policy.
-
-**Need.** We need the fields that must be computed, the fields that may use project defaults, and the required treatment of timestamps and source identity.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `2b3306edc` made the fixed metadata explicit, but no interoperability evidence or settled project policy justifies the values.
-
 ### WR-05. The target version changes one digit only
 
 **Question.** What does `IgesWriteOptions::version` constrain?

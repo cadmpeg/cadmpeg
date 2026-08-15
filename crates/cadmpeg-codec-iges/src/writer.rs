@@ -43,6 +43,23 @@ const DEPENDENT_TOPOLOGY_STATUS: &str = "00010000";
 const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
 const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
 const CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE: i32 = 2;
+const WRITER_SENDER_PRODUCT: &str = "cadmpeg";
+const WRITER_NATIVE_FILE_NAME: &str = "generated.igs";
+const WRITER_NATIVE_SYSTEM_ID: &str = "cadmpeg";
+const WRITER_PREPROCESSOR_VERSION: &str = "0.1";
+const WRITER_INTEGER_REPRESENTATION_BITS: i64 = 32;
+const WRITER_SINGLE_PRECISION_MAGNITUDE: i64 = 38;
+const WRITER_SINGLE_PRECISION_SIGNIFICANCE: i64 = 6;
+const WRITER_DOUBLE_PRECISION_MAGNITUDE: i64 = 308;
+const WRITER_DOUBLE_PRECISION_SIGNIFICANCE: i64 = 17;
+const WRITER_MODEL_SPACE_SCALE: &str = "1.0";
+const WRITER_UNITS_FLAG: i64 = 2;
+const WRITER_UNITS_NAME: &str = "MM";
+const WRITER_MAXIMUM_LINE_WEIGHT_GRADATIONS: i64 = 1;
+const WRITER_MAXIMUM_LINE_WIDTH: &str = "1.0";
+const WRITER_AUTHOR_NAME: &str = "author";
+const WRITER_AUTHOR_ORGANIZATION: &str = "cadmpeg";
+const WRITER_DRAFTING_STANDARD_FLAG: i64 = 0;
 
 /// Plan an IGES export, selecting replay only after checking the document
 /// baseline and retained source-image integrity.
@@ -4923,14 +4940,12 @@ fn encode_file(
 ) -> Result<Vec<u8>, CodecError> {
     let generation_timestamp = generation_timestamp(SystemTime::now())?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
-    let global = format!(
-        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H{},{},{},6Hauthor,7Hcadmpeg,{},0,0H,0H;",
-        generation_timestamp,
-        number(minimum_resolution),
-        number(maximum_coordinate),
-        version.global_flag(),
-    )
-    .into_bytes();
+    let global = generated_global(
+        version,
+        &generation_timestamp,
+        minimum_resolution,
+        maximum_coordinate,
+    );
     let global_count = global.len().div_ceil(72);
     let mut expanded = Vec::with_capacity(entities.len() * 2);
     for entity in entities {
@@ -5046,6 +5061,50 @@ fn encode_file(
     );
     bytes.extend(card(terminate.as_bytes(), b'T', 1)?);
     Ok(bytes)
+}
+
+fn global_hollerith(value: &str) -> String {
+    debug_assert!(value.is_ascii());
+    format!("{}H{value}", value.len())
+}
+
+fn generated_global(
+    version: crate::IgesVersion,
+    generation_timestamp: &str,
+    minimum_resolution: f64,
+    maximum_coordinate: f64,
+) -> Vec<u8> {
+    let fields = [
+        "1H,".to_owned(),
+        "1H;".to_owned(),
+        global_hollerith(WRITER_SENDER_PRODUCT),
+        global_hollerith(WRITER_NATIVE_FILE_NAME),
+        global_hollerith(WRITER_NATIVE_SYSTEM_ID),
+        global_hollerith(WRITER_PREPROCESSOR_VERSION),
+        WRITER_INTEGER_REPRESENTATION_BITS.to_string(),
+        WRITER_SINGLE_PRECISION_MAGNITUDE.to_string(),
+        WRITER_SINGLE_PRECISION_SIGNIFICANCE.to_string(),
+        WRITER_DOUBLE_PRECISION_MAGNITUDE.to_string(),
+        WRITER_DOUBLE_PRECISION_SIGNIFICANCE.to_string(),
+        global_hollerith(""),
+        WRITER_MODEL_SPACE_SCALE.to_owned(),
+        WRITER_UNITS_FLAG.to_string(),
+        global_hollerith(WRITER_UNITS_NAME),
+        WRITER_MAXIMUM_LINE_WEIGHT_GRADATIONS.to_string(),
+        WRITER_MAXIMUM_LINE_WIDTH.to_owned(),
+        global_hollerith(generation_timestamp),
+        number(minimum_resolution),
+        number(maximum_coordinate),
+        global_hollerith(WRITER_AUTHOR_NAME),
+        global_hollerith(WRITER_AUTHOR_ORGANIZATION),
+        version.global_flag().to_string(),
+        WRITER_DRAFTING_STANDARD_FLAG.to_string(),
+        global_hollerith(""),
+        global_hollerith(""),
+    ];
+    let mut global = fields.join(",");
+    global.push(';');
+    global.into_bytes()
 }
 
 fn generated_maximum_coordinate(entities: &[Entity]) -> f64 {
