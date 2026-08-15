@@ -106,16 +106,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a later presentation record can be rejected or degraded even when its bounded prefix is readable.
 
-### LG-02. V2 class-payload compatibility
-
-**Question.** Do all V2 class payloads use the later archive class-data grammar and version fields?
-
-**Known.** `rhino_3dm.md` §8.2 "V2 uses the table and polymorphic class-record grammar in sections 7 through" states that all V2 class payloads use that grammar, while `chunks.rs:30-67` only establishes generic V2 chunk framing. The comparison document provides aggregate archive evidence but no class-specific V2 payload witness for this rule.
-
-**Need.** Provide class-specific V2 evidence for the payload boundary and version fields, or narrow the specification to the classes established by evidence.
-
-**Note.** Reopened as a promotion-to-spec gap. A V2 class can be admitted under an unverified later-archive assumption and then be falsely typed or lose unsupported fields.
-
 ### RS-01. Later-minor bounded suffixes
 
 **Question.** Which remaining versioned readers outside sections 7.1, 13.3,

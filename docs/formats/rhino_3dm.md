@@ -1164,9 +1164,16 @@ V2 uses the table and polymorphic class-record grammar in sections 7 through
 17. All chunk values use four bytes. The object class wrapper contains the
 class UUID, one class-data chunk, zero or more class-userdata chunks, and the
 class-end short chunk. The class UUID selects the class payload grammar. A
-geometry or annotation class uses the same versioned class-data fields in V2
-as in a later archive carrying that class and payload version; V2 changes the
-outer chunk width, not the class-data boundary or the class identity rule.
+class wrapper always uses that boundary, but `WriteObject` can select a
+compatibility class before writing it. In V2, ordinary curves and surfaces are
+written as NURBS classes, extrusions are written as Breps or surfaces, modern
+annotations are converted to obsolete V2 annotation classes, text dots are
+written as V2 text-dot classes, and SubD is written as a mesh proxy. The
+class-data fields and version are therefore those of the selected serialized
+class, not necessarily those of the runtime object or of a later archive that
+stores that runtime class. V1 and V2 object writers do not write class userdata.
+V2 changes the outer chunk width while the producer's compatibility conversion
+selects the class identity and class-data grammar.
 
 For standard units, the enum determines the scale. For custom units,
 `meters-per-unit` and the custom name determine the scale and label.
