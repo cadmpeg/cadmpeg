@@ -26,6 +26,7 @@ use super::selections::{
 };
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
 use crate::classification::{native_object_class, NativeClassKind};
+use crate::history::is_history_metadata_record;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_ir::features::{FeatureDefinition, Length, PathRef, PatternKind, PatternSeed};
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -33,12 +34,28 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::{HashMap, HashSet};
 
+pub(super) fn history_metadata_ids(
+    histories: &[crate::records::FeatureHistory],
+) -> HashSet<String> {
+    histories
+        .iter()
+        .flat_map(|history| {
+            history
+                .features
+                .iter()
+                .filter(|feature| is_history_metadata_record(feature, &history.features))
+                .map(|feature| feature.id.clone())
+        })
+        .collect()
+}
+
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    let metadata_ids = history_metadata_ids(histories);
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -75,6 +92,7 @@ pub(crate) fn bind_pattern_inputs(
         };
         let mut starts = history_features
             .iter()
+            .filter(|feature| !metadata_ids.contains(&feature.id))
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|(offset, _)| *offset);
@@ -674,6 +692,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    let metadata_ids = history_metadata_ids(histories);
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -694,6 +713,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
     for lane in lanes {
         let mut starts = history_features
             .iter()
+            .filter(|feature| !metadata_ids.contains(&feature.id))
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|(offset, _)| *offset);
@@ -807,6 +827,7 @@ pub(crate) fn bind_scalar_operands(
     lanes: &mut [FeatureInputLane],
 ) {
     let represented_sketches = represented_sketch_features(histories, lanes);
+    let metadata_ids = history_metadata_ids(histories);
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
@@ -816,6 +837,7 @@ pub(crate) fn bind_scalar_operands(
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
+            .filter(|feature| !metadata_ids.contains(&feature.id))
             .filter_map(|feature| {
                 Some((
                     feature_object_name(feature, lane)?.offset,
@@ -981,6 +1003,7 @@ fn represented_sketch_features(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> HashSet<String> {
+    let metadata_ids = history_metadata_ids(histories);
     let features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -992,6 +1015,7 @@ fn represented_sketch_features(
         }
         let mut objects = features
             .iter()
+            .filter(|feature| !metadata_ids.contains(&feature.id))
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|(offset, _)| *offset);

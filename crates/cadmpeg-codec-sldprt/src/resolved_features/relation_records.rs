@@ -2,6 +2,7 @@
 
 use super::scalars::feature_object_name;
 use crate::classification::{native_object_class, NativeClassKind};
+use crate::history::is_history_metadata_record;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
@@ -15,7 +16,12 @@ pub(super) fn feature_intervals(
 ) -> Vec<(u64, u64, String)> {
     let mut starts = histories
         .iter()
-        .flat_map(|history| &history.features)
+        .flat_map(|history| {
+            history
+                .features
+                .iter()
+                .filter(|feature| !is_history_metadata_record(feature, &history.features))
+        })
         .filter_map(|feature| {
             Some((
                 feature_object_name(feature, lane)?.offset,
@@ -472,6 +478,48 @@ mod relation_records_tests {
         ];
 
         assert!(relation_instances(&history, &lane).is_empty());
+    }
+
+    #[test]
+    fn metadata_records_do_not_split_relation_feature_intervals() {
+        let mut history = sketch_history();
+        let mut metadata = history[0].features[0].clone();
+        metadata.id = "attribute-definition".into();
+        metadata.xml_tag = "Feature".into();
+        metadata.source_id = Some("-1".into());
+        metadata.ordinal = 1;
+        metadata.name = "Attribute-Definition".into();
+        metadata.kind = "Attribute-Definition".into();
+        metadata.input_class = None;
+        history[0].features.push(metadata);
+
+        let mut relation_scalar = scalar(120, FeatureInputScalarRole::Driving);
+        relation_scalar.feature_ref = Some("sketch".into());
+        let mut lane = lane(vec![class(110, "sgPntPntDist")], vec![relation_scalar]);
+        lane.names = vec![
+            FeatureInputName {
+                id: "name-sketch".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                object_id: None,
+                value: "Sketch".into(),
+            },
+            FeatureInputName {
+                id: "name-attribute".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 100,
+                object_id: None,
+                value: "Attribute-Definition".into(),
+            },
+        ];
+
+        let relations = relation_instances(&history, &lane);
+        let [relation] = relations.as_slice() else {
+            panic!("metadata must not terminate the sketch interval");
+        };
+        assert_eq!(relation.feature_ref, "sketch");
     }
 
     #[test]

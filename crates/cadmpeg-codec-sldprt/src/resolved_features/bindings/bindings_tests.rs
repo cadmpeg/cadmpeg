@@ -4,6 +4,7 @@ use super::super::LEGACY_SKETCH_MARKER;
 use super::{
     bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
     bind_resolved_curve_vertices, bind_scalar_operands, normalize_indexed_curve_entities,
+    represented_sketch_features,
 };
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -59,13 +60,21 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         .properties
         .insert("Description".into(), child.name.clone());
     let following = native_feature("following", "12", 2, "Following", "Feature", None);
+    let attribute = native_feature(
+        "attribute",
+        "-1",
+        3,
+        "Attribute-Definition",
+        "Feature",
+        None,
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
-        features: vec![extrusion, child, following],
+        features: vec![extrusion, child, following, attribute],
     };
     let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
         id: id.into(),
@@ -99,6 +108,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
             name("d5-name", 240, 20, "D5"),
             name("d6-name", 280, 21, "D6"),
             name("d7-name", 320, 22, "D7"),
+            name("attribute-name", 360, 99, "Attribute-Definition"),
             name("following-name", 400, 12, "Following"),
             name("later-name", 440, 23, "later"),
         ],
@@ -115,7 +125,20 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: Vec::new(),
+        sketch_entities: vec![SketchInputEntity {
+            id: "sketch-marker".into(),
+            parent: "lane".into(),
+            feature_ref: None,
+            ordinal: 0,
+            offset: 370,
+            object_index: Some(1),
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: Some([0.0, 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        }],
     };
 
     bind_scalar_operands(
@@ -127,6 +150,14 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         .iter()
         .all(|scalar| scalar.feature_ref.as_deref() == Some("extrusion")));
     assert_eq!(lane.scalars[3].feature_ref.as_deref(), Some("following"));
+    assert_eq!(
+        lane.sketch_entities[0].feature_ref.as_deref(),
+        Some("profile-child")
+    );
+    assert_eq!(
+        represented_sketch_features(std::slice::from_ref(&history), std::slice::from_ref(&lane)),
+        HashSet::from([String::from("profile-child")])
+    );
 }
 
 #[test]

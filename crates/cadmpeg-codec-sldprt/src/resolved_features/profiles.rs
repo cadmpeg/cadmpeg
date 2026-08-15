@@ -3,6 +3,7 @@
 use super::assembly::is_supplemental_config_lane;
 #[cfg(test)]
 use super::bindings::bind_detached_legacy_sketch_objects;
+use super::bindings::history_metadata_ids;
 use super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
@@ -80,6 +81,7 @@ pub(crate) fn bind_sketch_profiles(
 ) {
     let declared_carriers = declared_entity_handle_circular_carriers(features, parameters, lanes);
     let mut superseded = HashSet::new();
+    let metadata_ids = history_metadata_ids(histories);
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -88,6 +90,9 @@ pub(crate) fn bind_sketch_profiles(
     for lane in lanes {
         let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
         for feature in native_features.values() {
+            if metadata_ids.contains(&feature.id) {
+                continue;
+            }
             let Some(name) = feature_object_name(feature, lane) else {
                 continue;
             };
@@ -283,6 +288,7 @@ pub(crate) fn project_compact_sketch_profiles(
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let metadata_ids = history_metadata_ids(histories);
 
     let native_features = histories
         .iter()
@@ -294,6 +300,7 @@ pub(crate) fn project_compact_sketch_profiles(
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
         let mut objects = native_features
             .values()
+            .filter(|feature| !metadata_ids.contains(&feature.id))
             .filter_map(|feature| {
                 let start = feature_object_name(feature, lane)
                     .map(|name| name.offset)
@@ -695,6 +702,7 @@ pub(crate) fn project_marker_backed_sketches(
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let metadata_ids = history_metadata_ids(histories);
 
     let native_features = histories
         .iter()
@@ -720,6 +728,7 @@ pub(crate) fn project_marker_backed_sketches(
             .collect::<HashMap<_, _>>();
         let mut objects = native_features
             .values()
+            .filter(|feature| !metadata_ids.contains(&feature.id))
             .filter_map(|feature| {
                 let start = feature_object_name(feature, lane)
                     .map(|name| name.offset)
