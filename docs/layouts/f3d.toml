@@ -6,7 +6,7 @@ format = "f3d"
 spec = "docs/formats/f3d.md"
 endianness = "little"
 note = """
-Covers the fixed Design-segment headers, parameter-owner prefix, and body-map prefix, the named solid-primitive prologue,
+Covers the fixed Design-segment headers, parameter-owner prefix, Draft scope frames, and body-map prefix, the named solid-primitive prologue,
 the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
 feature scope, current and shifted Extrude operation and extent sections,
 wrapper, and Scene records,
@@ -548,6 +548,529 @@ offset = 82
 type = "bytes[6]"
 source = "spec"
 anchor = "a six-byte zero trailer"
+
+[[record]]
+name = "design_draft_scope_class318_compact"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "There is no reserved u32 before the count."
+size = 336
+note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 336."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each `byte_offset` is the start of the primary 11-byte indexed header"
+
+[[record.gap]]
+offset = 11
+size = 160
+note = "The variable Draft prologue precedes the fixed reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 171
+type = "u32"
+source = "spec"
+anchor = "+171: u32 reference_count=6"
+
+[[record.field]]
+name = "references"
+offset = 175
+type = "bytes[66]"
+source = "spec"
+anchor = "+175 + 11i: reference entry"
+note = "Six consecutive entries. Each entry is u8 one, u32 record index, and six zero bytes; the record-index value starts at offset 176 + 11i."
+
+[[record.field]]
+name = "current_history_state"
+offset = 241
+type = "u32"
+source = "spec"
+anchor = "+241: u32 current_history_state"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 245
+type = "u32"
+source = "spec"
+anchor = "+245: u32 code_unit_count=5"
+
+[[record.field]]
+name = "kind"
+offset = 249
+type = "bytes[10]"
+source = "spec"
+anchor = "+249: UTF-16LE Draft"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 259
+type = "u32"
+source = "spec"
+anchor = "+259: u32 feature_ordinal"
+
+[[record.gap]]
+offset = 263
+size = 27
+note = "The Draft frame carries an unassigned span before the preceding-history state."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 290
+type = "u32"
+source = "spec"
+anchor = "+290: u32 previous_history_state"
+
+[[record.gap]]
+offset = 294
+size = 42
+note = "The fixed frame tail before the paired indexed header is not assigned."
+
+[[record]]
+name = "design_draft_scope_class318_shifted"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The reserved zero u32 shifts the reference table"
+size = 340
+note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each `byte_offset` is the start of the primary 11-byte indexed header"
+
+[[record.gap]]
+offset = 11
+size = 160
+note = "The variable Draft prologue precedes the reserved zero and fixed reference table."
+
+[[record.field]]
+name = "reserved_zero"
+offset = 171
+type = "u32"
+source = "spec"
+anchor = "+171: u32 0"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "+175: u32 reference_count=6"
+
+[[record.field]]
+name = "references"
+offset = 179
+type = "bytes[66]"
+source = "spec"
+anchor = "+179 + 11i: reference entry"
+note = "Six consecutive entries. Each entry is u8 one, u32 record index, and six zero bytes; the record-index value starts at offset 180 + 11i."
+
+[[record.field]]
+name = "current_history_state"
+offset = 245
+type = "u32"
+source = "spec"
+anchor = "+245: u32 current_history_state"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 249
+type = "u32"
+source = "spec"
+anchor = "+249: u32 code_unit_count=5"
+
+[[record.field]]
+name = "kind"
+offset = 253
+type = "bytes[10]"
+source = "spec"
+anchor = "+253: UTF-16LE Draft"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 263
+type = "u32"
+source = "spec"
+anchor = "+263: u32 feature_ordinal"
+
+[[record.gap]]
+offset = 267
+size = 27
+note = "The Draft frame carries an unassigned span before the preceding-history state."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 294
+type = "u32"
+source = "spec"
+anchor = "+294: u32 previous_history_state"
+
+[[record.gap]]
+offset = 298
+size = 42
+note = "The fixed frame tail before the paired indexed header is not assigned."
+
+[[record]]
+name = "design_draft_scope_class318_legacy"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The paired class and nine-reference count discriminate this legacy envelope"
+size = 373
+note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 373."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each `byte_offset` is the start of the primary 11-byte indexed header"
+
+[[record.gap]]
+offset = 11
+size = 160
+note = "The variable Draft prologue precedes the reserved zero and fixed reference table."
+
+[[record.field]]
+name = "reserved_zero"
+offset = 171
+type = "u32"
+source = "spec"
+anchor = "+171..+174: u32 0"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "+175: u32 reference_count=9"
+
+[[record.field]]
+name = "references"
+offset = 179
+type = "bytes[99]"
+source = "spec"
+anchor = "+179 + 11i: reference entry"
+note = "Nine consecutive entries. Each entry is u8 one, u32 record index, and six zero bytes; the record-index value starts at offset 180 + 11i."
+
+[[record.field]]
+name = "current_history_state"
+offset = 278
+type = "u32"
+source = "spec"
+anchor = "+278: u32 current_history_state"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 282
+type = "u32"
+source = "spec"
+anchor = "+282: u32 code_unit_count=5"
+
+[[record.field]]
+name = "kind"
+offset = 286
+type = "bytes[10]"
+source = "spec"
+anchor = "+286: UTF-16LE Draft"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 296
+type = "u32"
+source = "spec"
+anchor = "+296: u32 feature_ordinal"
+
+[[record.gap]]
+offset = 300
+size = 27
+note = "The Draft frame carries an unassigned span before the preceding-history state."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 327
+type = "u32"
+source = "spec"
+anchor = "+327: u32 previous_history_state"
+
+[[record.gap]]
+offset = 331
+size = 42
+note = "The fixed frame tail before the paired indexed header is not assigned."
+
+[[record]]
+name = "design_draft_scope_class372"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The paired class `259` discriminates this generation."
+size = 340
+note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each `byte_offset` is the start of the primary 11-byte indexed header"
+
+[[record.gap]]
+offset = 11
+size = 160
+note = "The variable Draft prologue precedes the reserved zero and fixed reference table."
+
+[[record.field]]
+name = "reserved_zero"
+offset = 171
+type = "u32"
+source = "spec"
+anchor = "+171: u32 0"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "+175: u32 reference_count=6"
+
+[[record.field]]
+name = "references"
+offset = 179
+type = "bytes[66]"
+source = "spec"
+anchor = "+179 + 11i: reference entry"
+
+[[record.field]]
+name = "current_history_state"
+offset = 245
+type = "u32"
+source = "spec"
+anchor = "+245: u32 current_history_state"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 249
+type = "u32"
+source = "spec"
+anchor = "+249: u32 code_unit_count=5"
+
+[[record.field]]
+name = "kind"
+offset = 253
+type = "bytes[10]"
+source = "spec"
+anchor = "+253: UTF-16LE Draft"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 263
+type = "u32"
+source = "spec"
+anchor = "+263: u32 feature_ordinal"
+
+[[record.gap]]
+offset = 267
+size = 27
+note = "The Draft frame carries an unassigned span before the preceding-history state."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 294
+type = "u32"
+source = "spec"
+anchor = "+294: u32 previous_history_state"
+
+[[record.gap]]
+offset = 298
+size = 42
+note = "The fixed frame tail before the paired indexed header is not assigned."
+
+[[record]]
+name = "design_draft_scope_class393"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 76-byte tail and paired class `261` discriminate this form."
+size = 339
+note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 339."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each `byte_offset` is the start of the primary 11-byte indexed header"
+
+[[record.gap]]
+offset = 11
+size = 160
+note = "The variable Draft prologue precedes the reserved zero and fixed reference table."
+
+[[record.field]]
+name = "reserved_zero"
+offset = 171
+type = "u32"
+source = "spec"
+anchor = "+171: u32 0"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "+175: u32 reference_count=6"
+
+[[record.field]]
+name = "references"
+offset = 179
+type = "bytes[66]"
+source = "spec"
+anchor = "+179 + 11i: reference entry"
+
+[[record.field]]
+name = "current_history_state"
+offset = 245
+type = "u32"
+source = "spec"
+anchor = "+245: u32 current_history_state"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 249
+type = "u32"
+source = "spec"
+anchor = "+249: u32 code_unit_count=5"
+
+[[record.field]]
+name = "kind"
+offset = 253
+type = "bytes[10]"
+source = "spec"
+anchor = "+253: UTF-16LE Draft"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 263
+type = "u32"
+source = "spec"
+anchor = "+263: u32 feature_ordinal"
+
+[[record.gap]]
+offset = 267
+size = 26
+note = "The 76-byte tail leaves a one-byte shorter span before the preceding-history state."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 293
+type = "u32"
+source = "spec"
+anchor = "+293: u32 previous_history_state"
+
+[[record.gap]]
+offset = 297
+size = 42
+note = "The fixed frame tail before the paired indexed header is not assigned."
+
+[[record]]
+name = "design_draft_scope_class448"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The paired class `263` discriminates this generation."
+size = 340
+note = "Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each `byte_offset` is the start of the primary 11-byte indexed header"
+
+[[record.gap]]
+offset = 11
+size = 160
+note = "The variable Draft prologue precedes the reserved zero and fixed reference table."
+
+[[record.field]]
+name = "reserved_zero"
+offset = 171
+type = "u32"
+source = "spec"
+anchor = "+171: u32 0"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "+175: u32 reference_count=6"
+
+[[record.field]]
+name = "references"
+offset = 179
+type = "bytes[66]"
+source = "spec"
+anchor = "+179 + 11i: reference entry"
+
+[[record.field]]
+name = "current_history_state"
+offset = 245
+type = "u32"
+source = "spec"
+anchor = "+245: u32 current_history_state"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 249
+type = "u32"
+source = "spec"
+anchor = "+249: u32 code_unit_count=5"
+
+[[record.field]]
+name = "kind"
+offset = 253
+type = "bytes[10]"
+source = "spec"
+anchor = "+253: UTF-16LE Draft"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 263
+type = "u32"
+source = "spec"
+anchor = "+263: u32 feature_ordinal"
+
+[[record.gap]]
+offset = 267
+size = 27
+note = "The Draft frame carries an unassigned span before the preceding-history state."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 294
+type = "u32"
+source = "spec"
+anchor = "+294: u32 previous_history_state"
+
+[[record.gap]]
+offset = 298
+size = 42
+note = "The fixed frame tail before the paired indexed header is not assigned."
 
 [[record]]
 name = "scale_modern_operation_prefix"

@@ -230,6 +230,194 @@ pub(crate) mod design_parameter_owner_legacy_88 {
     pub(crate) const ZERO_RUN_6_TAIL: usize = 82;
 }
 
+/// Byte offsets for the `design_draft_scope_class318_compact` record.
+///
+/// Spec §3.1. Record length 336 B.
+///
+/// ```text
+/// Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 336.
+/// ```
+pub(crate) mod design_draft_scope_class318_compact {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 336;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 171;
+    /// Offset of `references` (`bytes[66]`). Spec §3.1.
+    pub(crate) const REFERENCES: usize = 175;
+    /// Offset of `current_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURRENT_HISTORY_STATE: usize = 241;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 245;
+    /// Offset of `kind` (`bytes[10]`). Spec §3.1.
+    pub(crate) const KIND: usize = 249;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 259;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 290;
+}
+
+/// Byte offsets for the `design_draft_scope_class318_shifted` record.
+///
+/// Spec §3.1. Record length 340 B.
+///
+/// ```text
+/// Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
+/// ```
+pub(crate) mod design_draft_scope_class318_shifted {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 340;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `reserved_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESERVED_ZERO: usize = 171;
+    /// Stated value of `reserved_zero` (`u32`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 175;
+    /// Offset of `references` (`bytes[66]`). Spec §3.1.
+    pub(crate) const REFERENCES: usize = 179;
+    /// Offset of `current_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURRENT_HISTORY_STATE: usize = 245;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 249;
+    /// Offset of `kind` (`bytes[10]`). Spec §3.1.
+    pub(crate) const KIND: usize = 253;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 263;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 294;
+}
+
+/// Byte offsets for the `design_draft_scope_class318_legacy` record.
+///
+/// Spec §3.1. Record length 373 B.
+///
+/// ```text
+/// Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 373.
+/// ```
+pub(crate) mod design_draft_scope_class318_legacy {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 373;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `reserved_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESERVED_ZERO: usize = 171;
+    /// Stated value of `reserved_zero` (`u32`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 175;
+    /// Offset of `references` (`bytes[99]`). Spec §3.1.
+    pub(crate) const REFERENCES: usize = 179;
+    /// Offset of `current_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURRENT_HISTORY_STATE: usize = 278;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 282;
+    /// Offset of `kind` (`bytes[10]`). Spec §3.1.
+    pub(crate) const KIND: usize = 286;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 296;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 327;
+}
+
+/// Byte offsets for the `design_draft_scope_class372` record.
+///
+/// Spec §3.1. Record length 340 B.
+///
+/// ```text
+/// Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
+/// ```
+pub(crate) mod design_draft_scope_class372 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 340;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `reserved_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESERVED_ZERO: usize = 171;
+    /// Stated value of `reserved_zero` (`u32`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 175;
+    /// Offset of `references` (`bytes[66]`). Spec §3.1.
+    pub(crate) const REFERENCES: usize = 179;
+    /// Offset of `current_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURRENT_HISTORY_STATE: usize = 245;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 249;
+    /// Offset of `kind` (`bytes[10]`). Spec §3.1.
+    pub(crate) const KIND: usize = 253;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 263;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 294;
+}
+
+/// Byte offsets for the `design_draft_scope_class393` record.
+///
+/// Spec §3.1. Record length 339 B.
+///
+/// ```text
+/// Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 339.
+/// ```
+pub(crate) mod design_draft_scope_class393 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 339;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `reserved_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESERVED_ZERO: usize = 171;
+    /// Stated value of `reserved_zero` (`u32`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 175;
+    /// Offset of `references` (`bytes[66]`). Spec §3.1.
+    pub(crate) const REFERENCES: usize = 179;
+    /// Offset of `current_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURRENT_HISTORY_STATE: usize = 245;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 249;
+    /// Offset of `kind` (`bytes[10]`). Spec §3.1.
+    pub(crate) const KIND: usize = 253;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 263;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 293;
+}
+
+/// Byte offsets for the `design_draft_scope_class448` record.
+///
+/// Spec §3.1. Record length 340 B.
+///
+/// ```text
+/// Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
+/// ```
+pub(crate) mod design_draft_scope_class448 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 340;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `reserved_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESERVED_ZERO: usize = 171;
+    /// Stated value of `reserved_zero` (`u32`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 175;
+    /// Offset of `references` (`bytes[66]`). Spec §3.1.
+    pub(crate) const REFERENCES: usize = 179;
+    /// Offset of `current_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURRENT_HISTORY_STATE: usize = 245;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 249;
+    /// Offset of `kind` (`bytes[10]`). Spec §3.1.
+    pub(crate) const KIND: usize = 253;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 263;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 294;
+}
+
 /// Byte offsets for the `scale_modern_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 79 B.

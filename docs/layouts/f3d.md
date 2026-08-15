@@ -7,7 +7,7 @@
 Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
-Covers the fixed Design-segment headers, parameter-owner prefix, and body-map prefix, the named solid-primitive prologue,
+Covers the fixed Design-segment headers, parameter-owner prefix, Draft scope frames, and body-map prefix, the named solid-primitive prologue,
 the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
 feature scope, current and shifted Extrude operation and extent sections,
 wrapper, and Scene records,
@@ -178,6 +178,167 @@ Parsed by:
 | 77 | 1 | `repeated_scope_marker` | `u8` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
 | 78 | 4 | `repeated_scope_record_index` | `u32` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
 | 82 | 6 | `zero_run_6_tail` | `bytes[6]` | little | spec | a six-byte zero trailer |
+
+## `design_draft_scope_class318_compact`
+
+Spec §3.1 · layout: byte offsets · size: 336 B
+
+Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 336.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Each `byte_offset` is the start of the primary 11-byte indexed header |
+| 171 | 4 | `reference_count` | `u32` | little | spec | +171: u32 reference_count=6 |
+| 175 | 66 | `references` | `bytes[66]` | little | spec | Six consecutive entries. Each entry is u8 one, u32 record index, and six zero bytes; the record-index value starts at offset 176 + 11i. |
+| 241 | 4 | `current_history_state` | `u32` | little | spec | +241: u32 current_history_state |
+| 245 | 4 | `kind_code_unit_count` | `u32` | little | spec | +245: u32 code_unit_count=5 |
+| 249 | 10 | `kind` | `bytes[10]` | little | spec | +249: UTF-16LE Draft |
+| 259 | 4 | `feature_ordinal` | `u32` | little | spec | +259: u32 feature_ordinal |
+| 290 | 4 | `previous_history_state` | `u32` | little | spec | +290: u32 previous_history_state |
+
+Unstated regions:
+
+- `11..171` (160 B): The variable Draft prologue precedes the fixed reference table.
+- `263..290` (27 B): The Draft frame carries an unassigned span before the preceding-history state.
+- `294..336` (42 B): The fixed frame tail before the paired indexed header is not assigned.
+
+## `design_draft_scope_class318_shifted`
+
+Spec §3.1 · layout: byte offsets · size: 340 B
+
+Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Each `byte_offset` is the start of the primary 11-byte indexed header |
+| 171 | 4 | `reserved_zero` | `u32` | little | spec | +171: u32 0 · value `0` |
+| 175 | 4 | `reference_count` | `u32` | little | spec | +175: u32 reference_count=6 |
+| 179 | 66 | `references` | `bytes[66]` | little | spec | Six consecutive entries. Each entry is u8 one, u32 record index, and six zero bytes; the record-index value starts at offset 180 + 11i. |
+| 245 | 4 | `current_history_state` | `u32` | little | spec | +245: u32 current_history_state |
+| 249 | 4 | `kind_code_unit_count` | `u32` | little | spec | +249: u32 code_unit_count=5 |
+| 253 | 10 | `kind` | `bytes[10]` | little | spec | +253: UTF-16LE Draft |
+| 263 | 4 | `feature_ordinal` | `u32` | little | spec | +263: u32 feature_ordinal |
+| 294 | 4 | `previous_history_state` | `u32` | little | spec | +294: u32 previous_history_state |
+
+Unstated regions:
+
+- `11..171` (160 B): The variable Draft prologue precedes the reserved zero and fixed reference table.
+- `267..294` (27 B): The Draft frame carries an unassigned span before the preceding-history state.
+- `298..340` (42 B): The fixed frame tail before the paired indexed header is not assigned.
+
+## `design_draft_scope_class318_legacy`
+
+Spec §3.1 · layout: byte offsets · size: 373 B
+
+Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 373.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Each `byte_offset` is the start of the primary 11-byte indexed header |
+| 171 | 4 | `reserved_zero` | `u32` | little | spec | +171..+174: u32 0 · value `0` |
+| 175 | 4 | `reference_count` | `u32` | little | spec | +175: u32 reference_count=9 |
+| 179 | 99 | `references` | `bytes[99]` | little | spec | Nine consecutive entries. Each entry is u8 one, u32 record index, and six zero bytes; the record-index value starts at offset 180 + 11i. |
+| 278 | 4 | `current_history_state` | `u32` | little | spec | +278: u32 current_history_state |
+| 282 | 4 | `kind_code_unit_count` | `u32` | little | spec | +282: u32 code_unit_count=5 |
+| 286 | 10 | `kind` | `bytes[10]` | little | spec | +286: UTF-16LE Draft |
+| 296 | 4 | `feature_ordinal` | `u32` | little | spec | +296: u32 feature_ordinal |
+| 327 | 4 | `previous_history_state` | `u32` | little | spec | +327: u32 previous_history_state |
+
+Unstated regions:
+
+- `11..171` (160 B): The variable Draft prologue precedes the reserved zero and fixed reference table.
+- `300..327` (27 B): The Draft frame carries an unassigned span before the preceding-history state.
+- `331..373` (42 B): The fixed frame tail before the paired indexed header is not assigned.
+
+## `design_draft_scope_class372`
+
+Spec §3.1 · layout: byte offsets · size: 340 B
+
+Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Each `byte_offset` is the start of the primary 11-byte indexed header |
+| 171 | 4 | `reserved_zero` | `u32` | little | spec | +171: u32 0 · value `0` |
+| 175 | 4 | `reference_count` | `u32` | little | spec | +175: u32 reference_count=6 |
+| 179 | 66 | `references` | `bytes[66]` | little | spec | +179 + 11i: reference entry |
+| 245 | 4 | `current_history_state` | `u32` | little | spec | +245: u32 current_history_state |
+| 249 | 4 | `kind_code_unit_count` | `u32` | little | spec | +249: u32 code_unit_count=5 |
+| 253 | 10 | `kind` | `bytes[10]` | little | spec | +253: UTF-16LE Draft |
+| 263 | 4 | `feature_ordinal` | `u32` | little | spec | +263: u32 feature_ordinal |
+| 294 | 4 | `previous_history_state` | `u32` | little | spec | +294: u32 previous_history_state |
+
+Unstated regions:
+
+- `11..171` (160 B): The variable Draft prologue precedes the reserved zero and fixed reference table.
+- `267..294` (27 B): The Draft frame carries an unassigned span before the preceding-history state.
+- `298..340` (42 B): The fixed frame tail before the paired indexed header is not assigned.
+
+## `design_draft_scope_class393`
+
+Spec §3.1 · layout: byte offsets · size: 339 B
+
+Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 339.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Each `byte_offset` is the start of the primary 11-byte indexed header |
+| 171 | 4 | `reserved_zero` | `u32` | little | spec | +171: u32 0 · value `0` |
+| 175 | 4 | `reference_count` | `u32` | little | spec | +175: u32 reference_count=6 |
+| 179 | 66 | `references` | `bytes[66]` | little | spec | +179 + 11i: reference entry |
+| 245 | 4 | `current_history_state` | `u32` | little | spec | +245: u32 current_history_state |
+| 249 | 4 | `kind_code_unit_count` | `u32` | little | spec | +249: u32 code_unit_count=5 |
+| 253 | 10 | `kind` | `bytes[10]` | little | spec | +253: UTF-16LE Draft |
+| 263 | 4 | `feature_ordinal` | `u32` | little | spec | +263: u32 feature_ordinal |
+| 293 | 4 | `previous_history_state` | `u32` | little | spec | +293: u32 previous_history_state |
+
+Unstated regions:
+
+- `11..171` (160 B): The variable Draft prologue precedes the reserved zero and fixed reference table.
+- `267..293` (26 B): The 76-byte tail leaves a one-byte shorter span before the preceding-history state.
+- `297..339` (42 B): The fixed frame tail before the paired indexed header is not assigned.
+
+## `design_draft_scope_class448`
+
+Spec §3.1 · layout: byte offsets · size: 340 B
+
+Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Each `byte_offset` is the start of the primary 11-byte indexed header |
+| 171 | 4 | `reserved_zero` | `u32` | little | spec | +171: u32 0 · value `0` |
+| 175 | 4 | `reference_count` | `u32` | little | spec | +175: u32 reference_count=6 |
+| 179 | 66 | `references` | `bytes[66]` | little | spec | +179 + 11i: reference entry |
+| 245 | 4 | `current_history_state` | `u32` | little | spec | +245: u32 current_history_state |
+| 249 | 4 | `kind_code_unit_count` | `u32` | little | spec | +249: u32 code_unit_count=5 |
+| 253 | 10 | `kind` | `bytes[10]` | little | spec | +253: UTF-16LE Draft |
+| 263 | 4 | `feature_ordinal` | `u32` | little | spec | +263: u32 feature_ordinal |
+| 294 | 4 | `previous_history_state` | `u32` | little | spec | +294: u32 previous_history_state |
+
+Unstated regions:
+
+- `11..171` (160 B): The variable Draft prologue precedes the reserved zero and fixed reference table.
+- `267..294` (27 B): The Draft frame carries an unassigned span before the preceding-history state.
+- `298..340` (42 B): The fixed frame tail before the paired indexed header is not assigned.
 
 ## `scale_modern_operation_prefix`
 
