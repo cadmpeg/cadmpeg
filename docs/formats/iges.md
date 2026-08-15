@@ -246,4 +246,4 @@ The `native.iges` namespace version is `2`. Its `colors` arena stores typed Type
 
 ## Byte accounting
 
-The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader does not emit a closed `transfer_ledger`.
+The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader emits a closed `transfer_ledger` for every non-null Directory entity and verifies it against the decoded model.
