@@ -4,7 +4,8 @@
 
 use crate::families::standard::fbb::{
     boundary_cycles, largest_fbb_run, parse_edge_tables, parse_fbb_edge_tables,
-    parse_standard_edge_tables, parse_trim_chain, parse_vertex_table, selected_standard_run,
+    parse_standard_edge_tables, parse_standard_edge_tables_with_width, parse_trim_chain,
+    parse_vertex_table, selected_standard_run,
 };
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
@@ -234,28 +235,17 @@ struct StandardMeshAnalysis {
 
 fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
-    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
-    let mut solutions = Vec::new();
-    for width in [1, 2, 3] {
-        // Each width is an independent grammar candidate. A malformed or
-        // ambiguous candidate must not mask a complete candidate at another
-        // width.
-        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
-            continue;
-        };
-        let Some(cycles) = trims
-            .iter()
-            .map(|trim| boundary_cycles(&trim.triangles))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles) else {
-            continue;
-        };
-        solutions.push((cycles, occurrences));
-    }
-    let [(cycles, occurrences)] = <[_; 1]>::try_from(solutions).ok()?;
+    let (edge_rows, handle_width) = parse_standard_edge_tables_with_width(bytes, after_faces)
+        .map(|(rows, _, width)| (rows, width))
+        .or_else(|| {
+            parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width))
+        })?;
+    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
+    let cycles = trims
+        .iter()
+        .map(|trim| boundary_cycles(&trim.triangles))
+        .collect::<Option<Vec<_>>>()?;
+    let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
     Some(StandardMeshAnalysis {
         edge_rows,
         cycles,

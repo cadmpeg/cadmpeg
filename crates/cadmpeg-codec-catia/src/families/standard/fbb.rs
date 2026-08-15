@@ -583,7 +583,7 @@ pub(crate) fn parse_standard_edge_tables(
         .map(|(rows, vertex_header, _)| (rows, vertex_header))
 }
 
-fn parse_standard_edge_tables_with_width(
+pub(crate) fn parse_standard_edge_tables_with_width(
     bytes: &[u8],
     position: usize,
 ) -> Option<(Vec<EdgeRow>, usize, usize)> {

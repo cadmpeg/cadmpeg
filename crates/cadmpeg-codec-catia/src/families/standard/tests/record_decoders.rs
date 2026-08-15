@@ -184,6 +184,11 @@ fn compact_standard_topology_recovers_a_triangle_boundary_and_vertices() {
             .len(),
         3
     );
+    assert_eq!(
+        crate::solve::missing_edge::standard_mesh_edge_ports(&bytes)
+            .expect("compact standard mesh port quotient"),
+        vec![[0, 1], [1, 2], [2, 0]]
+    );
 }
 
 #[test]
