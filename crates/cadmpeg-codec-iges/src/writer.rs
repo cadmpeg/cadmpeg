@@ -37,6 +37,7 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "transformations",
 ];
 const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
+const NURBS_CLOSEDNESS_TOLERANCE: f64 = 1.0e-10;
 const DEPENDENT_TOPOLOGY_STATUS: &str = "00010000";
 const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
 const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
@@ -4409,7 +4410,9 @@ fn encode_nurbs(
         }
         None => vec![1.0; control_count],
     };
-    let polynomial = nurbs.weights.is_none();
+    let polynomial = weights
+        .first()
+        .is_some_and(|first| weights.iter().all(|weight| weight == first));
     let plane_normal = nurbs_plane_normal(&nurbs.control_points);
     let planar = plane_normal.is_some();
     let closed = nurbs_is_closed(nurbs, &weights, domain);
@@ -4440,11 +4443,10 @@ fn encode_nurbs(
     parameters.push_str(&number(range[0]));
     parameters.push(',');
     parameters.push_str(&number(range[1]));
-    if let Some(normal) = plane_normal {
-        for value in [normal.x, normal.y, normal.z] {
-            parameters.push(',');
-            parameters.push_str(&number(value));
-        }
+    let normal = plane_normal.unwrap_or(Vector3::new(0.0, 0.0, 0.0));
+    for value in [normal.x, normal.y, normal.z] {
+        parameters.push(',');
+        parameters.push_str(&unit_normal_number(value));
     }
     parameters.push(';');
     let status = if label == "PCURVE" {
@@ -4531,9 +4533,6 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
 }
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> bool {
-    if nurbs.periodic {
-        return true;
-    }
     let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree,
         &nurbs.knots,
@@ -4558,7 +4557,7 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
         .map(|point| point.distance(start))
         .filter(|distance| distance.is_finite())
         .fold(1.0, f64::max);
-    start.distance(end) <= 1.0e-10 * scale
+    start.distance(end) <= NURBS_CLOSEDNESS_TOLERANCE * scale
 }
 
 fn flatten_curve(geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> {
@@ -5114,6 +5113,14 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> 
 
 fn number(value: f64) -> String {
     let value = stabilize_real(value);
+    if value == 0.0 {
+        "0".into()
+    } else {
+        format!("{value:.16e}").replace('e', "D")
+    }
+}
+
+fn unit_normal_number(value: f64) -> String {
     if value == 0.0 {
         "0".into()
     } else {

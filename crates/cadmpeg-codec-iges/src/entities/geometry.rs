@@ -20,6 +20,57 @@ const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 
 #[derive(Clone, Copy)]
+enum ControlPointPlane {
+    Unique,
+    NonPlanar,
+    NoUniquePlane,
+}
+
+fn classify_control_point_plane(points: &[Point3], tolerance: f64) -> ControlPointPlane {
+    let Some(origin) = points.first().copied() else {
+        return ControlPointPlane::NoUniquePlane;
+    };
+    let Some((first_direction, first_length)) = points.iter().skip(1).find_map(|point| {
+        let direction = point.vector_from(origin);
+        let length = direction.norm();
+        (length.is_finite() && length > tolerance).then_some((direction, length))
+    }) else {
+        return ControlPointPlane::NoUniquePlane;
+    };
+    let Some(normal) = points.iter().skip(1).find_map(|point| {
+        let candidate = first_direction.cross(point.vector_from(origin));
+        let length = candidate.norm();
+        (length.is_finite() && length > tolerance * first_length).then_some(candidate)
+    }) else {
+        return ControlPointPlane::NoUniquePlane;
+    };
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= 0.0 {
+        return ControlPointPlane::NonPlanar;
+    }
+    let normal = normal.scale(1.0 / normal_length);
+    if points
+        .iter()
+        .skip(1)
+        .any(|point| normal.dot(point.vector_from(origin)).abs() > tolerance)
+    {
+        ControlPointPlane::NonPlanar
+    } else {
+        ControlPointPlane::Unique
+    }
+}
+
+fn control_points_fit_plane(points: &[Point3], normal: Vector3, tolerance: f64) -> bool {
+    let Some(origin) = points.first().copied() else {
+        return false;
+    };
+    points
+        .iter()
+        .skip(1)
+        .all(|point| normal.dot(point.vector_from(origin)).abs() <= tolerance)
+}
+
+#[derive(Clone, Copy)]
 pub(crate) struct DeclaredInterval {
     lower: f64,
     upper: f64,
@@ -1049,6 +1100,13 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "polynomial spline has unequal weights"));
             continue;
         }
+        if !polynomial && equal_weights {
+            losses.push(entity_loss(
+                entry,
+                "rational spline has equal weights but PROP3 declares rational",
+            ));
+            continue;
+        }
         let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
             losses.push(entity_loss(
                 entry,
@@ -1120,13 +1178,81 @@ pub(crate) fn project_geometry(
                 ))
             })
             .collect::<Vec<_>>();
+        if control_points
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        {
+            losses.push(entity_loss(
+                entry,
+                "transformed control-point vector is non-finite",
+            ));
+            continue;
+        }
+        let point_scale = control_points
+            .iter()
+            .skip(1)
+            .map(|point| point.distance(control_points[0]))
+            .filter(|distance| distance.is_finite())
+            .fold(1.0, f64::max);
+        let plane_tolerance = global
+            .minimum_resolution_mm()
+            .max(point_scale * COMPUTATION_TOLERANCE);
+        let plane = classify_control_point_plane(&control_points, plane_tolerance);
+        let planar = flags[0] == Some(1);
+        let Some(normal_start) = range_start.checked_add(2) else {
+            losses.push(entity_loss(entry, "plane-normal offset overflows"));
+            continue;
+        };
+        let Some(normal_values) = collect_numbers(normal_start, 3) else {
+            losses.push(entity_loss(
+                entry,
+                "plane-normal fields are missing or non-finite",
+            ));
+            continue;
+        };
+        if planar {
+            let normal_definition =
+                Vector3::new(normal_values[0], normal_values[1], normal_values[2]);
+            if !declared_unit_vector(record, normal_start, normal_definition, precision) {
+                losses.push(entity_loss(
+                    entry,
+                    "planar spline normal is not a declared unit vector",
+                ));
+                continue;
+            }
+            let normal = transform.vector(normal_definition);
+            let normal_length = normal.norm();
+            if !normal_length.is_finite()
+                || normal_length <= 0.0
+                || !control_points_fit_plane(
+                    &control_points,
+                    normal.scale(1.0 / normal_length),
+                    plane_tolerance,
+                )
+                || matches!(plane, ControlPointPlane::NonPlanar)
+            {
+                losses.push(entity_loss(
+                    entry,
+                    "planar spline flag disagrees with the control-point geometry",
+                ));
+                continue;
+            }
+        } else if matches!(plane, ControlPointPlane::Unique) {
+            losses.push(entity_loss(
+                entry,
+                "non-planar spline flag disagrees with a unique control-point plane",
+            ));
+            continue;
+        }
         let weights = (!polynomial).then_some(native_weights);
         let nurbs = NurbsCurve {
             degree,
             knots,
             control_points,
             weights,
-            periodic: flags[3] == Some(1),
+            // IGES PROP4 is informational; neutral evaluation uses the
+            // serialized active carrier without periodic parameter wrapping.
+            periodic: false,
         };
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree,
@@ -1134,7 +1260,8 @@ pub(crate) fn project_geometry(
             &nurbs.control_points,
             nurbs.weights.as_deref(),
             parameter_range[0],
-        ) else {
+        )
+        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
             losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
             continue;
         };
@@ -1144,10 +1271,19 @@ pub(crate) fn project_geometry(
             &nurbs.control_points,
             nurbs.weights.as_deref(),
             parameter_range[1],
-        ) else {
+        )
+        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
         };
+        let closed = start.distance(end) <= global.minimum_resolution_mm();
+        if flags[1] != Some(i64::from(closed)) {
+            losses.push(entity_loss(
+                entry,
+                "closed spline flag disagrees with evaluated endpoints",
+            ));
+            continue;
+        }
         let stem = format!("D{}", entry.sequence);
         let start_point = PointId(format!("iges:model:point#{stem}-start"));
         let end_point = PointId(format!("iges:model:point#{stem}-end"));

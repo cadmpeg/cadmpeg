@@ -27,6 +27,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use super::enforce_transform_depth;
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -117,7 +118,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
 }
 
 #[test]
-fn decode_preserves_a_rational_declaration_with_equal_weights() {
+fn decode_rejects_a_rational_declaration_with_equal_weights() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(equal_weight_rational_nurbs_curve_file()),
@@ -125,12 +126,81 @@ fn decode_preserves_a_rational_declaration_with_equal_weights() {
         )
         .unwrap();
 
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry
-    else {
+    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(
+        result.report().losses[0].code,
+        IgesLossCode::EntityNotProjected.kind()
+    );
+}
+
+#[test]
+fn decode_rejects_inconsistent_type_126_planar_and_closed_flags() {
+    for (flags, normal) in [
+        ([1, 0, 0, 0], [1, 0, 0]),
+        ([1, 1, 0, 0], [0, 0, 1]),
+        ([0, 0, 0, 0], [0, 0, 0]),
+    ] {
+        let parameters = format!(
+            "126,2,2,{},{},{},{},0,0,0,1,1,1,1,0.5,1,0,0,0,1,1,0,2,0,0,0,1,{},{},{};",
+            flags[0], flags[1], flags[2], flags[3], normal[0], normal[1], normal[2]
+        );
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(polynomial_nurbs_curve_file(parameters.as_bytes())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            result.ir().model.curves.is_empty(),
+            "flags={flags:?}: losses={:?}",
+            result.report().losses
+        );
+        assert_eq!(result.report().losses.len(), 1, "flags={flags:?}");
+        assert_eq!(
+            result.report().losses[0].code,
+            IgesLossCode::EntityNotProjected.kind(),
+            "flags={flags:?}"
+        );
+    }
+}
+
+#[test]
+fn decode_treats_type_126_periodic_flag_as_evaluation_metadata() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(polynomial_nurbs_curve_file(
+                b"126,2,2,1,0,1,1,0,0,0,1,1,1,1,1,1,0,0,0,1,1,0,2,0,0,0,1,0,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.report().losses.is_empty());
+    let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
         panic!("expected a NURBS carrier");
     };
-    assert_eq!(nurbs.weights, Some(vec![1.0, 1.0, 1.0]));
-    assert!(result.report().losses.is_empty());
+    assert!(!nurbs.periodic);
+}
+
+#[test]
+fn decode_rejects_type_126_without_required_normal_fields() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(polynomial_nurbs_curve_file(
+                b"126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(
+        result.report().losses[0].code,
+        IgesLossCode::EntityNotProjected.kind()
+    );
 }
 
 #[test]

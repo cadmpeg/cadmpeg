@@ -1895,6 +1895,17 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
             },
             [1, 1, 1, 0],
         ),
+        (
+            "equal-weight-rational",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                weights: Some(vec![2.0, 2.0]),
+                periodic: false,
+            },
+            [1, 0, 1, 0],
+        ),
     ];
     for (name, nurbs, expected) in cases {
         let mut ir = CadIr::empty(Units::default());
