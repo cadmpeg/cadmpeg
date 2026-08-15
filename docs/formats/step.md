@@ -512,10 +512,12 @@ branch. For a non-seam source curve with multiple pcurve candidates on its
 owning surface, the decoder maps each candidate through that surface and
 selects it when one candidate has a unique endpoint-continuous fit for the
 coedge. If several candidates tie, the decoder compares their mapped loci
-over the endpoint interval. Candidates with equivalent model-space loci are
-one semantic carrier and the first source candidate is retained. Distinct
-tied or otherwise unresolved candidates remain detached and produce a
-topology loss.
+over the endpoint interval with adaptive subdivision. Candidates with
+equivalent model-space loci are one semantic carrier and the candidate with
+the lowest STEP identity is retained. A declared pcurve trim is the endpoint
+witness when it maps to both edge vertices; a stale declared trim can be
+replaced by an independently inverted edge interval. Distinct tied or
+otherwise unresolved candidates remain detached and produce a topology loss.
 
 The source pcurve carrier is immutable. A chart variant derived from one
 coedge's endpoint fit is a use-scoped pcurve carrier. The coedge owns that

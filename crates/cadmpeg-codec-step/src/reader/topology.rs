@@ -3052,6 +3052,11 @@ struct SelectedPcurve {
 }
 
 const PCURVE_VARIANT_MARKER: &str = "-use-";
+const PCURVE_ENDPOINT_GRID_DIVISIONS: usize = 64;
+const PCURVE_LOCI_INITIAL_DIVISIONS: usize = 32;
+const PCURVE_LOCI_MIN_DEPTH: usize = 2;
+const PCURVE_LOCI_MAX_DEPTH: usize = 10;
+const PCURVE_LOCI_FLATNESS_FRACTION: f64 = 0.25;
 
 #[derive(Clone)]
 struct PcurveCandidateFit {
@@ -3468,7 +3473,10 @@ fn select_associated_pcurve(
         candidates
             .iter()
             .enumerate()
-            .find(|(candidate_index, _)| (scores[*candidate_index] - best).abs() <= tie_tolerance)
+            .filter(|(candidate_index, _)| (scores[*candidate_index] - best).abs() <= tie_tolerance)
+            .min_by(|&(left_index, _), &(right_index, _)| {
+                candidates[left_index].cmp(&candidates[right_index])
+            })
             .map(|(candidate_index, _)| candidate_index)
             .expect("tied candidate set is non-empty")
     } else {
@@ -3525,6 +3533,28 @@ fn pcurve_endpoint_fit(
     start: Point3,
     end: Point3,
 ) -> Option<PcurveEndpointFit> {
+    if let Some(parameter_range) = pcurve_declared_parameter_range(geometry) {
+        let declared_score =
+            pcurve_declared_endpoint_fit(index, surface_id, geometry, parameter_range, start, end)?;
+        if declared_score <= COINCIDENCE_TOLERANCE {
+            return Some(PcurveEndpointFit {
+                start_parameter: parameter_range[0],
+                end_parameter: parameter_range[1],
+                score: declared_score,
+            });
+        }
+        // A few producers retain a stale trim around an edge-local pcurve.
+        // Keep the declared endpoint as the first witness, but recover the
+        // edge interval only when an independent inverse finds both vertices.
+        let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
+        let start = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?;
+        let end = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)?;
+        return Some(PcurveEndpointFit {
+            start_parameter: start.1,
+            end_parameter: end.1,
+            score: start.0.max(end.0),
+        });
+    }
     let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
     let start = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?;
     let end = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)?;
@@ -3721,9 +3751,15 @@ fn pcurve_loci_equivalent(
     if !tolerance.is_finite() || tolerance < 0.0 {
         return false;
     }
-    let left_points = pcurve_locus_samples(index, surface_id, left, left_parameters);
-    let right_points = pcurve_locus_samples(index, surface_id, right, right_parameters);
-    let (Some(left_points), Some(right_points)) = (left_points, right_points) else {
+    let Some((left_points, right_points)) = pcurve_locus_samples(
+        index,
+        surface_id,
+        left,
+        left_parameters,
+        right,
+        right_parameters,
+        tolerance,
+    ) else {
         return false;
     };
     directed_sample_distance(&left_points, &right_points) <= tolerance
@@ -3733,18 +3769,125 @@ fn pcurve_loci_equivalent(
 fn pcurve_locus_samples(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
+    left: &PcurveGeometry,
+    left_parameters: [f64; 2],
+    right: &PcurveGeometry,
+    right_parameters: [f64; 2],
+    tolerance: f64,
+) -> Option<(Vec<Point3>, Vec<Point3>)> {
+    let mut fractions = (0..=PCURVE_LOCI_INITIAL_DIVISIONS)
+        .map(|sample| sample as f64 / PCURVE_LOCI_INITIAL_DIVISIONS as f64)
+        .collect::<Vec<_>>();
+    pcurve_parameter_break_fractions(left, left_parameters, &mut fractions);
+    pcurve_parameter_break_fractions(right, right_parameters, &mut fractions);
+    fractions.sort_by(f64::total_cmp);
+    fractions.dedup_by(|left, right| *left == *right);
+
+    let evaluate = |geometry: &PcurveGeometry, parameters: [f64; 2], fraction: f64| {
+        let parameter = parameters[0] + (parameters[1] - parameters[0]) * fraction;
+        let uv = pcurve_uv(geometry, parameter)?;
+        surface_selection_point(index, surface_id, uv.u, uv.v)
+    };
+    let points = |fractions: &[f64]| {
+        let left_points = fractions
+            .iter()
+            .copied()
+            .map(|fraction| evaluate(left, left_parameters, fraction))
+            .collect::<Option<Vec<_>>>()?;
+        let right_points = fractions
+            .iter()
+            .copied()
+            .map(|fraction| evaluate(right, right_parameters, fraction))
+            .collect::<Option<Vec<_>>>()?;
+        Some((left_points, right_points))
+    };
+    let mut sampled = points(&fractions)?;
+    let flatness_tolerance = tolerance * PCURVE_LOCI_FLATNESS_FRACTION;
+    for depth in 0..=PCURVE_LOCI_MAX_DEPTH {
+        let mut midpoints = Vec::new();
+        for (interval, (left_points, right_points)) in fractions
+            .windows(2)
+            .zip(sampled.0.windows(2).zip(sampled.1.windows(2)))
+        {
+            let [lower, upper] = [interval[0], interval[1]];
+            let midpoint = 0.5 * (lower + upper);
+            let left_midpoint = evaluate(left, left_parameters, midpoint)?;
+            let right_midpoint = evaluate(right, right_parameters, midpoint)?;
+            let needs_refinement = depth < PCURVE_LOCI_MIN_DEPTH
+                || left_midpoint.distance(right_midpoint) > tolerance
+                || point_segment_distance_3d(left_midpoint, left_points[0], left_points[1])
+                    > flatness_tolerance
+                || point_segment_distance_3d(right_midpoint, right_points[0], right_points[1])
+                    > flatness_tolerance;
+            if needs_refinement {
+                midpoints.push(midpoint);
+            }
+        }
+        if midpoints.is_empty() {
+            return Some(sampled);
+        }
+        if depth == PCURVE_LOCI_MAX_DEPTH {
+            return None;
+        }
+        fractions.extend(midpoints);
+        fractions.sort_by(f64::total_cmp);
+        fractions.dedup_by(|left, right| *left == *right);
+        sampled = points(&fractions)?;
+    }
+    None
+}
+
+fn pcurve_parameter_break_fractions(
     geometry: &PcurveGeometry,
     parameters: [f64; 2],
-) -> Option<Vec<Point3>> {
-    const SAMPLE_COUNT: usize = 33;
-    (0..SAMPLE_COUNT)
-        .map(|sample| {
-            let fraction = sample as f64 / (SAMPLE_COUNT - 1) as f64;
-            let parameter = parameters[0] + (parameters[1] - parameters[0]) * fraction;
-            let uv = pcurve_uv(geometry, parameter)?;
-            surface_selection_point(index, surface_id, uv.u, uv.v)
-        })
-        .collect()
+    fractions: &mut Vec<f64>,
+) {
+    let parameter_span = parameters[1] - parameters[0];
+    if !parameter_span.is_finite() || parameter_span == 0.0 {
+        return;
+    }
+    let mut add = |parameter: f64| {
+        let fraction = (parameter - parameters[0]) / parameter_span;
+        if fraction.is_finite() && fraction > 0.0 && fraction < 1.0 {
+            fractions.push(fraction);
+        }
+    };
+    match geometry {
+        PcurveGeometry::Nurbs { knots, .. } | PcurveGeometry::PolarNurbs { knots, .. } => {
+            knots.iter().copied().for_each(&mut add);
+        }
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+            ..
+        } => {
+            add(parameter_range[0]);
+            add(parameter_range[1]);
+            pcurve_parameter_break_fractions(basis, parameters, fractions);
+        }
+        PcurveGeometry::Offset { basis, .. } | PcurveGeometry::Transformed { basis, .. } => {
+            pcurve_parameter_break_fractions(basis, parameters, fractions);
+        }
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => {}
+    }
+}
+
+fn point_segment_distance_3d(point: Point3, start: Point3, end: Point3) -> f64 {
+    let segment = end.vector_from(start);
+    let length_squared = segment.dot(segment);
+    if length_squared <= f64::EPSILON {
+        return point.distance(start);
+    }
+    let parameter = (point.vector_from(start).dot(segment) / length_squared).clamp(0.0, 1.0);
+    point.distance(start.translated(segment, parameter))
 }
 
 fn directed_sample_distance(from: &[Point3], to: &[Point3]) -> f64 {
@@ -3766,6 +3909,10 @@ fn pcurve_selection_seeds(
     let mut seeds = vec![0.0];
     if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
         seeds.extend([start, start + (end - start) * 0.5, end]);
+        for step in 0..=PCURVE_ENDPOINT_GRID_DIVISIONS {
+            let fraction = step as f64 / PCURVE_ENDPOINT_GRID_DIVISIONS as f64;
+            seeds.push(start + (end - start) * fraction);
+        }
     }
     if pcurve_has_angular_parameterization(geometry) {
         seeds.extend([

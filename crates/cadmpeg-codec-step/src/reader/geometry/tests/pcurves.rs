@@ -572,6 +572,27 @@ fn equivalent_seam_pcurve_candidates_select_one_carrier() {
 }
 
 #[test]
+fn equivalent_seam_pcurve_selection_is_independent_of_candidate_order() {
+    let source = equivalent_seam_source().replace(
+        "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
+        "#57=SEAM_CURVE('',#16,(#69,#56),.PCURVE_S1.);",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode reordered equivalent seam pcurves");
+
+    let coedge = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| !coedge.pcurves.is_empty())
+        .expect("reordered equivalent seam coedge");
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
+}
+
+#[test]
 fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
     let decoded = StepCodec::default()
         .decode(

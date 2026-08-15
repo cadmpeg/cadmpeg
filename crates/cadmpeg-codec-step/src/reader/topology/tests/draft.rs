@@ -10,6 +10,8 @@ use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
 use cadmpeg_ir::units::Units;
 use std::collections::HashSet;
 
+const EPS_PCURVE_LOCI_DISTANCE: f64 = 1.0e-6;
+
 fn surface_draft(id: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
     draft
@@ -100,6 +102,91 @@ fn pcurve_fit_keeps_exact_points_at_a_degenerate_surface_boundary() {
     assert_eq!(fit.start_parameter, 0.0);
     assert_eq!(fit.end_parameter, 1.0);
     assert!(fit.score <= f64::EPSILON);
+}
+
+#[test]
+fn trimmed_pcurve_fit_uses_declared_endpoints() {
+    let surface_id = SurfaceId("step:data:surface#trimmed-endpoints".into());
+    let surface_geometry = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: surface_geometry.clone(),
+        source_object: None,
+    });
+    let pcurve = PcurveGeometry::Trimmed {
+        parameter_range: [
+            std::f64::consts::FRAC_PI_2,
+            5.0 * std::f64::consts::FRAC_PI_2,
+        ],
+        same_sense: true,
+        basis: Box::new(PcurveGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            x_axis: Point2::new(1.0, 0.0),
+            y_axis: Point2::new(0.0, 1.0),
+            radius: 1.0,
+        }),
+    };
+
+    let fit = pcurve_endpoint_fit(
+        &ModelIndex::new(&ir),
+        &surface_id,
+        &pcurve,
+        &surface_geometry,
+        Point3::new(0.0, 1.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    )
+    .expect("declared pcurve endpoints should be evaluable");
+
+    assert_eq!(fit.start_parameter, std::f64::consts::FRAC_PI_2);
+    assert_eq!(fit.end_parameter, 5.0 * std::f64::consts::FRAC_PI_2);
+    assert!(fit.score <= 2.0 * f64::EPSILON);
+}
+
+#[test]
+fn pcurve_locus_check_rejects_a_narrow_between_sample_crossing() {
+    let surface_id = SurfaceId("step:data:surface#locus-crossing".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let left = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 0.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+    let right = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 0.415, 0.421, 0.428, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(0.415, 0.0),
+            Point2::new(0.421, 1.0),
+            Point2::new(0.428, 0.0),
+            Point2::new(1.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+
+    assert!(!pcurve_loci_equivalent(
+        &ModelIndex::new(&ir),
+        &surface_id,
+        &left,
+        [0.0, 1.0],
+        &right,
+        [0.0, 1.0],
+        EPS_PCURVE_LOCI_DISTANCE,
+    ));
 }
 
 #[test]

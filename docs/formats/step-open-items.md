@@ -213,20 +213,21 @@ correct edge carrier, and that tied candidates have the same model-space
 locus?
 
 **Known.** `select_associated_pcurve` scores candidate endpoint fits and
-accepts the lowest finite score within tolerance
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:3623-3747`). A tie is
-declared from a relative score threshold, and `pcurve_loci_equivalent`
-compares 33 samples in each direction before the first tied candidate is
-selected. The search uses a finite seed set and a bounded iterative closest
-point calculation.
+accepts the lowest finite score within tolerance. A tie is
+declared from a relative score threshold. Declared pcurve trims are checked at
+their own endpoints; a stale trim falls back to an independently inverted edge
+interval. `pcurve_loci_equivalent` includes NURBS breakpoints, performs bounded
+adaptive subdivision, and selects the lowest STEP identity for equivalent ties.
+Endpoint inversion still uses a finite seed grid and bounded iterative
+closest-point calculation.
 
 **Note.** TP-02 records the semantic selection rule, but this implementation
 does not prove a global minimum or a global locus equivalence. A pcurve with
-an unsampled endpoint minimum, or two distinct curves that meet at the sample
-points and diverge between them, can pass the acceptance checks. The first
-tied candidate then depends on candidate order. This item records the
-verification gap rather than treating the numerical heuristic as STEP
-semantics.
+an endpoint minimum outside the finite seed grid can still be missed. Adaptive
+subdivision returns unresolved when its depth limit cannot establish a flat
+interval, but it is not an interval-arithmetic proof for arbitrary surface and
+pcurve compositions. This item records the verification gap rather than
+treating the numerical heuristic as STEP semantics.
 
 **Need.** We need independent multi-pcurve files and an exact inverse or
 interval/adaptive proof for endpoint fit and locus equivalence, including
