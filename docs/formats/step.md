@@ -623,15 +623,30 @@ occurrence placement is unresolved.
 Exact and tessellated representations of one product remain linked when their
 source item has one exact body owner. A tessellated solid, shell, or shape
 representation may list a supported triangulated item directly or through a
-tessellated geometric set. An exact body link or representation relationship
-supplies that body owner to every supported leaf in the item graph. A missing
-or ambiguous owner detaches the tessellation, retains its source item
-association, and records a `ReferenceGraphNotClosed` loss. Tessellated indices
-are one-based. PNINDEX maps local points to shared coordinates. Triangle and
-fan indices address local points in listed order. A triangle strip alternates
-the first two indices for each odd triangle so adjacent triangles keep one
-surface orientation. A normal aggregate of length one applies to every local
-point; other normal aggregates align with the local point table.
+tessellated geometric set. A product-linked shape representation supplies a
+declaration. An exact body link or representation relationship supplies the
+body owner to every supported leaf in the item graph. An isolated shape
+representation is also admitted when its supported item identities are listed
+by a product-linked shape representation. A shape representation without a
+product link, shared product-linked items, or an exact representation link
+remains a detached source association. A missing or ambiguous owner detaches
+the tessellation, retains its source item association, and records a
+`ReferenceGraphNotClosed` loss.
+Tessellated indices are one-based. PNINDEX maps local points to shared
+coordinates. Triangle and fan indices address local points in listed order. A
+triangle strip alternates the first two indices for each odd triangle so
+adjacent triangles keep one surface orientation. A normal aggregate of length
+one applies to every local point; other normal aggregates align with the local
+point table.
+
+`TESSELLATED_ANNOTATION_OCCURRENCE` carries a tessellated geometric set;
+supported triangulated descendants transfer as detached tessellations. A
+`REPOSITIONED_TESSELLATED_ITEM` applies its axis placement, including nested
+repositioning, to a detached leaf. Unsupported annotation wrappers and
+unsupported descendants remain native records. If one detached leaf is
+reached through multiple distinct placement transforms, no transform is
+selected, source coordinates remain, and `tessellation.placement-ambiguous`
+is recorded.
 
 Styles resolve from a styled item through presentation assignments to color.
 For `SURFACE_STYLE_USAGE`, `.BOTH.` takes precedence over `.POSITIVE.`, and

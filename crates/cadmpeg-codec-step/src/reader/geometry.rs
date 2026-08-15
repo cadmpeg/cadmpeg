@@ -38,6 +38,31 @@ pub(super) struct GeometryData {
     pub plane_angle_scales: BTreeMap<u64, f64>,
 }
 
+pub(super) fn placement_transform(
+    (origin, z_axis, x_axis): (Point3, Vector3, Vector3),
+) -> Transform {
+    let y_axis = Vector3::new(
+        z_axis.y * x_axis.z - z_axis.z * x_axis.y,
+        z_axis.z * x_axis.x - z_axis.x * x_axis.z,
+        z_axis.x * x_axis.y - z_axis.y * x_axis.x,
+    );
+    let placement_basis = [
+        [x_axis.x, y_axis.x, z_axis.x],
+        [x_axis.y, y_axis.y, z_axis.y],
+        [x_axis.z, y_axis.z, z_axis.z],
+    ];
+    let mut rows = Transform::identity().rows;
+    for row in 0..3 {
+        for column in 0..3 {
+            rows[row][column] = placement_basis[row][column];
+        }
+    }
+    rows[0][3] = origin.x;
+    rows[1][3] = origin.y;
+    rows[2][3] = origin.z;
+    Transform { rows }
+}
+
 /// Infer the carrier interval trimmed by each edge's endpoint vertices.
 pub(super) fn infer_edge_parameter_ranges(
     ir: &mut CadIr,

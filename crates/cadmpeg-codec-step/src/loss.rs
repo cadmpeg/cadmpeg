@@ -104,6 +104,8 @@ pub enum StepLossCode {
     TessellationItemBodyUnresolved,
     /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,
+    /// A detached tessellation item has multiple distinct repositioning placements.
+    TessellationPlacementAmbiguous,
     /// A geometric validation measure unit scale did not resolve.
     ValidationMeasureUnitUnresolved,
     /// The IR document has bodies but no exportable solids.
@@ -311,6 +313,7 @@ impl StepLossCode {
         Self::DraughtingAssociatedItemUntyped,
         Self::TessellationItemBodyUnresolved,
         Self::TessellationItemUndeclared,
+        Self::TessellationPlacementAmbiguous,
         Self::ValidationMeasureUnitUnresolved,
         Self::NoExportableSolids,
         Self::LayerItemWithoutCarrier,
@@ -446,6 +449,7 @@ impl StepLossCode {
             Self::DraughtingAssociatedItemUntyped => "drawing.draughting-associated-item-untyped",
             Self::TessellationItemBodyUnresolved => "tessellation.item-body-unresolved",
             Self::TessellationItemUndeclared => "tessellation.item-undeclared",
+            Self::TessellationPlacementAmbiguous => "tessellation.placement-ambiguous",
             Self::ValidationMeasureUnitUnresolved => "validation.measure-unit-unresolved",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::LayerItemWithoutCarrier => "layer.item-without-carrier",
@@ -674,7 +678,8 @@ impl StepLossCode {
             | Self::DrawingSheetRevisionUnresolved
             | Self::DrawingRevisionSheetUnresolved
             | Self::TessellationItemBodyUnresolved
-            | Self::TessellationItemUndeclared => LossTaxonomy::ReferenceGraphNotClosed,
+            | Self::TessellationItemUndeclared
+            | Self::TessellationPlacementAmbiguous => LossTaxonomy::ReferenceGraphNotClosed,
             Self::PcurveEndpointsDiscontinuous
             | Self::PcurveCarrierUnwritable
             | Self::CoedgePcurveNoGeometry
@@ -798,6 +803,7 @@ mod tests {
                 "drawing.draughting-associated-item-untyped",
                 "tessellation.item-body-unresolved",
                 "tessellation.item-undeclared",
+                "tessellation.placement-ambiguous",
                 "validation.measure-unit-unresolved",
                 "export.no-exportable-solids",
                 "layer.item-without-carrier",

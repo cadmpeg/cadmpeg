@@ -7,6 +7,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids::StepIdentity;
@@ -42,6 +43,7 @@ pub(super) fn decode(
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
+    let mut item_placements = BTreeMap::<u64, Vec<Transform>>::new();
     let mut declared_items = BTreeSet::new();
     let mut unresolved_containers = BTreeSet::new();
     for (&id, record) in &exchange.records {
@@ -69,15 +71,25 @@ pub(super) fn decode(
             declared_items: &mut declared_items,
             unresolved_containers: &mut unresolved_containers,
             typed: &mut typed,
+            geometry,
+            placements: &mut item_placements,
             declare_containers: true,
+            claim_containers: true,
             active: BTreeSet::new(),
         };
         for item in item_ids {
-            associator.visit(item, 0);
+            associator.visit(item, 0, None);
         }
         typed.insert(id);
     }
     let mut representation_cache = BTreeMap::new();
+    let product_representations = product_linked_representations(exchange);
+    let product_representation_items = product_representations
+        .iter()
+        .filter_map(|id| exchange.records.get(id))
+        .filter_map(super::representation::items)
+        .flatten()
+        .collect::<BTreeSet<_>>();
     for (&id, record) in &exchange.records {
         if !has_entity(record, "TESSELLATED_SHAPE_REPRESENTATION") {
             continue;
@@ -94,7 +106,11 @@ pub(super) fn decode(
             0,
             None,
         );
-        if bodies.is_empty() {
+        let product_linked = product_representations.contains(&id)
+            || items
+                .iter()
+                .any(|item| product_representation_items.contains(item));
+        if bodies.is_empty() && !product_linked {
             continue;
         }
         let mut associator = TessellationItemAssociator {
@@ -104,12 +120,40 @@ pub(super) fn decode(
             declared_items: &mut declared_items,
             unresolved_containers: &mut unresolved_containers,
             typed: &mut typed,
+            geometry,
+            placements: &mut item_placements,
             declare_containers: false,
+            claim_containers: true,
             active: BTreeSet::new(),
         };
         for item in items {
-            associator.visit(item, 0);
+            associator.visit(item, 0, None);
         }
+    }
+    for (&id, record) in &exchange.records {
+        if !has_entity(record, "TESSELLATED_ANNOTATION_OCCURRENCE") {
+            continue;
+        }
+        let Some(item) = tessellated_annotation_item(record) else {
+            warnings.push(format!(
+                "TESSELLATED_ANNOTATION_OCCURRENCE #{id} has no tessellated item"
+            ));
+            continue;
+        };
+        let mut associator = TessellationItemAssociator {
+            bodies: &[],
+            exchange,
+            item_bodies: &mut item_bodies,
+            declared_items: &mut declared_items,
+            unresolved_containers: &mut unresolved_containers,
+            typed: &mut typed,
+            geometry,
+            placements: &mut item_placements,
+            declare_containers: false,
+            claim_containers: false,
+            active: BTreeSet::new(),
+        };
+        associator.visit(item, 0, None);
     }
     for id in unresolved_containers {
         let Some(record) = exchange.records.get(&id) else {
@@ -124,6 +168,20 @@ pub(super) fn decode(
         .iter()
         .filter_map(|(&item, bodies)| bodies.is_empty().then_some(item))
         .collect::<BTreeSet<_>>();
+    for (&item, placements) in &item_placements {
+        if !item_bodies.get(&item).is_some_and(BTreeSet::is_empty) {
+            continue;
+        }
+        let distinct = distinct_placements(placements);
+        if distinct.len() > 1 {
+            let message = format!(
+                "tessellation item #{item} has {} distinct repositioning placements; mesh retained in source coordinates",
+                distinct.len()
+            );
+            warnings.push(message.clone());
+            losses.push(StepLossCode::TessellationPlacementAmbiguous.note(message));
+        }
+    }
     for (&item, bodies) in &item_bodies {
         if unresolved_items.contains(&item) || bodies.len() != 1 {
             let detail = if bodies.is_empty() {
@@ -192,7 +250,7 @@ pub(super) fn decode(
                 indices
             }
         };
-        let (local_vertices, local_triangles, coordinate_indices) = if pnindex.is_empty() {
+        let (mut local_vertices, local_triangles, coordinate_indices) = if pnindex.is_empty() {
             if triangles
                 .iter()
                 .flatten()
@@ -246,7 +304,7 @@ pub(super) fn decode(
         };
         let source_normals =
             normal_rows(inherited_parameter(record, base_kind, 2)).unwrap_or_default();
-        let normals = match source_normals.len() {
+        let mut normals = match source_normals.len() {
             0 => Vec::new(),
             1 => vec![source_normals[0]; local_vertices.len()],
             count if count == local_vertices.len() => source_normals,
@@ -263,6 +321,19 @@ pub(super) fn decode(
                 Vec::new()
             }
         };
+        if item_bodies.get(&id).is_some_and(BTreeSet::is_empty) {
+            let distinct = distinct_placements(item_placements.get(&id).map_or(&[], Vec::as_slice));
+            if let [placement] = distinct.as_slice() {
+                local_vertices = local_vertices
+                    .into_iter()
+                    .map(|vertex| placement.apply_point(vertex))
+                    .collect();
+                normals = normals
+                    .into_iter()
+                    .map(|normal| placement.apply_normal(normal).unwrap_or(normal))
+                    .collect();
+            }
+        }
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
             let surface_id = StepIdentity::data("surface", surface_step);
             if let Some(surface) = ir
@@ -357,12 +428,15 @@ struct TessellationItemAssociator<'a> {
     declared_items: &'a mut BTreeSet<u64>,
     unresolved_containers: &'a mut BTreeSet<u64>,
     typed: &'a mut HashSet<u64>,
+    geometry: &'a GeometryData,
+    placements: &'a mut BTreeMap<u64, Vec<Transform>>,
     declare_containers: bool,
+    claim_containers: bool,
     active: BTreeSet<u64>,
 }
 
 impl TessellationItemAssociator<'_> {
-    fn visit(&mut self, id: u64, depth: usize) {
+    fn visit(&mut self, id: u64, depth: usize, inherited_placement: Option<Transform>) {
         if depth >= super::record_graph_limit(None) || !self.active.insert(id) {
             return;
         }
@@ -370,6 +444,10 @@ impl TessellationItemAssociator<'_> {
             self.active.remove(&id);
             return;
         };
+        let placement = repositioned_placement(record, self.geometry)
+            .map_or(inherited_placement, |local| {
+                Some(inherited_placement.map_or(local, |parent| parent.compose(local)))
+            });
         if entity_kind(
             record,
             &[
@@ -386,6 +464,9 @@ impl TessellationItemAssociator<'_> {
                 .entry(id)
                 .or_default()
                 .extend(self.bodies.iter().cloned());
+            if let Some(placement) = placement {
+                self.placements.entry(id).or_default().push(placement);
+            }
         } else if let Some(kind) = entity_kind(
             record,
             &[
@@ -401,7 +482,9 @@ impl TessellationItemAssociator<'_> {
                     .or_default()
                     .extend(self.bodies.iter().cloned());
             }
-            self.typed.insert(id);
+            if self.claim_containers {
+                self.typed.insert(id);
+            }
             if !self.bodies.is_empty() && matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL")
             {
                 self.unresolved_containers.remove(&id);
@@ -416,7 +499,7 @@ impl TessellationItemAssociator<'_> {
                 })
                 .unwrap_or_default();
             for item in item_ids {
-                self.visit(item, depth + 1);
+                self.visit(item, depth + 1, placement);
             }
         } else if self.declare_containers {
             self.declared_items.insert(id);
@@ -427,6 +510,98 @@ impl TessellationItemAssociator<'_> {
         }
         self.active.remove(&id);
     }
+}
+
+fn distinct_placements(placements: &[Transform]) -> Vec<Transform> {
+    let mut distinct = Vec::new();
+    for &placement in placements {
+        if !distinct.contains(&placement) {
+            distinct.push(placement);
+        }
+    }
+    distinct
+}
+
+fn repositioned_placement(record: &RawRecord, geometry: &GeometryData) -> Option<Transform> {
+    let placement_id = entity_parameter(record, "REPOSITIONED_TESSELLATED_ITEM", 0, 1)
+        .and_then(ValueExt::reference)?;
+    geometry
+        .placements
+        .get(&placement_id)
+        .copied()
+        .map(super::geometry::placement_transform)
+}
+
+fn tessellated_annotation_item(record: &RawRecord) -> Option<u64> {
+    for name in ["TESSELLATED_ANNOTATION_OCCURRENCE", "STYLED_ITEM"] {
+        let Some(partial) = record.partials.iter().find(|partial| partial.name == name) else {
+            continue;
+        };
+        if let Some(item) = partial
+            .parameters
+            .iter()
+            .rev()
+            .find_map(ValueExt::reference)
+        {
+            return Some(item);
+        }
+    }
+    None
+}
+
+fn product_linked_representations(exchange: &Exchange) -> BTreeSet<u64> {
+    let product_shape_definitions = exchange
+        .entities("PRODUCT_DEFINITION_SHAPE")
+        .filter_map(|(id, record)| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "PRODUCT_DEFINITION_SHAPE")
+                .then_some(id)
+        })
+        .collect::<BTreeSet<_>>();
+    let mut linked = exchange
+        .entities("SHAPE_DEFINITION_REPRESENTATION")
+        .filter_map(|(_, record)| {
+            let partial = record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "SHAPE_DEFINITION_REPRESENTATION")?;
+            let definition = partial.parameters.first().and_then(ValueExt::reference)?;
+            product_shape_definitions
+                .contains(&definition)
+                .then(|| partial.parameters.get(1).and_then(ValueExt::reference))?
+        })
+        .collect::<BTreeSet<_>>();
+    if linked.is_empty() {
+        return linked;
+    }
+    let mut relationships = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for record in exchange.records.values() {
+        let Some(partial) = record.partials.iter().find(|partial| {
+            matches!(
+                partial.name.as_str(),
+                "REPRESENTATION_RELATIONSHIP" | "SHAPE_REPRESENTATION_RELATIONSHIP"
+            )
+        }) else {
+            continue;
+        };
+        let mut references = partial.parameters.iter().filter_map(ValueExt::reference);
+        let (Some(left), Some(right)) = (references.next(), references.next()) else {
+            continue;
+        };
+        relationships.entry(left).or_default().insert(right);
+        relationships.entry(right).or_default().insert(left);
+    }
+    let mut pending = linked.iter().copied().collect::<Vec<_>>();
+    while let Some(representation) = pending.pop() {
+        for &related in relationships.get(&representation).into_iter().flatten() {
+            if linked.insert(related) {
+                pending.push(related);
+            }
+        }
+    }
+    linked
 }
 
 fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyData) -> BTreeSet<BodyId> {

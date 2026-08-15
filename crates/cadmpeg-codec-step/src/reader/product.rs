@@ -7,7 +7,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
@@ -1078,7 +1077,7 @@ fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
         .placements
         .get(&id)
         .copied()
-        .map(placement_transform)
+        .map(super::geometry::placement_transform)
         .or_else(|| geometry.transformation_operators.get(&id).copied())
 }
 
@@ -1134,27 +1133,6 @@ fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64
     Some((references.next()?, references.next()?))
 }
 
-fn placement_transform((origin, z_axis, x_axis): (Point3, Vector3, Vector3)) -> Transform {
-    let placement_basis = basis(z_axis, x_axis);
-    let mut rows = Transform::identity().rows;
-    for row in 0..3 {
-        for column in 0..3 {
-            rows[row][column] = placement_basis[row][column];
-        }
-    }
-    rows[0][3] = origin.x;
-    rows[1][3] = origin.y;
-    rows[2][3] = origin.z;
-    Transform { rows }
-}
-fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {
-    let y = Vector3::new(
-        z.y * x.z - z.z * x.y,
-        z.z * x.x - z.x * x.z,
-        z.x * x.y - z.y * x.x,
-    );
-    [[x.x, y.x, z.x], [x.y, y.y, z.y], [x.z, y.z, z.z]]
-}
 fn product_ir_id(id: u64) -> ProductDefinitionId {
     ProductDefinitionId(StepIdentity::product("product", id))
 }

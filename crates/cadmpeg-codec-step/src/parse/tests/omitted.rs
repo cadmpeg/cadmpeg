@@ -69,6 +69,25 @@ fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
 }
 
 #[test]
+fn parser_recovers_omitted_repositioned_tessellated_item_name() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=REPOSITIONED_TESSELLATED_ITEM(#2);#2=KNOWN();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) =
+        crate::parse::parse(source).expect("recover omitted repositioned item name");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::OmittedEntityName
+    );
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::String(Vec::new()),
+            crate::parse::Value::Reference(2),
+        ]
+    );
+}
+
+#[test]
 fn parser_retains_user_defined_entity_and_type_names() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=!VENDOR_ENTITY(!VENDOR_TYPE(#2));#2=KNOWN();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("user-defined names");
