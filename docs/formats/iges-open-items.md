@@ -69,16 +69,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `4080057b9` added suppression and a synthetic malformed fixture, but no producer or format evidence establishes that one malformed member invalidates every root inference.
 
-### DR-09. The Directory status field accepts blank or eight digits and nothing between
-
-**Question.** Must the Directory status number be zero-padded to eight digits?
-
-**Known.** `directory.rs:92-129` accepts an all-blank field or exactly eight digits. It rejects right-justified digits with leading blanks, unlike the other Directory numeric fields. The current documentation states that leading blanks are equivalent to zero.
-
-**Need.** We need the required rendering and blank-field rule from the format source. A wrong choice rejects a complete file when one status field uses conventional right alignment.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `4edd96bee` added the right-justified behavior and tests, but the external IGES material checked describes status subfields as fixed two-digit fields and does not settle this acceptance policy. The current code and documentation also need their leading-blank semantics reconciled.
-
 ### DR-10. Two fabricated defaults in the Type 406 Form 30 native record
 
 **Question.** What are the defaults of the Type 406 Form 30 character-set and witness-line-angle fields, and in which unit is the angle native?
