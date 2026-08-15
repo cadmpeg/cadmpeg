@@ -64,6 +64,20 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
+fn dispatcher_preserves_unresolved_work_plane_construction() {
+    let mut referenced =
+        DesignParameterScope::empty("f3d:native:parameter-scope#10", "WorkPlane", 10);
+    referenced.work_plane_transform = Some(identity_matrix());
+    referenced.work_plane_reference = Some(11);
+
+    let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::DatumPlaneUnresolved
+    ));
+}
+
+#[test]
 fn dispatcher_projects_three_point_work_plane_vertices() {
     use crate::records::{DesignVertexRecipe, DesignWorkPlaneConstruction};
     use cadmpeg_ir::features::VertexSelection;

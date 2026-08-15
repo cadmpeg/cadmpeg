@@ -1803,18 +1803,18 @@ fn project_work_plane(
     let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
         &scope.work_plane_construction
     else {
-        return FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
+        return if scope.work_plane_reference.is_none() {
+            FeatureDefinition::DatumPlane {
+                origin,
+                normal,
+                u_axis,
+            }
+        } else {
+            FeatureDefinition::DatumPlaneUnresolved
         };
     };
     let Some(state_id) = work_plane_recipe_state_id(scope) else {
-        return FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
-        };
+        return FeatureDefinition::DatumPlaneUnresolved;
     };
     let feature_id = neutral_feature_id(scope);
     let feature_key = feature_id
@@ -1833,11 +1833,7 @@ fn project_work_plane(
         })
         .collect::<Option<Vec<_>>>();
     let Some(points) = points.and_then(|points| points.try_into().ok()) else {
-        return FeatureDefinition::DatumPlane {
-            origin,
-            normal,
-            u_axis,
-        };
+        return FeatureDefinition::DatumPlaneUnresolved;
     };
     FeatureDefinition::DatumThreePointPlane {
         origin,

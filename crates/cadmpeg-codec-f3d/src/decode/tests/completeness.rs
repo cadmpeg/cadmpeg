@@ -4,6 +4,29 @@
 use super::super::feature_definition_is_incomplete;
 
 #[test]
+fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let direct = FeatureDefinition::DatumPlane {
+        origin: Point3::new(1.0, 2.0, 3.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    assert!(!feature_definition_is_incomplete(&direct));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::DatumPlane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::DatumPlaneUnresolved
+    ));
+}
+
+#[test]
 fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     use cadmpeg_ir::features::{
         AxisAngle, BodySelection, BooleanOp, FaceMotion, FaceSelection, FeatureDefinition, Length,

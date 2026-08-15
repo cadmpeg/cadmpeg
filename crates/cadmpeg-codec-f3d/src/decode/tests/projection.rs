@@ -656,13 +656,13 @@ fn datum_point_completeness_requires_a_resolved_construction_rule() {
 }
 
 #[test]
-fn datum_plane_completeness_distinguishes_frames_from_construction_rules() {
+fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     let definition = |value| {
         serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("datum-plane definition")
     };
 
-    assert!(feature_definition_is_incomplete(&definition(
+    assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "datum_plane",
             "origin": {"x": 0.0, "y": 0.0, "z": 5.0},

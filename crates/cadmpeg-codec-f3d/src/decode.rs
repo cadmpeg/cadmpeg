@@ -355,6 +355,22 @@ fn vector_is_finite(vector: &cadmpeg_ir::math::Vector3) -> bool {
         .all(f64::is_finite)
 }
 
+fn datum_plane_frame_is_resolved(
+    origin: &cadmpeg_ir::math::Point3,
+    normal: &cadmpeg_ir::math::Vector3,
+    u_axis: &cadmpeg_ir::math::Vector3,
+) -> bool {
+    const EPS_DATUM_PLANE_ORTHOGONAL: f64 = 1.0e-10;
+
+    let (Some(normal), Some(u_axis)) = (normal.unit(), u_axis.unit()) else {
+        return false;
+    };
+    point_is_finite(origin)
+        && vector_is_finite(&normal)
+        && vector_is_finite(&u_axis)
+        && normal.dot(u_axis).abs() <= EPS_DATUM_PLANE_ORTHOGONAL
+}
+
 fn positive_finite(value: f64) -> bool {
     value.is_finite() && value > 0.0
 }
@@ -464,16 +480,26 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::FreeformSurfaceUnresolved
         | FeatureDefinition::BoundarySurfaceUnresolved
         | FeatureDefinition::DraftUnresolved => true,
-        // F3D WorkPlane projection currently retains only the solved frame.
-        // Its construction rule and operands are required for replay.
-        FeatureDefinition::DatumPlane { .. } => true,
-        FeatureDefinition::DatumThreePointPlane { points, .. } => !points.iter().all(|point| {
-            matches!(
-                point,
-                cadmpeg_ir::features::VertexSelection::Generated { .. }
-                    | cadmpeg_ir::features::VertexSelection::Historical { .. }
-            )
-        }),
+        FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        } => !datum_plane_frame_is_resolved(origin, normal, u_axis),
+        FeatureDefinition::DatumThreePointPlane {
+            origin,
+            normal,
+            u_axis,
+            points,
+        } => {
+            !datum_plane_frame_is_resolved(origin, normal, u_axis)
+                || !points.iter().all(|point| {
+                    matches!(
+                        point,
+                        cadmpeg_ir::features::VertexSelection::Generated { .. }
+                            | cadmpeg_ir::features::VertexSelection::Historical { .. }
+                    )
+                })
+        }
         FeatureDefinition::DatumOffsetPlane { reference, .. } => reference
             .as_ref()
             .is_none_or(|reference| !datum_plane_reference_is_resolved(reference)),
