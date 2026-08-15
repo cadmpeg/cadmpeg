@@ -927,15 +927,25 @@ pub(crate) fn project_relation_bindings(
         .iter()
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
+    // First-match index over `constraints` by `native_ref`, maintained on every
+    // push below so a lookup is O(1) instead of a scan of a growing arena.
+    // `or_insert` keeps the earliest index for a duplicated ref, matching the
+    // first-match semantics of the `position` scans this replaces.
+    let mut constraints_by_native_ref = HashMap::<String, usize>::new();
+    for (index, constraint) in constraints.iter().enumerate() {
+        if let Some(native_ref) = constraint.native_ref.as_deref() {
+            constraints_by_native_ref
+                .entry(native_ref.to_owned())
+                .or_insert(index);
+        }
+    }
     for lane in lanes {
         let lane_key = lane
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
-            let existing = constraints
-                .iter()
-                .position(|constraint| constraint.native_ref.as_deref() == Some(&relation.id));
+            let existing = constraints_by_native_ref.get(relation.id.as_str()).copied();
             if existing.is_some_and(|index| {
                 !matches!(
                     &constraints[index].definition,
@@ -1029,13 +1039,14 @@ pub(crate) fn project_relation_bindings(
                     constraints[index] = projected;
                 }
             } else {
+                constraints_by_native_ref
+                    .entry(relation.id.clone())
+                    .or_insert(constraints.len());
                 constraints.push(projected);
             }
         }
         for marker in &lane.sketch_entities {
-            let existing = constraints
-                .iter()
-                .position(|constraint| constraint.native_ref.as_deref() == Some(&marker.id));
+            let existing = constraints_by_native_ref.get(marker.id.as_str()).copied();
             if existing.is_some_and(|index| {
                 !matches!(
                     &constraints[index].definition,
@@ -1088,6 +1099,9 @@ pub(crate) fn project_relation_bindings(
                     constraints[index] = projected;
                 }
             } else {
+                constraints_by_native_ref
+                    .entry(marker.id.clone())
+                    .or_insert(constraints.len());
                 constraints.push(projected);
             }
         }
