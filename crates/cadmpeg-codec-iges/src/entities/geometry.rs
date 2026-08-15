@@ -6,7 +6,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{Global, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
@@ -352,6 +352,60 @@ pub(crate) fn resolve_transform(
     })();
     path.remove(&sequence);
     result
+}
+
+pub(crate) fn enforce_transform_depth(
+    directory: &[DirectoryEntry],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    let depth_limit = ctx
+        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+        .map_or(MAX_TRANSFORM_DEPTH, |policy| {
+            policy.min(MAX_TRANSFORM_DEPTH)
+        });
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+
+    for entry in directory {
+        let Some(mut sequence) = u32::try_from(entry.transform)
+            .ok()
+            .filter(|sequence| sequence % 2 == 1)
+        else {
+            continue;
+        };
+        let mut path = BTreeSet::new();
+        let mut depth = 0_usize;
+        loop {
+            if depth >= depth_limit {
+                return Err(refuse_local_limit(
+                    "iges_transform_depth",
+                    depth_limit as u64,
+                    depth.saturating_add(1) as u64,
+                    None,
+                ));
+            }
+            if !path.insert(sequence) {
+                break;
+            }
+            depth += 1;
+            let Some(transform) = entries.get(&sequence).copied() else {
+                break;
+            };
+            if transform.entity_type != 124 || !matches!(transform.form, 0 | 1) {
+                break;
+            }
+            let Some(next) = u32::try_from(transform.transform)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+            else {
+                break;
+            };
+            sequence = next;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) struct Projection {

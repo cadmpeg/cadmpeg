@@ -557,7 +557,15 @@ fn bounded_nurbs_for_id(
         .map_or(MAX_COMPOSITE_DEPTH, |policy| {
             policy.min(MAX_COMPOSITE_DEPTH)
         });
-    if depth > depth_limit {
+    if depth >= depth_limit {
+        if let Some(ctx) = ctx {
+            let _ = ctx.refuse_codec_limit(
+                "iges_composite_depth",
+                depth_limit as u64,
+                depth.saturating_add(1) as u64,
+                None,
+            );
+        }
         return None;
     }
     let curve = index

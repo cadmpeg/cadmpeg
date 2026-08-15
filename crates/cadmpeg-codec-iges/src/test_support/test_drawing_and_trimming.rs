@@ -1271,3 +1271,77 @@ pub(crate) fn nested_transformed_point_file() -> Vec<u8> {
     ));
     bytes
 }
+
+pub(crate) fn transform_chain_overflow_file(transform_count: u32) -> Vec<u8> {
+    assert!(transform_count > 0);
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    let identity = b"124,1,0,0,0,0,1,0,0,0,0,1,0;";
+    for index in 0..transform_count {
+        let sequence = 1 + index * 2;
+        let transform = if index + 1 < transform_count {
+            sequence + 2
+        } else {
+            0
+        };
+        bytes.extend(directory_card(
+            [
+                "124",
+                &(index + 1).to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                &transform.to_string(),
+                "0",
+                "00000000",
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            ["124", "0", "0", "1", "0", "", "", "TRANS", "0"],
+            sequence + 1,
+        ));
+    }
+    let point_sequence = 1 + transform_count * 2;
+    bytes.extend(directory_card(
+        [
+            "116",
+            &(transform_count + 1).to_string(),
+            "0",
+            "0",
+            "0",
+            "0",
+            "1",
+            "0",
+            "00000000",
+        ],
+        point_sequence,
+    ));
+    bytes.extend(directory_card(
+        ["116", "0", "0", "1", "0", "", "", "POINT", "0"],
+        point_sequence + 1,
+    ));
+    for index in 0..transform_count {
+        let sequence = 1 + index * 2;
+        bytes.extend(parameter_card(identity, sequence, index + 1));
+    }
+    bytes.extend(parameter_card(
+        b"116,1,2,3;",
+        point_sequence,
+        transform_count + 1,
+    ));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!(
+            "S0000001G{global_cards:07}D{:07}P{:07}",
+            (transform_count + 1) * 2,
+            transform_count + 1
+        )
+        .as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}

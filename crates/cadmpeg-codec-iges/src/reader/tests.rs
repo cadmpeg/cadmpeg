@@ -30,6 +30,28 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 #[test]
+fn decode_refuses_a_transformation_chain_over_its_projection_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(transform_chain_overflow_file(65)),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(
+        matches!(
+            &error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
+                    && limit.limit == 64
+                    && limit.used == 64
+                    && limit.additional == 1
+        ),
+        "{error:#?}"
+    );
+}
+
+#[test]
 fn decode_enforces_each_iges_session_resource_dimension() {
     fn assert_refusal(
         edit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),

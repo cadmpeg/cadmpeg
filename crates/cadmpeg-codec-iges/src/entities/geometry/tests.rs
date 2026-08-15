@@ -26,8 +26,64 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use super::enforce_transform_depth;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+#[test]
+fn transform_depth_overflow_is_a_structured_resource_refusal() {
+    fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
+        crate::directory::DirectoryEntry {
+            source_offset: 0,
+            sequence,
+            entity_type: 124,
+            parameter_start: 0,
+            structure: 0,
+            line_font: 0,
+            level: 0,
+            view: 0,
+            transform,
+            label_display: 0,
+            status: crate::directory::Status {
+                blank: 0,
+                subordinate: 0,
+                use_flag: 0,
+                hierarchy: 0,
+            },
+            line_weight: 0,
+            color: 0,
+            parameter_line_count: 0,
+            form: 0,
+            reserved: [[b' '; 8]; 2],
+            label: [b' '; 8],
+            subscript: 0,
+        }
+    }
+
+    let transform_count = 65_u32;
+    let mut directory = (0..transform_count)
+        .map(|index| {
+            let sequence = 1 + index * 2;
+            let transform = if index + 1 < transform_count {
+                sequence + 2
+            } else {
+                0
+            };
+            transform_entry(sequence, i64::from(transform))
+        })
+        .collect::<Vec<_>>();
+    directory.push(transform_entry(1 + transform_count * 2, 1));
+
+    let error = enforce_transform_depth(&directory, None).unwrap_err();
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
+                && limit.limit == 64
+                && limit.used == 64
+                && limit.additional == 1
+    ));
+}
 
 #[test]
 fn decode_preserves_rational_bspline_weights_and_multiplicities() {

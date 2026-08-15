@@ -115,6 +115,7 @@ fn decode_with_occurrence_limits(
     }
     let directory = directory::parse(&scan)?;
     charge_entities(ctx, directory.len() as u64, "iges_directory_entries")?;
+    entities::geometry::enforce_transform_depth(&directory, ctx)?;
     let parameters = parameter::assemble_with_context(&scan, &directory, &global, ctx)?;
     let parameter_tokens = parameters
         .iter()
