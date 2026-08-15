@@ -1,90 +1,150 @@
 # Rhino 3DM Open Items
 
-The following items were reopened by the 2026-08-15 QA audits. Settled format
-rules remain in [`rhino_3dm.md`](rhino_3dm.md). Independent transfer evidence
-remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.md).
+The remaining questions are narrowed to producer-defined payload fields or
+class-specific transfer evidence. Settled format rules remain in
+[`rhino_3dm.md`](rhino_3dm.md). OpenNURBS transfer evidence remains in
+[`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.md).
 
-## Reopened items
+## Remaining items
 
 ### PP-01. Plug-in class payload grammar
 
-**Question.** What payload grammar and semantics does each third-party plug-in class UUID select?
+**Question.** For each third-party plug-in class UUID admitted by this codec,
+which class-owned `Write`/`Read` implementation defines its class-data fields
+and typed mapping?
 
-**Known.** `decode.rs:2460-2500` retains an unregistered object or table record as an opaque byte range. Section 20.6 states that a class UUID alone does not admit typed transfer.
+**Known.** Section 6.4 defines the class wrapper: class UUID, bounded
+class-data, optional class-userdata, and class end. The class-data grammar is
+owned by the class reader. OpenNURBS looks up the UUID and invokes that reader;
+its application-loading hook delegates unavailable plug-in classes to the
+plug-in. There is no common third-party class-data grammar.
 
-**Need.** Establish the payload grammar and typed-transfer rule for each supported plug-in class, or explicitly define the class as permanently opaque with a machine-readable loss contract.
+**Need.** Read the producer implementation for each admitted third-party UUID,
+or supply an independent witness whose bytes identify the class fields and
+typed mapping.
 
-**Note.** Reopened because retaining the complete record preserves bytes but does not answer the original grammar or semantic question.
+**Note.** Narrowed 2026-08-16. The common wrapper and the source-defined
+ownership rule are settled. The per-class producer contract remains open.
 
 ### PP-02. Plug-in class field semantics
 
-**Question.** Which fields in a supported plug-in class payload carry transferable object state?
+**Question.** For each supported third-party class, which fields carry
+transferable object state and what neutral mappings do they have?
 
-**Known.** The decoder does not inspect the payload after the class UUID and retains it through the opaque-record path at `decode.rs:2460-2500`.
+**Known.** A class reader owns the field grammar after the class UUID. Public
+OpenNURBS examples demonstrate that this is class-specific: `MyUserData` writes
+an integer, line, and string, while `CExampleWriteUserData` writes a string.
+Those examples do not establish the fields of the plug-ins admitted by this
+codec.
 
-**Need.** Define field boundaries, required fields, and neutral mappings for each supported plug-in class.
+**Need.** The actual supported class's writer and reader, or an independent
+byte-level witness with field-to-neutral mappings, for every admitted class.
 
-**Note.** Reopened for the same refusal-as-answer: opaque retention is a preservation policy, not field semantics.
+**Note.** Narrowed 2026-08-16. Per-class field semantics remain open; opaque
+retention is not a field mapping.
 
 ### PP-03. Plug-in user-data dictionary grammar
 
-**Question.** What record and value grammar applies to plug-in user-data dictionaries?
+**Question.** What semantics and typed mappings do non-standard or plug-in
+dictionary UUIDs use?
 
-**Known.** Unknown user-data records are retained as opaque data under `rhino_3dm.md` §20.6 "An unregistered class UUID has no typed payload contract."; no typed dictionary grammar is established.
+**Known.** Section 20.6 now defines the standard `ON_ArchivableDictionary`
+grammar, UUID `21EE7933-1E2D-4047-869E-6BDBF986EA11`, bounded entries, array
+counts, nested dictionaries, and stable entry types 0 through 47. Unknown
+entry types are skipped at their entry boundary. A dictionary with another ID
+is not assigned this grammar.
 
-**Need.** Establish the dictionary record boundaries, value types, and transfer semantics for supported plug-in dictionaries.
+**Need.** The producer dictionary implementation or an independent witness for
+each non-standard dictionary UUID, including its value semantics and neutral
+mapping.
 
-**Note.** Reopened because the current path can preserve a dictionary without making any of its fields available to typed transfer.
+**Note.** Narrowed 2026-08-16. The standard dictionary grammar is settled; the
+plug-in dictionary set and its semantics remain open.
 
 ### PP-04. Plug-in direct user-record grammar
 
-**Question.** What payload grammar and ownership rules apply to plug-in direct user records?
+**Question.** What inner grammar and typed mapping does each plug-in direct
+user-table record use?
 
-**Known.** `decode.rs:2492-2500` retains unknown direct records as opaque bytes, and section 20.6 does not define their internal fields.
+**Known.** Section 20.6 defines the outer framing: a plug-in UUID chunk, an
+optional major-1 record-header chunk containing the goo flag and producer
+archive/runtime versions, one bounded `TCODE_USER_RECORD`, and the table end
+marker. The record body is arbitrary plug-in-owned bytes; the common framing
+does not define its fields.
 
-**Need.** Define the direct-record header, payload boundary, ownership, and typed or opaque admission rule.
+**Need.** The plug-in writer and reader, or an independent witness, for each
+direct record type that is admitted as typed data.
 
-**Note.** Reopened because the closure supplies no grammar for the originally requested direct-record fields.
+**Note.** Narrowed 2026-08-16. Boundary and ownership are settled. The inner
+plug-in grammar remains open.
 
 ### FV-01. Future object-class payloads
 
-**Question.** Which later object-class payload versions are compatible with the typed decoder?
+**Question.** Which later versions of each built-in object-class payload retain
+typed compatibility, and which fields remain admissible?
 
-**Known.** Later or unregistered class payloads fall through to the opaque record path at `decode.rs:2460-2500`. Section 20.6 admits no typed transfer from a class UUID alone.
+**Known.** The audited built-in class readers consume their known major-1
+prefixes, apply their minor field gates, and skip bounded suffixes. Major
+version changes remain family-specific; a class UUID and a preserved record do
+not establish typed compatibility with a new major layout.
 
-**Need.** Define versioned payload admission and field compatibility for each supported later object class.
+**Need.** A producer implementation or independent witness for each later
+object-class major/version that is to enter typed decoding, with its field
+grammar and neutral mapping.
 
-**Note.** Reopened because byte preservation does not establish compatibility with any future payload version.
+**Note.** Narrowed 2026-08-16. Bounded later-minor handling is settled for the
+audited classes; later object-class versions with changed layout remain open.
 
 ### FV-02. Future table-record payloads
 
-**Question.** Which later table-record payload versions can be decoded as typed records?
+**Question.** Which later table-record versions retain typed decoding, and what
+fields do those versions add or change?
 
-**Known.** Unknown table records are retained by `decode.rs:2460-2500`; no version-specific field grammar is applied after the record identity.
+**Known.** The audited material, texture, group, light, linetype, hatch, font,
+dimension-style, view, and settings readers consume known bounded prefixes and
+skip source-defined suffixes. Tagged streams, explicit terminators, and
+writer-band ceilings remain grammar controls. An unknown table record has no
+typed fields from its typecode alone.
 
-**Need.** Define table-record version admission, field boundaries, and neutral mapping for later payloads.
+**Need.** Producer source or an independent witness for any later table-record
+major or changed layout that is to be admitted as typed data.
 
-**Note.** Reopened because retention does not establish typed table-record compatibility.
+**Note.** Narrowed 2026-08-16. The audited bounded suffix subset is settled;
+later table-record layouts outside it remain open.
 
 ### FV-03. Future user-data payloads
 
-**Question.** Which later user-data payload versions are typed, and which are opaque?
+**Question.** Which later user-data versions have a typed payload grammar, and
+which fields remain admissible?
 
-**Known.** Section 20.6 applies an opaque fallback to unregistered user-data at `rhino_3dm.md` §20.6 "An unregistered class UUID has no typed payload contract." without a versioned field grammar.
+**Known.** Section 7.2 defines major-1 and major-2 headers, their bounded
+payload child, minor-gated header fields, and suffix skipping. The payload
+grammar is owned by the userdata class. Unknown classes can be preserved but
+do not gain typed fields from the header.
 
-**Need.** Define version admission, field boundaries, and loss behavior for later user-data payloads.
+**Need.** The later userdata class writer and reader, or an independent witness,
+for each version that is to be typed, including its fields and loss mapping.
 
-**Note.** Reopened because the closure retains future bytes but does not resolve their versioned semantics.
+**Note.** Narrowed 2026-08-16. Generic header and boundary semantics are
+settled; future class-specific payload semantics remain open.
 
 ### FV-04. Future presentation records
 
-**Question.** Which later presentation-record versions may append fields before their bounded end?
+**Question.** Which presentation records outside the audited bounded set have
+producer-defined later versions and appendable fields before their bounded end?
 
-**Known.** Several presentation readers still impose local version caps and require zero remaining bytes; for example `presentation.rs:611-678`, `771-898`, and `935-1023`.
+**Known.** The specification now covers source-defined bounded suffix handling
+for material, texture, mapping, group, light, linetype, hatch, font,
+text-style, dimension-style, rendering attributes, view children, annotation
+settings, grid defaults, render settings, and related settings records.
+Tagged attribute/layer streams and explicit terminators are not generic suffix
+grammars.
 
-**Need.** Define the supported version range and suffix handling for every presentation record, with evidence for each local ceiling.
+**Need.** Producer writer/reader evidence for any remaining presentation class,
+or an independent witness showing its later version, fields, and boundary.
 
-**Note.** Reopened because a later presentation record can be rejected or degraded even when its bounded prefix is readable.
+**Note.** Narrowed 2026-08-16. The audited presentation set is settled; the
+remaining presentation classes need source or witness evidence.
 
 ### RS-01. Later-minor bounded suffixes
 
@@ -92,53 +152,68 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 13.4, 18.3, and 20.2-20.3 accept unread fields appended before their bounded
 end?
 
-**Known.** The global rule at `rhino_3dm.md` §4.2 permits later-minor suffixes.
-The producer-backed readers covered by sections 7.1, 13.3, 13.4, 18.3, and
-20.2-20.3 consume their known prefixes and skip bounded suffixes. Remaining
-versioned readers still have local caps or zero-tail checks, including texture
-mapping, font, text-style, dimension-style, view, object-attribute, and other
-presentation readers.
+**Known.** The global rule at section 4.2 and the source-backed changes cover
+point clouds, simple curves, curve-on-surface, NURBS curves and surfaces,
+procedural surfaces, extrusions, cages, annotations, dimensions, userdata,
+views, document settings, presentation resources, and object-class suffixes.
+Remaining strict rules are writer-band ceilings, tagged item streams,
+explicit terminators, or versioned readers whose exact producer field gates
+have not yet been characterized individually.
 
-**Need.** For the remaining readers, identify producer-supported minor ceilings
-and suffix fields, then remove unjustified rejection or document a producer-
-backed writer-band ceiling.
+**Need.** Producer writer/reader evidence for each remaining reader, or an
+independent witness that distinguishes an appendable suffix from a changed
+layout. Remove only rejection not required by that evidence.
 
-**Note.** Narrowed 2026-08-15. `ON_Texture::Read`, `ON_Material::Read`,
-`ON_Material::Internal_ReadV5`, `ON_Group::Internal_ReadV5`, `ON_Light::Read`,
-`ON_Linetype::Read`, `ON_UuidList::Read`, `ON_PlaneSurface::Read`,
-`ON_ClippingPlane::Read`, `ON_ClippingPlaneSurface::Read`, and
-`ON_DetailView::Read` establish the settled subset. The remaining readers need
-the same producer-source audit or an independent witness.
+**Note.** Narrowed 2026-08-16. The bounded-reader subset is substantially
+settled; the residual is the explicit writer-band/tagged/direct-reader audit.
 
 ### TE-01. Class-specific transfer differential evidence
 
-**Question.** Which Rhino-authored object classes differ from the committed transfer fixtures, and which byte-level fields cause the difference?
+**Question.** Which remaining Rhino-authored object classes differ from the
+committed transfer fixtures, and which byte-level fields cause each difference?
 
-**Known.** The comparison harness records aggregate source floors and a synthesized point/structured tier at `integration_tests.rs:514-530` and in the opening source-tier and synthesized-tier paragraphs of `rhino_3dm-opennurbs-comparison.md`. It does not preserve a byte-level, class-by-class differential witness for each affected source file.
+**Known.** The public source and example-file comparison establishes aggregate
+source floors and class admission, while the synthesized tier covers a point
+and structured objects. It does not preserve an independent byte-level,
+class-by-class differential witness for every affected class.
 
-**Need.** Add class-specific transfer witnesses with byte-level differences and accepted/rejected outcomes for each affected class.
+**Need.** For each affected class, an independent witness file and a byte-level
+differential report that names the field, accepted or rejected outcome, and
+typed or opaque transfer result.
 
-**Note.** Reopened because aggregate floors can pass while one class remains opaque; they do not identify the field difference needed to promote a transfer rule to the specification.
+**Note.** Narrowed 2026-08-16. Aggregate floors and decoder tests do not answer
+the per-class field question.
 
 ### FV-06. Later major payload admission
 
-**Question.** Which later major versions of built-in payloads may enter typed decoding?
+**Question.** Which later major versions of built-in table, object, geometry,
+presentation, or userdata payloads may enter typed decoding?
 
-**Known.** `decode.rs:2460-2500` retains unsupported class and table records as opaque records. Section 20.6 gives the opaque fallback but defines no later-major field grammar or typed admission rule.
+**Known.** The specification now distinguishes source-defined major families,
+bounded later-minor suffixes, writer-band ceilings, and opaque unknown records.
+A later major still needs its own field grammar; complete byte retention does
+not establish typed admission.
 
-**Need.** Establish a major-version grammar and admission rule for each supported built-in payload, or state that the later major remains permanently opaque with a typed loss contract.
+**Need.** Producer source or an independent witness for each later major that is
+to be admitted, naming its fields, boundaries, and neutral mapping.
 
-**Note.** Reopened because the closure converted an unknown major into a preservation decision. Complete byte retention does not establish typed compatibility or field boundaries.
+**Note.** Narrowed 2026-08-16. The admission distinction is settled; later
+major field grammars remain open.
 
 ### FV-07. Later minor payload suffixes
 
-**Question.** Which fields and boundaries do later minor versions append to each built-in payload?
+**Question.** Which fields and boundaries do future minor versions append after
+the known prefix of each built-in payload?
 
-**Known.** The global rule permits bounded later-minor suffixes, but `decode.rs:2460-2500` can retain the complete record without identifying the suffix grammar. A bounded end does not identify the fields in an unsupported suffix.
+**Known.** Source-defined later-minor readers consume known prefixes and skip
+bounded suffixes. The specification does not assign names or meanings to
+future bytes that no audited producer writes.
 
-**Need.** Define each supported minor suffix and its admission, skip, and loss behavior, or keep the complete payload opaque with an explicit typed loss.
+**Need.** A future producer writer/reader or an independent witness for each
+future suffix, with its field order, boundary, and typed admission rule.
 
-**Note.** Reopened because the closure treats an unread suffix as opaque without establishing whether the known prefix remains admissible.
+**Note.** Narrowed 2026-08-16. Suffix preservation is settled; future suffix
+field semantics remain open.
 
 ### SW-10. Writer first-pcurve selection
 
@@ -153,13 +228,10 @@ by `opennurbs_brep.h` and `ON_BrepTrim::Write`/`Read` in
 `writer.rs:2481-2489` currently select only the first use for geometry,
 tolerance, and NURBS validation.
 
-**Need.** Producer or transfer-policy evidence for the selection rule, or a
-writer change that rejects or reports loss for a coedge with more than one use.
-The rule must preserve the selected range and geometry semantics.
+**Need.** A Rhino transfer writer rule or an independent witness with more than
+one pcurve use and differing carrier/range, followed by either a source-backed
+selection rule or an explicit writer rejection/loss rule. The rule must
+preserve the selected range and geometry semantics.
 
-**Note.** Narrowed 2026-08-16. The native source settles the remaining
-capacity question: one trim cannot serialize multiple ordered pcurve uses. The
-current first-use behavior is implementation policy, not evidence of the
-Rhino transfer rule. A second pcurve with a different range or carrier is
-accepted by ownership validation and then omitted from the written C2 or trim
-payload.
+**Note.** Narrowed 2026-08-16. OpenNURBS settles the one-slot capacity, but not
+the Rhino transfer policy for choosing among multiple neutral uses.

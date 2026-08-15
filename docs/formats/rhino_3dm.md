@@ -433,7 +433,11 @@ of child chunks: direct fields can occur before, between, and after complete
 nested chunks. A class reader consumes each nested chunk at the field that
 owns it and validates the declared boundary there. A class wrapper scanner
 must not apply one flat child-chunk or checksum range to the complete
-class-data body.
+class-data body. The complete wrapper order is the class UUID chunk, the
+class-data chunk, zero or more class-userdata chunks, and the class-end chunk.
+After the class reader consumes its known fields, unread bytes through the
+class-data boundary are skipped. A class UUID selects the class grammar; it
+does not supply a common grammar for classes outside the built-in registry.
 
 ### 6.5 Object-type filter bitfield
 
@@ -718,6 +722,10 @@ The header has the checksum selected by its typecode. An anonymous child
 contains the userdata payload. Older userdata without archive-version fields
 uses the containing archive version below 50 and archive version 5 with
 four-byte chunk lengths at 50 and later. The anonymous child is always bounded.
+The userdata-header reader consumes the fields defined by its minor version and
+skips a later bounded suffix. The userdata payload is owned by the userdata
+class and is skipped at its anonymous-child boundary when no typed reader owns
+that class.
 
 ### 7.3 Strings
 
@@ -1527,7 +1535,8 @@ minor >= 2:
 ```
 
 Optional counts are zero or the point count. Flags bit 0 means ordered points;
-bit 1 means the plane is set.
+bit 1 means the plane is set. Writers emit version 1.2. A major-1 reader uses
+the minor gates above and skips a later bounded suffix.
 
 ### 12.3 Line curve
 
@@ -1633,6 +1642,10 @@ are finite. The object UUID and component index persist the source curve,
 Brep edge, or Brep trim selection; the reversal and domain fields define its
 orientation and parameter mapping inside the polyedge.
 
+The packed curve readers consume their known prefixes and skip unread bytes
+before the containing class-data boundary. A later minor does not change the
+field order of the known prefix.
+
 ### 12.7 Curve on surface
 
 `ON_CurveOnSurface` has no version prefix. Its bounded class payload is:
@@ -1650,6 +1663,8 @@ surface use document length conversion. All three child objects must derive
 from their declared curve or surface families. The model curve is the exact
 stored solved carrier when present; the parameter curve and support surface
 retain the construction relationship independently.
+The containing class-data reader skips bytes after the three known child
+objects and their presence field before its bounded end.
 
 ## 13. NURBS curves and surfaces
 
@@ -1686,6 +1701,8 @@ domain.max = K[CV count - 1]
 Rational CVs are homogeneous `[xw,yw,zw,w]`; Euclidean points are
 `[xw/w,yw/w,zw/w]`. Weights are finite and nonzero. Periodicity is derived
 from the reconstructed knot vector, not serialized as a boolean.
+After the known minor-gated fields, the reader skips any suffix before the
+bounded class-data end.
 
 The stored vector omits two endpoint knots. Let `o=order`, `n=CV count`,
 `m=o+n-2`, and `K[0..m)` be stored knots. The full vector has `o+n` entries:
@@ -1746,6 +1763,8 @@ for i in 0..U_count:
 The flat index is `i * V_count + j`. Rational surface CVs use the same
 homogeneous conversion. Periodicity in each direction is derived from its knot
 vector.
+The reader consumes the known major-1 prefix and skips any suffix before the
+bounded class-data end.
 
 ### 13.3 Plane surface
 
@@ -1819,7 +1838,7 @@ remaining bytes are skipped at the bounded chunk end.
 
 ### 13.5 Revolution surface
 
-Packed version `2.0`; majors 1 and 2 are accepted. The presence field is a
+Writers emit packed version `2.0`; majors 1 and 2 are accepted. The presence field is a
 one-byte `char`; transpose is an `i32`:
 
 ```
@@ -1836,10 +1855,11 @@ if present: polymorphic ON_Curve profile
 Major 1 defaults the surface parameter interval to the angular interval. A
 present profile is a curve. A profile control point on the revolution axis
 produces one exact axis control point at every angular control position.
+The known fields are followed by a bounded suffix that the reader skips.
 
 ### 13.6 Sum surface
 
-Packed version `1.0`:
+Writers emit packed version `1.0`. Major 1 is accepted:
 
 ```
 u8 version
@@ -1853,6 +1873,8 @@ The exact surface is `S(u,v)=basepoint+C0(u)+C1(v)`. For child homogeneous
 poles `H0=(wP,w)` and `H1=(vQ,v)`, the surface weight is `wv` and the
 homogeneous point is `v(wP)+w(vQ)+wv*basepoint`. U inherits the first curve;
 V inherits the second.
+The reader consumes the known prefix and skips any suffix before the bounded
+class-data end.
 
 ## 14. Mesh
 
@@ -2139,7 +2161,9 @@ incidence.
 ## 16. Extrusion
 
 `ON_Extrusion` uses an anonymous chunk version `(i32 major, i32 minor)`.
-Defined versions are 1.0 through 1.3. The common fields are:
+Writers emit versions 1.0 through 1.3. A reader accepts major 1 with any
+nonnegative minor, consumes the fields gated by the known minor values, and
+skips a later suffix before the bounded class-data end. The common fields are:
 
 ```
 polymorphic ON_Curve profile
@@ -2575,7 +2599,9 @@ minor 0 defaults it to zero.
 
 ### 18.4 NURBS cages
 
-`ON_NurbsCage` uses anonymous version 1.0:
+`ON_NurbsCage` writers emit anonymous version 1.0. A reader accepts major 1
+with any nonnegative minor and skips a later suffix before the bounded
+class-data end:
 
 ```text
 i32 dimension
@@ -3225,6 +3251,13 @@ decimal separator. Sizes, baseline spacing, fixed extension length, leader
 landing length, and plot weights are length values. Scale factors, rotations,
 fractions, rounding values, colors, enums, and override bits are not scaled.
 
+Bounded font, text-style, dimension-style, hatch, rendering-attribute,
+texture-mapping, material, group, and light readers consume their known
+major-1 prefixes and skip later suffix bytes before the containing bound.
+Tagged object-attribute and layer streams retain their one-byte item grammar;
+an unknown item has no generic value width. Writer-band ceilings and explicit
+terminators remain part of those grammars.
+
 Modern text and leader objects contain the common annotation structure and an
 ordered leader point array. V5 text and leader classes contain outer anonymous
 version 1.0 and the common V5 annotation chunk described in section 18. Text
@@ -3285,6 +3318,11 @@ skips any suffix before the clipping record's bounded end. A standalone
 clipping-plane object's separate record uses the minor-0-through-5 grammar in
 section 13.4, including the minor-5 participation items.
 
+Each known view child consumes its bounded known prefix and skips a suffix
+before that child boundary. Unknown child chunks are skipped as complete
+bounded chunks. `TCODE_ENDOFTABLE` remains the required final view-list
+terminator.
+
 Trace images store path, width, height, plane, grayscale, hidden, filtered, and
 file-reference state. Wallpaper stores path, grayscale, hidden, and file
 reference. Windows bitmap classes store a Windows bitmap header followed by
@@ -3315,15 +3353,69 @@ SHA-256; retained bytes, when present, cover the complete record.
 
 ### 20.6 Extension and version boundaries
 
-An unregistered class UUID has no typed payload contract. Its complete object
-record is opaque, and the class UUID identifies the class payload within that
-record. A class-userdata item with an unregistered class UUID, item UUID, or
-plug-in UUID remains part of the complete containing object record. A dictionary
-inside that item remains part of the same bounded userdata payload.
+The class wrapper contains a class UUID chunk, a class-data chunk, optional
+class-userdata chunks, and a class-end chunk. The class-data chunk contains the
+fields written by the selected class. An unregistered class UUID has no typed
+payload contract because no class reader supplies its field grammar. Its
+complete object record is opaque, and the class UUID identifies the class
+payload within that record. A class-userdata item with an unregistered class
+UUID, item UUID, or plug-in UUID remains part of the complete containing object
+record. A dictionary inside that item remains part of the same bounded userdata
+payload.
 
-A direct record in the user table is opaque when no built-in record type owns its
-payload. Its table typecode, record typecode, archive offset, byte length, and
-SHA-256 identify the record.
+`ON_ArchivableDictionary` has dictionary UUID
+`21EE7933-1E2D-4047-869E-6BDBF986EA11`. Its structure is:
+
+```text
+TCODE_DICTIONARY, major 1 minor 0
+  TCODE_DICTIONARY_ID, major 1 minor 0
+    ON_UUID dictionary ID
+    i32 dictionary version
+    UTF-16 dictionary name
+  repeated TCODE_DICTIONARY_ENTRY
+    i32 entry type
+    UTF-16 entry name
+    entry value
+  TCODE_DICTIONARY_END
+```
+
+The dictionary ID child, each entry, and the dictionary end marker are bounded
+chunks. Array values use an `i32` element count followed by their elements;
+nested dictionaries use entry type 44 and recurse through this grammar.
+Dictionary entry types are stable:
+
+| Value | Type codes |
+| --- | --- |
+| undefined, Boolean, UInt8, Int8, Int16, UInt16, Int32, UInt32, Int64, Float, Double, UUID, UTF-16 string | 0-12 |
+| Boolean[], UInt8[], Int8[], Int16[], Int32[], Float[], Double[], UUID[], UTF-16 string[] | 13-21 |
+| Color, Point2i, Point2f, Rect4i, Rect4f, Size2i, Size2f, Font | 22-29 |
+| Interval, Point2d, Point3d, Point4d, Vector2d, Vector3d, BoundingBox, Ray3d, PlaneEquation, Xform, Plane, Line, Point3f, Vector3f | 30-43 |
+| nested dictionary, obsolete object, MeshParameters, Geometry | 44-47 |
+
+The primitive and geometric values use the encodings in §3. An obsolete or
+unsupported entry type is skipped at the entry boundary. A dictionary UUID
+other than the standard ID, and the field semantics of a plug-in dictionary,
+remain owned by that plug-in.
+
+A direct user-table record has this framing:
+
+```text
+TCODE_USER_TABLE_UUID
+  ON_UUID plug-in ID
+  optional TCODE_USER_TABLE_RECORD_HEADER, major 1 minor 0
+    bool last-saved-as-goo
+    i32 goo archive version
+    i32 goo writer version
+TCODE_USER_RECORD
+  arbitrary plug-in-owned bytes
+TCODE_ENDOFTABLE
+```
+
+The `TCODE_USER_RECORD` body is one bounded record. The UUID and optional
+header identify the producer context; they do not define an inner plug-in
+grammar. A direct record in the user table is opaque when no built-in record
+type owns its payload. Its table typecode, record typecode, archive offset, byte
+length, and SHA-256 identify the record.
 
 V5+ object attributes use a major-2 tagged stream. After the UUID and layer
 reference, each item is a one-byte ID followed directly by the value grammar
