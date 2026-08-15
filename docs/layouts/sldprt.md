@@ -10,7 +10,8 @@ Table source: `docs/layouts/sldprt.toml`.
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
 inventory (§4), the entity common header (§5), the class-root directory (§6),
 and the Parasolid geometry carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
-layouts in prose; the fixed-offset profile, sketch-input, reference-plane, and
+layouts in prose; the fixed-offset profile, sketch-input, reference-plane,
+temporary-axis, and
 cosmetic-thread carrier layouts are tabulated below, and the remaining layouts
 are listed under "Not tabulated" with a coverage note.
 
@@ -1328,6 +1329,31 @@ Parsed by:
 Unstated regions:
 
 - `8..84` (76 B): The nested `moFaceRef_c` class declaration occupies a variable position before the component marker.
+
+## `temporary_axis_reference_nine_scalar`
+
+Spec §2 · layout: byte offsets · size: 316 B
+
+Offsets begin at the class declaration. The carrier body ends at +311; a following class marker at +312 terminates the record after zero padding of at most 24 bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `class_marker` | `bytes[4]` | little | spec | The declaration starts with `ff ff 01 00` · value `[255, 255, 1, 0]` |
+| 4 | 2 | `name_length` | `u16` | little | spec | name length `15` at `+4` · value `15` |
+| 6 | 15 | `name` | `bytes[15]` | little | spec | class name `moTempAxisRef_w` at `+6` · value `[109, 111, 84, 101, 109, 112, 65, 120, 105, 115, 82, 101, 102, 95, 119]` |
+| 223 | 8 | `handles` | `bytes[8]` | little | spec | two `c7 cf ff ff` handle words at declaration offsets `+223` and `+227` · value `[199, 207, 255, 255, 199, 207, 255, 255]` |
+| 231 | 4 | `zero_before_address` | `bytes[4]` | little | spec | followed by a zero u32 and a nonzero stream address · value `[0, 0, 0, 0]` |
+| 235 | 4 | `stream_address` | `u32` | little | spec | followed by a zero u32 and a nonzero stream address |
+| 239 | 72 | `axis_frame` | `f64[9]` | little | spec | Nine little-endian f64 values at declaration offset `+239` store the axis point in metres in the first xyz triple and the unit axis direction in the final xyz triple. |
+| 312 | 4 | `next_class_marker` | `bytes[4]` | little | spec | the next class declaration starts at `+312` · value `[255, 255, 1, 0]` |
+
+Unstated regions:
+
+- `21..223` (202 B): Undecoded class-body bytes between the class name and the handle pair.
+- `311..312` (1 B): One byte separates the final f64 scalar from the next class marker.
 
 ## `cosmetic_thread_component_edge_wrapper_prefix`
 

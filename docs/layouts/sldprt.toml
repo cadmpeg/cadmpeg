@@ -7,7 +7,8 @@ note = """
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
 inventory (§4), the entity common header (§5), the class-root directory (§6),
 and the Parasolid geometry carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
-layouts in prose; the fixed-offset profile, sketch-input, reference-plane, and
+layouts in prose; the fixed-offset profile, sketch-input, reference-plane,
+temporary-axis, and
 cosmetic-thread carrier layouts are tabulated below, and the remaining layouts
 are listed under "Not tabulated" with a coverage note.
 
@@ -4986,6 +4987,88 @@ offset = 100
 type = "u16"
 source = "spec"
 anchor = "zero marker tail at `+100..+101`"
+
+[[record]]
+name = "temporary_axis_reference_nine_scalar"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs"
+kind = "byte"
+section = "2"
+anchor = "An `moTempAxisRef_w` declaration stores two `c7 cf ff ff` handle words"
+size = 316
+endianness = "little"
+note = "Offsets begin at the class declaration. The carrier body ends at +311; a following class marker at +312 terminates the record after zero padding of at most 24 bytes."
+
+[[record.field]]
+name = "class_marker"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "The declaration starts with `ff ff 01 00`"
+value = [0xff, 0xff, 0x01, 0x00]
+
+[[record.field]]
+name = "name_length"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "name length `15` at `+4`"
+value = 15
+
+[[record.field]]
+name = "name"
+offset = 6
+type = "bytes[15]"
+source = "spec"
+anchor = "class name `moTempAxisRef_w` at `+6`"
+value = [0x6d, 0x6f, 0x54, 0x65, 0x6d, 0x70, 0x41, 0x78, 0x69, 0x73, 0x52, 0x65, 0x66, 0x5f, 0x77]
+
+[[record.field]]
+name = "handles"
+offset = 223
+type = "bytes[8]"
+source = "spec"
+anchor = "two `c7 cf ff ff` handle words at declaration offsets `+223` and `+227`"
+value = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]
+
+[[record.field]]
+name = "zero_before_address"
+offset = 231
+type = "bytes[4]"
+source = "spec"
+anchor = "followed by a zero u32 and a nonzero stream address"
+value = [0x00, 0x00, 0x00, 0x00]
+
+[[record.field]]
+name = "stream_address"
+offset = 235
+type = "u32"
+source = "spec"
+anchor = "followed by a zero u32 and a nonzero stream address"
+
+[[record.field]]
+name = "axis_frame"
+offset = 239
+type = "f64[9]"
+source = "spec"
+anchor = "Nine little-endian f64 values at declaration offset `+239` store the axis point in metres in the first xyz triple and the unit axis direction in the final xyz triple."
+
+[[record.field]]
+name = "next_class_marker"
+offset = 312
+type = "bytes[4]"
+source = "spec"
+anchor = "the next class declaration starts at `+312`"
+value = [0xff, 0xff, 0x01, 0x00]
+
+[[record.gap]]
+offset = 21
+size = 202
+note = "Undecoded class-body bytes between the class name and the handle pair."
+
+[[record.gap]]
+offset = 311
+size = 1
+note = "One byte separates the final f64 scalar from the next class marker."
 
 [[record]]
 name = "cosmetic_thread_component_edge_wrapper_prefix"

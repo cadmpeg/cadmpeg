@@ -558,14 +558,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** Distinguish the wrapper selector byte and the tail words between the surface-body identity pair and the termination sentinels with labeled parts cut to opposite sides before assigning the reverse value.
 
-### DI-37. Circular-pattern axis carrier
-
-**Question.** Which native record supplies the axis origin and direction for an `moCirPattern_c` interval after its seed identity resolves?
-
-**Known.** `sldprt.md` defines the `moCirPatternSurfIdRep_c` generated-surface identity path and its seed join. The interval retains the circular count and angle parameters. The identity path does not contain a complete axis frame, so the neutral circular-pattern axis remains unresolved.
-
-**Need.** We must recover the axis frame to construct `PatternKind::Circular` and replay the pattern.
-
 ### DI-33. SWIFT feature-to-topology identity
 
 **Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid body, face, edge, or vertex identity?
