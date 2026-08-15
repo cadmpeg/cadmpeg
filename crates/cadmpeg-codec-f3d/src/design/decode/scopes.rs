@@ -4564,6 +4564,12 @@ pub(crate) fn exact_work_plane_frame(
         for (start, paired) in records.frames(*record_index) {
             let frame_length = paired.checked_sub(start)?;
             let (matrix_at, reference) = match frame_length {
+                325 if bytes.get(start + 4..start + 7) == Some(b"380")
+                    && bytes.get(paired + 4..paired + 7) == Some(b"262")
+                    && bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) =>
+                {
+                    (start + 49, None)
+                }
                 321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
                     (start + 49, None)
                 }

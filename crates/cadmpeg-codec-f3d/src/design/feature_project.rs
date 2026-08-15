@@ -2628,6 +2628,27 @@ fn project_draft(
         return None;
     }
     match role_groups.as_slice() {
+        [neutral_plane]
+            if member_of_scope(neutral_plane)
+                && group_has_entity_selection(scope, neutral_plane, entity_selection_operands) =>
+        {
+            let neutral_plane =
+                selected_work_plane(scope, neutral_plane, entity_selection_operands, scopes)?;
+            let transform = neutral_plane.work_plane_transform?;
+            let pull_direction =
+                Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
+            Some(FeatureDefinition::Draft {
+                faces: project_face_selection(scope, faces, face_operands, histories),
+                neutral_plane: cadmpeg_ir::features::FaceSelection::Native(
+                    neutral_feature_id(neutral_plane).0,
+                ),
+                parting_tool: None,
+                pull_direction: Some(pull_direction),
+                pull_plane: Some(neutral_feature_id(neutral_plane)),
+                angle: Some(Angle(construction.angle)),
+                outward: None,
+            })
+        }
         [neutral_plane] if member_of_scope(neutral_plane) => {
             // A neutral-plane group is a face-recipe group. An entity-selection
             // member belongs to the parting-line form and must not be silently

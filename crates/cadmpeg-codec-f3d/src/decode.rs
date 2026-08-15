@@ -275,6 +275,21 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
     }
 }
 
+fn draft_neutral_plane_is_resolved(
+    selection: &cadmpeg_ir::features::FaceSelection,
+    pull_plane: Option<&cadmpeg_ir::features::FeatureId>,
+    pull_direction: Option<&cadmpeg_ir::math::Vector3>,
+) -> bool {
+    face_selection_is_resolved(selection)
+        || match selection {
+            cadmpeg_ir::features::FaceSelection::Native(native) => {
+                pull_plane.is_some_and(|plane| plane.0 == *native)
+                    && pull_direction.is_some_and(|direction| direction.unit().is_some())
+            }
+            _ => false,
+        }
+}
+
 fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::EdgeSelection) -> bool {
     use cadmpeg_ir::features::EdgeSelection;
 
@@ -739,7 +754,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                             || pull_direction.is_some_and(|direction| direction.unit().is_none())
                             || pull_plane.is_none()
                     }
-                    None => !face_selection_is_resolved(neutral_plane),
+                    None => !draft_neutral_plane_is_resolved(
+                        neutral_plane,
+                        pull_plane.as_ref(),
+                        pull_direction.as_ref(),
+                    ),
                 }
         }
         FeatureDefinition::Sketch { space, sketch } => {

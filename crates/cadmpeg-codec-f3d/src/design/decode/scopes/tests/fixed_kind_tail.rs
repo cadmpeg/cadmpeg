@@ -1672,3 +1672,28 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
 
     super::fixed_kind_operations::continue_fixed_kind_operations(bytes, scope, &thicken_group);
 }
+
+#[test]
+fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
+    let mut bytes = vec![0; 325];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"380");
+    bytes[7..11].copy_from_slice(&71u32.to_le_bytes());
+    let transform = identity_matrix();
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&71u32.to_le_bytes());
+
+    let scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+    let mut scope = scope;
+    scope.reference_members = vec![71];
+    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("class-380 WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, 49);
+    assert_eq!(decoded.reference, None);
+}
