@@ -5892,24 +5892,34 @@ fn hole_package_projection(
                 && template.end_treatment
                     == crate::native::features::SimpleHoleEndTreatment::Chamfer
         });
-        if !requests_chamfer {
+        let requests_no_treatment = child_templates.iter().all(|matches| {
+            let template = matches[0];
+            template.start_treatment == crate::native::features::SimpleHoleEndTreatment::None
+                && template.end_treatment == crate::native::features::SimpleHoleEndTreatment::None
+        });
+        if !requests_chamfer && !requests_no_treatment {
             continue;
         }
-        let Some(chamfer) = group
-            .operation_labels
-            .first()
-            .and_then(|operation| chamfers.get(operation))
-            .copied()
-        else {
-            continue;
+        let chamfer = if requests_chamfer {
+            let Some(chamfer) = group
+                .operation_labels
+                .first()
+                .and_then(|operation| chamfers.get(operation))
+                .copied()
+            else {
+                continue;
+            };
+            if group
+                .operation_labels
+                .iter()
+                .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
+            {
+                continue;
+            }
+            Some(chamfer)
+        } else {
+            None
         };
-        if group
-            .operation_labels
-            .iter()
-            .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
-        {
-            continue;
-        }
         projection
             .internal_operations
             .extend(group.operation_labels.iter().cloned());
@@ -5919,9 +5929,11 @@ fn hole_package_projection(
         projection
             .diameters
             .insert(use_.operation_label.clone(), diameter);
-        projection
-            .chamfers
-            .insert(use_.operation_label.clone(), chamfer);
+        if let Some(chamfer) = chamfer {
+            projection
+                .chamfers
+                .insert(use_.operation_label.clone(), chamfer);
+        }
         let placements = hole_axis_placements_for_body(ir, body);
         if placements.len() == group.operation_labels.len() {
             projection

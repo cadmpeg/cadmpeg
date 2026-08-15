@@ -338,11 +338,51 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     );
     assert_eq!(
         projection.internal_operations,
-        operations.into_iter().collect()
+        operations.iter().cloned().collect()
+    );
+    assert_eq!(projection.outputs["package"], std::slice::from_ref(&body));
+    assert_eq!(projection.diameters["package"], Length(5.1));
+    assert_eq!(projection.chamfers["package"], chamfer);
+
+    let untreated_templates = templates
+        .iter()
+        .cloned()
+        .map(|mut template| {
+            template.start_treatment = SimpleHoleEndTreatment::None;
+            template.end_treatment = SimpleHoleEndTreatment::None;
+            template
+        })
+        .collect::<Vec<_>>();
+    let projection = super::hole_package_projection(
+        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &untreated_templates,
+        std::slice::from_ref(&group),
+        std::slice::from_ref(&use_),
+        &outputs,
+        &diameters,
+        &BTreeMap::new(),
+    );
+    assert_eq!(
+        projection.internal_operations,
+        operations.iter().cloned().collect()
     );
     assert_eq!(projection.outputs["package"], [body]);
     assert_eq!(projection.diameters["package"], Length(5.1));
-    assert_eq!(projection.chamfers["package"], chamfer);
+    assert!(!projection.chamfers.contains_key("package"));
+
+    let mut mixed_templates = untreated_templates.clone();
+    mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
+    let projection = super::hole_package_projection(
+        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &mixed_templates,
+        std::slice::from_ref(&group),
+        std::slice::from_ref(&use_),
+        &outputs,
+        &diameters,
+        &BTreeMap::new(),
+    );
+    assert!(projection.internal_operations.is_empty());
+    assert!(projection.outputs.is_empty());
 
     let mut mismatched_outputs = outputs;
     mismatched_outputs.insert("simple-b".into(), vec![BodyId("other-body".into())]);
