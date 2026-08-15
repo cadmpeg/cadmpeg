@@ -1731,16 +1731,10 @@ fn finish_decode(
         .features
         .iter()
         .filter(|feature| {
-            matches!(
-                feature.source_tag.as_deref(),
-                Some(
-                    "EdgeFillet"
-                        | "Prism_ThickThin1"
-                        | "Prism_ThickThin2"
-                        | "Revol_ThickThin1"
-                        | "Sweep_ThickThin1"
-                )
-            )
+            feature
+                .source_tag
+                .as_deref()
+                .is_some_and(design_feature::is_admitted_native_operation_class)
         })
         .map(|feature| feature.id.clone())
         .collect::<HashSet<_>>();

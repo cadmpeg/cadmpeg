@@ -316,8 +316,9 @@ current levels require those matrices and representative fixtures.
   assign a parameter to an operation role such as profile, direction, extent,
   or output.
 - Typed unresolved operation definitions expose the admitted CATIA operation
-  family without asserting unresolved operands: `Prism_ThickThin1` and
-  `Prism_ThickThin2` are unresolved extrusions, `Revol_ThickThin1` is an
+  family without asserting unresolved operands: `Prism_EndLimit_Length`,
+  `Prism_ThickThin1`, and `Prism_ThickThin2` are unresolved extrusions,
+  `Revol_ThickThin1` is an
   unresolved revolution, `Sweep_ThickThin1` is a sweep with unresolved section,
   path, and result mode, and `EdgeFillet` is an unresolved fillet. Exact
   definition-bound values remain in `Feature.source_properties` under stable
@@ -341,8 +342,9 @@ current levels require those matrices and representative fixtures.
   history ordinal. Schema fields named `PRTSketch` or `Sketch` do not establish
   sketch instances.
 - Exact separator-form owner declarations for the admitted operation classes
-  `EdgeFillet`, `Prism_ThickThin1`, `Prism_ThickThin2`, `Revol_ThickThin1`, and
-  `Sweep_ThickThin1` transfer family-specific unresolved feature nodes with
+  `EdgeFillet`, `Prism_EndLimit_Length`, `Prism_ThickThin1`,
+  `Prism_ThickThin2`, `Revol_ThickThin1`, and `Sweep_ThickThin1` transfer
+  family-specific unresolved feature nodes with
   source order, identity, and structural parent linkage. Their operands,
   profiles, directions, axes, extents, outputs, edge groups, radii,
   operation-specific dependency roles, and regeneration semantics remain

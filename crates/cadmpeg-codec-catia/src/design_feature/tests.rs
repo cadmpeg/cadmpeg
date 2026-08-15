@@ -640,9 +640,15 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
     let cases = [
         ("prism-one", "Prism_ThickThin1", "prism-one-record", 1_u32),
         ("prism-two", "Prism_ThickThin2", "prism-two-record", 2_u32),
-        ("revolution", "Revol_ThickThin1", "revolution-record", 3_u32),
-        ("sweep", "Sweep_ThickThin1", "sweep-record", 4_u32),
-        ("fillet", "EdgeFillet", "fillet-record", 5_u32),
+        (
+            "end-limit",
+            "Prism_EndLimit_Length",
+            "end-limit-record",
+            3_u32,
+        ),
+        ("revolution", "Revol_ThickThin1", "revolution-record", 4_u32),
+        ("sweep", "Sweep_ThickThin1", "sweep-record", 5_u32),
+        ("fillet", "EdgeFillet", "fillet-record", 6_u32),
     ];
     let objects = cases
         .iter()
@@ -694,7 +700,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
     assert_eq!(ir.model.features.len(), cases.len());
     for feature in &ir.model.features {
         match feature.source_tag.as_deref() {
-            Some("Prism_ThickThin1" | "Prism_ThickThin2") => {
+            Some("Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2") => {
                 assert!(matches!(
                     feature.definition,
                     FeatureDefinition::ExtrudeUnresolved
@@ -1420,7 +1426,7 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
         None,
         1,
         "helper-record",
-        "Prism_EndLimit_Length",
+        "Unadmitted_Helper",
         "helper-entry",
     );
     let native = CatiaNative {
@@ -1438,7 +1444,7 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
                 None,
                 Some(1),
                 None,
-                Some("Prism_EndLimit_Length"),
+                Some("Unadmitted_Helper"),
                 Some("helper-entry"),
             )],
         }],

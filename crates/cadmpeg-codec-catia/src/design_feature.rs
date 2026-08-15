@@ -681,10 +681,11 @@ fn native_operation_candidate<'a>(
         })
 }
 
-fn is_admitted_native_operation_class(name: &str) -> bool {
+pub(crate) fn is_admitted_native_operation_class(name: &str) -> bool {
     matches!(
         name,
         "EdgeFillet"
+            | "Prism_EndLimit_Length"
             | "Prism_ThickThin1"
             | "Prism_ThickThin2"
             | "Revol_ThickThin1"
@@ -756,7 +757,9 @@ fn native_operation_definition(
     properties: BTreeMap<String, String>,
 ) -> (FeatureDefinition, BTreeMap<String, String>) {
     let definition = match kind {
-        "Prism_ThickThin1" | "Prism_ThickThin2" => FeatureDefinition::ExtrudeUnresolved,
+        "Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2" => {
+            FeatureDefinition::ExtrudeUnresolved
+        }
         "Revol_ThickThin1" => FeatureDefinition::RevolveUnresolved,
         "Sweep_ThickThin1" => FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(Some(native_ref.to_string())),
