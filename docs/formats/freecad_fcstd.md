@@ -221,6 +221,9 @@ are connected to persistent names and to placed neutral occurrences;
 they are never exposed as persistent identity by themselves. Counts, indices, dictionary
 references, string references, property ownership, and neutral topology links are validated
 without synthesizing missing names.
+A repeated use of one OCCT shape identity at one composed location, including a reversed use,
+occupies the first indexed position. A distinct copied shape at that location and a shape at a
+different location occupy separate indexed positions.
 
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape. Each root shape

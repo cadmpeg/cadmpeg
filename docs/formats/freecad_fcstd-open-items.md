@@ -82,20 +82,21 @@ equal shape-plus-location occurrences receive one shared or multiple indexed-map
 **Known.** FreeCAD assigns non-root topology positions through `TopExp::MapShapes` into a
 `TopTools::IndexedMapOfShape`; root-shape positions use `TopoDS_Iterator` order. Part's
 `TopoShapeExpansion` walks those one-based positions and binds element-map names to them. The
-element-map root is the final map node after child maps.
+element-map root is the final map node after child maps. Differential authored witnesses show that
+one OCCT shape identity at one placement, including a reversed use, occupies one indexed position;
+a copied shape at that placement and a shape at a different placement occupy two positions.
 
-**Conflict.** The producer call sites do not establish the OCCT equality and traversal behavior for
-repeated placed roots or equal shape-plus-location occurrences. topology_transfer.rs:1554-1598
-uses a decoder-owned key composed of shape and transform, so its result cannot be assumed to match
-the producer for those cases.
+**Conflict.** The producer call sites and witnesses do not establish the child traversal order of
+`TopExp::MapShapes` for unequal nested topology. topology_transfer.rs:1554-1598 uses a
+decoder-owned walk, so its order cannot be assumed to match the producer for those cases.
 
-**Need.** Read the OCCT map implementation or author differential witnesses that distinguish equal
-shape-plus-location occurrences, repeated roots, and orientation changes. Then compare those
-positions with topology transfer and preserve distinct persistent occurrences when the producer
-does.
+**Need.** Read the OCCT map implementation or author differential witnesses that distinguish
+unequal nested topology traversal. Then compare those positions with topology transfer and
+preserve the producer's order.
 
 **Note.** This pass settled the FreeCAD producer's map owner, root iterator, one-based positions,
-and element-map binding. The OCCT identity and traversal question remains smaller and open.
+element-map binding, and identity behavior for repeated, copied, relocated, and reversed witness
+uses. Nested traversal order remains open.
 
 ## 4. Exact-topology transfer
 
