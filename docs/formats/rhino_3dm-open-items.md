@@ -220,16 +220,6 @@ the same producer-source audit or an independent witness.
 
 **Note.** Reopened as a promotion-to-spec gap. Reordering extensions with different offsets or base-point data changes the transferred presentation.
 
-### SW-07. V1 surface rational-form arbitration
-
-**Question.** Which V1 surface rational-form byte is authoritative when the two stored bytes differ?
-
-**Known.** `legacy.rs:349-361` reads both bytes, rejects values above 2, and selects the last nonzero byte. Section 8.2 lists two rational-form bytes and their forms but defines no agreement or precedence rule.
-
-**Need.** Establish the relationship between the two bytes and the mismatch policy. Preserve or reject a disagreement instead of selecting by byte order.
-
-**Note.** A disagreement such as `[1, 2]` versus `[2, 1]` changes the rational interpretation. Reordering the stored bytes changes the neutral surface without a source discriminator.
-
 ### SW-09. Ambiguous history producers
 
 **Question.** How is a history dependency represented when more than one record produces the same descendant UUID?

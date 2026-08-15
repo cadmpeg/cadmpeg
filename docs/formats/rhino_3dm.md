@@ -1078,7 +1078,11 @@ bytes, a dimension-wide bounding box, the U and V openNURBS knot vectors, and
 the U-major control lattice. Each order is its stored degree plus one. Each
 pole count is `order - 1 + stored delta`. Rational form 1 stores Euclidean
 coordinates followed by weight. Rational form 2 stores homogeneous
-coordinates followed by weight.
+coordinates followed by weight. The reader processes the U rational-form byte
+then the V byte into one mode: zero leaves the current mode unchanged, and a
+nonzero form replaces it. Therefore a nonzero V form is authoritative; when V
+is zero, a nonzero U form is authoritative; when both are zero, the surface is
+non-rational.
 
 Each `TCODE_LEGACY_BND` contains `TCODE_LEGACY_BNDSTUFF` (`0x00010105`):
 
