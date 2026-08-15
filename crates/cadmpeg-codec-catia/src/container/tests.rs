@@ -53,6 +53,17 @@ fn test_descriptor(name: &str, physical_offset: u32, length: u32) -> Descriptor 
     }
 }
 
+fn fbb_only_tables_with_shared_delimiter() -> Vec<u8> {
+    let mut bytes = vec![0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2];
+    for (kind, handles) in [(1u8, [1u8, 2]), (2, [2, 3])] {
+        bytes.extend_from_slice(&[0x01, kind, 0x01, 0x02, 0x02]);
+        bytes.extend_from_slice(&handles);
+        bytes.extend_from_slice(super::EDGE_DELIMITER.as_slice());
+    }
+    bytes.extend_from_slice(&[0x01, 0x06, 0x00]);
+    bytes
+}
+
 #[test]
 fn coherent_e5_stream_overrides_nested_fbb_markers() {
     let inner = InnerDir {
@@ -65,7 +76,7 @@ fn coherent_e5_stream_overrides_nested_fbb_markers() {
         ..Census::default()
     };
     assert_eq!(
-        identify_variant(Some(&inner), Some(&[]), &census, true),
+        identify_variant(Some(&inner), Some(&[]), None, &census, true),
         Variant::E5Stream
     );
 }
@@ -77,7 +88,7 @@ fn coherent_e5_stream_overrides_zero_entity_markers() {
         ..Census::default()
     };
     assert_eq!(
-        identify_variant(None, None, &census, true),
+        identify_variant(None, None, None, &census, true),
         Variant::E5Stream
     );
 }
@@ -100,8 +111,35 @@ fn coherent_e5_stream_overrides_an_inner_body_without_brep_streams() {
         descriptors: Vec::new(),
     };
     assert_eq!(
-        identify_variant(Some(&inner), None, &Census::default(), true),
+        identify_variant(Some(&inner), None, None, &Census::default(), true),
         Variant::E5Stream
+    );
+}
+
+#[test]
+fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
+    let inner = InnerDir {
+        inner: 0,
+        descriptors: Vec::new(),
+    };
+    let brep = fbb_only_tables_with_shared_delimiter();
+    let census = Census {
+        fbb_runs: 1,
+        edge_delimiters: 2,
+        ..Census::default()
+    };
+
+    assert_eq!(
+        crate::families::standard::fbb::standard_edge_count(&brep),
+        None
+    );
+    assert_eq!(
+        crate::families::standard::fbb::fbb_only_edge_count(&brep),
+        Some(2)
+    );
+    assert_eq!(
+        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        Variant::FbbOnly
     );
 }
 

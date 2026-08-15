@@ -1221,8 +1221,10 @@ fn unique_largest_descriptor<'a>(
 /// Identify the storage variant from container-level evidence ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#1-variant-families)).
 ///
 /// The identification is intentionally structural: standard-nested requires an
-/// FBB spine plus the standard edge-table delimiter; FBB-only requires an FBB
-/// spine without that delimiter; zero-entity requires no nested container and an
+/// FBB spine plus an admitted standard edge-table grammar; FBB-only requires
+/// an admitted two-table FBB edge grammar. The delimiter byte sequence is not
+/// sufficient to distinguish them because FBB-only widths one and three reuse
+/// the standard delimiter. Zero-entity requires no nested container and an
 /// `a9 03` family; the object-stream / E5 families are named from their record
 /// census. A coherent E5 walk owns its bounded stream before the weaker
 /// container and marker fallbacks are considered. Anything that matches no
@@ -1230,6 +1232,7 @@ fn unique_largest_descriptor<'a>(
 fn identify_variant(
     inner: Option<&InnerDir>,
     brep: Option<&[u8]>,
+    main_data_stream: Option<&[u8]>,
     census: &Census,
     coherent_e5: bool,
 ) -> Variant {
@@ -1247,17 +1250,27 @@ fn identify_variant(
         }
         // Nested container, but its directory catalogues no BREP body.
         (Some(_), None) => Variant::InnerNoDirectory,
-        (Some(_), Some(_)) => {
+        (Some(_), Some(brep)) => {
             if census.fbb_runs > 0 {
-                if census.edge_delimiters > 0 {
-                    Variant::StandardNested
-                } else {
-                    Variant::FbbOnly
-                }
+                identify_fbb_variant(main_data_stream.unwrap_or(brep), census)
             } else {
                 Variant::FloatPackedInnerNoFbb
             }
         }
+    }
+}
+
+fn identify_fbb_variant(brep: &[u8], census: &Census) -> Variant {
+    if crate::families::standard::fbb::standard_edge_count(brep).is_some() {
+        return Variant::StandardNested;
+    }
+    if crate::families::standard::fbb::fbb_only_edge_count(brep).is_some() {
+        return Variant::FbbOnly;
+    }
+    if census.edge_delimiters > 0 {
+        Variant::StandardNested
+    } else {
+        Variant::FbbOnly
     }
 }
 
@@ -1308,6 +1321,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let variant = identify_variant(
         inner.as_ref(),
         brep.as_deref(),
+        main_data_stream.as_deref(),
         &census,
         outer_body.is_some_and(|body| {
             e5_record_stream_in_segments(&data, body, &finjpl_segments).is_some()
