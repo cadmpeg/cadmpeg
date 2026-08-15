@@ -54,7 +54,9 @@ surface and pcurve geometry before output. Unsupported neutral or native
 content is explicitly refused. Edited source documents may report
 `passthrough_record_omitted` losses for native direction, display, or
 occurrence-expansion records that are not regenerated. The bounded full-file
-gate is [`scripts/verify-iges-bounded.py`](../../scripts/verify-iges-bounded.py);
+gate is [`scripts/verify-iges-bounded.py`](../../scripts/verify-iges-bounded.py).
+CI runs it with `--roundtrip` to convert every successful decode to IGES 5.3,
+then decode and validate the generated file;
 the independent FreeCAD gate is
 [`scripts/verify-iges-freecad.py`](../../scripts/verify-iges-freecad.py).
 The reproducible FreeCAD geometry profile uses

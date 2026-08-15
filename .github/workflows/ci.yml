@@ -130,11 +130,12 @@ jobs:
         # running, so a separate `cargo build` step would be redundant.
         run: cargo test-fast
 
-      - name: Bounded IGES decode and validation gate
-        # Give every synthesized IGES fixture independent decode and CADIR
-        # validation deadlines under the unattended resource profile. Use the
-        # production profile so the deadline measures codec behavior rather
-        # than an unoptimized debug binary.
+      - name: Bounded IGES decode and round-trip gate
+        # Give every synthesized IGES fixture independent decode, validation,
+        # conversion, generated-file decode, and generated-file validation
+        # deadlines under the unattended resource profile. Use the production
+        # profile so the deadline measures codec behavior rather than an
+        # unoptimized debug binary.
         run: |
           set -euo pipefail
           mkdir -p "$HOME/side2/tmp/iges-l9"
@@ -144,6 +145,7 @@ jobs:
             --cadmpeg target/release/cadmpeg \
             --limits service \
             --timeout 30 \
+            --roundtrip \
             --report "$HOME/side2/tmp/iges-l9/iges-bounded-report.json"
 
       - name: Independent Inventor evidence test

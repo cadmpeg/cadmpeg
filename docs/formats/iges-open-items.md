@@ -97,8 +97,8 @@ The IGES fuzz target parses `CadIr` JSON, selects IGES 5.1, 5.2, or 5.3,
 exercises source-less planning, topology synthesis, unsupported-native
 rejection, inspection, decode, validation, verbatim replay, and edited-
 document regeneration. The smoke workflow runs each fuzz target for 60
-seconds with a 2 GiB RSS limit. The bounded decode and validation gate runs
-separately.
+seconds with a 2 GiB RSS limit. The bounded decode, validation, and round-trip
+gate runs separately.
 
 Required closure:
 
@@ -106,7 +106,8 @@ Required closure:
   resource limit;
 - retain every minimized writer or replay regression as a seed or focused
   test; and
-- keep the writer campaign and the bounded decode and validation gates in CI.
+- keep the writer campaign and the bounded decode, validation, and round-trip
+  gates in CI.
 
 # Unrecorded format rules
 

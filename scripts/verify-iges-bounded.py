@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Run the bounded IGES decode and CADIR validation gate.
+"""Run the bounded IGES decode, validation, and optional round-trip gate.
 
-Each input receives an independent timeout for decode and validation. A
-non-zero decode exit is a terminal, classified refusal. A timeout, crash,
-launcher failure, missing output, or validation failure fails the gate.
+Each input receives an independent timeout for every command. A non-zero
+initial decode exit is a terminal, classified refusal. A timeout, crash,
+launcher failure, missing output, validation failure, conversion failure, or
+generated-file validation failure fails the gate. ``--roundtrip`` adds
+conversion to IGES 5.3 and decode plus validation of the generated file.
 
 Temporary decoded artifacts are created below ``$HOME/side2/tmp/iges-l9`` by
 default. Set ``--scratch`` when a CI runner needs another dedicated scratch
@@ -101,6 +103,7 @@ def verify_file(
     limits: str,
     timeout: float,
     scratch: Path,
+    roundtrip: bool,
 ) -> dict[str, object]:
     relative_name = path.relative_to(root).as_posix()
     with tempfile.TemporaryDirectory(prefix="iges-bounded-", dir=scratch) as directory:
@@ -146,6 +149,77 @@ def verify_file(
             result["status"] = "validation_error"
             return result
 
+        if roundtrip:
+            generated = temporary / "roundtrip.igs"
+            convert_stderr = temporary / "convert.stderr"
+            convert_command = [
+                cadmpeg,
+                "convert",
+                str(cadir),
+                "--format",
+                "iges",
+                "--iges-target",
+                "5.3",
+                "--limits",
+                limits,
+                "--allow-empty",
+                "--output",
+                str(generated),
+                "--force",
+            ]
+            convert = run_command(convert_command, timeout, convert_stderr)
+            result["convert"] = asdict(convert)
+            if convert.status != "exited":
+                result["status"] = f"convert_{convert.status}"
+                return result
+            if convert.returncode != 0:
+                result["status"] = "convert_error"
+                return result
+            if not generated.is_file() or generated.stat().st_size == 0:
+                result["status"] = "convert_missing_output"
+                return result
+
+            redecoded = temporary / "redecoded.cadir.json"
+            redecode_stderr = temporary / "redecode.stderr"
+            redecode_command = [
+                cadmpeg,
+                "decode",
+                str(generated),
+                "--limits",
+                limits,
+                "--output",
+                str(redecoded),
+                "--force",
+            ]
+            redecode = run_command(redecode_command, timeout, redecode_stderr)
+            result["redecode"] = asdict(redecode)
+            if redecode.status != "exited":
+                result["status"] = f"redecode_{redecode.status}"
+                return result
+            if redecode.returncode != 0:
+                result["status"] = "redecode_error"
+                return result
+            if not redecoded.is_file() or redecoded.stat().st_size == 0:
+                result["status"] = "redecode_missing_output"
+                return result
+
+            revalidate_stderr = temporary / "revalidate.stderr"
+            revalidate_command = [
+                cadmpeg,
+                "validate",
+                str(redecoded),
+                "--limits",
+                limits,
+            ]
+            revalidate = run_command(revalidate_command, timeout, revalidate_stderr)
+            result["revalidate"] = asdict(revalidate)
+            if revalidate.status != "exited":
+                result["status"] = f"revalidation_{revalidate.status}"
+                return result
+            if revalidate.returncode != 0:
+                result["status"] = "revalidation_error"
+                return result
+
         result["gate_pass"] = True
         result["status"] = "success"
         return result
@@ -182,6 +256,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=Path,
         help="write the JSON report to this path instead of standard output",
     )
+    parser.add_argument(
+        "--roundtrip",
+        action="store_true",
+        help="convert each successful decode to IGES 5.3 and re-decode and validate it",
+    )
     args = parser.parse_args(argv)
     if args.timeout <= 0:
         parser.error("--timeout must be greater than zero")
@@ -203,7 +282,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     scratch = args.scratch.expanduser().resolve()
     scratch.mkdir(parents=True, exist_ok=True)
     results = [
-        verify_file(path, root, args.cadmpeg, args.limits, args.timeout, scratch)
+        verify_file(
+            path,
+            root,
+            args.cadmpeg,
+            args.limits,
+            args.timeout,
+            scratch,
+            args.roundtrip,
+        )
         for path in files
     ]
     failures = [result for result in results if not result["gate_pass"]]
