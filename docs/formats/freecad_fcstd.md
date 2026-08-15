@@ -224,11 +224,10 @@ use is a distinct neutral occurrence. Repeated root uses of the same shape at th
 retain their serialized root order as an occurrence discriminator; they do not share body,
 region, shell, face, loop, coedge, edge, vertex, or point identity.
 
-An edge endpoint accessor visits the edge's direct child uses in serialized order. Exactly one
-`Forward` vertex supplies the start vertex and exactly one `Reversed` vertex supplies the end
-vertex. `Internal` and `External` children do not supply endpoints. Closed and degenerate edges
-still require both oriented uses; the uses can reference the same vertex. Duplicate endpoint
-orientations and an edge without both endpoint orientations are invalid.
+An edge endpoint accessor visits the edge's direct child uses in serialized order. A normal edge
+has two endpoint uses: one `Forward` vertex supplies the start vertex and one `Reversed` vertex
+supplies the end vertex. A closed edge can use the same vertex identity in those two oriented
+uses.
 
 Edge geometry access follows serialized representation order. At most one 3D-curve representation
 can supply the exact neutral carrier and parameter range. Only when no 3D curve exists can one

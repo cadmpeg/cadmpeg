@@ -116,21 +116,25 @@ and element-map binding. The OCCT identity and traversal question remains smalle
 
 ### XT-01. Edge endpoint child selection
 
-**Question.** What child-use cardinality and orientation combinations define the start and end
-vertices of normal, closed, degenerate, and malformed edge records?
+**Question.** What child-use cardinality and orientation grammar does a producer-valid degenerate
+edge use, and which malformed endpoint forms are invalid?
 
-**Known.** Exact-shape records retain ordered and oriented topology children. Neutral edges
-require explicit start and end vertex identities.
+**Known.** Exact-shape records retain ordered and oriented topology children. A normal edge has
+two endpoint uses, with `Forward` supplying the start and `Reversed` the end. A closed edge can
+use the same vertex identity in those two orientations. In authored `NormalEdge.Shape.brp`, the
+endpoint line is `+3 0 -2 0 *` at offset `0x2f8`; in `ClosedEdge.Shape.brp`, it is `+2 0 -2 0 *`
+at offset `0x329`.
 
-**Conflict.** topology_transfer.rs:1691-1721 requires one Forward and one Reversed child and
-rejects duplicate orientations. No producer or kernel rule establishes that duplicate
-orientation uses are invalid or that this is the complete valid endpoint grammar.
+**Conflict.** No valid producer-authored degenerate edge is available. The decoder's
+topology_transfer.rs:1691-1721 rejection of duplicate orientations or missing endpoint uses is
+not evidence for the producer's malformed-input boundary.
 
-**Need.** Establish the valid endpoint forms and their orientation semantics. Handle each valid
-form explicitly and reject only a form that cannot establish both endpoint identities.
+**Need.** Author a valid degenerate edge or read the producer/kernel writer path that defines its
+endpoint uses. Obtain independent evidence for malformed duplicate, missing, and extra endpoint
+forms before assigning their validity.
 
-**Note.** The closure changed an unverified selection rule into a refusal rule. Reopened after the
-topology closure.
+**Note.** This pass settled the normal and closed two-use forms from producer-authored bytes. The
+degenerate and malformed forms remain open.
 
 ### XT-02. Edge representation selection and uniqueness
 
