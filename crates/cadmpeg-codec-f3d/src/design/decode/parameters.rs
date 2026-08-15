@@ -269,22 +269,24 @@ fn parse_legacy_design_parameter(
 }
 
 pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
-    if source_kind == "TangencyWeight" {
-        6
-    } else {
-        0
+    match source_kind {
+        "ScaleFactor" => 5,
+        "TangencyWeight" => 6,
+        _ => 0,
     }
 }
 
 pub(crate) fn valid_design_parameter_discriminator(value: u64) -> bool {
-    matches!(value, 0 | 3 | 4 | 6)
+    matches!(value, 0 | 3 | 4 | 5 | 6)
 }
 
 fn valid_design_parameter_family(discriminator: Option<u64>, source_kind: &str, tail: u8) -> bool {
     match tail {
         16 => discriminator == Some(6),
         19 => discriminator.is_none_or(|value| {
-            matches!(value, 0 | 3 | 4) || (value == 6 && source_kind == "TangencyWeight")
+            matches!(value, 0 | 3 | 4)
+                || (value == 5 && source_kind == "ScaleFactor")
+                || (value == 6 && source_kind == "TangencyWeight")
         }),
         _ => false,
     }

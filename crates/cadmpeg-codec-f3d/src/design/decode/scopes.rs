@@ -3828,14 +3828,15 @@ pub(crate) fn exact_scale_operation(
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let [center_record_index, body_group_record_index, ..] = scope.reference_members.as_slice()
+    let [factor_record_index, body_group_record_index, _, _, center_record_index] =
+        scope.reference_members.as_slice()
     else {
         return None;
     };
     if View::u32_le_at(bytes, start + 20)? != 1
         || bytes.get(start + 24) != Some(&0)
-        || marked_record_reference(bytes, start + 33)? != *scope.reference_members.last()?
-        || marked_record_reference(bytes, start + 44)? != *center_record_index
+        || marked_record_reference(bytes, start + 33)? != *center_record_index
+        || marked_record_reference(bytes, start + 44)? != *factor_record_index
         || View::u32_le_at(bytes, start + 55)? != 1
         || bytes.get(start + 59) != Some(&0)
         || View::u32_le_at(bytes, start + 60)? != 1

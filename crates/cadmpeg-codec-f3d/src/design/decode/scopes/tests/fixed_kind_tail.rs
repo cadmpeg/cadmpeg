@@ -821,7 +821,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_scale_operation(&bytes, &scale_scope),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
-            center_record_index: 101,
+            center_record_index: 105,
             uniform_factor: 1.5,
             uniform_factor_offset: (scale_at + 25) as u64,
         })
