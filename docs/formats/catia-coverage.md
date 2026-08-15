@@ -309,9 +309,11 @@ current levels require those matrices and representative fixtures.
   constraint when both fields are selected by the same transferred `Sketch`
   owner list and their graph, entity, design-object, class-entry, and owner
   identities agree. The point entity, target field and entity, and every
-  source/reference offset remain available. Constraint type, coordinates,
-  parameters, driving or active state, and solver semantics remain unresolved;
-  this slice does not raise the CATIA score.
+  source/reference offset remain available. Every outbound target-field
+  reference remains in source order with its identity, container, offset,
+  resolution state, and resolved target identity/class when available.
+  Constraint type, coordinates, parameters, driving or active state, and solver
+  semantics remain unresolved; this slice does not raise the CATIA score.
 - A transferred typed parameter receives a feature owner only when its exact
   entity record selects an object record whose design-object owner chain
   reaches a transferred feature through a complete acyclic prefix. The nearest

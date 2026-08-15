@@ -208,7 +208,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What are the operand and value fields of each dimensional and non-dimensional sketch constraint?
 
-**Known.** Constraint-range values and structural incidences are retained separately. An exact source-closed relation from an admitted `2DPoint` field to a complete `ConstraintDYS` field is retained as one unresolved native sketch constraint when both fields are direct members of the same transferred `Sketch` owner list and all graph, entity, design-object, class-entry, and owner identities agree. The point entity, target field and entity, target ordinal, and source/reference offsets are retained. No constraint type, coordinate, parameter, driving or active state, or solver semantics is assigned.
+**Known.** Constraint-range values and structural incidences are retained separately. An exact source-closed relation from an admitted `2DPoint` field to a complete `ConstraintDYS` field is retained as one unresolved native sketch constraint when both fields are direct members of the same transferred `Sketch` owner list and all graph, entity, design-object, class-entry, and owner identities agree. The point entity, target field and entity, target ordinal, source/reference offsets, and every outbound target-field reference occurrence with its source container, identity, offset, resolution state, and resolved target class are retained. No constraint type, coordinate, parameter, driving or active state, or solver semantics is assigned.
 
 **Need.** We must know the fields to transfer and solve the constraints.
 
