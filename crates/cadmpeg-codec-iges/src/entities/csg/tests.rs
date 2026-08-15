@@ -353,7 +353,7 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
 }
 
 #[test]
-fn decode_classifies_brep_content_across_complete_boolean_subtrees() {
+fn decode_requires_direct_brep_operand_for_boolean_form_one() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(nested_brep_boolean_file()),
@@ -361,7 +361,7 @@ fn decode_classifies_brep_content_across_complete_boolean_subtrees() {
         )
         .unwrap();
     let trees = &result.ir().native.namespace("iges").unwrap().arenas["boolean_trees"];
-    assert_eq!(trees.len(), 3);
+    assert_eq!(trees.len(), 6);
     assert_eq!(
         result
             .report()
@@ -371,7 +371,7 @@ fn decode_classifies_brep_content_across_complete_boolean_subtrees() {
                 .message
                 .contains("Boolean operands, form, or reference acyclicity is invalid"))
             .count(),
-        1,
+        3,
         "{:#?}",
         result.report().losses
     );

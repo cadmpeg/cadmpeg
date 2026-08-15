@@ -83,16 +83,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `6bb0de35f` supplied a formula and synthetic boundary tests, but no external evidence supports using one value for these five roles.
 
-### TP-06. Type 180 Form 1 requires a direct Type 186 operand
-
-**Question.** Does a Type 180 Form 1 Boolean tree accept a Type 186 solid directly, or through a complete operand subtree?
-
-**Known.** `brep.rs` recursively checks Type 180 and Type 430 references and accepts a Form 1 operand when the complete referenced subtree contains a Type 186. The current fixtures use project-generated nested trees.
-
-**Need.** We need the operand rule for Boolean subtrees and the treatment of nested or malformed operands from the format source or independent producer files.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `34861ac75` made the recursive interpretation internally consistent, but the source rule remains unverified. The current documentation promotes the recursive choice to a settled format fact.
-
 ### TP-09. A model-curve pointer has no resolved edge-ownership rule
 
 **Question.** How does a Type 141/142 model-curve pointer select a neutral edge when multiple edges use the same curve carrier?
