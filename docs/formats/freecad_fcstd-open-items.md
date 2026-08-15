@@ -15,62 +15,78 @@ Each item has an identifier and these fields:
 
 ### AR-01. Application-specific side-entry framing
 
-**Question.** What byte framing does each application-specific side-entry family use when no
-typed property grammar identifies the family?
+**Question.** What concrete `SaveDocFile` payload framing does each application-specific side-entry
+writer use when its runtime property type is not registered by this codec?
 
-**Known.** A side entry gets semantic meaning from a typed reference in Document.xml or
-GuiDocument.xml. An unreferenced entry remains a named archive record. Application data without
-a neutral representation retains its owning object and property.
+**Known.** `Writer::addFile` stores one persistence writer and one unique member name for each
+request, and the ZIP writer invokes that object's `SaveDocFile` for the complete member. The
+generic archive boundary has no application-wide payload header. The producer source contains
+concrete core and module side-entry writers, but the codec does not yet enumerate every remaining
+runtime family that can reach this path.
 
-**Need.** Establish the framing and record boundaries for each unregistered side-entry family.
+**Need.** Enumerate the remaining unregistered runtime families and document the payload boundary
+and framing emitted by each concrete writer.
 
-**Note.** The closure records opaque retention as policy but provides no producer grammar or
-independent witness for the unregistered families. Reopened after the side-entry closure.
+**Note.** The full producer writer path settles the generic request and member boundary, not the
+internal grammar of every family. This item remains narrowed; opaque retention is not a semantic
+answer.
 
 ### AR-02. Application-specific side-entry values
 
-**Question.** What does each field in an application-specific side-entry family mean when no
-typed property grammar identifies the family?
+**Question.** What does each field in an application-specific side-entry payload mean after its
+concrete persistence writer has been identified?
 
-**Known.** The native record retains the owning object, property, declared application type,
-links, source order, XML bytes, side-entry bytes, byte spans, lengths, and digests.
+**Known.** The exact persistence object writes the complete payload selected by `SaveDocFile`; core
+serializers define typed payloads for several file-backed properties, including raw file bytes,
+vector and placement lists, float/color/material lists, string tables, and element maps. The native
+record retains the owning object, property, declared application type, XML bytes, side-entry bytes,
+byte spans, lengths, and digests.
 
-**Need.** Establish field semantics before transferring an unregistered side entry to a typed
-native or neutral record.
+**Need.** Read the remaining concrete serializers and establish their field semantics before
+transferring an unregistered side entry to a typed native or neutral record.
 
-**Note.** Native retention prevents unsafe interpretation but does not establish field semantics
-or prove that an unregistered type has no neutral meaning. Reopened after the side-entry closure.
+**Note.** The producer source now supplies a concrete writer lineage for this subset. Remaining
+unregistered family fields still need their own writer evidence; native retention is not meaning
+evidence.
 
 ## 2. GUI properties
 
 ### GP-01. Other GUI property grammars
 
-**Question.** What value grammar does each GUI property runtime type use when the specification
-does not define that type?
+**Question.** What value grammar remains for each GUI property runtime type not yet covered by the
+specification?
 
-**Known.** Undefined GUI properties retain their owner, runtime type, status, ordered value
-elements, side-entry references, exact XML, and byte range.
+**Known.** `ViewProvider` persistence reaches the same `TransactionalObject`,
+`ExtensionContainer`, and `PropertyContainer` serializer used by application objects. The base
+registry and an authored GUI witness establish these forms: Font/String, StringList/String,
+IntegerList/I, Map/Item, Matrix `a11`-`a44`, Position/Direction `PropertyVector`, Quantity/Float,
+and Rotation/PropertyRotation. The authored Sketcher witness also establishes a custom
+`VisualLayerList` root with ordered `VisualLayer` records.
 
-**Need.** Establish each remaining runtime type grammar and validate its values without dropping
-the native record.
+**Need.** Establish the complete remaining module-owned and dynamic GUI runtime registry, including
+custom serializers and side-entry use, and validate those values without dropping the native
+record.
 
-**Note.** Exact handling for selected material and color-list types does not establish the
-grammar of the remaining GUI types. The closure still has no complete producer registry or
-independent witness for the unregistered set.
+**Note.** The headless authoring witness corrects the earlier claim that no usable GUI witness was
+available. The settled subset does not establish the complete module/dynamic registry.
 
 ### GP-02. Other GUI property semantics
 
-**Question.** What presentation value does each GUI property runtime type represent when the
-specification does not define that type?
+**Question.** What presentation semantics remain for each GUI property runtime type after the
+settled core and Sketcher visual-layer subset?
 
-**Known.** GUI records retain view-provider identity and each undefined property's runtime type
-and ordered values.
+**Known.** GUI properties use the application property's semantic type; GUI persistence does not
+introduce a second interpretation. The authored Sketcher witness and its source class establish
+that ordered `VisualLayer` records represent per-layer visibility, line pattern, and line width.
+GUI records retain view-provider identity and each remaining undefined property's runtime type and
+ordered values.
 
-**Need.** Establish the value semantics before transferring an unregistered GUI property to a
-neutral presentation field.
+**Need.** Read the defining source and independent uses for each remaining module-owned or dynamic
+runtime type before transferring it to a neutral presentation field.
 
-**Note.** Native retention is not semantic evidence. An unregistered property can still have
-neutral meaning; the closure does not establish that every such type is opaque.
+**Note.** Core value semantics and the Sketcher visual-layer subset are now source-backed. The
+remaining provider-specific presentation mapping is open; native retention is not semantic
+evidence.
 
 ## 3. Persistent topology identity
 
@@ -90,13 +106,13 @@ a copied shape at that placement and a shape at a different placement occupy two
 `TopExp::MapShapes` for unequal nested topology. topology_transfer.rs:1554-1598 uses a
 decoder-owned walk, so its order cannot be assumed to match the producer for those cases.
 
-**Need.** Read the OCCT map implementation or author differential witnesses that distinguish
-unequal nested topology traversal. Then compare those positions with topology transfer and
-preserve the producer's order.
+**Need.** Read the OCCT map implementation or author differential witnesses for remaining unequal
+nested topology. Nested compound evidence settles direct-child order and recursion; non-compound
+unequal traversal and any unproven equality cases remain.
 
-**Note.** This pass settled the FreeCAD producer's map owner, root iterator, one-based positions,
-element-map binding, and identity behavior for repeated, copied, relocated, and reversed witness
-uses. Nested traversal order remains open.
+**Note.** Three authored nested-compound permutations establish persisted child order and
+depth-first recursion, and match the topology-transfer walk. The item remains narrowed because
+simple nested solids do not establish every OCCT topology class or equality case.
 
 ## 4. Exact-topology transfer
 
@@ -200,16 +216,17 @@ must use a stable maximal subset whose targets precede their consumers, or carry
 blocking loss.
 
 **Conflict.** design.rs:679-688 marks all remaining objects cycle-affected, assigns ordinals by
-source order, and design.rs:450-456 removes edges whose targets are not earlier. The specification
-now records this policy, but no producer cycle projection establishes that source order and edge
-discard are the correct neutral result.
+source order, and design.rs:450-456 removes edges whose targets are not earlier. No producer
+cycle projection establishes that source order and edge discard are the correct neutral result.
 
 **Need.** Define a cycle projection that is stable and preserves the maximal admissible subset, or
 refuse with an explicit loss. Do not source-order a cycle and silently discard its edges.
 
 **Note.** This pass settled that the producer persists directed dependency cycles. Native retention
-and the blocking feature.cyclic-history loss are a safety improvement, but they do not establish
-the neutral relation. The projection remains open.
+and the blocking `feature.cyclic-history` loss are safety policies, but they do not establish the
+neutral relation. The prior specification text that prescribed source-order assignment and edge
+discard was removed because it was decoder policy rather than producer evidence; the projection
+remains open.
 
 ### DP-07. Legacy point carrier provenance
 

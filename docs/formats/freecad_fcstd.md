@@ -54,6 +54,8 @@ is one payload, and the ZIP member boundary is the only generic side-entry frami
 runtime type may define an internal grammar for that payload. A runtime type outside the registered
 property grammar does not define a generic internal framing or field model; its complete payload
 remains one named opaque record.
+There is no application-wide header outside the exact typed property or persistence writer; the
+member bytes are exactly the payload emitted for that request.
 The producer allocates one archive member for each typed side-entry request. A repeated requested
 name receives a unique suffixed name, and the returned name is the XML reference. Two properties
 requesting the same source payload therefore receive separate archive members; a producer-created
@@ -225,6 +227,8 @@ without synthesizing missing names.
 A repeated use of one OCCT shape identity at one composed location, including a reversed use,
 occupies the first indexed position. A distinct copied shape at that location and a shape at a
 different location occupy separate indexed positions.
+For a nested compound root, the indexed map visits direct compound children in persisted order and
+traverses a compound child before a later outer child.
 
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape. Each root shape
@@ -266,10 +270,9 @@ the format has no field that joins three or more uses into a radial cycle.
 Construction objects retain source order and native identity independently of their cached shape.
 Planar sketch geometry is transferred in persisted entity order. The one-based position of each
 `Geometry` element in `GeometryList` is its numeric persisted entity position. Non-construction
-line, circular-arc, and elliptical-arc entities are connected into deterministic oriented profile
-chains. Each chain starts with the earliest unused non-construction entity by that position and
-grows from both endpoints. Points, lines, circles, ellipses, hyperbolas, parabolas, their bounded
-arc forms, and rational or
+line, circular-arc, and elliptical-arc entities retain their persisted entity positions. The format
+has no profile-chain or profile-seed record. Points, lines, circles, ellipses, hyperbolas, parabolas,
+their bounded arc forms, and rational or
 non-rational B-splines retain
 canonical millimetre/radian values and parameter bounds. Both start/end-angle and legacy
 first/last-parameter bound names identify the same conic interval. A persisted placement supplies
@@ -303,15 +306,6 @@ list carries source entity order and the constraint list carries append order an
 operands. The format has no profile chain, profile seed entity, endpoint-junction tolerance, or
 junction tie-break field. `ArcFitTolerance` is a separate precision property
 for fitting arcs of projected external geometry; it is not an endpoint-junction tolerance.
-
-An active coincident-loci constraint between two non-construction endpoints is authoritative. If an
-endpoint has one or more such relations, only those relations are profile candidates. Otherwise,
-two bounded endpoints connect when their solved coordinates differ by at most 64 binary64 machine
-epsilons at the coordinate scale. The coordinate scale is the maximum absolute endpoint
-coordinate or one; the bound covers endpoint evaluation roundoff and is not a persisted FreeCAD
-tolerance. If one endpoint connects to more than one endpoint under the selected relation, all
-incident entities remain separate single-entity profiles. The decoder does not select one branch
-by record order.
 
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
@@ -555,6 +549,18 @@ type registry used for application properties; GUI persistence does not introduc
 grammar. A registered property family remains typed even when no neutral presentation field uses
 it. An unregistered GUI runtime type retains its exact ordered XML values without semantic
 dispatch, and its XML span is `named_opaque` in the logical ledger.
+
+The application registry also uses these GUI property forms: `App::PropertyFont` contains
+`String`; `App::PropertyStringList` contains `StringList` with a count and ordered `String`
+elements; `App::PropertyIntegerList` contains `IntegerList` with a count and ordered `I` elements;
+`App::PropertyMap` contains `Map` with a count and `Item` key/value pairs; `App::PropertyMatrix`
+contains `PropertyMatrix` with attributes `a11` through `a44`; `App::PropertyPosition` and
+`App::PropertyDirection` contain `PropertyVector`; `App::PropertyQuantity` contains `Float`; and
+`App::PropertyRotation` contains `PropertyRotation`.
+A Sketcher view-provider `VisualLayerList` property contains one `VisualLayerList` root with a
+count and ordered `VisualLayer` records. Each record contains boolean `visible`, unsigned
+`linePattern`, and `lineWidth` attributes. The records are per-layer visual representation
+settings; the format does not replace them with a core scalar or list value root.
 
 A color-list side entry contains a little-endian `u32` count followed by that many little-endian
 packed `u32` colors. A material-list value has a format version from zero through three. Versions
@@ -865,9 +871,7 @@ stable dependency order and use source order as the tie-break rule. Forward prof
 and pattern-seed links also precede
 their consumers. Body child lists are structural membership, not body inputs. If the native graph
 contains a dependency, parent, or expression cycle, the native graph retains it.
-When ordinal assignment has no ready object, every remaining cycle-affected history object receives
-a native feature definition and one blocking `feature.cyclic-history` loss. Its neutral dependency
-list retains only edges whose targets precede the consumer; the native graph remains authoritative.
+The dependency envelope has no neutral cycle ordinal or edge-discard field.
 
 Design dispatch uses exact runtime names. `PartDesign::Pad`, `PartDesign::Pocket`, and
 `Part::Extrusion` are extrusions; `PartDesign::Revolution`, `PartDesign::Groove`, and
