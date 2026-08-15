@@ -190,16 +190,6 @@ the same producer-source audit or an independent witness.
 
 **Note.** Reopened as a promotion-to-spec gap. Reordering conflicting unit records changes coordinate scaling; reordering writer-version records changes version gates.
 
-### SW-04. V1 vertex identity
-
-**Question.** Does V1 topology identify shared vertices by source references or by trim connectivity?
-
-**Known.** `legacy.rs:628-724` unions endpoint occurrences by loop adjacency and seam or mate connectivity, then assigns the arithmetic mean of incident curve endpoints at `legacy.rs:673-713`. The replacement for proximity matching is covered only by local constructed cases.
-
-**Need.** Establish the source vertex-identity and position rule independently, including the behavior of distinct nearby endpoints and conflicting endpoint positions.
-
-**Note.** Reopened because the closure promotes trim connectivity, mean position, and maximum tolerance to the format without an independent source rule.
-
 ### SW-05. V1 seam-group curve ownership
 
 **Question.** Which model-space curve owns a V1 seam or mate relation when the paired trims carry different curve states?

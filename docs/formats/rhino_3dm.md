@@ -1031,6 +1031,13 @@ face count × {
 2 × 3 × f64 bounding-box points
 ```
 
+In this direct pre-class Brep record, the vertex table and the vertex-index
+fields on edges and trims identify shared vertices by their stored source
+references. The legacy `TCODE_LEGACY_FAC` and `TCODE_LEGACY_SHL` records have
+no vertex table; their trim-loop adjacency and seam or mate permutations define
+the topology, and the reader derives vertex positions from incident edge
+endpoints.
+
 `TCODE_RH_POINT` begins with three `f64` coordinates. Attribute chunks follow
 the coordinates inside the same bounded chunk.
 
