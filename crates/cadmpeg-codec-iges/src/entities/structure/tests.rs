@@ -1325,6 +1325,37 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
 }
 
 #[test]
+fn decode_does_not_infer_roots_from_malformed_network_definition_members() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(malformed_network_occurrence_definition_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["network_definitions"].len(), 1);
+    assert_eq!(native.arenas["network_instances"].len(), 1);
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::OccurrenceRootInferenceBlocked.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D1")
+    );
+    assert!(native.arenas["network_definitions"][0].fields()["members"][0].is_null());
+}
+
+#[test]
 fn decode_rejects_non_decreasing_subfigure_nesting_depth() {
     let result = IgesCodec
         .decode(

@@ -732,6 +732,25 @@ pub(crate) fn malformed_occurrence_definition_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn malformed_network_occurrence_definition_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "BROKEN".into(),
+            status: "00000200",
+            parameters: "320,0,9HBROKENNET,1,3.,0,2HR1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "NETINST".into(),
+            status: "00000000",
+            parameters: "420,1,0,0,0,1,,,,2HU1,0,0;".into(),
+        },
+    ])
+}
+
 pub(crate) fn invalid_subfigure_depth_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
