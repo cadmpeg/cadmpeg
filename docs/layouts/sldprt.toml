@@ -4863,7 +4863,7 @@ section = "2"
 anchor = "store a 97-byte constructed reference-plane frame immediately after the class name"
 size = 97
 endianness = "little"
-note = "Offsets begin immediately after the data-class name. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix."
+note = "Offsets begin immediately after the data-class name. The pairwise-orthogonal form uses both basis triples; the `moFixedRefPlnData_c` repeated-normal form uses one in-plane triple and duplicates the normal in the other. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix."
 
 [[record.field]]
 name = "origin"
@@ -4891,14 +4891,14 @@ name = "u_axis"
 offset = 49
 type = "f64[3]"
 source = "spec"
-anchor = "Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`"
+anchor = "In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`"
 
 [[record.field]]
 name = "v_axis"
 offset = 73
 type = "f64[3]"
 source = "spec"
-anchor = "Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`"
+anchor = "In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`"
 
 [[record]]
 name = "constructed_reference_plane_matrix_frame"

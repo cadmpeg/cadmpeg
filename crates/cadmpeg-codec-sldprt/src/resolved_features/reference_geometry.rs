@@ -2176,6 +2176,7 @@ pub(super) fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u
 
 pub(super) const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
 const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
+const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
 
 pub(super) fn explicit_reference_plane_frame(
     payload: &[u8],
@@ -2212,7 +2213,13 @@ pub(super) fn constraint_reference_plane_frame(
         "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
         | "moFacePtRefPlnData_c"
         | "moFixedRefPlnData_c" => {
-            fixed_reference_plane_frame(payload.get(body..body + fixed_plane::LEN)?)
+            let frame = payload.get(body..body + fixed_plane::LEN)?;
+            if class_name == "moFixedRefPlnData_c" {
+                fixed_reference_plane_frame(frame)
+                    .or_else(|| repeated_normal_reference_plane_frame(frame))
+            } else {
+                fixed_reference_plane_frame(frame)
+            }
         }
         "moDefaultRefPlnData_c" | "moConstraintPrllPlnTanOneCylinderRefplaneData_c" => {
             minimal_reference_plane_frame(
@@ -2283,11 +2290,59 @@ pub(super) fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vecto
     );
     ([normal, u_axis, v_axis]
         .into_iter()
-        .all(|vector| (vector.norm() - 1.0).abs() <= 1.0e-9)
-        && normal.dot(u_axis).abs() <= 1.0e-9
-        && normal.dot(v_axis).abs() <= 1.0e-9
-        && u_axis.dot(v_axis).abs() <= 1.0e-9)
+        .all(|vector| (vector.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE)
+        && normal.dot(u_axis).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+        && normal.dot(v_axis).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+        && u_axis.dot(v_axis).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE)
         .then_some((origin, normal, u_axis))
+}
+
+fn repeated_normal_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    if bytes.len() != fixed_plane::LEN || bytes.get(fixed_plane::FRAME_MARKER) != Some(&1) {
+        return None;
+    }
+    let scalar = |offset| {
+        let value = View::f64_le_at(bytes, offset)?;
+        value.is_finite().then_some(value)
+    };
+    let origin = Point3::new(
+        scalar(fixed_plane::ORIGIN)? * NATIVE_TO_IR,
+        scalar(fixed_plane::ORIGIN + 8)? * NATIVE_TO_IR,
+        scalar(fixed_plane::ORIGIN + 16)? * NATIVE_TO_IR,
+    );
+    let normal = Vector3::new(
+        scalar(fixed_plane::NORMAL)?,
+        scalar(fixed_plane::NORMAL + 8)?,
+        scalar(fixed_plane::NORMAL + 16)?,
+    );
+    let first_axis = Vector3::new(
+        scalar(fixed_plane::U_AXIS)?,
+        scalar(fixed_plane::U_AXIS + 8)?,
+        scalar(fixed_plane::U_AXIS + 16)?,
+    );
+    let second_axis = Vector3::new(
+        scalar(fixed_plane::V_AXIS)?,
+        scalar(fixed_plane::V_AXIS + 8)?,
+        scalar(fixed_plane::V_AXIS + 16)?,
+    );
+    let unit = |vector: Vector3| (vector.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE;
+    let plane_axis = |vector: Vector3| {
+        unit(vector) && normal.dot(vector).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+    };
+    let repeated_normal = |vector: Vector3| {
+        unit(vector)
+            && (normal.dot(vector).abs() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+            && normal.cross(vector).norm() <= REFERENCE_PLANE_FRAME_TOLERANCE
+    };
+    let u_axis = if plane_axis(first_axis) && repeated_normal(second_axis) {
+        first_axis
+    } else if plane_axis(second_axis) && repeated_normal(first_axis) {
+        second_axis
+    } else {
+        return None;
+    };
+    Some((origin, normal, u_axis))
 }
 
 type ReferencePlaneFrame = (Point3, Vector3, Vector3);

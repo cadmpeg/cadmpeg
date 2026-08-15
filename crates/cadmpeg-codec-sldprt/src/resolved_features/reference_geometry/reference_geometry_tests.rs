@@ -1232,6 +1232,57 @@ fn offset_plane_face_reference_owns_a_fixed_plane_frame() {
 }
 
 #[test]
+fn fixed_reference_plane_accepts_repeated_normal_axis_form() {
+    const CLASS: &str = "moFixedRefPlnData_c";
+    let payload_for = |first_axis: [f64; 3], second_axis: [f64; 3]| {
+        let root = 7;
+        let mut payload = vec![0xaa; root];
+        payload.extend(CLASS_MARKER);
+        payload.extend((CLASS.len() as u16).to_le_bytes());
+        payload.extend(CLASS.as_bytes());
+        let body = payload.len();
+        payload.resize(body + fixed_plane::LEN, 0);
+        for (offset, value) in [(0, 0.0025_f64), (24, 0.0), (32, 1.0), (40, 0.0)] {
+            payload[body + offset..body + offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        for (axis_offset, axis) in [
+            (fixed_plane::U_AXIS, first_axis),
+            (fixed_plane::V_AXIS, second_axis),
+        ] {
+            for (index, value) in axis.into_iter().enumerate() {
+                let offset = body + axis_offset + index * 8;
+                payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        payload[body + fixed_plane::FRAME_MARKER] = 1;
+        (payload, root)
+    };
+
+    for (first_axis, second_axis, expected) in [
+        (
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        (
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+    ] {
+        let (payload, root) = payload_for(first_axis, second_axis);
+        assert_eq!(
+            constraint_reference_plane_frame(&payload, root, CLASS),
+            Some((
+                Point3::new(2.5, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                expected,
+            ))
+        );
+    }
+}
+
+#[test]
 fn named_reference_plane_data_classes_anchor_frame_lengths() {
     let payload_for = |class: &str, frame: &[u8]| {
         let root = 7;

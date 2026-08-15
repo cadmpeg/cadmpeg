@@ -1654,7 +1654,7 @@ pub(crate) mod coordinate_system_xy_tail {
 /// Spec §2. Record length 97 B.
 ///
 /// ```text
-/// Offsets begin immediately after the data-class name. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
+/// Offsets begin immediately after the data-class name. The pairwise-orthogonal form uses both basis triples; the `moFixedRefPlnData_c` repeated-normal form uses one in-plane triple and duplicates the normal in the other. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
 /// ```
 pub(crate) mod constructed_reference_plane_fixed_frame {
     /// Record length in bytes. Spec §2.
