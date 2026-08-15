@@ -763,8 +763,9 @@ missing auxiliary path leave the operation attributable and native.
 PartDesign ShapeBinder and SubShapeBinder operations retain their ordered support links and
 subelement selectors. A SubShapeBinder `Context` property is optional and, when present, is one
 `App::PropertyXLink` carrier with at most one link target. A duplicate `Context` carrier, another
-runtime type, or multiple link targets leaves the binder as an attributable native operation;
-the decoder does not select a target by source order.
+runtime type, multiple link targets, or a subelement selector is malformed for this operation. An
+admissible carrier with an unresolved target leaves the binder attributable and native; the
+decoder does not select a target by source order.
 
 Part scale operations retain their source-shape selection and model-origin scale center. Uniform
 mode carries one factor; anisotropic mode carries independent x, y, and z factors. Finite nonzero
@@ -816,11 +817,14 @@ design-domain loss report.
 Plain Part and PartDesign features are direct stored geometry rather than unknown parametric
 operations. Their exact shape payload supplies the feature outputs when present; no replay
 construction is fabricated when a stored feature is empty or frozen. A PartDesign base feature is
-instead a derived-geometry operation whose input is the earlier linked feature. Application-owned
-feature subclasses remain in the complete native object/property graph and are not misclassified
-as built-in modeling operations solely because their type derives from a core feature class.
-Legacy spline, extended-feature, geometry-set, and planar-feature containers likewise represent
-direct stored geometry when they carry no replay construction. STEP, IGES, B-rep, and curve-network
+instead a derived-geometry operation whose input is the earlier linked feature. Its `BaseFeature`
+carrier is one `App::PropertyLink` with exactly one target. Another runtime type or multiple targets
+leave the feature attributable and native; duplicate named carriers are malformed. The decoder does
+not select a target by source order. Application-owned feature subclasses remain in the complete
+native object/property graph and are not misclassified as built-in modeling operations solely because
+their type derives from a core feature class. Legacy spline, extended-feature, geometry-set, and
+planar-feature containers likewise represent direct stored geometry when they carry no replay
+construction. STEP, IGES, B-rep, and curve-network
 import features instead retain their exact external path and source model format as replayable
 import intent; an absent or empty source path leaves the feature attributable and native.
 

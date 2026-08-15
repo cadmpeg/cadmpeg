@@ -4321,7 +4321,9 @@ fn binder_definition(
         let context = match context_properties.as_slice() {
             [] => None,
             [property]
-                if property.type_name == "App::PropertyXLink" && property.links.len() <= 1 =>
+                if property.type_name == "App::PropertyXLink"
+                    && property.links.len() == 1
+                    && property.links[0].subelements.is_empty() =>
             {
                 property
                     .links
@@ -4866,11 +4868,18 @@ fn feature_base_definition(
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
 ) -> Option<FeatureDefinition> {
-    let source = property(properties, "BaseFeature")?
-        .links
-        .first()?
-        .object
-        .as_deref()?;
+    let base_properties = properties
+        .iter()
+        .filter(|property| property.name == "BaseFeature")
+        .copied()
+        .collect::<Vec<_>>();
+    let [property] = base_properties.as_slice() else {
+        return None;
+    };
+    if property.type_name != "App::PropertyLink" || property.links.len() != 1 {
+        return None;
+    }
+    let source = property.links[0].object.as_deref()?;
     Some(FeatureDefinition::DerivedGeometry {
         source: feature_ids.get(source)?.clone(),
     })

@@ -97,6 +97,46 @@ fn distinguishes_stored_base_and_application_owned_features() {
 }
 
 #[test]
+fn rejects_noncanonical_feature_base_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="Source" id="1"/>
+ <Object type="Part::Feature" name="Alternate" id="2"/>
+ <Object type="PartDesign::FeatureBase" name="MultiBase" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Source"><Properties Count="0"/></Object>
+ <Object name="Alternate"><Properties Count="0"/></Object>
+ <Object name="MultiBase"><Properties Count="1"><Property name="BaseFeature" type="App::PropertyLinkList"><LinkList count="2"><Link value="Source"/><Link value="Alternate"/></LinkList></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("noncanonical feature base carriers");
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("MultiBase"))
+        .expect("feature base");
+    assert!(matches!(
+        &feature.definition,
+        FeatureDefinition::Native { kind, .. } if kind == "PartDesign::FeatureBase"
+    ));
+    assert_eq!(result.report().losses.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking));
+}
+
+#[test]
 fn keeps_extension_dress_ups_out_of_exact_design_dispatch() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
