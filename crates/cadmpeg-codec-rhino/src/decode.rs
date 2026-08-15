@@ -2014,28 +2014,14 @@ impl<'a> DecodeContext<'a> {
         before: &ModelCheckpoint,
         transform: Transform,
     ) -> Result<Vec<String>, String> {
-        let mut owned_curves = BTreeSet::new();
-        let mut owned_surfaces = BTreeSet::new();
-        let owned_points = before
-            .added::<Vertex>(&self.ir.model)
-            .ok_or_else(|| "instance decode removed existing vertices".to_string())?
-            .iter()
-            .map(|vertex| vertex.point.clone())
-            .collect::<BTreeSet<_>>();
-        for edge in before
-            .added::<Edge>(&self.ir.model)
-            .ok_or_else(|| "instance decode removed existing edges".to_string())?
-        {
-            if let Some(curve) = &edge.curve {
-                owned_curves.insert(curve.clone());
-            }
-        }
-        for face in before
-            .added::<Face>(&self.ir.model)
-            .ok_or_else(|| "instance decode removed existing faces".to_string())?
-        {
-            owned_surfaces.insert(face.surface.clone());
-        }
+        // `before` is captured immediately before decoding one UUID from the
+        // definition member array.  The presence of a newly emitted body is
+        // therefore the carrier boundary for that source object, not a
+        // topology inference from its child references.
+        let body_carrier = !before
+            .added::<Body>(&self.ir.model)
+            .ok_or_else(|| "instance decode removed existing bodies".to_string())?
+            .is_empty();
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
         for body in before
@@ -2050,7 +2036,7 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Point>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing points".to_string())?
         {
-            if !owned_points.contains(&point.id) {
+            if !body_carrier {
                 point.position = transform.apply_point(point.position);
                 derived_ids.push(point.id.to_string());
             }
@@ -2059,7 +2045,7 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Curve>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing curves".to_string())?
         {
-            if !owned_curves.contains(&curve.id) {
+            if !body_carrier {
                 transform_curve(curve, transform)?;
                 links.push(curve.id.to_string());
                 derived_ids.push(curve.id.to_string());
@@ -2069,7 +2055,7 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Surface>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
         {
-            if !owned_surfaces.contains(&surface.id) {
+            if !body_carrier {
                 transform_surface(surface, transform)?;
                 links.push(surface.id.to_string());
                 derived_ids.push(surface.id.to_string());

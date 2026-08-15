@@ -934,9 +934,18 @@ TCODE_LEGACY_CRV parameter-space curve
 if edge-present: TCODE_LEGACY_CRV model-space edge curve
 ```
 
-Flag bit 0 marks an explicit model-space edge curve. Bits 1 or 2 mark a mate;
-bit 1 marks a seam on the same face. The face seam permutation pairs seam
-trims that use one edge.
+Flag bit 0 marks an explicit model-space edge curve. Bit 1 marks a seam on the
+same face. Bit 2 marks a mated trim on another face. The face seam permutation
+and shell permutation pair trim records. A pair shares one edge only when
+exactly one trim stores a model-space edge curve; the curve-less trim uses that
+edge. If both trims store model-space edge curves, they remain separate edges.
+If neither trim stores one, neither trim has a model-space edge curve.
+
+V1 Brep vertices are identified by trim-loop adjacency and the shared-edge
+permutations. The endpoint coordinates do not merge separate topological
+vertices. A vertex position is the arithmetic mean of its incident
+model-space edge endpoints, and its tolerance is the maximum incident edge
+tolerance.
 
 `TCODE_LEGACY_SHL` (`0x00010003`) contains one
 `TCODE_LEGACY_SHLSTUFF` (`0x00010103`):
@@ -2074,9 +2083,14 @@ ON_BoundingBox bounds
 
 Definition membership comes from the definition UUID array, not object
 attributes. The reference payload carries the transform and bounding box.
-The transform applies to each free entity emitted by the definition. A body
-transform carries its topology and vertex points. A free point is transformed
-independently when the same definition also emits a body.
+The member UUID array identifies the source object records that belong to the
+definition. The reference transform is applied once to every carrier emitted
+by each member record. A member that emits a body stores the transform on the
+body; the body carries its topology and vertex points. A member with no body
+transforms each emitted point, curve, and surface directly. Mesh and SubD
+vertex arrays are transformed directly. A free point from another member is
+therefore transformed independently even when the definition also emits a
+body.
 
 ### 18.1 Modern dimensions
 

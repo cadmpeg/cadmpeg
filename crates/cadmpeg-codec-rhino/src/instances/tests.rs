@@ -454,6 +454,55 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
 }
 
 #[test]
+fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
+    let archive = ArchiveVersion::V5;
+    let point_id = [0x58; 16];
+    let curve_id = [0x59; 16];
+    let definition_id = [0x68; 16];
+    let reference_id = [0x79; 16];
+    let point =
+        object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
+    let curve = object_record_with_payload(
+        archive,
+        4,
+        NURBS_CURVE_CLASS,
+        &nurbs_curve_payload([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
+    );
+    let reference = object_record_with_payload(
+        archive,
+        0x1000,
+        INSTANCE_REFERENCE_CLASS,
+        &instance_reference_payload(definition_id, transform(1.0, [10.0, 0.0, 0.0])),
+    );
+    let mut scan = scan_with_objects(&[point, curve, reference]);
+    set_identity(&mut scan, 0, point_id, "point-member", None, true);
+    set_identity(&mut scan, 1, curve_id, "curve-member", None, true);
+    set_identity(&mut scan, 2, reference_id, "reference", None, true);
+    install_definitions(
+        &mut scan,
+        vec![static_definition(definition_id, &[point_id, curve_id])],
+    );
+
+    let result = crate::decode::decode_for_test(&scan);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.points[0].position.x, 1.0);
+    assert_eq!(
+        result.ir().model.bodies[0]
+            .transform
+            .expect("body carrier transform")
+            .rows[0][3],
+        10.0
+    );
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry
+    else {
+        panic!("free member curve must remain a transformed solved carrier");
+    };
+    assert_eq!(curve.control_points[0].x, 11.0);
+    assert_eq!(curve.control_points[1].x, 12.0);
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+}
+
+#[test]
 pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_path() {
     let archive = ArchiveVersion::V5;
     let member_id = [0x52; 16];

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino V1 flat geometry decoding.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
@@ -495,13 +495,6 @@ fn union(parents: &mut [usize], left: usize, right: usize) {
     }
 }
 
-fn same_point(left: Point3, right: Point3, tolerance: f64) -> bool {
-    let tolerance = tolerance.max(1.0e-12);
-    (left.x - right.x).abs() <= tolerance
-        && (left.y - right.y).abs() <= tolerance
-        && (left.z - right.z).abs() <= tolerance
-}
-
 fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<(), CodecError> {
     let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{suffix}").into();
     let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{suffix}").into();
@@ -521,6 +514,17 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         return Err(CodecError::Malformed("V1 Brep has no trims".to_string()));
     }
     let mut parents = (0..trim_paths.len()).collect::<Vec<_>>();
+    let has_edge = |index: usize| {
+        let (face, loop_index, trim) = trim_paths[index];
+        brep.faces[face].loops[loop_index].trims[trim]
+            .curve
+            .is_some()
+    };
+    let glue_edges = |parents: &mut [usize], left: usize, right: usize| {
+        if has_edge(left) != has_edge(right) {
+            union(parents, left, right);
+        }
+    };
     for (face_index, face) in brep.faces.iter().enumerate() {
         let seams = face_trim_indices[face_index]
             .iter()
@@ -533,7 +537,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         if face.seam_glue.len() == seams.len() {
             for (index, mate) in face.seam_glue.iter().copied().enumerate() {
                 if mate < seams.len() {
-                    union(&mut parents, seams[index], seams[mate]);
+                    glue_edges(&mut parents, seams[index], seams[mate]);
                 }
             }
         }
@@ -542,21 +546,21 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         .iter()
         .enumerate()
         .filter_map(|(index, (face, loop_index, trim))| {
-            brep.faces[*face].loops[*loop_index].trims[*trim]
-                .has_mate
-                .then_some(index)
+            let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
+            (record.has_mate && !record.seam).then_some(index)
         })
         .collect::<Vec<_>>();
     if brep.shell_glue.len() == mates.len() {
         for (index, mate) in brep.shell_glue.iter().copied().enumerate() {
             if mate < mates.len() {
-                union(&mut parents, mates[index], mates[mate]);
+                glue_edges(&mut parents, mates[index], mates[mate]);
             }
         }
     }
     let roots = (0..trim_paths.len())
         .map(|index| find_root(&mut parents, index))
         .collect::<Vec<_>>();
+    let group_roots = roots.iter().copied().collect::<BTreeSet<_>>();
     let mut group_curve = BTreeMap::<usize, NurbsCurve>::new();
     let mut group_tolerance = BTreeMap::<usize, f64>::new();
     for (index, (face, loop_index, trim)) in trim_paths.iter().copied().enumerate() {
@@ -608,44 +612,119 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             }
         }
     }
-    let mut vertex_points = Vec::<(Point3, f64, cadmpeg_ir::ids::VertexId)>::new();
-    let mut group_vertices = BTreeMap::new();
-    for (root, points) in &group_points {
-        let tolerance = group_tolerance.get(root).copied().unwrap_or(0.0);
-        let mut ids = Vec::with_capacity(2);
-        for point in points {
-            if let Some((_, _, id)) =
-                vertex_points
-                    .iter()
-                    .find(|(candidate, candidate_tolerance, _)| {
-                        same_point(*candidate, *point, tolerance.max(*candidate_tolerance))
-                    })
-            {
-                ids.push(id.clone());
-                continue;
-            }
-            let index = vertex_points.len();
-            let point_id: cadmpeg_ir::ids::PointId =
-                format!("rhino:object:point#{suffix}.vertex-{index}").into();
-            let vertex_id: cadmpeg_ir::ids::VertexId =
-                format!("rhino:object:vertex#{suffix}.slot-{index}").into();
-            ir.model.points.push(Point {
-                id: point_id.clone(),
-                position: *point,
-                source_object: None,
-            });
-            ir.model.vertices.push(Vertex {
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: (tolerance > 0.0).then_some(tolerance),
-            });
-            vertex_points.push((*point, tolerance, vertex_id.clone()));
-            ids.push(vertex_id);
+    for root in &group_roots {
+        if !group_points.contains_key(root) {
+            return Err(CodecError::Malformed(
+                "V1 edge group has no model-space endpoint curve".to_string(),
+            ));
         }
-        group_vertices.insert(*root, [ids[0].clone(), ids[1].clone()]);
+    }
+
+    // The V1 reader creates vertices from trim connectivity.  A loop joins
+    // each trim end to the next trim start, and a glued edge joins the
+    // corresponding ends of every trim that uses that edge.  Coordinates
+    // are only used for the resulting vertex position; they never identify
+    // two topologically separate vertices.
+    let mut endpoint_parents = (0..trim_paths.len() * 2).collect::<Vec<_>>();
+    for (face_index, face) in brep.faces.iter().enumerate() {
+        for (loop_index, loop_record) in face.loops.iter().enumerate() {
+            let start = face_trim_indices[face_index]
+                .iter()
+                .position(|global| {
+                    let (_, candidate_loop, candidate_trim) = trim_paths[*global];
+                    candidate_loop == loop_index && candidate_trim == 0
+                })
+                .map(|position| face_trim_indices[face_index][position])
+                .ok_or_else(|| CodecError::Malformed("V1 loop has no indexed trim".to_string()))?;
+            let globals = (0..loop_record.trims.len())
+                .map(|offset| start + offset)
+                .collect::<Vec<_>>();
+            for (position, global) in globals.iter().copied().enumerate() {
+                let next = globals[(position + 1) % globals.len()];
+                let (_, _, trim_index) = trim_paths[global];
+                let (_, _, next_trim_index) = trim_paths[next];
+                let current = &loop_record.trims[trim_index];
+                let following = &loop_record.trims[next_trim_index];
+                let current_root = roots[global];
+                let next_root = roots[next];
+                let current_end = usize::from(!current.reversed);
+                let next_start = usize::from(following.reversed);
+                union(
+                    &mut endpoint_parents,
+                    current_root * 2 + current_end,
+                    next_root * 2 + next_start,
+                );
+            }
+        }
+    }
+    for (index, root) in roots.iter().copied().enumerate() {
+        let (_, loop_index, trim_index) = trim_paths[index];
+        let trim = &brep.faces[trim_paths[index].0].loops[loop_index].trims[trim_index];
+        for endpoint in 0..2 {
+            let slot = if trim.reversed {
+                1 - endpoint
+            } else {
+                endpoint
+            };
+            union(&mut endpoint_parents, index * 2 + endpoint, root * 2 + slot);
+        }
+    }
+
+    let mut class_samples = BTreeMap::<usize, Vec<(Point3, f64)>>::new();
+    for root in &group_roots {
+        let points = group_points[root];
+        let tolerance = group_tolerance.get(root).copied().unwrap_or(0.0);
+        for (slot, point) in points.into_iter().enumerate() {
+            let class = find_root(&mut endpoint_parents, root * 2 + slot);
+            class_samples
+                .entry(class)
+                .or_default()
+                .push((point, tolerance));
+        }
+    }
+    let mut vertex_by_class = BTreeMap::<usize, cadmpeg_ir::ids::VertexId>::new();
+    for (class, samples) in class_samples {
+        let count = samples.len() as f64;
+        let (position, tolerance) = samples.into_iter().fold(
+            (Point3::new(0.0, 0.0, 0.0), 0.0_f64),
+            |(sum, maximum_tolerance), (point, sample_tolerance)| {
+                (
+                    Point3::new(sum.x + point.x, sum.y + point.y, sum.z + point.z),
+                    maximum_tolerance.max(sample_tolerance),
+                )
+            },
+        );
+        let position = Point3::new(position.x / count, position.y / count, position.z / count);
+        let index = vertex_by_class.len();
+        let point_id: cadmpeg_ir::ids::PointId =
+            format!("rhino:object:point#{suffix}.vertex-{index}").into();
+        let vertex_id: cadmpeg_ir::ids::VertexId =
+            format!("rhino:object:vertex#{suffix}.slot-{index}").into();
+        ir.model.points.push(Point {
+            id: point_id.clone(),
+            position,
+            source_object: None,
+        });
+        ir.model.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point_id,
+            tolerance: (tolerance > 0.0).then_some(tolerance),
+        });
+        vertex_by_class.insert(class, vertex_id);
+    }
+    let mut group_vertices = BTreeMap::new();
+    for root in &group_roots {
+        let ids = [0, 1].map(|slot| {
+            let class = find_root(&mut endpoint_parents, root * 2 + slot);
+            vertex_by_class
+                .get(&class)
+                .expect("every V1 endpoint class has a vertex")
+                .clone()
+        });
+        group_vertices.insert(*root, ids);
     }
     let mut group_edges = BTreeMap::new();
-    for (edge_index, root) in group_points.keys().copied().enumerate() {
+    for (edge_index, root) in group_roots.iter().copied().enumerate() {
         let curve_id = if let Some(curve) = group_curve.remove(&root) {
             let id: cadmpeg_ir::ids::CurveId =
                 format!("rhino:object:curve#{suffix}.edge-{edge_index}").into();
@@ -1495,15 +1574,17 @@ mod tests {
         )
     }
 
-    fn legacy_trim(from: [f64; 3], to: [f64; 3]) -> Vec<u8> {
-        let mut stuff = vec![1];
+    fn legacy_trim(from: [f64; 3], to: [f64; 3], flags: u8) -> Vec<u8> {
+        let mut stuff = vec![flags];
         stuff.extend(0_i32.to_le_bytes());
         stuff.extend(0_i32.to_le_bytes());
         stuff.extend(0_i32.to_le_bytes());
         stuff.extend(0.001_f64.to_le_bytes());
         stuff.extend(0.001_f64.to_le_bytes());
         stuff.extend(legacy_line(from, to, 2));
-        stuff.extend(legacy_line(from, to, 3));
+        if flags & 1 != 0 {
+            stuff.extend(legacy_line(from, to, 3));
+        }
         legacy_chunk(
             TCODE_LEGACY_TRM,
             &legacy_chunk(TCODE_LEGACY_TRMSTUFF, &stuff),
@@ -1538,20 +1619,19 @@ mod tests {
         )
     }
 
-    fn legacy_face_archive() -> Vec<u8> {
-        let corners = [
-            [0.0_f64, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [1.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ];
-        let mut boundary = 4_i32.to_le_bytes().to_vec();
+    fn legacy_face_archive_with(corners: &[[f64; 3]], trim_flags: &[u8], glue: &[u16]) -> Vec<u8> {
+        assert_eq!(corners.len(), trim_flags.len());
+        let mut boundary = (corners.len() as i32).to_le_bytes().to_vec();
         boundary.extend(0_i32.to_le_bytes());
         for value in [0.0_f64, 0.0, 1.0, 1.0] {
             boundary.extend(value.to_le_bytes());
         }
-        for index in 0..4 {
-            boundary.extend(legacy_trim(corners[index], corners[(index + 1) % 4]));
+        for index in 0..corners.len() {
+            boundary.extend(legacy_trim(
+                corners[index],
+                corners[(index + 1) % corners.len()],
+                trim_flags[index],
+            ));
         }
         let boundary = legacy_chunk(
             TCODE_LEGACY_BND,
@@ -1563,7 +1643,10 @@ mod tests {
         for value in [0.0_f64, 0.0, 0.0, 1.0, 1.0, 0.0] {
             face.extend(value.to_le_bytes());
         }
-        face.extend(0_i32.to_le_bytes());
+        face.extend((glue.len() as i32).to_le_bytes());
+        for value in glue {
+            face.extend(value.to_le_bytes());
+        }
         face.extend(legacy_surface());
         face.extend(boundary);
         let face = legacy_chunk(
@@ -1575,6 +1658,16 @@ mod tests {
         archive.extend(chunk(TCODE_COMMENT, b"legacy face"));
         archive.extend(face);
         archive
+    }
+
+    fn legacy_face_archive() -> Vec<u8> {
+        let corners = [
+            [0.0_f64, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
+        legacy_face_archive_with(&corners, &[1, 1, 1, 1], &[])
     }
 
     fn legacy_shell_archive() -> Vec<u8> {
@@ -1672,5 +1765,73 @@ mod tests {
         assert_eq!(result.report().coverage["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
+    }
+
+    #[test]
+    fn v1_vertices_follow_trim_connectivity_not_nearby_coordinates() {
+        let corners = [
+            [0.0_f64, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0005, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
+        let result = decode_v1(&legacy_face_archive_with(&corners, &[1, 1, 1, 1], &[]))
+            .expect("nearby but topologically distinct V1 vertices are valid");
+        assert_eq!(result.ir().model.vertices.len(), 4);
+        assert_eq!(result.ir().model.edges.len(), 4);
+        let edge_endpoints = result
+            .ir()
+            .model
+            .edges
+            .iter()
+            .map(|edge| (edge.start.clone(), edge.end.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(edge_endpoints[0].0, edge_endpoints[3].1);
+        assert_ne!(edge_endpoints[0].0, edge_endpoints[2].0);
+    }
+
+    #[test]
+    fn v1_seam_glue_keeps_two_explicit_edge_curves_separate() {
+        let corners = [
+            [0.0_f64, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
+        let result = decode_v1(&legacy_face_archive_with(
+            &corners,
+            &[3, 3, 3, 3],
+            &[1, 0, 3, 2],
+        ))
+        .expect("explicit seam edge curves are valid");
+        assert_eq!(result.ir().model.edges.len(), 4);
+        assert_eq!(result.ir().model.curves.len(), 4);
+        assert!(result
+            .ir()
+            .model
+            .edges
+            .iter()
+            .all(|edge| edge.curve.is_some()));
+    }
+
+    #[test]
+    fn v1_seam_glue_attaches_curve_less_trim_to_explicit_edge() {
+        let corners = [
+            [0.0_f64, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ];
+        let result = decode_v1(&legacy_face_archive_with(
+            &corners,
+            &[3, 2, 3, 2],
+            &[1, 0, 3, 2],
+        ))
+        .expect("curve-less seam partners are valid");
+        assert_eq!(result.ir().model.edges.len(), 2);
+        assert_eq!(result.ir().model.curves.len(), 2);
+        let coedges = &result.ir().model.coedges;
+        assert_eq!(coedges[0].edge, coedges[1].edge);
+        assert_eq!(coedges[2].edge, coedges[3].edge);
     }
 }
