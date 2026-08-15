@@ -437,7 +437,8 @@ pub(crate) fn unique_complete_local_system(definition: &FeatureDefinition) -> Op
         .iter()
         .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
         .filter_map(|frame| frame.decoded_values.as_deref())
-        .filter_map(|values| <&[f64; 12]>::try_from(values).ok());
+        .filter_map(|values| <&[f64; 12]>::try_from(values).ok())
+        .filter(|values| values.iter().all(|value| value.is_finite()));
     let values = *frames.next()?;
     frames.next().is_none().then_some(values)
 }

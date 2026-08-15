@@ -101,6 +101,32 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
 }
 
 #[test]
+fn unique_complete_local_system_rejects_nonfinite_values() {
+    let mut definition = blank_definition();
+    definition.parameter_frames = vec![FeatureParameterFrame {
+        kind: FeatureParameterFrameKind::LocalSystem,
+        body: Vec::new(),
+        decoded_values: Some(vec![
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            f64::NAN,
+            0.0,
+            0.0,
+        ]),
+        offset: 1,
+    }];
+
+    assert_eq!(unique_complete_local_system(&definition), None);
+}
+
+#[test]
 fn unresolved_local_system_does_not_hide_a_complete_outline_plane() {
     let unresolved = PlaneLocalSystem {
         surface_id: 7,
