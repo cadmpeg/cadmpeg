@@ -1891,6 +1891,10 @@ and loop rings must be finite, endpoint-continuous, and closed.
 For Brep minor at least 1, render and analysis side chunks each contain one
 byte per face; nonzero is followed by a polymorphic object which must be an
 `ON_Mesh`. These are cache channels and do not alter Brep topology.
+If a present slot has the wrong class or its bounded mesh payload cannot be
+parsed, the slot is discarded independently and the decode report emits
+`brep.mesh-cache-degraded` with the diagnostic cause. The Brep remains
+admissible when its analytic topology is valid.
 
 For minor at least 2, `i32 is_solid` is 0 unset, 1 solid/outward, 2
 solid/inward, and 3 not-solid. Other values remain in native source data and
@@ -1905,6 +1909,10 @@ presence byte and, when present, a major-1 region-topology object. The object
 contains a face-side array and region array, each with major 1 and
 an `i32` count. Before archive 60, arrays contain raw anonymous element chunks;
 at archive 60 and later, arrays contain polymorphic objects.
+When the optional region topology fails its face-side or element invariants, the
+complete optional region topology is discarded and the decode report emits
+`container.redundant-field-repaired` with the diagnostic cause; the Brep remains
+admissible.
 
 Face side:
 

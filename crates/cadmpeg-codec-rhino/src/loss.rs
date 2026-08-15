@@ -39,6 +39,8 @@ pub enum RhinoLossCode {
     EnumerationValueDegraded,
     /// A redundant count or size was inconsistent; dependent data was dropped.
     RedundantFieldRepaired,
+    /// A Brep display-mesh cache slot was wrong-class or unreadable.
+    BrepMeshCacheDegraded,
     /// A duplicate source record was resolved by the format's ownership rule.
     DuplicateRecordResolved,
     /// A stored quad was converted to neutral triangles.
@@ -104,6 +106,7 @@ impl RhinoLossCode {
         Self::MeshNgonGroupingDropped,
         Self::EnumerationValueDegraded,
         Self::RedundantFieldRepaired,
+        Self::BrepMeshCacheDegraded,
         Self::DuplicateRecordResolved,
         Self::MeshQuadTopologyTriangulated,
         Self::HistoryEmbeddedGeometryDropped,
@@ -143,6 +146,7 @@ impl RhinoLossCode {
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
             Self::EnumerationValueDegraded => "container.enumeration-value-degraded",
             Self::RedundantFieldRepaired => "container.redundant-field-repaired",
+            Self::BrepMeshCacheDegraded => "brep.mesh-cache-degraded",
             Self::DuplicateRecordResolved => "container.duplicate-record-resolved",
             Self::MeshQuadTopologyTriangulated => "mesh.quad-topology-triangulated",
             Self::HistoryEmbeddedGeometryDropped => "history.embedded-geometry-dropped",
@@ -202,6 +206,7 @@ impl RhinoLossCode {
             Self::EnumerationValueDegraded | Self::RedundantFieldRepaired => {
                 LossTaxonomy::DecodeDiagnostic
             }
+            Self::BrepMeshCacheDegraded => LossTaxonomy::RecordNotTyped,
             Self::DuplicateRecordResolved => LossTaxonomy::DecodeDiagnostic,
             Self::HistoryEmbeddedGeometryDropped => LossTaxonomy::GeometryNotTransferred,
             Self::DimensionOverrideDropped => LossTaxonomy::PmiOmitted,
@@ -272,6 +277,7 @@ mod tests {
                 "mesh.ngon-grouping-dropped",
                 "container.enumeration-value-degraded",
                 "container.redundant-field-repaired",
+                "brep.mesh-cache-degraded",
                 "container.duplicate-record-resolved",
                 "mesh.quad-topology-triangulated",
                 "history.embedded-geometry-dropped",

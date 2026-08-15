@@ -136,16 +136,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened as a promotion-to-spec gap. A V2 class can be admitted under an unverified later-archive assumption and then be falsely typed or lose unsupported fields.
 
-### NS-01. Brep mesh-cache loss accounting
-
-**Question.** How is a Brep mesh-cache slot that has the wrong class or cannot be parsed represented in loss accounting?
-
-**Known.** `brep.rs:981-1047` distinguishes wrong-class, parse-failure, and outer-cache failures in diagnostics, but `decode.rs:2369-2380` maps all scan warnings to the generic `container.scan-diagnostic` loss code.
-
-**Need.** Use a codec-specific typed loss code for Brep mesh-cache degradation, retaining the diagnostic detail and distinguishing it from unrelated container scan failures.
-
-**Note.** The cache framing fix is sound. Reopened because the remaining degradation path is not represented with the required fidelity-specific loss vocabulary.
-
 ### RS-01. Later-minor bounded suffixes
 
 **Question.** Which versioned records accept unread fields appended before their bounded end?
@@ -235,16 +225,6 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 **Need.** Provide an independent source rule for the diagonal calculation and tie case, then keep the derived exactness and `mesh.quad-topology-triangulated` loss contract aligned with that rule.
 
 **Note.** Reopened because the closure fixed the neutral loss accounting but promoted one local geometric rule without an independent operand for equal diagonals.
-
-### RS-06. Redundant-field repair accounting
-
-**Question.** Which stored redundant counts, indices, and optional fields may be repaired, and what typed loss does each repair emit?
-
-**Known.** The closure partitions several mesh, point-cloud, history, and positional fields as redundant or optional. `brep.rs:1114-1119` still converts an invalid optional region topology into the warning `invalid optional Brep region topology discarded: ...`. `decode.rs:3265-3279` routes that warning through `scan_warning`; `redundant_field_diagnostic` at `decode.rs:3362-3364` does not classify it as a redundant-field warning. The final report therefore uses a generic object diagnostic for this repair.
-
-**Need.** Define the repair or refusal rule for every redundant count, index, and optional field, and classify each accepted repair, including invalid Brep region topology, as `container.redundant-field-repaired` while retaining the cause.
-
-**Note.** Reopened because the closure covers several mesh, point-cloud, history, and positional repairs but leaves at least one documented optional repair outside the typed loss path. A repaired or discarded stored field must not become indistinguishable from an absent field.
 
 ### SW-01. Duplicate layer index resolution
 

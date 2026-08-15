@@ -2372,6 +2372,8 @@ impl<'a> DecodeContext<'a> {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
             } else if warning.contains(" has invalid color source ") {
                 RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
+            } else if brep_mesh_cache_diagnostic(warning) {
+                RhinoLossCode::BrepMeshCacheDegraded.note(warning.clone())
             } else if redundant_field_diagnostic(warning) {
                 RhinoLossCode::RedundantFieldRepaired.note(warning.clone())
             } else if duplicate_resolution_diagnostic(warning) {
@@ -2384,6 +2386,10 @@ impl<'a> DecodeContext<'a> {
         for warning in &self.phase_warnings {
             if integrity_diagnostic(warning) {
                 losses.push(RhinoLossCode::IntegrityFailure.note(warning.clone()));
+                continue;
+            }
+            if brep_mesh_cache_diagnostic(warning) {
+                losses.push(RhinoLossCode::BrepMeshCacheDegraded.note(warning.clone()));
                 continue;
             }
             if redundant_field_diagnostic(warning) {
@@ -3360,7 +3366,13 @@ fn duplicate_resolution_diagnostic(message: &str) -> bool {
 }
 
 fn redundant_field_diagnostic(message: &str) -> bool {
-    message.starts_with("redundant ") || message.contains(": redundant ")
+    message.starts_with("redundant ")
+        || message.contains(": redundant ")
+        || message.contains("invalid optional Brep region topology discarded")
+}
+
+fn brep_mesh_cache_diagnostic(message: &str) -> bool {
+    message.contains("Brep mesh cache") || message.contains(" mesh cache slot ")
 }
 
 fn duplicate_userdata_count(
