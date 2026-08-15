@@ -628,6 +628,33 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         outside_resolution.report().losses.clone(),
     );
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let at_or_beyond_resolution = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.001_000_000_000_000_2)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let at_or_beyond_resolution_curve = at_or_beyond_resolution
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .expect("Type 102 curve at the Global resolution");
+    assert!(matches!(
+        at_or_beyond_resolution_curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Composite { .. }
+    ));
+    assert_eq!(
+        at_or_beyond_resolution
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::CompositeCarrierDegraded.kind())
+            .count(),
+        1
+    );
 }
 
 #[test]

@@ -728,7 +728,12 @@ fn close(left: Point3, right: Point3) -> bool {
 fn close_with_tolerance(left: Point3, right: Point3, tolerance: Option<f64>) -> bool {
     match tolerance {
         Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => {
-            left.distance(right) <= tolerance
+            let distance = left.distance(right);
+            if tolerance == 0.0 {
+                distance == 0.0
+            } else {
+                distance < tolerance
+            }
         }
         _ => close(left, right),
     }
