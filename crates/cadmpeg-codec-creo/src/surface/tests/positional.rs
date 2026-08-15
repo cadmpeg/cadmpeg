@@ -4,6 +4,53 @@
 use super::super::*;
 
 #[test]
+fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
+    let valid = PositionalConeFrame {
+        apex: [0.0, 1.0, 2.0],
+        axis: [0.0, 1.0, 0.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        half_angle: std::f64::consts::FRAC_PI_4,
+    };
+    assert!(valid.is_valid());
+
+    let mut nonfinite_apex = valid;
+    nonfinite_apex.apex[1] = f64::NAN;
+    assert!(!nonfinite_apex.is_valid());
+
+    let mut zero_angle = valid;
+    zero_angle.half_angle = 0.0;
+    assert!(!zero_angle.is_valid());
+
+    let mut right_angle = valid;
+    right_angle.half_angle = std::f64::consts::FRAC_PI_2;
+    assert!(!right_angle.is_valid());
+}
+
+#[test]
+fn positional_torus_frame_rejects_nonfinite_or_nonpositive_components() {
+    let valid = PositionalTorusFrame {
+        center: [0.0, 1.0, 2.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        major_radius: 4.0,
+        minor_radius: 0.5,
+    };
+    assert!(valid.is_valid());
+
+    let mut nonfinite_center = valid;
+    nonfinite_center.center[1] = f64::INFINITY;
+    assert!(!nonfinite_center.is_valid());
+
+    let mut nonpositive_major = valid;
+    nonpositive_major.major_radius = 0.0;
+    assert!(!nonpositive_major.is_valid());
+
+    let mut nonfinite_minor = valid;
+    nonfinite_minor.minor_radius = f64::NAN;
+    assert!(!nonfinite_minor.is_valid());
+}
+
+#[test]
 fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
     let valid = PositionalCylinderFrame {
         origin: [0.0, 1.0, 2.0],

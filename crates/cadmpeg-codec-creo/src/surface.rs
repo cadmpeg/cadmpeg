@@ -396,6 +396,17 @@ pub struct PositionalConeFrame {
     pub half_angle: f64,
 }
 
+impl PositionalConeFrame {
+    fn is_valid(&self) -> bool {
+        self.apex
+            .into_iter()
+            .chain(self.axis)
+            .chain(self.ref_direction)
+            .all(f64::is_finite)
+            && valid_half_angle(self.half_angle)
+    }
+}
+
 /// Complete model-space carrier decoded from a positional torus row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PositionalTorusFrame {
@@ -409,6 +420,20 @@ pub struct PositionalTorusFrame {
     pub major_radius: f64,
     /// Positive minor radius.
     pub minor_radius: f64,
+}
+
+impl PositionalTorusFrame {
+    fn is_valid(&self) -> bool {
+        self.center
+            .into_iter()
+            .chain(self.axis)
+            .chain(self.ref_direction)
+            .all(f64::is_finite)
+            && self.major_radius.is_finite()
+            && self.major_radius > 0.0
+            && self.minor_radius.is_finite()
+            && self.minor_radius > 0.0
+    }
 }
 
 /// Six-slot outline frame in a positional torus-or-sphere body.
@@ -3114,6 +3139,7 @@ fn decode_positional_torus_frame(
         major_radius,
         minor_radius,
     })
+    .filter(PositionalTorusFrame::is_valid)
 }
 
 fn decode_positional_cylinder_frame(
@@ -3427,10 +3453,12 @@ fn decode_positional_cone_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
-    decode_planar_envelope_cone_frame(body, cache).or_else(|| {
-        let angle = terminal_cone_half_angle_layout(body)?;
-        decode_support_apex_cone_frame(&body[..angle.start], angle.value, cache)
-    })
+    decode_planar_envelope_cone_frame(body, cache)
+        .or_else(|| {
+            let angle = terminal_cone_half_angle_layout(body)?;
+            decode_support_apex_cone_frame(&body[..angle.start], angle.value, cache)
+        })
+        .filter(PositionalConeFrame::is_valid)
 }
 
 fn decode_planar_envelope_cone_frame(
@@ -5774,7 +5802,7 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
 }
 
 fn valid_half_angle(value: f64) -> bool {
-    value.is_finite() && (0.0..std::f64::consts::FRAC_PI_2).contains(&value)
+    value.is_finite() && value > 0.0 && value < std::f64::consts::FRAC_PI_2
 }
 
 fn id_ending_at(payload: &[u8], type_offset: usize) -> Option<(u32, usize)> {
