@@ -1855,6 +1855,47 @@
         resolved_section_points(&midpoint_definition),
         BTreeMap::from([(1, [0.0, 0.0]), (2, [4.0, 2.0]), (4, [2.0, 1.0])])
     );
+    let mut saved_line_midpoint = midpoint_definition.clone();
+    saved_line_midpoint.order_table = Some(crate::feature::FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![crate::feature::FeatureOrderRow {
+            external_id: 99,
+            internal_id: 20,
+            bitmask: 1,
+            offset: 95,
+        }],
+        offset: 94,
+    });
+    saved_line_midpoint.saved_section = Some(crate::feature::FeatureSavedSection {
+        entities: vec![crate::feature::FeatureSavedEntity::Line(
+            crate::feature::FeatureSavedLine {
+                entity_id: 20,
+                references: Vec::new(),
+                attributes: Vec::new(),
+                endpoints: [
+                    [Some(0.0), Some(0.0), Some(0.0)],
+                    [Some(4.0), Some(2.0), Some(0.0)],
+                ],
+                body: Vec::new(),
+                offset: 96,
+            },
+        )],
+        offset: 96,
+    });
+    saved_line_midpoint
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[0]
+        .entity_id = 99;
+    synchronize_skamp_count(&mut saved_line_midpoint);
+    assert_eq!(
+        resolved_section_points(&saved_line_midpoint).get(&4),
+        Some(&[2.0, 1.0])
+    );
     let mut arc_midpoint_definition = midpoint_definition.clone();
     arc_midpoint_definition
         .variables

@@ -149,14 +149,14 @@ pub(crate) fn resolved_section_coordinates(
         .collect::<Vec<_>>();
     let line_midpoint_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_line_midpoint_sources(definition, skamp))
-        .filter(|(point_ids, point)| {
-            point_ids
-                .iter()
-                .all(|point_id| !ambiguous_point_ids.contains(point_id))
-                && match point {
-                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-                    SectionPointSource::Value(_) => true,
-                }
+        .filter(|(point_sources, point)| {
+            point_sources.iter().all(|source| match source {
+                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                SectionPointSource::Value(_) => true,
+            }) && match point {
+                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                SectionPointSource::Value(_) => true,
+            }
         })
         .collect::<Vec<_>>();
     let symmetric_point_constraints = active_complete_section_skamps(definition)
@@ -390,11 +390,11 @@ pub(crate) fn resolved_section_coordinates(
             point, coordinate, value,
         ));
     }
-    for &(point_ids, point) in &line_midpoint_constraints {
+    for &(point_sources, point) in &line_midpoint_constraints {
         for coordinate in 0..2 {
             let mut equation = SectionCoordinateEquation::default();
-            equation.add_point(point_ids[0], coordinate, 1.0);
-            equation.add_point(point_ids[1], coordinate, 1.0);
+            equation.add_source(point_sources[0], coordinate, 1.0);
+            equation.add_source(point_sources[1], coordinate, 1.0);
             equation.add_source(point, coordinate, -2.0);
             equations.push(equation);
         }

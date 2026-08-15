@@ -17,6 +17,8 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::BTreeMap;
 
+const EPS_NONDEGENERATE_LINE: f64 = 0.000_000_000_001_f64;
+
 pub(in super::super) fn section_point_locus(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -847,20 +849,50 @@ pub(in super::super) fn section_skamp_is_circular(
 pub(in super::super) fn section_skamp_line_midpoint_sources(
     definition: &crate::feature::FeatureDefinition,
     skamp: &crate::feature::FeatureSkamp,
-) -> Option<([u32; 2], SectionPointSource)> {
+) -> Option<([SectionPointSource; 2], SectionPointSource)> {
     let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
         return None;
     };
     let target = |item: &crate::feature::FeatureSkampItem| {
         if item.sense == 4 {
-            return unique_centered_line_segment(definition, item.entity_id)
-                .map(|line| [line.center_id, line.center_id]);
+            return unique_centered_line_segment(definition, item.entity_id).map(|line| {
+                [
+                    SectionPointSource::Point(line.center_id),
+                    SectionPointSource::Point(line.center_id),
+                ]
+            });
         }
         if item.sense != 0 {
             return None;
         }
-        let segment = unique_decoded_section_segment(definition, item.entity_id)?;
-        (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(segment.point_ids)
+        if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
+            return (segment.kind == crate::feature::FeatureSegmentKind::Line)
+                .then_some(segment.point_ids.map(SectionPointSource::Point));
+        }
+        let crate::feature::FeatureSavedEntity::Line(line) =
+            section_saved_entity(definition, item.entity_id)?
+        else {
+            return None;
+        };
+        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+            line.endpoints
+        else {
+            return None;
+        };
+        let scale = [first_u, first_v, second_u, second_v]
+            .into_iter()
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        let midpoint = [
+            f64::midpoint(first_u, second_u),
+            f64::midpoint(first_v, second_v),
+        ];
+        (midpoint.iter().all(|value| value.is_finite())
+            && (second_u - first_u).hypot(second_v - first_v) > EPS_NONDEGENERATE_LINE * scale)
+            .then_some([
+                SectionPointSource::Value(midpoint),
+                SectionPointSource::Value(midpoint),
+            ])
     };
     let point =
         |item: &crate::feature::FeatureSkampItem| section_skamp_selected_point(definition, item);
