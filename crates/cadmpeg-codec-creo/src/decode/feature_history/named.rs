@@ -18,7 +18,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn named_feature_definition(
     scan: &ContainerScan,
@@ -213,6 +213,17 @@ pub(in super::super) fn surface_intersect_feature_definition(
         table.feature_id == Some(feature_id)
             && table.table_class_id == 29
             && !table.surface_ids.is_empty()
+            && table
+                .surface_ids
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>()
+                .len()
+                == table.surface_ids.len()
+            && table.surface_ids.iter().all(|surface_id| {
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
+                    .is_some_and(|surface| surface.feature_id == feature_id)
+            })
     });
     surface_tables.next()?;
     surface_tables.next().is_none().then_some(())?;
