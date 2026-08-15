@@ -1132,14 +1132,14 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     };
 
     assert_eq!(
-        entity_intersection([9, 10], Some(&segments), Some(&variables)),
+        entity_intersection(&[9, 10], Some(&segments), Some(&variables)),
         Some([3.0, 4.0])
     );
 
     let mut duplicate_segments = segments.clone();
     duplicate_segments.rows.push(segments.rows[0].clone());
     assert!(duplicate_segments.segment(9).is_none());
-    assert!(entity_intersection([9, 10], Some(&duplicate_segments), Some(&variables)).is_none());
+    assert!(entity_intersection(&[9, 10], Some(&duplicate_segments), Some(&variables)).is_none());
 
     let mut duplicate_points = variables.clone();
     duplicate_points.points.push(variables.points[0].clone());
@@ -1148,12 +1148,12 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         Some(&[Some(3.0), Some(4.0)])
     );
     assert_eq!(
-        entity_intersection([9, 10], Some(&segments), Some(&duplicate_points)),
+        entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)),
         Some([3.0, 4.0])
     );
     duplicate_points.points[1].u = Some(5.0);
     assert!(duplicate_points.reconciled_points().1.contains(&2));
-    assert!(entity_intersection([9, 10], Some(&segments), Some(&duplicate_points)).is_none());
+    assert!(entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)).is_none());
     let row = |variable_type, value, offset| FeatureVariableRow {
         variable_type,
         key: 2,
@@ -1181,6 +1181,240 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     );
     repeated_raw.rows[1].value = Some(5.0);
     assert!(repeated_raw.reconciled_points().1.contains(&2));
+}
+
+#[test]
+fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
+    let segment = |kind, point_ids, center_id, radius_ref, external_id| FeatureSegment {
+        kind,
+        directions: [None; 3],
+        point_ids,
+        center_id,
+        arc_orientation: center_id.map(|_| 0),
+        vertical_horizontal: None,
+        radius_ref,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let segment_table = |rows: Vec<FeatureSegment>| FeatureSegmentTable {
+        declared_count: rows.len() as u32,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows,
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: 0,
+    };
+    let point = |point_id, u, v| FeatureSectionPoint {
+        point_id,
+        u: Some(u),
+        v: Some(v),
+    };
+    let radius = |key, value| FeatureVariableRow {
+        variable_type: 3,
+        key,
+        value: Some(value),
+        value_body: Vec::new(),
+        guess: None,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: None,
+        homogeneity: None,
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let variables =
+        |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| FeatureVariableTable {
+            declared_count: rows.len() as u32,
+            entity_ref: None,
+            rows,
+            points,
+            offset: 0,
+        };
+
+    let bounded_unique = segment_table(vec![
+        segment(FeatureSegmentKind::Line, [1, 2], None, None, 9),
+        segment(FeatureSegmentKind::Arc, [3, 4], Some(5), Some(6), 10),
+    ]);
+    let bounded_unique_variables = variables(
+        vec![
+            point(1, 0.0, 0.0),
+            point(2, 2.0, 0.0),
+            point(3, 0.0, 1.0),
+            point(4, 0.0, -1.0),
+            point(5, 0.0, 0.0),
+        ],
+        vec![radius(6, 1.0)],
+    );
+    assert_eq!(
+        entity_intersection(
+            &[9, 10],
+            Some(&bounded_unique),
+            Some(&bounded_unique_variables),
+        ),
+        Some([1.0, 0.0])
+    );
+    let mut derived_radius = bounded_unique_variables.clone();
+    derived_radius.rows.clear();
+    derived_radius.declared_count = 0;
+    assert_eq!(
+        entity_intersection(&[9, 10], Some(&bounded_unique), Some(&derived_radius)),
+        Some([1.0, 0.0])
+    );
+    let conflicting_radius = variables(
+        bounded_unique_variables.points.clone(),
+        vec![radius(6, 2.0)],
+    );
+    assert!(
+        entity_intersection(&[9, 10], Some(&bounded_unique), Some(&conflicting_radius),).is_none()
+    );
+
+    let secant = segment_table(vec![
+        segment(FeatureSegmentKind::Line, [1, 2], None, None, 9),
+        segment(FeatureSegmentKind::Arc, [3, 4], Some(5), Some(6), 10),
+    ]);
+    let secant_variables = variables(
+        vec![
+            point(1, -2.0, 0.0),
+            point(2, 2.0, 0.0),
+            point(3, 0.0, 1.0),
+            point(4, 0.0, -1.0),
+            point(5, 0.0, 0.0),
+        ],
+        vec![radius(6, 1.0)],
+    );
+    assert!(entity_intersection(&[9, 10], Some(&secant), Some(&secant_variables)).is_none());
+
+    let tangent_circles = segment_table(vec![
+        segment(FeatureSegmentKind::Arc, [1, 2], Some(5), Some(6), 9),
+        segment(FeatureSegmentKind::Arc, [3, 4], Some(7), Some(8), 10),
+    ]);
+    let tangent_circle_variables = variables(
+        vec![
+            point(1, 1.0, 0.0),
+            point(2, -1.0, 0.0),
+            point(3, 3.0, 0.0),
+            point(4, 1.0, 0.0),
+            point(5, 0.0, 0.0),
+            point(7, 2.0, 0.0),
+        ],
+        vec![radius(6, 1.0), radius(8, 1.0)],
+    );
+    assert_eq!(
+        entity_intersection(
+            &[9, 10],
+            Some(&tangent_circles),
+            Some(&tangent_circle_variables),
+        ),
+        Some([1.0, 0.0])
+    );
+
+    let secant_circles = segment_table(vec![
+        segment(FeatureSegmentKind::Arc, [1, 2], Some(5), Some(6), 9),
+        segment(FeatureSegmentKind::Arc, [3, 4], Some(7), Some(8), 10),
+    ]);
+    let secant_circle_variables = variables(
+        vec![
+            point(1, 1.0, 0.0),
+            point(2, -1.0, 0.0),
+            point(3, 1.0, 1.0),
+            point(4, 1.0, -1.0),
+            point(5, 0.0, 0.0),
+            point(7, 1.0, 0.0),
+        ],
+        vec![radius(6, 1.0), radius(8, 1.0)],
+    );
+    assert!(entity_intersection(
+        &[9, 10],
+        Some(&secant_circles),
+        Some(&secant_circle_variables),
+    )
+    .is_none());
+}
+
+#[test]
+fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
+    let segment = |point_ids, external_id| FeatureSegment {
+        kind: FeatureSegmentKind::Line,
+        directions: [None; 3],
+        point_ids,
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let segments = FeatureSegmentTable {
+        declared_count: 3,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![segment([1, 2], 9), segment([3, 4], 10), segment([5, 6], 11)],
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: 0,
+    };
+    let variables = FeatureVariableTable {
+        declared_count: 0,
+        entity_ref: None,
+        rows: Vec::new(),
+        points: vec![
+            FeatureSectionPoint {
+                point_id: 1,
+                u: Some(-1.0),
+                v: Some(-1.0),
+            },
+            FeatureSectionPoint {
+                point_id: 2,
+                u: Some(1.0),
+                v: Some(1.0),
+            },
+            FeatureSectionPoint {
+                point_id: 3,
+                u: Some(-1.0),
+                v: Some(1.0),
+            },
+            FeatureSectionPoint {
+                point_id: 4,
+                u: Some(1.0),
+                v: Some(-1.0),
+            },
+            FeatureSectionPoint {
+                point_id: 5,
+                u: Some(0.0),
+                v: Some(-2.0),
+            },
+            FeatureSectionPoint {
+                point_id: 6,
+                u: Some(0.0),
+                v: Some(2.0),
+            },
+        ],
+        offset: 0,
+    };
+    assert_eq!(
+        entity_intersection(&[9, 10, 11], Some(&segments), Some(&variables)),
+        Some([0.0, 0.0])
+    );
+
+    let mut incomplete = variables.clone();
+    incomplete.declared_count = 1;
+    assert!(entity_intersection(&[9, 10, 11], Some(&segments), Some(&incomplete)).is_none());
 }
 
 #[test]
