@@ -19,8 +19,8 @@ fn retains_support_attachment_and_distinct_offset_frame() {
  <Object name="Support"><Properties Count="0"/></Object>
  <Object name="Sketch"><Properties Count="5">
   <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
-  <Property name="Support" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>
-  <Property name="MapMode" type="App::PropertyString"><String value="FlatFace"/></Property>
+  <Property name="AttachmentSupport" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Support" sub="Face1"/></LinkSubList></Property>
+  <Property name="MapMode" type="App::PropertyEnumeration"><Integer value="5"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="AttachmentOffset" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
@@ -36,7 +36,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
         .arena_as::<crate::native::AttachmentRecord>("attachments")
         .expect("attachments");
     assert_eq!(attachments.len(), 1);
-    assert_eq!(attachments[0].map_mode.as_deref(), Some("FlatFace"));
+    assert_eq!(attachments[0].map_mode.as_deref(), Some("5"));
     assert_eq!(
         attachments[0].supports[0].object.as_deref(),
         Some("fcstd:native:object#Support")
@@ -63,6 +63,31 @@ fn rejects_ambiguous_attachment_carriers() {
     for property in [
         r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1"/><PropertyPlacement Px="2"/></Property>"#,
         r#"<Property name="MapMode" type="App::PropertyString"><String value="FlatFace"/><String value="Deformed"/></Property>"#,
+        r#"<Property name="AttachmentSupport" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>"#,
+        r#"<Property name="MapMode" type="App::PropertyEnumeration"><Integer value="55"/></Property>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">{property}</Properties></Object></ObjectData>
+</Document>"#
+        );
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
+fn rejects_noncanonical_map_mode_value_grammar() {
+    for property in [
+        r#"<Property name="MapMode" type="App::PropertyEnumeration"><String value="FlatFace"/></Property>"#,
+        r#"<Property name="MapMode" type="App::PropertyEnumeration"><Integer value="5"/><CustomEnumList count="1"><Enum value="FlatFace"/></CustomEnumList></Property>"#,
+        r#"<Property name="MapMode" type="App::PropertyEnumeration"><Integer/></Property>"#,
     ] {
         let document = format!(
             r#"<Document SchemaVersion="4" FileVersion="1">

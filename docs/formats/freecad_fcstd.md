@@ -743,9 +743,21 @@ subelement identity separately from the map mode. The persisted resolved `Placem
 `AttachmentOffset` remain distinct matrices. Neutral geometry composes them as
 `Placement × AttachmentOffset` when both are present, and uses the sole present matrix otherwise.
 Validation checks support identity, finite matrices, and this effective-frame rule. Each named attachment
-carrier occurs at most once. `MapMode` has at most one text value, and each placement carrier is an
-`App::PropertyPlacement` property with at most one `PropertyPlacement` value containing finite
-position and quaternion or axis-angle components.
+carrier occurs at most once. `AttachmentSupport` is an `App::PropertyLinkSubList` with one
+`LinkSubList` value whose zero or more `Link` children carry `obj` and `sub` attributes in order.
+`MapMode` is an
+`App::PropertyEnumeration` with one `Integer` value; its zero-based index selects, in order,
+`Deactivated`, `Translate`, `ObjectXY`, `ObjectXZ`, `ObjectYZ`, `FlatFace`, `TangentPlane`,
+`NormalToEdge`, `FrenetNB`, `FrenetTN`, `FrenetTB`, `Concentric`, `SectionOfRevolution`,
+`ThreePointsPlane`, `ThreePointsNormal`, `Folding`, `ObjectX`, `ObjectY`, `ObjectZ`,
+`AxisOfCurvature`, `Directrix1`, `Directrix2`, `Asymptote1`, `Asymptote2`, `Tangent`, `Normal`,
+`Binormal`, `TangentU`, `TangentV`, `TwoPointLine`, `IntersectionLine`, `ProximityLine`,
+`ObjectOrigin`, `Focus1`, `Focus2`, `OnEdge`, `CenterOfCurvature`, `CenterOfMass`,
+`IntersectionPoint`, `Vertex`, `ProximityPoint1`, `ProximityPoint2`, `AxisOfInertia1`,
+`AxisOfInertia2`, `AxisOfInertia3`, `InertialCS`, `FaceNormal`, `OZX`, `OZY`, `OXY`, `OXZ`,
+`OYZ`, `OYX`, `ParallelPlane`, and `MidPoint`. An index outside this list is malformed.
+Each placement carrier is an `App::PropertyPlacement` property with at most one
+`PropertyPlacement` value containing finite position and quaternion or axis-angle components.
 Duplicate carriers or values are malformed.
 
 Native namespace version 12 adds one carrier-census record per exact-shape payload. Census records

@@ -304,22 +304,22 @@ neutral transfer.
 
 ## 8. Attachment and assembly
 
-### AT-02. Attachment support and map-mode carrier grammar
+### AT-02. Native map-mode representation
 
-**Question.** Which exact runtime types and value grammar identify Support and MapMode?
+**Question.** Should the neutral `AttachmentRecord.map_mode` expose the fixed `MapMode` name or
+retain the persisted zero-based index after the producer enum has been validated?
 
-**Known.** AttachExtension.h declares the support as App::PropertyLinkSubList, MapMode as
-App::PropertyEnumeration, and AttachmentOffset as App::PropertyPlacement. PropertyEnumeration
-serializes one Integer index and optional CustomEnumList metadata; Attacher.cpp supplies the mode
-name order.
+**Known.** FreeCAD writes `AttachmentSupport` as `App::PropertyLinkSubList` and `MapMode` as one
+`App::PropertyEnumeration` `Integer` value. The specification records the complete index-to-name
+table and the out-of-range rule. The decoder now enforces those carriers and rejects invalid
+indexes while retaining the index text in the existing native field.
 
-**Conflict.** attachment.rs:27-39 selects Support and MapMode by name only. Support links have no
-runtime-type gate. property_text reads the first text-like value, so a normal enumeration's
-Integer index is retained as a numeric string rather than its mode name; a wrong PropertyString
-can also populate map_mode.
+**Need.** Settle the neutral field spelling without changing the frozen golden snapshots in this
+migration.
 
-**Need.** Enforce the accepted support link families and MapMode enumeration grammar, including
-index-to-name mapping, cardinality, and out-of-range behavior.
+**Conflict.** The producer name is semantic, but the existing native arena contract stores the
+persisted index text.
 
-**Note.** The AT-01 composition closure is source-backed. It does not establish carrier typing or
-map-mode value semantics.
+**Note.** This pass settled the producer carrier grammar, support cardinality, fixed enum table,
+and out-of-range behavior with current source and an authored witness. The neutral spelling is a
+smaller remaining implementation question.
