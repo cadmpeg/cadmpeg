@@ -41,21 +41,6 @@ native or neutral record.
 **Note.** Native retention prevents unsafe interpretation but does not establish field semantics
 or prove that an unregistered type has no neutral meaning. Reopened after the side-entry closure.
 
-### AR-04. Shared side-entry logical ownership
-
-**Question.** How does the logical byte ledger represent one archive entry referenced by more
-than one property or typed payload?
-
-**Known.** EntryRecord.referenced_by retains multiple semantic references while the byte span
-has one archive-entry owner.
-
-**Need.** Establish whether typed side entries can be shared. If sharing is valid, keep one byte
-span with a many-owner relation. If sharing is invalid for a typed family, reject the conflicting
-claims.
-
-**Note.** The representation fix did not establish the producer rule. The closure changes the
-ledger shape, not the validity of shared typed references. Reopened after the side-entry closure.
-
 ## 2. GUI properties
 
 ### GP-01. Other GUI property grammars

@@ -54,6 +54,10 @@ is one payload, and the ZIP member boundary is the only generic side-entry frami
 runtime type may define an internal grammar for that payload. A runtime type outside the registered
 property grammar does not define a generic internal framing or field model; its complete payload
 remains one named opaque record.
+The producer allocates one archive member for each typed side-entry request. A repeated requested
+name receives a unique suffixed name, and the returned name is the XML reference. Two properties
+requesting the same source payload therefore receive separate archive members; a producer-created
+typed side entry has one requesting property or payload owner.
 
 `GuiDocument.xml` has at most one `ViewProviderData` container. `ViewProvider` names are unique.
 Each provider has one direct `Properties` container, and direct property names are unique within
