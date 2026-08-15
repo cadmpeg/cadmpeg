@@ -341,11 +341,8 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
         if !points_coincident(start, end) {
             return Ok(0);
         }
-        let one_third = evaluate_profile_point(
-            &curve,
-            domain[0] + (domain[1] - domain[0]) / 3.0,
-            offset,
-        )?;
+        let one_third =
+            evaluate_profile_point(&curve, domain[0] + (domain[1] - domain[0]) / 3.0, offset)?;
         let two_thirds = evaluate_profile_point(
             &curve,
             domain[0] + 2.0 * (domain[1] - domain[0]) / 3.0,
