@@ -158,6 +158,25 @@ pub(crate) fn project_configuration_design_states(
             source.attributes.get("sw_version").map(String::as_str),
         )
     });
+    let mut resolved_base_features = ir.model.features.clone();
+    crate::resolved_features::operations::bind_extrusion_operations(
+        &mut resolved_base_features,
+        histories,
+        lanes,
+        form_padding,
+    );
+    crate::resolved_features::operations::bind_revolution_operations(
+        &mut resolved_base_features,
+        histories,
+        lanes,
+        form_padding,
+    );
+    crate::resolved_features::operations::bind_sweep_operations(
+        &mut resolved_base_features,
+        histories,
+        lanes,
+        form_padding,
+    );
     for configuration in &mut ir.model.configurations {
         configuration.parameter_values.clear();
         configuration.feature_states.clear();
@@ -220,6 +239,13 @@ pub(crate) fn project_configuration_design_states(
         );
         crate::resolved_features::operations::bind_sweep_operations(
             &mut features,
+            histories,
+            scoped_lanes,
+            form_padding,
+        );
+        crate::resolved_features::operations::inherit_configuration_operations(
+            &mut features,
+            &resolved_base_features,
             histories,
             scoped_lanes,
             form_padding,

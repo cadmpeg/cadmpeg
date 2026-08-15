@@ -345,6 +345,124 @@ pub(crate) fn bind_extrusion_operations(
     }
 }
 
+#[derive(Clone, Copy)]
+enum OperationKind {
+    Extrusion,
+    Revolution,
+}
+
+/// Preserve a Boolean operation that is invariant across a configuration lane
+/// when that lane carries no independent operation carrier.
+pub(crate) fn inherit_configuration_operations(
+    features: &mut [cadmpeg_ir::features::Feature],
+    base_features: &[cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
+) {
+    let history_by_id = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let base_definitions = base_features
+        .iter()
+        .map(|feature| (&feature.id, &feature.definition))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let Some(base_definition) = base_definitions.get(&feature.id) else {
+            continue;
+        };
+        let Some(history) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| history_by_id.get(native).copied())
+        else {
+            continue;
+        };
+        let operation_kind = match (&feature.definition, *base_definition) {
+            (
+                FeatureDefinition::Extrude { op, .. },
+                FeatureDefinition::Extrude { op: base_op, .. },
+            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                OperationKind::Extrusion
+            }
+            (
+                FeatureDefinition::Revolve { op, .. },
+                FeatureDefinition::Revolve { op: base_op, .. },
+            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                OperationKind::Revolution
+            }
+            _ => continue,
+        };
+        if lanes
+            .iter()
+            .any(|lane| operation_carrier_present(operation_kind, history, lane, form_padding))
+        {
+            continue;
+        }
+        match (&mut feature.definition, operation_kind, *base_definition) {
+            (
+                FeatureDefinition::Extrude { op, .. },
+                OperationKind::Extrusion,
+                FeatureDefinition::Extrude { op: base_op, .. },
+            )
+            | (
+                FeatureDefinition::Revolve { op, .. },
+                OperationKind::Revolution,
+                FeatureDefinition::Revolve { op: base_op, .. },
+            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                *op = *base_op;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn operation_carrier_present(
+    kind: OperationKind,
+    feature: &Feature,
+    lane: &FeatureInputLane,
+    form_padding: Option<FormCodePadding>,
+) -> bool {
+    let source_matches = feature
+        .source_id
+        .as_deref()
+        .and_then(|value| value.parse::<u32>().ok())
+        .map(|source_id| {
+            lane.names
+                .iter()
+                .filter(|name| name.object_id == Some(source_id))
+                .collect::<Vec<_>>()
+        })
+        .filter(|matches| !matches.is_empty());
+    let candidates = source_matches.unwrap_or_else(|| {
+        lane.names
+            .iter()
+            .filter(|name| name.value == feature.name)
+            .collect::<Vec<_>>()
+    });
+    let [name] = candidates.as_slice() else {
+        return candidates.len() > 1;
+    };
+    if matches!(kind, OperationKind::Extrusion)
+        && feature_inline_operation_fields(lane, name).is_some()
+    {
+        return true;
+    }
+    let Some(code) =
+        feature_operation_code(lane, name, feature.input_class.as_deref(), form_padding)
+    else {
+        return false;
+    };
+    matches!(kind, OperationKind::Revolution)
+        || !(code == 11
+            && matches!(
+                feature.input_class.as_deref(),
+                Some("moExtrusion_c" | "moICE_c" | "moCut_c")
+            ))
+}
+
 /// Establish projected split-line mode and source sketch from each
 /// `moPLine_c` feature-input object while native dimension values remain raw.
 pub(crate) fn enrich_history_split_lines(
