@@ -145,13 +145,30 @@ impl DeclaredInterval {
     }
 }
 
+fn interval_dot(left: [DeclaredInterval; 3], right: [DeclaredInterval; 3]) -> DeclaredInterval {
+    (0..3).fold(DeclaredInterval::around(0.0, 0.0), |sum, index| {
+        sum.add(left[index].multiply(right[index]))
+    })
+}
+
+fn interval_squared_norm(components: [DeclaredInterval; 3]) -> DeclaredInterval {
+    interval_dot(components, components)
+}
+
+fn is_finite_nonzero_vector(vector: Vector3) -> bool {
+    vector.x.is_finite()
+        && vector.y.is_finite()
+        && vector.z.is_finite()
+        && (vector.x != 0.0 || vector.y != 0.0 || vector.z != 0.0)
+}
+
 pub(crate) fn declared_unit_vector(
     record: &ParameterRecord,
     start: usize,
     vector: Vector3,
     precision: RealPrecision,
 ) -> bool {
-    if !vector.norm().is_finite() {
+    if !is_finite_nonzero_vector(vector) {
         return false;
     }
     let values = [vector.x, vector.y, vector.z];
@@ -161,12 +178,7 @@ pub(crate) fn declared_unit_vector(
             record.number_uncertainty(start + offset, values[offset], precision),
         )
     });
-    components
-        .into_iter()
-        .fold(DeclaredInterval::around(0.0, 0.0), |sum, component| {
-            sum.add(component.multiply(component))
-        })
-        .contains(1.0)
+    interval_squared_norm(components).contains(1.0)
 }
 
 pub(crate) fn declared_orthogonal_vectors(
@@ -179,19 +191,73 @@ pub(crate) fn declared_orthogonal_vectors(
 ) -> bool {
     let left_values = [left.x, left.y, left.z];
     let right_values = [right.x, right.y, right.z];
-    (0..3)
-        .fold(DeclaredInterval::around(0.0, 0.0), |sum, offset| {
-            let left = DeclaredInterval::around(
-                left_values[offset],
-                record.number_uncertainty(left_start + offset, left_values[offset], precision),
-            );
-            let right = DeclaredInterval::around(
-                right_values[offset],
-                record.number_uncertainty(right_start + offset, right_values[offset], precision),
-            );
-            sum.add(left.multiply(right))
-        })
-        .contains(0.0)
+    let left = std::array::from_fn::<_, 3, _>(|offset| {
+        DeclaredInterval::around(
+            left_values[offset],
+            record.number_uncertainty(left_start + offset, left_values[offset], precision),
+        )
+    });
+    let right = std::array::from_fn::<_, 3, _>(|offset| {
+        DeclaredInterval::around(
+            right_values[offset],
+            record.number_uncertainty(right_start + offset, right_values[offset], precision),
+        )
+    });
+    interval_dot(left, right).contains(0.0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeclaredTransformFrameError {
+    NotOrthonormal,
+    WrongDeterminant,
+}
+
+fn validate_declared_transform_frame(
+    coefficient_intervals: [DeclaredInterval; 9],
+    expected_determinant: f64,
+) -> Result<(), DeclaredTransformFrameError> {
+    let columns = std::array::from_fn::<_, 3, _>(|column| {
+        [
+            coefficient_intervals[column],
+            coefficient_intervals[3 + column],
+            coefficient_intervals[6 + column],
+        ]
+    });
+    if columns
+        .into_iter()
+        .any(|column| !interval_squared_norm(column).contains(1.0))
+        || [(0, 1), (0, 2), (1, 2)]
+            .into_iter()
+            .any(|(left, right)| !interval_dot(columns[left], columns[right]).contains(0.0))
+    {
+        return Err(DeclaredTransformFrameError::NotOrthonormal);
+    }
+
+    let interval = |row: usize, column: usize| coefficient_intervals[row * 3 + column];
+    let determinant_interval = interval(0, 0)
+        .multiply(
+            interval(1, 1)
+                .multiply(interval(2, 2))
+                .subtract(interval(1, 2).multiply(interval(2, 1))),
+        )
+        .subtract(
+            interval(0, 1).multiply(
+                interval(1, 0)
+                    .multiply(interval(2, 2))
+                    .subtract(interval(1, 2).multiply(interval(2, 0))),
+            ),
+        )
+        .add(
+            interval(0, 2).multiply(
+                interval(1, 0)
+                    .multiply(interval(2, 1))
+                    .subtract(interval(1, 1).multiply(interval(2, 0))),
+            ),
+        );
+    determinant_interval
+        .contains(expected_determinant)
+        .then_some(())
+        .ok_or(DeclaredTransformFrameError::WrongDeterminant)
 }
 
 #[derive(Clone, Copy)]
@@ -336,47 +402,20 @@ pub(crate) fn resolve_transform(
                 record.number_uncertainty(value_index + 1, values[value_index], precision),
             )
         });
-        let interval = |row: usize, column: usize| coefficient_intervals[row * 3 + column];
-        let column_dot_interval = |left: usize, right: usize| {
-            (0..3).fold(DeclaredInterval::around(0.0, 0.0), |sum, row| {
-                sum.add(interval(row, left).multiply(interval(row, right)))
-            })
-        };
-        if (0..3).any(|column| !column_dot_interval(column, column).contains(1.0))
-            || [(0, 1), (0, 2), (1, 2)]
-                .into_iter()
-                .any(|(left, right)| !column_dot_interval(left, right).contains(0.0))
-        {
-            return Err(format!(
-                "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"
-            ));
-        }
-        let determinant_interval = interval(0, 0)
-            .multiply(
-                interval(1, 1)
-                    .multiply(interval(2, 2))
-                    .subtract(interval(1, 2).multiply(interval(2, 1))),
-            )
-            .subtract(
-                interval(0, 1).multiply(
-                    interval(1, 0)
-                        .multiply(interval(2, 2))
-                        .subtract(interval(1, 2).multiply(interval(2, 0))),
-                ),
-            )
-            .add(
-                interval(0, 2).multiply(
-                    interval(1, 0)
-                        .multiply(interval(2, 1))
-                        .subtract(interval(1, 1).multiply(interval(2, 0))),
-                ),
-            );
         let expected_determinant = if entry.form == 0 { 1.0 } else { -1.0 };
-        if !determinant_interval.contains(expected_determinant) {
-            return Err(format!(
-                "transformation D{sequence} determinant disagrees with form {} within its declared numeric precision",
-                entry.form
-            ));
+        match validate_declared_transform_frame(coefficient_intervals, expected_determinant) {
+            Ok(()) => {}
+            Err(DeclaredTransformFrameError::NotOrthonormal) => {
+                return Err(format!(
+                    "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"
+                ));
+            }
+            Err(DeclaredTransformFrameError::WrongDeterminant) => {
+                return Err(format!(
+                    "transformation D{sequence} determinant disagrees with form {} within its declared numeric precision",
+                    entry.form
+                ));
+            }
         }
 
         let raw_columns = [
@@ -675,7 +714,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let direction = Vector3::new(x, y, z);
-        if !direction.norm().is_finite() || direction.norm() <= 0.0 {
+        if !is_finite_nonzero_vector(direction) {
             losses.push(entity_loss(entry, "direction is zero or non-finite"));
             continue;
         }

@@ -26,7 +26,10 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
-use super::enforce_transform_depth;
+use super::{
+    enforce_transform_depth, is_finite_nonzero_vector, validate_declared_transform_frame,
+    DeclaredInterval, DeclaredTransformFrameError,
+};
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
@@ -163,6 +166,67 @@ fn decode_rejects_inconsistent_type_126_planar_and_closed_flags() {
             "flags={flags:?}"
         );
     }
+}
+
+#[test]
+fn declared_transform_validation_separates_frame_and_handedness_invariants() {
+    let intervals = |rows: [[f64; 3]; 3]| {
+        std::array::from_fn::<_, 9, _>(|index| {
+            DeclaredInterval::around(rows[index / 3][index % 3], 0.0)
+        })
+    };
+
+    assert_eq!(
+        validate_declared_transform_frame(
+            intervals([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1.0,
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        validate_declared_transform_frame(
+            intervals([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            -1.0,
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        validate_declared_transform_frame(
+            intervals([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1.0,
+        ),
+        Err(DeclaredTransformFrameError::WrongDeterminant)
+    );
+    assert_eq!(
+        validate_declared_transform_frame(
+            intervals([[1.1, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            1.0,
+        ),
+        Err(DeclaredTransformFrameError::NotOrthonormal)
+    );
+}
+
+#[test]
+fn type_123_accepts_a_finite_non_unit_direction() {
+    assert!(is_finite_nonzero_vector(Vector3::new(2.0, -3.0, 4.0)));
+    assert!(!is_finite_nonzero_vector(Vector3::new(0.0, 0.0, 0.0)));
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(direction_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let direction = &result.ir().native.namespace("iges").unwrap().arenas["directions"][0];
+    assert_eq!(
+        direction.fields()["components"],
+        serde_json::json!([2.0, -3.0, 4.0])
+    );
+    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(
+        result.report().losses[0].code,
+        IgesLossCode::EntityRetainedUnprojected.kind()
+    );
 }
 
 #[test]

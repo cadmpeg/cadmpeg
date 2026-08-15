@@ -71,26 +71,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-01. The Type 124 transformation tolerance
-
-**Question.** What tolerance applies when a Type 124 transformation is compared with the canonical transform?
-
-**Known.** The reader uses intervals derived from Global real precision in `transform.rs`, and commit `40b1687ea` replaced a fixed tolerance with that calculation. The fixture perturbs a transform near the same project-selected boundary.
-
-**Need.** We need an IGES rule or independent producer evidence for transform equality and the accepted precision. Internal interval arithmetic proves only the implementation's chosen criterion.
-
-**Note.** Closure audit 2026-08-10: reopened. The code, fixture, and documentation were authored together; this is the promotion-to-spec pattern described by the QA plan.
-
-### GE-02. Unit-vector acceptance
-
-**Question.** What deviation from unit length is valid for a direction vector?
-
-**Known.** `geometry.rs` derives an interval from Global real precision and accepts a vector when the squared length interval contains one. The threshold is exercised by project-generated data.
-
-**Need.** We need a source or independent producer corpus that establishes the accepted numeric deviation and whether a decoder should normalize or reject it.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `8d4e832c4` replaced the old threshold with a more principled calculation, but did not supply external evidence for the format tolerance.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles
