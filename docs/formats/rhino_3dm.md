@@ -563,7 +563,11 @@ if minor >= 2: bool copy_on_replace
 An `ON_UuidList` is an anonymous major-1 chunk with a nonnegative minor
 version. It contains an archive array of UUIDs; fields after that array are
 skipped at the chunk boundary. Descendant order is serialized order.
-Antecedents identify input objects and descendants identify output objects.
+Antecedents identify input objects and descendants identify output objects. A
+descendant UUID belongs to the record that lists it, but the wire format does
+not require that UUID to occur in only one record and does not carry a producer
+selector for an antecedent. Multiple records can therefore produce the same
+descendant UUID without a unique history dependency in the bytes.
 `record_type` is 0 for update history parameters and 1 for feature parameters.
 
 Each history value is an anonymous major-1 chunk:

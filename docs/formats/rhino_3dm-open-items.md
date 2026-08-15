@@ -180,16 +180,6 @@ the same producer-source audit or an independent witness.
 
 **Note.** Reopened because the closure treats an unread suffix as opaque without establishing whether the known prefix remains admissible.
 
-### SW-09. Ambiguous history producers
-
-**Question.** How is a history dependency represented when more than one record produces the same descendant UUID?
-
-**Known.** `history.rs:1295-1310` changes a duplicate producer entry to `None`. `history.rs:1321-1328` then omits every dependency using that descendant. Only dependencies that point to later unique producers are counted at `history.rs:1312-1319` and reported at `decode.rs:5333-5338`.
-
-**Need.** Retain the ambiguity and emit a typed history-dependency loss when a duplicate producer prevents a neutral dependency edge.
-
-**Note.** Reopened as an ignored witness. Duplicate producer records remain in native history, but the omitted neutral edge has no ambiguity loss and is indistinguishable from an absent relation.
-
 ### SW-10. Writer first-pcurve selection
 
 **Question.** Which parameter-space curve use does the Rhino writer serialize when one coedge has more than one ordered pcurve use?
