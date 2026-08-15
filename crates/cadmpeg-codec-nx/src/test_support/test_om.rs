@@ -58,6 +58,40 @@ pub(crate) fn segment_body_binding_payload(stream_kind: &str) -> Vec<u8> {
     payload
 }
 
+pub(crate) fn segment_body_binding_repeated_link_payload() -> Vec<u8> {
+    let mut rows = [
+        [7_u32, 9, 11],
+        [1, 1, 0],
+        [0, 0, 94],
+        [150, 19, 0],
+        [0, 0, 95],
+        [151, 20, 0],
+    ];
+    let index_byte_len = u32::try_from(rows.len() * std::mem::size_of::<[u32; 3]>())
+        .expect("synthetic segment-index length");
+    let wrapper_offset = index_byte_len
+        + u32::try_from(std::mem::size_of::<[u32; 4]>()).expect("synthetic wrapper padding length");
+    rows[1][2] = index_byte_len;
+    rows[2][0] = wrapper_offset;
+    rows[4][0] = wrapper_offset;
+    let mut payload = rows
+        .into_iter()
+        .flatten()
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<_>>();
+    payload.resize(usize::try_from(wrapper_offset).unwrap(), 0);
+    payload.extend_from_slice(&0x8000_0000u32.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder
+        .write_all(
+            b"PS\0\0 (partition) SCH_test repeated stream-link payload with more than sixty-four inflated bytes........",
+        )
+        .unwrap();
+    payload.extend_from_slice(&encoder.finish().unwrap());
+    payload
+}
+
 pub(crate) fn segment_extended_wrapper_payload() -> Vec<u8> {
     let mut payload = Vec::new();
     for word in [7u32, 9, 11, 1, 1, 48, 64, 0, 94, 150, 19, 0] {

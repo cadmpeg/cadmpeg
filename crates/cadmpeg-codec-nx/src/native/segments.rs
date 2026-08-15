@@ -636,7 +636,11 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
             let stream_role = *words.get(pointer_word + 4)?;
             (body_object_index != 0 && body_alias_object_index != 0).then_some(())?;
             Some(SegmentBodyBinding {
-                id: format!("nx:segment-body-bindings:binding#{}", link.stream_ordinal),
+                id: link.id.replacen(
+                    "nx:segment-stream-links:link#",
+                    "nx:segment-body-bindings:binding#",
+                    1,
+                ),
                 stream_link: link.id,
                 stream_ordinal: link.stream_ordinal,
                 stream_kind: link.stream_kind,
@@ -760,6 +764,31 @@ mod tests {
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
+    }
+
+    #[test]
+    fn decode_assigns_distinct_binding_ids_to_repeated_stream_links() {
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_repeated_link_payload(),
+        )]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .expect("required invariant");
+        let namespace = result.ir().native.namespace("nx").expect("NX namespace");
+        let links = namespace
+            .arena_as::<super::SegmentStreamLink>("segment_stream_links")
+            .expect("required invariant");
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].stream_ordinal, links[1].stream_ordinal);
+        let bindings = namespace
+            .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
+            .expect("required invariant");
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[0].id, "nx:segment-body-bindings:binding#0");
+        assert_eq!(bindings[1].id, "nx:segment-body-bindings:binding#1");
+        assert_eq!(bindings[0].stream_link, links[0].id);
+        assert_eq!(bindings[1].stream_link, links[1].id);
     }
 
     #[test]
