@@ -3288,6 +3288,139 @@ source = "spec"
 anchor = "a nonzero, non-null u32 identity at marker +80"
 
 [[record]]
+name = "compact_legacy_84_coordinate_roster_curve"
+kind = "byte"
+section = "2"
+anchor = "An 84-byte compact-legacy roster curve uses native/role/selector combinations"
+size = 84
+endianness = "little"
+note = "The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing marker roster."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An 84-byte compact-legacy roster curve"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "Its header at marker +5 is either eight `ff` bytes or"
+
+[[record.field]]
+name = "shared_selector"
+offset = 13
+type = "bytes[4]"
+source = "spec"
+anchor = "A coordinate-bearing marker has the 12-byte prefix"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "An 84-byte compact-legacy roster curve uses native/role/selector combinations"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "An 84-byte compact-legacy roster curve uses native/role/selector combinations"
+
+[[record.gap]]
+offset = 29
+size = 2
+note = "The selector begins at +31; bytes +29 through +30 are zero."
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "An 84-byte compact-legacy roster curve uses native/role/selector combinations"
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "with f64 `1` at marker +48"
+value = 1.0
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "Its distinct endpoint u16 values at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "Its distinct endpoint u16 values at marker +56 and +58"
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 60
+type = "bytes[4]"
+source = "spec"
+anchor = "zero u32 at marker +60"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "signed_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +64"
+value = -1.0
+
+[[record.field]]
+name = "trailer_state"
+offset = 72
+type = "bytes[4]"
+source = "spec"
+anchor = "Profile curves use trailer state `00 00 00 00`"
+
+[[record.field]]
+name = "identity_first"
+offset = 76
+type = "u32"
+source = "spec"
+anchor = "selected construction curves use state `00 00 01 00`"
+
+[[record.field]]
+name = "identity_second"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "one repeated nonzero non-null identity"
+
+[[record]]
 name = "compact_legacy_68_profile_variant_curve"
 kind = "byte"
 section = "2"

@@ -112,6 +112,160 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
 }
 
 #[test]
+fn legacy_compact_84_curves_use_complete_coordinate_roster() {
+    let entity = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", 0, None, SketchInputKind::LineOrCircle);
+    let first = entity("first", 10, Some([0.0, 0.0]), SketchInputKind::Point);
+    let relation = entity(
+        "relation",
+        20,
+        Some([0.5, 0.0]),
+        SketchInputKind::Relation(SketchRelationKind::Horizontal),
+    );
+    let second = entity("second", 30, Some([1.0, 0.0]), SketchInputKind::Point);
+    let third = entity("third", 40, Some([1.0, 1.0]), SketchInputKind::Point);
+    let coordinate_curve = entity(
+        "coordinate-curve",
+        50,
+        Some([0.0, 1.0]),
+        SketchInputKind::LineOrCircle,
+    );
+    let fourth = entity("fourth", 60, Some([2.0, 1.0]), SketchInputKind::Point);
+    let markers = [
+        &curve,
+        &first,
+        &relation,
+        &second,
+        &third,
+        &coordinate_curve,
+        &fourth,
+    ];
+
+    let payload = |native_kind: u32,
+                   role: u16,
+                   selector: u8,
+                   endpoints: [u16; 2],
+                   trailer_state: [u8; 4],
+                   identities: [u32; 2]| {
+        let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&native_kind.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&role.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, selector, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&endpoints[0].to_le_bytes());
+        payload[58..60].copy_from_slice(&endpoints[1].to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&trailer_state);
+        payload[76..80].copy_from_slice(&identities[0].to_le_bytes());
+        payload[80..84].copy_from_slice(&identities[1].to_le_bytes());
+        payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload
+    };
+
+    let profile_payload = payload(0u32, 1u16, 5, [2u16, 3], [0, 0, 2, 0], [2, 3]);
+    assert_eq!(
+        legacy_compact_84_coordinate_roster_endpoint_indices(&profile_payload, 0),
+        Some([2, 3])
+    );
+    assert_eq!(
+        roster_curve_endpoint_markers(&profile_payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["second", "third"]
+    );
+
+    let code_one_payload = payload(1u32, 1u16, 0x0c, [2u16, 4], [0, 0, 0, 0], [0, 10]);
+    assert_eq!(
+        legacy_compact_84_coordinate_roster_endpoint_indices(&code_one_payload, 0),
+        Some([2, 4])
+    );
+    assert_eq!(
+        roster_curve_endpoint_markers(&code_one_payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["second", "coordinate-curve"]
+    );
+    let mut alternate_header = code_one_payload.clone();
+    alternate_header[5..13].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
+    assert_eq!(
+        legacy_compact_84_coordinate_roster_endpoint_indices(&alternate_header, 0),
+        Some([2, 4])
+    );
+
+    let construction_payload = payload(2u32, 2u16, 0x0c, [4u16, 5], [0, 0, 1, 0], [0, 4]);
+    assert_eq!(
+        legacy_compact_84_coordinate_roster_endpoint_indices(&construction_payload, 0),
+        Some([4, 5])
+    );
+    assert!(marker_is_selected_construction_line(
+        &construction_payload,
+        0
+    ));
+    assert_eq!(
+        roster_curve_endpoint_markers(&construction_payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["coordinate-curve", "fourth"]
+    );
+
+    let construction_zero_payload = payload(2u32, 2u16, 0x0c, [0u16, 5], [0, 0, 1, 0], [0, 4]);
+    assert_eq!(
+        legacy_compact_84_coordinate_roster_endpoint_indices(&construction_zero_payload, 0),
+        Some([0, 5])
+    );
+    assert!(marker_is_selected_construction_line(
+        &construction_zero_payload,
+        0
+    ));
+    assert_eq!(
+        roster_curve_endpoint_markers(&construction_zero_payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "fourth"]
+    );
+
+    let mut rejected = profile_payload.clone();
+    rejected[56..58].copy_from_slice(&1u16.to_le_bytes());
+    assert_eq!(
+        legacy_compact_84_coordinate_roster_endpoint_indices(&rejected, 0),
+        Some([1, 3])
+    );
+    assert!(roster_curve_endpoint_markers(&rejected, &curve, &markers).is_empty());
+    rejected[58..60].copy_from_slice(&1u16.to_le_bytes());
+    assert_eq!(
+        legacy_compact_84_coordinate_roster_endpoint_indices(&rejected, 0),
+        None
+    );
+    rejected[56..58].copy_from_slice(&2u16.to_le_bytes());
+    rejected[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    assert_eq!(
+        legacy_compact_84_coordinate_roster_endpoint_indices(&rejected, 0),
+        None
+    );
+}
+
+#[test]
 fn compact_legacy_wide_selected_axis_indexes_the_coordinate_roster() {
     let mut payload = vec![0; 92 + LEGACY_SKETCH_MARKER.len()];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);

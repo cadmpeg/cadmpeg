@@ -902,6 +902,39 @@ Unstated regions:
 - `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_legacy_84_coordinate_roster_curve`
+
+Spec §2 · layout: byte offsets · size: 84 B
+
+The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing marker roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An 84-byte compact-legacy roster curve |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is either eight `ff` bytes or |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | A coordinate-bearing marker has the 12-byte prefix |
+| 17 | 4 | `native_kind` | `u32` | little | spec | An 84-byte compact-legacy roster curve uses native/role/selector combinations |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | An 84-byte compact-legacy roster curve uses native/role/selector combinations |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | An 84-byte compact-legacy roster curve uses native/role/selector combinations |
+| 48 | 8 | `state_value` | `f64` | little | spec | with f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | Its distinct endpoint u16 values at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | Its distinct endpoint u16 values at marker +56 and +58 |
+| 60 | 4 | `zero_endpoint_prefix` | `bytes[4]` | little | spec | zero u32 at marker +60 · value `[0, 0, 0, 0]` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 4 | `trailer_state` | `bytes[4]` | little | spec | Profile curves use trailer state `00 00 00 00` |
+| 76 | 4 | `identity_first` | `u32` | little | spec | selected construction curves use state `00 00 01 00` |
+| 80 | 4 | `identity_second` | `u32` | little | spec | one repeated nonzero non-null identity |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `29..31` (2 B): The selector begins at +31; bytes +29 through +30 are zero.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `compact_legacy_68_profile_variant_curve`
 
 Spec §2 · layout: byte offsets · size: 68 B

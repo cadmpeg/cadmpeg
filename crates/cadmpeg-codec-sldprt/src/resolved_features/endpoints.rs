@@ -30,6 +30,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::layout::compact_legacy_68_profile_variant_curve as legacy_68;
 use crate::layout::compact_legacy_84_construction_line as legacy_84;
+use crate::layout::compact_legacy_84_coordinate_roster_curve as legacy_84_roster;
 use crate::layout::compact_legacy_90_geometry_line as legacy_90;
 use crate::layout::compact_legacy_terminal_diameter_circle as diam_circ;
 use crate::layout::extended_geometry_104_indexed_arc as geom_104;
@@ -515,6 +516,11 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                     return raw;
                 }
             }
+            let roster =
+                legacy_compact_84_coordinate_roster_endpoint_markers(payload, curve, markers);
+            if roster.len() == 2 {
+                return roster;
+            }
         }
         if coordinate_roster_curve_layout(payload, offset) {
             let roster = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
@@ -554,6 +560,10 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             }
         }
         return indexed;
+    }
+    let roster = legacy_compact_84_coordinate_roster_endpoint_markers(payload, curve, markers);
+    if roster.len() == 2 {
+        return roster;
     }
     let direct = extended_compact_endpoint_markers(payload, curve, markers);
     if direct.len() == 2 {
@@ -1252,6 +1262,44 @@ fn compact_complete_marker_roster_endpoints<'a>(
         return Vec::new();
     };
     endpoints.to_vec()
+}
+
+fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Vec<&'a SketchInputEntity> {
+    let Some(offset) = usize::try_from(curve.offset).ok() else {
+        return Vec::new();
+    };
+    let Some(indices) = legacy_compact_84_coordinate_roster_endpoint_indices(payload, offset)
+    else {
+        return Vec::new();
+    };
+    let mut owned = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref == curve.feature_ref && marker.coordinates_m.is_some())
+        .collect::<Vec<_>>();
+    owned.sort_unstable_by_key(|marker| marker.offset);
+    let endpoints = indices
+        .into_iter()
+        .filter_map(|index| owned.get(index).copied())
+        .filter(|marker| {
+            matches!(
+                marker.kind,
+                SketchInputKind::Point
+                    | SketchInputKind::ConstrainedPoint
+                    | SketchInputKind::LineOrCircle
+                    | SketchInputKind::Arc
+            )
+        })
+        .collect::<Vec<_>>();
+    if endpoints.len() == 2 && endpoints[0].id != endpoints[1].id {
+        endpoints
+    } else {
+        Vec::new()
+    }
 }
 
 fn compact_legacy_embedded_coordinate_roster_endpoint_markers<'a>(
@@ -4704,6 +4752,80 @@ pub(super) fn direct_indexed_curve_endpoint_indices(
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
+pub(super) fn legacy_compact_84_coordinate_roster_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[usize; 2]> {
+    let record_end = offset.checked_add(legacy_84_roster::LEN)?;
+    let record = payload.get(offset..record_end)?;
+    let code = View::u32_le_at(record, legacy_84_roster::NATIVE_KIND)?;
+    let role = View::u16_le_at(record, legacy_84_roster::ROLE)?;
+    let selector = record.get(legacy_84_roster::SELECTOR..legacy_84_roster::SELECTOR + 8)?;
+    let accepted_selector = match (code, role) {
+        (0, 1) if selector == [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00] => true,
+        (1, 1) | (2, 2) if selector == [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00] => true,
+        _ => false,
+    };
+    if record.get(legacy_84_roster::MARKER..legacy_84_roster::HEADER) != Some(LEGACY_SKETCH_MARKER)
+        || (record.get(legacy_84_roster::HEADER..legacy_84_roster::SHARED_SELECTOR)
+            != Some(&[0xff; 8])
+            && record.get(legacy_84_roster::HEADER..legacy_84_roster::SHARED_SELECTOR)
+                != Some(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]))
+        || record.get(legacy_84_roster::SHARED_SELECTOR..legacy_84_roster::NATIVE_KIND)
+            != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || record.get(legacy_84_roster::NATIVE_KIND + 4..legacy_84_roster::PROFILE_LOCUS)
+            != Some(&[0; 2])
+        || record.get(legacy_84_roster::PROFILE_LOCUS..legacy_84_roster::ROLE)
+            != Some(&[0x04, 0x00, 0x02, 0x00])
+        || record.get(legacy_84_roster::ROLE + 2..legacy_84_roster::SELECTOR) != Some(&[0; 2])
+        || !accepted_selector
+        || record.get(legacy_84_roster::SELECTOR + 8..legacy_84_roster::STATE_VALUE)
+            != Some(&[0; 9])
+        || record.get(legacy_84_roster::STATE_VALUE..legacy_84_roster::ENDPOINT_FIRST)
+            != Some(&legacy_84_roster::STATE_VALUE_VALUE.to_le_bytes())
+        || record.get(legacy_84_roster::ZERO_ENDPOINT_PREFIX..legacy_84_roster::SIGNED_SELECTOR)
+            != Some(&legacy_84_roster::ZERO_ENDPOINT_PREFIX_VALUE)
+        || record.get(legacy_84_roster::SIGNED_SELECTOR..legacy_84_roster::TRAILER_STATE)
+            != Some(&legacy_84_roster::SIGNED_SELECTOR_VALUE.to_le_bytes())
+        || !sketch_marker_prefix_at(payload, record_end)
+    {
+        return None;
+    }
+    let trailer_state =
+        record.get(legacy_84_roster::TRAILER_STATE..legacy_84_roster::IDENTITY_FIRST)?;
+    let first_identity = View::u32_le_at(record, legacy_84_roster::IDENTITY_FIRST)?;
+    let second_identity = View::u32_le_at(record, legacy_84_roster::IDENTITY_SECOND)?;
+    let valid_trailer = match (code, role) {
+        (2, 2) => match trailer_state {
+            [0x00, 0x00, 0x01, 0x00] => {
+                first_identity == 0 && second_identity != 0 && second_identity != u32::MAX
+            }
+            [0x00, 0x00, 0x00, 0x00] => {
+                first_identity != 0
+                    && first_identity != u32::MAX
+                    && first_identity == second_identity
+            }
+            _ => false,
+        },
+        (0 | 1, 1) => {
+            matches!(trailer_state, [0x00, 0x00, 0x00 | 0x02, 0x00])
+                && first_identity != u32::MAX
+                && second_identity != 0
+                && second_identity != u32::MAX
+        }
+        _ => false,
+    };
+    if !valid_trailer {
+        return None;
+    }
+    let endpoints = [
+        usize::from(View::u16_le_at(record, legacy_84_roster::ENDPOINT_FIRST)?),
+        usize::from(View::u16_le_at(record, legacy_84_roster::ENDPOINT_SECOND)?),
+    ];
+    (endpoints[0] != endpoints[1] && !endpoints.contains(&usize::from(u16::MAX)))
+        .then_some(endpoints)
+}
+
 pub(super) fn legacy_compact_84_construction_line_endpoint_indices(
     payload: &[u8],
     offset: usize,
@@ -5114,6 +5236,7 @@ pub(super) fn marker_is_selected_construction_line(payload: &[u8], offset: usize
         && marker_profile_curve_role(payload, offset) == Some(2))
         || compact_legacy_short_role_two_curve_endpoint_indices(payload, offset).is_some()
         || legacy_compact_84_construction_line_endpoint_indices(payload, offset).is_some()
+        || legacy_compact_84_coordinate_roster_construction_line(payload, offset)
         || alternate_current_selected_axis_endpoint_indices(payload, offset).is_some()
         || extended_profile_roster_construction_line_endpoint_indices(payload, offset).is_some()
         || extended_shifted_construction_line_endpoint_indices(payload, offset).is_some()
@@ -5141,6 +5264,17 @@ pub(super) fn marker_is_selected_construction_line(payload: &[u8], offset: usize
     } else {
         false
     }
+}
+
+fn legacy_compact_84_coordinate_roster_construction_line(payload: &[u8], offset: usize) -> bool {
+    legacy_compact_84_coordinate_roster_endpoint_indices(payload, offset).is_some()
+        && matches!(
+            (
+                View::u32_le_at(payload, offset + legacy_84_roster::NATIVE_KIND),
+                View::u16_le_at(payload, offset + legacy_84_roster::ROLE),
+            ),
+            (Some(2), Some(2))
+        )
 }
 
 pub(super) fn auxiliary_profile_record(payload: &[u8], offset: usize) -> bool {
