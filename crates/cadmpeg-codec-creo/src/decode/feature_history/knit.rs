@@ -306,7 +306,12 @@ pub(in super::super) fn feature_surface_transitions(
     for (output_table, output) in outputs {
         let intermediate_id = output.related_entity_id?;
         if output.related_entity_state != Some(0)
-            || !output_table.surface_ids.contains(&output.entity_id)
+            || output_table
+                .surface_ids
+                .iter()
+                .filter(|surface_id| **surface_id == output.entity_id)
+                .count()
+                != 1
             || crate::surface::unique_surface_row(surface_rows, output.entity_id)
                 .is_none_or(|row| row.feature_id != feature_id)
             || !output_ids.insert(output.entity_id)
