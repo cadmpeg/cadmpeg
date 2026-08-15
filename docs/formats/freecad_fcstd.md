@@ -243,7 +243,10 @@ stored polygon representation supply an approximate carrier; multiple fallback p
 invalid. For a face use, at most one pcurve representation whose surface and composed location
 equal the face surface supplies the pcurve. A closed-surface representation supplies its second
 pcurve when the edge use is reversed. Later nonmatching representations remain in the native edge
-record. Duplicate matching representations are invalid. The neutral analytic-surface frame uses
+record. A primary and secondary pcurve in one closed-surface representation are one paired edge
+representation, not duplicate matching pcurves for one face use. Polygon carriers are separate
+representation families and are not implied by pcurve multiplicity. Duplicate matching
+representations are invalid. The neutral analytic-surface frame uses
 the cross product of its axis and reference direction. If the persisted plane frame has the
 opposite V direction, the pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or
 torus frame has the opposite circumferential direction, the pcurve U parameter is negated. A cone

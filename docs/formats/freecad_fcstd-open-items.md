@@ -124,18 +124,22 @@ degenerate and malformed forms remain open.
 
 ### XT-02. Edge representation selection and uniqueness
 
-**Question.** When an edge has multiple 3D curve, polygon, or matching curve-on-surface
-representations, which representation supplies its neutral carrier and face pcurve?
+**Question.** When an edge has repeated 3D or polygon carriers, or more than one matching pcurve
+representation for one face use, which representation supplies its neutral carrier or face pcurve?
 
 **Known.** Exact-shape records retain all geometry carriers, locations, parameter ranges, and
-pcurves. Polygon transfer is a fallback when an exact 3D curve is absent.
+pcurves. Polygon transfer is a fallback when an exact 3D curve is absent. A primary and secondary
+pcurve can be one paired closed-surface representation rather than two matching representations
+for one face use. Authored cylinder, sphere, and torus witnesses serialize `Curve2ds` counts of
+6, 4, and 4 with both polygon tables at count zero.
 
-**Conflict.** topology_transfer.rs:1723-1745 rejects multiple matching representations. No
-producer or kernel rule establishes representation uniqueness, equivalence, or precedence for
-legal repeated carriers.
+**Conflict.** topology_transfer.rs:1723-1745 rejects multiple matching representations, but the
+witnesses do not distinguish repeated 3D or polygon carriers from multiple matching pcurves for
+one face use. No producer or kernel rule establishes their uniqueness, equivalence, or precedence.
 
-**Need.** Establish representation cardinality and precedence. Select by a serialized role or
-prove geometric equivalence when duplicates are legal; otherwise define the exact malformed form.
+**Need.** Establish cardinality and precedence for repeated 3D carriers, repeated polygon carriers,
+and multiple matching pcurves for one face use. Select by a serialized role or prove geometric
+equivalence when duplicates are legal; otherwise define the exact malformed form.
 
 **Note.** This pass settled the valid paired closed-surface pcurve form and its separation from
 polygon carriers. Repeated 3D or polygon carriers and multiple matching pcurves for one face use
