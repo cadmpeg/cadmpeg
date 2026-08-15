@@ -1256,31 +1256,58 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
+    let history = super::BodyWriterHistory::default();
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::Solid]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid]),
         BooleanOp::NewBody
     );
     assert_eq!(
-        super::extrude_boolean_op(true, &[BodyKind::Solid]),
+        super::extrude_boolean_op(
+            &super::BodyWriterHistory::default(),
+            None,
+            None,
+            &[BodyKind::Solid],
+        ),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::Sheet]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Sheet]),
         BooleanOp::NewBody
     );
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::Wire]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Wire]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::General]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::General]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::Solid, BodyKind::Solid]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid, BodyKind::Solid],),
         BooleanOp::Unresolved
     );
-    assert_eq!(super::extrude_boolean_op(false, &[]), BooleanOp::Unresolved);
+    assert_eq!(
+        super::extrude_boolean_op(&history, Some(7), None, &[]),
+        BooleanOp::Unresolved
+    );
+
+    let prior = super::FeatureId("prior-offset-writer".into());
+    let offset_body = "store:block#7";
+    let mut offset_history = super::BodyWriterHistory::default();
+    offset_history.record_writer(None, Some(offset_body), &[], &prior);
+    assert_eq!(
+        super::extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
+        BooleanOp::Unresolved
+    );
+    assert_eq!(
+        super::extrude_boolean_op(
+            &offset_history,
+            None,
+            Some("store:block#8"),
+            &[BodyKind::Solid],
+        ),
+        BooleanOp::NewBody
+    );
 }
 
 #[test]

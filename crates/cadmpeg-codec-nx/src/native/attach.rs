@@ -3145,11 +3145,9 @@ fn attach_feature_operations(
                 .collect::<Option<Vec<_>>>()
                 .unwrap_or_default();
             let op = extrude_boolean_op(
-                body_references.get(label.id.as_str()).is_none_or(|body| {
-                    body_writer_history
-                        .native_writer(canonical_body(*body))
-                        .is_some()
-                }),
+                &body_writer_history,
+                native_primary_body,
+                offset_store_primary_body,
                 &output_kinds,
             );
             extrude_feature_definition(
@@ -4331,9 +4329,17 @@ fn extrude_feature_definition(
 }
 
 fn extrude_boolean_op(
-    has_previous_writer: bool,
+    history: &BodyWriterHistory,
+    native_primary_body: Option<u32>,
+    offset_store_primary_body: Option<&str>,
     output_kinds: &[cadmpeg_ir::topology::BodyKind],
 ) -> BooleanOp {
+    let has_previous_writer =
+        if native_primary_body.is_some() || offset_store_primary_body.is_some() {
+            history.has_preceding_writer(None, native_primary_body, offset_store_primary_body, &[])
+        } else {
+            true
+        };
     if !has_previous_writer
         && matches!(
             output_kinds,
