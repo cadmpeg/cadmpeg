@@ -8,10 +8,7 @@ use crate::entities::geometry::{resolve_transform, Affine};
 use crate::entities::structure::array_base_type;
 use crate::global::{Global, RealPrecision};
 use crate::graph::{ParameterResolver, ReferenceEdge};
-use crate::parameter::{
-    earliest_pointer_group_with_associations, trailing_pointer_groups, ParameterRecord, Token,
-    TokenValue,
-};
+use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
@@ -808,6 +805,11 @@ pub(crate) struct ProductOccurrenceExpansion {
     pub(crate) malformed_placement_sequences: Vec<u32>,
 }
 
+pub(crate) struct NativeStoreResult {
+    pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
+    pub(crate) ambiguous_parameter_sequences: Vec<(u32, usize)>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeView {
     id: String,
@@ -1430,7 +1432,7 @@ pub(crate) fn store(
     global: &Global,
     limits: ProductOccurrenceLimits,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<ProductOccurrenceExpansion, CodecError> {
+) -> Result<NativeStoreResult, CodecError> {
     charge_native_entities(ctx, scan.lines.len() as u64)?;
     let cards = scan
         .lines
@@ -1479,6 +1481,15 @@ pub(crate) fn store(
             }
         }
     }
+    let ambiguous_parameter_sequences = required_back_pointer_members
+        .iter()
+        .filter_map(|sequence| {
+            let record = by_directory.get(sequence).copied()?;
+            let analysis = crate::parameter::analyze_trailing_pointer_groups(record, &entries);
+            (analysis.candidate_count > 1 && analysis.groups.is_none())
+                .then_some((*sequence, analysis.candidate_count))
+        })
+        .collect::<Vec<_>>();
     charge_native_entities(ctx, directory.len() as u64)?;
     let mut entities = directory
         .iter()
@@ -1491,7 +1502,10 @@ pub(crate) fn store(
                 && required_back_pointer_members.contains(&entry.sequence))
             .then(|| {
                 parameters
-                    .and_then(|record| earliest_pointer_group_with_associations(record, &entries))
+                    .and_then(|record| {
+                        crate::parameter::analyze_trailing_pointer_groups(record, &entries).groups
+                    })
+                    .filter(|groups| !groups.fully_valid)
             })
             .flatten();
             let edge_trailing = trailing.or(invalid_trailing.as_ref());
@@ -4649,11 +4663,14 @@ pub(crate) fn store(
     namespace.set_arena_from("annotations", annotations)?;
     namespace.set_arena_from("product_occurrences", product_occurrences)?;
     namespace.set_arena_from("product_occurrence_expansion", product_occurrence_expansion)?;
-    Ok(ProductOccurrenceExpansion {
-        output_truncated_at,
-        depth_truncated_at,
-        malformed_definition_sequences,
-        malformed_placement_sequences: malformed_placement_sequences.into_iter().collect(),
+    Ok(NativeStoreResult {
+        occurrence_expansion: ProductOccurrenceExpansion {
+            output_truncated_at,
+            depth_truncated_at,
+            malformed_definition_sequences,
+            malformed_placement_sequences: malformed_placement_sequences.into_iter().collect(),
+        },
+        ambiguous_parameter_sequences,
     })
 }
 

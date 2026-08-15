@@ -147,7 +147,10 @@ fn decode_with_occurrence_limits(
         entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)?
     };
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
-    let product_occurrence_expansion = native::store(
+    let native::NativeStoreResult {
+        occurrence_expansion: product_occurrence_expansion,
+        ambiguous_parameter_sequences,
+    } = native::store(
         &mut ir,
         &scan,
         &directory,
@@ -207,6 +210,16 @@ fn decode_with_occurrence_limits(
         losses.push(occurrence_loss(
             IgesLossCode::OccurrencePlacementMalformed,
             "IGES product occurrence expansion omitted an instance or member with malformed placement data",
+            source_sequence,
+            &directory,
+        ));
+    }
+    for (source_sequence, candidate_count) in ambiguous_parameter_sequences {
+        losses.push(occurrence_loss(
+            IgesLossCode::ParameterBoundaryAmbiguous,
+            format!(
+                "IGES Parameter Data has {candidate_count} structural trailing pointer-group boundaries for a required back-pointer; primary parameters and pointer ownership were not guessed"
+            ),
             source_sequence,
             &directory,
         ));

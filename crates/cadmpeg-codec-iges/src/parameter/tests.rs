@@ -26,7 +26,9 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
-use super::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
+use super::{
+    analyze_trailing_pointer_groups, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
+};
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -189,5 +191,51 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         comment: Vec::new(),
     };
 
+    assert!(trailing_pointer_groups(&record, &BTreeMap::new()).is_none());
+}
+
+#[test]
+fn unique_invalid_trailing_pointer_group_remains_visible() {
+    let record = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [116, 1, 99, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &BTreeMap::new());
+    assert_eq!(analysis.candidate_count, 1);
+    let groups = analysis.groups.expect("unique structural group");
+    assert!(!groups.fully_valid);
+    assert_eq!(groups.association_pointers[0].raw_pointer, 99);
+    assert!(groups.associations.is_empty());
+}
+
+#[test]
+fn ambiguous_trailing_pointer_group_boundary_is_not_guessed() {
+    let record = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [116, 1, 0, 2, 7, 9]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &BTreeMap::new());
+    assert_eq!(analysis.candidate_count, 2);
+    assert!(analysis.groups.is_none());
     assert!(trailing_pointer_groups(&record, &BTreeMap::new()).is_none());
 }

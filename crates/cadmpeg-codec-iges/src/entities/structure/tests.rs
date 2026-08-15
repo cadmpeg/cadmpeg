@@ -231,6 +231,48 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
 }
 
 #[test]
+fn decode_reports_an_ambiguous_required_trailing_back_pointer_boundary() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 1,
+            label: "GROUP".into(),
+            status: "00000200",
+            parameters: "402,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "MEMBER".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,0,2,7,9;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::ParameterBoundaryAmbiguous.kind())
+        .expect("ambiguous required group boundary loss");
+    assert!(loss.message.contains("2 structural"));
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D3")
+    );
+    let member = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(member.fields()["parameters"].as_array().unwrap().len(), 10);
+}
+
+#[test]
 fn decode_types_all_attribute_table_definition_forms() {
     let result = IgesCodec
         .decode(

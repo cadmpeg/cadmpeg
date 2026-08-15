@@ -45,6 +45,8 @@ pub enum IgesLossCode {
     BoundaryPcurveOutsideSupportDomain,
     /// A Directory Entry pointer did not resolve to the expected target.
     PointerUnresolved,
+    /// Parameter Data has more than one structural trailing pointer-group boundary.
+    ParameterBoundaryAmbiguous,
     /// Directory display, font, or color data was not projected.
     DisplayDataNotProjected,
     /// A drawing has conflicting valid properties of the same form.
@@ -76,6 +78,7 @@ impl IgesLossCode {
         Self::EntityNotProjected,
         Self::BoundaryPcurveOutsideSupportDomain,
         Self::PointerUnresolved,
+        Self::ParameterBoundaryAmbiguous,
         Self::DisplayDataNotProjected,
         Self::DrawingPropertyAmbiguous,
         Self::RuledDevelopabilityNotTransferred,
@@ -101,6 +104,7 @@ impl IgesLossCode {
                 "topology.boundary-pcurve-outside-support-domain"
             }
             Self::PointerUnresolved => "graph.pointer-unresolved",
+            Self::ParameterBoundaryAmbiguous => "parameter.boundary-ambiguous",
             Self::DisplayDataNotProjected => "presentation.display-data-not-projected",
             Self::DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
             Self::RuledDevelopabilityNotTransferred => {
@@ -129,6 +133,7 @@ impl IgesLossCode {
             | Self::EntityNotProjected
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::PointerUnresolved
+            | Self::ParameterBoundaryAmbiguous
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
             | Self::RuledDevelopabilityNotTransferred
@@ -150,6 +155,7 @@ impl IgesLossCode {
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
             Self::BoundaryPcurveOutsideSupportDomain => LossTaxonomy::SourceTopologyInvalid,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
+            Self::ParameterBoundaryAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::DisplayDataNotProjected => LossTaxonomy::MaterialNotTransferred,
             Self::DrawingPropertyAmbiguous
             | Self::RuledDevelopabilityNotTransferred
@@ -207,6 +213,7 @@ mod tests {
                 "entity.not-projected",
                 "topology.boundary-pcurve-outside-support-domain",
                 "graph.pointer-unresolved",
+                "parameter.boundary-ambiguous",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",
                 "geometry.ruled-developability-not-transferred",

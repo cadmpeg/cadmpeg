@@ -46,6 +46,12 @@ pub(crate) struct TrailingPointerGroups {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TrailingPointerAnalysis {
+    pub(crate) candidate_count: usize,
+    pub(crate) groups: Option<TrailingPointerGroups>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TrailingPointer {
     pub(crate) token_index: usize,
     pub(crate) raw_pointer: i64,
@@ -154,37 +160,37 @@ pub(crate) fn trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TrailingPointerGroups> {
-    let association_invalid = invalid_pointer_prefix(record, directory, true);
-    let property_invalid = invalid_pointer_prefix(record, directory, false);
-    (1..record.tokens.len()).find_map(|association_count_index| {
-        let candidate = pointer_group_candidate(record, association_count_index)?;
-        let associations_valid = association_invalid[candidate.association_start]
-            == association_invalid[candidate.property_count_index];
-        let property_start = candidate.property_count_index.checked_add(1)?;
-        let properties_valid =
-            property_invalid[property_start] == property_invalid[record.tokens.len()];
-        (associations_valid && properties_valid)
-            .then(|| groups_for_candidate(record, directory, candidate, true))
-            .flatten()
-    })
+    analyze_trailing_pointer_groups(record, directory)
+        .groups
+        .filter(|groups| groups.fully_valid)
 }
 
-pub(crate) fn earliest_pointer_group_with_associations(
+pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-) -> Option<TrailingPointerGroups> {
-    (1..record.tokens.len()).find_map(|association_count_index| {
-        let candidate = pointer_group_candidate(record, association_count_index)?;
-        (candidate.association_count > 0)
-            .then(|| groups_for_candidate(record, directory, candidate, false))
-            .flatten()
-    })
+) -> TrailingPointerAnalysis {
+    let candidates = structural_pointer_group_candidates(record);
+    let mut valid_groups = candidates
+        .iter()
+        .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
+        .filter(|groups| groups.fully_valid);
+    let first_valid = valid_groups.next();
+    let groups = match (first_valid, valid_groups.next()) {
+        (Some(groups), None) => Some(groups),
+        (None, None) if candidates.len() == 1 => {
+            groups_for_candidate(record, directory, candidates[0])
+        }
+        _ => None,
+    };
+    TrailingPointerAnalysis {
+        candidate_count: candidates.len(),
+        groups,
+    }
 }
 
 #[derive(Clone, Copy)]
 struct PointerGroupCandidate {
     token_start: usize,
-    association_count: usize,
     association_start: usize,
     property_count_index: usize,
     property_count: usize,
@@ -193,6 +199,7 @@ struct PointerGroupCandidate {
 fn pointer_group_candidate(
     record: &ParameterRecord,
     association_count_index: usize,
+    non_integer_prefix: &[usize],
 ) -> Option<PointerGroupCandidate> {
     let association_count = record
         .integer(association_count_index)
@@ -208,18 +215,31 @@ fn pointer_group_candidate(
     let property_start = property_count_index.checked_add(1)?;
     let end = property_start.checked_add(property_count)?;
     if end != record.tokens.len()
-        || !(association_start..property_count_index).all(|index| record.integer(index).is_some())
-        || !(property_start..end).all(|index| record.integer(index).is_some())
+        || non_integer_prefix[property_count_index] != non_integer_prefix[association_start]
+        || non_integer_prefix[end] != non_integer_prefix[property_start]
     {
         return None;
     }
     Some(PointerGroupCandidate {
         token_start: association_count_index,
-        association_count,
         association_start,
         property_count_index,
         property_count,
     })
+}
+
+fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerGroupCandidate> {
+    let mut non_integer_prefix = Vec::with_capacity(record.tokens.len() + 1);
+    non_integer_prefix.push(0);
+    for index in 0..record.tokens.len() {
+        non_integer_prefix
+            .push(non_integer_prefix[index] + usize::from(record.integer(index).is_none()));
+    }
+    (1..record.tokens.len())
+        .filter_map(|association_count_index| {
+            pointer_group_candidate(record, association_count_index, &non_integer_prefix)
+        })
+        .collect()
 }
 
 fn pointer_is_valid(
@@ -244,26 +264,10 @@ fn pointer_is_valid(
     })
 }
 
-fn invalid_pointer_prefix(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-    association: bool,
-) -> Vec<usize> {
-    let mut prefix = Vec::with_capacity(record.tokens.len() + 1);
-    prefix.push(0);
-    for index in 0..record.tokens.len() {
-        prefix.push(
-            prefix[index] + usize::from(!pointer_is_valid(record, index, directory, association)),
-        );
-    }
-    prefix
-}
-
 fn groups_for_candidate(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     candidate: PointerGroupCandidate,
-    fully_valid: bool,
 ) -> Option<TrailingPointerGroups> {
     let association_pointers = (candidate.association_start..candidate.property_count_index)
         .map(|token_index| {
@@ -309,6 +313,12 @@ fn groups_for_candidate(
                 })
         })
         .collect();
+    let fully_valid = association_pointers
+        .iter()
+        .all(|pointer| pointer_is_valid(record, pointer.token_index, directory, true))
+        && property_pointers
+            .iter()
+            .all(|pointer| pointer_is_valid(record, pointer.token_index, directory, false));
     Some(TrailingPointerGroups {
         token_start: candidate.token_start,
         associations,

@@ -45,16 +45,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-03. The boundary between entity parameters and trailing pointer groups
-
-**Question.** Where does an entity's own parameter list stop and its trailing pointer groups start?
-
-**Known.** `parameter.rs:153-161` scans every token position and accepts the earliest candidate for which the count and pointer groups are structurally valid. `native.rs:1362-1371` applies the same earliest-candidate rule when only an association group is available. The selected boundary controls entity parameters and Type 406 ownership.
-
-**Need.** We need per-entity parameter arity, or a source rule that makes the boundary unique. If a candidate group contains an unresolved member, the group must remain visible as a finding instead of disappearing through candidate selection.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `fdfda1cff` preserved malformed trailing groups but did not establish the boundary. The current `iges.md` wording promotes the earliest structurally closed suffix to a format rule without independent evidence. If an entity contains an earlier token suffix that also satisfies the pointer shape, the decoder can assign the wrong parameters and property owner.
-
 ## 2. Global metadata
 
 ## 3. Directory fields, the reference graph, and the native arenas
