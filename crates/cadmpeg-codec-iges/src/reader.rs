@@ -76,6 +76,17 @@ fn occurrence_loss(
     }
 }
 
+fn loss_is_attributed_to(losses: &[LossNote], source_sequence: u32) -> bool {
+    let directory_tag = format!("directory_entry:D{source_sequence}");
+    let parameter_prefix = format!("D{source_sequence}:");
+    losses.iter().any(|loss| {
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref())
+            .is_some_and(|tag| tag == directory_tag || tag.starts_with(&parameter_prefix))
+    })
+}
+
 pub(crate) fn decode(
     bytes: &[u8],
     options: DecodeOptions,
@@ -249,14 +260,21 @@ fn decode_with_occurrence_limits(
     }
     let mut transfer_ledger = TransferLedger::default();
     for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
+        let attributed_loss = loss_is_attributed_to(&losses, entry.sequence);
         let note = if options.container_only {
             "native record retained; semantic projection was not requested"
+        } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+            "native record retained; entity is outside the declared read envelope"
+        } else if projection.decoded.contains(&entry.sequence) && attributed_loss {
+            "native record retained; semantic projection emitted with an attributed loss"
         } else if projection.decoded.contains(&entry.sequence) {
             "native record retained; semantic projection emitted"
-        } else if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+        } else if attributed_loss {
             "native record retained; semantic projection omitted with an attributed loss"
+        } else if projection.handled.contains(&entry.sequence) {
+            "native record retained; no standalone neutral projection was required"
         } else {
-            "native record retained; entity is outside the declared read envelope"
+            "native record retained; semantic projection omitted with an attributed loss"
         };
         transfer_ledger.record(
             format!("D{}", entry.sequence),

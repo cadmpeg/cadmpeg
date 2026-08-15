@@ -213,7 +213,15 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .unwrap();
     assert!(!witness.report().geometry_transferred);
     assert!(witness.ir().model.curves.is_empty());
-    assert!(witness.report().losses.is_empty());
+    assert!(witness
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+    assert_eq!(
+        witness.report().transfer_ledger.entries[0].note.as_deref(),
+        Some("native record retained; semantic projection omitted with an attributed loss")
+    );
     let validation = cadmpeg_ir::validate_neutral(witness.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

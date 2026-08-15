@@ -6785,7 +6785,23 @@
     "container_only": false,
     "format": "iges",
     "geometry_transferred": true,
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "presentation.display-data-not-projected",
+          "kind": "material_not_transferred",
+          "namespace": "iges"
+        },
+        "message": "IGES entity type 106 form 40 display data was not projected: copious presentation tuples have no neutral display carrier",
+        "provenance": {
+          "format": "iges",
+          "offset": 729,
+          "stream": "iges",
+          "tag": "directory_entry:D7"
+        },
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=11",
       "entity.100.form.0=1",

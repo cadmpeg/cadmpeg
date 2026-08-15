@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -164,11 +165,11 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
         radius.fields()["leaders"][1],
         "iges:presentation:annotation#D9"
     );
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
 }
 
 #[test]
@@ -191,11 +192,11 @@ fn decode_types_angular_curve_diameter_flag_and_label_annotations() {
             .iter()
             .any(|annotation| annotation.fields()["kind"] == kind));
     }
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
 }
 
 #[test]

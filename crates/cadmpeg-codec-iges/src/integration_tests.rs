@@ -828,7 +828,6 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
         ("views", view_visibility_forms_file()),
         ("drawing", drawing_with_properties_file()),
         ("text", text_annotation_file()),
-        ("dimensions", dimension_forms_file()),
         ("symbols", symbol_and_sectioned_area_file()),
         ("associativity", bounded_associativity_forms_file()),
         ("text-font", text_font_definition_file()),

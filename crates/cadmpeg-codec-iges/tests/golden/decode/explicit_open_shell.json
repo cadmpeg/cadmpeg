@@ -7347,7 +7347,7 @@
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
+          "note": "native record retained; no standalone neutral projection was required",
           "source": "D3",
           "target": "iges:entity:directory#3"
         },

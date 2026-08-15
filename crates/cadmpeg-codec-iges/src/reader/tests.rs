@@ -52,6 +52,22 @@ fn decode_refuses_a_transformation_chain_over_its_projection_limit() {
 }
 
 #[test]
+fn transfer_ledger_does_not_claim_a_loss_for_a_native_only_direction() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(direction_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.report().losses.is_empty());
+    assert_eq!(
+        result.report().transfer_ledger.entries[0].note.as_deref(),
+        Some("native record retained; no standalone neutral projection was required")
+    );
+}
+
+#[test]
 fn decode_enforces_each_iges_session_resource_dimension() {
     fn assert_refusal(
         edit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),

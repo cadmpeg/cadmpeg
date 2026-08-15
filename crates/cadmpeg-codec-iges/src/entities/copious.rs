@@ -4,6 +4,7 @@
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -36,6 +37,17 @@ fn expected_interpretation(form: i64) -> Option<i64> {
 
 fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
+}
+
+fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
+    IgesLossCode::DisplayDataNotProjected
+        .note(format!(
+            "IGES entity type {} form {} display data was not projected: {}",
+            entry.entity_type,
+            entry.form,
+            message.into()
+        ))
+        .with_provenance(entry.loss_provenance())
 }
 
 pub(super) fn project(
@@ -184,6 +196,10 @@ pub(super) fn project(
             })
             .collect::<Vec<_>>();
         if presentation_form(entry.form) {
+            losses.push(presentation_loss(
+                entry,
+                "copious presentation tuples have no neutral display carrier",
+            ));
             continue;
         }
         if matches!(entry.form, 1..=3) {
