@@ -1308,6 +1308,27 @@ Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneDa
 | 48 | 1 | `frame_marker` | `u8` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 49 | 72 | `basis_matrix` | `f64[9]` | little | spec | A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order |
 
+## `component_face_nested_reference_prefix`
+
+Spec §2 · layout: byte offsets · size: 102 B
+
+Offsets begin at the `moCompFace_c` body. The nested class declaration is variable within the fixed region; the component-path entries follow the marker tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | class token at `+0` |
+| 2 | 4 | `record_version` | `u32` | little | spec | u32 `2` at `+2` |
+| 6 | 2 | `flags` | `bytes[2]` | little | spec | zero flags at `+6` |
+| 84 | 16 | `component_marker` | `bytes[16]` | little | spec | component marker at `+84` |
+| 100 | 2 | `marker_tail` | `u16` | little | spec | zero marker tail at `+100..+101` |
+
+Unstated regions:
+
+- `8..84` (76 B): The nested `moFaceRef_c` class declaration occupies a variable position before the component marker.
+
 ## `display_lists_scene_source_binding`
 
 Spec §8 · layout: byte offsets · size: 16 B

@@ -4938,6 +4938,56 @@ source = "spec"
 anchor = "A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order"
 
 [[record]]
+name = "component_face_nested_reference_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs"
+kind = "byte"
+section = "2"
+anchor = "Relative to the `moCompFace_c` body, this fixed prefix has the class token at `+0`, u32 `2` at `+2`, zero flags at `+6`, the nested declaration region at `+8..+83`, the component marker at `+84`, and a zero marker tail at `+100..+101`"
+size = 102
+endianness = "little"
+note = "Offsets begin at the `moCompFace_c` body. The nested class declaration is variable within the fixed region; the component-path entries follow the marker tail."
+
+[[record.field]]
+name = "class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "class token at `+0`"
+
+[[record.field]]
+name = "record_version"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "u32 `2` at `+2`"
+
+[[record.field]]
+name = "flags"
+offset = 6
+type = "bytes[2]"
+source = "spec"
+anchor = "zero flags at `+6`"
+
+[[record.gap]]
+offset = 8
+size = 76
+note = "The nested `moFaceRef_c` class declaration occupies a variable position before the component marker."
+
+[[record.field]]
+name = "component_marker"
+offset = 84
+type = "bytes[16]"
+source = "spec"
+anchor = "component marker at `+84`"
+
+[[record.field]]
+name = "marker_tail"
+offset = 100
+type = "u16"
+source = "spec"
+anchor = "zero marker tail at `+100..+101`"
+
+[[record]]
 name = "display_lists_scene_source_binding"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
 kind = "byte"

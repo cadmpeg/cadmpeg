@@ -487,6 +487,8 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
 #[test]
 fn component_face_reference_accepts_both_nested_body_flags() {
     let body_offset = 30;
+    let nested_marker =
+        body_offset + crate::layout::component_face_nested_reference_prefix::COMPONENT_MARKER;
     let build_payload = |flag: u8, marker: usize| {
         let mut payload = vec![0; marker - 12];
         payload[body_offset..body_offset + 2].copy_from_slice(&0x802b_u16.to_le_bytes());
@@ -519,6 +521,25 @@ fn component_face_reference_accepts_both_nested_body_flags() {
 
     payload[body_offset + 6] = 1;
     assert_eq!(component_face_reference_at(&payload, body_offset), None);
+
+    let nested_class = b"moFaceRef_c";
+    let nested_class_offset = body_offset + 46;
+    let mut nested = vec![0; nested_marker - 12];
+    nested[body_offset..body_offset + 2].copy_from_slice(&0x802b_u16.to_le_bytes());
+    nested[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
+    nested[nested_class_offset..nested_class_offset + 4].copy_from_slice(CLASS_MARKER);
+    nested[nested_class_offset + 4..nested_class_offset + 6]
+        .copy_from_slice(&(nested_class.len() as u16).to_le_bytes());
+    nested[nested_class_offset + 6..nested_class_offset + 6 + nested_class.len()]
+        .copy_from_slice(nested_class);
+    assert_eq!(selection_vector_tail(&mut nested, &[6]), nested_marker);
+    let (actual_marker, components) =
+        component_face_reference_at(&nested, body_offset).expect("nested face reference");
+    assert_eq!(actual_marker, nested_marker);
+    assert_eq!(
+        components.last().and_then(|component| component.local_id),
+        Some(6)
+    );
 }
 
 #[test]
@@ -1023,6 +1044,65 @@ fn face_reference_plane_owns_its_counted_surface_path() {
     assert_eq!(
         selections[0].terminal_feature_ref.as_deref(),
         Some("producer-41")
+    );
+}
+
+#[test]
+fn face_reference_plane_accepts_a_component_face_path() {
+    let class_name = "moCompFace_c";
+    let class_offset = 0;
+    let body_offset = class_offset + 6 + class_name.len();
+    let marker =
+        body_offset + crate::layout::component_face_nested_reference_prefix::COMPONENT_MARKER;
+    let mut payload = vec![0; marker - 12];
+    payload[class_offset..class_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + 6..body_offset].copy_from_slice(class_name.as_bytes());
+    payload[body_offset..body_offset + 2].copy_from_slice(&0x802b_u16.to_le_bytes());
+    payload[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
+    let nested_class = b"moFaceRef_c";
+    let nested_class_offset = body_offset + 46;
+    payload[nested_class_offset..nested_class_offset + 4].copy_from_slice(CLASS_MARKER);
+    payload[nested_class_offset + 4..nested_class_offset + 6]
+        .copy_from_slice(&(nested_class.len() as u16).to_le_bytes());
+    payload[nested_class_offset + 6..nested_class_offset + 6 + nested_class.len()]
+        .copy_from_slice(nested_class);
+    assert_eq!(selection_vector_tail(&mut payload, &[6]), marker);
+
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "component-face".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Reference,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let candidates = face_reference_plane_selection_candidates(&lane, 0, lane.native_payload.len());
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].0, marker);
+    assert_eq!(
+        candidates[0]
+            .1
+            .last()
+            .and_then(|component| component.local_id),
+        Some(6)
     );
 }
 

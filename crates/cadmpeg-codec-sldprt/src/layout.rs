@@ -1691,6 +1691,28 @@ pub(crate) mod constructed_reference_plane_matrix_frame {
     pub(crate) const BASIS_MATRIX: usize = 49;
 }
 
+/// Byte offsets for the `component_face_nested_reference_prefix` record.
+///
+/// Spec §2. Record length 102 B.
+///
+/// ```text
+/// Offsets begin at the `moCompFace_c` body. The nested class declaration is variable within the fixed region; the component-path entries follow the marker tail.
+/// ```
+pub(crate) mod component_face_nested_reference_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 102;
+    /// Offset of `class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_TOKEN: usize = 0;
+    /// Offset of `record_version` (`u32`, little-endian). Spec §2.
+    pub(crate) const RECORD_VERSION: usize = 2;
+    /// Offset of `flags` (`bytes[2]`). Spec §2.
+    pub(crate) const FLAGS: usize = 6;
+    /// Offset of `component_marker` (`bytes[16]`). Spec §2.
+    pub(crate) const COMPONENT_MARKER: usize = 84;
+    /// Offset of `marker_tail` (`u16`, little-endian). Spec §2.
+    pub(crate) const MARKER_TAIL: usize = 100;
+}
+
 /// Byte offsets for the `display_lists_scene_source_binding` record.
 ///
 /// Spec §8. Record length 16 B.

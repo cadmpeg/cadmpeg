@@ -26,6 +26,8 @@ use crate::records::{
 use cadmpeg_core::decode::{bounded_len, View};
 use std::collections::{HashMap, HashSet};
 
+use crate::layout::component_face_nested_reference_prefix as nested_face;
+
 pub(super) fn compact_body_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
@@ -642,26 +644,42 @@ fn face_reference_plane_selection_candidates(
                 && usize::try_from(class.offset).is_ok_and(|offset| (start..end).contains(&offset))
         })
         .collect::<Vec<_>>();
-    let [data_class] = data_classes.as_slice() else {
-        return Vec::new();
+    let mut candidates = if let [data_class] = data_classes.as_slice() {
+        let Some(body) = usize::try_from(data_class.offset)
+            .ok()
+            .and_then(|offset| offset.checked_add(6 + data_class.name.len()))
+        else {
+            return Vec::new();
+        };
+        (body..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+            .filter(|marker| {
+                lane.native_payload
+                    .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                    == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+            })
+            .filter_map(|marker| {
+                counted_surface_component_path_at(&lane.native_payload, marker)
+                    .map(|components| (marker, components))
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
     };
-    let Some(body) = usize::try_from(data_class.offset)
-        .ok()
-        .and_then(|offset| offset.checked_add(6 + data_class.name.len()))
-    else {
-        return Vec::new();
-    };
-    let mut candidates = (body..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-        .filter(|marker| {
-            lane.native_payload
-                .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
-                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        })
-        .filter_map(|marker| {
-            counted_surface_component_path_at(&lane.native_payload, marker)
-                .map(|components| (marker, components))
-        })
-        .collect::<Vec<_>>();
+    candidates.extend(
+        lane.classes
+            .iter()
+            .filter(|class| {
+                class.name == "moCompFace_c"
+                    && usize::try_from(class.offset)
+                        .ok()
+                        .is_some_and(|offset| (start..end).contains(&offset))
+            })
+            .filter_map(|class| {
+                let class_offset = usize::try_from(class.offset).ok()?;
+                let body = class_offset.checked_add(6 + class.name.len())?;
+                component_face_reference_at(&lane.native_payload, body)
+            }),
+    );
     candidates.sort_by_key(|(offset, _)| *offset);
     candidates.dedup();
     if candidates.len() == 1 {
@@ -1007,6 +1025,7 @@ pub(super) fn component_face_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    const NESTED_FACE_CLASS: &[u8] = b"moFaceRef_c";
     let token = View::u16_le_at(payload, body_offset)?;
     let flags = payload.get(body_offset + 6..body_offset + 8)?;
     if !is_class_token(token)
@@ -1015,8 +1034,21 @@ pub(super) fn component_face_reference_at(
     {
         return None;
     }
+    let nested_face_class = payload
+        .get(body_offset..body_offset + nested_face::COMPONENT_MARKER)
+        .is_some_and(|body| {
+            body.windows(CLASS_MARKER.len() + 2 + NESTED_FACE_CLASS.len())
+                .any(|header| {
+                    &header[..CLASS_MARKER.len()] == CLASS_MARKER
+                        && header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2]
+                            == (NESTED_FACE_CLASS.len() as u16).to_le_bytes()
+                        && &header[CLASS_MARKER.len() + 2..] == NESTED_FACE_CLASS
+                })
+        });
     let marker_offsets: &[usize] = if flags == [0x40, 0] {
         &[100]
+    } else if nested_face_class {
+        &[nested_face::COMPONENT_MARKER]
     } else {
         &[68, 92]
     };
