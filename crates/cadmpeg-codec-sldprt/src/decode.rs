@@ -2806,7 +2806,10 @@ fn build_geometry_ir(
         source.links.extend(links);
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
-    stamp_local_digests(&mut ir);
+    // Sort arenas for the order-sensitive loss scans that follow; the local
+    // digests are stamped once, in `decode_result`, after native unknown
+    // records are attached.
+    ir.finalize();
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
@@ -3419,7 +3422,10 @@ fn build_metadata_ir(
     stamp_configuration_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
     preserve_source_image(scan, &mut annotations, &mut unknowns);
-    stamp_local_digests(&mut ir);
+    // Sort arenas for the order-sensitive loss scans that follow; the local
+    // digests are stamped once, in `decode_result`, after native unknown
+    // records are attached.
+    ir.finalize();
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
