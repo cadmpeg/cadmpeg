@@ -21,7 +21,7 @@ pub(crate) fn transfer(
     );
     objects
         .iter()
-        .filter(|object| object.type_name.contains("TechDraw::"))
+        .filter(|object| object.type_name.starts_with("TechDraw::"))
         .map(|object| {
             let owned = by_owner
                 .get(object.id.as_str())
@@ -138,32 +138,30 @@ pub(crate) fn transfer_neutral(
 }
 
 fn classify(runtime_type: &str) -> DrawingKind {
-    if runtime_type.contains("DrawPage") {
-        DrawingKind::Page
-    } else if runtime_type.contains("Template") {
-        DrawingKind::Template
-    } else if runtime_type.contains("Dimension") {
-        DrawingKind::Dimension
-    } else if runtime_type.contains("Annotation") {
-        DrawingKind::Annotation
-    } else if runtime_type.contains("Balloon") {
-        DrawingKind::Balloon
-    } else if runtime_type.contains("Leader") {
-        DrawingKind::Leader
-    } else if runtime_type.contains("Symbol") {
-        DrawingKind::Symbol
-    } else if runtime_type.contains("Detail") {
-        DrawingKind::Detail
-    } else if runtime_type.contains("Section") {
-        DrawingKind::Section
-    } else if runtime_type.contains("Projection") || runtime_type.contains("ProjGroup") {
-        DrawingKind::Projection
-    } else if runtime_type.contains("Image") {
-        DrawingKind::Image
-    } else if runtime_type.contains("View") {
-        DrawingKind::View
-    } else {
-        DrawingKind::Other
+    match runtime_type {
+        "TechDraw::DrawPage" => DrawingKind::Page,
+        "TechDraw::DrawSVGTemplate" | "TechDraw::DrawDXFTemplate" => DrawingKind::Template,
+        "TechDraw::DrawViewDimension"
+        | "TechDraw::DrawViewDimExtent"
+        | "TechDraw::LandmarkDimension" => DrawingKind::Dimension,
+        "TechDraw::DrawViewAnnotation"
+        | "TechDraw::DrawViewAnnotationPython"
+        | "TechDraw::DrawRichAnno"
+        | "TechDraw::DrawRichAnnoPython" => DrawingKind::Annotation,
+        "TechDraw::DrawViewBalloon" => DrawingKind::Balloon,
+        "TechDraw::DrawLeaderLine" | "TechDraw::DrawLeaderLinePython" => DrawingKind::Leader,
+        "TechDraw::DrawViewSymbol"
+        | "TechDraw::DrawViewSymbolPython"
+        | "TechDraw::DrawWeldSymbol"
+        | "TechDraw::DrawWeldSymbolPython" => DrawingKind::Symbol,
+        "TechDraw::DrawViewDetail" => DrawingKind::Detail,
+        "TechDraw::DrawViewSection" => DrawingKind::Section,
+        "TechDraw::DrawProjGroup" | "TechDraw::DrawProjGroupItem" => DrawingKind::Projection,
+        "TechDraw::DrawViewImage" => DrawingKind::Image,
+        "TechDraw::DrawViewPart" | "TechDraw::DrawViewSpreadsheet" | "TechDraw::DrawViewClip" => {
+            DrawingKind::View
+        }
+        _ => DrawingKind::Other,
     }
 }
 

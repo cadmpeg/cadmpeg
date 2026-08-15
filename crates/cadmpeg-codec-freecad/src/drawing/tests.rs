@@ -121,3 +121,27 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .iter()
         .any(|finding| finding.message == "invalid drawing reference, order, or numeric state"));
 }
+
+#[test]
+fn classifies_drawing_runtime_types_exactly() {
+    assert_eq!(
+        super::classify("TechDraw::DrawPage"),
+        cadmpeg_ir::drawings::DrawingKind::Page
+    );
+    assert_eq!(
+        super::classify("TechDraw::DrawViewSection"),
+        cadmpeg_ir::drawings::DrawingKind::Section
+    );
+    assert_eq!(
+        super::classify("TechDraw::DrawViewDimension"),
+        cadmpeg_ir::drawings::DrawingKind::Dimension
+    );
+    assert_eq!(
+        super::classify("TechDraw::VendorDrawPage"),
+        cadmpeg_ir::drawings::DrawingKind::Other
+    );
+    assert_eq!(
+        super::classify("Vendor::TechDraw::DrawPage"),
+        cadmpeg_ir::drawings::DrawingKind::Other
+    );
+}

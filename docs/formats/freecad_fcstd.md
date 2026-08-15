@@ -539,6 +539,22 @@ object identities, and external document/object pairs remain explicit without be
 local references. View position, positive scale, nonzero projection direction, rotation, exact
 fallback parameters, and resolved template or image assets are independently validated.
 
+Core drawing dispatch uses exact runtime names. `TechDraw::DrawPage` is a page;
+`TechDraw::DrawSVGTemplate` and `TechDraw::DrawDXFTemplate` are templates;
+`TechDraw::DrawViewPart`, `TechDraw::DrawViewSpreadsheet`, and `TechDraw::DrawViewClip` are model
+views; `TechDraw::DrawProjGroup` and `TechDraw::DrawProjGroupItem` are projections;
+`TechDraw::DrawViewSection` is a section; `TechDraw::DrawViewDetail` is a detail;
+`TechDraw::DrawViewDimension`, `TechDraw::DrawViewDimExtent`, and
+`TechDraw::LandmarkDimension` are dimensions; `TechDraw::DrawViewAnnotation`,
+`TechDraw::DrawViewAnnotationPython`, `TechDraw::DrawRichAnno`, and
+`TechDraw::DrawRichAnnoPython` are annotations; `TechDraw::DrawViewBalloon` is a balloon;
+`TechDraw::DrawLeaderLine` and `TechDraw::DrawLeaderLinePython` are leaders;
+`TechDraw::DrawViewSymbol`, `TechDraw::DrawViewSymbolPython`, `TechDraw::DrawWeldSymbol`, and
+`TechDraw::DrawWeldSymbolPython` are symbols; and `TechDraw::DrawViewImage` is an image. A
+runtime type outside this registry remains an extension drawing with kind `other` and retains its
+exact native record. Drawing property names and registered value grammars provide carrier
+cardinality; projection does not select a carrier by source-order precedence.
+
 The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
 are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
 `TechDraw::DrawViewAnnotationPython`, `TechDraw::DrawRichAnno`, and

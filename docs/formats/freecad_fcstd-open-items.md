@@ -34,8 +34,6 @@ These items have a Conflict part and need a decision.
 - PR-01. Product membership and record identity selection
 - SA-01. Runtime-type to annotation-kind mapping
 - SA-02. Annotation scalar and position property selection
-- DG-01. TechDraw runtime-type classification
-- DG-02. Drawing link and parameter selection
 - AT-01. Attachment frame carrier precedence
 - JN-01. Joint kind and enumeration carrier selection
 
@@ -272,33 +270,7 @@ rejection prevents a source-order choice but does not resolve the legal cardinal
 
 **Note.** Commit `57371f57d` improved runtime-type filtering but retained first-property and first-value selection. The exact property registry and precedence remain unverified.
 
-## 8. TechDraw projection
-
-### DG-01. TechDraw runtime-type classification
-
-**Question.** Which exact runtime types enter the TechDraw arena and which drawing kind does each type represent?
-
-**Known.** Drawing records retain the exact runtime type and source order.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/drawing.rs:23-25` admits every type containing `TechDraw::`. `classify` at `:140-167` chooses the first matching substring among Page, Template, Dimension, Annotation, Balloon, Leader, Symbol, Detail, Section, Projection, Image, and View. A vendor type containing a known token, or a type containing two tokens, receives decoder-defined semantics.
-
-**Need.** We must establish the exact TechDraw runtime registry and inheritance/type mapping. Unknown extension types must remain native.
-
-**Note.** The filter and ordered classifier are direct; valid extension type names are not established.
-
-### DG-02. Drawing link and parameter selection
-
-**Question.** What cardinality and precedence rules select drawing templates, scalar/vector carriers, link properties, and repeated parameters?
-
-**Known.** Drawing records retain all links and source properties.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/drawing.rs:34-50` takes the first `Template` link. `scalar_property` and `vector_property` at `:170-193` take the first same-name property and first value. `links` at `:196-202` ignores later same-name properties. `drawing_parameters` at `:204-230` stores duplicate names in a `BTreeMap`, so the later value wins. Reordering conflicting carriers changes the projected drawing.
-
-**Need.** We must establish the TechDraw property definitions, cardinalities, and precedence from FreeCAD source or independent saved documents.
-
-**Note.** The code has separate first-wins and last-wins paths; producer uniqueness remains unverified.
-
-## 10. Attachment and assembly
+## 8. Attachment and assembly
 
 ### AT-01. Attachment frame carrier precedence
 
