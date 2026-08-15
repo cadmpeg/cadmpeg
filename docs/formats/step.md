@@ -302,9 +302,14 @@ unit. Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the
 length and plane-angle scales for that representation and its reachable
 representation-item closure. A carrier shared by representations must have
 one equal scale in every such context; conflicting contexts leave the carrier
-on the document fallback scale and produce a geometry loss. Unscoped values
-use the document fallback scale. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure
-whose unit resolves to a length unit. When several length measures are
+on the document fallback scale and produce a geometry loss. The document
+fallback scale is the unique scale shared by all applicable global unit
+contexts. If no context supplies a dimension, all records for that dimension
+must resolve to one scale. Equivalent contexts define that shared scale.
+Conflicting contexts or unresolved dimension units do not define a fallback;
+unscoped values remain in source numeric units and produce a document-unit
+unresolved error. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty
+measure whose unit resolves to a length unit. When several length measures are
 present, the one named `distance_accuracy_value` is selected; otherwise a
 unique length measure is required. An ambiguous set does not define a linear
 tolerance. Geometric-consistency checks use the selected document tolerance as

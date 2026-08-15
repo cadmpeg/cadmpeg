@@ -2778,59 +2778,61 @@ fn is_representation_context_record(record: &RawRecord) -> bool {
 }
 
 fn length_scale(exchange: &Exchange) -> Option<f64> {
-    let context_units = exchange.records.values().find_map(|record| {
-        record
-            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
-            .parameters
-            .first()?
-            .list()
-    });
-    let unit_id = context_units
-        .into_iter()
-        .flatten()
-        .filter_map(Value::reference)
-        .find(|id| {
-            exchange
-                .records
-                .get(id)
-                .is_some_and(|record| record.partial("LENGTH_UNIT").is_some())
-        })
-        .or_else(|| {
-            exchange
-                .records
-                .iter()
-                .find(|(_, record)| record.partial("LENGTH_UNIT").is_some())
-                .map(|(&id, _)| id)
-        })?;
-    unit_scale_mm(unit_id, exchange, &mut BTreeSet::new())
+    document_unit_scale(exchange, "LENGTH_UNIT", unit_scale_mm)
 }
 
 fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
-    let context_units = exchange.records.values().find_map(|record| {
-        record
-            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
-            .parameters
-            .first()?
-            .list()
-    });
-    let unit_id = context_units
-        .into_iter()
-        .flatten()
-        .filter_map(Value::reference)
-        .find(|id| {
-            exchange
-                .records
-                .get(id)
-                .is_some_and(|record| record.partial("PLANE_ANGLE_UNIT").is_some())
-        })
-        .or_else(|| {
-            exchange
-                .records
-                .iter()
-                .find(|(_, record)| record.partial("PLANE_ANGLE_UNIT").is_some())
-                .map(|(&id, _)| id)
-        })?;
-    unit_scale_radians(unit_id, exchange, &mut BTreeSet::new())
+    document_unit_scale(exchange, "PLANE_ANGLE_UNIT", unit_scale_radians)
+}
+
+fn document_unit_scale(
+    exchange: &Exchange,
+    dimension_partial: &str,
+    resolve: fn(u64, &Exchange, &mut BTreeSet<u64>) -> Option<f64>,
+) -> Option<f64> {
+    let mut context_scales = Vec::new();
+    let mut has_context_unit = false;
+
+    for record in exchange.records.values() {
+        let Some(units) = record
+            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")
+            .and_then(|partial| partial.parameters.first())
+            .and_then(Value::list)
+        else {
+            continue;
+        };
+        let unit_ids = units
+            .iter()
+            .filter_map(Value::reference)
+            .filter(|id| {
+                exchange
+                    .records
+                    .get(id)
+                    .is_some_and(|unit| unit.partial(dimension_partial).is_some())
+            })
+            .collect::<Vec<_>>();
+        if unit_ids.is_empty() {
+            continue;
+        }
+        has_context_unit = true;
+        let scales = unit_ids
+            .into_iter()
+            .map(|id| resolve(id, exchange, &mut BTreeSet::new()))
+            .collect::<Option<Vec<_>>>()?;
+        context_scales.push(unique_scale(&scales)?);
+    }
+
+    if has_context_unit {
+        return unique_scale(&context_scales);
+    }
+
+    let scales = exchange
+        .records
+        .iter()
+        .filter(|(_, record)| record.partial(dimension_partial).is_some())
+        .map(|(&id, _)| resolve(id, exchange, &mut BTreeSet::new()))
+        .collect::<Option<Vec<_>>>()?;
+    unique_scale(&scales)
 }
 
 pub(super) fn unit_scale_radians(

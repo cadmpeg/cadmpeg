@@ -56,6 +56,51 @@ fn unresolvable_length_unit_reports_an_error_loss() {
     );
 }
 
+fn assert_unscoped_document_point(
+    first_length_unit: u64,
+    second_length_unit: u64,
+    expected_x: f64,
+    expect_unresolved_loss: bool,
+) {
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('document fallback units'),'2;1');FILE_NAME('document-fallback-units','2026-08-15T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#{first_length_unit},#4)) REPRESENTATION_CONTEXT('first','3D'));#6=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#{second_length_unit},#4)) REPRESENTATION_CONTEXT('second','3D'));#7=CARTESIAN_POINT('unscoped',(1.,0.,0.));#8=REPRESENTATION_CONTEXT('unscoped','3D');#9=SHAPE_REPRESENTATION('unscoped',(#7),#8);ENDSEC;END-ISO-10303-21;"
+    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unscoped document point");
+    let point = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#7")
+        .expect("unscoped document point");
+    assert_eq!(point.position.x, expected_x);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| { loss.code == StepLossCode::DocumentLengthUnitUnresolved.kind() }),
+        expect_unresolved_loss
+    );
+}
+
+#[test]
+fn conflicting_document_fallback_units_are_order_independent() {
+    assert_unscoped_document_point(1, 3, 1.0, true);
+    assert_unscoped_document_point(3, 1, 1.0, true);
+}
+
+#[test]
+fn equivalent_document_fallback_units_define_the_shared_scale() {
+    assert_unscoped_document_point(1, 1, 1.0, false);
+    assert_unscoped_document_point(3, 3, 25.4, false);
+}
+
 #[test]
 pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
