@@ -985,6 +985,36 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
 }
 
 #[test]
+fn mirror_pattern_path_honors_full_count_before_following_path_data() {
+    let marker = 12;
+    let mut payload = vec![0; marker];
+    payload[..4].copy_from_slice(&2u32.to_le_bytes());
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+    let append_component = |payload: &mut Vec<u8>, instance: u16, source: u32, id: u32| {
+        payload.extend(instance.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0x34, 0x80, 0x37, 0]);
+        payload.extend(source.to_le_bytes());
+        payload.extend(0x4ad9_837au32.to_le_bytes());
+        payload.extend(id.to_le_bytes());
+    };
+    append_component(&mut payload, 0x803e, 37, 2);
+    payload.extend([0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+    append_component(&mut payload, 0x8263, 50, 3);
+    payload.extend([0; 2]);
+    append_component(&mut payload, 0x81a5, 18, 4);
+
+    let path = mirror_pattern_component_path_at(&payload, marker).expect("full count path");
+    assert_eq!(
+        path.iter()
+            .map(|component| component.local_id)
+            .collect::<Vec<_>>(),
+        vec![Some(2), Some(3)]
+    );
+}
+
+#[test]
 fn component_vector_cell_count_includes_interleaved_path_slots() {
     let marker = 12;
     let mut payload = vec![0; marker];

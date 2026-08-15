@@ -1416,6 +1416,17 @@ pub(super) const COMPACT_EDGE_VECTOR_MARKER: [u8; 16] = [
     0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54,
 ];
 
+const COMPACT_COMPONENT_PATH_GAPS: &[usize] = &[0, 2, 4, 6, 8, 10, 12];
+const COMPACT_ROOT_COMPONENT_PATH_GAPS: &[usize] = &[0, 2, 4, 6, 8, 10, 12, 16];
+
+fn component_path_gaps(root_separators: bool) -> &'static [usize] {
+    if root_separators {
+        COMPACT_ROOT_COMPONENT_PATH_GAPS
+    } else {
+        COMPACT_COMPONENT_PATH_GAPS
+    }
+}
+
 /// Component-vector selectors carry a lane-specific low subtype byte. The
 /// high role byte identifies the path family; the low byte is not a fixed
 /// discriminator and therefore must not be required to be zero.
@@ -1453,7 +1464,7 @@ pub(super) fn component_vector_path_at(
     let cell_count = usize::try_from(View::u32_le_at(payload, header)?)
         .ok()
         .filter(|count| (2..=65).contains(count))?;
-    let candidates = [
+    let candidate_results = [
         compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1),
         (cell_count > 2)
             .then(|| compact_heterogeneous_component_path(payload, marker + 18, cell_count - 2))
@@ -1468,10 +1479,15 @@ pub(super) fn component_vector_path_at(
                 compact_mixed_component_path(payload, marker + 18, cell_count.div_ceil(2), true)
             })
             .flatten(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    ];
+    // An exact count is an explicit vector boundary. A following path-shaped
+    // record does not extend it; continuation checks only disambiguate root
+    // slot interpretations.
+    let exact_count_candidates = candidate_results[2].clone().into_iter().collect::<Vec<_>>();
+    if let [candidate] = exact_count_candidates.as_slice() {
+        return Some(candidate.0.clone());
+    }
+    let candidates = candidate_results.into_iter().flatten().collect::<Vec<_>>();
     let candidates = distinct_candidates(
         // A shorter root-slot interpretation is incomplete when another valid
         // entry follows its end; the remaining entry is part of this path.
@@ -1486,14 +1502,18 @@ pub(super) fn component_vector_path_at(
 }
 
 fn component_path_continues(payload: &[u8], end: usize, root_separators: bool) -> bool {
-    [0usize, 2, 4, 6, 8, 10, 12].into_iter().any(|gap| {
-        let root_separator = root_separators
-            && gap == 10
-            && payload.get(end..end + 10) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        (compact_component_separator(payload, end, gap) || root_separator)
-            && (compact_heterogeneous_component_path(payload, end + gap, 1).is_some()
-                || compact_mixed_component_path(payload, end + gap, 1, root_separators).is_some())
-    })
+    component_path_gaps(root_separators)
+        .iter()
+        .copied()
+        .any(|gap| {
+            let root_separator = root_separators
+                && gap == 10
+                && payload.get(end..end + 10) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            (compact_component_separator(payload, end, gap) || root_separator)
+                && (compact_heterogeneous_component_path(payload, end + gap, 1).is_some()
+                    || compact_mixed_component_path(payload, end + gap, 1, root_separators)
+                        .is_some())
+        })
 }
 
 pub(super) fn compact_mixed_component_path(
@@ -1562,13 +1582,16 @@ pub(super) fn compact_mixed_component_path(
         if index + 1 == count {
             continue;
         }
-        let gap = [0usize, 2, 4, 6, 8, 10, 12].into_iter().find(|gap| {
-            let root_separator = root_separators
-                && *gap == 10
-                && payload.get(cursor..cursor + 10) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-            (compact_component_separator(payload, cursor, *gap) || root_separator)
-                && node_at(cursor + *gap, count - index - 1).is_some()
-        })?;
+        let gap = component_path_gaps(root_separators)
+            .iter()
+            .copied()
+            .find(|gap| {
+                let root_separator = root_separators
+                    && *gap == 10
+                    && payload.get(cursor..cursor + 10) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                (compact_component_separator(payload, cursor, *gap) || root_separator)
+                    && node_at(cursor + *gap, count - index - 1).is_some()
+            })?;
         cursor += gap;
     }
     Some((components, cursor))
@@ -2356,7 +2379,7 @@ fn compact_component_path_with_layout(
         if index + 1 == count {
             continue;
         }
-        let gap = [0usize, 2, 4, 6, 8, 10, 12].into_iter().find(|gap| {
+        let gap = COMPACT_COMPONENT_PATH_GAPS.iter().copied().find(|gap| {
             compact_component_separator(payload, cursor, *gap) && entry_at(cursor + *gap).is_some()
         })?;
         cursor += gap;
@@ -2389,6 +2412,10 @@ fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> boo
         }),
         10 => payload.get(cursor..cursor + 10) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0]),
         12 => payload.get(cursor..cursor + 12) == Some(&[0; 12]),
+        16 => {
+            payload.get(cursor..cursor + 16)
+                == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+        }
         _ => false,
     }
 }
@@ -2438,11 +2465,11 @@ fn compact_sparse_component_path(
             if remaining == 1 {
                 return Some((vec![entry], end));
             }
-            for gap in [0usize, 2, 4, 6, 8, 10, 12] {
-                if !compact_component_separator(payload, end, gap) {
+            for gap in COMPACT_COMPONENT_PATH_GAPS {
+                if !compact_component_separator(payload, end, *gap) {
                     continue;
                 }
-                let Some(next) = end.checked_add(gap) else {
+                let Some(next) = end.checked_add(*gap) else {
                     continue;
                 };
                 let Some((mut tail, path_end)) = parse(payload, next, remaining - 1, failed) else {
