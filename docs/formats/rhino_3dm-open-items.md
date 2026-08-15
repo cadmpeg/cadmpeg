@@ -4,7 +4,9 @@ The following items were reopened by the 2026-08-15 QA audit. Settled format
 rules remain in [`rhino_3dm.md`](rhino_3dm.md). Independent transfer evidence
 remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.md).
 
-## PP-01. Plug-in class payload grammar
+## Reopened items
+
+### PP-01. Plug-in class payload grammar
 
 **Question.** What payload grammar and semantics does each third-party plug-in class UUID select?
 
@@ -14,7 +16,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because retaining the complete record preserves bytes but does not answer the original grammar or semantic question.
 
-## PP-02. Plug-in class field semantics
+### PP-02. Plug-in class field semantics
 
 **Question.** Which fields in a supported plug-in class payload carry transferable object state?
 
@@ -24,7 +26,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened for the same refusal-as-answer: opaque retention is a preservation policy, not field semantics.
 
-## PP-03. Plug-in user-data dictionary grammar
+### PP-03. Plug-in user-data dictionary grammar
 
 **Question.** What record and value grammar applies to plug-in user-data dictionaries?
 
@@ -34,7 +36,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because the current path can preserve a dictionary without making any of its fields available to typed transfer.
 
-## PP-04. Plug-in direct user-record grammar
+### PP-04. Plug-in direct user-record grammar
 
 **Question.** What payload grammar and ownership rules apply to plug-in direct user records?
 
@@ -44,7 +46,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because the closure supplies no grammar for the originally requested direct-record fields.
 
-## PP-05. Future object attribute items
+### PP-05. Future object attribute items
 
 **Question.** What width and value grammar applies to unknown future object-attribute items?
 
@@ -54,7 +56,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because whole-record retention does not establish the item boundary or permit later fields to be decoded.
 
-## PP-06. Future layer and settings items
+### PP-06. Future layer and settings items
 
 **Question.** What width and value grammar applies to unknown future layer and settings items?
 
@@ -64,7 +66,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because the retained bytes do not answer the original future-item grammar question.
 
-## FV-01. Future object-class payloads
+### FV-01. Future object-class payloads
 
 **Question.** Which later object-class payload versions are compatible with the typed decoder?
 
@@ -74,7 +76,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because byte preservation does not establish compatibility with any future payload version.
 
-## FV-02. Future table-record payloads
+### FV-02. Future table-record payloads
 
 **Question.** Which later table-record payload versions can be decoded as typed records?
 
@@ -84,7 +86,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because retention does not establish typed table-record compatibility.
 
-## FV-03. Future user-data payloads
+### FV-03. Future user-data payloads
 
 **Question.** Which later user-data payload versions are typed, and which are opaque?
 
@@ -94,7 +96,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because the closure retains future bytes but does not resolve their versioned semantics.
 
-## FV-04. Future presentation records
+### FV-04. Future presentation records
 
 **Question.** Which later presentation-record versions may append fields before their bounded end?
 
@@ -104,7 +106,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a later presentation record can be rejected or degraded even when its bounded prefix is readable.
 
-## FV-05. Future view and clipping records
+### FV-05. Future view and clipping records
 
 **Question.** Which later view and clipping-record versions are accepted, and how are appended fields skipped?
 
@@ -114,7 +116,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because the current reader rejects specified later minors instead of consuming or skipping their bounded fields.
 
-## LG-01. Direct V1 record dispatch
+### LG-01. Direct V1 record dispatch
 
 **Question.** Which direct V1 typecodes are typed records rather than opaque records?
 
@@ -124,7 +126,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a spec-listed direct record is not decoded as typed data. The later annotation decoder does not change the V1 dispatch table.
 
-## LG-02. V2 class-payload compatibility
+### LG-02. V2 class-payload compatibility
 
 **Question.** Do all V2 class payloads use the later archive class-data grammar and version fields?
 
@@ -134,7 +136,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened as a promotion-to-spec gap. A V2 class can be admitted under an unverified later-archive assumption and then be falsely typed or lose unsupported fields.
 
-## NS-01. Brep mesh-cache loss accounting
+### NS-01. Brep mesh-cache loss accounting
 
 **Question.** How is a Brep mesh-cache slot that has the wrong class or cannot be parsed represented in loss accounting?
 
@@ -144,7 +146,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** The cache framing fix is sound. Reopened because the remaining degradation path is not represented with the required fidelity-specific loss vocabulary.
 
-## RS-01. Later-minor bounded suffixes
+### RS-01. Later-minor bounded suffixes
 
 **Question.** Which versioned records accept unread fields appended before their bounded end?
 
@@ -154,7 +156,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a valid bounded later-minor suffix can make a containing presentation record fail or become opaque.
 
-## RS-02. Later-minor version admission
+### RS-02. Later-minor version admission
 
 **Question.** What version ceilings are valid for each versioned record, independent of its field suffix?
 
@@ -164,7 +166,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because current admission rejects specified later minors. The clipping-plane minor-4/5 mismatch is the clearest concrete case.
 
-## RS-04. Strict boolean validation in object attributes
+### RS-04. Strict boolean validation in object attributes
 
 **Question.** Are object-attribute boolean fields validated against the writer-version strictness threshold?
 
@@ -174,7 +176,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a modern archive containing byte `0x02` is currently accepted as true instead of rejected as malformed.
 
-## RS-05. Unknown SubD symmetry enums
+### RS-05. Unknown SubD symmetry enums
 
 **Question.** What is the fallback for an unknown SubD symmetry type or coordinate-system enum?
 
@@ -184,7 +186,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because an unknown enum currently rejects the candidate instead of following the settled enum policy.
 
-## SW-03. Mixed instance-member transforms
+### SW-03. Mixed instance-member transforms
 
 **Question.** Which entities emitted by one instance-definition member receive the member transform when the member emits both a body carrier and auxiliary geometry?
 
@@ -194,7 +196,7 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 
 **Note.** Reopened because a member that emits both a body and auxiliary geometry can leave the auxiliary geometry outside the transform decision, and aggregate instance tests do not establish the source boundary rule.
 
-## TE-01. Class-specific transfer differential evidence
+### TE-01. Class-specific transfer differential evidence
 
 **Question.** Which Rhino-authored object classes differ from the committed transfer fixtures, and which byte-level fields cause the difference?
 
