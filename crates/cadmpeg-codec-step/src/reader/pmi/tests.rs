@@ -195,6 +195,35 @@ fn complex_datum_feature_remains_a_dimension_target() {
 }
 
 #[test]
+fn simple_shape_aspect_subtypes_remain_dimension_targets() {
+    use cadmpeg_ir::pmi::PmiTarget;
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=COMPOSITE_SHAPE_ASPECT('composite feature','',#5,.T.);
+#7=DATUM_TARGET('datum target','',#5,.T.,'A');
+#10=DIMENSIONAL_SIZE(#6,'composite width');
+#11=DIMENSIONAL_SIZE(#7,'target width');
+#99=UNRESOLVED_PRODUCT();",
+    );
+    for (name, source_id) in [("composite width", "#6"), ("target width", "#7")] {
+        let dimension = result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing dimension {name}"));
+        assert_eq!(
+            dimension.targets,
+            vec![PmiTarget::ShapeAspect {
+                source_id: source_id.into()
+            }]
+        );
+    }
+}
+
+#[test]
 fn complex_dimension_inherits_kind_targets_and_nominal_value() {
     use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiQuantity};
 

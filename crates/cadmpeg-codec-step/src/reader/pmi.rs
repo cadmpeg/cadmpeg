@@ -43,10 +43,13 @@ pub(super) fn decode(
             notes: Vec::new(),
         };
     }
-    let aspects = exchange
+    let base_aspects = exchange
         .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
-        .filter(|(_, record)| is_shape_aspect(record))
         .map(|(id, _)| id)
+        .collect::<BTreeSet<_>>();
+    let shape_aspects = exchange
+        .matching_entity_ids(is_shape_aspect_name)
+        .into_iter()
         .collect::<BTreeSet<_>>();
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
@@ -133,7 +136,7 @@ pub(super) fn decode(
                     .parameters()
                     .iter()
                     .flat_map(references)
-                    .filter(|id| aspects.contains(id)),
+                    .filter(|id| base_aspects.contains(id)),
             ),
             PmiDefinition::DatumSystem {
                 references: datum_references,
@@ -197,7 +200,7 @@ pub(super) fn decode(
             .iter()
             .flat_map(|partial| &partial.parameters)
             .flat_map(references)
-            .filter(|reference| aspects.contains(reference));
+            .filter(|reference| shape_aspects.contains(reference));
         push_annotation(
             ir,
             &mut annotations,
@@ -446,7 +449,7 @@ pub(super) fn decode(
                         StepLossCode::MetadataStringInvalid,
                     )
                 }),
-            targets(refs.iter().copied().filter(|id| aspects.contains(id))),
+            targets(refs.iter().copied().filter(|id| base_aspects.contains(id))),
             PmiDefinition::GeometricTolerance {
                 tolerance,
                 magnitude,
@@ -579,7 +582,7 @@ pub(super) fn decode(
             _ => None,
         })
         .collect::<BTreeSet<u64>>();
-    typed.extend(aspects.intersection(&targeted_aspects).copied());
+    typed.extend(shape_aspects.intersection(&targeted_aspects).copied());
     mark_characteristic_representations(exchange, &annotations, &mut typed);
     StageOutcome {
         value: (),
@@ -958,13 +961,116 @@ fn is_pmi_entity_name(name: &str) -> bool {
         || is_presentation_annotation(name)
 }
 
-fn is_shape_aspect(record: &RawRecord) -> bool {
-    record.partials.iter().any(|partial| {
-        matches!(
-            partial.name.as_str(),
-            "SHAPE_ASPECT" | "DATUM_FEATURE" | "DATUM"
-        )
-    })
+// Simple STEP instances contain only their most-derived entity name. The
+// parser does not load an EXPRESS inheritance graph, so keep the supported
+// shape_aspect lineage here for leaf names that do not identify that lineage
+// by the `_SHAPE_ASPECT` suffix.
+const SHAPE_ASPECT_SUBTYPE_NAMES: &[&str] = &[
+    "APEX",
+    "APPLIED_AREA",
+    "ASSEMBLY_BOND_DEFINITION",
+    "ASSEMBLY_JOINT",
+    "ASSEMBLY_SHAPE_CONSTRAINT",
+    "ASSEMBLY_SHAPE_JOINT",
+    "BASIC_ROUND_HOLE_OCCURRENCE",
+    "BASIC_ROUND_HOLE_OCCURRENCE_IN_ASSEMBLY",
+    "BEAD_END",
+    "BOSS_TOP",
+    "CENTRE_OF_SYMMETRY",
+    "CHAMFER",
+    "CHAMFER_OFFSET",
+    "CIRCULAR_CLOSED_PROFILE",
+    "CLOSED_PATH_PROFILE",
+    "COMMON_DATUM",
+    "COMPONENT_FEATURE",
+    "COMPONENT_FEATURE_JOINT",
+    "COMPONENT_MATING_CONSTRAINT_CONDITION",
+    "COMPONENT_TERMINAL",
+    "CONNECTION_ZONE_BASED_ASSEMBLY_JOINT",
+    "CONNECTION_ZONE_INTERFACE_PLANE_RELATIONSHIP",
+    "CONNECTIVITY_DEFINITION",
+    "CONTACTING_FEATURE",
+    "CONTACT_FEATURE",
+    "COUNTERBORE_HOLE_OCCURRENCE",
+    "COUNTERBORE_HOLE_OCCURRENCE_IN_ASSEMBLY",
+    "COUNTERDRILL_HOLE_OCCURRENCE",
+    "COUNTERDRILL_HOLE_OCCURRENCE_IN_ASSEMBLY",
+    "COUNTERSINK_HOLE_OCCURRENCE",
+    "COUNTERSINK_HOLE_OCCURRENCE_IN_ASSEMBLY",
+    "CROSS_SECTIONAL_ALTERNATIVE_SHAPE_ELEMENT",
+    "CROSS_SECTIONAL_GROUP_SHAPE_ELEMENT",
+    "CROSS_SECTIONAL_GROUP_SHAPE_ELEMENT_WITH_LACING",
+    "CROSS_SECTIONAL_GROUP_SHAPE_ELEMENT_WITH_TUBULAR_COVER",
+    "CROSS_SECTIONAL_OCCURRENCE_SHAPE_ELEMENT",
+    "CROSS_SECTIONAL_PART_SHAPE_ELEMENT",
+    "DATUM",
+    "DATUM_FEATURE",
+    "DATUM_REFERENCE_COMPARTMENT",
+    "DATUM_REFERENCE_ELEMENT",
+    "DATUM_SYSTEM",
+    "DATUM_SYSTEM_FOR_COMPOSITE_GROUP_ELEMENT",
+    "DATUM_TARGET",
+    "DEFAULT_MODEL_GEOMETRIC_VIEW",
+    "DIMENSIONAL_LOCATION_WITH_DATUM_FEATURE",
+    "DIMENSIONAL_SIZE_WITH_DATUM_FEATURE",
+    "DIRECTED_ANGLE",
+    "DIRECTED_TOLERANCE_ZONE",
+    "DIRECTION_FEATURE_TOLERANCE_ZONE",
+    "EDGE_ROUND",
+    "EXTENSION",
+    "FILLET",
+    "GENERAL_DATUM_REFERENCE",
+    "GEOMETRIC_ALIGNMENT",
+    "GEOMETRIC_CONTACT",
+    "GEOMETRIC_INTERSECTION",
+    "HARNESS_NODE",
+    "HARNESS_SEGMENT",
+    "HOLE_BOTTOM",
+    "INSTANCED_FEATURE",
+    "JOGGLE_TERMINATION",
+    "LINEAR_PROFILE",
+    "MATED_PART_RELATIONSHIP",
+    "MODIFIED_PATTERN",
+    "NGON_CLOSED_PROFILE",
+    "OPEN_PATH_PROFILE",
+    "ORIENTED_TOLERANCE_ZONE",
+    "PARALLEL_OFFSET",
+    "PARTIAL_CIRCULAR_PROFILE",
+    "PATH_FEATURE_COMPONENT",
+    "PERPENDICULAR_TO",
+    "PHYSICAL_COMPONENT_FEATURE",
+    "PHYSICAL_COMPONENT_INTERFACE_TERMINAL",
+    "PHYSICAL_COMPONENT_TERMINAL",
+    "PLACED_DATUM_TARGET_FEATURE",
+    "PLACED_FEATURE",
+    "POCKET_BOTTOM",
+    "PROFILE_FLOOR",
+    "RECTANGULAR_CLOSED_PROFILE",
+    "RIB_TOP_FLOOR",
+    "ROUNDED_U_PROFILE",
+    "SHAPE_ASPECT_OCCURRENCE",
+    "SLOT_END",
+    "SPOTFACE_OCCURRENCE",
+    "SPOTFACE_OCCURRENCE_IN_ASSEMBLY",
+    "SQUARE_U_PROFILE",
+    "TANGENT",
+    "TAPER",
+    "TEE_PROFILE",
+    "TERMINAL_FEATURE",
+    "TERMINAL_LOCATION_GROUP",
+    "THREAD_RUNOUT",
+    "TOLERANCE_ZONE",
+    "TOLERANCE_ZONE_WITH_DATUM",
+    "TRANSITION_FEATURE",
+    "TRANSPORT_FEATURE",
+    "TWISTED_CROSS_SECTIONAL_GROUP_SHAPE_ELEMENT",
+    "VEE_PROFILE",
+];
+
+fn is_shape_aspect_name(name: &str) -> bool {
+    name == "SHAPE_ASPECT"
+        || name.ends_with("_SHAPE_ASPECT")
+        || SHAPE_ASPECT_SUBTYPE_NAMES.contains(&name)
 }
 
 fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {

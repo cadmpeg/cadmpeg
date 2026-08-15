@@ -645,9 +645,10 @@ remains named opaque source data and produces a
 style may transfer independently. An `ANNOTATION_PLANE` owns each
 referenced surface carrier. A native presentation carrier without a neutral
 geometry arena retains its carrier identity as the style target. Semantic PMI
-retains its shape-aspect target, including a shape-aspect partial in a complex
-datum feature. A complex datum reads identification from its `DATUM` partial
-and name, targets, and product shape from its inherited `SHAPE_ASPECT` partial.
+retains every supported STEP `SHAPE_ASPECT` subtype as a shape-aspect target,
+including a simple leaf subtype and a shape-aspect partial in a complex datum
+feature. A complex datum reads identification from its `DATUM` partial and
+name, targets, and product shape from its inherited `SHAPE_ASPECT` partial.
 A complex dimension uses its dimensional partial for its kind and all inherited
 partials for its name, targets, and characteristic value.
 Its characteristic representation collects every measure representation item.
