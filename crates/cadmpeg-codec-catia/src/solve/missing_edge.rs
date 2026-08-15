@@ -2155,27 +2155,18 @@ fn standard_mesh_assignment_corner_points(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Option<(Vec<Vec<Vec<MeshEdgePlacementCandidate>>>, MeshCornerPoints)> {
-    let edge_rows = standard_edge_rows(bytes)?;
+    let analysis = standard_mesh_analysis(bytes)?;
+    let edge_rows = &analysis.edge_rows;
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return None;
     }
-    let runs = standard_mesh_edge_runs(bytes)?;
+    let runs = mesh_edge_runs(&analysis)?;
     let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces, None, true)?;
-    let (face_start, face_count, _) = selected_standard_run(bytes)?;
-    let cycle_solutions = [1, 2, 3]
-        .into_iter()
-        .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
-        .map(|trims| {
-            trims
-                .iter()
-                .map(|trim| {
-                    boundary_cycles(&trim.triangles)
-                        .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [cycle_lengths] = <[Vec<Vec<usize>>; 1]>::try_from(cycle_solutions).ok()?;
+    let cycle_lengths = analysis
+        .cycles
+        .iter()
+        .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
     let mut corner_points = MeshCornerPoints::new();
     let mut run_constraints = Vec::new();
     for run in runs {
