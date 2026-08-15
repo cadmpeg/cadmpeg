@@ -288,3 +288,15 @@ from a conformant file.
 **Note.** Reopened by the 2026-08-16 audit. The constants are explicit and deterministic, but the closure recorded them as settled without a complete mapping to the IGES specification or to exporter-authored witness files.
 
 ## 8. Evidence
+
+### EV-02. The independent-application gate has no recorded run
+
+**Question.** Does the FreeCAD acceptance gate pass for the complete writable geometry profile, with the run recorded?
+
+**Known.** `.github/workflows/iges-freecad.yml` defines the gate and uploads both JSON reports as run artifacts. `docs/formats/iges-fixture-charter.md` records an exact 11/11 pass and a broad 37/37 pass. `docs/format-support.md` cites the same numbers.
+
+**Conflict.** The repository's GitHub Actions has no registration and no run of this workflow, so the recorded numbers trace to a local run whose reports are not retained. Commit `5e4a933da` closed this item citing run artifacts that do not exist.
+
+**Need.** Run the workflow — merge the file to the default branch or trigger it from a pull request — confirm the exact and broad passes, retain both JSON report artifacts, and record the run identifier in `docs/formats/iges-fixture-charter.md`.
+
+**Note.** Reopened by the 2026-08-16 audit. The local pass numbers are plausible and the scripts exist; the element the original Need required and the closure did not supply is the recorded, artifact-retaining run.
