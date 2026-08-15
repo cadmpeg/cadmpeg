@@ -129,6 +129,20 @@ pub(super) fn decode(
         if !has_partial(layer, "PRESENTATION_LAYER_ASSIGNMENT") {
             continue;
         }
+        let Some(assigned_items) =
+            partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
+        else {
+            warnings.push(format!(
+                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
+            ));
+            continue;
+        };
+        if assigned_items.is_empty() {
+            warnings.push(format!(
+                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
+            ));
+            continue;
+        }
         let Some(name) =
             partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
                 decode_text(
@@ -164,10 +178,8 @@ pub(super) fn decode(
                 )
             })
             .filter(|value| !value.is_empty());
-        let items = partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2)
-            .and_then(ValueExt::list)
-            .into_iter()
-            .flatten()
+        let items = assigned_items
+            .iter()
             .filter_map(ValueExt::reference)
             .flat_map(|id| {
                 presentation_item(

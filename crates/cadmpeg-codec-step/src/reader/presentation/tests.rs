@@ -892,9 +892,11 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
 #31=UNKNOWN_LIMIT();
 #32=UNKNOWN_CHARACTERISTIC();
 #40=PRESENTATION_LAYER_ASSIGNMENT('inspection','',(#30));
+#41=PRESENTATION_LAYER_ASSIGNMENT('invalid empty set','',());
 #99=UNRESOLVED_PRODUCT();",
     );
     assert_eq!(result.ir().model.presentation_layers.len(), 1);
+    assert_eq!(result.ir().model.presentation_layers[0].name, "inspection");
     assert!(matches!(
         result.ir().model.presentation_layers[0].items.as_slice(),
         [PresentationItem::Source { source_id }] if source_id == "#30"
