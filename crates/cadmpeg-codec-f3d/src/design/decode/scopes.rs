@@ -334,7 +334,7 @@ fn strip_scope_variant_provenance(value: &mut serde_json::Value, top_level: bool
         }
         serde_json::Value::Object(fields) => {
             fields.retain(|key, _| {
-                if key.ends_with("_offset") {
+                if key.ends_with("_offset") || key.ends_with("_offsets") {
                     return false;
                 }
                 if top_level
