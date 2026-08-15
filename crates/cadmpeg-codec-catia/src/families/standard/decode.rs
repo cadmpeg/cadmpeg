@@ -41,6 +41,7 @@ use crate::wire::records::ConsolidatedRecord;
 
 const EPS_PARAM_RESOLUTION_SPAN: f64 = 1e-7;
 const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
+const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -4397,6 +4398,10 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         let surface0 = face_surface(ir, bindings, surface_indices, faces[0])?;
         let surface1 = face_surface(ir, bindings, surface_indices, faces[1])?;
         let direction = intersection_line_direction(&surface0.geometry, &surface1.geometry);
+        let same_cone_surface = matches!(
+            (&surface0.geometry, &surface1.geometry),
+            (SurfaceGeometry::Cone { .. }, SurfaceGeometry::Cone { .. })
+        ) && surface0.geometry == surface1.geometry;
         let points = candidates.get(*edges.first()?)?;
         let relation_count = points
             .len()
@@ -4430,8 +4435,16 @@ pub(crate) fn resolve_standard_endpoint_pairs(
                             .sqrt()
                             <= 1e-2 * segment_norm * direction_norm
                 });
+                let follows_same_cone_generator = !same_cone_surface
+                    || same_cone_generator_pair(
+                        &surface0.geometry,
+                        &surface1.geometry,
+                        start_point,
+                        end_point,
+                    );
                 if segment_norm != 0.0
                     && follows_direction
+                    && follows_same_cone_generator
                     && point_on_surface(midpoint, &surface0.geometry)
                     && point_on_surface(midpoint, &surface1.geometry)
                 {
@@ -5804,6 +5817,58 @@ pub(crate) fn intersection_line_direction(
         ) => ((*left_axis).cross(*right_axis).norm() <= ANGULAR_TOLERANCE).then_some(*left_axis),
         _ => None,
     }
+}
+
+/// A line on one right circular or elliptical cone is a generator through its
+/// apex. Same-carrier line rows have no surface-intersection direction, so
+/// their endpoint relation needs this independent straight-branch predicate.
+pub(crate) fn same_cone_generator_pair(
+    left: &SurfaceGeometry,
+    right: &SurfaceGeometry,
+    start: Point3,
+    end: Point3,
+) -> bool {
+    if left != right {
+        return false;
+    }
+    let SurfaceGeometry::Cone {
+        origin,
+        axis,
+        radius,
+        half_angle,
+        ..
+    } = left
+    else {
+        return false;
+    };
+    let tangent = half_angle.tan();
+    if !tangent.is_finite() || tangent == 0.0 {
+        return false;
+    }
+    let apex_offset = -*radius / tangent;
+    if !apex_offset.is_finite() {
+        return false;
+    }
+    let apex = Point3::new(
+        origin.x + apex_offset * axis.x,
+        origin.y + apex_offset * axis.y,
+        origin.z + apex_offset * axis.z,
+    );
+    if ![apex.x, apex.y, apex.z].into_iter().all(f64::is_finite) {
+        return false;
+    }
+    let segment = end.vector_from(start);
+    let segment_length = segment.norm();
+    if !segment_length.is_finite() || segment_length == 0.0 {
+        return false;
+    }
+    if start.distance(apex) <= EPS_SAME_CONE_GENERATOR
+        || end.distance(apex) <= EPS_SAME_CONE_GENERATOR
+    {
+        return true;
+    }
+    let line_distance = start.vector_from(apex).cross(segment).norm() / segment_length;
+    line_distance.is_finite() && line_distance <= EPS_SAME_CONE_GENERATOR
 }
 
 /// Collect plane normals only from trim-packet frame vectors, which carry the

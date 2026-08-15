@@ -16,6 +16,30 @@ fn standard_spline_rows_bind_the_unordered_prebound_side_by_opposite_rank() {
 }
 
 #[test]
+fn same_cone_generator_requires_an_apex_collinear_endpoint_pair() {
+    let cone = SurfaceGeometry::Cone {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 1.0,
+        ratio: 1.0,
+        half_angle: std::f64::consts::FRAC_PI_4,
+    };
+    assert!(same_cone_generator_pair(
+        &cone,
+        &cone,
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 1.0),
+    ));
+    assert!(!same_cone_generator_pair(
+        &cone,
+        &cone,
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 1.0),
+    ));
+}
+
+#[test]
 fn standard_spline_rows_bind_the_cardinality_matched_bipartite_side() {
     let supports = [10, 11].map(|tag| StandardCurveSupport {
         pos: tag as usize,

@@ -386,6 +386,10 @@ current levels require those matrices and representative fixtures.
   closure, endpoint resolution, and distinct reconstructed topology. Bounded
   search exhaustion is partitioned into quotient preparation, incidence
   enumeration, and endpoint resolution.
+- Same-carrier standard cone line rows retain only endpoint pairs whose segment
+  is a straight generator through the analytically derived cone apex. The
+  existing endpoint surface-membership and trim-incidence checks remain
+  independent gates.
 - FBB-only groups with one exact native endpoint pair for every edge row can
   close topology directly from their two counted edge tables and counted vertex
   table. This path reuses the existing face-incidence and edge-class quotient,
