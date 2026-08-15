@@ -696,7 +696,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let report = write_step(&missing_edge, &mut Vec::new(), &StepWriteOptions::default())
         .expect("report mode writes the surviving coedges");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::LoopEdgeNotWritable.kind()
+        loss.code == StepLossCode::LoopEdgeMissingForOrder.kind()
             && loss.message.contains("loop")
             && loss.message.contains("edge")
     }));

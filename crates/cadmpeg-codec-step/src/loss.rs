@@ -878,8 +878,10 @@ mod tests {
             let (family, detail) = text.split_once('.').expect("family.detail shape");
             assert!(!family.is_empty() && !detail.is_empty());
             assert!(
-                text.bytes()
-                    .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'),
+                text.bytes().all(|b| b.is_ascii_lowercase()
+                    || b.is_ascii_digit()
+                    || b == b'.'
+                    || b == b'-'),
                 "code {text} is not lowercase kebab"
             );
         }

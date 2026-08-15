@@ -181,7 +181,7 @@ fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
         .iter()
         .any(|mesh| mesh.id == "step:tessellation:mesh#7" && mesh.body.is_none()));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
             && loss.message.contains("mesh retained as detached")
     }));
 
