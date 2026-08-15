@@ -34,6 +34,7 @@ use crate::{
 };
 
 const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
+const EPS_APLL_POINT: f64 = 1.0e-12;
 
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
     let CurveGeometry::Polyline {
@@ -661,6 +662,128 @@ fn unreferenced_curve_is_associated_as_free_geometry() {
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
+    let decoded = decode_inline(
+        "#20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#21=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#22=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20,#21)) REPRESENTATION_CONTEXT('model','3D'));
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=DIRECTION('',(0.,0.,1.));
+#12=DIRECTION('',(1.,0.,0.));
+#13=AXIS2_PLACEMENT_3D('',#10,#11,#12);
+#14=PLANE('',#13);
+#1=APLL_POINT('leader',(1.,2.,3.),.NONE.);
+#2=APLL_POINT_WITH_SURFACE('surface',(4.,5.,6.),.POSITIVE_ARROWHEAD.,#14);
+#3=(APLL_POINT(.NONE.) CARTESIAN_POINT((7.,8.,9.)) GEOMETRIC_REPRESENTATION_ITEM() POINT() REPRESENTATION_ITEM('complex leader'));
+#4=APLL_POINT((10.,11.,12.),.NONE.);
+#5=ANNOTATION_TO_MODEL_LEADER_LINE('model',(#1,#2,#3));
+#6=ANNOTATION_TO_ANNOTATION_LEADER_LINE('annotation',(#4));
+#7=AUXILIARY_LEADER_LINE('auxiliary',(#1,#2),#5);",
+    );
+
+    assert_eq!(decoded.ir().model.points.len(), 4);
+    for (id, expected) in [
+        ("#1", (1.0, 2.0, 3.0)),
+        ("#2", (4.0, 5.0, 6.0)),
+        ("#3", (7.0, 8.0, 9.0)),
+        ("#4", (10.0, 11.0, 12.0)),
+    ] {
+        let point = decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|point| {
+                point
+                    .source_object
+                    .as_ref()
+                    .is_some_and(|source| source.object_id == id)
+            })
+            .unwrap_or_else(|| panic!("missing APLL point {id}"));
+        assert!((point.position.x - expected.0).abs() < EPS_APLL_POINT);
+        assert!((point.position.y - expected.1).abs() < EPS_APLL_POINT);
+        assert!((point.position.z - expected.2).abs() < EPS_APLL_POINT);
+    }
+    let named_point = decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| {
+            point
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id == "#1")
+        })
+        .expect("named APLL point");
+    assert_eq!(
+        named_point
+            .source_object
+            .as_ref()
+            .and_then(|source| source.name.as_deref()),
+        Some("leader")
+    );
+    let complex_point = decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| {
+            point
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id == "#3")
+        })
+        .expect("complex APLL point");
+    assert_eq!(
+        complex_point
+            .source_object
+            .as_ref()
+            .and_then(|source| source.name.as_deref()),
+        Some("complex leader")
+    );
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    for (id, kind) in [
+        (1, "apll_point"),
+        (2, "apll_point_with_surface"),
+        (3, "apll_point"),
+        (4, "apll_point"),
+        (5, "annotation_to_model_leader_line"),
+        (6, "annotation_to_annotation_leader_line"),
+        (7, "auxiliary_leader_line"),
+    ] {
+        assert!(
+            unknowns.iter().any(|record| {
+                (id == 3 && record.id.0.ends_with("#3") && record.id.0.contains(kind))
+                    || (id != 3 && record.id.0 == format!("step:data:{kind}#{id}"))
+            }),
+            "missing retained source record #{id}"
+        );
+    }
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn invalid_apll_leader_point_stays_source_native() {
+    let decoded = decode_inline(
+        "#1=APLL_POINT('invalid',(1.,2.),.NONE.);
+#2=ANNOTATION_TO_MODEL_LEADER_LINE('invalid',(#1));",
+    );
+
+    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:apll_point#1"));
 }
 
 #[test]

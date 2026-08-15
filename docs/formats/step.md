@@ -709,6 +709,13 @@ numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`.
 
+An `APLL_POINT` or `APLL_POINT_WITH_SURFACE` referenced by an annotation
+placeholder, annotation-to-annotation, annotation-to-model, or auxiliary
+leader line transfers its three-dimensional coordinates to a neutral point
+with the APLL source identity. The APLL and leader-line records remain named
+opaque records because the neutral model has no fields for `symbol_applied`,
+`associated_surface`, or ordered leader-line semantics.
+
 Drawing structure is a linked object graph. `DRAWING_DEFINITION` identifies the
 drawing, `DRAWING_REVISION` identifies one revision of it, and
 `DRAWING_SHEET_REVISION` identifies a sheet revision with its ordered drawing

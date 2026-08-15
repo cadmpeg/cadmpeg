@@ -323,6 +323,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
+    let mut apll_point_names = BTreeMap::new();
     let mut directions = BTreeMap::new();
     let mut directions2 = BTreeMap::new();
     let mut vectors = BTreeMap::new();
@@ -333,8 +334,42 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         ir.tolerances.linear = uncertainty;
     }
 
-    for (id, record) in exchange.entities_any(&["CARTESIAN_POINT", "DIRECTION"]) {
-        match entity_type(record, &["CARTESIAN_POINT", "DIRECTION"]) {
+    for (id, record) in exchange.entities_any(&[
+        "APLL_POINT",
+        "APLL_POINT_WITH_SURFACE",
+        "CARTESIAN_POINT",
+        "DIRECTION",
+    ]) {
+        match entity_type(
+            record,
+            &[
+                "APLL_POINT",
+                "APLL_POINT_WITH_SURFACE",
+                "CARTESIAN_POINT",
+                "DIRECTION",
+            ],
+        ) {
+            Some(point_type @ ("APLL_POINT" | "APLL_POINT_WITH_SURFACE")) => {
+                let record_scale = unit_scales.length(id, scale);
+                if let Some(position) = apll_point_coordinates(record, point_type, record_scale) {
+                    points.insert(id, position);
+                    let source_name = representation_item_name(record)
+                        .and_then(|value| {
+                            super::decode_text(
+                                exchange,
+                                value,
+                                &mut losses,
+                                id,
+                                "APLL point name",
+                                StepLossCode::MetadataStringInvalid,
+                            )
+                        })
+                        .filter(|name| !name.is_empty());
+                    apll_point_names.insert(id, source_name);
+                } else {
+                    warnings.push(format!("{point_type} #{id} has invalid coordinates"));
+                }
+            }
             Some("CARTESIAN_POINT") => {
                 let record_scale = unit_scales.length(id, scale);
                 if let Some(position) =
@@ -416,6 +451,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
             }
         }
+        if is_apll_leader_line(record) {
+            let mut references = Vec::new();
+            for parameter in record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+            {
+                collect_references(parameter, &mut references);
+            }
+            point_carriers.extend(references.into_iter().filter(|id| points.contains_key(id)));
+        }
         if let Some(id) = super::presentation::styled_item_target(record) {
             if points.contains_key(&id) {
                 point_carriers.insert(id);
@@ -426,7 +472,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .points
         .extend(point_carriers.into_iter().filter_map(|id| {
             points.get(&id).copied().map(|position| Point {
-                source_object: None,
+                source_object: apll_point_names
+                    .get(&id)
+                    .map(|name| SourceObjectAssociation {
+                        format: "step".into(),
+                        object_id: format!("#{id}"),
+                        name: name.clone(),
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
                 id: PointId(StepIdentity::data("point", id)),
                 position,
             })
@@ -2315,6 +2371,18 @@ fn entity_type<'a>(record: &RawRecord, names: &[&'a str]) -> Option<&'a str> {
         .find(|name| record.partial(name).is_some())
 }
 
+fn is_apll_leader_line(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "ANNOTATION_PLACEHOLDER_LEADER_LINE"
+                | "ANNOTATION_TO_ANNOTATION_LEADER_LINE"
+                | "ANNOTATION_TO_MODEL_LEADER_LINE"
+                | "AUXILIARY_LEADER_LINE"
+        )
+    })
+}
+
 fn first_named_list(record: &RawRecord, names: &[&str]) -> Option<Vec<u64>> {
     record
         .partials
@@ -3808,6 +3876,33 @@ fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -
         values[1].number()? * scale,
         values[2].number()? * scale,
     ))
+}
+
+fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> Option<Point3> {
+    let values = if record.partials.len() == 1 {
+        named_parameter(record, point_type, 1).and_then(Value::list)
+    } else {
+        [
+            ("CARTESIAN_POINT", 0),
+            ("CARTESIAN_POINT", 1),
+            (point_type, 0),
+            (point_type, 1),
+        ]
+        .into_iter()
+        .find_map(|(name, index)| named_parameter(record, name, index).and_then(Value::list))
+    }?;
+    if values.len() != 3 {
+        return None;
+    }
+    let point = Point3::new(
+        values[0].number()? * scale,
+        values[1].number()? * scale,
+        values[2].number()? * scale,
+    );
+    [point.x, point.y, point.z]
+        .iter()
+        .all(|coordinate| coordinate.is_finite())
+        .then_some(point)
 }
 
 fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Point2> {

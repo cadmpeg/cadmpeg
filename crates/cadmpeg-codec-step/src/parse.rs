@@ -456,12 +456,18 @@ fn has_named_carrier(name: &str) -> bool {
     matches!(
         name,
         "ANNOTATION_PLANE"
+            | "ANNOTATION_PLACEHOLDER_LEADER_LINE"
+            | "ANNOTATION_TO_ANNOTATION_LEADER_LINE"
+            | "ANNOTATION_TO_MODEL_LEADER_LINE"
             | "ADVANCED_FACE"
             | "ADVANCED_BREP_REPRESENTATION"
             | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+            | "APLL_POINT"
+            | "APLL_POINT_WITH_SURFACE"
             | "AXIS1_PLACEMENT"
             | "AXIS2_PLACEMENT_2D"
             | "AXIS2_PLACEMENT_3D"
+            | "AUXILIARY_LEADER_LINE"
             | "BEZIER_CURVE"
             | "BOUNDARY_CURVE"
             | "BREP_WITH_VOIDS"
