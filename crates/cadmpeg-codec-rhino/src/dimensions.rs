@@ -359,10 +359,38 @@ pub(crate) fn legacy_annotation(
             "unsupported legacy annotation version",
         ));
     }
+    let value = legacy_annotation_fields(&mut annotation, scale, minor, false)?;
+    reader.skip(next - reader.position())?;
+    Ok(value)
+}
+
+/// Reads the direct legacy annotation payload used by archive versions 2, 3,
+/// and 4. Those archives store a packed version byte and then the common
+/// fields without an anonymous wrapper.
+pub(crate) fn legacy_annotation_direct(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+) -> Result<LegacyAnnotation, FramingError> {
+    let version = reader.u8()?;
+    if version >> 4 != 1 || version & 0x0f != 0 {
+        return Err(FramingError::structural(
+            reader.position() - 1,
+            "unsupported direct legacy annotation version",
+        ));
+    }
+    legacy_annotation_fields(reader, scale, 0, true)
+}
+
+fn legacy_annotation_fields(
+    annotation: &mut BoundedReader<'_>,
+    scale: f64,
+    minor: i32,
+    direct_legacy: bool,
+) -> Result<LegacyAnnotation, FramingError> {
     let kind = annotation.i32()?;
     let text_display_mode = annotation.i32()?;
     let plane_offset = annotation.position();
-    let plane = scale_plane(plane(&mut annotation)?, scale, plane_offset)?;
+    let plane = scale_plane(plane(annotation)?, scale, plane_offset)?;
     let point_count_offset = annotation.position();
     let point_count = annotation.i32()?;
     let point_count = usize::try_from(point_count)
@@ -374,9 +402,9 @@ pub(crate) fn legacy_annotation(
     let mut points = Vec::with_capacity(point_count);
     for _ in 0..point_count {
         let offset = annotation.position();
-        points.push(scaled_point(point2(&mut annotation)?, scale, offset)?);
+        points.push(scaled_point(point2(annotation)?, scale, offset)?);
     }
-    let rich_text = utf16(&mut annotation)?;
+    let rich_text = utf16(annotation)?;
     let user_positioned_text = match annotation.i32()? {
         0 => false,
         1 => true,
@@ -397,15 +425,17 @@ pub(crate) fn legacy_annotation(
             "invalid legacy annotation text height",
         ));
     }
-    let justification = annotation.i32()?;
-    let stored_text_scaling = (minor >= 1).then(|| annotation.bool()).transpose()?;
+    let justification = if direct_legacy { 0 } else { annotation.i32()? };
+    let stored_text_scaling = (!direct_legacy && minor >= 1)
+        .then(|| annotation.bool())
+        .transpose()?;
     let allow_text_scaling = legacy_text_scaling(stored_text_scaling);
-    let user_text = if minor >= 2 {
-        utf16(&mut annotation)?
+    let user_text = if !direct_legacy && minor >= 2 {
+        utf16(annotation)?
     } else {
         rich_text.clone()
     };
-    let dimstyle_index = if minor >= 3 {
+    let dimstyle_index = if !direct_legacy && minor >= 3 {
         let text_style_index = annotation.i32()?;
         let dimension_style_index = annotation.i32()?;
         if kind == 7 {
@@ -428,7 +458,6 @@ pub(crate) fn legacy_annotation(
             "legacy annotation has trailing bytes",
         ));
     }
-    reader.skip(next - reader.position())?;
     let (plane, justification) = if kind == 7 && justification == 0 {
         (shifted_plane(plane, [0.0, text_height]), (1 << 18) | 1)
     } else {

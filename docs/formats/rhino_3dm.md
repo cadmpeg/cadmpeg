@@ -2948,6 +2948,12 @@ dots store packed version, model point, point height, primary and secondary
 text, font face, and independent always-on-top, transparency, bold, and italic
 bits.
 
+In archive versions 2 through 4, the V5 text and leader class-data payload has
+no outer anonymous chunk. It begins with packed version 1.0 and stores the
+common fields through text height directly. The direct form omits justification,
+model-space text scaling, text formula, and separate style indices. Its user
+text equals the displayed text and model-space text scaling is false.
+
 V5 annotations use world X as the reference horizontal vector. Its plane-space
 direction is `(dot(world-X, plane-X), dot(world-X, plane-Y))`. V5 angular
 dimensions store the two extension-line origin offsets in

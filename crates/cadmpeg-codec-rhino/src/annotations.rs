@@ -172,6 +172,20 @@ fn decode_legacy_annotation(
     archive: ArchiveVersion,
     scale: f64,
 ) -> Result<crate::dimensions::LegacyAnnotation, FramingError> {
+    if matches!(
+        archive,
+        ArchiveVersion::V2 | ArchiveVersion::V3 | ArchiveVersion::V4
+    ) {
+        let mut reader = BoundedReader::new(data, range.start, range.end)?;
+        let value = crate::dimensions::legacy_annotation_direct(&mut reader, scale)?;
+        if reader.remaining() != 0 {
+            return Err(FramingError::structural(
+                reader.position(),
+                "direct legacy annotation has trailing bytes",
+            ));
+        }
+        return Ok(value);
+    }
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
         return Err(FramingError::structural(
@@ -261,15 +275,22 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut annotations = Vec::new();
     let mut dots = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
-        let Some(identity) = &object.identity else {
-            continue;
-        };
+        let identity = object.identity.as_ref();
         let link = format!("rhino:object:record#{source_order:06}");
-        let key = if identity.object_id.is_nil() {
-            format!("record-{source_order:06}")
-        } else {
-            identity.object_id.to_string()
-        };
+        let key = identity.map_or_else(
+            || format!("record-{source_order:06}"),
+            |identity| {
+                if identity.object_id.is_nil() {
+                    format!("record-{source_order:06}")
+                } else {
+                    identity.object_id.to_string()
+                }
+            },
+        );
+        let source_uuid = identity.map_or_else(
+            || Uuid::nil().to_string(),
+            |identity| identity.object_id.to_string(),
+        );
         if matches!(object.class_uuid, TEXT | LEADER) {
             let leader = object.class_uuid == LEADER;
             let Ok((value, points)) = decode_annotation(
@@ -284,7 +305,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
             annotations.push(AnnotationRecord {
                 id: format!("rhino:document:annotation#{key}"),
                 source_offset: object.range.start as u64,
-                source_uuid: identity.object_id.to_string(),
+                source_uuid: source_uuid.clone(),
                 kind: if leader { "leader" } else { "text" },
                 rich_text: value.rich_text,
                 plane_origin: value.plane.origin.0,
@@ -323,7 +344,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
             annotations.push(AnnotationRecord {
                 id: format!("rhino:document:annotation#{key}"),
                 source_offset: object.range.start as u64,
-                source_uuid: identity.object_id.to_string(),
+                source_uuid: source_uuid.clone(),
                 kind: if leader { "leader" } else { "text" },
                 rich_text: value.rich_text,
                 plane_origin: value.plane.origin.0,
@@ -356,7 +377,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
             };
             value.id = format!("rhino:document:text_dot#{key}");
             value.source_offset = object.range.start as u64;
-            value.source_uuid = identity.object_id.to_string();
+            value.source_uuid = source_uuid;
             value.links.push(link);
             dots.push(value);
         }
@@ -453,5 +474,31 @@ mod tests {
         assert_eq!(value.text_height, 15.0);
         assert_eq!(value.dimstyle_index, 12);
         assert_eq!(value.justification, (1 << 18) | 1);
+    }
+
+    #[test]
+    fn direct_legacy_text_uses_packed_version_and_base_fields() {
+        let mut bytes = vec![0x10];
+        bytes.extend(7_i32.to_le_bytes());
+        bytes.extend(2_i32.to_le_bytes());
+        bytes.extend(plane());
+        bytes.extend(2_i32.to_le_bytes());
+        for value in [1.0_f64, 2.0, 4.0, 8.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(utf16("legacy"));
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend((-1_i32).to_le_bytes());
+        bytes.extend(1.5_f64.to_le_bytes());
+        let value = decode_legacy_annotation(&bytes, 0..bytes.len(), ArchiveVersion::V4, 10.0)
+            .expect("valid direct legacy text");
+        assert_eq!(value.rich_text, "legacy");
+        assert_eq!(value.user_text, "legacy");
+        assert_eq!(value.plane.origin.0, [10.0, 35.0, 30.0]);
+        assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
+        assert_eq!(value.text_height, 15.0);
+        assert_eq!(value.dimstyle_index, -1);
+        assert_eq!(value.justification, (1 << 18) | 1);
+        assert!(!value.allow_text_scaling);
     }
 }
