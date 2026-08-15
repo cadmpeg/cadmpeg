@@ -11,6 +11,7 @@ use super::relation_loci::{
     profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
     same_dimension_length, typed_relation_definition,
 };
+use super::relation_records::circle_dimension_handle_driver;
 use super::transforms::{
     marker_entities, quantize, sketch_entity_loci, sketch_frame_marker_transform,
 };
@@ -1138,10 +1139,16 @@ pub(crate) fn owned_relation_parameters(
                 }
                 continue;
             }
-            let parameter = relation_parameter_by_driving_name(
-                relation, lane, features, parameters,
-            )
-            .or_else(|| relation_parameter_by_display_name(relation, lane, features, parameters));
+            let parameter =
+                relation_parameter_by_driving_name(relation, lane, features, parameters)
+                    .or_else(|| {
+                        circle_dimension_handle_driver(relation, lane).and_then(|scalar| {
+                            parameters_by_scalar.get(scalar.id.as_str()).copied()
+                        })
+                    })
+                    .or_else(|| {
+                        relation_parameter_by_display_name(relation, lane, features, parameters)
+                    });
             let Some(parameter) = parameter else {
                 continue;
             };
