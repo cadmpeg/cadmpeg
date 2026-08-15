@@ -114,6 +114,31 @@ fn requires_one_camera_in_schema_one_gui_document() {
 }
 
 #[test]
+fn rejects_ambiguous_gui_containers_and_names() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    for gui in [
+        br#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><ViewProviderData Count="0"/><Camera settings=""/></Document>"#.as_slice(),
+        br#"<Document SchemaVersion="1"><ViewProviderData Count="2"><ViewProvider name="Model"><Properties Count="0"/></ViewProvider><ViewProvider name="Model"><Properties Count="0"/></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
+        br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="0"/><Properties Count="0"/></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
+        br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="2"><Property name="State" type="Vendor::PropertyState"><Value/></Property><Property name="State" type="Vendor::PropertyState"><Value/></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
+    ] {
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("ambiguous GUI graph");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn gui_property_counts_ignore_nested_extension_properties() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>

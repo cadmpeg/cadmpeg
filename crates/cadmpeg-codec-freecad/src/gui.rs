@@ -93,14 +93,20 @@ pub(crate) fn transfer(
             ))
         })
         .collect::<Vec<_>>();
+    let mut view_provider_data = xml
+        .descendants()
+        .filter(|node| node.has_tag_name("ViewProviderData"));
+    let first_view_provider_data = view_provider_data.next();
+    if view_provider_data.next().is_some() {
+        return Err(CodecError::Malformed(
+            "GuiDocument.xml has multiple ViewProviderData containers".into(),
+        ));
+    }
     let providers = xml
         .descendants()
         .filter(|node| node.has_tag_name("ViewProvider"))
         .collect::<Vec<_>>();
-    if let Some(container) = xml
-        .descendants()
-        .find(|node| node.has_tag_name("ViewProviderData"))
-    {
+    if let Some(container) = first_view_provider_data {
         let declared = container
             .attribute("Count")
             .and_then(|value| value.parse::<usize>().ok())
@@ -112,10 +118,16 @@ pub(crate) fn transfer(
             )));
         }
     }
+    let mut provider_names = HashSet::new();
     for (provider_order, provider) in providers.into_iter().enumerate() {
         let Some(name) = provider.attribute("name") else {
             return Err(CodecError::Malformed("ViewProvider has no name".into()));
         };
+        if !provider_names.insert(name) {
+            return Err(CodecError::Malformed(
+                "GuiDocument.xml has duplicate ViewProvider names".into(),
+            ));
+        }
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
                 text,
@@ -135,12 +147,9 @@ pub(crate) fn transfer(
             &mut native_providers,
             &mut native_properties,
         )?;
-        let properties_node = provider
-            .children()
-            .find(|node| node.has_tag_name("Properties"))
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("ViewProvider {name} has no Properties"))
-            })?;
+        let properties_node = unique_child(provider, "Properties")?.ok_or_else(|| {
+            CodecError::Malformed(format!("ViewProvider {name} has no Properties"))
+        })?;
         let property_nodes = properties_node
             .children()
             .filter(|node| node.has_tag_name("Property"))
@@ -632,6 +641,24 @@ fn gui_state(text: &str, order: usize, node: roxmltree::Node<'_, '_>) -> GuiStat
     }
 }
 
+fn unique_child<'a, 'input>(
+    parent: roxmltree::Node<'a, 'input>,
+    tag: &str,
+) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
+    let mut children = parent
+        .children()
+        .filter(|child| child.is_element() && child.has_tag_name(tag));
+    let Some(first) = children.next() else {
+        return Ok(None);
+    };
+    if children.next().is_some() {
+        return Err(CodecError::Malformed(
+            "GUI record has multiple child containers".into(),
+        ));
+    }
+    Ok(Some(first))
+}
+
 fn append_native_provider(
     text: &str,
     provider: roxmltree::Node<'_, '_>,
@@ -652,10 +679,7 @@ fn append_native_provider(
         order,
         raw_xml: text[provider.range()].to_owned(),
     });
-    let Some(container) = provider
-        .children()
-        .find(|node| node.has_tag_name("Properties"))
-    else {
+    let Some(container) = unique_child(provider, "Properties")? else {
         return Err(CodecError::Malformed(format!(
             "ViewProvider {name} has no Properties"
         )));
@@ -676,10 +700,16 @@ fn append_native_provider(
             property_nodes.len()
         )));
     }
+    let mut property_names = HashSet::new();
     for (property_order, property) in property_nodes.into_iter().enumerate() {
         let property_name = property.attribute("name").ok_or_else(|| {
             CodecError::Malformed(format!("ViewProvider {name} property has no name"))
         })?;
+        if !property_names.insert(property_name) {
+            return Err(CodecError::Malformed(
+                "ViewProvider has duplicate property names".into(),
+            ));
+        }
         let type_name = property.attribute("type").ok_or_else(|| {
             CodecError::Malformed(format!("ViewProvider {name}.{property_name} has no type"))
         })?;

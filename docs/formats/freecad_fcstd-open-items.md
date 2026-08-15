@@ -22,7 +22,6 @@ These items have a Conflict part and need a decision.
 
 - AR-03. Typed geometry side-entry cardinality
 - GP-04. Topology-color shape-property association
-- GP-05. GUI provider and property duplicate selection
 - PT-02. Element-map position to neutral-occurrence order
 - PT-03. Element-map carrier and owner selection
 - XT-01. Edge endpoint child selection
@@ -117,18 +116,6 @@ These items have a Conflict part and need a decision.
 **Need.** We must find the persisted association rule between a GUI topology-color array and its application shape property. If the format supplies no association, neutral transfer must require one unambiguous shape candidate.
 
 **Note.** Commit `472740f40` wrote the `Shape` association into the specification and added synthetic count tests. Those tests construct the association expected by the implementation; they do not show that FreeCAD writes it or that duplicate shape candidates are invalid.
-
-### GP-05. GUI provider and property duplicate selection
-
-**Question.** What cardinality and precedence rules govern `ViewProviderData`, provider `Properties`, property value elements, and duplicate GUI property names?
-
-**Known.** The GUI graph retains provider and property source order. Registered properties have name/type pairs.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/gui.rs:103-117` takes the first `ViewProviderData` container. At `:141-165`, the neutral property map takes one value element per name and stores duplicate names in a `HashMap`; later entries overwrite earlier ones. At `:401-471`, native projection finds the first same-name property and its first value. The two paths can therefore disagree.
-
-**Need.** We must establish GUI container cardinality, property-name uniqueness, and value precedence from FreeCAD output. Conflicting duplicate records must be rejected or retained without a source-order choice.
-
-**Note.** The selection paths and the disagreement are present in the code read; valid producer cardinality is still unknown.
 
 ## 3. Persistent topology identity
 

@@ -48,6 +48,11 @@ decompression.
 presentation graph. Other entries acquire meaning only from typed references in either graph;
 unreferenced entries remain named archive records.
 
+`GuiDocument.xml` has at most one `ViewProviderData` container. `ViewProvider` names are unique.
+Each provider has one direct `Properties` container, and direct property names are unique within
+that container. Registered GUI property types define the cardinality of their value elements;
+unregistered properties retain their ordered values without semantic dispatch.
+
 In schema 2, `Features.Count` equals the number of `Feature` declarations. Each declaration has a
 unique `name` and a `type`. `FeatureData.Count` equals the number of `Feature` value records. Each
 value record has a unique `name`. Declaration and value-record name sets are equal. Declaration
