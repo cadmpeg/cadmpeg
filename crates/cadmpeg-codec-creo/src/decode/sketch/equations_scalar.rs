@@ -675,15 +675,17 @@ pub(crate) fn resolved_section_scalar_values(
     {
         merge_scalar_value_candidate(&mut values, variable, value);
     }
-    for (variable, value) in
-        section_equation_function_six_distance_values(definition, &coordinates, &BTreeSet::new())
-    {
+    for (variable, value) in section_equation_function_six_distance_values(
+        definition,
+        &coordinates,
+        &ambiguous_point_ids,
+    ) {
         merge_scalar_value_candidate(&mut values, variable, value);
     }
     for (variable, value) in section_equation_function_forty_three_axis_distance_values(
         definition,
         &coordinates,
-        &BTreeSet::new(),
+        &ambiguous_point_ids,
     ) {
         merge_scalar_value_candidate(&mut values, variable, value);
     }
@@ -699,7 +701,7 @@ pub(crate) fn resolved_section_scalar_values(
         merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
     }
     for constraint in
-        section_equation_radial_constraints(definition, &coordinates, &BTreeSet::new())
+        section_equation_radial_constraints(definition, &coordinates, &ambiguous_point_ids)
     {
         for (variable, value) in [
             (constraint.radius, constraint.radius_value),

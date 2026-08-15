@@ -60,8 +60,12 @@ pub(crate) fn resolved_section_radii(
         }
     }
     let radial_coordinates = resolved_section_coordinates(definition);
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
     for constraint in
-        section_equation_radial_constraints(definition, &radial_coordinates, &BTreeSet::new())
+        section_equation_radial_constraints(definition, &radial_coordinates, &ambiguous_point_ids)
     {
         if constraint.radius.0 == 3 {
             if let Some(value) = constraint
@@ -78,7 +82,7 @@ pub(crate) fn resolved_section_radii(
     for (variable, value) in section_equation_function_six_distance_values(
         definition,
         &radial_coordinates,
-        &BTreeSet::new(),
+        &ambiguous_point_ids,
     ) {
         if variable.0 == 3 && value.is_finite() && value > 0.0 {
             candidates.entry(variable.1).or_default().push(value);
