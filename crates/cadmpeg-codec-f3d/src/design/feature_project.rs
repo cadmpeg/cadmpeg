@@ -2646,7 +2646,7 @@ fn project_draft(
                 pull_direction: Some(pull_direction),
                 pull_plane: Some(neutral_feature_id(neutral_plane)),
                 angle: Some(Angle(construction.angle)),
-                outward: None,
+                outward: Some(construction.angle < 0.0),
             })
         }
         [neutral_plane] if member_of_scope(neutral_plane) => {
@@ -2668,7 +2668,7 @@ fn project_draft(
                 pull_direction: None,
                 pull_plane: None,
                 angle: Some(Angle(construction.angle)),
-                outward: None,
+                outward: Some(construction.angle < 0.0),
             })
         }
         [first, second] if member_of_scope(first) && member_of_scope(second) => {
@@ -2703,7 +2703,7 @@ fn project_draft(
                 pull_direction: Some(pull_direction),
                 pull_plane: Some(neutral_feature_id(pull_plane)),
                 angle: Some(Angle(construction.angle)),
-                outward: None,
+                outward: Some(construction.angle < 0.0),
             })
         }
         _ => None,

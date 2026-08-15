@@ -145,16 +145,6 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** This item is the case in which the agreement rule has no input. The neutral model then has no body selection.
 
-### DR-23. `Draft` outward convention
-
-**Question.** Which stored carrier fixes the outward-material convention of a `Draft` scope?
-
-**Known.** `f3d.md` §3.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is a finite signed draft angle in radians, including zero, and the second reserves the opposite-side angle at zero. A neutral-plane draft has one role-`0x0000002100000000` face-recipe group. A parting-line draft has two such groups: one single-member entity-selection group names the WorkPlane at primary identity plus one, and the other carries the parting-tool face recipes. The WorkPlane's third matrix column supplies the pull direction and its feature is the pull-plane dependency.
-
-The signed angle and the WorkPlane pull direction are independent fields. The outward-material convention has no identified carrier, so the neutral model leaves `outward` unset.
-
-**Need.** Identify the stored carrier for the outward-material convention without deriving it from the angle sign or pull direction.
-
 ### DR-24. Class-365 whole-body operand fields
 
 **Question.** What do the class-365 whole-body operand fields after the asset UUID and the context UUID hold? This question excludes the bounded nested-record join and the body-recipe join.
