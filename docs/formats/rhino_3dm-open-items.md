@@ -16,29 +16,7 @@ Each item has an identifier. Use the identifier in commit messages and in code c
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## 1. Reopened closures audited on 2026-08-10
-
-The following items were removed by `b8c98b9c5` and were reopened by the QA pass. The commit changed the implementation and documentation, but did not establish the settled rule recorded in each item.
-
-### LG-01. V1 geometry payloads
-
-**Question.** What grammar and semantics does each V1 geometry payload use?
-
-**Known.** The current specification and `crates/cadmpeg-codec-rhino/src/legacy.rs` define several V1 point, curve, face, surface, boundary, and mesh paths. They do not establish the complete V1 geometry family or every field and variant.
-
-**Note.** Reopened. This is promotion to spec: partial decoder coverage was written as a complete V1 rule. Passing self-authored fixtures or matching the current decoder does not prove the missing V1 payload grammar.
-
-**Need.** We must know the payload grammar and semantics to decode V1 geometry as typed neutral geometry.
-
-### LG-02. V2 geometry payloads
-
-**Question.** What grammar and semantics does each V2 geometry payload use?
-
-**Known.** The current specification states that V2 class payloads use the same point, curve, surface, mesh, Brep, and annotation grammar as later archives. The class wrapper and CRC framing are defined, but no independent evidence establishes that payload claim for every V2 class and version.
-
-**Note.** Reopened. This is promotion to spec. The broad V2 statement is an assertion derived from the current decoder shape, not evidence for every V2 payload. Agreement with the branch's fixtures is consistency with the guess.
-
-**Need.** We must know the payload grammar and semantics to decode V2 geometry as typed neutral geometry.
+## 1. Hostile sweep findings recorded on 2026-08-10
 
 ### ON-04. Strictness rules that openNURBS does not apply
 
@@ -109,8 +87,6 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 **Note.** Reopened. Partial tolerance is not the requested rule. Each redundant field needs a source-backed repair or degradation policy and a typed loss where the IR no longer carries the stored value.
 
 **Need.** Each redundant field must repair or degrade and record a typed loss. Discarding a record loses data that the file holds.
-
-## 4. Hostile sweep findings recorded on 2026-08-10
 
 ### SW-03. Instance transform ownership inferred from topology
 

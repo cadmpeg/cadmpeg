@@ -10,6 +10,8 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
     SurfaceGeometry,
 };
+use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{DecodeReport, TransferLedger};
@@ -19,6 +21,7 @@ use cadmpeg_ir::topology::{
     Shell, Vertex,
 };
 use cadmpeg_ir::units::Units;
+use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
 use crate::layout::file_header;
@@ -48,6 +51,35 @@ const TCODE_ENDOFFILE: u32 = 0x8000_7fff;
 #[allow(clippy::needless_pass_by_value)]
 fn malformed(error: FramingError) -> CodecError {
     CodecError::Malformed(error.to_string())
+}
+
+fn retain_v1_record(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    retained_bytes: &mut usize,
+) -> UnknownRecord {
+    let range = chunk.range();
+    let bytes = &data[range.clone()];
+    let retain = bytes.len() <= crate::decode::RETAINED_RECORD_CAP
+        && retained_bytes
+            .checked_add(bytes.len())
+            .is_some_and(|end| end <= crate::decode::RETAINED_DOCUMENT_CAP);
+    if retain {
+        *retained_bytes = retained_bytes
+            .checked_add(bytes.len())
+            .expect("V1 retention cap checked");
+    }
+    UnknownRecord {
+        id: UnknownId(format!(
+            "rhino:legacy:record#{:08x}-{:016x}",
+            chunk.typecode, chunk.header_start
+        )),
+        offset: u64::try_from(range.start).expect("V1 record offset fits u64"),
+        byte_len: u64::try_from(bytes.len()).expect("V1 record length fits u64"),
+        sha256: sha256_hex(bytes),
+        data: retain.then(|| bytes.to_vec()),
+        links: Vec::new(),
+    }
 }
 
 fn child_with_type(
@@ -1132,6 +1164,8 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
     let mut decoded_meshes = 0_usize;
     let mut decoded_breps = 0_usize;
     let mut omitted = BTreeMap::<u32, usize>::new();
+    let mut opaque_records = Vec::new();
+    let mut retained_bytes = 0_usize;
     let mut diagnostics = Vec::new();
     let mut scale = 1.0_f64;
     while offset < data.len() {
@@ -1309,6 +1343,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 Err(error) => {
                     diagnostics.push(format!("V1 curve at offset {offset}: {error}"));
                     *omitted.entry(chunk.typecode).or_default() += 1;
+                    opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                 }
             }
         } else if matches!(chunk.typecode, TCODE_LEGACY_FAC | TCODE_LEGACY_SHL) && !chunk.short {
@@ -1319,6 +1354,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 Err(error) => {
                     diagnostics.push(format!("V1 Brep at offset {offset}: {error}"));
                     *omitted.entry(chunk.typecode).or_default() += 1;
+                    opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                 }
             }
         } else if chunk.typecode == TCODE_MESH_OBJECT && !chunk.short {
@@ -1335,14 +1371,21 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 Err(error) => {
                     diagnostics.push(format!("V1 mesh at offset {offset}: {error}"));
                     *omitted.entry(chunk.typecode).or_default() += 1;
+                    opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                 }
             }
         } else {
             *omitted.entry(chunk.typecode).or_default() += 1;
+            opaque_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
         }
         offset = chunk.next_offset;
     }
     ir.model.finalize();
+    let opaque_count = opaque_records.len();
+    let opaque_bytes = opaque_records
+        .iter()
+        .filter(|record| record.data.is_some())
+        .count();
     let losses = omitted
         .into_iter()
         .map(|(typecode, count)| {
@@ -1351,6 +1394,8 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
             ))
         })
         .collect();
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    source_fidelity.retain_unknown_records("rhino", opaque_records);
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
@@ -1371,10 +1416,15 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
             notes: std::iter::once(format!(
                 "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
             ))
+            .chain((opaque_count > 0).then(|| {
+                format!(
+                    "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
+                )
+            }))
             .chain(diagnostics)
             .collect(),
         },
-        cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity,
     ))
 }
 
@@ -1573,6 +1623,29 @@ mod tests {
             Point3::new(1.0, 2.0, 3.0)
         );
         assert!(result.report().geometry_transferred);
+    }
+
+    #[test]
+    fn v1_unsupported_framed_record_is_retained_atomically() {
+        let mut bytes = archive(&[[1.0, 2.0, 3.0]]);
+        let record_offset = bytes.len();
+        let record = chunk(0x0020_0004, b"legacy annotation payload");
+        bytes.extend(&record);
+
+        let result = decode_v1(&bytes).expect("framed unsupported V1 record");
+        assert_eq!(result.ir().model.points.len(), 1);
+        let retained = &result.source_fidelity().retained_records;
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].offset, record_offset as u64);
+        assert_eq!(retained[0].byte_len, record.len() as u64);
+        assert_eq!(retained[0].data.as_deref(), Some(record.as_slice()));
+        assert_eq!(retained[0].stream, "rhino");
+        assert!(retained[0].id.starts_with("rhino:legacy:record#00200004-"));
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind()));
     }
 
     #[test]

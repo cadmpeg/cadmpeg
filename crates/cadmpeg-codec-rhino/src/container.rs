@@ -731,7 +731,8 @@ pub(crate) fn decode(
     if container_only
         && matches!(
             scan.archive,
-            ArchiveVersion::V3
+            ArchiveVersion::V2
+                | ArchiveVersion::V3
                 | ArchiveVersion::V4
                 | ArchiveVersion::V5
                 | ArchiveVersion::V6

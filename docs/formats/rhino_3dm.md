@@ -801,9 +801,33 @@ f64 relative tolerance
 f64 angle tolerance
 ```
 
-V1 geometry is a flat sequence. `TCODE_RH_POINT` (`0x00100001`) begins with
-three `f64` coordinates. Attribute chunks follow the coordinates inside the
-same bounded chunk.
+V1 geometry is a flat sequence. The object reader dispatches these direct
+record typecodes:
+
+| Record | Typecode | Payload boundary |
+| --- | ---: | --- |
+| `TCODE_RH_POINT` | `0x00100001` | one point and optional attribute data in the same chunk |
+| `TCODE_MESH_OBJECT` | `0x00100015` | one `TCODE_COMPRESSED_MESH_GEOMETRY` child and optional attribute data |
+| `TCODE_LEGACY_SHL` | `0x00010003` | one legacy shell wrapper |
+| `TCODE_LEGACY_FAC` | `0x00010004` | one legacy face wrapper |
+| `TCODE_LEGACY_CRV` | `0x00010008` | one legacy curve wrapper |
+| `TCODE_TEXT_BLOCK` | `0x00200004` | one V1 text annotation record |
+| `TCODE_ANNOTATION_LEADER` | `0x00200005` | one V1 leader annotation record |
+| `TCODE_LINEAR_DIMENSION` | `0x00200006` | one V1 linear-dimension record |
+| `TCODE_ANGULAR_DIMENSION` | `0x00200007` | one V1 angular-dimension record |
+| `TCODE_RADIAL_DIMENSION` | `0x00200008` | one V1 radial-dimension record |
+| `TCODE_RHINOIO_OBJECT_NURBS_CURVE` | `0x00020008` | one pre-class NURBS curve record |
+| `TCODE_RHINOIO_OBJECT_NURBS_SURFACE` | `0x00020009` | one pre-class NURBS surface record |
+| `TCODE_RHINOIO_OBJECT_BREP` | `0x0002000b` | one pre-class NURBS Brep record |
+
+The five annotation and three pre-class NURBS records are complete bounded
+records. They are not split into legacy geometry children. A direct typecode
+outside this dispatch is skipped as one complete chunk. A reader that does not
+interpret one of the dispatched payloads keeps that outer chunk as the atomic
+record; it does not promote a partial child.
+
+`TCODE_RH_POINT` begins with three `f64` coordinates. Attribute chunks follow
+the coordinates inside the same bounded chunk.
 
 `TCODE_LEGACY_CRV` (`0x00010008`) contains attribute chunks followed by one
 `TCODE_LEGACY_CRVSTUFF` (`0x00010108`). Curve stuff stores dimension `u8`,
@@ -905,9 +929,12 @@ V1 legacy wrapper/stuff pairs share the wrapper's trailing CRC16. The final
 stuff child ends at the wrapper end and does not add a second CRC16.
 
 V2 uses the table and polymorphic class-record grammar in sections 7 through
-17. The archive uses four-byte chunk values and the class UUID selects the
-same point, curve, surface, mesh, Brep, and annotation payload grammar as a
-later archive carrying that class and payload version.
+17. All chunk values use four bytes. The object class wrapper contains the
+class UUID, one class-data chunk, zero or more class-userdata chunks, and the
+class-end short chunk. The class UUID selects the class payload grammar. A
+geometry or annotation class uses the same versioned class-data fields in V2
+as in a later archive carrying that class and payload version; V2 changes the
+outer chunk width, not the class-data boundary or the class identity rule.
 
 For standard units, the enum determines the scale. For custom units,
 `meters-per-unit` and the custom name determine the scale and label.

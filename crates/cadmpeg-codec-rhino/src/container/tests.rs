@@ -184,6 +184,51 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
 }
 
 #[test]
+fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
+    let archive = ArchiveVersion::V2;
+    let point =
+        object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
+    let mut units_payload = 100_i32.to_le_bytes().to_vec();
+    units_payload.extend(2_i32.to_le_bytes());
+    units_payload.extend(0.01_f64.to_le_bytes());
+    units_payload.extend(0.1_f64.to_le_bytes());
+    units_payload.extend(0.001_f64.to_le_bytes());
+    let bytes = minimal_document(
+        "2",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(
+                archive,
+                0x1000_0015,
+                &[crc_chunk(archive, 0x2000_8031, &units_payload)],
+            ),
+            table(archive, 0x1000_0013, &[point]),
+        ],
+    );
+
+    let container_only = RhinoCodec
+        .decode(
+            &mut Cursor::new(bytes.clone()),
+            &DecodeOptions {
+                container_only: true,
+                ..Default::default()
+            },
+        )
+        .expect("V2 container-only decode");
+    assert!(container_only.report().container_only);
+    assert!(container_only.ir().model.points.is_empty());
+
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("V2 class-record decode");
+    assert_eq!(decoded.ir().model.points.len(), 1, "{:?}", decoded.report());
+    assert_eq!(
+        decoded.ir().model.points[0].position,
+        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+    );
+}
+
+#[test]
 fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
     for version in ["5", "999"] {
         let bytes = header(version);
