@@ -402,6 +402,19 @@ fn indexed_frame_parse_matches_one_shot_parse() {
     );
 }
 
+#[test]
+fn budgeted_dependency_admission_matches_one_shot_records() {
+    let bytes = crate::test_support::b5_closed_triangle_stream();
+    let frames = object_stream_frames(&bytes);
+    let expected = records_from_frames(&bytes, &frames);
+    let budget = cadmpeg_core::decode::WorkBudget::new(10_000);
+
+    let actual = records_from_frames_budgeted(&bytes, &frames, Some(&budget));
+
+    assert_eq!(actual, expected);
+    assert!(!budget.exhausted());
+}
+
 fn a8_class21_test_payload() -> Vec<u8> {
     let mut payload = vec![0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x09, 0x01];
     for value in [10.0f64, 20.0] {

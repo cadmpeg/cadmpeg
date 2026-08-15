@@ -4462,8 +4462,10 @@ pub(crate) fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B
 
 /// Dependency-admission fixpoint with an optional session work budget.
 ///
-/// Each pass may scan every frame. When `budget` is present, one pass costs
-/// `frames.len()` work units; exhaustion stops further admissions.
+/// The dependency candidates are indexed once by object identity. Earlier
+/// passes rescanned every frame for every newly discovered dependency, which
+/// made a large population spend its bounded work slice on repeated scans
+/// before the selected topology graph could be parsed.
 pub(crate) fn records_from_frames_budgeted(
     bytes: &[u8],
     frames: &[ObjectFrame],
@@ -4473,43 +4475,46 @@ pub(crate) fn records_from_frames_budgeted(
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
     let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
     let mut admitted = HashSet::new();
+    let mut candidates = None;
     loop {
         pending.retain(|object_id| !existing.contains(object_id) && !admitted.contains(object_id));
         if pending.is_empty() {
             break;
         }
-        if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
+        let candidates = candidates.get_or_insert_with(|| {
+            if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
+                return HashMap::new();
+            }
+            let mut candidates = HashMap::<u32, Option<B5Record>>::new();
+            for frame in frames {
+                if !is_reference_dependency_class(frame.family, frame.class) {
+                    continue;
+                }
+                let Some(candidate) = record_from_frame(bytes, frame) else {
+                    continue;
+                };
+                candidates
+                    .entry(frame.object_id)
+                    .and_modify(|slot| {
+                        if slot.as_ref().is_some_and(|existing| {
+                            existing.family != candidate.family
+                                || existing.class != candidate.class
+                                || existing.payload != candidate.payload
+                        }) {
+                            *slot = None;
+                        }
+                    })
+                    .or_insert(Some(candidate));
+            }
+            candidates
+        });
+        if budget.is_some_and(|budget| !budget.charge_by(pending.len())) {
             break;
         }
-        let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-        for frame in frames {
-            if !pending.contains(&frame.object_id)
-                || !is_reference_dependency_class(frame.family, frame.class)
-            {
-                continue;
-            }
-            let header = if frame.family == 0xa8 { 11 } else { 8 };
-            let candidate = B5Record {
-                offset: frame.start,
-                family: frame.family,
-                class: frame.class,
-                object_id: frame.object_id,
-                payload: bytes[frame.start + header..frame.end].to_vec(),
-            };
-            candidates
-                .entry(frame.object_id)
-                .and_modify(|slot| {
-                    if slot.as_ref().is_some_and(|existing| {
-                        existing.family != candidate.family
-                            || existing.class != candidate.class
-                            || existing.payload != candidate.payload
-                    }) {
-                        *slot = None;
-                    }
-                })
-                .or_insert(Some(candidate));
-        }
-        let mut found = candidates.into_values().flatten().collect::<Vec<_>>();
+        let mut found = pending
+            .iter()
+            .filter_map(|object_id| candidates.get(object_id).and_then(Option::as_ref).cloned())
+            .collect::<Vec<_>>();
         if found.is_empty() {
             break;
         }
@@ -4522,6 +4527,19 @@ pub(crate) fn records_from_frames_budgeted(
         }
     }
     records
+}
+
+fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
+    let header = if frame.family == 0xa8 { 11 } else { 8 };
+    Some(B5Record {
+        offset: frame.start,
+        family: frame.family,
+        class: frame.class,
+        object_id: frame.object_id,
+        payload: bytes
+            .get(frame.start.checked_add(header)?..frame.end)?
+            .to_vec(),
+    })
 }
 
 fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
@@ -4540,29 +4558,26 @@ fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
         {
             continue;
         }
-        let header = if family == 0xa8 { 11 } else { 8 };
-        let Some(payload) = bytes.get(start + header..end).map(ToOwned::to_owned) else {
+        let frame = ObjectFrame {
+            start,
+            end,
+            family,
+            class,
+            object_id,
+        };
+        let Some(record) = record_from_frame(bytes, &frame) else {
             continue;
         };
         if seen
             .get(&object_id)
             .is_some_and(|(seen_class, seen_payload)| {
-                *seen_class == class && *seen_payload == payload
+                *seen_class == record.class && *seen_payload == record.payload
             })
         {
             continue;
         }
-        seen.insert(object_id, (class, payload.clone()));
-        records.push((
-            end,
-            B5Record {
-                offset: start,
-                family,
-                class,
-                object_id,
-                payload,
-            },
-        ));
+        seen.insert(object_id, (record.class, record.payload.clone()));
+        records.push((end, record));
     }
     // Preserve the historical child-before-wrapper order for records nested in
     // an A8 frame while retaining the walker's bounded admission rules.
