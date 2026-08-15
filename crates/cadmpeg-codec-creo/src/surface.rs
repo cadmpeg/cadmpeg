@@ -3576,6 +3576,7 @@ fn decode_support_apex_cone_frame(
 
 /// Decode a named cone prototype whose local-system body carries the complete
 /// support-apex suffix and whose half-angle is a single scalar field.
+#[cfg(test)]
 pub(crate) fn prototype_cone_frame(record: &SurfacePrototypeRecord) -> Option<PositionalConeFrame> {
     (record.family == SurfacePrototypeFamily::Cone).then_some(())?;
     let local_system = record.field("local_sys")?;

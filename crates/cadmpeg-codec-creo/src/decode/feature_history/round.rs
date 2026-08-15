@@ -14,7 +14,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 const EPS_CYLINDER_FIT: f64 = 1e-8;
 
@@ -682,29 +682,20 @@ pub(in super::super) fn chamfer_constant_distance(
             .iter()
             .all(|row| row.kind == crate::surface::SurfaceKind::Cone))
     .then_some(())?;
-    let prototype_frames = unique_surface_prototype_associations(scan)
-        .into_iter()
-        .filter(|(_, row, _)| row.feature_id == feature_id)
-        .filter_map(|(prototype, row, _)| {
-            Some((row.offset, crate::surface::prototype_cone_frame(prototype)?))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let cones =
-        rows.iter()
-            .map(|row| {
-                let frame = prototype_frames.get(&row.offset).copied().or_else(|| {
-                    unique_surface_parameter_record(scan, row)?.positional_cone_frame
-                })?;
-                Some(ConeEquation {
-                    origin: frame.apex,
-                    axis: frame.axis,
-                    ref_direction: frame.ref_direction,
-                    radius: 0.0,
-                    ratio: 1.0,
-                    half_angle: frame.half_angle,
-                })
+    let cones = rows
+        .iter()
+        .map(|row| {
+            let frame = unique_surface_parameter_record(scan, row)?.positional_cone_frame?;
+            Some(ConeEquation {
+                origin: frame.apex,
+                axis: frame.axis,
+                ref_direction: frame.ref_direction,
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle: frame.half_angle,
             })
-            .collect::<Option<Vec<_>>>()?;
+        })
+        .collect::<Option<Vec<_>>>()?;
     let affected_ids = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
@@ -730,3 +721,6 @@ pub(in super::super) fn chamfer_constant_distance(
         .collect::<Vec<_>>();
     equal_distance_chamfer_setback(&cones, &support_planes)
 }
+
+#[cfg(test)]
+mod tests;
