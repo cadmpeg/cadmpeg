@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
-"""Compact summary/diff of *.report.json sweep-report directories (sldprt sweeps).
+"""USAGE (this block is the complete surface — no need to read further):
 
-One directory: aggregate status / geometry_transferred / loss-severity counts,
-top loss codes, and the worst-offender files (most blocking losses, then most
-total losses). Two directories: per-file diff keyed by the shared stem
-(`<stem>.report.json`), listing regressed and improved files. Output is
-hard-capped (default ~100 lines) — prefer this over dumping raw report JSONs.
+    report-diff.py [--limit N] [--top N] DIR_A [DIR_B]
+
+    DIR_A alone   aggregate summary of DIR_A/*.report.json
+    DIR_A DIR_B   per-file diff A -> B keyed by <stem>.report.json
+    --limit N     max output lines, hard cap             (default: 100)
+    --top N       max offenders/diff rows per list       (default: 10)
 
 Examples:
     python3 scripts/report-diff.py ~/side2/tmp/sldprt-l6/sweep-reports-v3/
     python3 scripts/report-diff.py ~/side2/tmp/sldprt-l6/current-reports-v3/ \\
         ~/side2/tmp/sldprt-l6/post-cone-reports-v1/
-    python3 scripts/report-diff.py --limit 200 ~/side2/tmp/sldprt-l6/typed-v4/ \\
-        ~/side2/tmp/sldprt-l6/typed-v7-subset/
 
+Each summary prints a `fingerprint:` of the content (stems + per-file status/
+loss counts) — identical fingerprints mean two dirs hold the same sweep.
 Unparseable files are skipped and counted, not fatal. Exit is non-zero only
 when an input path is missing or a directory yields no usable reports.
 """
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import Counter
@@ -96,6 +98,16 @@ def top(counter, n=10):
     return s or "(none)"
 
 
+def fingerprint(records):
+    """Stable hash of stems + per-file status/loss shape; equal => same sweep."""
+    h = hashlib.sha256()
+    for stem in sorted(records):
+        r = records[stem]
+        codes = ",".join(f"{k}={v}" for k, v in sorted(r["codes"].items()))
+        h.update(f"{stem}|{r['status']}|{r['losses']}|{r['blocking']}|{codes}\n".encode())
+    return h.hexdigest()[:12]
+
+
 def score(rec):
     """Badness key: worse status > blocking losses > total losses."""
     return (0 if rec["status"] == "ok" else 1, rec["blocking"], rec["losses"])
@@ -103,6 +115,7 @@ def score(rec):
 
 def summarize(dirpath, records, skipped, out, offenders):
     out.emit(f"== {dirpath}: {len(records)} reports" + (f" ({skipped} unparseable skipped)" if skipped else ""))
+    out.emit(f"  fingerprint: {fingerprint(records)}")
     out.emit("  status: " + top(Counter(r["status"] for r in records.values())))
     out.emit("  schema_version: " + top(Counter(str(r["schema_version"]) for r in records.values())))
     out.emit("  geometry_transferred: " + top(Counter(str(r["geom"]) for r in records.values())))
@@ -126,6 +139,11 @@ def diff(dir_a, recs_a, dir_b, recs_b, out, offenders):
     shared = sorted(set(recs_a) & set(recs_b))
     only_a, only_b = set(recs_a) - set(recs_b), set(recs_b) - set(recs_a)
     out.emit(f"== diff  A={dir_a} ({len(recs_a)})  ->  B={dir_b} ({len(recs_b)})")
+    fp_a, fp_b = fingerprint(recs_a), fingerprint(recs_b)
+    out.emit(f"  fingerprints: A={fp_a} B={fp_b}")
+    if fp_a == fp_b:
+        out.emit("  NOTE: identical content fingerprints — A and B hold the same sweep; "
+                 "this diff will show no changes.")
     out.emit(f"  shared={len(shared)} only-in-A={len(only_a)} only-in-B={len(only_b)}")
     regressed, improved = [], []
     for stem in shared:

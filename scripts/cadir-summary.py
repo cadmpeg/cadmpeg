@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Compact summary of one or many *.cadir.json decode outputs (sldprt IR).
+"""USAGE (this block is the complete surface — no need to read further):
 
-Prints per-file: model topology counts, native arena sizes, feature kinds,
-configurations, and suppressed/unknown tallies. Output is hard-capped
-(default ~100 lines) so it stays cheap to read in an agent context —
-prefer this over dumping the raw JSON (files are often >1 MB).
+    cadir-summary.py [--section all|model|arenas|features|configs]
+                     [--limit N] FILE_OR_DIR...
 
-Examples:
-    python3 scripts/cadir-summary.py ~/side2/tmp/sldprt-l6/baseline/bolt_m4.sldprt.cadir.json
-    python3 scripts/cadir-summary.py ~/side2/tmp/sldprt-l6/typed-v7-subset/          # all *.cadir.json in dir
+    FILE_OR_DIR   *.cadir.json file(s) and/or dirs (globs *.cadir.json)
+    --section     which section(s) to print         (default: all)
+    --limit N     max output lines, hard cap        (default: 100)
+
+Examples (tmp dirs churn; glob for a live *.cadir.json if these are gone):
+    python3 scripts/cadir-summary.py ~/side2/tmp/sldprt-l6/current-typed-cadir-v1/01fcc5d98a109241.cadir.json
+    python3 scripts/cadir-summary.py ~/side2/tmp/sldprt-l6/typed-v7-subset/
     python3 scripts/cadir-summary.py --section features --limit 200 \\
         ~/side2/tmp/sldprt-l6/current-typed-cadir-v1/01fcc5d98a109241.cadir.json
 
-Sections (--section): all (default), model, arenas, features, configs.
-For single-item queries prefer `target/debug/cadmpeg query item` / `query summary`.
+Prints per-file: model topology counts, native arena sizes, feature kinds,
+configurations, unknown tallies. Prefer this over dumping raw JSON (>1 MB);
+for single-item queries prefer `target/debug/cadmpeg query item` / `query summary`.
 """
 
 import argparse
