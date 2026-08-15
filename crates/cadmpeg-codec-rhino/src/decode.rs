@@ -2016,14 +2016,6 @@ impl<'a> DecodeContext<'a> {
         before: &ModelCheckpoint,
         transform: Transform,
     ) -> Result<Vec<String>, String> {
-        // `before` is captured immediately before decoding one UUID from the
-        // definition member array.  The presence of a newly emitted body is
-        // therefore the carrier boundary for that source object, not a
-        // topology inference from its child references.
-        let body_carrier = !before
-            .added::<Body>(&self.ir.model)
-            .ok_or_else(|| "instance decode removed existing bodies".to_string())?
-            .is_empty();
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
         for body in before
@@ -2038,30 +2030,24 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Point>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing points".to_string())?
         {
-            if !body_carrier {
-                point.position = transform.apply_point(point.position);
-                derived_ids.push(point.id.to_string());
-            }
+            point.position = transform.apply_point(point.position);
+            derived_ids.push(point.id.to_string());
         }
         for curve in before
             .added_mut::<Curve>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing curves".to_string())?
         {
-            if !body_carrier {
-                transform_curve(curve, transform)?;
-                links.push(curve.id.to_string());
-                derived_ids.push(curve.id.to_string());
-            }
+            transform_curve(curve, transform)?;
+            links.push(curve.id.to_string());
+            derived_ids.push(curve.id.to_string());
         }
         for surface in before
             .added_mut::<Surface>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
         {
-            if !body_carrier {
-                transform_surface(surface, transform)?;
-                links.push(surface.id.to_string());
-                derived_ids.push(surface.id.to_string());
-            }
+            transform_surface(surface, transform)?;
+            links.push(surface.id.to_string());
+            derived_ids.push(surface.id.to_string());
         }
         for mesh in before
             .added_mut::<Tessellation>(&mut self.ir.model)
