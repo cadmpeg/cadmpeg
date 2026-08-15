@@ -545,16 +545,10 @@ fn decode_code_page(bytes: &[u8], code_page: Option<u16>) -> Result<String, Code
             ));
         }
         let mut view = View::over_retained(bytes);
-        let mut units = Vec::new();
-        while !view.is_empty() {
-            let unit = view.u16_le().ok_or_else(|| {
-                CodecError::Malformed("OLE Unicode code-page string has an odd byte length".into())
-            })?;
-            units.push(unit);
-        }
-        require_and_remove_null(&mut units, "OLE Unicode code-page string")?;
-        return String::from_utf16(&units)
-            .map_err(|_| CodecError::Malformed("OLE code-page string is not UTF-16".into()));
+        let value = view
+            .utf16_le(bytes.len() / 2)
+            .ok_or_else(|| CodecError::Malformed("OLE code-page string is not UTF-16".into()))?;
+        return require_and_remove_null(value, "OLE Unicode code-page string");
     }
     let (content, had_null) = bytes
         .strip_suffix(&[0])
@@ -602,17 +596,14 @@ fn encoding_for_code_page(code_page: u16) -> Option<&'static encoding_rs::Encodi
     encoding_rs::Encoding::for_label(label.as_bytes())
 }
 
-fn require_and_remove_null(units: &mut Vec<u16>, field: &str) -> Result<(), CodecError> {
-    if units.is_empty() {
-        return Ok(());
+fn require_and_remove_null(value: String, field: &str) -> Result<String, CodecError> {
+    if value.is_empty() {
+        return Ok(value);
     }
-    if units.last() != Some(&0) {
-        return Err(CodecError::Malformed(format!(
-            "{field} has no null terminator"
-        )));
-    }
-    units.pop();
-    Ok(())
+    value
+        .strip_suffix('\0')
+        .map(str::to_owned)
+        .ok_or_else(|| CodecError::Malformed(format!("{field} has no null terminator")))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -743,13 +734,14 @@ impl<'a> Cursor<'a> {
             CodecError::Malformed(format!("{} {field} length overflows", self.scope))
         })?;
         ctx.charge_retained(byte_len as u64, "retain OLE Unicode property string", None)?;
-        let mut units = Vec::new();
-        for _ in 0..count {
-            units.push(self.u16(field)?);
-        }
-        require_and_remove_null(&mut units, field)?;
-        String::from_utf16(&units)
-            .map_err(|_| CodecError::Malformed(format!("{} {field} is not UTF-16", self.scope)))
+        let value = self.view.utf16_le(count).ok_or_else(|| {
+            if self.view.remaining() < byte_len {
+                self.truncated(field)
+            } else {
+                CodecError::Malformed(format!("{} {field} is not UTF-16", self.scope))
+            }
+        })?;
+        require_and_remove_null(value, field)
     }
 
     fn zero_finish(self) -> Result<(), CodecError> {

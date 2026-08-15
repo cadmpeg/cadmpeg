@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -48,7 +49,7 @@ fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+        loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
             && loss.message.contains("one optional pcurve")
             && loss.message.contains("not continuous")
     }));
@@ -262,7 +263,7 @@ fn periodic_surface_pcurve_selection_seeds_line_parameter_branches() {
             .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
     }));
     assert!(!decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
@@ -400,7 +401,7 @@ fn degree_valued_cylindrical_pcurve_is_not_reinterpreted() {
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+        loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
             && loss.message.contains("curve #57")
             && loss.message.contains("pcurve is omitted")
     }));
@@ -435,7 +436,7 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
         .all(|coedge| coedge.pcurves.is_empty()));
     assert!(
         decoded.report().losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::PcurveOmitted)
+            loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
                 && loss.severity == cadmpeg_ir::Severity::Error
                 && loss.message.contains("optional pcurve")
         }),
@@ -525,10 +526,7 @@ fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
         .report()
         .losses
         .iter()
-        .filter(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
-        })
+        .filter(|loss| loss.code == StepLossCode::PcurveAssociationAmbiguous.kind())
         .collect();
     assert_eq!(
         losses.len(),
@@ -602,8 +600,11 @@ fn ambiguous_pcurves_do_not_reject_the_body() {
 
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Solid);
-    assert!(decoded.report().losses.iter().any(|loss| loss.code
-        == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

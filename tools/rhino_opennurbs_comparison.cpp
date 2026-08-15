@@ -13,7 +13,7 @@ int main(int argc, char** argv)
 
   ON::Begin();
   ONX_Model model;
-  model.m_sStartSectionComments = "cadmpeg independent openNURBS transfer witness";
+  model.m_sStartSectionComments = "cadmpeg independent openNURBS comparison";
   model.AddDefaultLayer(nullptr, ON_Color::Black);
   ON_Point point(ON_3dPoint(1.25, -2.5, 4.0));
   model.AddModelGeometryComponent(&point, nullptr);

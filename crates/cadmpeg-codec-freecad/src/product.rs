@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product containers and link occurrences recovered from the application graph.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
@@ -735,6 +735,70 @@ fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
         ],
         [0.0, 0.0, 0.0, 1.0],
     ])
+}
+
+pub(crate) fn product_cycle_nodes<'a>(
+    nodes: &HashMap<&'a str, &'a ProductNodeRecord>,
+) -> HashSet<&'a str> {
+    let edges = |name: &'a str| {
+        nodes.get(name).into_iter().flat_map(|node| {
+            node.members
+                .iter()
+                .map(String::as_str)
+                .chain(node.prototype.as_deref())
+                .filter(|target| nodes.contains_key(target))
+        })
+    };
+    let mut reverse = HashMap::<&str, Vec<&str>>::new();
+    for &source in nodes.keys() {
+        reverse.entry(source).or_default();
+        for target in edges(source) {
+            reverse.entry(target).or_default().push(source);
+        }
+    }
+
+    let mut visited = HashSet::new();
+    let mut finish = Vec::with_capacity(nodes.len());
+    for &root in nodes.keys() {
+        if !visited.insert(root) {
+            continue;
+        }
+        let mut stack = vec![(root, edges(root).collect::<Vec<_>>(), 0_usize)];
+        while let Some((current, targets, next)) = stack.last_mut() {
+            if let Some(&target) = targets.get(*next) {
+                *next += 1;
+                if visited.insert(target) {
+                    stack.push((target, edges(target).collect(), 0));
+                }
+            } else {
+                finish.push(*current);
+                stack.pop();
+            }
+        }
+    }
+
+    let mut assigned = HashSet::new();
+    let mut cyclic = HashSet::new();
+    while let Some(root) = finish.pop() {
+        if !assigned.insert(root) {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            component.push(current);
+            for &source in reverse.get(current).into_iter().flatten() {
+                if assigned.insert(source) {
+                    stack.push(source);
+                }
+            }
+        }
+        let self_cycle = component.len() == 1 && edges(component[0]).any(|target| target == root);
+        if component.len() > 1 || self_cycle {
+            cyclic.extend(component);
+        }
+    }
+    cyclic
 }
 
 #[cfg(test)]

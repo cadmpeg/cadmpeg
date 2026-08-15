@@ -17,6 +17,8 @@
 
 mod decode;
 mod detect;
+#[allow(dead_code)] // Loss catalog is consumed by tests.
+mod loss;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};

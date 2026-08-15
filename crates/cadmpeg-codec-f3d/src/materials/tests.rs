@@ -18,11 +18,11 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
 use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
+use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -1636,14 +1636,10 @@ fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: vec![cadmpeg_ir::report::LossNote {
-            code: LossCode::shared(LossTaxonomy::MaterialNotTransferred),
-            severity: Severity::Warning,
-            message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
-                      transferred."
-                .to_owned(),
-            provenance: None,
-        }],
+        losses: vec![F3dLossCode::MaterialNotTransferred.note(
+            "Materials/appearances (.protein assets, ACT/design assignments) were not \
+             transferred.",
+        )],
         notes: Vec::new(),
     }
 }

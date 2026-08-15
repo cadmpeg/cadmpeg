@@ -10,6 +10,8 @@ Each item has these parts:
 - **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
 - **Note** — a defect in the item or in the specification.
 
+When an item is resolved, delete it in the same change that writes the answer into the specification. Do not keep a Resolved part.
+
 Each item has an identifier. Use the identifier in commit messages and in code comments.
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
@@ -82,7 +84,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the result slot to transfer a relation with an output.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `5f1d8cb2d` changed only this ledger. The current parser chooses the lead-`12` context or lead-`54` trailing reference when its class is `paramout`, and formula transfer consumes that field. No independent byte witness establishes that slot and class rule. Parser/spec agreement and synthetic tests are consistency, not verification of the native result binding. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `5f1d8cb2d` changed only this ledger. The current parser chooses the lead-`12` context or lead-`54` trailing reference when its class is `paramout`, and formula transfer consumes that field. No independent byte witness establishes that slot and class rule. Parser/spec agreement and synthetic tests are consistency, not verification of the native result binding.
 
 ### DI-08. Legacy relation `body` selector
 
@@ -108,7 +110,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must join the source symbol to its string packet to evaluate the relation.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `0d0e50f98` settles only complete same-run local input packets and explicitly leaves nonlocal or unresolved input selectors unresolved. That supported subset does not answer which packet supplies every typed `String` input. The spec change and synthetic consistency tests do not identify the native input join. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `0d0e50f98` settles only complete same-run local input packets and explicitly leaves nonlocal or unresolved input selectors unresolved. That supported subset does not answer which packet supplies every typed `String` input. The spec change and synthetic consistency tests do not identify the native input join.
 
 ### DI-11. Evaluated `String` relation results
 
@@ -118,7 +120,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the result entity for input-bearing relations and relations with nonlocal selectors so we can transfer the evaluated value.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `0d0e50f98` documents the zero-input/local subset already stated above; it does not settle the original input-bearing and nonlocal result question. Agreement on that subset cannot verify the remaining result ownership. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `0d0e50f98` documents the zero-input/local subset already stated above; it does not settle the original input-bearing and nonlocal result question. Agreement on that subset cannot verify the remaining result ownership.
 
 ### DI-12. Typed `Boolean` value production
 
@@ -128,7 +130,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the scalar production to transfer a Boolean parameter.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `d0f630db0` adds 0/1 atom handling and synthetic tests built by the same fixture helper, then states that mapping as settled. No independent CATIA witness proves that this atom is the Boolean scalar production; a Boolean-named field can carry other value forms. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `d0f630db0` adds 0/1 atom handling and synthetic tests built by the same fixture helper, then states that mapping as settled. No independent CATIA witness proves that this atom is the Boolean scalar production; a Boolean-named field can carry other value forms.
 
 ### DI-13. Active configuration state
 
@@ -304,7 +306,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** `catia.md` §5.4.1 states an answer for one body class: "Regular-motif bodies serialize vertex allocation as a walk over the ordered trim packets", with four fixed column permutations. This item states that the relation is unknown. One of the two documents is wrong. The specification gives no byte-level derivation for the four permutations, and the two validity tests it states — the first-occurrence population equals the vertex-table count, and every circle row with exactly two on-circle vertex rows maps to that pair — are the two output tests that `missing_edge::motif_port_points` and `standard::fbb::parse_standard_motif` apply. A permuted emission order satisfies both tests. On a body with no circle rows the second test is vacuous, because `circle_anchors` is `None` for a `Line` or `Bspline` row and the caller accepts `None`.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `693c263ce` only rejects an incomplete walk and adds a synthetic test; it does not derive the four allocation permutations. The documented rule is therefore a promotion of the current solver behavior, not byte-level evidence. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `693c263ce` only rejects an incomplete walk and adds a synthetic test; it does not derive the four allocation permutations. The documented rule is therefore a promotion of the current solver behavior, not byte-level evidence.
 
 ### SN-11. Standard 3D spline cache
 
@@ -330,7 +332,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the remaining binding to transfer the native edge carrier.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `5f6cb0666` adds a unique-unused-native-edge fallback from endpoint incidence and synthetic endpoint maps. No independent standard-file witness establishes that this fallback is the native `0x60` binding rule; the current spec merely records the decoder policy. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `5f6cb0666` adds a unique-unused-native-edge fallback from endpoint incidence and synthetic endpoint maps. No independent standard-file witness establishes that this fallback is the native `0x60` binding rule; the current spec merely records the decoder policy.
 
 ### SN-14. Multiple FBB face groups
 
@@ -356,7 +358,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve other references to bind the pcurve support.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `ca564c382` changes only documentation and adds a separate embedded type-3 cylinder case to SN-12. It does not answer the remaining `a5 03 20` persistent-reference namespace. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `ca564c382` changes only documentation and adds a separate embedded type-3 cylinder case to SN-12. It does not answer the remaining `a5 03 20` persistent-reference namespace.
 
 ### SN-17. Class-`0x62` owner bounds
 
@@ -438,7 +440,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve the directrix identity when the interval binding is not unique.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `10b187f9f` changed only documentation. The current resolver and synthetic tests cover exact record identity and a unique interval fallback, but they do not establish the allocation namespace or directrix rule for non-unique and other unresolved cases. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `10b187f9f` changed only documentation. The current resolver and synthetic tests cover exact record identity and a unique interval fallback, but they do not establish the allocation namespace or directrix rule for non-unique and other unresolved cases.
 
 ### SN-27. Consolidated class-`0x27` plane carrier
 
@@ -540,7 +542,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the role to make the complete pcurve record.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `a9117f1d5` labels the scalar as a source-span witness and adds tests that mutate it without changing standalone pcurve geometry. Production extrusion paths use the scalar as a span constraint, but no independent source identifies that role; the tests establish decoder consistency only. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `a9117f1d5` labels the scalar as a source-span witness and adds tests that mutate it without changing standalone pcurve geometry. Production extrusion paths use the scalar as a span constraint, but no independent source identifies that role; the tests establish decoder consistency only.
 
 ### OS-11. Class-`0x2c` auxiliary scalars
 
@@ -582,9 +584,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the lane roles to validate the program against the surface it belongs to, and to write it.
 
-**Note.** This item was removed in the tree that added the layout table and the `valid_a8_elided_tail` validator, and it is restored here with a narrower question. A table of observed literal values is a shape test, not the semantics the question asks for. The pole location half of the original question is answered: `catia.md` §6.7 gives the external allocation, and `a5a8::records::a8_surface_from_external_grid` binds it through the pcurve support reference.
-
-**Audit note.** Reopened by the 2026-08-10 closure audit. Commit `1182d6612` makes the lane labels part of the spec and retains the parsed fields, but the generated-tail tests only repeat those labels. No independent CATIA witness establishes the range, affine, or extrapolation roles. Confidence: high.
+**Note.** This item was removed in the tree that added the layout table and the `valid_a8_elided_tail` validator, and it is restored here with a narrower question. A table of observed literal values is a shape test, not the semantics the question asks for. The pole location half of the original question is answered: `catia.md` §6.7 gives the external allocation, and `a5a8::records::a8_surface_from_external_grid` binds it through the pcurve support reference. Reopened by the 2026-08-10 closure audit. Commit `1182d6612` makes the lane labels part of the spec and retains the parsed fields, but the generated-tail tests only repeat those labels. No independent CATIA witness establishes the range, affine, or extrapolation roles.
 
 ## 5. Zero-entity `a9 03`
 
@@ -622,7 +622,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know the namespaces to bind the edge, supports, and incidences.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `403bd91cb` derives labels from tuple positions and arithmetic and tests only synthetic records. It does not bind those labels to the native `0638`/`2569` topology or `0x21xx`/support namespaces. The current spec promotes those labels without an independent byte witness. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `403bd91cb` derives labels from tuple positions and arithmetic and tests only synthetic records. It does not bind those labels to the native `0638`/`2569` topology or `0x21xx`/support namespaces. The current spec promotes those labels without an independent byte witness.
 
 ### ZE-05. Zero-entity ownership-root selection
 
@@ -632,7 +632,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know the terminal/root identity rule or reject multiple valid ownership triples before transferring body and shell ownership.
 
-**Note.** Added by the 2026-08-10 hostile sweep. `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs:464-502` uses `records.windows(3).find_map`, so the first matching triple wins and later matches are never compared. A stream with two valid triples can assign the earlier hierarchy even when the later triple is the terminal owner. Exact tags, contiguity, and face-slot checks validate each candidate but do not establish uniqueness. Confidence: medium.
+**Note.** Added by the 2026-08-10 hostile sweep. `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs:464-502` uses `records.windows(3).find_map`, so the first matching triple wins and later matches are never compared. A stream with two valid triples can assign the earlier hierarchy even when the later triple is the terminal owner. Exact tags, contiguity, and face-slot checks validate each candidate but do not establish uniqueness.
 
 ## 6. E5 `0D 03`
 
@@ -644,7 +644,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know the selector to choose the correct circle arc.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `0bb127ce2` adds a cone jet normalization test but no byte-level selector evidence and no independent CATIA witness for the circle branch. A generated cone chart exercising the decoder cannot settle which wrapper field selects a circle. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `0bb127ce2` adds a cone jet normalization test but no byte-level selector evidence and no independent CATIA witness for the circle branch. A generated cone chart exercising the decoder cannot settle which wrapper field selects a circle.
 
 ### E5-02. `0xa0` co-parametric mapping
 
@@ -654,7 +654,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know the other mappings to trim the primitive correctly.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `0bb127ce2` proves only the cone subset in a synthetic `E5Surface`/`E5Pcurve::Jet` fixture. It does not establish the mapping for other carriers or the native wrapper parameter relation. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `0bb127ce2` proves only the cone subset in a synthetic `E5Surface`/`E5Pcurve::Jet` fixture. It does not establish the mapping for other carriers or the native wrapper parameter relation.
 
 ### E5-03. Plane-cap digon orientation
 
@@ -664,7 +664,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know the fields to orient the cap when its boundary is a digon.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `acb22c30f` adds a plane-digon orientation hint based on degree-5 jets, carrier classes, support ranges, and synthetic orientation tests, then promotes that relation to the spec. The test fixture is generated from the same rule; no independent CATIA bytes establish that these fields are the native global-sense anchor. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `acb22c30f` adds a plane-digon orientation hint based on degree-5 jets, carrier classes, support ranges, and synthetic orientation tests, then promotes that relation to the spec. The test fixture is generated from the same rule; no independent CATIA bytes establish that these fields are the native global-sense anchor.
 
 ### E5-04. Rank-deficient plane frame
 
@@ -674,7 +674,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know the completion rule to construct the plane.
 
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `66545be34` removes the item and records the rank-one normal/sign procedure only in coverage documentation. The documented normal and first-nonzero-component sign are decoder choices with no independent byte-level derivation. Confidence: high.
+**Note.** Reopened by the 2026-08-10 closure audit. Commit `66545be34` removes the item and records the rank-one normal/sign procedure only in coverage documentation. The documented normal and first-nonzero-component sign are decoder choices with no independent byte-level derivation.
 
 ### E5-05. Root orientation signs
 
@@ -732,7 +732,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must distinguish a valid one-sided construction from multiple or conflicting sides before selecting an edge carrier.
 
-**Note.** Added by the 2026-08-10 hostile sweep. At `crates/cadmpeg-codec-catia/src/families/e5/decode.rs:1172-1182`, any failed two-side context falls back to `sides.first()`. If three sides exist, or two sides have conflicting ranges, source order selects one and discards the others. The exact two-side helper and range checks are counter-evidence only for the accepted case; they do not justify the first-side fallback. Confidence: medium-high.
+**Note.** Added by the 2026-08-10 hostile sweep. At `crates/cadmpeg-codec-catia/src/families/e5/decode.rs:1172-1182`, any failed two-side context falls back to `sides.first()`. If three sides exist, or two sides have conflicting ranges, source order selects one and discards the others. The exact two-side helper and range checks are counter-evidence only for the accepted case; they do not justify the first-side fallback.
 
 ## 7. FBB-only and float-packed variants
 
@@ -808,9 +808,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know whether the external allocation transfers the face, and we must hold the exclusion when it does not. Transferring the face without a grid needs invented vertex coordinates.
 
-**Note.** This item was removed by the tree that made the elided-tail test stricter. A stricter test admits fewer carriers, so it cannot have transferred a face that was excluded before. No test and no decode-report count shows the face reaching the neutral model, and the tree's commit message states no rationale. The item is restored until one of the two exists. The remaining carrier-program semantics are tracked by OS-15.
-
-**Audit note.** Reopened by the 2026-08-10 closure audit. Commit `1de8cc061` adds an end-to-end synthetic A8/grid/B5-chain fixture and validates one generated triangle. That proves one decoder-constructed path, not the native external-grid ownership rule or general face transfer. Confidence: high.
+**Note.** This item was removed by the tree that made the elided-tail test stricter. A stricter test admits fewer carriers, so it cannot have transferred a face that was excluded before. No test and no decode-report count shows the face reaching the neutral model, and the tree's commit message states no rationale. The item is restored until one of the two exists. The remaining carrier-program semantics are tracked by OS-15. Reopened by the 2026-08-10 closure audit. Commit `1de8cc061` adds an end-to-end synthetic A8/grid/B5-chain fixture and validates one generated triangle. That proves one decoder-constructed path, not the native external-grid ownership rule or general face transfer.
 
 ### FV-10. Float-packed fixture validity
 
@@ -820,9 +818,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know the minimum valid record set to synthesize golden fixtures that hold the object-stream route under snapshot.
 
-**Note.** Loop membership no longer blocks this item. `catia.md` §6.7 "**Object-stream topology:**" fixes the rule a fixture must satisfy: each `62` node is named by exactly one `5f` face, its trailing reference is that face's carrier, and its `n_refs` equals `2*edge_count+1`. The remaining blocker is the `5d` identity chain, which needs a `5d`, a class-`05` roster, class-`06` parameter incidences, and `05 08 01` vertex rows that agree with the lifted pcurve endpoints of every incident edge. A fixture that omits the chain reaches the excluded state for a carrier without an endpoint source and proves nothing about the route.
-
-**Audit note.** Reopened by the 2026-08-10 closure audit. Commit `0daf2d957` proves that one generated fixture is sufficient for one triangle. It does not establish the minimum or necessary record set, nor does it validate the existing golden fixtures. Confidence: high.
+**Note.** Loop membership no longer blocks this item. `catia.md` §6.7 "**Object-stream topology:**" fixes the rule a fixture must satisfy: each `62` node is named by exactly one `5f` face, its trailing reference is that face's carrier, and its `n_refs` equals `2*edge_count+1`. The remaining blocker is the `5d` identity chain, which needs a `5d`, a class-`05` roster, class-`06` parameter incidences, and `05 08 01` vertex rows that agree with the lifted pcurve endpoints of every incident edge. A fixture that omits the chain reaches the excluded state for a carrier without an endpoint source and proves nothing about the route. Reopened by the 2026-08-10 closure audit. Commit `0daf2d957` proves that one generated fixture is sufficient for one triangle. It does not establish the minimum or necessary record set, nor does it validate the existing golden fixtures.
 
 ## 8. Appearance
 

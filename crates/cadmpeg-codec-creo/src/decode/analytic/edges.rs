@@ -10,6 +10,7 @@ use super::super::surfaces::curve_contains_points;
 use super::equations::{cross, dot};
 use super::planes::valid_positive_nurbs_curve;
 
+const EPS_ON_CONIC: f64 = 1e-7;
 const EPS_AGREE: f64 = 1e-9;
 const EPS_NEAR_ZERO: f64 = 1e-12;
 
@@ -494,7 +495,7 @@ pub fn nonperiodic_conic_parameter(geometry: &CurveGeometry, point: [f64; 3]) ->
         .max(x_scale)
         .max(y_scale)
         .max(1.0);
-    (dot(relative, normal).abs() <= 1e-7 * scale).then_some(())?;
+    (dot(relative, normal).abs() <= EPS_ON_CONIC * scale).then_some(())?;
     let x = dot(relative, x_axis);
     let y = dot(relative, y_axis);
     let parameter = match family {
@@ -505,7 +506,7 @@ pub fn nonperiodic_conic_parameter(geometry: &CurveGeometry, point: [f64; 3]) ->
         NonperiodicConicFamily::Parabola => x_scale * parameter * parameter,
         NonperiodicConicFamily::Hyperbola => x_scale * parameter.cosh(),
     };
-    (parameter.is_finite() && (x - expected_x).abs() <= 1e-7 * scale).then_some(parameter)
+    (parameter.is_finite() && (x - expected_x).abs() <= EPS_ON_CONIC * scale).then_some(parameter)
 }
 
 pub fn nonperiodic_conic_edge_parameter_range(

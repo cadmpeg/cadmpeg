@@ -43,40 +43,33 @@ pub(crate) struct PolyEdge {
     pub(crate) segments: Vec<Segment>,
 }
 
-fn malformed(offset: usize, message: impl Into<String>) -> FramingError {
-    FramingError::Structural {
-        offset,
-        message: message.into(),
-    }
-}
-
 fn refused(offset: usize, error: &CodecError) -> FramingError {
-    malformed(offset, format!("polyedge allocation refused: {error}"))
+    FramingError::structural(offset, format!("polyedge allocation refused: {error}"))
 }
 
 fn req_u8(view: &mut View<'_>) -> Result<u8, FramingError> {
     let offset = view.position();
     view.req_u8()
-        .map_err(|_| malformed(offset, "polyedge record truncated"))
+        .map_err(|_| FramingError::structural(offset, "polyedge record truncated"))
 }
 
 fn req_i32(view: &mut View<'_>) -> Result<i32, FramingError> {
     let offset = view.position();
     view.req_i32_le()
-        .map_err(|_| malformed(offset, "polyedge record truncated"))
+        .map_err(|_| FramingError::structural(offset, "polyedge record truncated"))
 }
 
 fn req_f64(view: &mut View<'_>) -> Result<f64, FramingError> {
     let offset = view.position();
     view.req_f64_le()
-        .map_err(|_| malformed(offset, "polyedge record truncated"))
+        .map_err(|_| FramingError::structural(offset, "polyedge record truncated"))
 }
 
 fn req_uuid(view: &mut View<'_>) -> Result<Uuid, FramingError> {
     let offset = view.position();
     let bytes = view
         .req_take(16)
-        .map_err(|_| malformed(offset, "polyedge record truncated"))?;
+        .map_err(|_| FramingError::structural(offset, "polyedge record truncated"))?;
     Ok(Uuid::from_wire(bytes.try_into().expect("length checked")))
 }
 
@@ -85,7 +78,7 @@ fn req_bool(view: &mut View<'_>) -> Result<bool, FramingError> {
     match req_u8(view)? {
         0 => Ok(false),
         1 => Ok(true),
-        value => Err(malformed(
+        value => Err(FramingError::structural(
             offset,
             format!("boolean value {value} is not 0 or 1"),
         )),
@@ -105,11 +98,14 @@ fn counted(
     let value = req_i32(view)?;
     let count = usize::try_from(value).map_err(|_| FramingError::Overflow { offset })?;
     if count > ITEM_CAP {
-        return Err(malformed(offset, "polyedge count exceeds cap"));
+        return Err(FramingError::structural(
+            offset,
+            "polyedge count exceeds cap",
+        ));
     }
-    let bound = view
-        .counted(count as u64, width)
-        .ok_or_else(|| malformed(offset, "polyedge count exceeds remaining window"))?;
+    let bound = view.counted(count as u64, width).ok_or_else(|| {
+        FramingError::structural(offset, "polyedge count exceeds remaining window")
+    })?;
     Ok((count, bound))
 }
 
@@ -119,7 +115,10 @@ fn interval(view: &mut View<'_>) -> Result<[f64; 2], FramingError> {
     if value.iter().all(|value| value.is_finite()) {
         Ok(value)
     } else {
-        Err(malformed(offset, "polyedge interval is not finite"))
+        Err(FramingError::structural(
+            offset,
+            "polyedge interval is not finite",
+        ))
     }
 }
 
@@ -131,13 +130,18 @@ fn segment(
 ) -> Result<Segment, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
-        return Err(malformed(range.start, "invalid polyedge-segment framing"));
+        return Err(FramingError::structural(
+            range.start,
+            "invalid polyedge-segment framing",
+        ));
     }
     let mut body = root
         .child(chunk.body.start, chunk.body.end)
-        .ok_or_else(|| malformed(chunk.body.start, "polyedge segment body out of range"))?;
+        .ok_or_else(|| {
+            FramingError::structural(chunk.body.start, "polyedge segment body out of range")
+        })?;
     if req_i32(&mut body)? != 1 || req_i32(&mut body)? < 0 {
-        return Err(malformed(
+        return Err(FramingError::structural(
             chunk.body.start,
             "unsupported polyedge-segment version",
         ));
@@ -169,17 +173,20 @@ pub(crate) fn decode(
     let mut body = expand
         .root()
         .child(range.start, range.end)
-        .ok_or_else(|| malformed(range.start, "polyedge body out of range"))?;
+        .ok_or_else(|| FramingError::structural(range.start, "polyedge body out of range"))?;
 
     let version = req_u8(&mut body)?;
     if version >> 4 != 1 {
-        return Err(malformed(range.start, "unsupported polyedge-curve version"));
+        return Err(FramingError::structural(
+            range.start,
+            "unsupported polyedge-curve version",
+        ));
     }
     let (segment_count, segment_bound) = counted(&mut body, MIN_SEGMENT_BYTES)?;
     req_i32(&mut body)?;
     req_i32(&mut body)?;
     body.skip(48)
-        .ok_or_else(|| malformed(body.position(), "polyedge record truncated"))?;
+        .ok_or_else(|| FramingError::structural(body.position(), "polyedge record truncated"))?;
     let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
 
     let mut reserved =
@@ -189,7 +196,10 @@ pub(crate) fn decode(
         let offset = body.position();
         let value = req_f64(&mut body)?;
         if !value.is_finite() || previous.is_some_and(|last| value <= last) {
-            return Err(malformed(offset, "invalid polyedge parameter"));
+            return Err(FramingError::structural(
+                offset,
+                "invalid polyedge parameter",
+            ));
         }
         previous = Some(value);
         reserved
@@ -208,7 +218,7 @@ pub(crate) fn decode(
         let class =
             parse_class_wrapper(data, start..wrapper.next_offset, archive, &mut Vec::new())?;
         if class.class_uuid != SEGMENT_CLASS {
-            return Err(malformed(
+            return Err(FramingError::structural(
                 start,
                 "polyedge child is not a persistent segment",
             ));
@@ -221,11 +231,12 @@ pub(crate) fn decode(
                 archive,
             )?)
             .map_err(|error| refused(body.position(), &error))?;
-        body.skip(wrapper.next_offset - start)
-            .ok_or_else(|| malformed(body.position(), "polyedge segment overruns body"))?;
+        body.skip(wrapper.next_offset - start).ok_or_else(|| {
+            FramingError::structural(body.position(), "polyedge segment overruns body")
+        })?;
     }
     if body.remaining() != 0 {
-        return Err(malformed(
+        return Err(FramingError::structural(
             body.position(),
             "polyedge curve has trailing bytes",
         ));

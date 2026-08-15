@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::{DecodeReport, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -23,6 +23,7 @@ use crate::assemble::{
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
+use crate::loss::CatiaLossCode;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct WireTransferCounts {
@@ -918,6 +919,13 @@ pub(crate) fn try_decode_zero_entity(
     } else {
         "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted as independent wire bodies; support-to-oriented-use, oriented-use-to-incidence, physical edge identity, and source body/shell bindings remain unresolved."
     };
+    let topology_loss = if topology_counts.is_some() {
+        CatiaLossCode::TopologyZeroEntityGaugeSubstituted
+    } else if wire_counts.loops == 0 {
+        CatiaLossCode::TopologyZeroEntityNotTransferred
+    } else {
+        CatiaLossCode::TopologyZeroEntityFaceUnresolved
+    };
     Some(FamilyOutput {
         ir,
         report: DecodeReport {
@@ -926,20 +934,7 @@ pub(crate) fn try_decode_zero_entity(
             geometry_transferred: true,
             coverage,
             transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-            losses: vec![LossNote {
-                code: if topology_counts.is_some() {
-                    cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyGaugeSubstituted)
-                } else {
-                    cadmpeg_ir::report::LossKind::shared(LossTaxonomy::TopologyNotTransferred)
-                },
-                severity: if topology_counts.is_some() {
-                    Severity::Warning
-                } else {
-                    Severity::Blocking
-                },
-                message: topology_message.to_string(),
-                provenance: None,
-            }],
+            losses: vec![topology_loss.note(topology_message)],
             notes: container::summarize(scan).notes,
         },
         annotations: annotations.build(),

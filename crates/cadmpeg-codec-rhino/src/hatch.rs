@@ -48,15 +48,8 @@ pub(crate) struct Hatch {
     pub(crate) warnings: Vec<String>,
 }
 
-fn structural(offset: usize, message: impl Into<String>) -> GeometryError {
-    GeometryError::Malformed(FramingError::Structural {
-        offset,
-        message: message.into(),
-    })
-}
-
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
-    structural(offset, format!("hatch allocation refused: {error}"))
+    GeometryError::malformed(offset, format!("hatch allocation refused: {error}"))
 }
 
 fn coordinate3(view: &mut View<'_>, label: &str) -> Result<[f64; 3], GeometryError> {
@@ -65,7 +58,7 @@ fn coordinate3(view: &mut View<'_>, label: &str) -> Result<[f64; 3], GeometryErr
     if values.iter().all(|value| value.is_finite()) {
         Ok(values)
     } else {
-        Err(structural(
+        Err(GeometryError::malformed(
             offset,
             format!("{label} contains a nonfinite value"),
         ))
@@ -85,7 +78,7 @@ fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
         view.req_f64_le()?,
     ];
     if !equation.iter().all(|value| value.is_finite()) {
-        return Err(structural(
+        return Err(GeometryError::malformed(
             equation_offset,
             "plane equation contains a nonfinite value",
         ));
@@ -109,7 +102,7 @@ pub(crate) fn decode(
     let mut body = expand
         .root()
         .child(range.start, range.end)
-        .ok_or_else(|| structural(range.start, "hatch body out of range"))?;
+        .ok_or_else(|| GeometryError::malformed(range.start, "hatch body out of range"))?;
 
     let version_offset = body.position();
     let version = body.req_u8()?;
@@ -124,13 +117,13 @@ pub(crate) fn decode(
     let scale_offset = body.position();
     let pattern_scale = body.req_f64_le()?;
     if !pattern_scale.is_finite() {
-        return Err(structural(
+        return Err(GeometryError::malformed(
             scale_offset,
             "hatch pattern scale is not finite",
         ));
     }
     if pattern_scale <= 0.0 {
-        return Err(structural(
+        return Err(GeometryError::malformed(
             scale_offset,
             "hatch pattern scale is not positive",
         ));
@@ -138,7 +131,7 @@ pub(crate) fn decode(
     let rotation_offset = body.position();
     let pattern_rotation = body.req_f64_le()?;
     if !pattern_rotation.is_finite() {
-        return Err(structural(
+        return Err(GeometryError::malformed(
             rotation_offset,
             "hatch pattern rotation is not finite",
         ));
@@ -154,14 +147,17 @@ pub(crate) fn decode(
         .into());
     };
     if count > MAX_LOOPS {
-        return Err(structural(count_offset, "hatch loop count exceeds cap"));
+        return Err(GeometryError::malformed(
+            count_offset,
+            "hatch loop count exceeds cap",
+        ));
     }
     // A loop contributes at least a five-byte header (`u8` version + `i32`
     // type) before its curve wrapper, so the count is proven against the
     // remaining window at that minimum element size.
-    let loop_bound = body
-        .counted(count as u64, 5)
-        .ok_or_else(|| structural(count_offset, "hatch loop count exceeds remaining window"))?;
+    let loop_bound = body.counted(count as u64, 5).ok_or_else(|| {
+        GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
+    })?;
     let mut loops = match ExactVec::<HatchLoop>::new(loop_bound) {
         Ok(loops) => loops,
         Err(error) => return Err(refused(body.position(), &error)),
@@ -183,7 +179,12 @@ pub(crate) fn decode(
         let kind = match body.req_i32_le()? {
             0 => LoopKind::Outer,
             1 => LoopKind::Inner,
-            _ => return Err(structural(loop_offset + 1, "invalid hatch loop type")),
+            _ => {
+                return Err(GeometryError::malformed(
+                    loop_offset + 1,
+                    "invalid hatch loop type",
+                ))
+            }
         };
         let wrapper_offset = body.position();
         let wrapper = chunk_at(data, wrapper_offset, range.end, archive, false)?;
@@ -195,11 +196,11 @@ pub(crate) fn decode(
             &mut loop_warnings,
         )?;
         body.skip(wrapper.next_offset - wrapper_offset)
-            .ok_or_else(|| structural(body.position(), "hatch loop overruns body"))?;
+            .ok_or_else(|| GeometryError::malformed(body.position(), "hatch loop overruns body"))?;
         let decoded =
             crate::curves::decode_2d(data, class.class_uuid, class.class_data_range, archive)?;
         let DecodedGeometry::Curve { curve } = decoded else {
-            return Err(structural(
+            return Err(GeometryError::malformed(
                 wrapper_offset,
                 "hatch loop object is not a curve",
             ));
@@ -215,14 +216,20 @@ pub(crate) fn decode(
         let offset = body.position();
         let basepoint = [body.req_f64_le()?, body.req_f64_le()?];
         if !basepoint.into_iter().all(f64::is_finite) {
-            return Err(structural(offset, "hatch basepoint is invalid"));
+            return Err(GeometryError::malformed(
+                offset,
+                "hatch basepoint is invalid",
+            ));
         }
         basepoint
     } else {
         [0.0, 0.0]
     };
     if body.remaining() != 0 {
-        return Err(structural(body.position(), "hatch has trailing bytes"));
+        return Err(GeometryError::malformed(
+            body.position(),
+            "hatch has trailing bytes",
+        ));
     }
     let loops = match loops.finish() {
         Ok(loops) => loops,
@@ -258,17 +265,19 @@ pub(crate) fn apply_userdata(
         extra.payload_range.end,
     )?;
     if reader.i32()? != 1 || reader.i32()? < 0 {
-        return Err(structural(
+        return Err(GeometryError::malformed(
             reader.position() - 8,
             "unsupported V5 hatch-extra version",
         ));
     }
     reader.take(16)?;
     let basepoint = [
-        crate::wire::scaled_coordinate(reader.f64()?, scale)
-            .ok_or_else(|| structural(reader.position() - 8, "invalid V5 hatch base point"))?,
-        crate::wire::scaled_coordinate(reader.f64()?, scale)
-            .ok_or_else(|| structural(reader.position() - 8, "invalid V5 hatch base point"))?,
+        crate::wire::scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+            GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
+        })?,
+        crate::wire::scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+            GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
+        })?,
     ];
     hatch.basepoint = basepoint;
     Ok(())

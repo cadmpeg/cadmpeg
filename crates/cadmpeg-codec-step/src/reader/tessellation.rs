@@ -6,11 +6,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryData;
@@ -82,10 +82,7 @@ pub(super) fn decode(
             let message =
                 format!("tessellation item #{item} has {detail}; mesh retained as detached");
             warnings.push(message.clone());
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
-                message,
-            ));
+            losses.push(StepLossCode::TessellationItemBodyUnresolved.note(message));
         }
     }
     for (&id, record) in &exchange.records {
@@ -238,10 +235,7 @@ pub(super) fn decode(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
             );
             warnings.push(message.clone());
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
-                message,
-            ));
+            losses.push(StepLossCode::TessellationItemUndeclared.note(message));
         }
         ir.model.tessellations.push(Tessellation {
             faces: Vec::new(),

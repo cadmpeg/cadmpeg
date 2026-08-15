@@ -10,10 +10,11 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, LimitsAndFits, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
@@ -64,7 +65,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "datum identification",
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                    StepLossCode::MetadataStringInvalid,
                 )
             })
             .unwrap_or_else(|| format!("#{id}"));
@@ -79,7 +80,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "datum name",
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                    StepLossCode::MetadataStringInvalid,
                 )
             }),
             targets([id]),
@@ -124,7 +125,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "datum system name",
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                    StepLossCode::MetadataStringInvalid,
                 )
             }),
             targets(
@@ -160,7 +161,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "dimension name",
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                    StepLossCode::MetadataStringInvalid,
                 )
             });
         if matches!(kind, DimensionKind::Size) {
@@ -178,7 +179,7 @@ pub(super) fn decode(
                             &mut losses,
                             id,
                             "dimension category",
-                            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                            StepLossCode::MetadataStringInvalid,
                         )
                     })
             } else {
@@ -244,7 +245,7 @@ pub(super) fn decode(
                                     &mut losses,
                                     *reference,
                                     "limits-and-fits form variance",
-                                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                                    StepLossCode::MetadataStringInvalid,
                                 )
                             })
                             .unwrap_or_default(),
@@ -257,7 +258,7 @@ pub(super) fn decode(
                                     &mut losses,
                                     *reference,
                                     "limits-and-fits zone variance",
-                                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                                    StepLossCode::MetadataStringInvalid,
                                 )
                             })
                             .unwrap_or_default(),
@@ -270,7 +271,7 @@ pub(super) fn decode(
                                     &mut losses,
                                     *reference,
                                     "limits-and-fits grade",
-                                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                                    StepLossCode::MetadataStringInvalid,
                                 )
                             })
                             .unwrap_or_default(),
@@ -283,7 +284,7 @@ pub(super) fn decode(
                                     &mut losses,
                                     *reference,
                                     "limits-and-fits source",
-                                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                                    StepLossCode::MetadataStringInvalid,
                                 )
                             })
                             .unwrap_or_default(),
@@ -442,7 +443,7 @@ pub(super) fn decode(
                         &mut losses,
                         id,
                         "geometric tolerance name",
-                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                        StepLossCode::MetadataStringInvalid,
                     )
                 }),
             targets(refs.iter().copied().filter(|id| aspects.contains(id))),
@@ -549,7 +550,7 @@ pub(super) fn decode(
                         &mut losses,
                         id,
                         "presentation annotation name",
-                        LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                        StepLossCode::MetadataStringInvalid,
                     )
                 }),
             Vec::new(),
@@ -834,14 +835,9 @@ fn find_annotation_text(
             Some(text)
         }
         count => {
-            losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-                severity: Severity::Warning,
-                message: format!(
+            losses.push(StepLossCode::PresentationAnnotationTextUnordered.note(format!(
                     "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
-                ),
-                provenance: None,
-            });
+                )));
             None
         }
     }
@@ -870,7 +866,7 @@ fn collect_annotation_text(
             losses,
             id,
             "PMI annotation text",
-            LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+            StepLossCode::MetadataStringInvalid,
         ) {
             candidates.insert(id, text);
         }
@@ -1136,29 +1132,19 @@ fn characteristic_values(
         let selected = if named_nominals.len() == 1 {
             named_nominals.first().copied()
         } else if named_nominals.len() > 1 {
-            losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-                severity: Severity::Warning,
-                message: format!(
+            losses.push(StepLossCode::DimensionalNominalAmbiguous.note(format!(
                     "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
                     named_nominals.len()
-                ),
-                provenance: None,
-            });
+                )));
             None
         } else if values.len() == 1 {
             values.first().map(|(_, value)| *value)
         } else {
             if values.len() > 1 {
-                losses.push(LossNote {
-                    code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-                    severity: Severity::Warning,
-                    message: format!(
+                losses.push(StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
                         "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
                         values.len()
-                    ),
-                    provenance: None,
-                });
+                    )));
             }
             None
         };
@@ -1279,7 +1265,7 @@ fn measure_item_name(
                 losses,
                 record.id,
                 "measure item name",
-                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                StepLossCode::MetadataStringInvalid,
             )
         })
         .filter(|name| !name.is_empty())
@@ -1390,14 +1376,9 @@ fn measure_inner(
                     super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
                 })
                     .unwrap_or_else(|| {
-                        measurements.losses.push(LossNote {
-                            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-                            severity: Severity::Error,
-                            message: format!(
+                        measurements.losses.push(StepLossCode::PmiLengthUnitUnresolved.note(format!(
                                 "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
-                            ),
-                            provenance: None,
-                        });
+                            )));
                         measurements.length_scale
                     }),
                 PmiQuantity::Angle => unit
@@ -1405,14 +1386,9 @@ fn measure_inner(
                     super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
                 })
                     .unwrap_or_else(|| {
-                        measurements.losses.push(LossNote {
-                            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-                            severity: Severity::Error,
-                            message: format!(
+                        measurements.losses.push(StepLossCode::PmiAngleUnitUnresolved.note(format!(
                                 "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"
-                            ),
-                            provenance: None,
-                        });
+                            )));
                         measurements.angle_scale
                     }),
                 PmiQuantity::Ratio => 1.0,

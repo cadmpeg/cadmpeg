@@ -242,7 +242,7 @@ pub(crate) fn trailing_pointer_group_candidates(
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(format!(
+    crate::error::malformed(format!(
         "IGES parameters for D{sequence}: {}",
         message.into()
     ))

@@ -10,6 +10,8 @@ Each item has these parts:
 - **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
 - **Note** — a defect in the item or in the specification.
 
+When an item is resolved, delete it in the same change that writes the answer into the specification. Do not keep a Resolved part.
+
 Each item has an identifier. Use the identifier in commit messages and in code comments.
 
 A reference to the specification gives the section number and the start of the paragraph. An example is `asm.md` §6.3 `off_spl_sur`. Do not use line numbers. Line numbers become incorrect when the specification changes. The `scripts/check-doc-anchors.py` command makes sure that each reference finds exactly one paragraph.
@@ -156,9 +158,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `asm.md` §6.2 `cone` states that the major-axis vector gives the base radius. It states that `u_scale` is a parameter scale and is not a radius. `decode_surface` in `brep/geometry.rs` accepts a missing or zero-length major-axis vector. It then uses `u_scale` as the radius and `deterministic_ref_direction(axis)` as the reference direction. It records no loss.
 
-If an offset-derived cone has a `u_scale` that differs from its major-axis radius, the emitted radius is wrong. Its zero-azimuth direction is also invented, so an attached cone pcurve can use the wrong chart. We need a valid-record witness or a rule that requires the record to remain native when the major-axis vector is absent.
+If an offset-derived cone has a `u_scale` that differs from its major-axis radius, the emitted radius is wrong. Its zero-azimuth direction is also invented, so an attached cone pcurve can use the wrong chart.
 
-**Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/geometry.rs:98-118`. Confidence: high for the fallback and its failure path; medium for reachability in a conforming record because the fixed layout requires the vector. The fixed layout and the text shape table are counter-evidence against treating the fallback as a conforming form, but they do not justify emitting substitute geometry when the binary reader reaches it.
+**Need.** We need a valid-record witness or a rule that requires the record to remain native when the major-axis vector is absent.
+
+**Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/geometry.rs:98-118`. The fixed layout and the text shape table are counter-evidence against treating the fallback as a conforming form, but they do not justify emitting substitute geometry when the binary reader reaches it.
 
 ### GC-31. Missing analytic-surface frame members
 
@@ -170,7 +174,7 @@ If a one-vector sphere is accepted, the point set is unchanged but the pole and 
 
 **Need.** A conforming record carries the complete frame. We need a specimen or an authoritative alternate form that identifies the one stored vector, or the decoder must retain the record without synthesizing a frame.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:82-96,155-183`. Confidence: high for the code behavior and parameterization failure; medium for reachability in a conforming record because the fixed layouts require the vectors. Required-vector layouts are counter-evidence against a valid one-vector form, not evidence for the substitutions.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:82-96,155-183`. Required-vector layouts are counter-evidence against a valid one-vector form, not evidence for the substitutions.
 
 ### GC-32. Rolling-ball fallback field selection
 
@@ -182,17 +186,19 @@ If optional side ranges, locations, or other doubles occur after the actual offs
 
 **Need.** A real `rb_blend_spl_sur` specimen with a failed structured branch must identify each field by its grammar and must state whether a failed branch is recoverable. Until then the fallback must not infer members from encounter order and must retain the native payload or report the loss.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_surface.rs:4087-4115` and `crates/cadmpeg-asm/src/nurbs/blend.rs:1505-1577`. Confidence: high for the inference and failure mechanism; medium for the set of inputs that reach it because the complete decoder runs first. The complete decoder and the structured grammar are counter-evidence for conforming records that parse successfully, not for the fallback's behavior after a parse failure.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_surface.rs:4087-4115` and `crates/cadmpeg-asm/src/nurbs/blend.rs:1505-1577`. The complete decoder and the structured grammar are counter-evidence for conforming records that parse successfully, not for the fallback's behavior after a parse failure.
 
 ### GC-33. Cone pcurve chart sign and scale
 
 **Question.** What gives the sign and scale of the axial coordinate of a pcurve on a native `cone` support?
 
-**Conflict.** `asm.md` §6.2 now states that the first cone-chart coordinate is multiplied by `direction * cosine * u_scale`, with `direction` selected by `sine * cosine`. `native_support_chart` and `normalize_pcurve_for_surface_record` in `nurbs/proc_curve.rs` implement that formula. The current rule was written from the implementation change and synthetic token tests; no independent SAT/SAB witness or external rule in the repository separates this formula from the preceding `direction * u_scale` interpretation. The parse-failure branch also substitutes the canonical chart with no loss.
+**Known.** `asm.md` §6.2 states that the first cone-chart coordinate is multiplied by `direction * cosine * u_scale`, with `direction` selected by `sine * cosine`. `native_support_chart` and `normalize_pcurve_for_surface_record` in `nurbs/proc_curve.rs` implement that formula.
+
+**Conflict.** The current rule was written from the implementation change and synthetic token tests; no independent SAT/SAB witness or external rule in the repository separates this formula from the preceding `direction * u_scale` interpretation. The parse-failure branch also substitutes the canonical chart with no loss.
 
 **Need.** A cone pcurve with a negative cosine, an offset-derived `u_scale`, and a known surface position would distinguish the chart direction and scale. Without that evidence, the current text is a promotion of the implementation's choice, not proof that the file format uses it.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:79-164`; the synthetic tests are at `:3111-3145`. Confidence: high that the current implementation and specification agree; high that the agreement is not independently evidenced in this branch. A test that supplies tokens constructed by the same rule is counter-evidence only for arithmetic consistency, not for the native rule.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:79-164`; the synthetic tests are at `:3111-3145`. A test that supplies tokens constructed by the same rule is counter-evidence only for arithmetic consistency, not for the native rule.
 
 ### GC-34. Pcurve interval eligibility tolerance
 
@@ -204,7 +210,7 @@ If an endpoint overshoots by less than the hard-coded tolerance, the decoder sil
 
 **Need.** A source rule or a specimen with endpoint error near the boundary must settle the tolerance, the clamping rule, and whether the full-domain fallback is valid after rejection.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:386-420` and `crates/cadmpeg-asm/src/brep/topology.rs:355-372`. Confidence: high for the code behavior and failure mechanism; medium for the intended tolerance because the specification only gives the domain predicate. The ordered signed candidates and full-domain fallback are documented, but the numeric threshold is not.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:386-420` and `crates/cadmpeg-asm/src/brep/topology.rs:355-372`. The ordered signed candidates and full-domain fallback are documented, but the numeric threshold is not.
 
 ### GC-35. Reversal of an embedded blend support
 
@@ -216,7 +222,7 @@ If the discarded Boolean is the support reversal, every reversed blend support i
 
 **Need.** A paired support/face specimen or an authoritative field description must bind the Boolean to surface reversal or to another native member. The answer determines whether the neutral field must be populated or removed from this path.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:2481-2583,2631-2733`, `crates/cadmpeg-asm/src/nurbs/blend.rs:384-440`, and `crates/cadmpeg-asm/src/brep/emit.rs:2441-2483`. Confidence: high for the discarded/constant behavior; medium for the Boolean's format meaning. The field is structurally consumed, but no current specification paragraph assigns its semantics.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:2481-2583,2631-2733`, `crates/cadmpeg-asm/src/nurbs/blend.rs:384-440`, and `crates/cadmpeg-asm/src/brep/emit.rs:2441-2483`. The field is structurally consumed, but no current specification paragraph assigns its semantics.
 
 ### GC-36. Ownership and width of decoded NURBS cache blocks
 
@@ -228,7 +234,7 @@ If a nested support cache precedes an owning cache, a raw scan can return the su
 
 **Need.** A specimen with multiple valid blocks and the stream header's integer width must establish the owner, scope boundary, ordinal, and whether a second candidate is invalid. Until then every read and patch path must use the owning scope and known width, and must withhold when two blocks remain valid. GC-29 covers the separate writer helper; this item covers the read paths.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/reader.rs:20-26,52-92`, `crates/cadmpeg-asm/src/nurbs/core.rs:146-187,551-630`, `crates/cadmpeg-asm/src/nurbs/pcurve.rs:160-171`, and `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:560-583,2876-2935`. Confidence: high for the selection behavior and missing tie gate; medium for a conforming file that presents competing valid blocks. The format paragraphs in `asm.md` §6.3-§6.6 assert first/final cache roles, and owned-scope helpers exist, but neither is an independent witness for every generic caller.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/reader.rs:20-26,52-92`, `crates/cadmpeg-asm/src/nurbs/core.rs:146-187,551-630`, `crates/cadmpeg-asm/src/nurbs/pcurve.rs:160-171`, and `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:560-583,2876-2935`. The format paragraphs in `asm.md` §6.3-§6.6 assert first/final cache roles, and owned-scope helpers exist, but neither is an independent witness for every generic caller.
 
 ## 2. Topology
 
@@ -242,7 +248,7 @@ If one coedge of a valid pair is dropped because its face carrier is unavailable
 
 **Need.** A source rule or a retained native reference must distinguish a genuinely laminar self-ring from a partner lost during reachability filtering. The decoder must withhold the coedge or report the missing partner until that distinction is known.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/topology.rs:90-103` and `crates/cadmpeg-asm/src/brep/emit.rs:3690-3751`. Confidence: high for the substitution; medium for the intended neutral representation. Self-radial laminar boundaries are valid counter-evidence, but the current code uses the same value for a dropped partner.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/topology.rs:90-103` and `crates/cadmpeg-asm/src/brep/emit.rs:3690-3751`. Self-radial laminar boundaries are valid counter-evidence, but the current code uses the same value for a dropped partner.
 
 ### TG-02. Body-kind inference from edge-use counts
 
@@ -254,7 +260,7 @@ If a closed sheet or a body with a non-manifold internal face has every edge cou
 
 **Need.** A body-kind field, an authoritative topology invariant, or a specimen with a body whose stored metadata separates solid and sheet states must settle the rule. Until then the neutral body kind is an inference from the output graph.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:1099-1168` and `crates/cadmpeg-asm/src/brep/mod.rs:673-681`. Confidence: high for the inference; medium for the native source of body kind because no body-kind rule appears in the current specification. The edge-count rule is valid for ordinary two-manifold solids, but that does not establish it for all bodies.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:1099-1168` and `crates/cadmpeg-asm/src/brep/mod.rs:673-681`. The edge-count rule is valid for ordinary two-manifold solids, but that does not establish it for all bodies.
 
 ### TG-03. Normal sign of an analytic procedural carrier
 
@@ -266,7 +272,7 @@ If the directrix normal is opposite the chosen cylinder axis, the point set is u
 
 **Need.** A specimen with an oriented directrix and an antiparallel extrusion or blend axis must settle whether parallel means oriented parallel, either sign, or a sign plus face-sense rule.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:625-652,732-782` and `crates/cadmpeg-asm/src/brep/emit.rs:3830-3847`. Confidence: high for the absolute-dot selection; medium for the normal failure because the current prose can be read as allowing either parallel sign. Existing tests deliberately use an antiparallel extrusion and therefore prove only that the implementation accepts it.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:625-652,732-782` and `crates/cadmpeg-asm/src/brep/emit.rs:3830-3847`. Existing tests deliberately use an antiparallel extrusion and therefore prove only that the implementation accepts it.
 
 ## 3. Attributes
 
@@ -280,7 +286,7 @@ If a chain contains `truecolor` before `rgb_color`, the first record supplies th
 
 **Need.** A source rule or a specimen with multiple colour classes must establish precedence, channel units, and the treatment of an invalid first candidate.
 
-**Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/attributes.rs:132-193`. Confidence: high for first-match behavior and the failure story; medium for the intended precedence because the current specification only establishes coexistence. Chain order is counter-evidence only if the format explicitly defines it as precedence.
+**Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/attributes.rs:132-193`. Chain order is counter-evidence only if the format explicitly defines it as precedence.
 
 ## 4. Text encoding
 
@@ -310,4 +316,4 @@ If a stream carries zero, a negative value, or `NaN`, every length-bearing text 
 
 **Need.** An authoritative valid-domain rule or a specimen with an invalid header must settle whether the stream is malformed, uses a special unit convention, or requires a different conversion. The reader must not fabricate a scale while this is open.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/sat.rs:274-324,331-341`. Confidence: high for the fallback behavior; medium for whether invalid headers are in the format's accepted domain. The settled unit rule and existing valid positive headers are counter-evidence against treating the fallback as a valid convention.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/sat.rs:274-324,331-341`. The settled unit rule and existing valid positive headers are counter-evidence against treating the fallback as a valid convention.

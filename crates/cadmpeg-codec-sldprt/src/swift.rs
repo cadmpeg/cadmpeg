@@ -1608,14 +1608,7 @@ fn rendered_dimensions(payload: &[u8]) -> Vec<RenderedDimension> {
                 return None;
             }
             let start = length_offset.checked_add(1)?;
-            let end = start.checked_add(units.checked_mul(2)?)?;
-            let slice = payload.get(start..end)?;
-            let mut view = View::over_retained(slice);
-            let mut code_units = Vec::new();
-            while let Some(unit) = view.u16_le() {
-                code_units.push(unit);
-            }
-            let text = String::from_utf16(&code_units).ok()?;
+            let text = View::utf16le_at(payload, start, units)?.0;
             Some(rendered_dimension_literals(&text))
         })
         .flatten()

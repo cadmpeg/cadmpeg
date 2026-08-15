@@ -26,7 +26,9 @@ use cadmpeg_ir::CadIr;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+use crate::export::is_rigid_transform;
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -34,7 +36,7 @@ use crate::{
 
 #[test]
 fn rigid_transform_rejects_reflections() {
-    assert!(!crate::is_rigid_transform(&[
+    assert!(!is_rigid_transform(&[
         [-1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
@@ -167,7 +169,7 @@ fn parallel_axis_reference_direction_is_reported_and_inferred() {
 #7=SHAPE_REPRESENTATION('',(#6),$);",
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::CarrierAxisInferred)
+        loss.code == StepLossCode::PlacementReferenceInferred.kind()
             && loss.message.contains("AXIS2_PLACEMENT_3D #4")
     }));
 }

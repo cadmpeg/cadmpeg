@@ -7,7 +7,7 @@ use std::ops::Range;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
+use crate::chunks::{chunk_at, ArchiveVersion};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
@@ -32,39 +32,33 @@ pub(crate) struct Cage {
     pub(crate) weights: Option<Vec<f64>>,
 }
 
-fn malformed(offset: usize, message: impl Into<String>) -> GeometryError {
-    GeometryError::Malformed(FramingError::Structural {
-        offset,
-        message: message.into(),
-    })
-}
-
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
-    malformed(offset, format!("NURBS cage allocation refused: {error}"))
+    GeometryError::malformed(offset, format!("NURBS cage allocation refused: {error}"))
 }
 
 fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
     let offset = view.position();
     view.req_i32_le()
-        .map_err(|_| malformed(offset, "NURBS cage record truncated"))
+        .map_err(|_| GeometryError::malformed(offset, "NURBS cage record truncated"))
 }
 
 fn req_f64(view: &mut View<'_>) -> Result<f64, GeometryError> {
     let offset = view.position();
     view.req_f64_le()
-        .map_err(|_| malformed(offset, "NURBS cage record truncated"))
+        .map_err(|_| GeometryError::malformed(offset, "NURBS cage record truncated"))
 }
 
 fn positive(view: &mut View<'_>, label: &str) -> Result<usize, GeometryError> {
     let offset = view.position();
     let value = req_i32(view)?;
     if value <= 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             offset,
             format!("NURBS cage {label} is not positive"),
         ));
     }
-    usize::try_from(value).map_err(|_| malformed(offset, format!("NURBS cage {label} overflows")))
+    usize::try_from(value)
+        .map_err(|_| GeometryError::malformed(offset, format!("NURBS cage {label} overflows")))
 }
 
 pub(crate) fn decode(
@@ -75,7 +69,10 @@ pub(crate) fn decode(
 ) -> Result<Cage, GeometryError> {
     let (cage, next) = decode_at(expand, range.start, range.end, scale, archive)?;
     if next != range.end {
-        return Err(malformed(range.start, "invalid NURBS cage framing"));
+        return Err(GeometryError::malformed(
+            range.start,
+            "invalid NURBS cage framing",
+        ));
     }
     Ok(cage)
 }
@@ -90,13 +87,18 @@ pub(crate) fn decode_at(
     let data = expand.data();
     let chunk = chunk_at(data, offset, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(malformed(offset, "invalid NURBS cage framing"));
+        return Err(GeometryError::malformed(
+            offset,
+            "invalid NURBS cage framing",
+        ));
     }
 
     let mut body = expand
         .root()
         .child(chunk.body.start, chunk.body.end)
-        .ok_or_else(|| malformed(chunk.body.start, "NURBS cage body out of range"))?;
+        .ok_or_else(|| {
+            GeometryError::malformed(chunk.body.start, "NURBS cage body out of range")
+        })?;
 
     let major = req_i32(&mut body)?;
     let minor = req_i32(&mut body)?;
@@ -108,7 +110,7 @@ pub(crate) fn decode_at(
     }
     let dimension = positive(&mut body, "dimension")?;
     if dimension > MAX_DIMENSION {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             body.position() - 4,
             "NURBS cage dimension exceeds cap",
         ));
@@ -117,7 +119,7 @@ pub(crate) fn decode_at(
         0 => false,
         1 => true,
         _ => {
-            return Err(malformed(
+            return Err(GeometryError::malformed(
                 body.position() - 4,
                 "invalid NURBS cage rational flag",
             ))
@@ -136,7 +138,7 @@ pub(crate) fn decode_at(
     let orders_offset = body.position() - 24;
     for axis in 0..3 {
         if orders[axis] < 2 || counts[axis] < orders[axis] {
-            return Err(malformed(
+            return Err(GeometryError::malformed(
                 orders_offset + axis * 4,
                 "invalid NURBS cage order and count",
             ));
@@ -146,24 +148,31 @@ pub(crate) fn decode_at(
         .into_iter()
         .try_fold(1_usize, usize::checked_mul)
         .filter(|count| *count <= MAX_CONTROL_POINTS)
-        .ok_or_else(|| malformed(body.position(), "NURBS cage control count exceeds cap"))?;
+        .ok_or_else(|| {
+            GeometryError::malformed(body.position(), "NURBS cage control count exceeds cap")
+        })?;
 
     let mut knots: [Vec<f64>; 3] = std::array::from_fn(|_| Vec::new());
     for axis in 0..3 {
         let knot_count = orders[axis]
             .checked_add(counts[axis])
             .and_then(|value| value.checked_sub(2))
-            .ok_or_else(|| malformed(body.position(), "NURBS cage knot count overflows"))?;
-        let bound = body
-            .counted(knot_count as u64, 8)
-            .ok_or_else(|| malformed(body.position(), "NURBS cage knot vector truncated"))?;
+            .ok_or_else(|| {
+                GeometryError::malformed(body.position(), "NURBS cage knot count overflows")
+            })?;
+        let bound = body.counted(knot_count as u64, 8).ok_or_else(|| {
+            GeometryError::malformed(body.position(), "NURBS cage knot vector truncated")
+        })?;
         let mut reserved =
             ExactVec::<f64>::new(bound).map_err(|error| refused(body.position(), &error))?;
         let mut previous: Option<f64> = None;
         for _ in 0..knot_count {
             let knot = req_f64(&mut body)?;
             if !knot.is_finite() || previous.is_some_and(|last| knot < last) {
-                return Err(malformed(body.position() - 8, "invalid NURBS cage knot"));
+                return Err(GeometryError::malformed(
+                    body.position() - 8,
+                    "invalid NURBS cage knot",
+                ));
             }
             previous = Some(knot);
             reserved
@@ -179,32 +188,36 @@ pub(crate) fn decode_at(
     let _total_scalars = control_count
         .checked_mul(stored_dimension)
         .filter(|count| *count <= MAX_SCALARS && *count <= body.remaining() / 8)
-        .ok_or_else(|| malformed(body.position(), "NURBS cage control data exceeds bound"))?;
+        .ok_or_else(|| {
+            GeometryError::malformed(body.position(), "NURBS cage control data exceeds bound")
+        })?;
 
     let control_bound = body
         .counted(control_count as u64, stored_dimension * 8)
-        .ok_or_else(|| malformed(body.position(), "NURBS cage control net truncated"))?;
+        .ok_or_else(|| {
+            GeometryError::malformed(body.position(), "NURBS cage control net truncated")
+        })?;
     let mut control_points = ExactVec::<Vec<f64>>::new(control_bound)
         .map_err(|error| refused(body.position(), &error))?;
     let mut weights = if rational {
         let mut weights = Vec::new();
-        weights
-            .try_reserve_exact(control_count)
-            .map_err(|_| malformed(body.position(), "NURBS cage weight allocation failed"))?;
+        weights.try_reserve_exact(control_count).map_err(|_| {
+            GeometryError::malformed(body.position(), "NURBS cage weight allocation failed")
+        })?;
         Some(weights)
     } else {
         None
     };
     for _ in 0..control_count {
-        let tuple_bound = body
-            .counted(stored_dimension as u64, 8)
-            .ok_or_else(|| malformed(body.position(), "NURBS cage coordinate tuple truncated"))?;
+        let tuple_bound = body.counted(stored_dimension as u64, 8).ok_or_else(|| {
+            GeometryError::malformed(body.position(), "NURBS cage coordinate tuple truncated")
+        })?;
         let mut stored =
             ExactVec::<f64>::new(tuple_bound).map_err(|error| refused(body.position(), &error))?;
         for _ in 0..stored_dimension {
             let value = req_f64(&mut body)?;
             if !value.is_finite() {
-                return Err(malformed(
+                return Err(GeometryError::malformed(
                     body.position() - 8,
                     "nonfinite NURBS cage control value",
                 ));
@@ -219,7 +232,10 @@ pub(crate) fn decode_at(
         let weight = if rational {
             let weight = stored.pop().expect("rational cage has a weight");
             if weight == 0.0 {
-                return Err(malformed(body.position() - 8, "zero NURBS cage weight"));
+                return Err(GeometryError::malformed(
+                    body.position() - 8,
+                    "zero NURBS cage weight",
+                ));
             }
             weights
                 .as_mut()
@@ -233,7 +249,10 @@ pub(crate) fn decode_at(
             .into_iter()
             .map(|coordinate| {
                 scaled_coordinate(coordinate / weight, scale).ok_or_else(|| {
-                    malformed(body.position(), "scaled NURBS cage coordinate is invalid")
+                    GeometryError::malformed(
+                        body.position(),
+                        "scaled NURBS cage coordinate is invalid",
+                    )
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -242,7 +261,10 @@ pub(crate) fn decode_at(
             .map_err(|error| refused(body.position(), &error))?;
     }
     if body.remaining() != 0 {
-        return Err(malformed(body.position(), "NURBS cage has trailing bytes"));
+        return Err(GeometryError::malformed(
+            body.position(),
+            "NURBS cage has trailing bytes",
+        ));
     }
     let control_points = control_points
         .finish()

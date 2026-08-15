@@ -780,12 +780,8 @@ pub fn project_spatial_sketch_constraints(
                         ),
                         _ => unreachable!(),
                     };
-                    let line = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
-                    let cross = Vector3::new(
-                        line.y * direction.z - line.z * direction.y,
-                        line.z * direction.x - line.x * direction.z,
-                        line.x * direction.y - line.y * direction.x,
-                    );
+                    let line = end.vector_from(start);
+                    let cross = line.cross(direction);
                     if line.norm() <= 1.0e-12 || cross.norm() > 1.0e-9 * line.norm() {
                         return None;
                     }

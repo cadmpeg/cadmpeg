@@ -4,10 +4,9 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeResult};
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::report::LossKind;
-use cadmpeg_ir::LossTaxonomy;
 use std::io::Cursor;
 
+use crate::loss::SatLossCode;
 use crate::test_support::{binary_sphere_stream, text_sphere_stream, BinaryFixtureKind};
 use crate::{SatCodec, FORMAT};
 
@@ -103,7 +102,7 @@ fn a_geometry_less_text_stream_reports_uncovered_coverage() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == LossKind::shared(LossTaxonomy::GeometryNotTransferred))
+        .find(|loss| loss.code == SatLossCode::GeometryFramedWithoutCarriers.kind())
         .expect("coverage loss");
     assert!(loss.message.contains("End-of-ACIS-data"));
 }

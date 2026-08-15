@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -212,10 +213,7 @@ fn occurrence_transform_direction_follows_relationship_endpoints() {
         .expect("placed child occurrence");
     assert_eq!(child.transform.rows[0][3], -25.0);
     assert!(!result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred,
-            )
+        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
             && loss.message.contains("NAUO #12")
     }));
 }
@@ -247,12 +245,11 @@ fn occurrence_transform_resolves_through_placed_shape_representation() {
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("placed child occurrence");
     assert_eq!(child.transform.rows[0][3], 25.0);
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred,
-            )
-    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
 }
 
 #[test]
@@ -283,10 +280,11 @@ fn occurrence_transform_accepts_cartesian_operator_endpoints() {
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("placed child occurrence");
     assert_eq!(child.transform.rows[0][3], 25.0);
-    assert!(!result.report().losses.iter().any(|loss| loss.code
-        == cadmpeg_ir::LossKind::shared(
-            cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred
-        )));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
 }
 
 #[test]
@@ -305,10 +303,7 @@ fn unresolved_occurrence_transform_is_reported_as_error() {
     );
 
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred,
-            )
+        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("NAUO #10")
     }));
@@ -395,10 +390,7 @@ fn conflicting_standalone_mapped_body_placements_are_not_overwritten() {
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!(result.ir().model.bodies[0].transform.is_none());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred,
-            )
+        loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss
                 .message
@@ -494,10 +486,11 @@ fn decode_builds_mapped_item_placement_from_canonical_cartesian_operator() {
     assert_eq!(child.transform.rows[0], [2.0, 0.0, 0.0, 20.0]);
     assert_eq!(child.transform.rows[1], [0.0, 2.0, 0.0, 5.0]);
     assert_eq!(child.transform.rows[2], [0.0, 0.0, 2.0, 0.0]);
-    assert!(!result.report().losses.iter().any(|loss| loss.code
-        == cadmpeg_ir::LossKind::shared(
-            cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred
-        )));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -524,10 +517,11 @@ fn decode_builds_repeated_occurrence_placements_from_their_shape_representations
     assert_eq!(children[1].name.as_deref(), Some("Second child"));
     assert_eq!(children[1].transform.rows[0][3], -10.0);
     assert_eq!(children[1].transform.rows[1][3], 4.0);
-    assert!(!result.report().losses.iter().any(|loss| loss.code
-        == cadmpeg_ir::LossKind::shared(
-            cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred
-        )));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -586,12 +580,11 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
     assert_eq!(children[0].transform.rows[0][3], 25.0);
     assert_eq!(children[1].transform.rows[0][3], -10.0);
     assert_eq!(children[1].transform.rows[1][3], 4.0);
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred,
-            )
-    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -640,10 +633,7 @@ fn unrelated_representation_mapping_does_not_place_an_occurrence() {
         cadmpeg_ir::transform::Transform::identity()
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred,
-            )
+        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("NAUO #16")
     }));
@@ -698,10 +688,7 @@ fn repeated_child_uses_without_owned_placements_remain_unresolved() {
         .all(|occurrence| occurrence.transform == cadmpeg_ir::transform::Transform::identity()));
     for usage_id in [16, 17] {
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(
-                    cadmpeg_ir::LossTaxonomy::AssemblyPlacementsNotTransferred,
-                )
+            loss.code == StepLossCode::NauoPlacementUnresolved.kind()
                 && loss.severity == cadmpeg_ir::Severity::Error
                 && loss.message.contains(&format!("NAUO #{usage_id}"))
         }));

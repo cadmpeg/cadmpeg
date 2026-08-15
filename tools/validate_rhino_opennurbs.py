@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and run the independent openNURBS Rhino transfer witness."""
+"""Build and run the independent openNURBS Rhino comparison."""
 
 from __future__ import annotations
 
@@ -22,15 +22,15 @@ def main() -> None:
     root = args.opennurbs.resolve()
     repo = Path(__file__).resolve().parents[1]
     run(["make", "-s", f"-j{args.jobs}", "example_read/example_read"], root)
-    with tempfile.TemporaryDirectory(prefix="cadmpeg-rhino-witness-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="cadmpeg-rhino-comparison-") as temporary:
         generated = Path(temporary)
-        generator = generated / "rhino-witness"
+        generator = generated / "rhino-comparison"
         run(
             [
                 "c++",
                 "-std=c++14",
                 f"-I{root}",
-                str(repo / "tools/rhino_opennurbs_witness.cpp"),
+                str(repo / "tools/rhino_opennurbs_comparison.cpp"),
                 f"-L{root}",
                 "-lopennurbs_public",
                 "-lm",

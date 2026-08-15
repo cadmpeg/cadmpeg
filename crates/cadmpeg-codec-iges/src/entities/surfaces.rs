@@ -7,8 +7,9 @@ use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface,
-    ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface, SurfaceGeometry,
+    derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
+    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -17,6 +18,11 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SURFACE_POLES: usize = 1_000_000;
+
+fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let length = vector.norm();
+    (length.is_finite() && length > 0.0).then(|| vector.scale(1.0 / length))
+}
 
 fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
     let column = |index| {
@@ -27,37 +33,23 @@ fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
         )
     };
     let [x, y, z] = [column(0), column(1), column(2)];
-    let squared_scale = dot(x, x);
+    let squared_scale = x.dot(x);
     if !squared_scale.is_finite() || squared_scale <= 0.0 {
         return None;
     }
     let tolerance = squared_scale * 1.0e-10;
-    if (dot(y, y) - squared_scale).abs() > tolerance
-        || (dot(z, z) - squared_scale).abs() > tolerance
-        || dot(x, y).abs() > tolerance
-        || dot(x, z).abs() > tolerance
-        || dot(y, z).abs() > tolerance
+    if (y.dot(y) - squared_scale).abs() > tolerance
+        || (z.dot(z) - squared_scale).abs() > tolerance
+        || x.dot(y).abs() > tolerance
+        || x.dot(z).abs() > tolerance
+        || y.dot(z).abs() > tolerance
     {
         return None;
     }
-    let determinant = dot(x, cross(y, z));
+    let determinant = x.dot(y.cross(z));
     let determinant_tolerance = squared_scale.sqrt() * squared_scale * 1.0e-10;
     (determinant.is_finite() && determinant.abs() > determinant_tolerance)
         .then(|| determinant.signum())
-}
-
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
-fn normalized(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0)
-        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
 }
 
 fn bounded_nurbs(
@@ -75,33 +67,13 @@ fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
     Some(knots.iter().rev().map(|knot| first + last - knot).collect())
 }
 
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn subtract(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn scale(vector: Vector3, factor: f64) -> Vector3 {
-    Vector3::new(vector.x * factor, vector.y * factor, vector.z * factor)
-}
-
-fn add_point_vector(point: Point3, vector: Vector3) -> Point3 {
-    Point3::new(point.x + vector.x, point.y + vector.y, point.z + vector.z)
-}
-
 fn rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     let cosine = angle.cos();
     let sine = angle.sin();
-    let parallel = scale(axis, dot(axis, vector));
-    let perpendicular = subtract(vector, parallel);
-    let tangent = cross(axis, perpendicular);
-    Vector3::new(
-        parallel.x + cosine * perpendicular.x + sine * tangent.x,
-        parallel.y + cosine * perpendicular.y + sine * tangent.y,
-        parallel.z + cosine * perpendicular.z + sine * tangent.z,
-    )
+    let parallel = axis.scale(axis.dot(vector));
+    let perpendicular = vector - parallel;
+    let tangent = axis.cross(perpendicular);
+    parallel + perpendicular.scale(cosine) + tangent.scale(sine)
 }
 
 struct AngularBasis {
@@ -145,7 +117,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             normal,
             u_axis,
         } => Some(SurfaceGeometry::Plane {
-            origin: add_point_vector(*origin, scale(*normal, distance)),
+            origin: origin.translated(*normal, distance),
             normal: *normal,
             u_axis: *u_axis,
         }),
@@ -192,7 +164,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             ratio,
             half_angle,
         } if *ratio == 1.0 => Some(SurfaceGeometry::Cone {
-            origin: add_point_vector(*origin, scale(*axis, -distance * half_angle.sin())),
+            origin: origin.translated(*axis, -distance * half_angle.sin()),
             axis: *axis,
             ref_direction: *ref_direction,
             radius: radius + distance * half_angle.cos(),
@@ -227,7 +199,7 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
         parameters[0],
         parameters[1],
     )?;
-    normalized(cross(partials.du, partials.dv))
+    unit_vector(partials.du.cross(partials.dv))
 }
 
 fn indicator_orientation(
@@ -252,7 +224,7 @@ fn indicator_orientation(
     };
     if contains(normal) {
         Some(1.0)
-    } else if contains(scale(normal, -1.0)) {
+    } else if contains(normal.scale(-1.0)) {
         Some(-1.0)
     } else {
         None
@@ -334,12 +306,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "plane normal is degenerate"));
             continue;
         }
-        let Some(local_normal_unit) = normalized(local_normal) else {
+        let Some(local_normal_unit) = unit_vector(local_normal) else {
             losses.push(entity_loss(entry, "plane normal cannot be normalized"));
             continue;
         };
         let local_u = derive_reference_direction(local_normal_unit);
-        let local_v = cross(local_normal_unit, local_u);
+        let local_v = local_normal_unit.cross(local_u);
         let local_origin = Point3::new(
             a * d / normal_squared * factor,
             b * d / normal_squared * factor,
@@ -360,21 +332,21 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(u_axis) = normalized(transform.vector(local_u)) else {
+        let Some(u_axis) = unit_vector(transform.vector(local_u)) else {
             losses.push(entity_loss(
                 entry,
                 "plane placement collapses its u direction",
             ));
             continue;
         };
-        let Some(v_axis) = normalized(transform.vector(local_v)) else {
+        let Some(v_axis) = unit_vector(transform.vector(local_v)) else {
             losses.push(entity_loss(
                 entry,
                 "plane placement collapses its v direction",
             ));
             continue;
         };
-        let Some(normal) = normalized(cross(u_axis, v_axis)) else {
+        let Some(normal) = unit_vector(u_axis.cross(v_axis)) else {
             losses.push(entity_loss(entry, "plane placement collapses its normal"));
             continue;
         };
@@ -570,7 +542,7 @@ pub(super) fn project(
             continue;
         };
         let target = Point3::new(x * factor, y * factor, z * factor);
-        let direction = Vector3::new(target.x - start.x, target.y - start.y, target.z - start.z);
+        let direction = target.vector_from(start);
         if !direction.norm().is_finite() || direction.norm() <= 0.0 {
             losses.push(entity_loss(entry, "generatrix is zero or non-finite"));
             continue;
@@ -578,16 +550,7 @@ pub(super) fn project(
         let control_points = directrix
             .control_points
             .iter()
-            .flat_map(|point| {
-                [
-                    *point,
-                    Point3::new(
-                        point.x + direction.x,
-                        point.y + direction.y,
-                        point.z + direction.z,
-                    ),
-                ]
-            })
+            .flat_map(|point| [*point, point.translated(direction, 1.0)])
             .collect::<Vec<_>>();
         let Ok(u_count) = u32::try_from(directrix.control_points.len()) else {
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
@@ -739,20 +702,9 @@ pub(super) fn project(
         let mut control_points = Vec::with_capacity(surface_pole_count);
         let mut weights = Vec::with_capacity(control_points.capacity());
         for (u_index, point) in generatrix.control_points.iter().enumerate() {
-            let delta = Vector3::new(
-                point.x - axis_origin.x,
-                point.y - axis_origin.y,
-                point.z - axis_origin.z,
-            );
-            let axis_point = add_point_vector(
-                axis_origin,
-                scale(axis_direction, dot(delta, axis_direction)),
-            );
-            let radial = Vector3::new(
-                point.x - axis_point.x,
-                point.y - axis_point.y,
-                point.z - axis_point.z,
-            );
+            let delta = point.vector_from(axis_origin);
+            let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
+            let radial = point.vector_from(axis_point);
             let u_weight = generatrix
                 .weights
                 .as_ref()
@@ -761,8 +713,8 @@ pub(super) fn project(
                 .unwrap_or(1.0);
             for (angle, angular_weight) in &angular_controls {
                 let rotated = rotate(radial, axis_direction, *angle);
-                let radial_control = scale(rotated, 1.0 / angular_weight);
-                control_points.push(transform.point(add_point_vector(axis_point, radial_control)));
+                let radial_control = rotated.scale(1.0 / angular_weight);
+                control_points.push(transform.point(axis_point.translated(radial_control, 1.0)));
                 weights.push(u_weight * angular_weight);
             }
         }
@@ -808,14 +760,14 @@ pub(super) fn project(
                 source_object: Some(source_object(entry)),
             });
             procedural_axis_origin = transform.point(axis_origin);
-            let Some(direction) = normalized(transform.vector(axis_direction)) else {
+            let Some(direction) = unit_vector(transform.vector(axis_direction)) else {
                 losses.push(entity_loss(
                     entry,
                     "placement collapses the revolution axis",
                 ));
                 continue;
             };
-            procedural_axis_direction = scale(direction, orientation);
+            procedural_axis_direction = direction.scale(orientation);
             true
         } else {
             false
@@ -970,9 +922,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        if u_knots.windows(2).any(|pair| pair[0] > pair[1])
-            || v_knots.windows(2).any(|pair| pair[0] > pair[1])
-        {
+        if !knots_nondecreasing(&u_knots) || !knots_nondecreasing(&v_knots) {
             losses.push(entity_loss(entry, "surface knot vector is decreasing"));
             continue;
         }
@@ -1141,7 +1091,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
             continue;
         }
-        let indicator = normalized(indicator).expect("validated nonzero finite offset indicator");
+        let indicator = unit_vector(indicator).expect("validated nonzero finite offset indicator");
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)

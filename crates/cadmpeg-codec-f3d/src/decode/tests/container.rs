@@ -17,11 +17,12 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossKind;
 use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
+use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -34,7 +35,7 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    let message = |code: LossCode| {
+    let message = |code: LossKind| {
         let loss = decoded
             .report()
             .losses
@@ -44,7 +45,7 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
         loss.message.clone()
     };
 
-    let geometry = message(LossCode::shared(LossTaxonomy::GeometryNotTransferred));
+    let geometry = message(F3dLossCode::GeometryNotTransferred.kind());
     assert!(
         geometry.contains("declares no ASM BREP stream"),
         "geometry loss must state the absent stream: {geometry}"
@@ -54,14 +55,14 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
         "no stream was selected, so none can have failed to decode: {geometry}"
     );
 
-    let topology = message(LossCode::shared(LossTaxonomy::TopologyNotTransferred));
+    let topology = message(F3dLossCode::TopologyNotTransferred.kind());
     assert!(
         topology.contains("declares no ASM BREP stream"),
         "topology loss must state the absent stream: {topology}"
     );
 
     assert_eq!(
-        message(LossCode::shared(LossTaxonomy::MissingGeometryStream)),
+        message(F3dLossCode::MissingGeometryStream.kind()),
         "no ASM BREP stream (.smb/.smbh) was found in the container"
     );
 
@@ -91,7 +92,7 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    let message = |code: LossCode| {
+    let message = |code: LossKind| {
         let loss = decoded
             .report()
             .losses
@@ -101,7 +102,7 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
         loss.message.clone()
     };
 
-    let geometry = message(LossCode::shared(LossTaxonomy::GeometryNotTransferred));
+    let geometry = message(F3dLossCode::GeometryNotTransferred.kind());
     assert!(
         geometry.contains("text-encoded ASM stream(s)") && geometry.contains("BREP0.sat"),
         "geometry loss must name the empty text carrier: {geometry}"
@@ -111,14 +112,14 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
         "a text carrier is a declared carrier: {geometry}"
     );
 
-    let topology = message(LossCode::shared(LossTaxonomy::TopologyNotTransferred));
+    let topology = message(F3dLossCode::TopologyNotTransferred.kind());
     assert!(
         topology.contains("text-encoded"),
         "topology loss must name the encoding: {topology}"
     );
 
     assert_eq!(
-        message(LossCode::shared(LossTaxonomy::MissingGeometryStream)),
+        message(F3dLossCode::MissingGeometryStream.kind()),
         "2 ASM BREP stream(s) are present in the text encoding (.sat/.smt) and produced no \
          geometry; no binary stream (.smb/.smbh) was found"
     );
@@ -187,7 +188,7 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
             },
         )
         .unwrap();
-    let message = |code: LossCode| {
+    let message = |code: LossKind| {
         let loss = decoded
             .report()
             .losses
@@ -198,11 +199,11 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
     };
 
     assert_eq!(
-        message(LossCode::shared(LossTaxonomy::MissingGeometryStream)),
+        message(F3dLossCode::MissingGeometryStream.kind()),
         "2 ASM BREP stream(s) are present, but none of them was selected as the document's \
          geometry stream"
     );
-    let geometry = message(LossCode::shared(LossTaxonomy::GeometryNotTransferred));
+    let geometry = message(F3dLossCode::GeometryNotTransferred.kind());
     assert!(
         geometry.contains("2 BREP stream(s) were located") && geometry.contains("ambiguous"),
         "geometry loss must state the ambiguous selection: {geometry}"

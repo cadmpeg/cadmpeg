@@ -4939,7 +4939,7 @@ fn block_placement(
             continue;
         };
         let normal = canonical_normal(*normal, angular_tolerance)?;
-        let offset = normal.x * origin.x + normal.y * origin.y + normal.z * origin.z;
+        let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
         let existing = bands
             .iter_mut()
             .find(|band| (1.0 - dot_vector(band.normal, normal)).abs() <= angular_tolerance);
@@ -6123,7 +6123,7 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
         if leading < 0.0 {
             axis = Vector3::new(-axis.x, -axis.y, -axis.z);
         }
-        let axial_offset = origin.x * axis.x + origin.y * axis.y + origin.z * axis.z;
+        let axial_offset = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
         let origin = Point3::new(
             origin.x - axial_offset * axis.x,
             origin.y - axial_offset * axis.y,
@@ -6868,7 +6868,7 @@ fn simple_hole_chamfers(
                 .iter()
                 .enumerate()
                 .filter_map(|(ordinal, (bore_origin, bore_axis, _))| {
-                    let dot = axis.x * bore_axis.x + axis.y * bore_axis.y + axis.z * bore_axis.z;
+                    let dot = axis.dot(*bore_axis);
                     if (1.0 - dot.abs()) > angular_tolerance {
                         return None;
                     }
@@ -6877,11 +6877,7 @@ fn simple_hole_chamfers(
                         origin.y - bore_origin.y,
                         origin.z - bore_origin.z,
                     );
-                    let cross = Vector3::new(
-                        delta.y * bore_axis.z - delta.z * bore_axis.y,
-                        delta.z * bore_axis.x - delta.x * bore_axis.z,
-                        delta.x * bore_axis.y - delta.y * bore_axis.x,
-                    );
+                    let cross = delta.cross(*bore_axis);
                     (cross.norm() <= linear_tolerance).then_some(ordinal)
                 })
                 .collect::<Vec<_>>();

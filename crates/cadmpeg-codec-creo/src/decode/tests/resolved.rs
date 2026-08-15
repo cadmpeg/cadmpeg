@@ -16,6 +16,7 @@ use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
+use crate::loss::CreoLossCode;
 use crate::surface::TorusRadius2Encoding;
 use crate::test_support::*;
 use crate::CreoCodec;
@@ -158,10 +159,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
         0
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::report::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::GeometryNotTransferred,
-            )
+        loss.code == CreoLossCode::SectionSegmentGeometryUnresolved.kind()
             && loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
@@ -207,10 +205,7 @@ fn decode_reports_missing_declared_section_segment_rows() {
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::report::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
-            )
+        loss.code == CreoLossCode::SectionSegmentMissing.kind()
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
@@ -303,10 +298,7 @@ fn decode_reports_missing_declared_solver_variable_rows() {
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code
-            == cadmpeg_ir::report::LossKind::shared(
-                cadmpeg_ir::LossTaxonomy::FeatureHistoryRetained,
-            )
+        loss.code == CreoLossCode::SectionSolverVariableMissing.kind()
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(

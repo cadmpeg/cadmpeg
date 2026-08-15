@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Feature-gated entry points for focused parser fuzzing.
+//! `()`-returning wrappers over internal parsers for the `cadmpeg-fuzz` targets.
+//!
+//! Each wrapper feeds arbitrary bytes to one internal parser and discards the
+//! result. The contract is that no input may panic.
+#![doc(hidden)]
 
 /// Exercise outer-container scanning.
 pub fn container(data: &[u8]) {

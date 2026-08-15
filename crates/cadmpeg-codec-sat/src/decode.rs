@@ -12,11 +12,12 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::{Tolerances, Units};
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
+use crate::loss::SatLossCode;
 use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
@@ -167,26 +168,16 @@ fn build_result(
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{dialect}`.")
         });
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Blocking,
-            message: format!(
-                "the stream framed but its records decoded no surfaces, points, or faces; its \
-                 version or branch is outside the ASM decoders' coverage.{branch}"
-            ),
-            provenance: None,
-        });
+        losses.push(SatLossCode::GeometryFramedWithoutCarriers.note(format!(
+            "the stream framed but its records decoded no surfaces, points, or faces; its \
+             version or branch is outside the ASM decoders' coverage.{branch}"
+        )));
     }
     if stats.unknown_surface_faces > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{} face(s) rest on procedural surface constructions without a decoded carrier",
-                stats.unknown_surface_faces
-            ),
-            provenance: None,
-        });
+        losses.push(SatLossCode::GeometryProceduralSurfaceUntyped.note(format!(
+            "{} face(s) rest on procedural surface constructions without a decoded carrier",
+            stats.unknown_surface_faces
+        )));
     }
     let mut coverage = BTreeMap::new();
     coverage.insert("unknown_records".to_string(), unknowns.len());
@@ -226,12 +217,7 @@ fn unsupported_result(message: &str, attributes: BTreeMap<String, String>) -> De
         geometry_transferred: false,
         coverage: BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-        losses: vec![LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Blocking,
-            message: message.to_string(),
-            provenance: None,
-        }],
+        losses: vec![SatLossCode::ContainerAcisSaveFormatUnsupported.note(message)],
         notes: Vec::new(),
     };
     DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default())

@@ -10,8 +10,7 @@ pub const LEN_TO_MM: f64 = 10.0;
 
 pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0)
-        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
+    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
 }
 
 pub(crate) const NUBS_MARKER: &[u8] = b"\x0d\x04nubs";
@@ -242,13 +241,7 @@ pub(crate) fn take_bool(bytes: &[u8], position: &mut usize) -> Option<bool> {
 }
 
 pub(crate) fn normalized(value: [f64; 3]) -> Option<Vector3> {
-    let length = value
-        .iter()
-        .map(|component| component * component)
-        .sum::<f64>()
-        .sqrt();
-    (length.is_finite() && length > 0.0)
-        .then(|| Vector3::new(value[0] / length, value[1] / length, value[2] / length))
+    unit_vector(Vector3::from(value))
 }
 
 pub(crate) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<String> {

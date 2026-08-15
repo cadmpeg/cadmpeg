@@ -16,6 +16,8 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
+use crate::error::malformed;
+
 /// Container magic.
 const MAGIC: [u8; 12] = [
     0x89, 0x55, 0x44, 0x50, 0x4D, 0x45, 0x53, 0x48, 0x0D, 0x0A, 0x1A, 0x0A,
@@ -503,10 +505,6 @@ fn element_bytes(element_code: u64) -> Option<u32> {
         ELEMENT_TRIANGLE_DELTA => Some(4),
         _ => None,
     }
-}
-
-fn malformed(message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(message.into())
 }
 
 /// Whether a registry field-12 value is a lowercase RFC 4122 version-4 UUID.

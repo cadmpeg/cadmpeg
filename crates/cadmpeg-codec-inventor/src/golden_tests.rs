@@ -1,21 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Golden inspect and decode snapshots over a field-built CFB declaration.
+//! Golden inspect and decode snapshots over field-built CFB declarations.
 //!
-//! The input is constructed from explicit CFB fields by [`crate::test_support::fixture`].
-//! Snapshot regeneration never writes input bytes.
+//! Inputs are constructed in code by [`crate::test_support::fixture`] and
+//! [`crate::test_support::primary_envelope_fixture`]. Shared harness:
+//! [`cadmpeg_test_support::golden`]. `UPDATE_GOLDEN=1` rewrites goldens only.
 
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_test_support::golden::snapshot_text;
+use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use crate::InventorCodec;
 
-const INSPECT: &str = include_str!("../tests/golden/inspect/structural.json");
-const DECODE: &str = include_str!("../tests/golden/decode/structural.json");
-const PRIMARY_INSPECT: &str = include_str!("../tests/golden/inspect/primary.json");
-const PRIMARY_DECODE: &str = include_str!("../tests/golden/decode/primary.json");
+const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-inventor golden";
+
+fn harness() -> Harness {
+    Harness::new(env!("CARGO_MANIFEST_DIR"), "ipt", REGENERATE)
+}
+
+fn branches() -> [Branch; 2] {
+    [
+        Branch::new("inspect", inspect_snapshot),
+        Branch::new("decode", decode_snapshot),
+    ]
+}
+
+fn inputs() -> Vec<(String, Vec<u8>)> {
+    vec![
+        ("structural".to_string(), crate::test_support::fixture(true)),
+        (
+            "primary".to_string(),
+            crate::test_support::primary_envelope_fixture(),
+        ),
+    ]
+}
 
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match InventorCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
@@ -39,47 +58,20 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_snapshots_hold() {
-    let bytes = crate::test_support::fixture(true);
-    let inspect = inspect_snapshot(&bytes);
-    let decode = decode_snapshot(&bytes);
-    if std::env::var_os("UPDATE_GOLDEN").is_some() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
-        std::fs::write(root.join("inspect/structural.json"), &inspect)
-            .expect("write inspect golden");
-        std::fs::write(root.join("decode/structural.json"), &decode).expect("write decode golden");
-        return;
-    }
-    assert_eq!(INSPECT, inspect);
-    assert_eq!(DECODE, decode);
+    harness().check_inputs(&inputs(), &branches());
 }
 
 #[test]
 fn golden_output_is_deterministic() {
-    let bytes = crate::test_support::fixture(true);
-    assert_eq!(inspect_snapshot(&bytes), inspect_snapshot(&bytes));
-    assert_eq!(decode_snapshot(&bytes), decode_snapshot(&bytes));
+    harness().check_determinism_inputs(&inputs(), &branches());
 }
 
 #[test]
 fn primary_golden_snapshots_hold() {
-    let bytes = crate::test_support::primary_envelope_fixture();
-    let inspect = inspect_snapshot(&bytes);
-    let decode = decode_snapshot(&bytes);
-    if std::env::var_os("UPDATE_GOLDEN").is_some() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
-        std::fs::write(root.join("inspect/primary.json"), &inspect)
-            .expect("write primary inspect golden");
-        std::fs::write(root.join("decode/primary.json"), &decode)
-            .expect("write primary decode golden");
-        return;
-    }
-    assert_eq!(PRIMARY_INSPECT, inspect);
-    assert_eq!(PRIMARY_DECODE, decode);
+    harness().check_inputs(&inputs(), &branches());
 }
 
 #[test]
 fn primary_golden_output_is_deterministic() {
-    let bytes = crate::test_support::primary_envelope_fixture();
-    assert_eq!(inspect_snapshot(&bytes), inspect_snapshot(&bytes));
-    assert_eq!(decode_snapshot(&bytes), decode_snapshot(&bytes));
+    harness().check_determinism_inputs(&inputs(), &branches());
 }

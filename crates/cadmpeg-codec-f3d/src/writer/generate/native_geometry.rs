@@ -4390,29 +4390,17 @@ fn native_conic_interval_curve(
         ));
     }
     let axis_norm = axis.norm();
-    let axis = Vector3::new(axis.x / axis_norm, axis.y / axis_norm, axis.z / axis_norm);
+    let axis = axis.scale(1.0 / axis_norm);
     let major_norm = major_direction.norm();
-    let major_direction = Vector3::new(
-        major_direction.x / major_norm,
-        major_direction.y / major_norm,
-        major_direction.z / major_norm,
-    );
-    let minor_direction = Vector3::new(
-        axis.y * major_direction.z - axis.z * major_direction.y,
-        axis.z * major_direction.x - axis.x * major_direction.z,
-        axis.x * major_direction.y - axis.y * major_direction.x,
-    );
+    let major_direction = major_direction.scale(1.0 / major_norm);
+    let minor_direction = axis.cross(major_direction);
     let minor_norm = minor_direction.norm();
     if !minor_norm.is_finite() || minor_norm == 0.0 {
         return Err(CodecError::Malformed(
             "source-less F3D conic axis and major direction must not be parallel".into(),
         ));
     }
-    let minor_direction = Vector3::new(
-        minor_direction.x / minor_norm,
-        minor_direction.y / minor_norm,
-        minor_direction.z / minor_norm,
-    );
+    let minor_direction = minor_direction.scale(1.0 / minor_norm);
     let delta = parameter_range[1] - parameter_range[0];
     let spans = (delta / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
     let step = delta / spans as f64;

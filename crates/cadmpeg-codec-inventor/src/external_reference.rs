@@ -884,12 +884,17 @@ impl<'a> Cursor<'a> {
             .checked_mul(2)
             .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} length overflows")))?;
         ctx.charge_retained(len as u64, "retain UFRxDoc string", None)?;
-        let mut units = Vec::with_capacity(count);
-        for _ in 0..count {
-            units.push(self.u16(field)?);
-        }
-        String::from_utf16(&units)
-            .map_err(|_| CodecError::Malformed(format!("UFRxDoc {field} is not UTF-16")))
+        let _ = self
+            .position()
+            .checked_add(len)
+            .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} range overflows")))?;
+        self.view.utf16_le(count).ok_or_else(|| {
+            if self.view.remaining() < len {
+                CodecError::Malformed(format!("truncated UFRxDoc {field}"))
+            } else {
+                CodecError::Malformed(format!("UFRxDoc {field} is not UTF-16"))
+            }
+        })
     }
 
     fn utf8(

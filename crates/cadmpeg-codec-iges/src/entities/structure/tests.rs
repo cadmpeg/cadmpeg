@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -222,10 +223,7 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
         .iter()
         .find(|loss| loss.message.contains("D3 Parameter pointer 99"))
         .unwrap();
-    assert_eq!(
-        loss.code,
-        cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
-    );
+    assert_eq!(loss.code, IgesLossCode::PointerUnresolved.kind());
     assert_eq!(
         loss.provenance.as_ref().unwrap().offset,
         pointer_offset as u64
@@ -356,10 +354,7 @@ fn decode_validates_structure_targets_by_source_entity() {
         .report()
         .losses
         .iter()
-        .filter(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
-        })
+        .filter(|loss| loss.code == IgesLossCode::PointerUnresolved.kind())
         .collect::<Vec<_>>();
     assert_eq!(reference_losses.len(), 3);
     assert!(reference_losses.iter().all(|loss| {

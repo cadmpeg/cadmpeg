@@ -22,6 +22,7 @@ categories = ["encoding", "parser-implementations", "graphics"]
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
+cadmpeg-container.workspace = true
 flate2.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
@@ -37,6 +38,10 @@ cadmpeg-test-support = { workspace = true }
 [[bin]]
 name = "nx_profile"
 path = "src/bin/nx_profile.rs"
+
+# Local census helper. cargo-dist would otherwise ship it as a release app.
+[package.metadata.dist]
+dist = false
 
 [lints]
 workspace = true

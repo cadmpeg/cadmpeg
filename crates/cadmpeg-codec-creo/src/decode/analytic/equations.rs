@@ -4,13 +4,18 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::sketch::normalized;
+use crate::vecmath::normalized;
+pub(crate) use crate::vecmath::{cross, dot};
 
 use super::planes::point_on_carrier;
 
 const EPS_PLANE_RESIDUAL: f64 = 1e-6;
+const EPS_CONIC_RESIDUAL: f64 = 1e-8;
+const EPS_ROOT_CLUSTER: f64 = 1e-7;
+const EPS_PARAM_UNIQUE: f64 = 1e-7;
 const EPS_AGREE: f64 = 1e-9;
 const EPS_ORTHO: f64 = 1e-10;
+const EPS_POLY_ROOT_VALUE: f64 = 1e-11;
 const EPS_NEAR_ZERO: f64 = 1e-12;
 
 #[derive(Clone, Copy)]
@@ -81,18 +86,6 @@ pub struct PlaneConicEquation {
     pub u: f64,
     pub v: f64,
     pub constant: f64,
-}
-
-pub fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [
-        left[1].mul_add(right[2], -(left[2] * right[1])),
-        left[2].mul_add(right[0], -(left[0] * right[2])),
-        left[0].mul_add(right[1], -(left[1] * right[0])),
-    ]
-}
-
-pub fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
-    left[0].mul_add(right[0], left[1].mul_add(right[1], left[2] * right[2]))
 }
 
 pub fn matrix_vector(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
@@ -336,7 +329,7 @@ pub fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
     );
     boundaries.push(bound);
     boundaries.sort_by(f64::total_cmp);
-    let value_tolerance = 1e-11;
+    let value_tolerance = EPS_POLY_ROOT_VALUE;
     let mut roots = boundaries
         .iter()
         .copied()
@@ -366,7 +359,7 @@ pub fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
         .into_iter()
         .fold(Vec::<f64>::new(), |mut unique, root| {
             if let Some(previous) = unique.last_mut() {
-                let tolerance = 1e-7 * previous.abs().max(root.abs()).max(1.0);
+                let tolerance = EPS_ROOT_CLUSTER * previous.abs().max(root.abs()).max(1.0);
                 if (*previous - root).abs() <= tolerance {
                     if polynomial_value(&coefficients, root).abs()
                         < polynomial_value(&coefficients, *previous).abs()
@@ -563,14 +556,14 @@ pub fn common_plane_conic_parameters(
             .into_iter()
             .map(f64::abs)
             .fold(1.0, f64::max);
-            let tolerance = 1e-8 * coefficient_scale * scale * scale;
+            let tolerance = EPS_CONIC_RESIDUAL * coefficient_scale * scale * scale;
             if plane_conic_value(first, candidate[0], candidate[1]).abs() <= tolerance
                 && plane_conic_value(second, candidate[0], candidate[1]).abs() <= tolerance
                 && !parameters.iter().any(|known| {
                     (known[0] - candidate[0])
                         .abs()
                         .max((known[1] - candidate[1]).abs())
-                        <= 1e-7 * scale
+                        <= EPS_PARAM_UNIQUE * scale
                 })
             {
                 parameters.push(candidate);

@@ -22,31 +22,6 @@ pub(super) struct ConicProjection {
     pub(super) wire_edges: Vec<EdgeId>,
 }
 
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn cross(left: Vector3, right: Vector3) -> Vector3 {
-    Vector3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
-fn scale(vector: Vector3, factor: f64) -> Vector3 {
-    Vector3::new(vector.x * factor, vector.y * factor, vector.z * factor)
-}
-
-fn normalized(vector: Vector3) -> Option<(Vector3, f64)> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| (scale(vector, 1.0 / norm), norm))
-}
-
-fn difference(point: Point3, origin: Point3) -> Vector3 {
-    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
-}
-
 fn add_bounded_curve(
     ir: &mut CadIr,
     entry: &DirectoryEntry,
@@ -180,24 +155,34 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some((basis_x, scale_x)) = normalized(transform.vector(Vector3::new(1.0, 0.0, 0.0)))
-        else {
+        let Some((basis_x, scale_x)) = ({
+            let v = transform.vector(Vector3::new(1.0, 0.0, 0.0));
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
+        }) else {
             losses.push(entity_loss(entry, "conic placement collapses the x axis"));
             continue;
         };
-        let Some((basis_y, scale_y)) = normalized(transform.vector(Vector3::new(0.0, 1.0, 0.0)))
-        else {
+        let Some((basis_y, scale_y)) = ({
+            let v = transform.vector(Vector3::new(0.0, 1.0, 0.0));
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
+        }) else {
             losses.push(entity_loss(entry, "conic placement collapses the y axis"));
             continue;
         };
-        if dot(basis_x, basis_y).abs() > 1.0e-10 {
+        if basis_x.dot(basis_y).abs() > 1.0e-10 {
             losses.push(entity_loss(
                 entry,
                 "conic placement produces non-orthogonal principal axes",
             ));
             continue;
         }
-        let Some((mut axis, _)) = normalized(cross(basis_x, basis_y)) else {
+        let Some((mut axis, _)) = ({
+            let v = basis_x.cross(basis_y);
+            let n = v.norm();
+            (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
+        }) else {
             losses.push(entity_loss(entry, "conic placement collapses its plane"));
             continue;
         };
@@ -225,12 +210,12 @@ pub(super) fn project(
                     if radius_x >= radius_y {
                         (basis_x, basis_y, radius_x, radius_y)
                     } else {
-                        (basis_y, scale(basis_x, -1.0), radius_y, radius_x)
+                        (basis_y, basis_x.scale(-1.0), radius_y, radius_x)
                     };
                 let parameter = |point: Point3| {
-                    let delta = difference(point, plane_origin);
-                    (dot(delta, minor_direction) / minor_radius)
-                        .atan2(dot(delta, major_direction) / major_radius)
+                    let delta = point.vector_from(plane_origin);
+                    (delta.dot(minor_direction) / minor_radius)
+                        .atan2(delta.dot(major_direction) / major_radius)
                         .rem_euclid(std::f64::consts::TAU)
                 };
                 let raw_start_parameter = parameter(start);
@@ -263,7 +248,7 @@ pub(super) fn project(
             } else {
                 (
                     basis_y,
-                    scale(basis_x, -1.0),
+                    basis_x.scale(-1.0),
                     -*coeff_f / *coeff_c,
                     *coeff_f / *coeff_a,
                 )
@@ -271,32 +256,32 @@ pub(super) fn project(
             if major_squared <= 0.0 || minor_squared <= 0.0 {
                 None
             } else {
-                let major_scale = if dot(major, basis_x).abs() > 0.5 {
+                let major_scale = if major.dot(basis_x).abs() > 0.5 {
                     scale_x
                 } else {
                     scale_y
                 };
-                let minor_scale = if dot(minor, basis_x).abs() > 0.5 {
+                let minor_scale = if minor.dot(basis_x).abs() > 0.5 {
                     scale_x
                 } else {
                     scale_y
                 };
                 let major_radius = major_squared.sqrt() * factor * major_scale;
                 let minor_radius = minor_squared.sqrt() * factor * minor_scale;
-                let branch = if dot(difference(start, plane_origin), major) < 0.0 {
+                let branch = if start.vector_from(plane_origin).dot(major) < 0.0 {
                     -1.0
                 } else {
                     1.0
                 };
-                let major_direction = scale(major, branch);
+                let major_direction = major.scale(branch);
                 let parameter = |point: Point3, axis: Vector3| {
-                    let minor_direction = cross(axis, major_direction);
-                    (dot(difference(point, plane_origin), minor_direction) / minor_radius).asinh()
+                    let minor_direction = axis.cross(major_direction);
+                    (point.vector_from(plane_origin).dot(minor_direction) / minor_radius).asinh()
                 };
                 let mut start_parameter = parameter(start, axis);
                 let mut end_parameter = parameter(end, axis);
                 if end_parameter < start_parameter {
-                    axis = scale(axis, -1.0);
+                    axis = axis.scale(-1.0);
                     start_parameter = parameter(start, axis);
                     end_parameter = parameter(end, axis);
                 }
@@ -317,19 +302,19 @@ pub(super) fn project(
             } else {
                 -1.0
             };
-            let major_direction = scale(basis_y, opening);
+            let major_direction = basis_y.scale(opening);
             let focal_distance =
                 (coeff_e / (4.0 * coeff_a)).abs() * factor * scale_x * scale_x / scale_y;
             let parameter = |point: Point3, axis: Vector3| {
-                dot(
-                    difference(point, plane_origin),
-                    cross(axis, major_direction),
-                ) / (2.0 * focal_distance)
+                point
+                    .vector_from(plane_origin)
+                    .dot(axis.cross(major_direction))
+                    / (2.0 * focal_distance)
             };
             let mut start_parameter = parameter(start, axis);
             let mut end_parameter = parameter(end, axis);
             if end_parameter < start_parameter {
-                axis = scale(axis, -1.0);
+                axis = axis.scale(-1.0);
                 start_parameter = parameter(start, axis);
                 end_parameter = parameter(end, axis);
             }
@@ -348,19 +333,19 @@ pub(super) fn project(
             } else {
                 -1.0
             };
-            let major_direction = scale(basis_x, opening);
+            let major_direction = basis_x.scale(opening);
             let focal_distance =
                 (coeff_d / (4.0 * coeff_c)).abs() * factor * scale_y * scale_y / scale_x;
             let parameter = |point: Point3, axis: Vector3| {
-                dot(
-                    difference(point, plane_origin),
-                    cross(axis, major_direction),
-                ) / (2.0 * focal_distance)
+                point
+                    .vector_from(plane_origin)
+                    .dot(axis.cross(major_direction))
+                    / (2.0 * focal_distance)
             };
             let mut start_parameter = parameter(start, axis);
             let mut end_parameter = parameter(end, axis);
             if end_parameter < start_parameter {
-                axis = scale(axis, -1.0);
+                axis = axis.scale(-1.0);
                 start_parameter = parameter(start, axis);
                 end_parameter = parameter(end, axis);
             }
@@ -398,14 +383,14 @@ pub(super) fn project(
             continue;
         };
         let resolution = global.minimum_resolution_mm();
-        if difference(start, evaluated_start).norm() > resolution {
+        if start.distance(evaluated_start) > resolution {
             losses.push(entity_loss(
                 entry,
                 "conic start point disagrees with the evaluated carrier beyond the minimum resolution",
             ));
             continue;
         }
-        if difference(end, evaluated_end).norm() > resolution {
+        if end.distance(evaluated_end) > resolution {
             losses.push(entity_loss(
                 entry,
                 "conic terminate point disagrees with the evaluated carrier beyond the minimum resolution",

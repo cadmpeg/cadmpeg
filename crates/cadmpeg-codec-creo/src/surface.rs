@@ -5,6 +5,7 @@
 //! boundary, and namespace links. A [`SurfacePrototype`] contains named template
 //! parameters. A named prototype locates its adjacent first positional instance.
 
+use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
 
 use crate::layout::type24_first_coordinate_bounded_round as type24_round;
@@ -5756,20 +5757,6 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
 
 fn valid_half_angle(value: f64) -> bool {
     value.is_finite() && (0.0..std::f64::consts::FRAC_PI_2).contains(&value)
-}
-
-fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    data.get(from..)?
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|relative| from + relative)
-}
-
-fn find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize> {
-    data.get(from..end)?
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|relative| from + relative)
 }
 
 fn id_ending_at(payload: &[u8], type_offset: usize) -> Option<(u32, usize)> {

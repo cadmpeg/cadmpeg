@@ -8,7 +8,6 @@ use super::endpoints::{
     wide_indexed_curve_endpoint_indices,
 };
 use super::scalars::feature_object_name;
-use super::sketch_edges::{cross, dot};
 use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
@@ -1192,7 +1191,7 @@ pub(super) fn profile_roster_construction_axis(
     };
     let start = project(native_start)?;
     let end = project(native_end)?;
-    let v_axis = cross(normal, u_axis);
+    let v_axis = normal.cross(u_axis);
     let point = |point: Point2| {
         Point3::new(
             origin.x + point.u * u_axis.x + point.v * v_axis.x,
@@ -1229,8 +1228,8 @@ fn profile_generated_surface_axis(
         axis.origin.y - origin.y,
         axis.origin.z - origin.z,
     );
-    if dot(axis.direction, normal).abs() > 1.0e-9
-        || dot(relative_origin, normal).abs() > LINE_TOLERANCE
+    if axis.direction.dot(normal).abs() > 1.0e-9
+        || relative_origin.dot(normal).abs() > LINE_TOLERANCE
     {
         return None;
     }
@@ -1239,11 +1238,11 @@ fn profile_generated_surface_axis(
         origin.y - axis.origin.y,
         origin.z - axis.origin.z,
     );
-    let perpendicular = cross(origin_offset, axis.direction);
-    if dot(perpendicular, perpendicular).sqrt() <= LINE_TOLERANCE {
+    let perpendicular = origin_offset.cross(axis.direction);
+    if perpendicular.norm() <= LINE_TOLERANCE {
         axis.origin = origin;
     } else {
-        let projection = dot(origin_offset, axis.direction);
+        let projection = origin_offset.dot(axis.direction);
         axis.origin = Point3::new(
             axis.origin.x + projection * axis.direction.x,
             axis.origin.y + projection * axis.direction.y,
@@ -1258,7 +1257,7 @@ fn profile_generated_surface_axis(
         .filter(|endpoint| endpoint.object_index.is_some())
         .collect::<Vec<_>>();
     let mut endpoint_ids = HashSet::new();
-    let v_axis = cross(normal, u_axis);
+    let v_axis = normal.cross(u_axis);
     let mut sides = Vec::new();
     for endpoint in curve_endpoints {
         if !endpoint_ids.insert(endpoint.id.as_str()) {
@@ -1279,7 +1278,7 @@ fn profile_generated_surface_axis(
             point.y - axis.origin.y,
             point.z - axis.origin.z,
         );
-        sides.push(dot(cross(axis.direction, relative), normal));
+        sides.push(axis.direction.cross(relative).dot(normal));
     }
     if sides.len() < 2
         || !sides.iter().any(|side| side.abs() > LINE_TOLERANCE)
@@ -1318,7 +1317,7 @@ pub(super) fn common_generated_surface_axis(
     if axes.len() < 2 {
         return None;
     }
-    let length = dot(*direction, *direction).sqrt();
+    let length = direction.norm();
     if !length.is_finite() || length <= 1.0e-9 {
         return None;
     }
@@ -1328,7 +1327,7 @@ pub(super) fn common_generated_surface_axis(
         direction.z / length,
     );
     for (candidate_origin, candidate_direction) in &axes[1..] {
-        let candidate_length = dot(*candidate_direction, *candidate_direction).sqrt();
+        let candidate_length = candidate_direction.norm();
         if !candidate_length.is_finite() || candidate_length <= 1.0e-9 {
             return None;
         }
@@ -1342,11 +1341,9 @@ pub(super) fn common_generated_surface_axis(
             candidate_origin.y - origin.y,
             candidate_origin.z - origin.z,
         );
-        let direction_cross = cross(direction, candidate_direction);
-        let line_offset = cross(origin_delta, direction);
-        if dot(direction_cross, direction_cross).sqrt() > DIRECTION_TOLERANCE
-            || dot(line_offset, line_offset).sqrt() > LINE_TOLERANCE
-        {
+        let direction_cross = direction.cross(candidate_direction);
+        let line_offset = origin_delta.cross(direction);
+        if direction_cross.norm() > DIRECTION_TOLERANCE || line_offset.norm() > LINE_TOLERANCE {
             return None;
         }
     }
@@ -1358,7 +1355,7 @@ pub(super) fn common_generated_surface_axis(
     {
         direction = Vector3::new(-direction.x, -direction.y, -direction.z);
     }
-    let origin_projection = dot(Vector3::new(origin.x, origin.y, origin.z), direction);
+    let origin_projection = Vector3::new(origin.x, origin.y, origin.z).dot(direction);
     let origin = Point3::new(
         origin.x - origin_projection * direction.x,
         origin.y - origin_projection * direction.y,

@@ -928,13 +928,10 @@ impl<'a> Cursor<'a> {
             ))
         })?;
         ctx.charge_retained(byte_len as u64, "retain Inventor PmApp UTF-16 string", None)?;
-        let mut encoded = Vec::with_capacity(units);
-        for _ in 0..units {
-            encoded.push(self.source.req_u16_le()?);
-        }
-        String::from_utf16(&encoded)
+        self.source
+            .utf16_le(units)
             .map(|value| value.trim_end_matches('\0').to_owned())
-            .map_err(|_| {
+            .ok_or_else(|| {
                 CodecError::Malformed(format!("Inventor presentation {field} is invalid UTF-16"))
             })
     }

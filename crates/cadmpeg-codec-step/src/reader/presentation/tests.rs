@@ -52,6 +52,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -292,7 +293,7 @@ fn composite_presentation_text_does_not_depend_on_set_order() {
     };
     assert!(text.is_none());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::MetadataNotTransferred)
+        loss.code == StepLossCode::PresentationAnnotationTextUnordered.kind()
             && loss.message.contains("2 reachable text carriers")
     }));
     let unknowns = result
@@ -435,7 +436,7 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
         2
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::MetadataNotTransferred)
+        loss.code == StepLossCode::ConflictingScalarColors.kind()
             && loss.message.contains("#47")
             && loss.message.contains("#76")
             && loss.message.contains("scalar color omitted")

@@ -3,8 +3,9 @@
 
 use crate::card::{CardScan, Section};
 use crate::directory::DirectoryEntry;
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::report::{LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::cell::RefCell;
@@ -460,20 +461,19 @@ pub(crate) fn losses(
                             .copied()
                             .map(|offset| (offset, format!("D{source}")))
                     });
-                    LossNote {
-                        code: cadmpeg_ir::LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
-                        severity: Severity::Warning,
-                        message: format!(
-                            "IGES Directory Entry D{source} {:?} pointer {} has {:?} resolution; expected {}",
-                            edge.kind, edge.raw_pointer, edge.resolution, edge.expected
-                        ),
-                        provenance: location.map(|(offset, tag)| SourceProvenance {
+                    let mut note = IgesLossCode::PointerUnresolved.note(format!(
+                        "IGES Directory Entry D{source} {:?} pointer {} has {:?} resolution; expected {}",
+                        edge.kind, edge.raw_pointer, edge.resolution, edge.expected
+                    ));
+                    if let Some((offset, tag)) = location {
+                        note = note.with_provenance(SourceProvenance {
                             format: "iges".into(),
                             stream: "iges".into(),
                             offset,
                             tag: Some(tag),
-                        }),
+                        });
                     }
+                    note
                 })
         })
         .collect()

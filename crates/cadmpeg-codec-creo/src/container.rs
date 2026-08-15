@@ -17,6 +17,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::{ContainerEntry, ContainerSummary};
 
 use crate::curve::{
@@ -449,16 +450,6 @@ pub struct FeatureScan {
 /// extension-based, because `.prt` is shared with Siemens NX ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
 pub fn looks_like_creo(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
-}
-
-fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    if needle.is_empty() || from >= haystack.len() {
-        return None;
-    }
-    haystack[from..]
-        .windows(needle.len())
-        .position(|w| w == needle)
-        .map(|p| p + from)
 }
 
 fn line_at(data: &[u8], start: usize) -> String {

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
+use crate::loss::IgesLossCode;
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, DecodeMode};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::report::{
-    DecodeReport, LossNote, LossTaxonomy, Severity, TransferDisposition, TransferLedger,
-};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity, TransferDisposition, TransferLedger};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -163,30 +162,22 @@ fn decode_with_occurrence_limits(
     let mut losses = projection.losses;
     losses.extend(graph::losses(&references, &scan, &parameters));
     if product_occurrence_expansion.output_truncated {
-        losses.push(LossNote {
-            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-            severity: Severity::Warning,
-            message: "IGES product occurrence expansion reached its configured output limit".into(),
-            provenance: None,
-        });
+        losses.push(
+            IgesLossCode::OccurrenceExpansionOutputTruncated
+                .note("IGES product occurrence expansion reached its configured output limit"),
+        );
     }
     if product_occurrence_expansion.depth_truncated {
-        losses.push(LossNote {
-            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-            severity: Severity::Warning,
-            message: "IGES product occurrence expansion reached its configured nesting-depth limit"
-                .into(),
-            provenance: None,
-        });
+        losses.push(
+            IgesLossCode::OccurrenceExpansionDepthTruncated.note(
+                "IGES product occurrence expansion reached its configured nesting-depth limit",
+            ),
+        );
     }
     if product_occurrence_expansion.root_inference_blocked {
-        losses.push(LossNote {
-            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-            severity: Severity::Warning,
-            message: "IGES product occurrence root inference was suppressed because a definition member list is malformed"
-                .into(),
-            provenance: None,
-        });
+        losses.push(IgesLossCode::OccurrenceRootInferenceBlocked.note(
+            "IGES product occurrence root inference was suppressed because a definition member list is malformed",
+        ));
     }
     if !options.container_only {
         losses.extend(
@@ -197,21 +188,19 @@ fn decode_with_occurrence_limits(
                         && (!crate::profile::envelope_a_admits(entry.entity_type, entry.form)
                             || !projection.handled.contains(&entry.sequence))
                 })
-                .map(|entry| LossNote {
-                    code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
-                    severity: Severity::Warning,
-                    message: if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
-                        format!(
+                .map(|entry| {
+                    let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+                        IgesLossCode::EntityRetainedUnprojected.note(format!(
                             "IGES entity type {} form {} retained without neutral projection",
                             entry.entity_type, entry.form
-                        )
+                        ))
                     } else {
-                        format!(
+                        IgesLossCode::EntityOutsideEnvelope.note(format!(
                             "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
                             entry.entity_type, entry.form
-                        )
-                    },
-                    provenance: Some(entry.loss_provenance()),
+                        ))
+                    };
+                    note.with_provenance(entry.loss_provenance())
                 }),
         );
         charge_work(

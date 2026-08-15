@@ -1,4 +1,4 @@
-# Admissibility accept/reject fixtures (Phase 5 freeze)
+# Admissibility accept/reject fixtures
 
 Frozen before any production gate switches onto a narrow `Check` subset.
 Rejected candidates are load-bearing: decoder rollback and writer refusal are

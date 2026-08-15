@@ -749,7 +749,7 @@ fn plane_digon_orientation_hint(
     curve_supports: &BTreeMap<u32, E5CurveSupport>,
     bounds: &BTreeMap<u32, E5Bounds>,
 ) -> Option<i8> {
-    const TOLERANCE: f64 = 1e-8;
+    const EPS_PLANE_DIGON: f64 = 1e-8;
     if surface_class != Some(0xc8)
         || pcurve_ids.len() != 2
         || edge_ids.len() != 2
@@ -807,7 +807,7 @@ fn plane_digon_orientation_hint(
     let close = |left: f64, right: f64| {
         left.is_finite()
             && right.is_finite()
-            && (left - right).abs() <= TOLERANCE * (1.0 + left.abs().max(right.abs()))
+            && (left - right).abs() <= EPS_PLANE_DIGON * (1.0 + left.abs().max(right.abs()))
     };
     let close_point =
         |left: [f64; 2], right: [f64; 2]| close(left[0], right[0]) && close(left[1], right[1]);
@@ -840,7 +840,7 @@ fn plane_digon_orientation_hint(
         || !first_end_radius.is_finite()
         || !second_start_radius.is_finite()
         || !second_end_radius.is_finite()
-        || first_start_radius <= TOLERANCE
+        || first_start_radius <= EPS_PLANE_DIGON
         || !close(first_start_radius, first_end_radius)
         || !close(first_start_radius, second_start_radius)
         || !close(first_start_radius, second_end_radius)
@@ -863,10 +863,10 @@ fn plane_digon_orientation_hint(
         let cross = radial[0] * derivative[1] - radial[1] * derivative[0];
         (derivative_norm.is_finite()
             && radial_norm.is_finite()
-            && derivative_norm > TOLERANCE
-            && radial_norm > TOLERANCE
+            && derivative_norm > EPS_PLANE_DIGON
+            && radial_norm > EPS_PLANE_DIGON
             && cross.is_finite()
-            && cross.abs() > TOLERANCE * radial_norm * derivative_norm)
+            && cross.abs() > EPS_PLANE_DIGON * radial_norm * derivative_norm)
             .then_some(if cross > 0.0 { 1i8 } else { -1i8 })
     };
     let signed_parameter_direction = |edge: &E5Edge, pcurve_id: u32, native_range: [f64; 2]| {
@@ -881,8 +881,8 @@ fn plane_digon_orientation_hint(
         let native_span = native_range[1] - native_range[0];
         if !bound_span.is_finite()
             || !native_span.is_finite()
-            || bound_span.abs() <= TOLERANCE
-            || native_span.abs() <= TOLERANCE
+            || bound_span.abs() <= EPS_PLANE_DIGON
+            || native_span.abs() <= EPS_PLANE_DIGON
         {
             return None;
         }

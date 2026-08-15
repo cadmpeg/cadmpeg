@@ -40,8 +40,7 @@ pub(crate) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
         && u_length.is_finite()
         && normal_length > f64::EPSILON
         && u_length > f64::EPSILON
-        && (normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z).abs()
-            <= 1.0e-9 * normal_length * u_length
+        && normal.dot(u_axis).abs() <= 1.0e-9 * normal_length * u_length
 }
 
 pub(crate) fn valid_coordinate_frame(
@@ -54,21 +53,15 @@ pub(crate) fn valid_coordinate_frame(
         .into_iter()
         .all(f64::is_finite);
     let unit = |axis: Vector3| (axis.norm() - 1.0).abs() <= 1.0e-9;
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let cross = Vector3::new(
-        x_axis.y * y_axis.z - x_axis.z * y_axis.y,
-        x_axis.z * y_axis.x - x_axis.x * y_axis.z,
-        x_axis.x * y_axis.y - x_axis.y * y_axis.x,
-    );
+    let cross = x_axis.cross(y_axis);
     finite_origin
         && unit(x_axis)
         && unit(y_axis)
         && unit(z_axis)
-        && dot(x_axis, y_axis).abs() <= 1.0e-9
-        && dot(x_axis, z_axis).abs() <= 1.0e-9
-        && dot(y_axis, z_axis).abs() <= 1.0e-9
-        && dot(cross, z_axis) >= 1.0 - 1.0e-9
+        && x_axis.dot(y_axis).abs() <= 1.0e-9
+        && x_axis.dot(z_axis).abs() <= 1.0e-9
+        && y_axis.dot(z_axis).abs() <= 1.0e-9
+        && cross.dot(z_axis) >= 1.0 - 1.0e-9
 }
 
 pub(crate) fn valid_direction(direction: Vector3) -> bool {

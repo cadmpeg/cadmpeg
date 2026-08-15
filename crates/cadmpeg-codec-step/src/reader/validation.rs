@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::LossNote;
 
+use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
@@ -64,7 +65,7 @@ pub(super) fn decode(
                     &mut losses,
                     id,
                     "validation property name",
-                    LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                    StepLossCode::MetadataStringInvalid,
                 )
             })?;
             if name.eq_ignore_ascii_case("geometric validation property") {
@@ -80,7 +81,7 @@ pub(super) fn decode(
                                 &mut losses,
                                 id,
                                 "validation property description",
-                                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
+                                StepLossCode::MetadataStringInvalid,
                             )
                         })
                         .unwrap_or_default(),
@@ -253,15 +254,10 @@ fn measure_scale(
             })
         })
         .unwrap_or_else(|| {
-            losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-                severity: Severity::Error,
-                message: format!(
+            losses.push(StepLossCode::ValidationMeasureUnitUnresolved.note(format!(
                     "geometric validation {kind} measure #{} unit scale did not resolve; the document length scale was used",
                     record.id,
-                ),
-                provenance: None,
-            });
+                )));
             fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 })
         })
 }

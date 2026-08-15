@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -184,7 +185,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
         Some(Point3::new(10.0, 0.0, 0.0))
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
@@ -253,7 +254,7 @@ fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
             && transform.rows[1][1].abs() < 1.0e-12
     ));
     assert!(!decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
@@ -330,7 +331,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
         1
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::ReferenceGraphNotClosed)
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model-space reference entities from `MdlRefInfo`.
 
+use cadmpeg_core::bytes::find_in;
+
 use crate::scalar::{self, ScalarCache};
+use crate::vecmath::{cross, dot, normalize_with_length};
 
 /// Stored reference-line family.
 #[derive(Debug, Clone, PartialEq)]
@@ -99,26 +102,6 @@ pub struct ReferenceEllipse {
     pub offset: usize,
 }
 
-fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
-    left[0].mul_add(right[0], left[1].mul_add(right[1], left[2] * right[2]))
-}
-
-fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    [
-        left[1].mul_add(right[2], -(left[2] * right[1])),
-        left[2].mul_add(right[0], -(left[0] * right[2])),
-        left[0].mul_add(right[1], -(left[1] * right[0])),
-    ]
-}
-
-fn normalize(vector: [f64; 3]) -> Option<([f64; 3], f64)> {
-    let magnitude = vector
-        .iter()
-        .fold(0.0_f64, |norm, value| norm.hypot(*value));
-    (magnitude.is_finite() && magnitude > 1e-12)
-        .then(|| (vector.map(|value| value / magnitude), magnitude))
-}
-
 /// Derive every ellipse whose conic frame, radii, and endpoints independently
 /// satisfy one model-space equation.
 pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
@@ -133,10 +116,10 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
         let center: [f64; 3] = frame[9..12].try_into().expect("three frame origin slots");
         let first_frame: [f64; 3] = frame[..3].try_into().expect("three frame axis slots");
         let second_frame: [f64; 3] = frame[3..6].try_into().expect("three frame axis slots");
-        let Some((first_frame, first_length)) = normalize(first_frame) else {
+        let Some((first_frame, first_length)) = normalize_with_length(first_frame) else {
             continue;
         };
-        let Some((second_frame, second_length)) = normalize(second_frame) else {
+        let Some((second_frame, second_length)) = normalize_with_length(second_frame) else {
             continue;
         };
         let scale = center
@@ -151,7 +134,7 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
         {
             continue;
         }
-        let Some((axis, _)) = normalize(cross(first_frame, second_frame)) else {
+        let Some((axis, _)) = normalize_with_length(cross(first_frame, second_frame)) else {
             continue;
         };
         let radii = [conic.coefficient_1.abs(), conic.coefficient_2.abs()];
@@ -167,8 +150,8 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
         let endpoint_deltas =
             endpoints.map(|endpoint| std::array::from_fn(|index| endpoint[index] - center[index]));
         let antipodal_major_direction = (|| {
-            let (first_direction, first_radius) = normalize(endpoint_deltas[0])?;
-            let (_, second_radius) = normalize(endpoint_deltas[1])?;
+            let (first_direction, first_radius) = normalize_with_length(endpoint_deltas[0])?;
+            let (_, second_radius) = normalize_with_length(endpoint_deltas[1])?;
             ((0..3).all(|index| {
                 (endpoint_deltas[0][index] + endpoint_deltas[1][index]).abs() <= 1e-9 * scale
             }) && dot(first_direction, axis).abs() <= 1e-9
@@ -178,7 +161,7 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
             if (first_radius - major_radius).abs() <= 1e-9 * radius_scale {
                 Some(first_direction)
             } else if (first_radius - minor_radius).abs() <= 1e-9 * radius_scale {
-                normalize(cross(first_direction, axis)).map(|(direction, _)| direction)
+                normalize_with_length(cross(first_direction, axis)).map(|(direction, _)| direction)
             } else {
                 None
             }
@@ -291,14 +274,6 @@ fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f6
         candidate = Some(values);
     }
     candidate
-}
-
-fn find_in(data: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
-    (start <= end && end <= data.len()).then_some(())?;
-    data[start..end]
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|relative| start + relative)
 }
 
 const CONIC_FIELD_HEADERS: [&[u8]; 10] = [

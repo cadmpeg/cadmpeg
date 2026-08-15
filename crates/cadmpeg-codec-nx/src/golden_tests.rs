@@ -1,20 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Golden serialized decode/inspect snapshots.
-//!
-//! Each fixture pins pretty-JSON of [`DecodeResult`] plus [`ContainerSummary`].
-//! Regenerate with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build,
-//! not `-p cadmpeg-codec-nx`: isolated builds pick `miniz_oxide` and diverge
-//! zlib bytes from the `zlib-rs` workspace backend).
+//! Golden serialized decode/inspect snapshots. NX snapshots are code-built and
+//! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
+//! See `docs/golden-coverage-floors.toml` for the zlib/flate2 backend note.
 #![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
-use std::path::{Path, PathBuf};
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use crate::test_support::*;
 use crate::NxCodec;
@@ -255,6 +252,19 @@ const KNOWN_ARENAS: &[&str] = &[
 
 /// Minimum distinct arenas the golden fixtures must collectively populate.
 const ARENA_COVERAGE_FLOOR: usize = 122;
+
+const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
+
+fn harness() -> Harness {
+    Harness::new(env!("CARGO_MANIFEST_DIR"), "prt", REGENERATE)
+}
+
+fn inputs() -> Vec<(String, Vec<u8>)> {
+    fixtures()
+        .into_iter()
+        .map(|(name, bytes)| (name.to_string(), bytes))
+        .collect()
+}
 
 /// Covering fixture set as `(golden name, full `.prt` bytes)`.
 fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
@@ -768,98 +778,19 @@ fn snapshot(bytes: &[u8]) -> String {
             Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
             Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
         };
-    let combined = serde_json::json!({ "decode": decode, "inspect": inspect });
-    let mut text = serde_json::to_string_pretty(&combined).expect("serialize snapshot");
-    text.push('\n');
-    text
-}
-
-fn golden_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
-}
-
-fn golden_path(name: &str) -> PathBuf {
-    golden_dir().join(format!("{name}.json"))
-}
-
-/// First line that differs between two documents, 1-based, with both sides
-/// truncated for a readable failure. `None` when the shorter side is a prefix
-/// of the longer (length-only difference).
-fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
-    let mut exp = expected.lines();
-    let mut act = actual.lines();
-    let mut line = 0usize;
-    loop {
-        line += 1;
-        match (exp.next(), act.next()) {
-            (Some(e), Some(a)) if e == a => {}
-            (e, a) => {
-                let trunc = |s: Option<&str>| match s {
-                    Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
-                    Some(s) => s.to_string(),
-                    None => "<end of file>".to_string(),
-                };
-                return (line, trunc(e), trunc(a));
-            }
-        }
-    }
-}
-
-fn update_requested() -> bool {
-    std::env::var_os("UPDATE_GOLDEN").is_some()
+    snapshot_text(&serde_json::json!({ "decode": decode, "inspect": inspect }))
 }
 
 #[test]
 fn golden_snapshots_are_byte_identical() {
-    let update = update_requested();
-    if update {
-        std::fs::create_dir_all(golden_dir()).expect("create golden dir");
-    }
-    let mut failures: Vec<String> = Vec::new();
-    for (name, bytes) in fixtures() {
-        let actual = snapshot(&bytes);
-        let path = golden_path(name);
-        if update {
-            std::fs::write(&path, actual.as_bytes())
-                .unwrap_or_else(|e| panic!("write golden {name}: {e}"));
-            continue;
-        }
-        let expected = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(e) => {
-                failures.push(format!(
-                    "fixture `{name}`: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test-fast golden`",
-                    path.display()
-                ));
-                continue;
-            }
-        };
-        if let Err(mismatch) = cadmpeg_test_support::golden::snapshots_agree(&expected, &actual) {
-            failures.push(format!(
-                "fixture `{name}`: output diverged from golden {mismatch}"
-            ));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} golden snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test-fast golden` and review the diff:\n\n{}",
-        failures.len(),
-        failures.join("\n\n")
-    );
+    harness().check_inputs(&inputs(), &[Branch::new("", snapshot)]);
 }
 
 /// Guards against nondeterministic codec output (`HashMap` iteration order,
 /// timestamps): decoding the same bytes twice must produce identical JSON.
 #[test]
 fn golden_output_is_deterministic() {
-    for (name, bytes) in fixtures() {
-        let first = snapshot(&bytes);
-        let second = snapshot(&bytes);
-        if first != second {
-            let (line, a, b) = first_line_diff(&first, &second);
-            panic!("fixture `{name}`: nondeterministic output at line {line}\n    run 1: {a}\n    run 2: {b}");
-        }
-    }
+    harness().check_determinism_inputs(&inputs(), &[Branch::new("", snapshot)]);
 }
 
 /// Union of `nx`-namespace arenas the fixture set populates.

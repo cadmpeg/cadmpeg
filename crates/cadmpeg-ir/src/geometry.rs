@@ -76,6 +76,22 @@ pub struct NurbsCurve {
     pub periodic: bool,
 }
 
+/// True when each knot is at least as large as the previous (repeats allowed).
+///
+/// A NaN pair fails this predicate. Prefer this form when the site already
+/// used `windows(2).all(|pair| pair[0] <= pair[1])`.
+pub fn knots_nondecreasing(knots: &[f64]) -> bool {
+    knots.windows(2).all(|pair| pair[0] <= pair[1])
+}
+
+/// True when each knot is strictly larger than the previous.
+///
+/// A NaN pair fails this predicate. Prefer this form when the site already
+/// used `windows(2).all(|pair| pair[0] < pair[1])`.
+pub fn knots_strictly_increasing(knots: &[f64]) -> bool {
+    knots.windows(2).all(|pair| pair[0] < pair[1])
+}
+
 /// Analytic, NURBS, or opaque surface geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

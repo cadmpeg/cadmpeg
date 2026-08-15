@@ -1479,9 +1479,9 @@ fn similarity(transform: Transform) -> Result<Similarity, CodecError> {
         || columns
             .iter()
             .any(|column| (column.norm() - scale).abs() > tolerance)
-        || dot(columns[0], columns[1]).abs() > tolerance
-        || dot(columns[0], columns[2]).abs() > tolerance
-        || dot(columns[1], columns[2]).abs() > tolerance
+        || columns[0].dot(columns[1]).abs() > tolerance
+        || columns[0].dot(columns[2]).abs() > tolerance
+        || columns[1].dot(columns[2]).abs() > tolerance
     {
         return Err(CodecError::Malformed(
             "B-rep location is not a finite similarity transform".into(),
@@ -1725,10 +1725,6 @@ pub(crate) fn normalize_occt_curve_range(
         CurveGeometry::Transformed { basis, .. } => normalize_occt_curve_range(basis, range),
         _ => range,
     }
-}
-
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.x * right.x + left.y * right.y + left.z * right.z
 }
 
 #[cfg(test)]

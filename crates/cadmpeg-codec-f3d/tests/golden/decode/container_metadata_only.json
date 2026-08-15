@@ -151,8 +151,8 @@
     "losses": [
       {
         "code": {
-          "namespace": "shared",
-          "code": "geometry_not_transferred",
+          "namespace": "f3d",
+          "code": "geometry.not-transferred",
           "kind": "geometry_not_transferred"
         },
         "severity": "blocking",
@@ -160,8 +160,8 @@
       },
       {
         "code": {
-          "namespace": "shared",
-          "code": "topology_not_transferred",
+          "namespace": "f3d",
+          "code": "topology.not-transferred",
           "kind": "topology_not_transferred"
         },
         "severity": "blocking",
@@ -169,8 +169,8 @@
       },
       {
         "code": {
-          "namespace": "shared",
-          "code": "material_not_transferred",
+          "namespace": "f3d",
+          "code": "material.not-transferred",
           "kind": "material_not_transferred"
         },
         "severity": "warning",

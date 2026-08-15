@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use flate2::read::ZlibDecoder;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::document::CadIr;

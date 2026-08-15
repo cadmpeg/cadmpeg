@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -85,10 +86,7 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
         .report()
         .losses
         .iter()
-        .filter(|loss| {
-            loss.code
-                == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::NoncanonicalSourceSyntax)
-        })
+        .filter(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind())
         .collect::<Vec<_>>();
 
     assert_eq!(losses.len(), 1);

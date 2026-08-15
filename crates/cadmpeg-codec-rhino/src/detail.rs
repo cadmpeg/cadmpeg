@@ -5,7 +5,7 @@ use std::ops::Range;
 
 use cadmpeg_ir::geometry::CurveGeometry;
 
-use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{DecodedCurve, GeometryError};
 use crate::wire::Uuid;
 
@@ -22,13 +22,6 @@ pub(crate) struct Detail {
     pub(crate) page_per_model_ratio: f64,
 }
 
-fn malformed(offset: usize, message: impl Into<String>) -> GeometryError {
-    GeometryError::Malformed(FramingError::Structural {
-        offset,
-        message: message.into(),
-    })
-}
-
 fn anonymous<'a>(
     data: &'a [u8],
     offset: usize,
@@ -38,7 +31,10 @@ fn anonymous<'a>(
 ) -> Result<(BoundedReader<'a>, usize, i32), GeometryError> {
     let chunk = chunk_at(data, offset, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(malformed(offset, format!("{family} is not anonymous")));
+        return Err(GeometryError::malformed(
+            offset,
+            format!("{family} is not anonymous"),
+        ));
     }
     let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
@@ -93,7 +89,7 @@ pub(crate) fn decode(
     }
     let geometry = crate::surfaces::read_nurbs_curve(&mut boundary, scale)?;
     if boundary.remaining() != 0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             boundary.position(),
             "detail boundary has trailing bytes",
         ));
@@ -101,13 +97,16 @@ pub(crate) fn decode(
     outer.skip(boundary_next - outer.position())?;
     let page_per_model_ratio = if minor >= 1 { outer.f64()? } else { 0.0 };
     if !page_per_model_ratio.is_finite() || page_per_model_ratio < 0.0 {
-        return Err(malformed(
+        return Err(GeometryError::malformed(
             outer.position().saturating_sub(8),
             "detail page-to-model ratio is invalid",
         ));
     }
     if outer.remaining() != 0 {
-        return Err(malformed(outer.position(), "detail has trailing bytes"));
+        return Err(GeometryError::malformed(
+            outer.position(),
+            "detail has trailing bytes",
+        ));
     }
     Ok(Detail {
         source_range: range,

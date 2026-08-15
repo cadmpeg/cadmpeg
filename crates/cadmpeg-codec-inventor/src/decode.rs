@@ -13,9 +13,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::{
-    DecodeReport, LossKind, LossNote, LossTaxonomy, Severity, TransferLedger,
-};
+use cadmpeg_ir::report::{DecodeReport, TransferLedger};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
@@ -23,6 +21,7 @@ use crate::container::{ContainerPurpose, InventorContainer};
 use crate::database::{RevisionPayload, VersionTuple};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
+use crate::loss::InventorLossCode;
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
     AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
@@ -1402,10 +1401,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     }
     let mut losses = Vec::new();
     if ctx.container_only() {
-        losses.push(LossNote::new(
-            LossKind::shared(LossTaxonomy::ContainerOnly),
-            "Container-only decode was requested.",
-        ));
+        losses.push(
+            InventorLossCode::ContainerOnlyDecode.note("Container-only decode was requested."),
+        );
     } else if !matches!(document_kind, DocumentKind::Assembly) && !geometry_transferred {
         let detail = geometry_failure.unwrap_or_else(|| match &container.rse.active_carrier {
             ActiveCarrierState::Selected(_) => {
@@ -1421,252 +1419,182 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 unreachable!("non-container decode expands RSe bulk streams")
             }
         });
-        losses.push(
-            LossNote::new(
-                LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-                detail,
-            )
-            .with_severity(Severity::Blocking),
-        );
+        losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail));
     }
     if !ctx.container_only() {
         if kernel_stats.unknown_surface_faces != 0 {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-                format!(
+            losses.push(
+                InventorLossCode::GeometryProceduralSurfaceNotTransferred.note(format!(
                     "{} face(s) use procedural surfaces without a decoded carrier.",
                     kernel_stats.unknown_surface_faces
-                ),
-            ));
+                )),
+            );
         }
         if !segment_pairs.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::RecordNotTyped),
-                format!(
-                    "Retained {} structurally paired RSe segment(s) without record semantics.",
-                    segment_pairs.len()
-                ),
-            ));
+            losses.push(InventorLossCode::RseSegmentPairUntyped.note(format!(
+                "Retained {} structurally paired RSe segment(s) without record semantics.",
+                segment_pairs.len()
+            )));
         }
         if !segment_meta_issues.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
-                    segment_meta_issues.len()
-                ),
-            ));
+            losses.push(InventorLossCode::RseMetadataStreamMalformed.note(format!(
+                "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
+                segment_meta_issues.len()
+            )));
         }
         if !segment_bulk_issues.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
-                    segment_bulk_issues.len()
-                ),
-            ));
+            losses.push(InventorLossCode::RseBulkStreamMalformed.note(format!(
+                "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
+                segment_bulk_issues.len()
+            )));
         }
         if !assembly_record_issues.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
-                    assembly_record_issues.len()
-                ),
-            ));
+            losses.push(InventorLossCode::AssemblyRecordMalformed.note(format!(
+                "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
+                assembly_record_issues.len()
+            )));
         }
         if !presentation_record_issues.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
-                    presentation_record_issues.len()
-                ),
-            ));
+            losses.push(InventorLossCode::PresentationRecordMalformed.note(format!(
+                "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
+                presentation_record_issues.len()
+            )));
         }
         if !design_inventory.issues.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
-                    design_inventory.issues.len()
-                ),
-            ));
+            losses.push(InventorLossCode::DesignRecordMalformed.note(format!(
+                "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
+                design_inventory.issues.len()
+            )));
         }
         if !sketch_inventory.issues.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "{} typed Inventor sketch record(s) could not be parsed exactly.",
-                    sketch_inventory.issues.len()
-                ),
-            ));
+            losses.push(InventorLossCode::SketchRecordMalformed.note(format!(
+                "{} typed Inventor sketch record(s) could not be parsed exactly.",
+                sketch_inventory.issues.len()
+            )));
         }
         if !feature_inventory.issues.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "{} typed Inventor feature record(s) could not be parsed exactly.",
-                    feature_inventory.issues.len()
-                ),
-            ));
+            losses.push(InventorLossCode::FeatureRecordMalformed.note(format!(
+                "{} typed Inventor feature record(s) could not be parsed exactly.",
+                feature_inventory.issues.len()
+            )));
         }
         if unresolved_features != 0 {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-                format!(
-                    "Retained {unresolved_features} typed Inventor feature record(s) whose operation graph is not closed."
-                ),
-            ));
+            losses.push(InventorLossCode::FeatureOperationGraphOpen.note(format!(
+                "Retained {unresolved_features} typed Inventor feature record(s) whose operation graph is not closed."
+            )));
         }
         if unresolved_feature_states != 0 {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-                format!(
-                    "Transferred {unresolved_feature_states} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state."
-                ),
-            ));
+            losses.push(InventorLossCode::FeatureStateUnresolved.note(format!(
+                "Transferred {unresolved_feature_states} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state."
+            )));
         }
         if unresolved_design_parameters != 0 {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::ParametricRecordOmitted),
-                format!(
-                    "Retained {unresolved_design_parameters} Inventor parameter record(s) whose unit or expression graph is not closed."
-                ),
-            ));
+            losses.push(InventorLossCode::ParameterGraphOpen.note(format!(
+                "Retained {unresolved_design_parameters} Inventor parameter record(s) whose unit or expression graph is not closed."
+            )));
         }
         if unresolved_sketches != 0
             || unresolved_sketch_entities != 0
             || unresolved_sketch_constraints != 0
         {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-                format!(
-                    "Retained {unresolved_sketches} Inventor sketch record(s), {unresolved_sketch_entities} sketch-entity record(s), and {unresolved_sketch_constraints} sketch-constraint record(s) whose neutral graph is not closed."
-                ),
-            ));
+            losses.push(InventorLossCode::SketchGraphOpen.note(format!(
+                "Retained {unresolved_sketches} Inventor sketch record(s), {unresolved_sketch_entities} sketch-entity record(s), and {unresolved_sketch_constraints} sketch-constraint record(s) whose neutral graph is not closed."
+            )));
         }
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
-                    container.rse.unpaired_metadata.len(),
-                    container.rse.unpaired_bulk.len()
-                ),
-            ));
+            losses.push(InventorLossCode::RseStreamUnpaired.note(format!(
+                "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
+                container.rse.unpaired_metadata.len(),
+                container.rse.unpaired_bulk.len()
+            )));
         }
         if !property_set_issues.is_empty() {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                format!(
-                    "{} OLE property-set stream(s) are malformed.",
-                    property_set_issues.len()
-                ),
-            ));
+            losses.push(InventorLossCode::PropertySetStreamMalformed.note(format!(
+                "{} OLE property-set stream(s) are malformed.",
+                property_set_issues.len()
+            )));
         }
         if metadata.unmapped != 0 {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-                format!(
-                    "Retained {} property value(s) without neutral metadata mapping.",
-                    metadata.unmapped
-                ),
-            ));
+            losses.push(InventorLossCode::MetadataPropertyUnmapped.note(format!(
+                "Retained {} property value(s) without neutral metadata mapping.",
+                metadata.unmapped
+            )));
         }
         match &container.protein {
             ProteinState::Package(_) => {
                 if let Some(detail) = &protein_semantic_issue {
-                    losses.push(LossNote::new(
-                        LossKind::shared(LossTaxonomy::MaterialNotTransferred),
-                        format!("The Protein asset catalog could not be decoded: {detail}"),
-                    ));
+                    losses.push(InventorLossCode::ProteinCatalogUndecodable.note(format!(
+                        "The Protein asset catalog could not be decoded: {detail}"
+                    )));
                 } else {
                     if !protein_rejections.is_empty() {
-                        losses.push(LossNote::new(
-                            LossKind::shared(LossTaxonomy::MaterialNotTransferred),
-                            format!(
-                                "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
-                                protein_rejections.len()
-                            ),
-                        ));
+                        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
+                            "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
+                            protein_rejections.len()
+                        )));
                     }
                     if ir.model.appearances.is_empty() {
-                        losses.push(LossNote::new(
-                            LossKind::shared(LossTaxonomy::MaterialNotTransferred),
-                            "The Protein package contains no decoded appearance assets.",
-                        ));
+                        losses
+                            .push(InventorLossCode::ProteinAppearanceAbsent.note(
+                                "The Protein package contains no decoded appearance assets.",
+                            ));
                     } else if presentation_projection.unresolved_defaults != 0 {
-                        losses.push(LossNote::new(
-                            LossKind::shared(LossTaxonomy::MaterialNotTransferred),
-                            format!(
-                                "Could not resolve {} PmApp document-default appearance assignment(s).",
-                                presentation_projection.unresolved_defaults
-                            ),
-                        ));
+                        losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
+                            "Could not resolve {} PmApp document-default appearance assignment(s).",
+                            presentation_projection.unresolved_defaults
+                        )));
                     }
                 }
                 if !material_catalog.duplicate_guids.is_empty() {
-                    losses.push(LossNote::new(
-                        LossKind::shared(LossTaxonomy::MaterialNotTransferred),
-                        format!(
-                            "The Protein catalog contains {} duplicate asset GUID(s); ambiguous texture joins were refused.",
-                            material_catalog.duplicate_guids.len()
-                        ),
-                    ));
+                    losses.push(InventorLossCode::ProteinGuidAmbiguous.note(format!(
+                        "The Protein catalog contains {} duplicate asset GUID(s); ambiguous texture joins were refused.",
+                        material_catalog.duplicate_guids.len()
+                    )));
                 }
             }
-            ProteinState::Malformed { .. } => losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                "The Inventor Protein stream is malformed.",
-            )),
+            ProteinState::Malformed { .. } => losses.push(
+                InventorLossCode::ProteinStreamMalformed
+                    .note("The Inventor Protein stream is malformed."),
+            ),
             ProteinState::Absent | ProteinState::Empty { .. } => {}
         }
         if presentation_projection.unresolved_face_overrides != 0 {
-            losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::MaterialNotTransferred),
-                format!(
+            losses.push(
+                InventorLossCode::AppearanceFaceOverrideUnresolved.note(format!(
                     "Could not resolve {} PmGraphics face appearance override(s).",
                     presentation_projection.unresolved_face_overrides
-                ),
-            ));
+                )),
+            );
         }
         match &container.ufrx {
-            UfrxState::Malformed { .. } => losses.push(LossNote::new(
-                LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                "The UFRxDoc external-reference table is malformed.",
-            )),
+            UfrxState::Malformed { .. } => losses.push(
+                InventorLossCode::UfrxTableMalformed
+                    .note("The UFRxDoc external-reference table is malformed."),
+            ),
             UfrxState::Unsupported { schema, .. } => {
-                let kind = if matches!(document_kind, DocumentKind::Assembly) {
-                    LossKind::shared(LossTaxonomy::AssemblyComponentsExternal)
+                let code = if matches!(document_kind, DocumentKind::Assembly) {
+                    InventorLossCode::UfrxSchemaUnsupportedAssembly
                 } else {
-                    LossKind::shared(LossTaxonomy::RecordNotTyped)
+                    InventorLossCode::UfrxSchemaUnsupported
                 };
-                losses.push(LossNote::new(
-                    kind,
-                    format!(
-                        "Retained unsupported UFRxDoc schema {schema} semantic branch without transfer."
-                    ),
-                ));
+                losses.push(code.note(format!(
+                    "Retained unsupported UFRxDoc schema {schema} semantic branch without transfer."
+                )));
             }
             UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
                 if !external_references.is_empty() {
-                    losses.push(LossNote::new(
-                        LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
-                        format!(
-                            "Retained {} unresolved external component reference(s).",
-                            external_references.len()
-                        ),
-                    ));
+                    losses.push(InventorLossCode::AssemblyComponentExternal.note(format!(
+                        "Retained {} unresolved external component reference(s).",
+                        external_references.len()
+                    )));
                 }
                 if assembly_projection.unresolved_placements != 0 {
-                    losses.push(LossNote::new(
-                        LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred),
-                        format!(
+                    losses.push(
+                        InventorLossCode::AssemblyPlacementNotTransferred.note(format!(
                             "Could not transfer {} assembly occurrence placement(s).",
                             assembly_projection.unresolved_placements
-                        ),
-                    ));
+                        )),
+                    );
                 }
             }
             UfrxState::Absent | UfrxState::Parsed(_) => {}

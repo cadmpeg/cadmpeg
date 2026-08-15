@@ -422,13 +422,6 @@ struct ObjectPresentationRecord {
     links: Vec<String>,
 }
 
-fn structural(offset: usize, message: impl Into<String>) -> FramingError {
-    FramingError::Structural {
-        offset,
-        message: message.into(),
-    }
-}
-
 fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     bytes
@@ -444,10 +437,9 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 }
 
 fn finite(reader: &BoundedReader<'_>, value: f64, label: &str) -> Result<f64, FramingError> {
-    value
-        .is_finite()
-        .then_some(value)
-        .ok_or_else(|| structural(reader.position() - 8, format!("{label} is not finite")))
+    value.is_finite().then_some(value).ok_or_else(|| {
+        FramingError::structural(reader.position() - 8, format!("{label} is not finite"))
+    })
 }
 
 fn read_finite(reader: &mut BoundedReader<'_>, label: &str) -> Result<f64, FramingError> {
@@ -461,7 +453,9 @@ fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f64; 3], Fram
         .iter()
         .all(|value| value.is_finite())
         .then_some(value)
-        .ok_or_else(|| structural(reader.position() - 24, format!("{label} is not finite")))
+        .ok_or_else(|| {
+            FramingError::structural(reader.position() - 24, format!("{label} is not finite"))
+        })
 }
 
 fn anonymous(
@@ -471,7 +465,10 @@ fn anonymous(
 ) -> Result<(BoundedReader<'_>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
-        return Err(structural(range.start, "presentation wrapper is invalid"));
+        return Err(FramingError::structural(
+            range.start,
+            "presentation wrapper is invalid",
+        ));
     }
     let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let version = (reader.i32()?, reader.i32()?);
@@ -485,14 +482,14 @@ fn component(
 ) -> Result<Component, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if !matches!(chunk.typecode, MODEL_ATTRIBUTES | ANONYMOUS) || chunk.short {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "model-component attributes are missing",
         ));
     }
     let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     if (value.i32()?, value.i32()?) != (1, 0) {
-        return Err(structural(
+        return Err(FramingError::structural(
             value.position(),
             "model-component version is unsupported",
         ));
@@ -500,7 +497,7 @@ fn component(
     if chunk.typecode == ANONYMOUS {
         let bits = value.u32()?;
         if bits & !0x1f != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 value.position() - 4,
                 "model-component bits are invalid",
             ));
@@ -527,7 +524,7 @@ fn component(
             value.skip(8)?;
         }
         if value.remaining() != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 value.position(),
                 "model-component attributes have trailing bytes",
             ));
@@ -538,30 +535,55 @@ fn component(
     match value.u8()? {
         0 | 2 => {}
         1 => value.skip(12)?,
-        _ => return Err(structural(value.position() - 1, "invalid serial status")),
+        _ => {
+            return Err(FramingError::structural(
+                value.position() - 1,
+                "invalid serial status",
+            ))
+        }
     }
     let id = match value.u8()? {
         0 | 2 => Uuid::nil(),
         1 => uuid(&mut value)?,
-        _ => return Err(structural(value.position() - 1, "invalid UUID status")),
+        _ => {
+            return Err(FramingError::structural(
+                value.position() - 1,
+                "invalid UUID status",
+            ))
+        }
     };
     match value.u8()? {
         0 | 2 => {}
         1 => value.skip(4)?,
-        _ => return Err(structural(value.position() - 1, "invalid type status")),
+        _ => {
+            return Err(FramingError::structural(
+                value.position() - 1,
+                "invalid type status",
+            ))
+        }
     }
     let index = match value.u8()? {
         0 | 2 => None,
         1 => Some(value.i32()?),
-        _ => return Err(structural(value.position() - 1, "invalid index status")),
+        _ => {
+            return Err(FramingError::structural(
+                value.position() - 1,
+                "invalid index status",
+            ))
+        }
     };
     let name = match value.u8()? {
         0 | 2 => String::new(),
         1 => utf16(&mut value)?,
-        _ => return Err(structural(value.position() - 1, "invalid name status")),
+        _ => {
+            return Err(FramingError::structural(
+                value.position() - 1,
+                "invalid name status",
+            ))
+        }
     };
     if value.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             value.position(),
             "model-component attributes have trailing bytes",
         ));
@@ -578,7 +600,7 @@ fn class_data(
 ) -> Result<Range<usize>, FramingError> {
     let class = parse_class_wrapper(data, record.body.clone(), archive, &mut Vec::new())?;
     if class.class_uuid != expected {
-        return Err(structural(
+        return Err(FramingError::structural(
             record.range.start,
             "table record has the wrong class",
         ));
@@ -594,7 +616,7 @@ fn parse_texture(
 ) -> Result<TextureRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || !(0..=2).contains(&version.1) {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "texture version is unsupported",
         ));
@@ -649,7 +671,10 @@ fn parse_texture(
     };
     let treat_as_linear = (version.1 >= 2).then(|| reader.bool()).transpose()?;
     if reader.remaining() != 0 {
-        return Err(structural(reader.position(), "texture has trailing bytes"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "texture has trailing bytes",
+        ));
     }
     Ok(TextureRecord {
         source_offset: source_offset as u64,
@@ -683,23 +708,23 @@ fn texture_array(
 ) -> Result<Vec<TextureRecord>, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "texture array is not anonymous",
         ));
     }
     let mut values = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     if (values.i32()?, values.i32()?) != (1, 0) {
-        return Err(structural(
+        return Err(FramingError::structural(
             values.position(),
             "texture array version is unsupported",
         ));
     }
     let count = values.i32()?;
     let count = usize::try_from(count)
-        .map_err(|_| structural(values.position() - 4, "negative texture count"))?;
+        .map_err(|_| FramingError::structural(values.position() - 4, "negative texture count"))?;
     if count > 1 << 16 {
-        return Err(structural(
+        return Err(FramingError::structural(
             values.position() - 4,
             "texture count exceeds limit",
         ));
@@ -708,7 +733,7 @@ fn texture_array(
     for _ in 0..count {
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
         if object.short {
-            return Err(structural(
+            return Err(FramingError::structural(
                 values.position(),
                 "texture object is short-framed",
             ));
@@ -720,7 +745,7 @@ fn texture_array(
             &mut Vec::new(),
         )?;
         if class.class_uuid != TEXTURE {
-            return Err(structural(
+            return Err(FramingError::structural(
                 values.position(),
                 "texture array item has the wrong class",
             ));
@@ -734,7 +759,7 @@ fn texture_array(
         values.skip(object.next_offset - values.position())?;
     }
     if values.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             values.position(),
             "texture array has trailing bytes",
         ));
@@ -754,7 +779,7 @@ fn parse_material(
     let (mut reader, component, minor, modern) = if framed {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 || version.1 != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "material version is unsupported",
             ));
@@ -765,7 +790,7 @@ fn parse_material(
         let mut outer = BoundedReader::new(data, range.start, range.end)?;
         // The first packed byte is the fixed outer material version 2.0.
         if outer.u8()? != 0x20 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 range.start,
                 "legacy material outer version is unsupported",
             ));
@@ -774,7 +799,7 @@ fn parse_material(
         let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
         let version = (reader.i32()?, reader.i32()?);
         if version.0 != 1 || !(0..=6).contains(&version.1) {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "legacy material version is unsupported",
             ));
@@ -867,7 +892,10 @@ fn parse_material(
         None
     };
     if reader.remaining() != 0 {
-        return Err(structural(reader.position(), "material has trailing bytes"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "material has trailing bytes",
+        ));
     }
     let key = if component.id.is_nil() {
         format!("record-{source_offset}")
@@ -912,7 +940,10 @@ fn parse_group(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 || packed & 0x0f > 1 {
-        return Err(structural(range.start, "group version is unsupported"));
+        return Err(FramingError::structural(
+            range.start,
+            "group version is unsupported",
+        ));
     }
     let index = reader.i32()?;
     let name = utf16(&mut reader)?;
@@ -922,7 +953,10 @@ fn parse_group(
         None
     };
     if reader.remaining() != 0 {
-        return Err(structural(reader.position(), "group has trailing bytes"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "group has trailing bytes",
+        ));
     }
     let key = id
         .filter(|id| !id.is_nil())
@@ -947,7 +981,10 @@ fn parse_light(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 || packed & 0x0f > 2 {
-        return Err(structural(range.start, "light version is unsupported"));
+        return Err(FramingError::structural(
+            range.start,
+            "light version is unsupported",
+        ));
     }
     let enabled = reader.i32()? != 0;
     let style = reader.i32()?;
@@ -979,12 +1016,16 @@ fn parse_light(
         value
     };
     if reader.remaining() != 0 {
-        return Err(structural(reader.position(), "light has trailing bytes"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "light has trailing bytes",
+        ));
     }
     for vector in [&mut location, &mut length, &mut width] {
         for value in vector {
-            *value = scaled_coordinate(*value, scale)
-                .ok_or_else(|| structural(range.start, "scaled light geometry is invalid"))?;
+            *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+                FramingError::structural(range.start, "scaled light geometry is invalid")
+            })?;
         }
     }
     let key = if id.is_nil() {
@@ -1049,7 +1090,7 @@ fn segments(
     for _ in 0..bytes / 12 {
         let length = read_finite(reader, "linetype segment length")?;
         let length = scaled_coordinate(length, scale).ok_or_else(|| {
-            structural(reader.position() - 8, "scaled linetype segment is invalid")
+            FramingError::structural(reader.position() - 8, "scaled linetype segment is invalid")
         })?;
         values.push(LinetypeSegment {
             length_millimeters: length,
@@ -1082,7 +1123,10 @@ fn parse_linetype(
             Uuid::nil()
         };
         if reader.remaining() != 0 {
-            return Err(structural(reader.position(), "linetype has trailing bytes"));
+            return Err(FramingError::structural(
+                reader.position(),
+                "linetype has trailing bytes",
+            ));
         }
         return Ok(linetype_record(
             value,
@@ -1099,7 +1143,7 @@ fn parse_linetype(
     } else if version.0 == 2 && (0..=3).contains(&version.1) {
         component(data, &mut reader, archive)?
     } else {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "linetype version is unsupported",
         ));
@@ -1142,7 +1186,7 @@ fn parse_linetype(
                 taper.push([reader.f64()?, reader.f64()?]);
             }
             if !taper.iter().flatten().all(|value| value.is_finite()) {
-                return Err(structural(
+                return Err(FramingError::structural(
                     reader.position(),
                     "linetype taper is not finite",
                 ));
@@ -1155,7 +1199,7 @@ fn parse_linetype(
         item = reader.u8()?;
     }
     if item != 0 || reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "linetype extension stream is invalid",
         ));
@@ -1220,7 +1264,7 @@ fn hatch_line_v5(
 ) -> Result<HatchLineRecord, FramingError> {
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position() - 1,
             "hatch-line version is unsupported",
         ));
@@ -1252,8 +1296,9 @@ fn hatch_line_fields(
         .chain(offset.iter_mut())
         .chain(dashes.iter_mut())
     {
-        *value = scaled_coordinate(*value, scale)
-            .ok_or_else(|| structural(reader.position(), "scaled hatch line is invalid"))?;
+        *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+            FramingError::structural(reader.position(), "scaled hatch line is invalid")
+        })?;
     }
     Ok(HatchLineRecord {
         angle_radians,
@@ -1274,7 +1319,7 @@ fn parse_hatch_pattern(
     let (component, fill_type, description, lines) = if modern {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version != (1, 0) {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "hatch-pattern version is unsupported",
             ));
@@ -1285,10 +1330,11 @@ fn parse_hatch_pattern(
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         let mut line_reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
         let count = line_reader.i32()?;
-        let count = usize::try_from(count)
-            .map_err(|_| structural(line_reader.position() - 4, "negative hatch-line count"))?;
+        let count = usize::try_from(count).map_err(|_| {
+            FramingError::structural(line_reader.position() - 4, "negative hatch-line count")
+        })?;
         if count > 1 << 16 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 line_reader.position() - 4,
                 "hatch-line count exceeds limit",
             ));
@@ -1304,14 +1350,14 @@ fn parse_hatch_pattern(
             )?;
             let mut payload = BoundedReader::new(data, line.body.start, line.body.end)?;
             if (payload.i32()?, payload.i32()?) != (1, 0) {
-                return Err(structural(
+                return Err(FramingError::structural(
                     payload.position(),
                     "hatch-line version is unsupported",
                 ));
             }
             lines.push(hatch_line_fields(&mut payload, scale)?);
             if payload.remaining() != 0 {
-                return Err(structural(
+                return Err(FramingError::structural(
                     payload.position(),
                     "hatch line has trailing bytes",
                 ));
@@ -1319,14 +1365,14 @@ fn parse_hatch_pattern(
             line_reader.skip(line.next_offset - line_reader.position())?;
         }
         if line_reader.remaining() != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 line_reader.position(),
                 "hatch-line array has trailing bytes",
             ));
         }
         reader.skip(chunk.next_offset - reader.position())?;
         if reader.remaining() != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "hatch pattern has trailing bytes",
             ));
@@ -1336,7 +1382,7 @@ fn parse_hatch_pattern(
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
         if packed >> 4 != 1 || packed & 0x0f > 2 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 range.start,
                 "legacy hatch-pattern version is unsupported",
             ));
@@ -1346,10 +1392,11 @@ fn parse_hatch_pattern(
         let name = utf16(&mut reader)?;
         let description = utf16(&mut reader)?;
         let count = if fill_type == 1 { reader.i32()? } else { 0 };
-        let count = usize::try_from(count)
-            .map_err(|_| structural(reader.position() - 4, "negative hatch-line count"))?;
+        let count = usize::try_from(count).map_err(|_| {
+            FramingError::structural(reader.position() - 4, "negative hatch-line count")
+        })?;
         if count > 1 << 16 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position() - 4,
                 "hatch-line count exceeds limit",
             ));
@@ -1364,7 +1411,7 @@ fn parse_hatch_pattern(
             Uuid::nil()
         };
         if reader.remaining() != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "legacy hatch pattern has trailing bytes",
             ));
@@ -1403,8 +1450,9 @@ fn scaled_length(
     label: &str,
 ) -> Result<f64, FramingError> {
     let value = read_finite(reader, label)?;
-    scaled_coordinate(value, scale)
-        .ok_or_else(|| structural(reader.position() - 8, format!("scaled {label} is invalid")))
+    scaled_coordinate(value, scale).ok_or_else(|| {
+        FramingError::structural(reader.position() - 8, format!("scaled {label} is invalid"))
+    })
 }
 
 fn named_child(
@@ -1415,7 +1463,7 @@ fn named_child(
     let offset = reader.position();
     let chunk = chunk_at(data, offset, reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(structural(
+        return Err(FramingError::structural(
             offset,
             "dimension-style child wrapper is invalid",
         ));
@@ -1615,7 +1663,7 @@ fn dimension_style_controls(
         put!("decimal_separator", reader.u32()?);
     }
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "dimension style has trailing bytes",
         ));
@@ -1632,7 +1680,7 @@ fn parse_dimension_style(
 ) -> Result<DimensionStyleRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || !(0..=9).contains(&version.1) {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "dimension-style version is unsupported",
         ));
@@ -1717,7 +1765,9 @@ fn xform(reader: &mut BoundedReader<'_>) -> Result<[[f64; 4]; 4], FramingError> 
         .flatten()
         .all(|value| value.is_finite())
         .then_some(rows)
-        .ok_or_else(|| structural(reader.position() - 128, "texture transform is not finite"))
+        .ok_or_else(|| {
+            FramingError::structural(reader.position() - 128, "texture transform is not finite")
+        })
 }
 
 fn parse_embedded_image(
@@ -1729,7 +1779,7 @@ fn parse_embedded_image(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 || packed & 0x0f > 1 {
-        return Err(structural(
+        return Err(FramingError::structural(
             range.start,
             "embedded-image version is unsupported",
         ));
@@ -1743,19 +1793,19 @@ fn parse_embedded_image(
         reader.skip(4)?;
         let method = reader.u8()?;
         if method > 1 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position() - 1,
                 "embedded-image buffer method is unsupported",
             ));
         }
         if method == 0 {
             let size = usize::try_from(uncompressed_byte_len)
-                .map_err(|_| structural(buffer_offset, "image size overflow"))?;
+                .map_err(|_| FramingError::structural(buffer_offset, "image size overflow"))?;
             reader.skip(size)?;
         } else {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             if chunk.typecode != ANONYMOUS || chunk.short {
-                return Err(structural(
+                return Err(FramingError::structural(
                     reader.position(),
                     "compressed image chunk is invalid",
                 ));
@@ -1775,7 +1825,7 @@ fn parse_embedded_image(
         String::new()
     };
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "embedded image has trailing bytes",
         ));
@@ -1806,7 +1856,7 @@ fn parse_windows_bitmap(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let file_path = if class_uuid == WINDOWS_BITMAP_EX {
         if reader.u8()? != 0x10 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position() - 1,
                 "Windows bitmap version is unsupported",
             ));
@@ -1826,7 +1876,7 @@ fn parse_windows_bitmap(
     let colors_used = reader.i32()?;
     let important_colors = reader.i32()?;
     if image_byte_len < 0 || colors_used < 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "Windows bitmap header is invalid",
         ));
@@ -1862,7 +1912,7 @@ fn parse_texture_mapping(
 ) -> Result<TextureMappingRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || !(0..=1).contains(&version.1) {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "texture-mapping version is unsupported",
         ));
@@ -1885,7 +1935,7 @@ fn parse_texture_mapping(
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
     let capped = version.1 >= 1 && reader.bool()?;
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "texture mapping has trailing bytes",
         ));
@@ -1921,16 +1971,17 @@ fn rendering_materials(
     (|| {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "rendering-attributes version is unsupported",
             ));
         }
         let count = reader.i32()?;
-        let count = usize::try_from(count)
-            .map_err(|_| structural(reader.position() - 4, "negative rendering-material count"))?;
+        let count = usize::try_from(count).map_err(|_| {
+            FramingError::structural(reader.position() - 4, "negative rendering-material count")
+        })?;
         if count > 1 << 16 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position() - 4,
                 "rendering-material count exceeds limit",
             ));
@@ -1941,7 +1992,7 @@ fn rendering_materials(
             let parsed = (|| {
                 let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
                 if value.i32()? != 1 {
-                    return Err(structural(
+                    return Err(FramingError::structural(
                         value.position(),
                         "rendering-material version is unsupported",
                     ));
@@ -1951,7 +2002,7 @@ fn rendering_materials(
                 let front_material_uuid = uuid(&mut value)?.to_string();
                 let mapping_count = value.i32()?;
                 if mapping_count != 0 {
-                    return Err(structural(
+                    return Err(FramingError::structural(
                         value.position() - 4,
                         "obsolete rendering mappings are nonempty",
                     ));
@@ -1965,7 +2016,7 @@ fn rendering_materials(
                     (None, None)
                 };
                 if value.remaining() != 0 {
-                    return Err(structural(
+                    return Err(FramingError::structural(
                         value.position(),
                         "rendering-material reference has trailing bytes",
                     ));
@@ -1981,7 +2032,7 @@ fn rendering_materials(
             reader.skip(chunk.next_offset - reader.position())?;
         }
         if reader.remaining() != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "rendering attributes have trailing bytes",
             ));
@@ -1997,12 +2048,18 @@ fn parse_font(
 ) -> Result<FontRecord, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(structural(reader.position(), "font wrapper is invalid"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "font wrapper is invalid",
+        ));
     }
     let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let (major, minor) = (value.i32()?, value.i32()?);
     if major != 1 || !(0..=6).contains(&minor) {
-        return Err(structural(value.position(), "font version is unsupported"));
+        return Err(FramingError::structural(
+            value.position(),
+            "font version is unsupported",
+        ));
     }
     let mut font = FontRecord {
         characteristics: value.u32()?,
@@ -2038,14 +2095,14 @@ fn parse_font(
         font.english_face_name = utf16(&mut value)?;
         let panose = chunk_at(data, value.position(), value.end(), archive, false)?;
         if panose.typecode != ANONYMOUS || panose.short {
-            return Err(structural(
+            return Err(FramingError::structural(
                 value.position(),
                 "font PANOSE wrapper is invalid",
             ));
         }
         let mut bytes = BoundedReader::new(data, panose.body.start, panose.body.end)?;
         if bytes.u8()? != 0x10 || bytes.remaining() != 10 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 bytes.position(),
                 "font PANOSE version is unsupported",
             ));
@@ -2057,7 +2114,10 @@ fn parse_font(
         font.quartet_member = Some(value.u8()?);
     }
     if value.remaining() != 0 {
-        return Err(structural(value.position(), "font has trailing bytes"));
+        return Err(FramingError::structural(
+            value.position(),
+            "font has trailing bytes",
+        ));
     }
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(font)
@@ -2075,7 +2135,7 @@ fn parse_text_style(
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
         if packed >> 4 != 1 || packed & 0x0f > 2 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 range.start,
                 "legacy text-style version is unsupported",
             ));
@@ -2106,7 +2166,7 @@ fn parse_text_style(
             font.windows_logfont_weight = Some(reader.i32()?);
             let italic = reader.i32()?;
             if !matches!(italic, 0 | 1) {
-                return Err(structural(
+                return Err(FramingError::structural(
                     reader.position() - 4,
                     "legacy font italic flag is invalid",
                 ));
@@ -2120,7 +2180,7 @@ fn parse_text_style(
             Uuid::nil()
         };
         if reader.remaining() != 0 {
-            return Err(structural(
+            return Err(FramingError::structural(
                 reader.position(),
                 "legacy text style has trailing bytes",
             ));
@@ -2138,7 +2198,7 @@ fn parse_text_style(
 
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || !(0..=1).contains(&version.1) {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "text-style version is unsupported",
         ));
@@ -2160,7 +2220,7 @@ fn parse_text_style(
         (component.id, component.name)
     };
     if reader.remaining() != 0 {
-        return Err(structural(
+        return Err(FramingError::structural(
             reader.position(),
             "text style has trailing bytes",
         ));

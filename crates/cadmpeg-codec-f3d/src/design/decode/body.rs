@@ -12,6 +12,7 @@ use crate::records::{
     DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
+use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
@@ -245,8 +246,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
     let mut counters: HashMap<(ConstructionRecipeKind, Option<String>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
         let mut cursor = 0;
-        while let Some(relative) = bytes[cursor..].windows(name.len()).position(|w| w == name) {
-            let offset = cursor + relative;
+        while let Some(offset) = find_from(bytes, name, cursor) {
             cursor = offset + 1;
             if kind == ConstructionRecipeKind::Face
                 && offset >= 8

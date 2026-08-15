@@ -5,12 +5,17 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
-use crate::native::{EntryRecord, PropertyRecord};
+use crate::native::{self, EntryRecord, PropertyRecord};
 
 /// Exact-shape side-entry form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -3754,6 +3759,414 @@ impl<'a> TokenCursor<'a> {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct CurveTransfer {
+    pub(crate) curves: Vec<Curve>,
+    pub(crate) procedural: Vec<ProceduralCurve>,
+}
+
+pub(crate) fn transfer_text_curves(
+    payloads: &[ShapePayloadRecord],
+    properties: &[PropertyRecord],
+) -> CurveTransfer {
+    let mut transfer = CurveTransfer::default();
+    for payload in payloads {
+        let curves = if let Some(text) = &payload.text {
+            &text.curves
+        } else if let Some(binary) = &payload.binary {
+            &binary.curves
+        } else {
+            continue;
+        };
+        let object_id = properties
+            .iter()
+            .find(|property| property.id == payload.property)
+            .map_or_else(
+                || payload.property.clone(),
+                |property| property.owner.clone(),
+            );
+        let association = SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id,
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        for (index, curve) in curves.iter().enumerate() {
+            let id = CurveId(native::model_id(
+                "curve",
+                &payload.id,
+                (index + 1).to_string(),
+            ));
+            append_text_curve(curve, id, &association, &mut transfer);
+        }
+    }
+    transfer
+}
+
+pub(crate) fn append_text_curve(
+    curve: &TextCurve,
+    id: CurveId,
+    association: &SourceObjectAssociation,
+    transfer: &mut CurveTransfer,
+) -> CurveGeometry {
+    let geometry = match curve {
+        TextCurve::Line { origin, direction } => CurveGeometry::Line {
+            origin: *origin,
+            direction: *direction,
+        },
+        TextCurve::Circle {
+            center,
+            axis: _,
+            ref_direction: _,
+            radius,
+        } if *radius == 0.0 => CurveGeometry::Degenerate { point: *center },
+        TextCurve::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => CurveGeometry::Circle {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: *radius,
+        },
+        TextCurve::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => CurveGeometry::Ellipse {
+            center: *center,
+            axis: *axis,
+            major_direction: *major_direction,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        TextCurve::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => CurveGeometry::Parabola {
+            vertex: *vertex,
+            axis: *axis,
+            major_direction: *major_direction,
+            focal_distance: *focal_distance,
+        },
+        TextCurve::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => CurveGeometry::Hyperbola {
+            center: *center,
+            axis: *axis,
+            major_direction: *major_direction,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        TextCurve::Nurbs(nurbs) => CurveGeometry::Nurbs(nurbs.clone()),
+        TextCurve::Trimmed {
+            parameter_range,
+            basis,
+        } => {
+            let basis_id = CurveId(format!("{}:basis", id.0));
+            let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer);
+            let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
+                &basis_geometry,
+                Some(*parameter_range),
+            )
+            .unwrap_or(*parameter_range);
+            transfer.procedural.push(ProceduralCurve {
+                id: ProceduralCurveId(format!("{}:construction", id.0)),
+                curve: id.clone(),
+                definition: ProceduralCurveDefinition::Subset {
+                    source: basis_id,
+                    parameter_range,
+                    sense: true,
+                },
+                cache_fit_tolerance: None,
+            });
+            basis_geometry
+        }
+        TextCurve::Offset {
+            distance,
+            direction,
+            basis,
+        } => {
+            let basis_id = CurveId(format!("{}:basis", id.0));
+            append_text_curve(basis, basis_id.clone(), association, transfer);
+            transfer.procedural.push(ProceduralCurve {
+                id: ProceduralCurveId(format!("{}:construction", id.0)),
+                curve: id.clone(),
+                definition: ProceduralCurveDefinition::Offset {
+                    source: basis_id,
+                    distance: *distance,
+                    direction: Some(*direction),
+                    support: None,
+                    distance_law: None,
+                    normal: None,
+                    parameter_range: None,
+                },
+                cache_fit_tolerance: None,
+            });
+            CurveGeometry::Unknown { record: None }
+        }
+    };
+    transfer.curves.push(Curve {
+        id,
+        geometry: geometry.clone(),
+        source_object: Some(association.clone()),
+    });
+    geometry
+}
+
+#[derive(Default)]
+pub(crate) struct SurfaceTransfer {
+    pub(crate) surfaces: Vec<Surface>,
+    pub(crate) procedural: Vec<ProceduralSurface>,
+}
+
+pub(crate) fn transfer_text_surfaces(
+    payloads: &[ShapePayloadRecord],
+    properties: &[PropertyRecord],
+    curve_transfer: &mut CurveTransfer,
+) -> SurfaceTransfer {
+    let mut transfer = SurfaceTransfer::default();
+    for payload in payloads {
+        let surfaces = if let Some(text) = &payload.text {
+            &text.surfaces
+        } else if let Some(binary) = &payload.binary {
+            &binary.surfaces
+        } else {
+            continue;
+        };
+        let object_id = properties
+            .iter()
+            .find(|property| property.id == payload.property)
+            .map_or_else(
+                || payload.property.clone(),
+                |property| property.owner.clone(),
+            );
+        let association = SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id,
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        for (index, surface) in surfaces.iter().enumerate() {
+            append_text_surface(
+                surface,
+                SurfaceId(native::model_id(
+                    "surface",
+                    &payload.id,
+                    (index + 1).to_string(),
+                )),
+                &association,
+                curve_transfer,
+                &mut transfer,
+            );
+        }
+    }
+    transfer
+}
+
+pub(crate) fn append_text_surface(
+    surface: &TextSurface,
+    id: SurfaceId,
+    association: &SourceObjectAssociation,
+    curve_transfer: &mut CurveTransfer,
+    transfer: &mut SurfaceTransfer,
+) -> SurfaceGeometry {
+    let geometry = match surface {
+        TextSurface::Plane {
+            origin,
+            axis,
+            u_axis,
+            ..
+        } => SurfaceGeometry::Plane {
+            origin: *origin,
+            normal: *axis,
+            u_axis: *u_axis,
+        },
+        TextSurface::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => SurfaceGeometry::Cylinder {
+            origin: *origin,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: *radius,
+        },
+        TextSurface::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            half_angle,
+            ..
+        } => SurfaceGeometry::Cone {
+            origin: *origin,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: *radius,
+            ratio: 1.0,
+            half_angle: *half_angle,
+        },
+        TextSurface::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => SurfaceGeometry::Sphere {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: *radius,
+        },
+        TextSurface::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => SurfaceGeometry::Torus {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        TextSurface::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs.clone()),
+        TextSurface::Extrusion {
+            direction,
+            directrix,
+        } => {
+            let directrix_id = CurveId(format!("{}:directrix", id.0));
+            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
+            transfer.procedural.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                surface: id.clone(),
+                definition: ProceduralSurfaceDefinition::Extrusion {
+                    directrix: directrix_id,
+                    parameter_interval: None,
+                    direction: *direction,
+                    native_position: None,
+                    revision_form: None,
+                },
+                record_bounds: None,
+                cache_fit_tolerance: None,
+            });
+            SurfaceGeometry::Unknown { record: None }
+        }
+        TextSurface::Revolution {
+            axis_origin,
+            axis_direction,
+            directrix,
+        } => {
+            let directrix_id = CurveId(format!("{}:directrix", id.0));
+            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
+            transfer.procedural.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                surface: id.clone(),
+                definition: ProceduralSurfaceDefinition::Revolution {
+                    directrix: directrix_id,
+                    axis_origin: *axis_origin,
+                    axis_direction: *axis_direction,
+                    angular_interval: [0.0, std::f64::consts::TAU],
+                    angular_parameter_interval: None,
+                    parameter_interval: None,
+                    transposed: true,
+                    revision_form: None,
+                },
+                record_bounds: None,
+                cache_fit_tolerance: None,
+            });
+            SurfaceGeometry::Unknown { record: None }
+        }
+        TextSurface::Trimmed {
+            parameter_ranges,
+            basis,
+        } => {
+            let basis_parameters = surface_parameter_affine(basis);
+            let parameter_ranges = [
+                parameter_ranges[0].map(|value| {
+                    value.mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
+                }),
+                parameter_ranges[1].map(|value| {
+                    value.mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
+                }),
+            ];
+            let basis_id = SurfaceId(format!("{}:basis", id.0));
+            let basis_geometry = append_text_surface(
+                basis,
+                basis_id.clone(),
+                association,
+                curve_transfer,
+                transfer,
+            );
+            transfer.procedural.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                surface: id.clone(),
+                definition: ProceduralSurfaceDefinition::Subset {
+                    support: basis_id,
+                    parameter_ranges,
+                    u_sense: None,
+                    v_sense: None,
+                },
+                record_bounds: None,
+                cache_fit_tolerance: None,
+            });
+            basis_geometry
+        }
+        TextSurface::Offset { distance, basis } => {
+            let basis_id = SurfaceId(format!("{}:basis", id.0));
+            append_text_surface(
+                basis,
+                basis_id.clone(),
+                association,
+                curve_transfer,
+                transfer,
+            );
+            transfer.procedural.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                surface: id.clone(),
+                definition: ProceduralSurfaceDefinition::Offset {
+                    support: basis_id,
+                    distance: *distance,
+                    u_sense: None,
+                    v_sense: None,
+                    extension_flags: Vec::new(),
+                    revision_form: None,
+                },
+                record_bounds: None,
+                cache_fit_tolerance: None,
+            });
+            SurfaceGeometry::Unknown { record: None }
+        }
+    };
+    transfer.surfaces.push(Surface {
+        id,
+        geometry: geometry.clone(),
+        source_object: Some(association.clone()),
+    });
+    geometry
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4316,5 +4729,77 @@ pub(crate) mod tests {
         );
         assert_eq!(result.ir().model.coedges.len(), 1);
         assert!(result.report().geometry_transferred);
+    }
+
+    #[test]
+    fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
+        let center = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
+        let curve = crate::brep::TextCurve::Circle {
+            center,
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius: 0.0,
+        };
+        let association = cadmpeg_ir::SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id: "object".into(),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        let mut transfer = crate::brep::CurveTransfer::default();
+
+        let geometry = crate::brep::append_text_curve(
+            &curve,
+            cadmpeg_ir::ids::CurveId("curve".into()),
+            &association,
+            &mut transfer,
+        );
+
+        assert_eq!(
+            geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Degenerate { point: center }
+        );
+    }
+
+    #[test]
+    fn transfers_occt_revolution_surface_parameter_order() {
+        let surface = crate::brep::TextSurface::Revolution {
+            axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            directrix: Box::new(crate::brep::TextCurve::Circle {
+                center: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            }),
+        };
+        let association = cadmpeg_ir::SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id: "fcstd:native:object#Surface".into(),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        let mut curves = crate::brep::CurveTransfer::default();
+        let mut surfaces = crate::brep::SurfaceTransfer::default();
+        crate::brep::append_text_surface(
+            &surface,
+            cadmpeg_ir::ids::SurfaceId("fcstd:model:surface#revolution".into()),
+            &association,
+            &mut curves,
+            &mut surfaces,
+        );
+        assert!(matches!(
+            surfaces.procedural[0].definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+                transposed: true,
+                ..
+            }
+        ));
     }
 }

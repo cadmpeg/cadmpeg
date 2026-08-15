@@ -49,6 +49,8 @@ pub(crate) mod formula;
 /// Byte-offset constants generated from `docs/layouts/catia.toml`.
 pub(crate) mod layout;
 pub(crate) mod legacy_entity;
+#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
+pub(crate) mod loss;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod object_graph;

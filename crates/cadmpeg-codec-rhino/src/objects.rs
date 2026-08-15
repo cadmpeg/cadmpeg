@@ -283,13 +283,6 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
 }
 
-fn malformed_at(offset: usize, message: impl Into<String>) -> FramingError {
-    FramingError::Structural {
-        offset,
-        message: message.into(),
-    }
-}
-
 fn child(
     bytes: &[u8],
     offset: usize,
@@ -302,7 +295,7 @@ fn child(
 
 fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
     if chunk.typecode != typecode || chunk.short {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             chunk.header_start,
             format!(
                 "expected long chunk {typecode:#x}, got {:#x}",
@@ -315,7 +308,7 @@ fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), Frami
 
 fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
     if chunk.typecode != typecode || !chunk.short || chunk.value != 0 {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             chunk.header_start,
             format!(
                 "expected short zero chunk {typecode:#x}, got {:#x}",
@@ -381,7 +374,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     let uuid_chunk = child(bytes, wrapper.body.start, wrapper.body.end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
     if uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
         ));
@@ -422,7 +415,10 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         }
     }
     if !end_seen || offset != wrapper.body.end || wrapper.next_offset != body.end {
-        return Err(malformed_at(offset, "class wrapper has trailing bytes"));
+        return Err(FramingError::structural(
+            offset,
+            "class wrapper has trailing bytes",
+        ));
     }
     Ok((
         ClassDescriptor {
@@ -452,7 +448,7 @@ fn parse_userdata(
         let payload = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
         if payload.next_offset != wrapper.body.end {
-            return Err(malformed_at(
+            return Err(FramingError::structural(
                 wrapper.body.end,
                 "userdata wrapper has trailing bytes",
             ));
@@ -509,7 +505,7 @@ fn parse_userdata(
     let last_saved_as_goo = if version.1 >= 2 {
         let value = header_reader.u8()?;
         if value > 1 {
-            return Err(malformed_at(
+            return Err(FramingError::structural(
                 header_reader.position() - 1,
                 "last-saved-as-goo must be encoded as 0 or 1",
             ));
@@ -521,7 +517,7 @@ fn parse_userdata(
     let archive_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     let writer_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     if header_reader.position() != header.body.end {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             header_reader.position(),
             "userdata header has trailing bytes",
         ));
@@ -529,7 +525,7 @@ fn parse_userdata(
     let payload = child(bytes, header.next_offset, wrapper.body.end, archive, false)?;
     require_long(&payload, ANONYMOUS)?;
     if payload.next_offset != wrapper.body.end {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             payload.next_offset,
             "userdata wrapper has trailing bytes",
         ));
@@ -578,7 +574,7 @@ fn parse_history(
                 data_range = Some(chunk_range(&item));
             }
             _ => {
-                return Err(malformed_at(
+                return Err(FramingError::structural(
                     item.header_start,
                     "history child is duplicate or out of order",
                 ))
@@ -606,7 +602,10 @@ fn finite_attribute(value: f64, offset: usize, label: &str) -> Result<f64, Frami
     if value.is_finite() {
         Ok(value)
     } else {
-        Err(malformed_at(offset, format!("{label} is not finite")))
+        Err(FramingError::structural(
+            offset,
+            format!("{label} is not finite"),
+        ))
     }
 }
 
@@ -624,7 +623,7 @@ pub(crate) fn parse_attributes(
     };
     if version.0 == 1 {
         if archive.value() >= 50 || version.1 > 8 {
-            return Err(malformed_at(
+            return Err(FramingError::structural(
                 body_range.start,
                 "unsupported fixed object-attributes version",
             ));
@@ -770,7 +769,7 @@ pub(crate) fn parse_attributes(
         });
     }
     if version.0 != 2 || archive.value() < 50 || version.1 > 13 {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             body_range.start,
             "unsupported tagged object-attributes version",
         ));
@@ -852,14 +851,14 @@ pub(crate) fn parse_attributes(
             40 => 12,
             41 => 13,
             _ => {
-                return Err(malformed_at(
+                return Err(FramingError::structural(
                     reader.position() - 1,
                     format!("unknown future object-attributes item {item}"),
                 ))
             }
         };
         if version.1 < gate {
-            return Err(malformed_at(
+            return Err(FramingError::structural(
                 reader.position() - 1,
                 format!("attribute item {item} precedes its version gate"),
             ));
@@ -964,7 +963,7 @@ pub(crate) fn parse_attributes(
             _ => unreachable!(),
         }
     }
-    Err(malformed_at(
+    Err(FramingError::structural(
         reader.end(),
         "tagged object attributes are missing terminator",
     ))
@@ -982,14 +981,14 @@ pub(crate) fn read_uuid_list(
         false,
     )?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             reader.position(),
             "UUID list wrapper is invalid",
         ));
     }
     let mut payload = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
     if payload.i32()? != 1 || payload.i32()? != 0 {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             payload.position(),
             "UUID list version is unsupported",
         ));
@@ -1001,7 +1000,7 @@ pub(crate) fn read_uuid_list(
         values.push(uuid_reader(&mut payload)?);
     }
     if payload.remaining() != 0 {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             payload.position(),
             "UUID list has trailing bytes",
         ));
@@ -1021,7 +1020,7 @@ fn finish_attributes(
     label: &str,
 ) -> Result<(), FramingError> {
     if reader.remaining() != 0 {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             reader.position(),
             format!("{label} has trailing bytes"),
         ));
@@ -1164,7 +1163,7 @@ pub(crate) fn parse_object_record(
 ) -> Result<ObjectDescriptor, FramingError> {
     let mut warnings = Vec::new();
     if record.typecode != 0x2000_8070 || record.short {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             record.range.start,
             "object record must be long-framed",
         ));
@@ -1172,13 +1171,13 @@ pub(crate) fn parse_object_record(
     let mut offset = record.body.start;
     let type_chunk = child(bytes, offset, record.body.end, archive, false)?;
     if type_chunk.typecode != OBJECT_RECORD_TYPE || !type_chunk.short {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             type_chunk.header_start,
             "object type must be the first short child",
         ));
     }
     let object_type = u32::try_from(type_chunk.value)
-        .map_err(|_| malformed_at(type_chunk.header_start, "negative object type"))?;
+        .map_err(|_| FramingError::structural(type_chunk.header_start, "negative object type"))?;
     offset = type_chunk.next_offset;
     let class = child(bytes, offset, record.body.end, archive, false)?;
     require_long(&class, OPENNURBS_CLASS)?;
@@ -1186,7 +1185,7 @@ pub(crate) fn parse_object_record(
     let uuid_chunk = child(bytes, offset, class.body.end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
     if uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
         ));
@@ -1222,7 +1221,7 @@ pub(crate) fn parse_object_record(
         }
     }
     if !class_end_seen || offset != class.body.end {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             class.body.end,
             "class wrapper has trailing bytes",
         ));
@@ -1240,7 +1239,10 @@ pub(crate) fn parse_object_record(
         if item.typecode == OBJECT_RECORD_END {
             require_short_zero(&item, OBJECT_RECORD_END)?;
             if item.next_offset != record.body.end {
-                return Err(malformed_at(item.header_start, "object end is not final"));
+                return Err(FramingError::structural(
+                    item.header_start,
+                    "object end is not final",
+                ));
             }
             offset = item.next_offset;
             object_end_seen = true;
@@ -1282,7 +1284,7 @@ pub(crate) fn parse_object_record(
                 phase = 3;
             }
             _ => {
-                return Err(malformed_at(
+                return Err(FramingError::structural(
                     item.header_start,
                     "object trailer child is out of order or malformed",
                 ))
@@ -1291,7 +1293,7 @@ pub(crate) fn parse_object_record(
         offset = item.next_offset;
     }
     if !object_end_seen || offset != record.body.end {
-        return Err(malformed_at(
+        return Err(FramingError::structural(
             record.body.end,
             "object record is missing object end",
         ));

@@ -2,6 +2,7 @@
 //! `DisplayLists` descriptor tables.
 
 use crate::container::{ContainerScan, Section};
+use cadmpeg_core::bytes::find;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -264,7 +265,7 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
 pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
     const MARKER: &[u8] = b"uoTempFaceTessData_c";
     let payload = section.payload();
-    let Some(marker) = payload.windows(MARKER.len()).position(|w| w == MARKER) else {
+    let Some(marker) = find(payload, MARKER) else {
         return Vec::new();
     };
     let end = marker + MARKER.len();
@@ -776,12 +777,9 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
     let subtract = |left: Point3, right: Point3| {
         Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
     };
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-    let norm = |value: Vector3| dot(value, value).sqrt();
     match surface {
         SurfaceGeometry::Plane { origin, normal, .. } => {
-            Some(dot(subtract(point, *origin), *normal).abs() / norm(*normal))
+            Some(subtract(point, *origin).dot(*normal).abs() / normal.norm())
         }
         SurfaceGeometry::Cylinder {
             origin,
@@ -790,17 +788,17 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
             ..
         } => {
             let delta = subtract(point, *origin);
-            let axis_length = norm(*axis);
-            let axial = dot(delta, *axis) / axis_length;
+            let axis_length = axis.norm();
+            let axial = delta.dot(*axis) / axis_length;
             let radial = Vector3::new(
                 delta.x - axis.x * axial / axis_length,
                 delta.y - axis.y * axial / axis_length,
                 delta.z - axis.z * axial / axis_length,
             );
-            Some((norm(radial) - radius).abs())
+            Some((radial.norm() - radius).abs())
         }
         SurfaceGeometry::Sphere { center, radius, .. } => {
-            Some((norm(subtract(point, *center)) - radius).abs())
+            Some((subtract(point, *center).norm() - radius).abs())
         }
         SurfaceGeometry::Torus {
             center,
@@ -810,15 +808,15 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
             ..
         } => {
             let delta = subtract(point, *center);
-            let axis_length = norm(*axis);
-            let axial = dot(delta, *axis) / axis_length;
+            let axis_length = axis.norm();
+            let axial = delta.dot(*axis) / axis_length;
             let radial = Vector3::new(
                 delta.x - axis.x * axial / axis_length,
                 delta.y - axis.y * axial / axis_length,
                 delta.z - axis.z * axial / axis_length,
             );
             Some(
-                (((norm(radial) - major_radius).powi(2) + axial.powi(2)).sqrt() - minor_radius)
+                (((radial.norm() - major_radius).powi(2) + axial.powi(2)).sqrt() - minor_radius)
                     .abs(),
             )
         }

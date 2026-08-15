@@ -14,6 +14,7 @@ use cadmpeg_ir::subd::{
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::container::ContainerScan;
+use crate::loss::F3dLossCode;
 
 const ENTRY_MARKER: &str = "/TSplines.BlobParts/";
 
@@ -57,36 +58,25 @@ pub(crate) fn decode(
         match parse(ctx, &entry.name, scan.entry_bytes(&entry.name)?) {
             Ok(parsed) => {
                 if parsed.unknown_records != 0 {
-                    losses.push(cadmpeg_ir::report::LossNote {
-                        code: cadmpeg_ir::report::LossKind::shared(
-                            cadmpeg_ir::LossTaxonomy::RecordNotTyped,
-                        ),
-                        severity: cadmpeg_ir::report::Severity::Warning,
-                        message: format!(
-                            "{} T-spline record(s) were retained without typed semantics.",
-                            parsed.unknown_records
-                        ),
-                        provenance: None,
-                    });
+                    losses.push(F3dLossCode::TsplineRecordUntyped.note(format!(
+                        "{} T-spline record(s) were retained without typed semantics.",
+                        parsed.unknown_records
+                    )));
                 }
                 cages.push(parsed.surface);
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => losses.push(cadmpeg_ir::report::LossNote {
-                code: cadmpeg_ir::report::LossKind::shared(
-                    cadmpeg_ir::LossTaxonomy::GeometryNotTransferred,
-                ),
-                severity: cadmpeg_ir::report::Severity::Error,
-                message: format!("T-spline control cage not decoded: {error}"),
-                provenance: None,
-            }),
+            Err(error) => losses.push(
+                F3dLossCode::TsplineCageUndecoded
+                    .note(format!("T-spline control cage not decoded: {error}")),
+            ),
         }
     }
     Ok((cages, losses))
 }
 
 fn malformed(name: &str, message: impl std::fmt::Display) -> CodecError {
-    CodecError::Malformed(format!("T-spline cage {name}: {message}"))
+    crate::error::malformed(format!("T-spline cage {name}: {message}"))
 }
 
 fn parse_usize(name: &str, value: Option<&str>, field: &str) -> Result<usize, CodecError> {

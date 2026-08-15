@@ -428,27 +428,27 @@
     "losses": [
       {
         "code": {
-          "code": "decode_diagnostic",
+          "code": "decode.warning",
           "kind": "decode_diagnostic",
-          "namespace": "shared"
+          "namespace": "step"
         },
         "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "reference_graph_not_closed",
+          "code": "tessellation.item-undeclared",
           "kind": "reference_graph_not_closed",
-          "namespace": "shared"
+          "namespace": "step"
         },
         "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "geometry_not_transferred",
+          "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "shared"
+          "namespace": "step"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"

@@ -84,12 +84,12 @@ jobs:
           python3 -m unittest -v scripts/test_check_public_api_ledger.py
           python3 scripts/check-public-api-ledger.py
 
-      - name: Fuzz parser imports
-        # Focused NX/Creo harnesses must import ::fuzz, not parser modules.
+      - name: Codec facade
+        # Crate-root pub items must match docs/codec-facade.toml.
         run: |
           set -euo pipefail
-          python3 -m unittest -v scripts/test_check_fuzz_parser_imports.py
-          python3 scripts/check-fuzz-parser-imports.py
+          python3 -m unittest -v scripts/test_check_codec_facade.py
+          python3 scripts/check-codec-facade.py
 
       - name: Format check
         run: cargo fmt --all --check
@@ -142,8 +142,8 @@ jobs:
       - name: Public API ledger unit tests
         run: python3 -m unittest -v scripts/test_check_public_api_ledger.py
 
-      - name: Fuzz parser import unit tests
-        run: python3 -m unittest -v scripts/test_check_fuzz_parser_imports.py
+      - name: Codec facade unit tests
+        run: python3 -m unittest -v scripts/test_check_codec_facade.py
 
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this

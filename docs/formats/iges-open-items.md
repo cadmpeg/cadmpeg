@@ -5,6 +5,22 @@ writer and its independent-application checks are extras above L8; they do not
 close the L9 gate while decode can time out, return invalid `CadIr`, or omit
 semantic records from transfer.
 
+This document lists the parts of the IGES format that we do not know. The specification `iges.md` gives the parts that we know.
+
+Each item has these parts:
+
+- **Question** — what we must find.
+- **Known** — what the specification gives now.
+- **Need** — why we must find the answer.
+- **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
+- **Note** — a defect in the item or in the specification.
+
+Each item has an identifier. Use the identifier in commit messages and in code comments.
+
+When an item is resolved, delete it in the same change that writes the answer into the specification. Do not keep a Resolved part.
+
+This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
+
 ## P0 — Make decode terminating and resource-bounded
 
 Fixed ASCII decode has exceeded the 30-second per-file guard on multiple
@@ -122,7 +138,7 @@ from a conformant file.
 
 **Need.** We need per-entity parameter arity, or a source rule that makes the boundary unique. If a candidate group contains an unresolved member, the group must remain visible as a finding instead of disappearing through candidate selection.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `fdfda1cff` preserved malformed trailing groups but did not establish the boundary. The current `iges.md` wording promotes the earliest structurally closed suffix to a format rule without independent evidence. Hostile-sweep confidence: high. If an entity contains an earlier token suffix that also satisfies the pointer shape, the decoder can assign the wrong parameters and property owner.
+**Note.** Closure audit 2026-08-10: reopened. Commit `fdfda1cff` preserved malformed trailing groups but did not establish the boundary. The current `iges.md` wording promotes the earliest structurally closed suffix to a format rule without independent evidence. If an entity contains an earlier token suffix that also satisfies the pointer shape, the decoder can assign the wrong parameters and property owner.
 
 ### PH-04. A physical line longer than 80 bytes
 
@@ -370,7 +386,7 @@ from a conformant file.
 
 **Need.** We need an ownership invariant or a source rule that makes the curve-to-edge relation unique, or a resolution path that verifies each candidate's range and endpoints. A wrong choice transfers the wrong range or endpoints to a boundary, B-rep, offset, composite, or sweep.
 
-**Note.** New item filed after the hostile sweep on 2026-08-10. Confidence: high. With two edge occurrences sharing one curve but having different spans, storage order decides; no candidate comparison or rejection exists.
+**Note.** New item filed after the hostile sweep on 2026-08-10. With two edge occurrences sharing one curve but having different spans, storage order decides; no candidate comparison or rejection exists.
 
 ## 6. Product structure, annotation, and presentation
 
@@ -454,7 +470,7 @@ from a conformant file.
 
 **Need.** We need the encoding for an unclassified loop, or a refusal when no valid outer-loop representation exists. The choice must not depend on list order.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `ed211eb05` documented the first-unclassified policy and added generated fixtures, but it supplied no source or producer evidence. Hostile-sweep confidence: high. Two unclassified loops with different containment or orientation can produce the wrong outer boundary.
+**Note.** Closure audit 2026-08-10: reopened. Commit `ed211eb05` documented the first-unclassified policy and added generated fixtures, but it supplied no source or producer evidence. Two unclassified loops with different containment or orientation can produce the wrong outer boundary.
 
 ### WR-02. The declared Global minimum resolution is tighter than the writer's own acceptance bound
 
@@ -474,7 +490,7 @@ from a conformant file.
 
 **Need.** We need the exterior shell identified from geometry, an explicit source role, or a validated IR invariant. List position alone must not invert a solid.
 
-**Note.** Closure audit 2026-08-10: reopened. Commit `46a71f68c` introduced the IR wording, accessor, writer use, and tests together. This is promotion to an IR invariant, not evidence that all producers supply the order. Hostile-sweep confidence: high.
+**Note.** Closure audit 2026-08-10: reopened. Commit `46a71f68c` introduced the IR wording, accessor, writer use, and tests together. This is promotion to an IR invariant, not evidence that all producers supply the order.
 
 ### WR-04. Global fields are a fixed string
 
@@ -546,9 +562,7 @@ from a conformant file.
 
 **Known.** `scripts/verify-iges-freecad.py` imports each file and refuses an import that gives no object or whose shapes are null or invalid (`:37-50`). It counts solids and faces and asserts nothing about them. A file with the wrong units, a mirrored surface, an inverted solid (WR-03), or an unbounded face (WR-01) imports as a valid shape and passes.
 
-**Note.** The script is wired into no CI job and no test, and it needs a manual environment. No result artifact is committed, so no run is on record.
-
-**Note.** The script globs `*.igs` only (`:68`). The CLI accepts and writes both `.igs` and `.iges` (`crates/cadmpeg/src/main.rs:168`), so a directory of `.iges` output is silently outside the check.
+**Note.** The script is wired into no CI job and no test, and it needs a manual environment. No result artifact is committed, so no run is on record. The script globs `*.igs` only (`:68`). The CLI accepts and writes both `.igs` and `.iges` (`crates/cadmpeg/src/main.rs:168`), so a directory of `.iges` output is silently outside the check.
 
 **Need.** The P0 gate above requires independent native-application acceptance. We need the acceptance criterion to compare geometry with the intended model, the glob to cover both extensions, and each run recorded.
 

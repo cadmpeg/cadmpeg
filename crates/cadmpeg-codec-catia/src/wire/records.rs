@@ -13,6 +13,7 @@
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::geometry::knots_strictly_increasing;
 use cadmpeg_ir::math::Point3;
 
 use crate::layout::a_family_frame as a_frame;
@@ -111,7 +112,7 @@ pub(crate) fn parse_consolidated_pcurve(
     at += 16;
     if at > end
         || !matches!(&data[at..end], [0x07] | [0x07, 0x00])
-        || knots.windows(2).any(|v| v[0] >= v[1])
+        || !knots_strictly_increasing(&knots)
         || range[0] >= range[1]
         || knots
             .iter()

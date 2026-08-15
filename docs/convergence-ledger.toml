@@ -1,23 +1,43 @@
 # Convergence ratchet ceilings. Counts may only fall.
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
-measured_at = "b6b4b073b59401a1dda44fe449b0c5aaaa56dd80"
-filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders."
+# [kinds] is pressure (no zero destination) or convergence ([targets]).
+measured_at = "bd717f777ecd746b57c3e4ed10ed0587eb234ffb"
+filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
+
+[kinds]
+from_endian_bytes = "pressure"
+codec_error_malformed_format = "convergence"
+loss_note_struct_literals = "convergence"
+bare_tolerance_literals = "convergence"
+nonliteral_vec_repeat = "convergence"
+crate_root_tests_rs = "convergence"
+path_test_includes = "convergence"
+test_line_debt = "convergence"
+production_line_debt = "convergence"
 
 [targets]
+codec_error_malformed_format = 0
+loss_note_struct_literals = 0
+bare_tolerance_literals = 0
+nonliteral_vec_repeat = 0
 crate_root_tests_rs = 0
 path_test_includes = 0
 test_line_debt = 0
 production_line_debt = 0
 
 [ceilings]
-from_endian_bytes = 68
-le_be_at_outside_core = 0
-codec_error_malformed_format = 1266
-loss_note_struct_literals = 197
-bare_tolerance_literals = 724
+from_endian_bytes = 113
+codec_error_malformed_format = 1264
+loss_note_struct_literals = 2
+bare_tolerance_literals = 708
 nonliteral_vec_repeat = 152
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 0
+test_line_debt = 1777
 production_line_debt = 0
+
+[reasons]
+from_endian_bytes = "widened glob from cadmpeg-codec-*/src to crates/**/src so the counter matches the unscoped from_le_bytes/from_be_bytes rule; honest end state is not zero (View/le/be and documented exceptions)"
+bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
+test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit"

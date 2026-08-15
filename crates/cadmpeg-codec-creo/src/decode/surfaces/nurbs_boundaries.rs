@@ -9,6 +9,8 @@ use cadmpeg_ir::math::Point3;
 use super::super::analytic::{cross, dot, quadratic_real_roots, PlaneEquation};
 use super::super::sketch::normalized;
 
+const EPS_CUBIC_PARAM: f64 = 1e-11;
+
 #[derive(Clone)]
 pub(in super::super) struct NurbsSurfaceBoundary {
     pub(super) curve: NurbsCurve,
@@ -397,7 +399,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
     if scale <= value_tolerance {
         return Vec::new();
     }
-    let parameter_tolerance = 1e-11;
+    let parameter_tolerance = EPS_CUBIC_PARAM;
     let evaluate = |parameter: f64| {
         ((cubic * parameter + quadratic) * parameter + linear) * parameter + constant
     };

@@ -10,9 +10,41 @@ Each item has these parts:
 - **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
 - **Note** — a defect in the item or in the specification.
 
+When an item is resolved, delete it in the same change that writes the answer into the specification. Do not keep a Resolved part.
+
 Each item has an identifier. Use the identifier in commit messages and in code comments.
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
+
+## Decision queue
+
+These items have a Conflict part and need a decision.
+
+- LP-07. Schema aliases and duplicate section selection
+- AR-03. Typed geometry side-entry cardinality
+- GP-04. Topology-color shape-property association
+- GP-05. GUI provider and property duplicate selection
+- PG-01. `ObjectDeps` framing and uniqueness
+- PG-03. Property identity and runtime-family selection
+- PT-01. `StringHasher2` association
+- PT-02. Element-map position to neutral-occurrence order
+- PT-03. Element-map carrier and owner selection
+- XT-01. Edge endpoint child selection
+- XT-02. Edge representation selection and uniqueness
+- XT-03. Non-manifold radial order
+- DP-01. Forward declared dependencies
+- DP-02. Sketch profile seed order
+- DP-03. Sketch profile junction ambiguity and tolerance
+- DP-04. Design runtime and sketch-carrier dispatch
+- PR-01. Product membership and record identity selection
+- SA-01. Runtime-type to annotation-kind mapping
+- SA-02. Annotation scalar and position property selection
+- DG-01. TechDraw runtime-type classification
+- DG-02. Drawing link and parameter selection
+- BR-01. Text B-rep header and table selection
+- AT-01. Attachment frame carrier precedence
+- JN-01. Joint kind and enumeration carrier selection
+- AG-01. Kernel-property runtime dispatch
 
 ## 1. Legacy persistence
 
@@ -26,7 +58,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish exact attribute spelling, section cardinality, and duplicate handling from FreeCAD source and malformed fixtures. Conflicting or duplicate structural carriers must be rejected rather than selected by order.
 
-**Confidence.** High. The first-candidate paths are direct; the producer's malformed-input policy remains unverified.
+**Note.** The first-candidate paths are direct; the producer's malformed-input policy remains unverified.
 
 ## 2. Auxiliary records
 
@@ -116,7 +148,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish GUI container cardinality, property-name uniqueness, and value precedence from FreeCAD output. Conflicting duplicate records must be rejected or retained without a source-order choice.
 
-**Confidence.** High. The selection paths and the disagreement are present in the code read; valid producer cardinality is still unknown.
+**Note.** The selection paths and the disagreement are present in the code read; valid producer cardinality is still unknown.
 
 ## 4. Persistence graph
 
@@ -142,7 +174,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish FreeCAD property-name uniqueness and the exact runtime-type registry. A conflicting duplicate or multi-family type must be rejected or retained without a semantic family choice.
 
-**Confidence.** High. The duplicate identity collision and ordered substring dispatch are direct code paths. The producer invariant requires primary source or independent malformed fixtures.
+**Note.** The duplicate identity collision and ordered substring dispatch are direct code paths. The producer invariant requires primary source or independent malformed fixtures.
 
 ## 5. Persistent topology identity
 
@@ -180,7 +212,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the exact element-map carrier cardinality and property association. Duplicate candidates must be rejected or linked by a producer-defined discriminator.
 
-**Confidence.** High. The first-candidate paths are direct; no source rule for duplicate carriers was found.
+**Note.** The first-candidate paths are direct; no source rule for duplicate carriers was found.
 
 ## 6. Exact-topology transfer
 
@@ -268,7 +300,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the exact design runtime registry, child grammar, and family precedence. Unknown or conflicting carriers must remain native or be rejected.
 
-**Confidence.** High. The alternative order and first-child choices are direct code paths; valid extension naming and carrier cardinality are unknown.
+**Note.** The alternative order and first-child choices are direct code paths; valid extension naming and carrier cardinality are unknown.
 
 ## 8. Product structure
 
@@ -282,7 +314,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the producer cardinality and precedence for container membership, product records, prototype links, and runtime types. Ambiguous records must be rejected or retained without a source-order choice.
 
-**Confidence.** High. The first/last choices and their inconsistent maps are direct; the valid FreeCAD cardinalities are not established.
+**Note.** The first/last choices and their inconsistent maps are direct; the valid FreeCAD cardinalities are not established.
 
 ## 9. Semantic annotations
 
@@ -322,7 +354,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the exact TechDraw runtime registry and inheritance/type mapping. Unknown extension types must remain native.
 
-**Confidence.** High. The filter and ordered classifier are direct; valid extension type names are not established.
+**Note.** The filter and ordered classifier are direct; valid extension type names are not established.
 
 ### DG-02. Drawing link and parameter selection
 
@@ -334,7 +366,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the TechDraw property definitions, cardinalities, and precedence from FreeCAD source or independent saved documents.
 
-**Confidence.** High. The code has separate first-wins and last-wins paths; producer uniqueness remains unverified.
+**Note.** The code has separate first-wins and last-wins paths; producer uniqueness remains unverified.
 
 ## 11. Text B-rep
 
@@ -348,7 +380,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the producer framing and reject duplicate or embedded header/table markers instead of accepting the first occurrence.
 
-**Confidence.** Medium. Valid OCCT text B-rep output normally has one header and one table, but the decoder has no uniqueness check for repeated markers.
+**Note.** Valid OCCT text B-rep output normally has one header and one table, but the decoder has no uniqueness check for repeated markers.
 
 ## 12. Attachment and assembly
 
@@ -362,7 +394,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the FreeCAD attachment composition and property cardinality. The decoder must compose or reject conflicting carriers according to that rule.
 
-**Confidence.** High. The precedence is explicit; no producer rule for the neutral effective frame was found.
+**Note.** The precedence is explicit; no producer rule for the neutral effective frame was found.
 
 ### JN-01. Joint kind and enumeration carrier selection
 
@@ -374,7 +406,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish joint runtime grammars, carrier cardinality, and grounded/joint-type precedence from FreeCAD source or independent saved documents.
 
-**Confidence.** Medium. The selection is direct, but the producer may forbid the conflicting forms.
+**Note.** The selection is direct, but the producer may forbid the conflicting forms.
 
 ## 13. Typed application geometry
 
@@ -388,4 +420,4 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the exact runtime-type registry and value grammar. Unknown or multi-family types must remain opaque or be rejected.
 
-**Confidence.** High. The dispatch order is direct; no exact registry evidence was found.
+**Note.** The dispatch order is direct; no exact registry evidence was found.

@@ -34,7 +34,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::io::Write as IoWrite;
 use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use serde::Deserialize;
 
@@ -256,10 +258,12 @@ where
 
 /// True when `path` names a test module rather than a parser.
 fn is_test_source_path(path: &str) -> bool {
-    Path::new(path).components().any(|component| match component {
-        Component::Normal(name) => name == "tests",
-        _ => false,
-    })
+    Path::new(path)
+        .components()
+        .any(|component| match component {
+            Component::Normal(name) => name == "tests",
+            _ => false,
+        })
 }
 
 /// A token tag that can be emitted as a Rust constant.
@@ -305,12 +309,12 @@ fn parse_token_tag(tag: &str) -> Option<TokenConst> {
         return Some(TokenConst::Bytes(bytes));
     }
     if let Ok(value) = compact.parse::<u64>() {
-        return Some(if value <= u64::from(u8::MAX) {
-            TokenConst::U8(value as u8)
-        } else if value <= u64::from(u16::MAX) {
-            TokenConst::U16(value as u16)
-        } else if value <= u64::from(u32::MAX) {
-            TokenConst::U32(value as u32)
+        return Some(if let Ok(value) = u8::try_from(value) {
+            TokenConst::U8(value)
+        } else if let Ok(value) = u16::try_from(value) {
+            TokenConst::U16(value)
+        } else if let Ok(value) = u32::try_from(value) {
+            TokenConst::U32(value)
         } else {
             TokenConst::U64(value)
         });
@@ -352,9 +356,7 @@ fn rust_hex(value: u64, digits: usize) -> String {
 }
 
 fn rust_byte_array(bytes: &[u8]) -> String {
-    let ascii_ok = bytes
-        .iter()
-        .all(|&b| b == 0 || (0x20..=0x7e).contains(&b));
+    let ascii_ok = bytes.iter().all(|&b| b == 0 || (0x20..=0x7e).contains(&b));
     let has_letter = bytes.iter().any(|&b| b.is_ascii_alphabetic());
     if ascii_ok && has_letter {
         let mut out = String::from("*b\"");
@@ -384,11 +386,7 @@ fn rust_token_ty(value: &TokenConst) -> String {
 }
 
 /// Decode a field `value` against its declared type. `width` is the byte width.
-fn decode_field_value(
-    raw: &toml::Value,
-    ty: &str,
-    width: Option<u64>,
-) -> Result<String, String> {
+fn decode_field_value(raw: &toml::Value, ty: &str, width: Option<u64>) -> Result<String, String> {
     let element = ty.split_once('[').map_or(ty, |(head, _)| head);
     if matches!(
         element,
@@ -955,10 +953,7 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
             if is_test_source_path(&check.path) {
                 push(
                     &mut errors,
-                    format!(
-                        "{at}: code check path `{}` names a test file",
-                        check.path
-                    ),
+                    format!("{at}: code check path `{}` names a test file", check.path),
                 );
             }
             let path = ctx.root.join(&check.path);
@@ -1298,7 +1293,7 @@ fn render(file: &LayoutFile) -> String {
                 cell(&field.note)
             };
             if let Some(raw) = &field.value {
-                meaning.push_str(&format!(" · value `{raw}`"));
+                let _ = write!(meaning, " · value `{raw}`");
             }
             match record.kind {
                 RecordKind::Byte => {
@@ -1572,10 +1567,8 @@ fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
                             "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
                             field.name, field.ty, record.section
                         );
-                        let _ = writeln!(
-                            fields_out,
-                            "    pub(crate) const {value_name}: {binding};"
-                        );
+                        let _ =
+                            writeln!(fields_out, "    pub(crate) const {value_name}: {binding};");
                     }
                     Err(message) => errors.push(format!("{at}: {message}")),
                 }
@@ -1708,7 +1701,32 @@ fn emit_layout_rs(file: &LayoutFile) -> Result<String, Vec<String>> {
     if !out.ends_with('\n') {
         out.push('\n');
     }
-    Ok(out)
+    Ok(rustfmt_source(&out))
+}
+
+/// rustfmt the emitter output so checked-in `layout.rs` files stay equal to
+/// `cargo fmt` (long byte arrays wrap) and to `UPDATE_LAYOUT_CODE=1`.
+fn rustfmt_source(src: &str) -> String {
+    let mut child = Command::new("rustfmt")
+        .args(["--emit", "stdout", "--quiet", "--edition", "2021"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rustfmt");
+    child
+        .stdin
+        .as_mut()
+        .expect("rustfmt stdin")
+        .write_all(src.as_bytes())
+        .expect("write rustfmt stdin");
+    let output = child.wait_with_output().expect("wait rustfmt");
+    assert!(
+        output.status.success(),
+        "rustfmt rejected generated layout.rs:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("rustfmt stdout utf-8")
 }
 
 // ---------------------------------------------------------------------------

@@ -14,12 +14,11 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
-use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::curves::{error, unsupported, GeometryError};
+use crate::curves::{error, GeometryError};
 use crate::wire::Uuid;
 
 /// Decode context and root view used for mesh expansion.
@@ -204,19 +203,19 @@ pub(crate) fn decode(
     let major = version >> 4;
     let minor = version & 0x0f;
     if major == 2 || major == 0 || major > 3 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             "unsupported ON_Mesh major",
         ));
     }
     if minor > 8 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             "unsupported ON_Mesh minor",
         ));
     }
     if major == 3 && archive == ArchiveVersion::V5 && minor > 5 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             reader.position() - 1,
             "mesh minor is newer than the V5 writer band",
         ));
@@ -771,41 +770,13 @@ fn inflate<'a>(
     source: View<'_>,
     expected: usize,
 ) -> Result<(View<'a>, usize), GeometryError> {
-    let input = source.window();
     let base = source.start();
-    let mut writer = expand
-        .ctx
-        .begin_expand(source, ExpandSpec::Exact(expected as u64))
-        .map_err(|refusal| expansion_refused(base, &refusal))?;
-    let mut decoder = Decompress::new(true);
-    let mut source_offset = 0;
-    let mut buffer = [0_u8; 8192];
-    loop {
-        let before_in = decoder.total_in();
-        let before_out = decoder.total_out();
-        let status = decoder
-            .decompress(&input[source_offset..], &mut buffer, FlushDecompress::None)
-            .map_err(|_| error(base + source_offset, "malformed zlib buffer"))?;
-        let consumed = (decoder.total_in() - before_in) as usize;
-        source_offset = source_offset
-            .checked_add(consumed)
-            .ok_or_else(|| error(base, "zlib input overflow"))?;
-        let produced = (decoder.total_out() - before_out) as usize;
-        // The writer charges before retaining and rejects output past the
-        // declared size; a refusal fuses the context.
-        writer
-            .write(&buffer[..produced])
-            .map_err(|refusal| expansion_refused(base, &refusal))?;
-        if status == Status::StreamEnd {
-            let view = writer
-                .finalize()
-                .map_err(|refusal| expansion_refused(base, &refusal))?;
-            return Ok((view, source_offset));
-        }
-        if consumed == 0 && produced == 0 {
-            return Err(error(base, "truncated zlib buffer"));
-        }
-    }
+    cadmpeg_container::compression::inflate_zlib_member(
+        expand.ctx(),
+        source,
+        ExpandSpec::Exact(expected as u64),
+    )
+    .map_err(|refusal| expansion_refused(base, &refusal))
 }
 
 fn read_ngons(
@@ -827,7 +798,7 @@ fn read_ngons(
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor != 0 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported ngon version",
         ));
@@ -870,7 +841,7 @@ fn read_mapping_tag(
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor > 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported mapping-tag version",
         ));
@@ -923,7 +894,7 @@ fn read_double_chunk<'a>(
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor > 1 {
-        return Err(unsupported(
+        return Err(GeometryError::unsupported(
             child.position() - 8,
             "unsupported double-vertex version",
         ));

@@ -94,77 +94,6 @@ class StripCfgTest(unittest.TestCase):
 
 
 class PatternFilters(unittest.TestCase):
-    def _count_in_crate(self, source: str) -> int:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            src = root / "crates" / "cadmpeg-codec-demo" / "src"
-            src.mkdir(parents=True)
-            (src / "lib.rs").write_text(source, encoding="utf-8")
-            old_root = ratchet.ROOT
-            try:
-                ratchet.ROOT = root
-                return ratchet.count_le_be_at_outside_core()
-            finally:
-                ratchet.ROOT = old_root
-
-    def test_skips_use_import_for_le_at(self) -> None:
-        self.assertEqual(
-            self._count_in_crate(
-                "use cadmpeg_core::le::u32_at;\n"
-                "fn f(b: &[u8]) { let _ = le::u32_at(b, 0); }\n"
-            ),
-            1,
-        )
-
-    def test_counts_aliased_imported_le_at(self) -> None:
-        self.assertEqual(
-            self._count_in_crate(
-                "use cadmpeg_core::le::u32_at as u32_le;\n"
-                "fn f(b: &[u8]) { let _ = u32_le(b, 0); }\n"
-            ),
-            1,
-        )
-
-    def test_counts_unaliased_imported_le_at(self) -> None:
-        self.assertEqual(
-            self._count_in_crate(
-                "use cadmpeg_core::le::u32_at;\n"
-                "fn f(b: &[u8]) { let _ = u32_at(b, 0); }\n"
-            ),
-            1,
-        )
-
-    def test_counts_brace_aliased_imports(self) -> None:
-        self.assertEqual(
-            self._count_in_crate(
-                "use cadmpeg_core::le::{u32_at as u32_le, f64_at};\n"
-                "fn f(b: &[u8]) { u32_le(b, 0); f64_at(b, 8); }\n"
-            ),
-            2,
-        )
-
-    def test_ignores_view_methods_for_aliased_name(self) -> None:
-        self.assertEqual(
-            self._count_in_crate(
-                "use cadmpeg_core::le::u32_at as u32_le;\n"
-                "fn f(v: View, b: &[u8]) {\n"
-                "    v.u32_le();\n"
-                "    View::u32_le_at(b, 0);\n"
-                "    u32_le(b, 0);\n"
-                "}\n"
-            ),
-            1,
-        )
-
-    def test_imported_le_be_at_names_parses_alias_and_brace(self) -> None:
-        self.assertEqual(
-            ratchet.imported_le_be_at_names(
-                "use cadmpeg_core::le::u32_at as u32_le;\n"
-                "use cadmpeg_core::be::{f64_at, u16_at as u16_be};\n"
-            ),
-            frozenset({"u32_le", "f64_at", "u16_be"}),
-        )
-
     def test_excludes_loss_note_return_and_struct(self) -> None:
         text = (
             "struct LossNote {\n"
@@ -192,6 +121,36 @@ class PatternFilters(unittest.TestCase):
         self.assertFalse(ratchet.is_production_rs(Path("crates/c/tests/foo.rs")))
         self.assertFalse(ratchet.is_production_rs(Path("crates/c/src/tests.rs")))
         self.assertTrue(ratchet.is_production_rs(Path("crates/c/src/decode.rs")))
+
+    def test_bare_tolerance_includes_seven_eight_eleven(self) -> None:
+        text = "a 1e-6 b 1e-7 c 1e-8 d 1e-9 e 1e-10 f 1e-11 g 1e-12 h 1e-18\n"
+        self.assertEqual(
+            ratchet.BARE_TOLERANCE.findall(text),
+            ["1e-6", "1e-7", "1e-8", "1e-9", "1e-10", "1e-11", "1e-12"],
+        )
+
+    def test_from_endian_counts_non_codec_crates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for relative, source in (
+                (
+                    "crates/cadmpeg-codec-demo/src/lib.rs",
+                    "fn f() { u32::from_le_bytes([0; 4]); }\n",
+                ),
+                (
+                    "crates/cadmpeg-protein/src/lib.rs",
+                    "fn f() { u32::from_le_bytes([0; 4]); u64::from_be_bytes([0; 8]); }\n",
+                ),
+            ):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source, encoding="utf-8")
+            old_root = ratchet.ROOT
+            try:
+                ratchet.ROOT = root
+                self.assertEqual(ratchet.count_from_endian_bytes(), 3)
+            finally:
+                ratchet.ROOT = old_root
 
 
 class PlacementMetrics(TempRepoCase):
@@ -471,9 +430,91 @@ class LedgerRoundTrip(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
             parsed = ratchet.parse_ledger(path)
         self.assertEqual(parsed["targets"], _complete_targets())
+        self.assertEqual(parsed["kinds"], dict(ratchet.KIND_BY_KEY))
+        self.assertNotIn("from_endian_bytes", parsed["targets"])
         self.assertEqual(parsed["ceilings"]["crate_root_tests_rs"], 12)
         self.assertEqual(parsed["ceilings"]["path_test_includes"], 23)
         self.assertEqual(parsed["filter"], "filter with #[path] text")
+
+    def test_check_rejects_invalid_measured_at(self) -> None:
+        failures = ratchet.check(
+            _zero_counts(),
+            _complete_ceilings(),
+            _complete_targets(),
+            measured_at="not-a-sha",
+        )
+        self.assertEqual(failures, ["ledger measured_at is not a 40-char git SHA"])
+
+    def test_check_accepts_valid_measured_at(self) -> None:
+        failures = ratchet.check(
+            _zero_counts(),
+            _complete_ceilings(),
+            _complete_targets(),
+            measured_at="0123456789abcdef0123456789abcdef01234567",
+        )
+        self.assertEqual(failures, [])
+
+    def test_raise_without_reason_fails(self) -> None:
+        failures = ratchet.check(
+            _zero_counts(),
+            _complete_ceilings(from_endian_bytes=10),
+            _complete_targets(),
+            previous_ceilings=_complete_ceilings(from_endian_bytes=1),
+            reasons={},
+        )
+        self.assertEqual(
+            failures, ["from_endian_bytes: ceiling raised without [reasons].from_endian_bytes"]
+        )
+
+    def test_raise_with_reason_passes(self) -> None:
+        failures = ratchet.check(
+            _zero_counts(),
+            _complete_ceilings(from_endian_bytes=10),
+            _complete_targets(),
+            previous_ceilings=_complete_ceilings(from_endian_bytes=1),
+            reasons={"from_endian_bytes": "widened glob to all crates/**/src"},
+        )
+        self.assertEqual(failures, [])
+
+    def test_kinds_must_match_script_classification(self) -> None:
+        failures = ratchet.check(
+            _zero_counts(),
+            _complete_ceilings(),
+            _complete_targets(),
+            kinds={"from_endian_bytes": "convergence"},
+        )
+        self.assertIn("from_endian_bytes: kind 'convergence' != 'pressure'", failures)
+        self.assertIn("ledger missing kind for codec_error_malformed_format", failures)
+
+    def test_pressure_key_must_not_have_target(self) -> None:
+        targets = _complete_targets()
+        targets["from_endian_bytes"] = 0
+        failures = ratchet.check(_zero_counts(), _complete_ceilings(), targets)
+        self.assertEqual(
+            failures, ["from_endian_bytes: pressure key must not have a [targets] entry"]
+        )
+
+    def test_update_refuses_increase(self) -> None:
+        repo = TempRepoCase()
+        try:
+            repo.setUp()
+            repo.write(
+                "crates/cadmpeg-codec-demo/src/lib.rs",
+                "fn f() { u32::from_le_bytes([0; 4]); }\n",
+            )
+            repo.write(
+                "docs/convergence-ledger.toml",
+                ratchet.render_ledger(
+                    "0123456789abcdef0123456789abcdef01234567",
+                    "filter",
+                    _complete_targets(),
+                    _complete_ceilings(),
+                    {},
+                ),
+            )
+            self.assertEqual(ratchet.main(["--update"]), 1)
+        finally:
+            repo.tearDown()
 
 
 if __name__ == "__main__":

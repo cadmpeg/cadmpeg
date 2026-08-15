@@ -7,6 +7,8 @@ use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::SketchGeometry;
 
+pub(crate) use crate::vecmath::normalized;
+
 use super::geometry::{
     resolved_section_segment_geometry_with_missing_line, saved_section_arc_carrier,
     saved_section_arc_record, saved_section_missing_line_geometry,
@@ -623,11 +625,4 @@ pub(crate) fn section_xyz_in_model(
             + point[1] * transform.v_axis[axis]
             + point[2] * transform.normal[axis]
     })
-}
-
-pub(crate) fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
-    let magnitude = vector
-        .iter()
-        .fold(0.0_f64, |norm, value| norm.hypot(*value));
-    (magnitude.is_finite() && magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
 }

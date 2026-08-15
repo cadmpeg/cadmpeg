@@ -1,4 +1,4 @@
-# STEP inspect disposition (Phase 5)
+# STEP inspect disposition (concluded)
 
 STEP `inspect` is deep semantic analysis, not a cheap container census.
 

@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
 
 use crate::psb::{self, compact_int, reference_id};
@@ -6182,28 +6183,11 @@ fn topology_suffix(row: &[u8]) -> Option<(usize, [u32; 4])> {
     Some(*candidate)
 }
 
-fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    data.get(from..)?
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|relative| from + relative)
-}
-
-fn find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize> {
-    data.get(from..end)?
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|relative| from + relative)
-}
-
 fn unique_find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize> {
-    let mut matches = data
-        .get(from..end)?
-        .windows(needle.len())
-        .enumerate()
-        .filter_map(|(relative, window)| (window == needle).then_some(from + relative));
-    let offset = matches.next()?;
-    matches.next().is_none().then_some(offset)
+    let offset = find_in(data, needle, from, end)?;
+    find_in(data, needle, offset.saturating_add(1), end)
+        .is_none()
+        .then_some(offset)
 }
 
 #[cfg(test)]

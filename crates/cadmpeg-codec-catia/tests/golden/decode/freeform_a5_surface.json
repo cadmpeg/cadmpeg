@@ -522,9 +522,9 @@
     "losses": [
       {
         "code": {
-          "code": "topology_not_transferred",
+          "code": "topology.b5-graph-unclosed",
           "kind": "topology_not_transferred",
-          "namespace": "shared"
+          "namespace": "catia"
         },
         "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close.",
         "severity": "blocking"

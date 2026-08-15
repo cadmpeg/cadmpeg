@@ -27,6 +27,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -224,7 +225,7 @@ fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
     assert_eq!(result.ir().model.curves.len(), 3);
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::DecodeDiagnostic)
+        loss.code == StepLossCode::DecodeWarning.kind()
             && loss.message.contains("UNKNOWN periodicity")
             && loss.message.contains("#4")
     }));
@@ -432,8 +433,7 @@ fn trimmed_curve_reports_a_fallback_when_the_preferred_form_is_absent() {
             .losses
             .iter()
             .filter(|loss| {
-                loss.code
-                    == cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::DecodeDiagnostic)
+                loss.code == StepLossCode::DecodeWarning.kind()
                     && loss.message.contains("TRIMMED_CURVE #40")
                     && loss.message.contains("Cartesian trim selector")
             })

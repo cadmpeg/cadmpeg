@@ -4,7 +4,8 @@
 use crate::design::profile_select::historical_face_points;
 use crate::records::{DesignExtrudeSelectionMember, SketchRelationOperand};
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::geometry::knots_nondecreasing;
+use cadmpeg_ir::math::{Point2, Point3};
 use std::collections::{HashMap, HashSet};
 
 /// Format-side work cap for arrangement edge retention walks.
@@ -1856,7 +1857,7 @@ fn nurbs_speed_bound(
         }
     };
     if knots.iter().any(|value| !value.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(knots)
         || control_points.iter().zip(weights).any(|(point, weight)| {
             !point.u.is_finite() || !point.v.is_finite() || !weight.is_finite() || *weight <= 0.0
         })
@@ -2572,18 +2573,9 @@ pub(crate) fn project_to_sketch(
     point: Point3,
 ) -> Option<Point2> {
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
-    let x = point.x - origin.x;
-    let y = point.y - origin.y;
-    let z = point.z - origin.z;
-    let v_axis = Vector3::new(
-        normal.y * u_axis.z - normal.z * u_axis.y,
-        normal.z * u_axis.x - normal.x * u_axis.z,
-        normal.x * u_axis.y - normal.y * u_axis.x,
-    );
-    Some(Point2::new(
-        x * u_axis.x + y * u_axis.y + z * u_axis.z,
-        x * v_axis.x + y * v_axis.y + z * v_axis.z,
-    ))
+    let offset = point.vector_from(origin);
+    let v_axis = normal.cross(u_axis);
+    Some(Point2::new(offset.dot(u_axis), offset.dot(v_axis)))
 }
 
 pub(crate) fn point_on_sketch_entity(

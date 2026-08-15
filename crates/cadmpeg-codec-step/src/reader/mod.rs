@@ -9,12 +9,13 @@ use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
 use crate::ids::StepIdentity;
+use crate::loss::StepLossCode;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
 pub(crate) mod dependencies;
@@ -102,24 +103,22 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 .collect(),
         };
         report.losses.extend(diagnostics.iter().map(|diagnostic| {
-            LossNote::new(
-                LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax),
-                diagnostic.message.clone(),
-            )
-            .with_provenance(cadmpeg_ir::SourceProvenance {
-                format: "step".into(),
-                stream: String::new(),
-                offset: diagnostic.offset as u64,
-                tag: Some(
-                    match diagnostic.kind {
-                        crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
-                            "complex_entity"
+            StepLossCode::ParseNoncanonicalSyntax
+                .note(diagnostic.message.clone())
+                .with_provenance(cadmpeg_ir::SourceProvenance {
+                    format: "step".into(),
+                    stream: String::new(),
+                    offset: diagnostic.offset as u64,
+                    tag: Some(
+                        match diagnostic.kind {
+                            crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
+                                "complex_entity"
+                            }
+                            crate::parse::ParseDiagnosticKind::OmittedEntityName => "entity_name",
                         }
-                        crate::parse::ParseDiagnosticKind::OmittedEntityName => "entity_name",
-                    }
-                    .into(),
-                ),
-            })
+                        .into(),
+                    ),
+                })
         }));
 
         Self {
@@ -157,14 +156,11 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     }
 
     fn absorb_warnings(&mut self, warnings: impl IntoIterator<Item = String>) {
-        self.report
-            .losses
-            .extend(warnings.into_iter().map(|message| LossNote {
-                code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                severity: Severity::Warning,
-                message,
-                provenance: None,
-            }));
+        self.report.losses.extend(
+            warnings
+                .into_iter()
+                .map(|message| StepLossCode::DecodeWarning.note(message)),
+        );
     }
 
     fn into_result(self, source_fidelity: SourceFidelity) -> DecodeResult {
@@ -508,15 +504,13 @@ fn decode_exchange_mode(
         );
     }
     if accounting.unclassified > 0 {
-        session.report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-            severity: Severity::Error,
-            message: format!(
+        session
+            .report
+            .losses
+            .push(StepLossCode::ByteAccountingUnclassified.note(format!(
                 "STEP byte accounting left {} byte(s) unclassified",
                 accounting.unclassified
-            ),
-            provenance: None,
-        });
+            )));
     }
     session.report.notes.push(format!(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
@@ -525,11 +519,10 @@ fn decode_exchange_mode(
     session
         .report
         .losses
-        .extend(counts.into_iter().map(|(name, count)| LossNote {
-            code: cadmpeg_ir::LossKind::shared(LossTaxonomy::RecordNotTyped),
-            severity: Severity::Warning,
-            message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
-            provenance: None,
+        .extend(counts.into_iter().map(|(name, count)| {
+            StepLossCode::OpaqueRecordPreserved.note(format!(
+                "preserved {count} {name} instance(s) as named opaque STEP records"
+            ))
         }));
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
     Ok((session.into_result(source_fidelity), opaque_offsets))
@@ -1120,7 +1113,7 @@ pub(super) fn decode_text(
     losses: &mut Vec<LossNote>,
     record_id: u64,
     field: &str,
-    code: LossKind,
+    code: StepLossCode,
 ) -> Option<String> {
     let Value::String(bytes) = value else {
         return None;
@@ -1132,12 +1125,9 @@ pub(super) fn decode_text(
     match decoded {
         Ok(text) => Some(text),
         Err(error) => {
-            losses.push(LossNote {
-                code,
-                severity: Severity::Warning,
-                message: format!("STEP record #{record_id} has an invalid {field} string: {error}"),
-                provenance: None,
-            });
+            losses.push(code.note(format!(
+                "STEP record #{record_id} has an invalid {field} string: {error}"
+            )));
             None
         }
     }

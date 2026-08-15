@@ -5,11 +5,12 @@ use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, paraboli
 use super::geometry::{entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
-    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
-    ProceduralCurve, ProceduralCurveDefinition,
+    knots_nondecreasing, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+    NurbsCurve, ProceduralCurve, ProceduralCurveDefinition,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
 use cadmpeg_ir::math::Point3;
@@ -30,14 +31,12 @@ pub(super) struct CompositeProjection {
 }
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
-    LossNote::new(
-        cadmpeg_ir::LossKind::shared(cadmpeg_ir::LossTaxonomy::GeometryNotTransferred),
-        format!(
+    IgesLossCode::CompositeCarrierDegraded
+        .note(format!(
             "IGES Type 102 entity D{} has no exact concatenated carrier because {reason}; the ordered native composite carrier was retained",
             entry.sequence
-        ),
-    )
-    .with_provenance(entry.loss_provenance())
+        ))
+        .with_provenance(entry.loss_provenance())
 }
 
 fn point_for_vertex(ir: &CadIr, id: &VertexId) -> Option<Point3> {
@@ -159,7 +158,7 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
             .as_ref()
             .is_some_and(|weights| weights.len() != control_count)
         || curve.knots.iter().any(|knot| !knot.is_finite())
-        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&curve.knots)
     {
         return None;
     }

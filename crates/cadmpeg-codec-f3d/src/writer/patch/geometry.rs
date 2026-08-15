@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::NurbsCurve;
+use cadmpeg_ir::geometry::{knots_nondecreasing, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Color, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -47,15 +47,17 @@ pub(crate) fn valid_edited_nurbs_direction(
         && after_knots.len() == control_count + degree + 1
         && unique_knot_count(after_knots) == unique_knot_count(before_knots)
         && after_knots.iter().all(|value| value.is_finite())
-        && after_knots.windows(2).all(|pair| pair[0] <= pair[1])
+        && knots_nondecreasing(after_knots)
 }
+
+const EPS_ORTHONORMAL: f64 = 1e-9;
 
 pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
     finite_vector(first)
         && finite_vector(second)
-        && (first.norm() - 1.0).abs() <= 1e-9
-        && (second.norm() - 1.0).abs() <= 1e-9
-        && (first.x * second.x + first.y * second.y + first.z * second.z).abs() <= 1e-9
+        && (first.norm() - 1.0).abs() <= EPS_ORTHONORMAL
+        && (second.norm() - 1.0).abs() <= EPS_ORTHONORMAL
+        && first.dot(second).abs() <= EPS_ORTHONORMAL
 }
 
 /// The per-entity BREP edit maps that the geometry patchers apply as a unit.

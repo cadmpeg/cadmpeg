@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! JT display-model record extractors and their record types.
 
-use std::io::Read as _;
-
-use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
@@ -15,44 +14,45 @@ use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+/// Session-free `DisplayJT` inflate bound: 16 MiB plus 256× input, at most 2 GiB.
+const DISPLAY_JT_PROBE_INFLATE_BASE: usize = 16 * 1024 * 1024;
+const DISPLAY_JT_PROBE_INFLATE_RATIO: usize = 256;
+const DISPLAY_JT_PROBE_INFLATE_MAX: usize = 2 * 1024 * 1024 * 1024;
+
+fn display_jt_probe_cap(compressed_len: usize) -> usize {
+    DISPLAY_JT_PROBE_INFLATE_BASE
+        .saturating_add(compressed_len.saturating_mul(DISPLAY_JT_PROBE_INFLATE_RATIO))
+        .min(DISPLAY_JT_PROBE_INFLATE_MAX)
+}
+
+/// Child whose window is exactly `slice` when `slice` sits inside `source`.
+fn child_for_subslice<'a>(source: View<'a>, slice: &[u8]) -> Option<View<'a>> {
+    let window = source.window();
+    let relative = (slice.as_ptr() as usize).checked_sub(window.as_ptr() as usize)?;
+    let relative_end = relative.checked_add(slice.len())?;
+    if relative_end > window.len() {
+        return None;
+    }
+    let start = source.start().checked_add(relative)?;
+    let end = start.checked_add(slice.len())?;
+    source.child(start, end)
+}
+
 fn inflate_display_jt(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     compressed: &[u8],
 ) -> Option<Vec<u8>> {
-    let mut decoder = ZlibDecoder::new(compressed);
-    let mut chunk = [0_u8; 16 * 1024];
-    if let Some((ctx, source)) = budget {
-        let mut writer = ctx.begin_expand(source, ExpandSpec::Unknown).ok()?;
-        loop {
-            let read = decoder.read(&mut chunk).ok()?;
-            if read == 0 {
-                break;
-            }
-            writer.write(&chunk[..read]).ok()?;
-        }
-        if decoder.total_in() != compressed.len() as u64 {
-            return None;
-        }
-        let inflated = writer.finalize().ok()?;
-        return ctx
-            .copy_retained(
-                inflated.window(),
-                "retain inflated DisplayJT payload",
-                Some(source.location()),
-            )
-            .ok();
-    }
-
-    let mut inflated = Vec::new();
-    loop {
-        let read = decoder.read(&mut chunk).ok()?;
-        if read == 0 {
-            break;
-        }
-        inflated.try_reserve(read).ok()?;
-        inflated.extend_from_slice(&chunk[..read]);
-    }
-    (decoder.total_in() == compressed.len() as u64).then_some(inflated)
+    let Some((ctx, source)) = budget else {
+        return inflate_zlib_probe(compressed, display_jt_probe_cap(compressed.len()));
+    };
+    let member = child_for_subslice(source, compressed)?;
+    let view = inflate_zlib_exact(ctx, member).ok()?;
+    ctx.copy_retained(
+        view.window(),
+        "retain inflated DisplayJT payload",
+        Some(source.location()),
+    )
+    .ok()
 }
 
 /// Outer index of the embedded JT display-model stream.
@@ -792,11 +792,10 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<(Vec<u16
     }
     let mut view = View::over_retained(body);
     view.seek(8)?;
-    let count = view.u32_le()?;
-    let code_units = view.read_counted(u64::from(count), 2, View::u16_le)?;
+    let count = usize::try_from(view.u32_le()?).ok()?;
+    let value = view.utf16_le(count)?;
     view.is_empty().then_some(())?;
-    let value = String::from_utf16(&code_units).ok()?;
-    Some((code_units, value))
+    Some((value.encode_utf16().collect(), value))
 }
 
 pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
@@ -1055,9 +1054,9 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
     if partition_flags & !1 != 0 {
         return None;
     }
-    let name_count = view.u32_le()?;
-    let file_name_code_units = view.read_counted(u64::from(name_count), 2, View::u16_le)?;
-    let file_name = String::from_utf16(&file_name_code_units).ok()?;
+    let name_count = usize::try_from(view.u32_le()?).ok()?;
+    let file_name = view.utf16_le(name_count)?;
+    let file_name_code_units: Vec<u16> = file_name.encode_utf16().collect();
     if file_name.is_empty() || file_name.chars().any(char::is_control) {
         return None;
     }

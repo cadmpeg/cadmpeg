@@ -1,4 +1,9 @@
-//! Hidden entry points for focused parser fuzzing.
+// SPDX-License-Identifier: Apache-2.0
+//! `()`-returning wrappers over internal parsers for the `cadmpeg-fuzz` targets.
+//!
+//! Each wrapper feeds arbitrary bytes to one internal parser and discards the
+//! result. The contract is that no input may panic.
+#![doc(hidden)]
 
 /// Exercise STEP lexical scanning.
 pub fn lex(data: &[u8]) {

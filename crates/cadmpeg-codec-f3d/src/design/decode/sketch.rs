@@ -16,8 +16,10 @@ use crate::records::{
     SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
     DESIGN_MODULE_SKETCH,
 };
+use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
 use std::collections::HashMap;
@@ -646,8 +648,7 @@ pub fn decode_persistent_references(
             ),
         ] {
             let mut cursor = 0;
-            while let Some(relative) = bytes[cursor..].windows(name.len()).position(|w| w == name) {
-                let offset = cursor + relative;
+            while let Some(offset) = find_from(bytes, name, cursor) {
                 cursor = offset + name.len();
                 let compact_type_offset = offset + name.len();
                 let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
@@ -2818,8 +2819,8 @@ pub(crate) fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface
         || coordinates.iter().any(|value| !value.is_finite())
         || u_knots.iter().any(|value| !value.is_finite())
         || v_knots.iter().any(|value| !value.is_finite())
-        || u_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || v_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || !knots_nondecreasing(&u_knots)
+        || !knots_nondecreasing(&v_knots)
     {
         return None;
     }
@@ -3444,11 +3445,7 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
     if length <= 0.0 {
         return None;
     }
-    let displacement_direction = Vector3::new(
-        displacement.x / length,
-        displacement.y / length,
-        displacement.z / length,
-    );
+    let displacement_direction = displacement.scale(1.0 / length);
     if (direction.norm() - 1.0).abs() > 1.0e-9 || (stored_normal.norm() - 1.0).abs() > 1.0e-9 {
         return None;
     }
@@ -3461,14 +3458,8 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
     // legacy sketches can retain a small component along the line direction;
     // remove that component so the typed carrier maintains its orthonormal
     // invariant without changing the line's endpoints or orientation side.
-    let dot = direction.x * stored_normal.x
-        + direction.y * stored_normal.y
-        + direction.z * stored_normal.z;
-    let projected_normal = Vector3::new(
-        stored_normal.x - dot * direction.x,
-        stored_normal.y - dot * direction.y,
-        stored_normal.z - dot * direction.z,
-    );
+    let dot = direction.dot(stored_normal);
+    let projected_normal = stored_normal - direction.scale(dot);
     let projected_length = projected_normal.norm();
     let normal = if projected_length.is_finite() && projected_length > 1.0e-12 {
         projected_normal.scale(1.0 / projected_length)
@@ -3495,11 +3486,7 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
     let start = Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0);
     Some(SketchCurveGeometry::Line {
         start,
-        end: Point3::new(
-            start.x + displacement.x * 10.0,
-            start.y + displacement.y * 10.0,
-            start.z + displacement.z * 10.0,
-        ),
+        end: start.translated(displacement, 10.0),
         direction,
         normal,
     })

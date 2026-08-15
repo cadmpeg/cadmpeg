@@ -7,10 +7,12 @@
 //! streams or zlib-compressed streams inside a transmit wrapper. Stream
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
-use crate::container::parasolid_offset;
+use cadmpeg_container::compression::inflate_zlib_probe;
+use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
-use std::io::Read as _;
+
+use crate::container::parasolid_offset;
 
 /// The constant 16-byte prefix of the wrapped Parasolid transmit-container
 /// magic. When it is present, the actual `PS\0\0` stream is a nested zlib member
@@ -67,20 +69,7 @@ fn inflate_zlib_candidate(bytes: &[u8]) -> Option<Vec<u8>> {
     let cap = (16 * 1024 * 1024_usize)
         .saturating_add(bytes.len().saturating_mul(256))
         .min(2 * 1024 * 1024 * 1024);
-    let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-    let mut output = Vec::new();
-    let mut chunk = [0_u8; 8192];
-    loop {
-        match decoder.read(&mut chunk) {
-            Ok(0) => return (!output.is_empty()).then_some(output),
-            Ok(read) if read <= cap.saturating_sub(output.len()) => {
-                output.try_reserve(read).ok()?;
-                output.extend_from_slice(&chunk[..read]);
-            }
-            Ok(_) => return None,
-            Err(_) => return (!output.is_empty()).then_some(output),
-        }
-    }
+    inflate_zlib_probe(bytes, cap)
 }
 
 /// Direct (uncompressed) Parasolid streams with their block-payload offsets.
@@ -126,10 +115,6 @@ pub fn wrapped_member_offsets(payload: &[u8]) -> Vec<usize> {
 /// parsable header).
 pub fn is_parasolid_stream(bytes: &[u8]) -> bool {
     bytes.starts_with(&[b'P', b'S', 0x00, 0x00]) && stream_header(bytes).is_some()
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.len() >= needle.len() && haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 /// Parsed framing fields for one Parasolid stream.

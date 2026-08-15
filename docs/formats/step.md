@@ -2,7 +2,9 @@
 
 Part 21 is a clear-text exchange grammar. [`docs/layouts/step.md`](../layouts/step.md)
 records the binary literal's fixed nibble rule. The source table is
-[`docs/layouts/step.toml`](../layouts/step.toml).
+[`docs/layouts/step.toml`](../layouts/step.toml). STEP `inspect` runs the
+semantic decode path; the concluded disposition is
+[step-inspect.md](step-inspect.md).
 
 ## 1. Envelope
 
@@ -17,7 +19,10 @@ A Part 21 ZIP container uses PKZIP 2.04g stored or Deflate entries. Its root
 member is named exactly `ISO-10303.p21` and is at the archive root. Every
 other member is a subsidiary, including directories, nested archives, and
 ancillary data. Archive member paths are relative, use `/`, and cannot contain
-`.` or `..` components that escape the archive.
+`.` or `..` components that escape the archive. A container without that root
+member, with an unsupported compression method, with a duplicate member name,
+or with an encrypted entry is invalid. The root member is the Part 21 exchange
+structure.
 
 ## 2. Byte repertoire and exchange framing
 
@@ -61,7 +66,7 @@ Space, the explicit `\N\` and `\F\` print-control directives, and comments
 separate tokens. The `/*` delimiter starts a comment, and `*/` ends it.
 Comment delimiters form non-nesting pairs. ASCII control octets are ignored
 when processing the exchange structure, including when they occur inside a
-token. The print-control directives are ignored in effective string and
+token. A leading byte-order mark is not Part 21 whitespace and is invalid. The print-control directives are ignored in effective string and
 binary contents and are forbidden in resources, ANCHOR sections, and
 REFERENCE sections. String and binary literals retain the other source bytes
 needed for escape decoding.
@@ -154,7 +159,9 @@ A parameter is an entity reference, value reference, named entity constant,
 named value constant, integer, real, enumeration, string, binary literal,
 resource, omitted value, derived value, list, or typed parameter. A list is a
 parenthesized comma-separated sequence. A typed parameter is a name followed
-by one parenthesized parameter. Empty lists are valid. Numeric value references
+by one parenthesized parameter. A user-defined type name does not assign
+value semantics; the wrapped parameter remains a typed opaque value. Empty
+lists are valid. Numeric value references
 and named constants are values, not local DATA entity identifiers.
 
 A simple entity instance is:
@@ -212,14 +219,14 @@ An identifier is a schema name with an optional brace-delimited object
 identifier containing space-separated signed decimal components. The supported
 identifiers are:
 
-| Identifier | Protocol and edition |
-| --- | --- |
-| `CONFIG_CONTROL_DESIGN` | AP203 edition 1 |
-| `AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }` | AP203 edition 2 |
-| `AUTOMOTIVE_DESIGN` or `AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }` | AP214 |
-| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }` | AP242 edition 1 |
-| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }` | AP242 edition 2 |
-| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }` | AP242 edition 3 |
+| Identifier                                                                                                   | Protocol and edition |
+| ------------------------------------------------------------------------------------------------------------ | -------------------- |
+| `CONFIG_CONTROL_DESIGN`                                                                                      | AP203 edition 1      |
+| `AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }` | AP203 edition 2      |
+| `AUTOMOTIVE_DESIGN` or `AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }`                                         | AP214                |
+| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }`                                    | AP242 edition 1      |
+| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }`                                    | AP242 edition 2      |
+| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }`                                    | AP242 edition 3      |
 
 An AP242 identifier with another object identifier has an unspecified edition.
 ASCII case differences compare equal.
@@ -262,9 +269,11 @@ an ANCHOR that supplies an entity for a `#id` occurrence or a value for an
 failed or cyclic resolution produces `$`. A resource path or UUID that cannot
 be obtained remains an external dependency until the caller supplies resource
 access. External occurrence names do not create local DATA entity identities.
-Each SIGNATURE section follows the exchange terminator. Its content is a CMS
-signature with external content, encoded as RFC 4648 Base64. The Base64
-content begins after `SIGNATURE;` and ends at its next `ENDSEC;`. The signature
+Each SIGNATURE section follows the exchange terminator. Its content is a
+detached CMS `SignedData` object as defined by RFC 5652, encoded as RFC 4648
+Base64. Digest and signature algorithm identifiers are inside that object, not
+in a Part 21 field. The Base64 content begins after `SIGNATURE;` and ends at
+its next `ENDSEC;`. The signature
 authenticates the Part 21 alphabet bytes from `ISO-10303-21;` through the byte
 before that section's `SIGNATURE;` token. A later section therefore also
 authenticates every earlier signature section. The reader retains both the
@@ -324,8 +333,7 @@ columns are normalized and orthogonal: axis3 defaults to +Z, axis1 is projected
 onto the plane normal to axis3, and axis2 determines the sense of the projected
 second axis. The default axis1 is +X, except for an axis3 within `1e-12` of
 parallel to X, where it is +Y; the default axis2 is +Y. The 2D operator derives a perpendicular
-second axis from axis1 and uses axis2 only to select its sense. Omitted scale is
-1.
+second axis from axis1 and uses axis2 only to select its sense. Omitted scale is 1.
 
 `AXIS2_PLACEMENT_3D` uses the same first-projected-axis rule when its optional
 reference direction is omitted or parallel to its axis: +X is projected onto
@@ -522,6 +530,12 @@ are errors. Other omitted topology relations are warnings. The strict
 unsupported policy rejects output when any topology-transfer loss exists.
 
 Each CADIR product definition represents one `PRODUCT_DEFINITION` view.
+A product with one definition uses identity `step:product:product#<product>`.
+When one `PRODUCT` has multiple definitions, each view receives a distinct
+identity suffixed by its definition instance. Shape bodies and definition
+descriptions bind to their own view and are not merged. Each definition that
+is not a usage child receives one root occurrence. Every usage occurrence
+references the specific child definition view.
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 `SHAPE_DEFINITION_REPRESENTATION`. Every body-producing representation,
 including `ADVANCED_BREP_REPRESENTATION` and

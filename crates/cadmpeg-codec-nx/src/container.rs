@@ -8,6 +8,7 @@
 
 use std::borrow::Cow;
 
+use cadmpeg_core::bytes::find;
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 
@@ -484,12 +485,6 @@ pub(crate) struct ExtrefIndexedRecord {
     pub record_id: u32,
     pub offset: usize,
     pub byte_len: usize,
-}
-
-fn find(bytes: &[u8], needle: &[u8]) -> Option<usize> {
-    bytes
-        .windows(needle.len())
-        .position(|window| window == needle)
 }
 
 pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(usize, String)>)> {

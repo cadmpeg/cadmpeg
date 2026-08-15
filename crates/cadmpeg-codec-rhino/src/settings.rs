@@ -334,18 +334,10 @@ pub(crate) struct DocumentMetadata {
     pub(crate) layers: Vec<LayerRecord>,
 }
 
-fn structural(reader: &BoundedReader<'_>, message: impl Into<String>) -> FramingError {
-    FramingError::Structural {
-        offset: reader.position(),
-        message: message.into(),
-    }
-}
-
 fn finite(reader: &BoundedReader<'_>, value: f64, label: &str) -> Result<f64, FramingError> {
-    value
-        .is_finite()
-        .then_some(value)
-        .ok_or_else(|| structural(reader, format!("{label} is not finite")))
+    value.is_finite().then_some(value).ok_or_else(|| {
+        FramingError::structural(reader.position(), format!("{label} is not finite"))
+    })
 }
 
 fn finite_array<const N: usize>(
@@ -357,7 +349,12 @@ fn finite_array<const N: usize>(
         .iter()
         .all(|value| value.is_finite())
         .then_some(values)
-        .ok_or_else(|| structural(reader, format!("{label} contains a nonfinite value")))
+        .ok_or_else(|| {
+            FramingError::structural(
+                reader.position(),
+                format!("{label} contains a nonfinite value"),
+            )
+        })
 }
 
 /// Reads a finite point.
@@ -421,11 +418,11 @@ pub(crate) fn xform(reader: &mut BoundedReader<'_>) -> Result<Xform, FramingErro
 #[allow(dead_code)]
 pub(crate) fn utf8(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
     let count_offset = reader.position();
-    let count =
-        usize::try_from(reader.u32()?).map_err(|_| structural(reader, "UTF-8 count overflow"))?;
+    let count = usize::try_from(reader.u32()?)
+        .map_err(|_| FramingError::structural(reader.position(), "UTF-8 count overflow"))?;
     if count > MAX_STRING_BYTES || count > reader.remaining() {
-        return Err(structural(
-            reader,
+        return Err(FramingError::structural(
+            reader.position(),
             format!("UTF-8 count {count} exceeds bounded string limit"),
         ));
     }
@@ -441,34 +438,34 @@ pub(crate) fn utf8(reader: &mut BoundedReader<'_>) -> Result<String, FramingErro
     }
     std::str::from_utf8(&bytes[..count - 1])
         .map(str::to_owned)
-        .map_err(|_| structural(reader, "invalid UTF-8 string"))
+        .map_err(|_| FramingError::structural(reader.position(), "invalid UTF-8 string"))
 }
 
 pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
     let count_offset = reader.position();
-    let count =
-        usize::try_from(reader.u32()?).map_err(|_| structural(reader, "UTF-16 count overflow"))?;
+    let count = usize::try_from(reader.u32()?)
+        .map_err(|_| FramingError::structural(reader.position(), "UTF-16 count overflow"))?;
     if count > MAX_STRING_BYTES / 2 || count.checked_mul(2).is_none_or(|n| n > reader.remaining()) {
-        return Err(structural(
-            reader,
+        return Err(FramingError::structural(
+            reader.position(),
             format!("UTF-16 count {count} exceeds bounded string limit"),
         ));
     }
     if count == 0 {
         return Ok(String::new());
     }
-    let mut view = View::over_retained(reader.take(count.saturating_mul(2))?);
-    let mut values = Vec::with_capacity(count.saturating_sub(1));
-    for _ in 0..count {
-        values.push(view.u16_le().expect("length checked"));
+    let bytes = reader.take(count.saturating_mul(2))?;
+    if View::u16_le_at(bytes, count.saturating_sub(1).saturating_mul(2)) != Some(0) {
+        return Err(FramingError::structural(
+            count_offset,
+            "UTF-16 string is missing NUL terminator",
+        ));
     }
-    if values.pop() != Some(0) {
-        return Err(FramingError::Structural {
-            offset: count_offset,
-            message: "UTF-16 string is missing NUL terminator".to_string(),
-        });
-    }
-    String::from_utf16(&values).map_err(|_| structural(reader, "invalid UTF-16 surrogate sequence"))
+    View::utf16le_at(bytes, 0, count.saturating_sub(1))
+        .map(|(value, _)| value)
+        .ok_or_else(|| {
+            FramingError::structural(reader.position(), "invalid UTF-16 surrogate sequence")
+        })
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
@@ -496,7 +493,10 @@ fn times(reader: &mut BoundedReader<'_>) -> Result<UtcTime, FramingError> {
 
 fn finish(reader: &BoundedReader<'_>, label: &str) -> Result<(), FramingError> {
     if reader.remaining() != 0 {
-        return Err(structural(reader, format!("{label} has trailing bytes")));
+        return Err(FramingError::structural(
+            reader.position(),
+            format!("{label} has trailing bytes"),
+        ));
     }
     Ok(())
 }
@@ -515,7 +515,10 @@ fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, Frami
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = packed(&mut reader)?;
     if version != (1, 0) {
-        return Err(structural(&reader, "unsupported revision-history version"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported revision-history version",
+        ));
     }
     let value = RevisionHistory {
         source: SourceRange {
@@ -535,7 +538,10 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 || version.1 > 1 {
-        return Err(structural(&reader, "unsupported notes version"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported notes version",
+        ));
     }
     let html = reader.i32()?;
     let text = utf16(&mut reader)?;
@@ -560,7 +566,10 @@ fn parse_application(data: &[u8], record: &Record) -> Result<Application, Framin
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = packed(&mut reader)?;
     if version != (1, 0) {
-        return Err(structural(&reader, "unsupported application version"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported application version",
+        ));
     }
     let value = Application {
         source: SourceRange {
@@ -612,7 +621,10 @@ pub(crate) fn parse_units(
     let version = reader.i32()?;
     let legacy = version == 1;
     if !legacy && !(100..=102).contains(&version) {
-        return Err(structural(&reader, "unsupported units structure version"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported units structure version",
+        ));
     }
     let unit_value = reader.i32()?;
     let absolute_raw = reader.f64()?;
@@ -629,13 +641,22 @@ pub(crate) fn parse_units(
     let angular = finite(&reader, angular, "angular tolerance")?;
     let relative = finite(&reader, relative, "relative tolerance")?;
     if absolute <= 0.0 {
-        return Err(structural(&reader, "absolute tolerance must be positive"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "absolute tolerance must be positive",
+        ));
     }
     if angular <= 0.0 || angular > std::f64::consts::PI {
-        return Err(structural(&reader, "angular tolerance must be in (0, pi]"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "angular tolerance must be in (0, pi]",
+        ));
     }
     if relative <= 0.0 || relative >= 1.0 {
-        return Err(structural(&reader, "relative tolerance must be in (0, 1)"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "relative tolerance must be in (0, 1)",
+        ));
     }
     let mode = (!legacy && version >= 101)
         .then(|| reader.i32())
@@ -654,15 +675,22 @@ pub(crate) fn parse_units(
     let unit = match unit_value {
         0 => UnitSystem::None,
         11 => UnitSystem::Custom {
-            meters_per_unit: custom_scale
-                .ok_or_else(|| structural(&reader, "custom unit has no scale"))?,
+            meters_per_unit: custom_scale.ok_or_else(|| {
+                FramingError::structural(reader.position(), "custom unit has no scale")
+            })?,
             name: custom_name.unwrap_or_default(),
         },
         255 => UnitSystem::Unset,
         value if standard_scale(value).is_some() => UnitSystem::Standard(
-            u8::try_from(value).map_err(|_| structural(&reader, "unit value overflow"))?,
+            u8::try_from(value)
+                .map_err(|_| FramingError::structural(reader.position(), "unit value overflow"))?,
         ),
-        _ => return Err(structural(&reader, "unknown unit enum value")),
+        _ => {
+            return Err(FramingError::structural(
+                reader.position(),
+                "unknown unit enum value",
+            ))
+        }
     };
     let scale = match &unit {
         UnitSystem::Standard(value) => standard_scale(i32::from(*value)),
@@ -677,17 +705,26 @@ pub(crate) fn parse_units(
         }
         UnitSystem::None | UnitSystem::Unset => None,
         UnitSystem::Custom { .. } => {
-            return Err(structural(&reader, "custom unit scale is invalid"))
+            return Err(FramingError::structural(
+                reader.position(),
+                "custom unit scale is invalid",
+            ))
         }
     };
     if scale.is_some_and(|factor| !factor.is_finite() || factor <= 0.0) {
-        return Err(structural(&reader, "unit scale is invalid"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "unit scale is invalid",
+        ));
     }
     let absolute_tolerance_millimeters = scale
         .map(|factor| absolute * factor)
         .filter(|value| value.is_finite() && *value > 0.0);
     if scale.is_some() && absolute_tolerance_millimeters.is_none() {
-        return Err(structural(&reader, "scaled absolute tolerance is invalid"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "scaled absolute tolerance is invalid",
+        ));
     }
     finish(&reader, "units")?;
     Ok(UnitsAndTolerances {
@@ -717,8 +754,8 @@ pub(crate) fn parse_rendering_attributes(
     let start = reader.position();
     let chunk = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(structural(
-            reader,
+        return Err(FramingError::structural(
+            reader.position(),
             "rendering attributes must be an anonymous chunk",
         ));
     }
@@ -726,8 +763,8 @@ pub(crate) fn parse_rendering_attributes(
     let major = payload.i32()?;
     let _minor = payload.i32()?;
     if major != 1 {
-        return Err(structural(
-            &payload,
+        return Err(FramingError::structural(
+            payload.position(),
             "unsupported rendering-attributes version",
         ));
     }
@@ -745,8 +782,8 @@ pub(crate) fn parse_rendering_attributes(
         let material =
             crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
         if material.typecode != ANONYMOUS || material.short {
-            return Err(structural(
-                &payload,
+            return Err(FramingError::structural(
+                payload.position(),
                 "rendering material reference must be anonymous",
             ));
         }
@@ -758,16 +795,16 @@ pub(crate) fn parse_rendering_attributes(
         let material_major = material_payload.i32()?;
         let material_minor = material_payload.i32()?;
         if material_major != 1 {
-            return Err(structural(
-                &material_payload,
+            return Err(FramingError::structural(
+                material_payload.position(),
                 "unsupported rendering material reference version",
             ));
         }
         material_payload.skip(16 + 16)?;
         let obsolete_mapping_count = material_payload.i32()?;
         if obsolete_mapping_count != 0 {
-            return Err(structural(
-                &material_payload,
+            return Err(FramingError::structural(
+                material_payload.position(),
                 "rendering material mapping array is not empty",
             ));
         }
@@ -794,8 +831,8 @@ fn begin_direct_object<'a>(
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>, (i32, i32)), FramingError> {
     let chunk = crate::chunks::chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
-        return Err(structural(
-            reader,
+        return Err(FramingError::structural(
+            reader.position(),
             format!("{label} must be an object chunk"),
         ));
     }
@@ -812,8 +849,8 @@ fn skip_model_attributes(
 ) -> Result<Range<usize>, FramingError> {
     let chunk = crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
     if chunk.typecode != MODEL_ATTRIBUTES || chunk.short {
-        return Err(structural(
-            payload,
+        return Err(FramingError::structural(
+            payload.position(),
             "missing model-component attributes chunk",
         ));
     }
@@ -837,15 +874,15 @@ fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
     for _ in 0..(bytes / 12) {
         let length = segment_reader.f64()?;
         if !length.is_finite() {
-            return Err(structural(
-                &segment_reader,
+            return Err(FramingError::structural(
+                segment_reader.position(),
                 "linetype segment length is not finite",
             ));
         }
         let kind = segment_reader.u32()?;
         if kind > 2 {
-            return Err(structural(
-                &segment_reader,
+            return Err(FramingError::structural(
+                segment_reader.position(),
                 "linetype segment type is invalid",
             ));
         }
@@ -866,8 +903,8 @@ pub(crate) fn parse_direct_linetype<'a>(
     if (archive.value() < 60 && version != (1, 1))
         || (archive.value() >= 60 && (version.0 != 2 || !(1..=3).contains(&version.1)))
     {
-        return Err(structural(
-            &payload,
+        return Err(FramingError::structural(
+            payload.position(),
             "unsupported embedded linetype version",
         ));
     }
@@ -898,7 +935,10 @@ pub(crate) fn parse_direct_linetype<'a>(
                 3 => {
                     let value = payload.f64()?;
                     if !value.is_finite() {
-                        return Err(structural(&payload, "linetype width is not finite"));
+                        return Err(FramingError::structural(
+                            payload.position(),
+                            "linetype width is not finite",
+                        ));
                     }
                 }
                 5 => {
@@ -916,16 +956,16 @@ pub(crate) fn parse_direct_linetype<'a>(
                     let _ = payload.bool()?;
                 }
                 _ => {
-                    return Err(structural(
-                        &payload,
+                    return Err(FramingError::structural(
+                        payload.position(),
                         format!("unknown embedded linetype item {item}"),
                     ))
                 }
             }
         }
         if !terminated {
-            return Err(structural(
-                &payload,
+            return Err(FramingError::structural(
+                payload.position(),
                 "embedded linetype is missing terminator",
             ));
         }
@@ -953,8 +993,8 @@ pub(crate) fn parse_direct_section_style<'a>(
     let (chunk, mut payload, version) =
         begin_direct_object(data, reader, archive, "embedded section style")?;
     if version.0 != 1 || !(0..=1).contains(&version.1) {
-        return Err(structural(
-            &payload,
+        return Err(FramingError::structural(
+            payload.position(),
             "unsupported embedded section-style version",
         ));
     }
@@ -980,7 +1020,10 @@ pub(crate) fn parse_direct_section_style<'a>(
             5 | 8 | 9 => {
                 let value = payload.f64()?;
                 if !value.is_finite() {
-                    return Err(structural(&payload, "section-style value is not finite"));
+                    return Err(FramingError::structural(
+                        payload.position(),
+                        "section-style value is not finite",
+                    ));
                 }
             }
             7 => {
@@ -994,16 +1037,16 @@ pub(crate) fn parse_direct_section_style<'a>(
                 );
             }
             _ => {
-                return Err(structural(
-                    &payload,
+                return Err(FramingError::structural(
+                    payload.position(),
                     format!("unknown embedded section-style item {item}"),
                 ))
             }
         }
     }
     if !terminated {
-        return Err(structural(
-            &payload,
+        return Err(FramingError::structural(
+            payload.position(),
             "embedded section style is missing terminator",
         ));
     }
@@ -1069,7 +1112,10 @@ fn parse_layer(
     )?;
     let version = packed(&mut reader)?;
     if version.0 != 1 || version.1 > 15 {
-        return Err(structural(&reader, "unsupported layer version"));
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported layer version",
+        ));
     }
     let obsolete_mode = reader.i32()?;
     let index = reader.i32()?;
@@ -1120,8 +1166,9 @@ fn parse_layer(
     };
     let rendering_range = if version.1 >= 7 {
         Some(
-            parse_rendering_attributes(data, &mut reader, archive, warnings)
-                .map_err(|error| structural(&reader, format!("rendering: {error}")))?,
+            parse_rendering_attributes(data, &mut reader, archive, warnings).map_err(|error| {
+                FramingError::structural(reader.position(), format!("rendering: {error}"))
+            })?,
         )
     } else {
         None
@@ -1129,7 +1176,9 @@ fn parse_layer(
     let display_material_id = (version.1 >= 8)
         .then(|| uuid(&mut reader))
         .transpose()
-        .map_err(|error| structural(&reader, format!("display material: {error}")))?;
+        .map_err(|error| {
+            FramingError::structural(reader.position(), format!("display material: {error}"))
+        })?;
     if version.1 == 9 {
         reader.skip(2)?;
     }
@@ -1175,15 +1224,15 @@ fn parse_layer(
                 34 => 14,
                 35..=36 => 15,
                 _ => {
-                    return Err(structural(
-                        &reader,
+                    return Err(FramingError::structural(
+                        reader.position(),
                         format!("unknown future layer extension item {item}"),
                     ))
                 }
             };
             if version.1 < minimum_minor {
-                return Err(structural(
-                    &reader,
+                return Err(FramingError::structural(
+                    reader.position(),
                     format!("layer extension item {item} precedes its version gate"),
                 ));
             }
@@ -1216,16 +1265,16 @@ fn parse_layer(
                     )?);
                 }
                 _ => {
-                    return Err(structural(
-                        &reader,
+                    return Err(FramingError::structural(
+                        reader.position(),
                         format!("unsupported layer extension item {item}"),
                     ))
                 }
             }
         }
         if !terminated {
-            return Err(structural(
-                &reader,
+            return Err(FramingError::structural(
+                reader.position(),
                 "layer extension stream is missing terminator",
             ));
         }

@@ -14,7 +14,7 @@ native CAD ── detect + inspect ──> container summary
 
 - `inspect` detects a codec and reports container structure without decoding geometry.
 - `decode` runs the selected codec and serializes `CadIr`, normally as `.cadir.json`.
-- `validate` reads or decodes an input and checks IR invariants.
+- `validate` reads or decodes an input and checks IR invariants. Decoder and export admission subsets are in [admissibility-routes.md](admissibility-routes.md).
 - `export` reads or decodes an input and writes CADIR, STEP, SLDPRT, F3D, Rhino, or FreeCAD without validation.
 - `convert` loads or decodes, validates, then exports. `--allow-invalid` continues export after validation errors.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source metadata, source annotations, and retained records. ID-bearing records match by globally unique IDs. Vector position is not entity identity. A source attribute whose key ends in `_local_sha256` holds a machine-local content digest, which no two platforms reproduce; `diff` reports a difference in one under a separate informational section and keeps status 0.
@@ -25,7 +25,7 @@ CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 
 
 The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the backend, and finalizes a `DecodeContext`.
 
-`DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`.
+`DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`. Classify a named `MAX_*` cap with [decode-resource-caps.md](decode-resource-caps.md) before adding a bound or a `ResourceLimits` field.
 
 ## CLI stream and exit contract
 
@@ -38,6 +38,8 @@ Writers create a unique temporary file in the destination directory, then rename
 ## Loss reports
 
 Source decoders return `DecodeReport`, including `geometry_transferred`, a decode-coverage census, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
+
+Each codec owns a `*LossCode` enum in `src/loss.rs`. Every reported drop goes through `code.note(message)`, which pins the namespaced local code, `LossTaxonomy`, severity, and strict floor. Shared taxonomy is the category used for subsystem reporting; the stable machine-readable identifier is the codec-local `family.detail` string.
 
 Every encoder returns an `ExportReport` with its format id, entity census, loss notes, informational notes, and a `write_path`. STEP reports reductions and omitted IR data. CADIR export carries no losses. F3D, SLDPRT, Rhino, and FreeCAD report replay versus regeneration and reject unsupported input atomically. Decode losses remain in the command report when export or convert started from native CAD.
 

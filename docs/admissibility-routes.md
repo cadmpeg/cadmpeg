@@ -1,9 +1,10 @@
-# Admissibility routes (Phase 5)
+# Admissibility routes
 
 Successful decode is not a valid IR. Decoder and export gates use documented
 subsets of [`Check`](../crates/cadmpeg-ir/src/report.rs); final document
 validation remains `validate_neutral` (+ fidelity + native at the application
-boundary).
+boundary). Accept/reject fixtures are in
+[admissibility-fixtures.md](admissibility-fixtures.md).
 
 ## Shared core
 
@@ -35,6 +36,10 @@ constants below.
 | IGES rejection                                   | full `validate_neutral`                     | classified keep-full: `DRAFT_CORE_CHECKS` ≡ full errors on all 78 IGES golden fixtures                                                  |
 | SLDPRT export precondition (`writer` input)      | full `validate_neutral`                     | keep-full: refusal depends on non-core Checks (`Counts`, …); `SLDPRT_EXPORT_PRECONDITION_CHECKS` is the documented draft/topology floor |
 | SLDPRT writer postcondition (after bake/prepare) | full `validate_neutral`                     | postcondition on the writer's own transform; not replaced                                                                               |
+
+Codecs not listed run no decode/export admission gate; their documents are
+checked only at the application boundary (`validate_neutral` + fidelity +
+native validators).
 
 ## Application composition
 

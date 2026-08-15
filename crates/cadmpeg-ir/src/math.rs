@@ -21,6 +21,18 @@ pub struct Point3 {
     pub z: f64,
 }
 
+impl From<[f64; 3]> for Point3 {
+    fn from([x, y, z]: [f64; 3]) -> Self {
+        Point3::new(x, y, z)
+    }
+}
+
+impl From<Point3> for [f64; 3] {
+    fn from(point: Point3) -> Self {
+        [point.x, point.y, point.z]
+    }
+}
+
 impl Point3 {
     /// Construct a point.
     pub fn new(x: f64, y: f64, z: f64) -> Self {
@@ -64,6 +76,18 @@ pub struct Vector3 {
     pub y: f64,
     /// Z component.
     pub z: f64,
+}
+
+impl From<[f64; 3]> for Vector3 {
+    fn from([x, y, z]: [f64; 3]) -> Self {
+        Vector3::new(x, y, z)
+    }
+}
+
+impl From<Vector3> for [f64; 3] {
+    fn from(vector: Vector3) -> Self {
+        [vector.x, vector.y, vector.z]
+    }
 }
 
 impl Vector3 {

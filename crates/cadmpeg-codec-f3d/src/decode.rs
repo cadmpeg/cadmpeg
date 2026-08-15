@@ -24,12 +24,13 @@ use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
+use crate::loss::F3dLossCode;
 use crate::materials;
 use cadmpeg_asm::{asm_header, sab};
 
@@ -170,14 +171,9 @@ fn report_unresolved_dimension_companions(
 ) {
     let count = unresolved_dimension_companion_count(native, ir);
     if count != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::RecordNotTyped),
-            severity: Severity::Warning,
-            message: format!(
-                "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::DimensionCompanionUntyped.note(format!(
+            "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
+        )));
     }
 }
 
@@ -190,67 +186,42 @@ fn report_unresolved_configuration_rules(
         &native.design_configurations,
     );
     if count != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::ConfigurationMemberUnassigned.note(format!(
+            "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
+        )));
     }
     let count = crate::design::configurations::unresolved_configuration_rule_count(
         &native.design_configurations,
         &ir.model.configurations,
     );
     if count != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::ConfigurationRuleUnbound.note(format!(
+            "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
+        )));
     }
     let count = crate::design::configurations::unresolved_configuration_parameter_override_count(
         &ir.model.configurations,
     );
     if count != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::ConfigurationParameterOverrideUnbound.note(format!(
+            "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
+        )));
     }
     let count = crate::design::configurations::unresolved_configuration_suppressed_feature_count(
         &ir.model.configurations,
     );
     if count != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::ConfigurationFeatureSuppressionUnbound.note(format!(
+            "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
+        )));
     }
 }
 
 fn report_unretained_act_component_links(report: &mut DecodeReport, count: usize) {
     if count != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
-            severity: Severity::Warning,
-            message: format!(
-                "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::ActComponentLinkUnresolved.note(format!(
+            "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
+        )));
     }
 }
 
@@ -1401,14 +1372,9 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         .filter(|history| history.record_table_binding_budget_exceeded)
         .count();
     if history_budget_skips != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-            severity: Severity::Error,
-            message: format!(
-                "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::HistoryBindingBudgetExceeded.note(format!(
+            "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
+        )));
     }
     for error in native
         .asm_histories
@@ -1417,70 +1383,45 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         .flat_map(|state| &state.records)
         .filter_map(|record| record.framing_error.as_deref())
     {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::RecordNotTyped),
-            severity: Severity::Error,
-            message: format!(
+        report
+            .losses
+            .push(F3dLossCode::HistoryRecordFramingFailed.note(format!(
                 "An ASM history span remains opaque because record framing failed: {error}."
-            ),
-            provenance: None,
-        });
+            )));
     }
     if gaps.unresolved_body_bindings != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
-            severity: Severity::Warning,
-            message: format!(
+        report
+            .losses
+            .push(F3dLossCode::DesignBodyBindingUnresolved.note(format!(
                 "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
                 gaps.unresolved_body_bindings
-            ),
-            provenance: None,
-        });
+            )));
     }
     if gaps.native_reference_images != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
-                gaps.native_reference_images
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::ReferenceImageNativeRetained.note(format!(
+            "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
+            gaps.native_reference_images
+        )));
     }
     if gaps.native_decals != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
-                gaps.native_decals
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::DecalNativeRetained.note(format!(
+            "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
+            gaps.native_decals
+        )));
     }
     if gaps.unrepaired_lost_edge_references != 0 {
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
-                gaps.unrepaired_lost_edge_references
-            ),
-            provenance: None,
-        });
+        report.losses.push(F3dLossCode::EdgeReferenceLostUnrepaired.note(format!(
+            "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
+            gaps.unrepaired_lost_edge_references
+        )));
     }
-    let mut push = |count: usize, message: String| {
+    let mut push = |code: F3dLossCode, count: usize, message: String| {
         if count != 0 {
-            report.losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::FeatureHistoryRetained),
-                severity: Severity::Warning,
-                message,
-                provenance: None,
-            });
+            report.losses.push(code.note(message));
         }
     };
     push(
+        F3dLossCode::FeatureDefinitionIncomplete,
         gaps.incomplete_features,
         format!(
             "{} feature scope(s) have no complete neutral feature definition: {}.",
@@ -1493,6 +1434,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,
         format!(
             "{} decoded feature scope(s) have no neutral construction-history feature.",
@@ -1500,6 +1442,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::ParameterUnprojected,
         gaps.unprojected_parameters,
         format!(
             "{} decoded Design parameter(s) have no neutral parameter.",
@@ -1507,6 +1450,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::ParameterOwnerUnrecognized,
         gaps.unresolved_parameter_owners,
         format!(
             "{} decoded Design parameter owner binding(s) have no recognized feature scope.",
@@ -1514,6 +1458,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::ParameterUnitUntyped,
         gaps.untyped_parameter_units,
         format!(
             "{} decoded Design parameter(s) retain unit tokens without a settled neutral quantity kind.",
@@ -1521,6 +1466,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::ParameterExpressionUnbound,
         gaps.unresolved_expression_dependencies,
         format!(
             "{} decoded parameter expression symbol(s) name same-stream parameters without a neutral dependency edge.",
@@ -1528,6 +1474,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::HistoryDependencyUnprojected,
         gaps.unprojected_history_dependencies,
         format!(
             "{} feature history-state dependency link(s) were not projected into neutral construction history.",
@@ -1535,6 +1482,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::HistoryDependencyAmbiguous,
         gaps.ambiguous_history_dependencies,
         format!(
             "{} feature history-state dependency link(s) have multiple source scopes for the preceding state identity.",
@@ -1542,6 +1490,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::SketchRelationNativeRetained,
         gaps.native_sketch_relations,
         format!(
             "{} sketch relation(s) retain native operands because no unique neutral relation was resolved.",
@@ -1549,6 +1498,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::SketchDimensionNativeRetained,
         gaps.native_dimensions,
         format!(
             "{} sketch dimension(s) retain native operands because no unique neutral dimension was resolved.",
@@ -1556,6 +1506,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::SketchPlacementUnprojected,
         gaps.unprojected_sketch_placements,
         format!(
             "{} decoded Sketch placement(s) have no neutral sketch.",
@@ -1563,6 +1514,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::SketchPointUnprojected,
         gaps.unprojected_sketch_points,
         format!(
             "{} decoded sketch point(s) have no neutral sketch entity.",
@@ -1570,6 +1522,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::SketchCurveUnprojected,
         gaps.unprojected_sketch_curves,
         format!(
             "{} decoded sketch curve(s) have no neutral sketch entity.",
@@ -1577,6 +1530,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::SketchSurfaceUnprojected,
         gaps.unprojected_sketch_surfaces,
         format!(
             "{} decoded sketch surface(s) have no neutral spatial sketch entity.",
@@ -1584,6 +1538,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::SketchTextUnprojected,
         gaps.unprojected_sketch_texts,
         format!(
             "{} decoded sketch text record(s) have no neutral sketch entity.",
@@ -1591,6 +1546,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::SketchRelationUnprojected,
         gaps.unprojected_sketch_relations,
         format!(
             "{} decoded sketch relation(s) have no neutral constraint.",
@@ -1598,6 +1554,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::DimensionUnprojected,
         gaps.unprojected_dimensions,
         format!(
             "{} Design dimension parameter(s) have no parameter-backed neutral or native sketch constraint.",
@@ -1605,6 +1562,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureProfileSelectionNative,
         gaps.profile_selections,
         format!(
             "{} feature profile selection(s) retain native selection identities because no unique neutral profile was resolved.",
@@ -1612,6 +1570,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeaturePathSelectionNative,
         gaps.path_selections,
         format!(
             "{} feature path selection(s) retain native selection identities because no unique neutral path was resolved.",
@@ -1619,6 +1578,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureFaceSelectionNative,
         gaps.face_selections,
         format!(
             "{} feature face selection(s) retain native candidates because no unique topological face was resolved.",
@@ -1626,6 +1586,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureBodySelectionNative,
         gaps.body_selections,
         format!(
             "{} feature body selection(s) retain native identities because no unique solved body was resolved.",
@@ -1633,6 +1594,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureFaceOperandUnresolved,
         gaps.partially_resolved_face_members,
         format!(
             "{} feature face operand(s) remain unresolved inside state-bound historical selections.",
@@ -1640,6 +1602,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureEdgeSelectionNative,
         gaps.native_edge_selections,
         format!(
             "{} edge-treatment selection(s) retain native construction recipes because no neutral historical edge selection was resolved.",
@@ -1647,6 +1610,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureEdgeOperandUnresolved,
         gaps.partially_resolved_edge_members,
         format!(
             "{} edge-treatment operand(s) remain unresolved inside state-bound historical selections.",
@@ -1654,6 +1618,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureEdgeSelectionLost,
         gaps.unresolved_edge_selections,
         format!(
             "{} edge-treatment selection(s) are unresolved because their source edge references were lost.",
@@ -1841,14 +1806,11 @@ impl<'a> F3dDecodeSession<'a> {
     ) -> Result<Self, CodecError> {
         let mut report = build_geometry_report(scan, &brep);
         if undecoded_candidates != 0 {
-            report.losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-                severity: Severity::Warning,
-                message: format!(
+            report
+                .losses
+                .push(F3dLossCode::BrepBlobUndecoded.note(format!(
                     "{undecoded_candidates} Design-referenced BREP blob(s) could not be decoded."
-                ),
-                provenance: None,
-            });
+                )));
         }
         let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
             scan,
@@ -2776,28 +2738,23 @@ fn project_mesh_bodies(
     for outcome in decoded.outcomes {
         match outcome {
             MeshContainerOutcome::Joined(body) => bodies.push(body),
-            MeshContainerOutcome::Unjoined { entry_name } => report.losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::AssetNotTransferred),
-                severity: Severity::Warning,
-                message: format!(
+            MeshContainerOutcome::Unjoined { entry_name } => {
+                report.losses.push(F3dLossCode::MeshContainerUnjoined.note(format!(
                     "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
-                ),
-                provenance: None,
-            }),
-            MeshContainerOutcome::Failed { entry_name, error } => report.losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::DecodeDiagnostic),
-                severity: Severity::Error,
-                message: format!("mesh geometry container `{entry_name}` was not decoded: {error}"),
-                provenance: None,
-            }),
-            MeshContainerOutcome::Missing { entry_name } => report.losses.push(LossNote {
-                code: LossKind::shared(LossTaxonomy::AssetNotTransferred),
-                severity: Severity::Warning,
-                message: format!(
+                )));
+            }
+            MeshContainerOutcome::Failed { entry_name, error } => {
+                report
+                    .losses
+                    .push(F3dLossCode::MeshContainerUndecoded.note(format!(
+                        "mesh geometry container `{entry_name}` was not decoded: {error}"
+                    )));
+            }
+            MeshContainerOutcome::Missing { entry_name } => {
+                report.losses.push(F3dLossCode::MeshContainerMissing.note(format!(
                     "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
-                ),
-                provenance: None,
-            }),
+                )));
+            }
         }
     }
     let mut unresolved = std::collections::BTreeMap::new();
@@ -3057,15 +3014,12 @@ fn report_unresolved_mesh_attributes(
                  vertex",
             ),
         };
-        report.losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::AttributesNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
+        report
+            .losses
+            .push(F3dLossCode::MeshAttributeNotTransferred.note(format!(
                 "{count} mesh attribute channel(s) addressing {addressing} were not transferred: \
-                 {reason}."
-            ),
-            provenance: None,
-        });
+             {reason}."
+            )));
     }
 }
 
@@ -3086,12 +3040,8 @@ fn annotate_docstruct(ir: &mut CadIr, scan: &ContainerScan) {
 
 /// A warning for a present but unparseable `RedirectionsStream.dat`.
 fn xref_parse_loss(error: &CodecError) -> LossNote {
-    LossNote {
-        code: LossKind::shared(LossTaxonomy::MetadataNotTransferred),
-        severity: Severity::Warning,
-        message: format!("external-reference table was not decoded: {error}"),
-        provenance: None,
-    }
+    F3dLossCode::XrefTableUndecoded
+        .note(format!("external-reference table was not decoded: {error}"))
 }
 
 /// Classify a mesh-body document.
@@ -3111,14 +3061,11 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
         )
     });
     report.geometry_transferred = true;
-    report.losses.push(LossNote {
-        code: LossKind::shared(LossTaxonomy::MeshVertexPrecision),
-        severity: Severity::Warning,
-        message: format!(
+    report
+        .losses
+        .push(F3dLossCode::MeshVertexPrecisionReduced.note(format!(
             "{bodies} mesh body geometry container(s) store vertex coordinates at f32 precision"
-        ),
-        provenance: None,
-    });
+        )));
 }
 
 /// Classify a bodyless design whose transferred content requires no BREP.
@@ -3161,12 +3108,9 @@ pub(crate) fn apply_bodyless_design_classification(
             "bodyless design: the document declares no body; its {sketch_entities} sketch entity(s) are its complete geometry, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
         ),
     };
-    report.losses.push(LossNote {
-        code: LossKind::shared(LossTaxonomy::CarrierSummary),
-        severity: Severity::Info,
-        message,
-        provenance: None,
-    });
+    report
+        .losses
+        .push(F3dLossCode::BodylessDesignCarrier.note(message));
 }
 
 /// Reclassify a BREP-less assembly document: its model is the placement of
@@ -3187,16 +3131,13 @@ fn apply_assembly_classification(
                 LossCategory::Geometry | LossCategory::Topology
             ))
     });
-    report.losses.push(LossNote {
-        code: LossKind::shared(LossTaxonomy::AssemblyComponentsExternal),
-        severity: Severity::Info,
-        message: format!(
+    report
+        .losses
+        .push(F3dLossCode::AssemblyComponentsExternal.note(format!(
             "assembly document: geometry is defined by {} external reference(s); decode the \
-             containing .f3z archive to resolve them",
+         containing .f3z archive to resolve them",
             table.references.len()
-        ),
-        provenance: None,
-    });
+        )));
     for reference in &table.references {
         let property_note = if reference.neutron_data.is_empty()
             || reference.neutron_data == reference.neutron_role
@@ -4250,132 +4191,83 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let mut losses = Vec::new();
 
     if s.nurbs_surfaces > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::CarrierSummary),
-            severity: Severity::Info,
-            message: format!(
-                "{} spline surface record(s) were decoded into NURBS carriers from their inline \
-                 cached B-spline block.",
-                s.nurbs_surfaces
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::NurbsSurfaceCarrier.note(format!(
+            "{} spline surface record(s) were decoded into NURBS carriers from their inline \
+             cached B-spline block.",
+            s.nurbs_surfaces
+        )));
     }
     if s.nurbs_curves > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::CarrierSummary),
-            severity: Severity::Info,
-            message: format!(
-                "{} procedural curve record(s) were decoded into NURBS carriers from their inline \
-                 cached 3D B-spline block.",
-                s.nurbs_curves
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::NurbsCurveCarrier.note(format!(
+            "{} procedural curve record(s) were decoded into NURBS carriers from their inline \
+             cached 3D B-spline block.",
+            s.nurbs_curves
+        )));
     }
     if s.missing_face_surfaces > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
-            severity: Severity::Warning,
-            message: format!(
-                "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
-                s.missing_face_surfaces,
-                format_kind_counts(&s.missing_face_surface_kinds)
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::FaceSurfaceReferenceDangling.note(format!(
+            "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
+            s.missing_face_surfaces,
+            format_kind_counts(&s.missing_face_surface_kinds)
+        )));
     }
     if s.unknown_surface_faces > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Warning,
-            message: format!(
-                "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
-                 typed carrier (no inline cached B-spline block: the cache is reached through a \
-                 subtype reference, or the record is a procedural form this codec does not \
-                 evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
-                 surface linking to the preserved record bytes. Topology is transferred; the \
-                 underlying surface shape is not. Native kinds: {}.",
-                s.unknown_surface_faces,
-                format_kind_counts(&s.unknown_surface_kinds)
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::SurfaceShapeNotDecoded.note(format!(
+            "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
+             typed carrier (no inline cached B-spline block: the cache is reached through a \
+             subtype reference, or the record is a procedural form this codec does not \
+             evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
+             surface linking to the preserved record bytes. Topology is transferred; the \
+             underlying surface shape is not. Native kinds: {}.",
+            s.unknown_surface_faces,
+            format_kind_counts(&s.unknown_surface_kinds)
+        )));
     }
     if s.mesh_surface_faces > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::CarrierSummary),
-            severity: Severity::Info,
-            message: format!(
-                "{} face(s) use zero-payload mesh_surface sentinels. Their exact surfaces are absent by definition; the emitted unknown surface preserves that distinction from tessellation attributes.",
-                s.mesh_surface_faces
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::MeshSurfaceSentinel.note(format!(
+            "{} face(s) use zero-payload mesh_surface sentinels. Their exact surfaces are absent by definition; the emitted unknown surface preserves that distinction from tessellation attributes.",
+            s.mesh_surface_faces
+        )));
     }
     if s.procedural_curve_edges > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::ProceduralReduced),
-            severity: Severity::Warning,
-            message: format!(
-                "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
-                 B-spline cache; the edge was emitted with its vertices and parameter range but no \
-                 attributed curve carrier. Native kinds: {}.",
-                s.procedural_curve_edges,
-                format_kind_counts(&s.procedural_curve_kinds)
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::ProceduralCurveUndecoded.note(format!(
+            "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
+             B-spline cache; the edge was emitted with its vertices and parameter range but no \
+             attributed curve carrier. Native kinds: {}.",
+            s.procedural_curve_edges,
+            format_kind_counts(&s.procedural_curve_kinds)
+        )));
     }
     if s.undecoded_pcurve_refs > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::ReferenceGraphNotClosed),
-            severity: Severity::Warning,
-            message: format!(
-                "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
-                 carrier on the face surface's parameterization; those coedges were emitted \
-                 without a pcurve. Native kinds: {}.",
-                s.undecoded_pcurve_refs,
-                format_kind_counts(&s.undecoded_pcurve_kinds)
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::PcurveUndecoded.note(format!(
+            "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
+             carrier on the face surface's parameterization; those coedges were emitted \
+             without a pcurve. Native kinds: {}.",
+            s.undecoded_pcurve_refs,
+            format_kind_counts(&s.undecoded_pcurve_kinds)
+        )));
     }
     if s.partial_procedural_supports > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::ProceduralReduced),
-            severity: Severity::Warning,
-            message: format!(
-                "{} rolling-ball blend definition(s) retain their signed radius and solved cache, but only one of two native supports resolved.",
-                s.partial_procedural_supports
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::BlendSupportPartial.note(format!(
+            "{} rolling-ball blend definition(s) retain their signed radius and solved cache, but only one of two native supports resolved.",
+            s.partial_procedural_supports
+        )));
     }
     if s.other_records > 0 {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::RecordNotTyped),
-            severity: Severity::Warning,
-            message: format!(
-                "{} solved-record application/refinement record(s) were not transferred: {}.",
-                s.other_records,
-                s.other_record_kinds
-                    .iter()
-                    .map(|(name, count)| format!("{name}={count}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            provenance: None,
-        });
+        losses.push(F3dLossCode::SolvedRecordUntyped.note(format!(
+            "{} solved-record application/refinement record(s) were not transferred: {}.",
+            s.other_records,
+            s.other_record_kinds
+                .iter()
+                .map(|(name, count)| format!("{name}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
     }
-    losses.push(LossNote {
-        code: LossKind::shared(LossTaxonomy::MaterialNotTransferred),
-        severity: Severity::Warning,
-        message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
-                  transferred."
-            .to_string(),
-        provenance: None,
-    });
+    losses.push(F3dLossCode::MaterialNotTransferred.note(
+        "Materials/appearances (.protein assets, ACT/design assignments) were not \
+         transferred.",
+    ));
 
     DecodeReport {
         format: "f3d".to_string(),
@@ -4508,35 +4400,19 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     };
 
     let mut losses = vec![
-        LossNote {
-            code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-            severity: Severity::Blocking,
-            message: geometry,
-            provenance: None,
-        },
-        LossNote {
-            code: LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            severity: Severity::Blocking,
-            message: topology,
-            provenance: None,
-        },
-        LossNote {
-            code: LossKind::shared(LossTaxonomy::MaterialNotTransferred),
-            severity: Severity::Warning,
-            message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
-                      transferred."
-                .to_string(),
-            provenance: None,
-        },
+        F3dLossCode::GeometryNotTransferred.note(geometry),
+        F3dLossCode::TopologyNotTransferred.note(topology),
+        F3dLossCode::MaterialNotTransferred.note(
+            "Materials/appearances (.protein assets, ACT/design assignments) were not \
+             transferred.",
+        ),
     ];
 
     // An absent carrier and an unselectable carrier produce different findings.
     // Full decode rejects an ambiguous selection before it builds this report.
     if selected.is_none() {
-        losses.push(LossNote {
-            code: LossKind::shared(LossTaxonomy::MissingGeometryStream),
-            severity: Severity::Error,
-            message: if brep_count == 0 && !text_breps.is_empty() {
+        losses.push(F3dLossCode::MissingGeometryStream.note(
+            if brep_count == 0 && !text_breps.is_empty() {
                 format!(
                     "{} ASM BREP stream(s) are present in the text encoding (.sat/.smt) and \
                      produced no geometry; no binary stream (.smb/.smbh) was found",
@@ -4550,8 +4426,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
                      the document's geometry stream"
                 )
             },
-            provenance: None,
-        });
+        ));
     }
 
     DecodeReport {

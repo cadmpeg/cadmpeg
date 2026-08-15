@@ -13,6 +13,7 @@ use std::io::{Cursor, Write};
 
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
+use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
@@ -383,7 +384,7 @@ fn patch_instance_colors(
                             })?
                     }
                     ("PrismOpaqueSchema", "surface_roughness") => {
-                        find(record, b"\x0e\x20\x00\x00", position)
+                        find_from(record, b"\x0e\x20\x00\x00", position)
                             .map(|marker| marker + 4)
                             .ok_or_else(|| {
                                 CodecError::Malformed("Protein roughness carrier is absent".into())
@@ -1626,28 +1627,14 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
     out
 }
 
-/// Decode one LP-UTF16 string at `offset`, validating unit by unit so a
-/// non-string byte window bails out before allocating.
+/// Decode one LP-UTF16 string at `offset`. Rejects a count outside 2..=256,
+/// invalid UTF-16, or a control character.
 fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
-    let count = usize::try_from(View::u32_le_at(bytes, offset)?).ok()?;
-    if !(2..=256).contains(&count) {
+    let (value, end) = lp_utf16_bounded(bytes, offset, 2..=256)?;
+    if value.chars().any(char::is_control) {
         return None;
     }
-    let byte_len = count * 2;
-    let payload = bytes.get(offset + 4..offset + 4 + byte_len)?;
-    let mut value = String::new();
-    for unit in char::decode_utf16(
-        payload
-            .chunks_exact(2)
-            .map(|pair| View::u16_le_at(pair, 0).expect("chunks_exact(2)")),
-    ) {
-        let ch = unit.ok()?;
-        if ch.is_control() {
-            return None;
-        }
-        value.push(ch);
-    }
-    Some((value, 4 + byte_len))
+    Some((value, end - offset))
 }
 
 /// Select the sole ordered body-map pair carrying one material owner's Design
@@ -1798,7 +1785,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
             position + 197 + delta,
         );
     } else if schema == "PrismOpaqueSchema" {
-        if let Some(marker) = find(record, b"\x0e\x20\x00\x00", position) {
+        if let Some(marker) = find_from(record, b"\x0e\x20\x00\x00", position) {
             fixed_scalar(&mut properties, "surface_roughness", record, marker + 4);
         }
     } else if schema == "PrismTransparentSchema" {
@@ -1870,14 +1857,6 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
         }
         _ => None,
     }
-}
-
-fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
-    bytes
-        .get(start..)?
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|offset| start + offset)
 }
 
 #[cfg(test)]

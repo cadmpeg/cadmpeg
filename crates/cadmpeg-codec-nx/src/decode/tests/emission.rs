@@ -17,6 +17,7 @@ use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
 use cadmpeg_ir::Exactness;
 
 use crate::container;
+use crate::loss::NxLossCode;
 use crate::parasolid::{self, StreamKind};
 use crate::test_support::*;
 use crate::NxCodec;
@@ -1580,7 +1581,7 @@ fn decode_emits_connected_primitive_brep() {
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code != LossKind::shared(LossTaxonomy::AttributesNotTransferred)));
+        .all(|loss| loss.code != NxLossCode::AttributeValueUnresolved.kind()));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)
             && loss.message.contains("Assembly occurrence placements")
@@ -1623,7 +1624,7 @@ fn decode_reports_external_assembly_boundary_without_inline_geometry() {
         .unwrap();
 
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == LossKind::shared(LossTaxonomy::AssemblyComponentsExternal)
+        loss.code == NxLossCode::AssemblyComponentsExternal.kind()
             && loss.message.contains("No inline Parasolid geometry")
     }));
     assert!(!result

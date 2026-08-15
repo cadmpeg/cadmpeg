@@ -10,6 +10,7 @@
 
 use serde::Deserialize;
 
+use cadmpeg_core::bytes::find_in;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
@@ -440,13 +441,13 @@ fn role_tails(bytes: &[u8], record: &IndexedRecord, value: &str) -> Vec<usize> {
     let mut needle = Vec::with_capacity(4 + encoded.len() * 2);
     needle.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
     needle.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
-    bytes[record.offset..record.end]
-        .windows(needle.len())
-        .enumerate()
-        .filter_map(|(relative, candidate)| {
-            (candidate == needle).then_some(record.offset + relative + needle.len())
-        })
-        .collect()
+    let mut tails = Vec::new();
+    let mut from = record.offset;
+    while let Some(at) = find_in(bytes, &needle, from, record.end) {
+        tails.push(at + needle.len());
+        from = at + 1;
+    }
+    tails
 }
 
 /// One occurrence-placement record: the target path it names and the transform
