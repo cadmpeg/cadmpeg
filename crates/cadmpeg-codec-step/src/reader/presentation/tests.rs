@@ -498,6 +498,45 @@ fn context_dependent_styles_are_not_flattened_without_context() {
 }
 
 #[test]
+fn context_dependent_styles_transfer_for_matching_contexts() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('red',1.,0.,0.);
+#2=PRESENTATION_STYLE_ASSIGNMENT((#1));
+#3=REPRESENTATION_CONTEXT('model','3D');
+#4=CARTESIAN_POINT('styled point',(0.,0.,0.));
+#5=SHAPE_REPRESENTATION('context',(#4),#3);
+#6=PRESENTATION_STYLE_BY_CONTEXT((#2),#5);
+#7=STYLED_ITEM('',(#6),#4);
+#8=COLOUR_RGB('blue',0.,0.,1.);
+#9=PRESENTATION_STYLE_ASSIGNMENT((#8));
+#10=PRESENTATION_STYLE_BY_CONTEXT((#9),#3);
+#11=STYLED_ITEM('',(#10),#4);",
+    );
+
+    assert_eq!(result.ir().model.appearances.len(), 2);
+    assert_eq!(result.ir().model.appearance_bindings.len(), 2);
+    assert!(matches!(
+        &result.ir().model.appearance_bindings[0].target,
+        cadmpeg_ir::appearance::AppearanceTarget::Point(point)
+            if point.0 == "step:data:point#4"
+    ));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::ContextDependentStyleUnresolved.kind() }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| {
+            record.id.0 == "step:data:presentation_style_by_context#6"
+                || record.id.0 == "step:data:presentation_style_by_context#10"
+        }));
+}
+
+#[test]
 fn presentation_records_retain_non_color_geometry_owners() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

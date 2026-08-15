@@ -638,8 +638,9 @@ set only when those styles produce one distinct color; conflicting colors
 leave it unset and produce a metadata loss. A direct `STYLED_ITEM` or
 `OVER_RIDING_STYLED_ITEM` still owns its curve, point, or surface target when
 the assignment has no resolvable colour. A `PRESENTATION_STYLE_BY_CONTEXT`
-branch is not selected without a matching presentation context. Its source
-records remain named opaque records and produce a
+branch transfers when its context representation or representation context
+directly contains the styled item. A branch without that exact membership
+remains named opaque source data and produces a
 `presentation.context-dependent-style-unresolved` loss. An unscoped sibling
 style may transfer independently. An `ANNOTATION_PLANE` owns each
 referenced surface carrier. A native presentation carrier without a neutral

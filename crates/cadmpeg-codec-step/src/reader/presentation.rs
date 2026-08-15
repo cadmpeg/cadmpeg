@@ -193,6 +193,7 @@ pub(super) fn decode(
         .iter()
         .filter_map(|(&id, record)| styled_item_parts(record).map(|_| id))
         .collect::<Vec<_>>();
+    let context_items = presentation_context_items(exchange);
     let overridden_styles = styles
         .iter()
         .filter_map(|id| overridden_style(&exchange.records[id]))
@@ -238,8 +239,39 @@ pub(super) fn decode(
                     .is_some_and(is_presentation_style_by_context)
             })
             .collect::<BTreeSet<_>>();
-        if !context_style_ids.is_empty() {
-            let contexts = context_style_ids
+        let mut effective_style_references = Vec::new();
+        let mut unresolved_context_style_ids = BTreeSet::new();
+        for reference in style_references.iter().copied() {
+            let Some(record) = exchange.records.get(&reference) else {
+                effective_style_references.push(reference);
+                continue;
+            };
+            if !context_style_ids.contains(&reference) {
+                effective_style_references.push(reference);
+                continue;
+            }
+            let Some(context) = presentation_style_context(record).and_then(ValueExt::reference)
+            else {
+                unresolved_context_style_ids.insert(reference);
+                continue;
+            };
+            if context_items
+                .get(&context)
+                .is_some_and(|items| items.contains(&target_step))
+            {
+                let assignments = presentation_style_assignments(record);
+                if assignments.is_empty() {
+                    unresolved_context_style_ids.insert(reference);
+                } else {
+                    effective_style_references.extend(assignments);
+                    typed.insert(reference);
+                }
+            } else {
+                unresolved_context_style_ids.insert(reference);
+            }
+        }
+        if !unresolved_context_style_ids.is_empty() {
+            let contexts = unresolved_context_style_ids
                 .iter()
                 .map(|context_style_id| {
                     let context = exchange
@@ -256,35 +288,41 @@ pub(super) fn decode(
                 contexts.join(", ")
             )));
         }
-        let color = style_references.iter().copied().find_map(|reference| {
-            find_color(
-                reference,
-                exchange,
-                domain,
-                &mut active,
-                &mut color_cache,
-                &mut losses,
-                0,
-            )
-        });
+        let color = effective_style_references
+            .iter()
+            .copied()
+            .find_map(|reference| {
+                find_color(
+                    reference,
+                    exchange,
+                    domain,
+                    &mut active,
+                    &mut color_cache,
+                    &mut losses,
+                    0,
+                )
+            });
         let color = color.or_else(|| {
             matches!(domain, StyleDomain::Curve | StyleDomain::Point).then(|| {
-                style_references.iter().copied().find_map(|reference| {
-                    find_color(
-                        reference,
-                        exchange,
-                        StyleDomain::Surface,
-                        &mut active,
-                        &mut color_cache,
-                        &mut losses,
-                        0,
-                    )
-                })
+                effective_style_references
+                    .iter()
+                    .copied()
+                    .find_map(|reference| {
+                        find_color(
+                            reference,
+                            exchange,
+                            StyleDomain::Surface,
+                            &mut active,
+                            &mut color_cache,
+                            &mut losses,
+                            0,
+                        )
+                    })
             })?
         });
         let Some((_, color_id, color, name)) = color else {
             let mut visited = BTreeSet::new();
-            if context_style_ids.is_empty()
+            if unresolved_context_style_ids.is_empty()
                 && !contains_null_style(parts.styles, exchange, &mut visited, 0)
             {
                 warnings.push(format!(
@@ -842,6 +880,59 @@ fn presentation_style_context(record: &RawRecord) -> Option<&Value> {
         .iter()
         .find(|partial| partial.name == "PRESENTATION_STYLE_BY_CONTEXT")
         .and_then(|partial| partial.parameters.last())
+}
+
+fn presentation_style_assignments(record: &RawRecord) -> Vec<u64> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "PRESENTATION_STYLE_BY_CONTEXT")
+        .and_then(|partial| partial.parameters.first())
+        .and_then(ValueExt::list)
+        .into_iter()
+        .flatten()
+        .filter_map(ValueExt::reference)
+        .collect()
+}
+
+fn presentation_context_items(exchange: &Exchange) -> BTreeMap<u64, BTreeSet<u64>> {
+    let mut context_items = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for (&representation_id, record) in &exchange.records {
+        let Some(items) = representation_items(record) else {
+            continue;
+        };
+        context_items
+            .entry(representation_id)
+            .or_default()
+            .extend(items.iter().copied());
+        if let Some(context_id) = representation_context(record) {
+            context_items.entry(context_id).or_default().extend(items);
+        }
+    }
+    context_items
+}
+
+fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
+    record
+        .partials
+        .iter()
+        .find(|partial| {
+            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        })
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(ValueExt::list)
+        .map(|items| items.iter().filter_map(ValueExt::reference).collect())
+}
+
+fn representation_context(record: &RawRecord) -> Option<u64> {
+    record
+        .partials
+        .iter()
+        .find(|partial| {
+            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        })
+        .and_then(|partial| partial.parameters.get(2))
+        .and_then(ValueExt::reference)
 }
 
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
