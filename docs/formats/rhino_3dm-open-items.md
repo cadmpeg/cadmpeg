@@ -140,16 +140,6 @@ backed writer-band ceiling.
 `ON_DetailView::Read` establish the settled subset. The remaining readers need
 the same producer-source audit or an independent witness.
 
-### SW-03. Mixed instance-member transforms
-
-**Question.** Which entities emitted by one instance-definition member receive the member transform when the member emits both a body carrier and auxiliary geometry?
-
-**Known.** `decode.rs:1906-2125` uses a checkpoint and treats the presence of a newly emitted body as the boundary for transforming bodies; it does not independently establish the handling of auxiliary entities from the same member. Existing tests cover separate member shapes but not a mixed-member witness.
-
-**Need.** Define the mixed-member boundary and add an independent witness that proves the transform and retention behavior for every emitted entity kind.
-
-**Note.** Reopened because a member that emits both a body and auxiliary geometry can leave the auxiliary geometry outside the transform decision, and aggregate instance tests do not establish the source boundary rule.
-
 ### TE-01. Class-specific transfer differential evidence
 
 **Question.** Which Rhino-authored object classes differ from the committed transfer fixtures, and which byte-level fields cause the difference?

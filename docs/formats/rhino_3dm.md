@@ -2319,16 +2319,13 @@ ON_Xform transform
 ON_BoundingBox bounds
 ```
 
-Definition membership comes from the definition UUID array, not object
-attributes. The reference payload carries the transform and bounding box.
-The member UUID array identifies the source object records that belong to the
-definition. The reference transform is applied once to every carrier emitted
-by each member record. A member that emits a body stores the transform on the
-body; the body carries its topology and vertex points. A member with no body
-transforms each emitted point, curve, and surface directly. Mesh and SubD
-vertex arrays are transformed directly. A free point from another member is
-therefore transformed independently even when the definition also emits a
-body.
+Definition membership comes from the ordered definition UUID array, not object
+attributes. The reference payload carries one transform and one bounding box.
+The transform applies to the definition as a whole. When transfer of one
+member emits more than one typed geometry carrier, the same transform is applied
+to every carrier emitted from that member, including a body carrier and any
+point, curve, surface, mesh, or subdivision carrier. The wire format has no
+per-carrier transform or carrier-selection field.
 
 ### 18.1 Modern dimensions
 
