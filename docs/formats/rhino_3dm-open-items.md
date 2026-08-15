@@ -1,6 +1,6 @@
 # Rhino 3DM Open Items
 
-The following items were reopened by the 2026-08-15 QA audit. Settled format
+The following items were reopened by the 2026-08-15 QA audits. Settled format
 rules remain in [`rhino_3dm.md`](rhino_3dm.md). Independent transfer evidence
 remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.md).
 
@@ -205,3 +205,143 @@ remains in [`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.
 **Need.** Add class-specific transfer witnesses with byte-level differences and accepted/rejected outcomes for each affected class.
 
 **Note.** Reopened because aggregate floors can pass while one class remains opaque; they do not identify the field difference needed to promote a transfer rule to the specification.
+
+### FV-06. Later major payload admission
+
+**Question.** Which later major versions of built-in payloads may enter typed decoding?
+
+**Known.** `decode.rs:2460-2500` retains unsupported class and table records as opaque records. Section 20.6 gives the opaque fallback but defines no later-major field grammar or typed admission rule.
+
+**Need.** Establish a major-version grammar and admission rule for each supported built-in payload, or state that the later major remains permanently opaque with a typed loss contract.
+
+**Note.** Reopened because the closure converted an unknown major into a preservation decision. Complete byte retention does not establish typed compatibility or field boundaries.
+
+### FV-07. Later minor payload suffixes
+
+**Question.** Which fields and boundaries do later minor versions append to each built-in payload?
+
+**Known.** The global rule permits bounded later-minor suffixes, but `decode.rs:2460-2500` can retain the complete record without identifying the suffix grammar. A bounded end does not identify the fields in an unsupported suffix.
+
+**Need.** Define each supported minor suffix and its admission, skip, and loss behavior, or keep the complete payload opaque with an explicit typed loss.
+
+**Note.** Reopened because the closure treats an unread suffix as opaque without establishing whether the known prefix remains admissible.
+
+### IC-04. Quadrilateral triangulation diagonal
+
+**Question.** Which diagonal does the neutral reader use for a quadrilateral mesh face?
+
+**Known.** `mesh.rs:466-489` compares the two geometric diagonals and selects diagonal `0-2` on equality. Section 12.2 says to use the shorter diagonal. The local test exercises one unequal case but does not establish the source rule or the equal-diagonal tie.
+
+**Need.** Provide an independent source rule for the diagonal calculation and tie case, then keep the derived exactness and `mesh.quad-topology-triangulated` loss contract aligned with that rule.
+
+**Note.** Reopened because the closure fixed the neutral loss accounting but promoted one local geometric rule without an independent operand for equal diagonals.
+
+### RS-06. Redundant-field repair accounting
+
+**Question.** Which stored redundant counts, indices, and optional fields may be repaired, and what typed loss does each repair emit?
+
+**Known.** The closure partitions several mesh, point-cloud, history, and positional fields as redundant or optional. `brep.rs:1114-1119` still converts an invalid optional region topology into the warning `invalid optional Brep region topology discarded: ...`. `decode.rs:3265-3279` routes that warning through `scan_warning`; `redundant_field_diagnostic` at `decode.rs:3362-3364` does not classify it as a redundant-field warning. The final report therefore uses a generic object diagnostic for this repair.
+
+**Need.** Define the repair or refusal rule for every redundant count, index, and optional field, and classify each accepted repair, including invalid Brep region topology, as `container.redundant-field-repaired` while retaining the cause.
+
+**Note.** Reopened because the closure covers several mesh, point-cloud, history, and positional repairs but leaves at least one documented optional repair outside the typed loss path. A repaired or discarded stored field must not become indistinguishable from an absent field.
+
+### SW-01. Duplicate layer index resolution
+
+**Question.** Which layer record owns an archive layer index when the index occurs more than once?
+
+**Known.** `settings.rs:1361-1375` retains both records and emits a warning. `objects.rs:1385-1389` maps the first record with `or_insert`. Section 8.3 states that component registration assigns a new index to the later record.
+
+**Need.** Apply the documented new-index rule to the later record, preserve references to the first record, and retain a typed duplicate diagnostic.
+
+**Note.** Reopened because the closure added the first-wins warning but did not implement the documented index reassignment. Reordering duplicate records changes the layer selected by an object reference.
+
+### SW-02. Duplicate singleton metadata selection
+
+**Question.** Which metadata record owns a singleton property or setting when the file contains more than one?
+
+**Known.** `settings.rs:1295-1397` applies the last successfully read value and emits a duplicate warning. The specification now states the same rule, but the closure supplies no independent source authority for conflicting units, writer versions, or settings.
+
+**Need.** Establish the source precedence rule for duplicate singleton records and retain a typed ambiguity or resolution diagnostic for conflicting values.
+
+**Note.** Reopened as a promotion-to-spec gap. Reordering conflicting unit records changes coordinate scaling; reordering writer-version records changes version gates.
+
+### SW-04. V1 vertex identity
+
+**Question.** Does V1 topology identify shared vertices by source references or by trim connectivity?
+
+**Known.** `legacy.rs:628-724` unions endpoint occurrences by loop adjacency and seam or mate connectivity, then assigns the arithmetic mean of incident curve endpoints at `legacy.rs:673-713`. The replacement for proximity matching is covered only by local constructed cases.
+
+**Need.** Establish the source vertex-identity and position rule independently, including the behavior of distinct nearby endpoints and conflicting endpoint positions.
+
+**Note.** Reopened because the closure promotes trim connectivity, mean position, and maximum tolerance to the format without an independent source rule.
+
+### SW-05. V1 seam-group curve ownership
+
+**Question.** Which model-space curve owns a V1 seam or mate relation when the paired trims carry different curve states?
+
+**Known.** `legacy.rs:523-558` glues only a curve-bearing trim to a curve-less trim. `legacy.rs:564-570` retains the first curve within a glued root, while the specification keeps two curve-bearing trims separate. The closure provides only local constructed cases for these alternatives.
+
+**Need.** Establish the source seam and mate ownership rule and the required behavior for conflicting curve copies.
+
+**Note.** Reopened because the closure promotes the exact-one and both-present decisions to the specification without an independent source witness.
+
+### SW-06. Duplicate built-in userdata extensions
+
+**Question.** Which built-in userdata extension owns a dimension or hatch when duplicate class UUIDs occur?
+
+**Known.** `dimensions.rs:1009-1012` and `dimensions.rs:1046-1049` select the first matching extension. `hatch.rs:256-260` does the same. `decode.rs:988-1000` and `decode.rs:1097-1107` emit a duplicate-resolution diagnostic, but the closure supplies no independent source precedence rule.
+
+**Need.** Establish the source uniqueness or precedence rule for each extension class and retain a typed ambiguity or resolution loss for conflicting duplicates.
+
+**Note.** Reopened as a promotion-to-spec gap. Reordering extensions with different offsets or base-point data changes the transferred presentation.
+
+### SW-07. V1 surface rational-form arbitration
+
+**Question.** Which V1 surface rational-form byte is authoritative when the two stored bytes differ?
+
+**Known.** `legacy.rs:349-361` reads both bytes, rejects values above 2, and selects the last nonzero byte. Section 8.2 lists two rational-form bytes and their forms but defines no agreement or precedence rule.
+
+**Need.** Establish the relationship between the two bytes and the mismatch policy. Preserve or reject a disagreement instead of selecting by byte order.
+
+**Note.** A disagreement such as `[1, 2]` versus `[2, 1]` changes the rational interpretation. Reordering the stored bytes changes the neutral surface without a source discriminator.
+
+### SW-08. Failed view-record fallback
+
+**Question.** What happens when a view record is framed but its child payload fails typed parsing?
+
+**Known.** `views.rs:890-892` stops a view list on a chunk error without a loss. `views.rs:895-929` converts a parse error into a synthetic view with empty identity fields and all three visibility flags set true. The warning is stored in the native view record, and `views.rs:1000-1011` publishes that record without a typed loss.
+
+**Need.** Retain the complete failed record as opaque or omit its typed view, and emit a typed loss. Do not expose fabricated visibility or identity as source state.
+
+**Note.** Reopened as silent substitution. A malformed or later view can become a visible default view, and later views can disappear after the first framing error.
+
+### SW-09. Ambiguous history producers
+
+**Question.** How is a history dependency represented when more than one record produces the same descendant UUID?
+
+**Known.** `history.rs:1295-1310` changes a duplicate producer entry to `None`. `history.rs:1321-1328` then omits every dependency using that descendant. Only dependencies that point to later unique producers are counted at `history.rs:1312-1319` and reported at `decode.rs:5333-5338`.
+
+**Need.** Retain the ambiguity and emit a typed history-dependency loss when a duplicate producer prevents a neutral dependency edge.
+
+**Note.** Reopened as an ignored witness. Duplicate producer records remain in native history, but the omitted neutral edge has no ambiguity loss and is indistinguishable from an absent relation.
+
+### SW-10. Writer first-pcurve selection
+
+**Question.** Which parameter-space curve use does the Rhino writer serialize when one coedge has more than one ordered pcurve use?
+
+**Known.** `writer.rs:2419-2443` allows multiple pcurve uses on one coedge. `writer.rs:2332-2338`, `writer.rs:2450-2456`, and `writer.rs:2481-2489` select only the first use for geometry, tolerance, and NURBS validation.
+
+**Need.** Emit every supported pcurve use, or reject a coedge with more than one use before writing. Preserve its ordered range and geometry semantics.
+
+**Note.** A second pcurve with a different range or carrier is accepted by ownership validation and then omitted from the written C2 or trim payload. The first ordered use silently wins.
+
+### SW-11. Extrusion closure and orientation constants
+
+**Question.** Which source rule defines extrusion profile endpoint coincidence and orientation?
+
+**Known.** `extrusion.rs:21-24` introduces absolute and relative closure tolerances. `extrusion.rs:328-390` approximates signed area by a fixed sample count per knot span. Section 16 states an archive point-coincidence rule and an oriented-area rule but gives neither the numeric tolerance nor the sampling authority.
+
+**Need.** Establish the source coincidence tolerance and orientation algorithm, or mark the approximation as derived and refuse cases whose classification is not proven.
+
+**Note.** Reopened as an invented-constant and plausibility-framing finding. A small endpoint gap changes cap admission, and a high-curvature rational profile can change area classification between samples.
