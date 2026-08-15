@@ -628,11 +628,11 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Question.** How does a zero-entity stream select its ownership root when more than one face-roster/shell/body triple is structurally valid?
 
-**Known.** `zero_entity_ownership_root` recognizes contiguous `[0x6142, 0x6006, 0x6508]` triples with checked fields and returns one root.
+**Known.** `zero_entity_ownership_roots` recognizes every contiguous `[0x6142, 0x6006, 0x6508]` triple with checked fields and retains the candidates in source order. The neutral zero-entity route binds ownership only when exactly one candidate exists. Multiple candidates remain native and do not select a body or shell.
 
 **Need.** We must know the terminal/root identity rule or reject multiple valid ownership triples before transferring body and shell ownership.
 
-**Note.** Added by the 2026-08-10 hostile sweep. `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs:464-502` uses `records.windows(3).find_map`, so the first matching triple wins and later matches are never compared. A stream with two valid triples can assign the earlier hierarchy even when the later triple is the terminal owner. Exact tags, contiguity, and face-slot checks validate each candidate but do not establish uniqueness.
+**Note.** The decoder now rejects ambiguous ownership for neutral transfer and retains every exact candidate. The source rule that identifies one terminal root when multiple complete triples exist remains unknown.
 
 ## 6. E5 `0D 03`
 

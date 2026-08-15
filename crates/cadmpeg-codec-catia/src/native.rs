@@ -6345,10 +6345,11 @@ fn zero_entity_ownership_roots(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Vec<CatiaZeroEntityOwnershipRoot> {
-    crate::families::zero_entity::records::zero_entity_ownership_root_in_range(bytes, range)
+    crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range)
         .into_iter()
-        .map(|root| CatiaZeroEntityOwnershipRoot {
-            id: "catia:zero-entity:ownership-root#0".to_string(),
+        .enumerate()
+        .map(|(index, root)| CatiaZeroEntityOwnershipRoot {
+            id: format!("catia:zero-entity:ownership-root#{index}"),
             face_roster_byte_offset: root.face_roster_pos as u64,
             face_roster_record_ordinal: root.face_roster_record_ordinal,
             face_slots: root.face_slots,

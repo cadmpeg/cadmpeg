@@ -660,6 +660,42 @@ fn native_namespace_retains_zero_entity_ownership_root() {
 }
 
 #[test]
+fn native_namespace_retains_multiple_zero_entity_ownership_candidates() {
+    let mut stream = zero_entity_face_support_stream();
+    stream.extend(zero_entity_ownership_stream(1));
+    stream.extend(zero_entity_ownership_stream(1));
+
+    let native = crate::native::CatiaNative::decode(&stream);
+    assert_eq!(native.zero_entity_ownership_roots.len(), 2);
+    assert_eq!(
+        native.zero_entity_ownership_roots[0].id,
+        "catia:zero-entity:ownership-root#0"
+    );
+    assert_eq!(
+        native.zero_entity_ownership_roots[1].id,
+        "catia:zero-entity:ownership-root#1"
+    );
+    assert_eq!(
+        native.zero_entity_ownership_roots[0].face_roster_record_ordinal,
+        4
+    );
+    assert_eq!(
+        native.zero_entity_ownership_roots[1].face_roster_record_ordinal,
+        7
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store multiple CATIA zero-entity ownership candidates");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace)
+            .expect("load multiple CATIA zero-entity ownership candidates"),
+        native
+    );
+}
+
+#[test]
 fn native_namespace_retains_separate_zero_entity_topology_registries() {
     let native = crate::native::CatiaNative::decode(&zero_entity_topology_stream());
     assert_eq!(native.zero_entity_records.len(), 8);

@@ -1899,41 +1899,41 @@ fn validate_zero_entity_ownership_roots(
     records: &[CatiaZeroEntityRecord],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let bound_face_count = support_runs.iter().filter(|run| run.face.is_some()).count();
-    let valid = roots.len() <= 1
-        && roots.iter().all(|root| {
-            root.id == "catia:zero-entity:ownership-root#0"
-                && root.face_slots.len() == bound_face_count
-                && root
-                    .face_slots
-                    .iter()
-                    .copied()
-                    .eq((1..=u32::try_from(bound_face_count).unwrap_or(0)).rev())
-                && [
-                    (
-                        root.face_roster_record_ordinal,
-                        root.face_roster_byte_offset,
-                        [0x61, 0x42],
-                    ),
-                    (
-                        root.shell_record_ordinal,
-                        root.shell_byte_offset,
-                        [0x60, 0x06],
-                    ),
-                    (
-                        root.body_record_ordinal,
-                        root.body_byte_offset,
-                        [0x65, 0x08],
-                    ),
-                ]
-                .into_iter()
-                .all(|(ordinal, byte_offset, tag)| {
-                    zero_entity_record(records, ordinal).is_some_and(|record| {
-                        record.byte_offset == byte_offset && record.tag == tag
-                    })
-                })
-                && root.shell_record_ordinal == root.face_roster_record_ordinal.saturating_add(1)
-                && root.body_record_ordinal == root.shell_record_ordinal.saturating_add(1)
-        });
+    let valid = roots.iter().enumerate().all(|(index, root)| {
+        root.id == format!("catia:zero-entity:ownership-root#{index}")
+            && root.face_slots.len() == bound_face_count
+            && root
+                .face_slots
+                .iter()
+                .copied()
+                .eq((1..=u32::try_from(bound_face_count).unwrap_or(0)).rev())
+            && [
+                (
+                    root.face_roster_record_ordinal,
+                    root.face_roster_byte_offset,
+                    [0x61, 0x42],
+                ),
+                (
+                    root.shell_record_ordinal,
+                    root.shell_byte_offset,
+                    [0x60, 0x06],
+                ),
+                (
+                    root.body_record_ordinal,
+                    root.body_byte_offset,
+                    [0x65, 0x08],
+                ),
+            ]
+            .into_iter()
+            .all(|(ordinal, byte_offset, tag)| {
+                zero_entity_record(records, ordinal)
+                    .is_some_and(|record| record.byte_offset == byte_offset && record.tag == tag)
+            })
+            && root.shell_record_ordinal == root.face_roster_record_ordinal.saturating_add(1)
+            && root.body_record_ordinal == root.shell_record_ordinal.saturating_add(1)
+            && (index == 0
+                || roots[index - 1].face_roster_byte_offset < root.face_roster_byte_offset)
+    });
     if valid {
         Ok(())
     } else {
