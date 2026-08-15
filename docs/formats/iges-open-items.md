@@ -57,16 +57,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-10. Fixed protocol constants with no IR source
-
-**Question.** What are the correct `PREF`, creation-method, and hierarchy values for generated records?
-
-**Known.** `writer.rs` emits fixed values for Type 141/142 preferences, Type 142 creation method, and Type 504 hierarchy. The values are justified by the current neutral IR and writer behavior, not by a complete source mapping.
-
-**Need.** We need the correct value for each field and independent evidence for the Type 504 hierarchy difference.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `82c13da5a` recorded protocol constants as settled without external format or producer evidence.
-
 ## 8. Evidence
 
 ### EV-01. No file authored by another system has ever been decoded

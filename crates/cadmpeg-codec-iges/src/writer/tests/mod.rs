@@ -2,15 +2,17 @@
 use super::*;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
+use std::io::Cursor;
 
+use crate::test_support::{parametrically_bounded_plane_file, trimmed_plane_file};
 use crate::writer::Entity;
-use crate::IgesVersion;
+use crate::{IgesCodec, IgesEncoder, IgesVersion};
 
 mod encode;
 mod roundtrip;
@@ -201,6 +203,51 @@ fn target_profiles_cover_every_emitted_entity_form() {
             Err(CodecError::NotImplemented(_))
         ));
     }
+}
+
+#[test]
+fn generated_boundary_records_use_the_declared_dependent_status() {
+    let regenerate = |bytes| {
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("fixture decodes");
+        let plan = IgesEncoder::default()
+            .plan(EncodeInput {
+                ir: decoded.ir(),
+                fidelity: None,
+            })
+            .expect("fixture has a semantic writer profile");
+        let mut written = Vec::new();
+        plan.write_to(&mut written).expect("writer succeeds");
+        IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .expect("generated IGES decodes")
+    };
+    let status = |ir: &CadIr, entity_type: i64| {
+        ir.native
+            .namespace("iges")
+            .expect("generated document has the IGES namespace")
+            .arenas["entities"]
+            .iter()
+            .find(|entity| entity.field("entity_type") == Some(entity_type.into()))
+            .map(|entity| {
+                (
+                    entity.field("subordinate_status"),
+                    entity.field("use_flag"),
+                    entity.field("hierarchy_status"),
+                )
+            })
+            .expect("generated entity status exists")
+    };
+
+    assert_eq!(
+        status(regenerate(parametrically_bounded_plane_file()).ir(), 141),
+        (Some(1.into()), Some(0.into()), Some(0.into()))
+    );
+    assert_eq!(
+        status(regenerate(trimmed_plane_file()).ir(), 142),
+        (Some(1.into()), Some(0.into()), Some(0.into()))
+    );
 }
 
 #[test]

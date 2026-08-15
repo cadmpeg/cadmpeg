@@ -1079,7 +1079,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
         .find(|entity| entity.field("entity_type") == Some(504.into()))
         .expect("generated B-rep has an edge list");
     assert_eq!(edge_list.field("subordinate_status"), Some(1.into()));
-    assert_eq!(edge_list.field("hierarchy_status"), Some(0.into()));
+    assert_eq!(edge_list.field("hierarchy_status"), Some(1.into()));
 }
 
 #[test]
