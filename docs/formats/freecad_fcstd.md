@@ -357,6 +357,25 @@ every direct container membership, while neutral admission requires each member 
 distinct parent container. Overlapping parent containers are refused instead of selecting by source
 order. Product record identities are unique by object identity; duplicate records are invalid.
 
+Named product carriers use the producer runtime type and value grammar. `Group` and `ElementList`
+are `App::PropertyLinkList` properties with one `LinkList` root; its `count` equals the number of
+ordered `Link` children. `LinkedObject` and `LinkCopyOnChangeSource` are `App::PropertyXLink`
+properties with one `XLink` target. `LinkCopyOnChangeGroup` is an `App::PropertyLink` with one
+`Link` target. `LinkTransform`, `LinkClaimChild`, and `LinkCopyOnChangeTouched` are
+`App::PropertyBool` properties with one `Bool` value. `ElementCount` is an
+`App::PropertyIntegerConstraint` with one `Integer` value. `Scale` is an `App::PropertyFloat`
+with one `Float` value, and `ScaleVector` is an `App::PropertyVector` with one `PropertyVector`
+value carrying `valueX`, `valueY`, and `valueZ`; `ScaleVector` is authoritative when both scale
+carriers are present. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
+a `value` bit string. `PlacementList` and
+`ScaleList` are respectively `App::PropertyPlacementList` and `App::PropertyVectorList`, each
+with one `PlacementList` or `VectorList` root and at most one named side entry. `LinkPlacement`,
+`Placement`, and the inherited component placement are `App::PropertyPlacement` properties with
+one `PropertyPlacement` value. A named carrier with another runtime type, root tag, value count,
+or link count is malformed and cannot populate a neutral field. The built-in `LinkCopyOnChange`
+carrier is an `App::PropertyEnumeration` with one selected `Integer` value; its persisted index is
+retained when it has no neutral policy name.
+
 The exact source attribute distinguishes an external file path from a document identity. Neutral
 references keep that path or identity separately from the target object and mark resolution as
 `unresolved`; decoding never guesses that an external file was loaded. A structurally present but
@@ -387,8 +406,8 @@ description, part number, and additional named BOM fields. Generated BOM spreads
 spreadsheet objects; they are not treated as the authoritative identity of their source component.
 
 Link semantics remain distinct from placement. Prototype subelement paths, tree-child claiming,
-base and per-element scale, explicit element objects, and per-element visibility are retained on
-neutral occurrences. `LinkCopyOnChange` is valid for neutral transfer only when its exact runtime
+base and per-element scale, and explicit element objects are retained on neutral occurrences.
+`LinkCopyOnChange` is valid for neutral transfer only when its exact runtime
 type is `App::PropertyEnumeration`; a same-named property of another runtime type remains native
 and does not alter occurrence semantics. Copy-on-change is typed as disabled, enabled, owned,
 tracking, or an explicit future native policy, with its source, ownership group, and touched state

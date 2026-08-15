@@ -239,28 +239,26 @@ registered name paired with another known carrier. The historical point alias re
 
 ## 6. Product structure
 
-### PR-03. Product named carrier runtime types and cardinality
+### PR-03. Product named carrier neutral projection
 
-**Question.** Which exact runtime type and value cardinality must each named product carrier have
-before its value enters a neutral occurrence?
+**Question.** Should a valid `VisibilityList` bit string populate neutral
+`Occurrence.visible`, or remain only in the retained typed property until the
+frozen product goldens can change?
 
-**Known.** FreeCAD Link.h declares LinkedObject and copy-on-change links as App::PropertyLink,
-LinkTransform and LinkCopyOnChangeTouched as App::PropertyBool, Scale as App::PropertyFloat,
-ScaleVector as App::PropertyVector, VisibilityList as App::PropertyBoolList, ElementCount as
-App::PropertyInteger, and ElementList as App::PropertyLinkList. Placement carriers use
-App::PropertyPlacement.
+**Known.** The current producer declares every named product carrier with the
+runtime types, roots, and cardinalities written in the specification. The
+decoder validates those carriers and retains the typed property XML and bit
+string in the native application record.
 
-**Conflict.** product.rs:40-47 and 89-104 select Group, LinkedObject, LinkTransform, copy-on-
-change links, scalar flags, Scale, VisibilityList, and ElementList by name. product.rs:736-775
-reads the first link or parseable value without checking the declared runtime type or all required
-cardinalities. A LinkList with one target can populate scalar LinkedObject; a wrong-type
-LinkTransform can select LinkPlacement; and a wrong-type list or scalar can populate array fields.
+**Need.** Settle the neutral visibility projection without regenerating the
+frozen product goldens.
 
-**Need.** Gate every named carrier by the exact producer runtime type, enforce its value and link
-cardinality, and retain or reject wrong-type carriers without neutral interpretation.
+**Conflict.** The producer writes a valid `BoolList` bit string, but projecting
+it into `Occurrence.visible` changes the existing product golden output.
 
-**Note.** PR-01's AssemblyLink registry entry and PR-02's LinkCopyOnChange type gate are sound.
-The remaining named carriers are not covered by those closures.
+**Note.** This pass settled the original runtime-type and value-cardinality
+subset with producer source and an authored witness. The neutral visibility
+projection remains a smaller implementation question.
 
 ## 7. Assembly joints
 

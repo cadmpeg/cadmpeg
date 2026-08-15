@@ -37,30 +37,76 @@ pub(crate) fn transfer(
             .get(object.id.as_str())
             .cloned()
             .unwrap_or_default();
-        let group = owned.iter().find(|property| property.name == "Group");
+        let group = unique_property(&owned, "Group")?;
+        let members = group
+            .map(|property| {
+                link_list(property, "App::PropertyLinkList", "Group").map(|links| {
+                    links
+                        .iter()
+                        .filter_map(|link| link.object.clone())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
         let linked = unique_property(&owned, "LinkedObject")?;
-        let prototype_link = singleton_link(linked, "LinkedObject")?;
+        let prototype_link = linked
+            .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
+            .transpose()?;
         let placement = selected_placement(&owned)?;
         let local_transform = placement.map(placement_matrix).transpose()?.flatten();
-        let link_transform = unique_property(&owned, "LinkTransform")?
-            .and_then(property_scalar)
-            .and_then(parse_bool);
+        let link_transform = bool_property(&owned, "LinkTransform")?;
+        let element_count = integer_property(&owned, "ElementCount")?;
+        let claim_child = bool_property(&owned, "LinkClaimChild")?;
+        let copy_on_change = copy_on_change_property(&owned)?;
+        let copy_on_change_source = linked_object(
+            &owned,
+            "LinkCopyOnChangeSource",
+            "App::PropertyXLink",
+            "XLink",
+        )?;
+        let copy_on_change_group =
+            linked_object(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
+        let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
+        let scale = scale_property(&owned)?;
+        let element_visibility_count = bool_list_count(&owned, "VisibilityList")?;
+        if let Some(count) = element_count {
+            let count = usize::try_from(count).map_err(|_| {
+                malformed(format!(
+                    "product object {} has a negative ElementCount",
+                    object.id
+                ))
+            })?;
+            if element_visibility_count != 0 && element_visibility_count != count {
+                return Err(malformed(format!(
+                    "product object {} has inconsistent link-array counts",
+                    object.id
+                )));
+            }
+        }
+        let element_objects = unique_property(&owned, "ElementList")?
+            .map(|property| {
+                link_list(property, "App::PropertyLinkList", "ElementList").map(|links| {
+                    links
+                        .iter()
+                        .filter_map(|link| link.object.clone())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
         output.push(ProductNodeRecord {
             id: crate::native::native_id("product", &object.name),
             object: object.id.clone(),
             kind: kind.into(),
-            members: group
-                .into_iter()
-                .flat_map(|property| &property.links)
-                .filter_map(|link| link.object.clone())
-                .collect(),
+            members,
             prototype: prototype_link.and_then(|link| link.object.clone()),
             external_document: prototype_link.and_then(|link| link.document.clone()),
             external_document_attribute: prototype_link
                 .and_then(|link| link.document_attribute.clone()),
             local_transform,
             placement_property: placement.map(|property| property.id.clone()),
-            element_count: scalar(&owned, "ElementCount").and_then(|value| value.parse().ok()),
+            element_count,
             link_transform,
             element_transforms: parse_placement_list(&owned, entries)?,
             element_scales: parse_vector_list(&owned, entries)?,
@@ -73,35 +119,14 @@ pub(crate) fn transfer(
                         .collect()
                 })
                 .unwrap_or_default(),
-            claim_child: scalar(&owned, "LinkClaimChild").and_then(parse_bool),
-            copy_on_change: unique_property(&owned, "LinkCopyOnChange")?
-                .map(|property| {
-                    if property.type_name != "App::PropertyEnumeration" {
-                        return Err(CodecError::Malformed(format!(
-                            "product property {} has the wrong runtime type for LinkCopyOnChange",
-                            property.id
-                        )));
-                    }
-                    Ok(enumeration_value(property))
-                })
-                .transpose()?
-                .flatten(),
-            copy_on_change_source: linked_object(&owned, "LinkCopyOnChangeSource"),
-            copy_on_change_group: linked_object(&owned, "LinkCopyOnChangeGroup"),
-            copy_on_change_touched: scalar(&owned, "LinkCopyOnChangeTouched").and_then(parse_bool),
-            scale: vector(&owned, "ScaleVector").or_else(|| {
-                scalar(&owned, "Scale")
-                    .and_then(|value| value.parse().ok())
-                    .map(|value| [value; 3])
-            }),
-            element_visibility: bool_list(&owned, "VisibilityList"),
-            element_objects: owned
-                .iter()
-                .find(|property| property.name == "ElementList")
-                .into_iter()
-                .flat_map(|property| &property.links)
-                .filter_map(|link| link.object.clone())
-                .collect(),
+            claim_child,
+            copy_on_change,
+            copy_on_change_source,
+            copy_on_change_group,
+            copy_on_change_touched,
+            scale,
+            element_visibility: Vec::new(),
+            element_objects,
         });
     }
     Ok(output)
@@ -281,7 +306,7 @@ pub(crate) fn transfer_neutral(
                 scale,
                 name: Some(record.object.clone()),
                 linked_subelements: record.linked_subelements.clone(),
-                visible: record.element_visibility.get(index).copied(),
+                visible: None,
                 element_component: record
                     .element_objects
                     .get(index)
@@ -526,7 +551,16 @@ fn parse_placement_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<[[f64; 4]; 4]>, CodecError> {
-    let Some(view) = side_bytes(properties, "PlacementList", entries)? else {
+    let Some(property) = unique_property(properties, "PlacementList")? else {
+        return Ok(Vec::new());
+    };
+    let Some(view) = side_bytes(
+        property,
+        "App::PropertyPlacementList",
+        "PlacementList",
+        entries,
+    )?
+    else {
         return Ok(Vec::new());
     };
     let (count, width) = list_layout(view, 7, "PlacementList")?;
@@ -547,7 +581,10 @@ fn parse_vector_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
-    let Some(view) = side_bytes(properties, "ScaleList", entries)? else {
+    let Some(property) = unique_property(properties, "ScaleList")? else {
+        return Ok(Vec::new());
+    };
+    let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
         return Ok(Vec::new());
     };
     let (count, width) = list_layout(view, 3, "ScaleList")?;
@@ -564,13 +601,18 @@ fn parse_vector_list(
 }
 
 fn side_bytes<'a>(
-    properties: &[&PropertyRecord],
+    property: &PropertyRecord,
+    expected_type: &str,
     name: &str,
     entries: &BTreeMap<String, View<'a>>,
 ) -> Result<Option<View<'a>>, CodecError> {
-    let Some(property) = properties.iter().find(|property| property.name == name) else {
-        return Ok(None);
-    };
+    require_root(property, expected_type, name, name)?;
+    if property.side_entries.len() > 1 {
+        return Err(malformed(format!(
+            "product property {} has multiple {name} side entries",
+            property.id
+        )));
+    }
     let Some(entry) = property.side_entries.first() else {
         return Ok(None);
     };
@@ -582,18 +624,85 @@ fn side_bytes<'a>(
     })
 }
 
-fn singleton_link<'a>(
-    property: Option<&'a PropertyRecord>,
+fn single_link<'a>(
+    property: &'a PropertyRecord,
+    expected_type: &str,
+    root: &str,
     name: &str,
-) -> Result<Option<&'a crate::native::LinkTarget>, CodecError> {
-    let Some(property) = property else {
-        return Ok(None);
-    };
-    match property.links.as_slice() {
-        [] => Ok(None),
-        [link] => Ok(Some(link)),
-        _ => Err(CodecError::Malformed(format!("{name} has multiple links"))),
+) -> Result<&'a crate::native::LinkTarget, CodecError> {
+    require_root(property, expected_type, name, root)?;
+    if property.links.len() != 1 {
+        return Err(malformed(format!(
+            "product property {} requires one {name} target, found {}",
+            property.id,
+            property.links.len()
+        )));
     }
+    Ok(&property.links[0])
+}
+
+fn link_list<'a>(
+    property: &'a PropertyRecord,
+    expected_type: &str,
+    name: &str,
+) -> Result<&'a [crate::native::LinkTarget], CodecError> {
+    require_root(property, expected_type, name, "LinkList")?;
+    if property
+        .values
+        .iter()
+        .skip(1)
+        .any(|value| value.tag != "Link")
+    {
+        return Err(malformed(format!(
+            "product property {} has a non-Link child in {name}",
+            property.id
+        )));
+    }
+    Ok(&property.links)
+}
+
+fn require_root(
+    property: &PropertyRecord,
+    expected_type: &str,
+    name: &str,
+    root: &str,
+) -> Result<(), CodecError> {
+    if property.type_name != expected_type {
+        return Err(malformed(format!(
+            "product property {} has runtime type {}, expected {expected_type} for {name}",
+            property.id, property.type_name
+        )));
+    }
+    if property.values.first().map(|value| value.tag.as_str()) != Some(root)
+        || property
+            .values
+            .iter()
+            .filter(|value| value.tag == root)
+            .count()
+            != 1
+    {
+        return Err(malformed(format!(
+            "product property {} requires one {root} value for {name}",
+            property.id
+        )));
+    }
+    Ok(())
+}
+
+fn single_value<'a>(
+    property: &'a PropertyRecord,
+    expected_type: &str,
+    name: &str,
+    root: &str,
+) -> Result<&'a crate::native::ValueRecord, CodecError> {
+    require_root(property, expected_type, name, root)?;
+    if property.values.len() != 1 {
+        return Err(malformed(format!(
+            "product property {} has multiple values for {name}",
+            property.id
+        )));
+    }
+    Ok(&property.values[0])
 }
 
 fn unique_property<'a>(
@@ -625,13 +734,9 @@ fn selected_placement<'a>(
     }
     match (link_placement, placement) {
         (Some(link_placement), Some(placement)) => {
-            let use_link_placement = unique_property(properties, "LinkTransform")?
-                .and_then(property_scalar)
-                .and_then(parse_bool)
-                .ok_or_else(|| {
-                    CodecError::Malformed(
-                        "LinkPlacement and Placement require a valid LinkTransform policy".into(),
-                    )
+            let use_link_placement =
+                bool_property(properties, "LinkTransform")?.ok_or_else(|| {
+                    malformed("LinkPlacement and Placement require a valid LinkTransform policy")
                 })?;
             Ok(Some(if use_link_placement {
                 link_placement
@@ -714,65 +819,161 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-fn enumeration_value(property: &PropertyRecord) -> Option<String> {
-    let index = property
-        .values
-        .iter()
-        .find(|value| value.tag == "Integer")?
-        .attributes
-        .get("value")?
-        .parse::<usize>()
-        .ok()?;
-    property
-        .values
-        .iter()
-        .filter(|value| value.tag == "Enum")
-        .nth(index)
-        .and_then(|value| value.attributes.get("value"))
-        .cloned()
-        .or_else(|| Some(index.to_string()))
+fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bool>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(None);
+    };
+    let value = single_value(property, "App::PropertyBool", name, "Bool")?;
+    let value = value.attributes.get("value").ok_or_else(|| {
+        malformed(format!(
+            "product property {} has no Bool value",
+            property.id
+        ))
+    })?;
+    parse_bool(value).map(Some).ok_or_else(|| {
+        malformed(format!(
+            "product property {} has an invalid Bool value",
+            property.id
+        ))
+    })
 }
 
-fn linked_object(properties: &[&PropertyRecord], name: &str) -> Option<String> {
-    properties
-        .iter()
-        .find(|property| property.name == name)?
-        .links
-        .first()?
+fn integer_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<i64>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(None);
+    };
+    let value = single_value(property, "App::PropertyIntegerConstraint", name, "Integer")?;
+    let value = value.attributes.get("value").ok_or_else(|| {
+        malformed(format!(
+            "product property {} has no Integer value",
+            property.id
+        ))
+    })?;
+    value.parse().map(Some).map_err(|_| {
+        malformed(format!(
+            "product property {} has an invalid Integer value",
+            property.id
+        ))
+    })
+}
+
+fn copy_on_change_property(properties: &[&PropertyRecord]) -> Result<Option<String>, CodecError> {
+    let Some(property) = unique_property(properties, "LinkCopyOnChange")? else {
+        return Ok(None);
+    };
+    let value = single_value(
+        property,
+        "App::PropertyEnumeration",
+        "LinkCopyOnChange",
+        "Integer",
+    )?;
+    Ok(Some(
+        value
+            .attributes
+            .get("value")
+            .ok_or_else(|| {
+                malformed(format!(
+                    "product property {} has no enumeration value",
+                    property.id
+                ))
+            })?
+            .to_owned(),
+    ))
+}
+
+fn linked_object(
+    properties: &[&PropertyRecord],
+    name: &str,
+    expected_type: &str,
+    root: &str,
+) -> Result<Option<String>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(None);
+    };
+    let link = single_link(property, expected_type, root, name)?;
+    Ok(link
         .object
         .as_ref()
         .filter(|object| !object.is_empty())
-        .cloned()
+        .cloned())
 }
 
-fn vector(properties: &[&PropertyRecord], name: &str) -> Option<[f64; 3]> {
-    let value = properties
-        .iter()
-        .find(|property| property.name == name)?
-        .values
-        .iter()
-        .find(|value| value.attributes.contains_key("valueX"))?;
-    Some([
-        value.attributes.get("valueX")?.parse().ok()?,
-        value.attributes.get("valueY")?.parse().ok()?,
-        value.attributes.get("valueZ")?.parse().ok()?,
+fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[f64; 3]>, CodecError> {
+    if let Some(property) = unique_property(properties, "ScaleVector")? {
+        return vector_property(property).map(Some);
+    }
+    let Some(property) = unique_property(properties, "Scale")? else {
+        return Ok(None);
+    };
+    let value = single_value(property, "App::PropertyFloat", "Scale", "Float")?;
+    let value = value.attributes.get("value").ok_or_else(|| {
+        malformed(format!(
+            "product property {} has no Float value",
+            property.id
+        ))
+    })?;
+    let value = parse_finite(value, property, "Scale")?;
+    Ok(Some([value; 3]))
+}
+
+fn vector_property(property: &PropertyRecord) -> Result<[f64; 3], CodecError> {
+    let value = single_value(
+        property,
+        "App::PropertyVector",
+        "ScaleVector",
+        "PropertyVector",
+    )?;
+    let component = |name: &str| {
+        let value = value.attributes.get(name).ok_or_else(|| {
+            malformed(format!(
+                "product property {} has no {name} vector component",
+                property.id
+            ))
+        })?;
+        parse_finite(value, property, "ScaleVector")
+    };
+    Ok([
+        component("valueX")?,
+        component("valueY")?,
+        component("valueZ")?,
     ])
 }
 
-fn bool_list(properties: &[&PropertyRecord], name: &str) -> Vec<bool> {
-    properties
-        .iter()
-        .find(|property| property.name == name)
-        .into_iter()
-        .flat_map(|property| &property.values)
-        .filter(|value| value.tag == "Bool")
-        .filter_map(|value| {
-            value
-                .attributes
-                .get("value")
-                .and_then(|value| parse_bool(value))
+fn parse_finite(value: &str, property: &PropertyRecord, name: &str) -> Result<f64, CodecError> {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| {
+            malformed(format!(
+                "product property {} has an invalid finite value for {name}",
+                property.id
+            ))
         })
-        .collect()
+}
+
+fn bool_list_count(properties: &[&PropertyRecord], name: &str) -> Result<usize, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(0);
+    };
+    let value = single_value(property, "App::PropertyBoolList", name, "BoolList")?;
+    let encoded = value.attributes.get("value").ok_or_else(|| {
+        malformed(format!(
+            "product property {} has no BoolList value",
+            property.id
+        ))
+    })?;
+    if encoded.bytes().any(|byte| !matches!(byte, b'0' | b'1')) {
+        return Err(malformed(format!(
+            "product property {} has an invalid BoolList bit string",
+            property.id
+        )));
+    }
+    Ok(encoded.len())
+}
+
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
 }
 
 pub(crate) fn placement_matrix(
@@ -784,21 +985,19 @@ pub(crate) fn placement_matrix(
             property.id
         )));
     }
-    let values = property
-        .values
-        .iter()
-        .filter(|value| value.tag == "PropertyPlacement")
-        .collect::<Vec<_>>();
-    let value = match values.as_slice() {
-        [] => return Ok(None),
-        [value] => *value,
-        _ => {
-            return Err(CodecError::Malformed(format!(
-                "placement property {} has multiple placement values",
-                property.id
-            )))
-        }
-    };
+    if property.values.len() != 1 {
+        return Err(malformed(format!(
+            "placement property {} requires one placement value",
+            property.id
+        )));
+    }
+    let value = &property.values[0];
+    if value.tag != "PropertyPlacement" {
+        return Err(malformed(format!(
+            "placement property {} requires one PropertyPlacement value",
+            property.id
+        )));
+    }
     let number = |name: &str| {
         value
             .attributes

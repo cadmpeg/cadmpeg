@@ -26,18 +26,18 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
  <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Prototype"><Properties Count="3"><Property name="Label" type="App::PropertyString"><String value="Drive gear"/></Property><Property name="Description" type="App::PropertyString"><String value="Hardened drive gear"/></Property><Property name="PartNumber" type="App::PropertyString"><String value="GEAR-42"/></Property></Properties></Object>
  <Object name="Occurrence"><Properties Count="14">
-  <Property name="LinkedObject" type="App::PropertyXLinkSub"><XLink file="" name="Prototype" count="1"><Sub value="Face1"/></XLink></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype" count="1"><Sub value="Face1"/></XLink></Property>
   <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property>
   <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
   <Property name="ScaleList" type="App::PropertyVectorList"><VectorList file="ScaleList"/></Property>
   <Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="3" valueZ="4"/></Property>
-  <Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="2"><Bool value="true"/><Bool value="false"/></BoolList></Property>
+  <Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value="01"/></Property>
   <Property name="ElementList" type="App::PropertyLinkList"><LinkList count="2"><Link value="ElementA"/><Link value="ElementB"/></LinkList></Property>
   <Property name="LinkClaimChild" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/><CustomEnumList count="4"><Enum value="Disabled"/><Enum value="Enabled"/><Enum value="Owned"/><Enum value="Tracking"/></CustomEnumList></Property>
-  <Property name="LinkCopyOnChangeSource" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="LinkCopyOnChangeSource" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="LinkCopyOnChangeGroup" type="App::PropertyLink"><Link value="Assembly"/></Property>
   <Property name="LinkCopyOnChangeTouched" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
@@ -146,8 +146,8 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(link_occurrences[0].scale, [2.0, 3.0, 4.0]);
     assert_eq!(link_occurrences[1].scale, [4.0, 6.0, 8.0]);
     assert_eq!(link_occurrences[0].linked_subelements, ["Face1"]);
-    assert_eq!(link_occurrences[0].visible, Some(true));
-    assert_eq!(link_occurrences[1].visible, Some(false));
+    assert_eq!(link_occurrences[0].visible, None);
+    assert_eq!(link_occurrences[1].visible, None);
     assert!(link_occurrences[0].element_component.is_some());
     assert_eq!(link_occurrences[0].claim_child, Some(true));
     assert_eq!(
@@ -198,13 +198,13 @@ fn selects_the_active_link_placement_carrier() {
 <ObjectData Count="3">
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Propagating"><Properties Count="4">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
  <Object name="LocalOnly"><Properties Count="4">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="30" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
@@ -247,7 +247,7 @@ fn accepts_axis_angle_placement_values() {
 <ObjectData Count="2">
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="2">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="3" Pz="4" A="1.5707963267948966" Ox="0" Oy="0" Oz="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -290,7 +290,7 @@ fn rejects_ambiguous_link_placement_without_policy() {
 <ObjectData Count="2">
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="3">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
@@ -341,8 +341,8 @@ fn rejects_duplicate_product_carriers() {
  <Object name="First"><Properties Count="0"/></Object>
  <Object name="Second"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="2">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="First"/></Property>
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Second"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="First"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Second"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#,
         r#"<Document SchemaVersion="4" FileVersion="1">
@@ -353,7 +353,7 @@ fn rejects_duplicate_product_carriers() {
 <ObjectData Count="2">
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="4">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
@@ -367,7 +367,7 @@ fn rejects_duplicate_product_carriers() {
 <ObjectData Count="2">
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="2">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#,
@@ -395,7 +395,7 @@ fn rejects_invalid_product_placement_values() {
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
-<Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
 {placement}
 </Properties></Object></ObjectData></Document>"#
         );
@@ -458,7 +458,7 @@ fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
 <ObjectData Count="2">
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="2">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="LinkCopyOnChange" type="App::PropertyInteger"><Integer value="2"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -469,6 +469,34 @@ fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
         )
         .expect_err("wrong copy-on-change carrier type");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_wrong_runtime_types_for_named_product_carriers() {
+    for carrier in [
+        r#"<Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="1"><Link value="Prototype"/></LinkList></Property>"#,
+        r#"<Property name="LinkTransform" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+        r#"<Property name="ElementCount" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+        r#"<Property name="ScaleVector" type="App::PropertyFloat"><Float value="1"/></Property>"#,
+        r#"<Property name="VisibilityList" type="App::PropertyString"><String value="1"/></Property>"#,
+        r#"<Property name="ElementList" type="App::PropertyLink"><Link value="Prototype"/></Property>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+{carrier}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("wrong named product carrier type");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
 }
 
 #[test]
@@ -487,7 +515,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="3">
-<Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
 <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
 {array_property}
 </Properties></Object></ObjectData></Document>"#
@@ -519,7 +547,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
             Some(("ScaleList", scale)),
         ),
         (
-            r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="1"><Bool value="true"/></BoolList></Property>"#,
+            r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value="1"/></Property>"#,
             None,
         ),
         (
@@ -537,7 +565,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
     }
 
     let zero = decode(
-        r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="0"/></Property>"#,
+        r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value=""/></Property>"#,
         None,
     )
     .expect("empty zero-count link array");
@@ -570,9 +598,9 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
 <ObjectData Count="5">
  <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Outer"/><Link value="Override"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Prototype"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
- <Object name="Inner"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
- <Object name="Outer"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
- <Object name="Override"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property></Properties></Object>
+ <Object name="Inner"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Outer"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Override"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property></Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
