@@ -7,8 +7,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
-    DatumReference, DimensionKind, GeometricToleranceKind, LimitsAndFits, PmiAnnotation,
-    PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionKind, GeometricToleranceKind, LimitsAndFits,
+    PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
@@ -90,6 +90,57 @@ pub(super) fn decode(
             }),
             targets([id]),
             PmiDefinition::Datum { identification },
+        );
+        typed.insert(id);
+    }
+
+    for id in exchange.matching_entity_ids(is_datum_target_name) {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        let form = shape_aspect_parameter(record, 1)
+            .and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "datum target form",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            })
+            .unwrap_or_default();
+        let identification = datum_target_identification_parameter(record)
+            .and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "datum target identification",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            })
+            .unwrap_or_else(|| format!("#{id}"));
+        push_annotation(
+            ir,
+            &mut annotations,
+            id,
+            shape_aspect_parameter(record, 0).and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "datum target name",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            }),
+            targets([id]),
+            PmiDefinition::DatumTarget {
+                form: datum_target_form(&form),
+                identification,
+            },
         );
         typed.insert(id);
     }
@@ -1088,6 +1139,30 @@ fn pmi_id(id: u64) -> PmiId {
     PmiId(StepIdentity::presentation("pmi", id))
 }
 
+fn datum_target_form(value: &str) -> DatumTargetForm {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "point" => DatumTargetForm::Point,
+        "line" => DatumTargetForm::Line,
+        "rectangle" => DatumTargetForm::Rectangle,
+        "circle" => DatumTargetForm::Circle,
+        "circular curve" => DatumTargetForm::CircularCurve,
+        _ => DatumTargetForm::Other(value.to_owned()),
+    }
+}
+
+fn datum_target_identification_parameter(record: &RawRecord) -> Option<&Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "DATUM_TARGET")
+        .and_then(|partial| partial.parameters.last())
+        .or_else(|| record.parameter(4))
+}
+
+fn is_datum_target_name(name: &str) -> bool {
+    matches!(name, "DATUM_TARGET" | "PLACED_DATUM_TARGET_FEATURE")
+}
+
 fn is_pmi_entity_name(name: &str) -> bool {
     matches!(
         name,
@@ -1101,8 +1176,11 @@ fn is_pmi_entity_name(name: &str) -> bool {
             | "DRAUGHTING_MODEL"
             | "ANNOTATION_PLANE"
             | "DRAUGHTING_CALLOUT"
+            | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
+            | "GEOMETRIC_ITEM_SPECIFIC_USAGE"
     ) || dimension_kind(Some(name)).is_some()
         || tolerance_kind(Some(name)).is_some()
+        || is_datum_target_name(name)
         || is_presentation_annotation(name)
 }
 

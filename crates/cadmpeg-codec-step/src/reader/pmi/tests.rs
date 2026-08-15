@@ -224,6 +224,46 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
 }
 
 #[test]
+fn datum_target_transfers_form_and_identification() {
+    use cadmpeg_ir::pmi::{DatumTargetForm, PmiDefinition, PmiTarget};
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=DATUM_TARGET('point target','point',#5,.F.,'A');
+#7=PLACED_DATUM_TARGET_FEATURE('circle target','circle',#5,.F.,'B');
+#8=(PLACED_DATUM_TARGET_FEATURE() DATUM_TARGET('C') SHAPE_ASPECT('rectangle target','rectangle',#5,.F.));
+#99=UNRESOLVED_PRODUCT();",
+    );
+
+    for (name, form, identification, source_id) in [
+        ("point target", DatumTargetForm::Point, "A", "#6"),
+        ("circle target", DatumTargetForm::Circle, "B", "#7"),
+        ("rectangle target", DatumTargetForm::Rectangle, "C", "#8"),
+    ] {
+        let target = result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing datum target {name}"));
+        assert_eq!(
+            target.targets,
+            [PmiTarget::ShapeAspect {
+                source_id: source_id.into()
+            }]
+        );
+        assert!(matches!(
+            &target.definition,
+            PmiDefinition::DatumTarget {
+                form: actual_form,
+                identification: actual_id,
+            } if actual_form == &form && actual_id == identification
+        ));
+    }
+}
+
+#[test]
 fn complex_dimension_inherits_kind_targets_and_nominal_value() {
     use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiQuantity};
 
@@ -907,14 +947,14 @@ fn complex_datum_reads_identification_from_its_named_partial() {
 
 #[test]
 fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
-    use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiTarget};
+    use cadmpeg_ir::pmi::{DatumTargetForm, DimensionKind, PmiDefinition, PmiTarget};
 
     let source =
         String::from_utf8(include_bytes!("../../../tests/fixtures/ap203_sheet.p21").to_vec())
             .expect("fixture is UTF-8")
             .replace(
                 "ENDSEC;\nEND-ISO-10303-21;",
-                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\nENDSEC;\nEND-ISO-10303-21;",
+                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\nENDSEC;\nEND-ISO-10303-21;",
             );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -952,8 +992,27 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
                 record.id.0.as_str(),
                 "step:data:geometric_item_specific_usage#43"
                     | "step:data:geometric_item_specific_usage#44"
+                    | "step:data:geometric_item_specific_usage#46"
             )
         }));
+    let datum_target = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("datum target"))
+        .expect("datum target annotation");
+    assert!(matches!(
+        &datum_target.definition,
+        PmiDefinition::DatumTarget {
+            form: DatumTargetForm::Circle,
+            identification,
+        } if identification == "A"
+    ));
+    assert!(datum_target.targets.iter().any(|target| matches!(
+        target,
+        PmiTarget::Face { face } if face.as_str() == "step:data:face#29"
+    )));
 
     let mut output = Vec::new();
     let report = write_step(
@@ -970,6 +1029,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .iter()
         .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
     assert!(String::from_utf8_lossy(&output).contains("GEOMETRIC_ITEM_SPECIFIC_USAGE"));
+    assert!(String::from_utf8_lossy(&output).contains("DATUM_TARGET("));
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written geometric item usage");
@@ -984,4 +1044,112 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         target,
         PmiTarget::Face { face } if face.as_str().starts_with("step:data:face#")
     )));
+    let roundtripped_datum_target = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("datum target"))
+        .expect("roundtripped datum target");
+    assert!(roundtripped_datum_target
+        .targets
+        .iter()
+        .any(|target| matches!(
+            target,
+            PmiTarget::Face { face } if face.as_str().starts_with("step:data:face#")
+        )));
+}
+
+#[test]
+fn datum_target_writes_and_round_trips() {
+    use cadmpeg_ir::pmi::{DatumTargetForm, PmiDefinition, PmiTarget};
+
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#30=DATUM_TARGET('datum target','circle',#5,.F.,'A');\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode datum target");
+    let target = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("datum target"))
+        .expect("datum target annotation");
+    assert_eq!(
+        target.targets,
+        [PmiTarget::ShapeAspect {
+            source_id: "#30".into()
+        }]
+    );
+    assert!(matches!(
+        &target.definition,
+        PmiDefinition::DatumTarget {
+            form: DatumTargetForm::Circle,
+            identification,
+        } if identification == "A"
+    ));
+
+    let mut output = Vec::new();
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write datum target");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
+    assert!(String::from_utf8_lossy(&output).contains("DATUM_TARGET("));
+
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written datum target");
+    assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::DatumTarget {
+            form: DatumTargetForm::Circle,
+            identification,
+        } if annotation.name.as_deref() == Some("datum target")
+            && annotation
+                .targets
+                .iter()
+                .any(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+            && identification == "A"
+    )));
+
+    let mut source_less_ir = result.ir().clone();
+    source_less_ir
+        .model
+        .pmi
+        .iter_mut()
+        .find(|annotation| annotation.name.as_deref() == Some("datum target"))
+        .expect("source datum target")
+        .targets
+        .clear();
+    let mut source_less_output = Vec::new();
+    let source_less_report = write_step(
+        &source_less_ir,
+        &mut source_less_output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write source-less datum target");
+    assert!(!source_less_report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
+    assert!(String::from_utf8_lossy(&source_less_output).contains("DATUM_TARGET("));
 }

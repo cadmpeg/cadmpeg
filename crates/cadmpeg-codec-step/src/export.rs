@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::pmi::{
-    DimensionKind, GeometricToleranceKind, PmiDefinition, PmiQuantity, PmiTarget,
+    DatumTargetForm, DimensionKind, GeometricToleranceKind, PmiDefinition, PmiQuantity, PmiTarget,
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
@@ -2583,6 +2583,24 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn emit_datum_target(
+        &mut self,
+        pds: Ref,
+        annotation: &cadmpeg_ir::PmiAnnotation,
+        form: &DatumTargetForm,
+        identification: &str,
+    ) -> Ref {
+        self.emitter.emit(
+            "DATUM_TARGET",
+            &format!(
+                "{},{},{pds},.F.,{}",
+                string(annotation.name.as_deref().unwrap_or("")),
+                string(datum_target_form_text(form)),
+                string(identification)
+            ),
+        )
+    }
+
     fn emit_pmi(&mut self, context: Ref) {
         if self.ir.model.pmi.is_empty() || !self.schema.supports_semantic_pmi() {
             return;
@@ -2593,6 +2611,25 @@ impl<'a> Builder<'a> {
         };
         let mut annotation_refs = HashMap::new();
         let mut aspects = HashMap::<String, Ref>::new();
+        for annotation in &annotations {
+            let PmiDefinition::DatumTarget {
+                form,
+                identification,
+            } = &annotation.definition
+            else {
+                continue;
+            };
+            for target in &annotation.targets {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    continue;
+                };
+                if aspects.contains_key(source_id) {
+                    continue;
+                }
+                let target = self.emit_datum_target(pds, annotation, form, identification);
+                aspects.insert(source_id.clone(), target);
+            }
+        }
         for annotation in &annotations {
             for target in &annotation.targets {
                 let PmiTarget::ShapeAspect { source_id } = target else {
@@ -2606,17 +2643,40 @@ impl<'a> Builder<'a> {
                 });
             }
         }
+        let mut datum_target_refs = HashMap::<cadmpeg_ir::ids::PmiId, Ref>::new();
+        for annotation in &annotations {
+            let PmiDefinition::DatumTarget {
+                form,
+                identification,
+            } = &annotation.definition
+            else {
+                continue;
+            };
+            let target_ref = annotation.targets.iter().find_map(|target| {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    return None;
+                };
+                aspects.get(source_id).copied()
+            });
+            let target_ref = target_ref
+                .unwrap_or_else(|| self.emit_datum_target(pds, annotation, form, identification));
+            datum_target_refs.insert(annotation.id.clone(), target_ref);
+        }
         let fallback_aspect = self
             .emitter
             .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."));
         let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
-            annotation.targets.iter().find_map(|target| {
-                if let PmiTarget::ShapeAspect { source_id } = target {
-                    aspects.get(source_id).copied()
-                } else {
-                    None
-                }
-            })
+            annotation
+                .targets
+                .iter()
+                .find_map(|target| {
+                    if let PmiTarget::ShapeAspect { source_id } = target {
+                        aspects.get(source_id).copied()
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| datum_target_refs.get(&annotation.id).copied())
         };
         let mut target_items = Vec::new();
         for annotation in &annotations {
@@ -2682,6 +2742,11 @@ impl<'a> Builder<'a> {
                     ),
                 );
                 annotation_refs.insert(annotation.id.clone(), datum);
+                self.written_pmi += usize::from(targets_exact(annotation));
+            }
+        }
+        for annotation in &annotations {
+            if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
                 self.written_pmi += usize::from(targets_exact(annotation));
             }
         }
@@ -4093,6 +4158,17 @@ impl<'a> Builder<'a> {
             losses: self.losses.clone(),
             notes: self.notes.clone(),
         }
+    }
+}
+
+fn datum_target_form_text(form: &DatumTargetForm) -> &str {
+    match form {
+        DatumTargetForm::Point => "point",
+        DatumTargetForm::Line => "line",
+        DatumTargetForm::Rectangle => "rectangle",
+        DatumTargetForm::Circle => "circle",
+        DatumTargetForm::CircularCurve => "circular curve",
+        DatumTargetForm::Other(value) => value,
     }
 }
 

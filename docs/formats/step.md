@@ -695,6 +695,12 @@ definition reached through a `SHAPE_ASPECT_RELATIONSHIP`, to its identified
 topology item. A resolved face, edge, vertex, or body is added as a typed PMI
 target while the source shape-aspect target remains. An unresolved usage remains
 source-native with its identity and links.
+`DATUM_TARGET` and `PLACED_DATUM_TARGET_FEATURE` transfer as typed datum-target
+definitions with their target form and identification, while their source
+shape-aspect identity remains a PMI target. Standard placed-target forms are
+point, line, rectangle, circle, and circular curve; another source description
+is retained as an `Other` form. `FEATURE_FOR_DATUM_TARGET_RELATIONSHIP` remains
+source-native because the neutral PMI model has no relationship field.
 Geometric validation properties read area, volume, and centroid values through
 inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
 `MEASURE_WITH_UNIT` partials. Direct `AREA_UNIT` and `VOLUME_UNIT` subtypes and
