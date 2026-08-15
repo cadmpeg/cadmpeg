@@ -100,7 +100,7 @@ pub enum StepLossCode {
     DraughtingSemanticDefinitionUntyped,
     /// A draughting model association references a source-typed item without identity.
     DraughtingAssociatedItemUntyped,
-    /// A tessellation item does not bind to exactly one decoded body.
+    /// A body-representation tessellation item does not bind to exactly one decoded body.
     TessellationItemBodyUnresolved,
     /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,

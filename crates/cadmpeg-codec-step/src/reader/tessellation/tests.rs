@@ -320,7 +320,7 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         loss.code == StepLossCode::TessellationItemUndeclared.kind()
             && loss.message.contains("tessellation item #7")
     }));
-    assert!(decoded.report().losses.iter().any(|loss| {
+    assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
             && loss.message.contains("tessellation item #7")
     }));

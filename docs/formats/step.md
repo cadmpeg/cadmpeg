@@ -667,11 +667,12 @@ not join strips or invent source parameters or a chordal bound.
 `TESSELLATED_ANNOTATION_OCCURRENCE` carries a tessellated geometric set;
 supported triangulated descendants transfer as detached tessellations. A
 `REPOSITIONED_TESSELLATED_ITEM` applies its axis placement, including nested
-repositioning, to a detached leaf. Unsupported annotation wrappers and
-unsupported descendants remain native records. If one detached leaf is
-reached through multiple distinct placement transforms, no transform is
-selected, source coordinates remain, and `tessellation.placement-ambiguous`
-is recorded.
+repositioning, to a detached leaf. Detached annotation leaves do not require
+an exact body owner and do not produce a body-association loss. Unsupported
+annotation wrappers and unsupported descendants remain native records. If one
+detached leaf is reached through multiple distinct placement transforms, no
+transform is selected, source coordinates remain, and
+`tessellation.placement-ambiguous` is recorded.
 
 Styles resolve from a styled item through presentation assignments to color.
 For `SURFACE_STYLE_USAGE`, `.BOTH.` takes precedence over `.POSITIVE.`, and

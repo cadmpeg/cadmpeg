@@ -46,6 +46,7 @@ pub(super) fn decode(
     let mut item_placements = BTreeMap::<u64, Vec<Transform>>::new();
     let mut declared_items = BTreeSet::new();
     let mut unresolved_containers = BTreeSet::new();
+    let mut body_context_items = BTreeSet::new();
     for (&id, record) in &exchange.records {
         let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
             continue;
@@ -73,6 +74,8 @@ pub(super) fn decode(
             typed: &mut typed,
             geometry,
             placements: &mut item_placements,
+            body_context_items: &mut body_context_items,
+            detached_annotation: false,
             declare_containers: true,
             claim_containers: true,
             active: BTreeSet::new(),
@@ -122,6 +125,8 @@ pub(super) fn decode(
             typed: &mut typed,
             geometry,
             placements: &mut item_placements,
+            body_context_items: &mut body_context_items,
+            detached_annotation: false,
             declare_containers: false,
             claim_containers: true,
             active: BTreeSet::new(),
@@ -149,6 +154,8 @@ pub(super) fn decode(
             typed: &mut typed,
             geometry,
             placements: &mut item_placements,
+            body_context_items: &mut body_context_items,
+            detached_annotation: true,
             declare_containers: false,
             claim_containers: false,
             active: BTreeSet::new(),
@@ -183,7 +190,7 @@ pub(super) fn decode(
         }
     }
     for (&item, bodies) in &item_bodies {
-        if unresolved_items.contains(&item) || bodies.len() != 1 {
+        if body_context_items.contains(&item) && bodies.len() != 1 {
             let detail = if bodies.is_empty() {
                 "no decoded body"
             } else if bodies.len() > 1 {
@@ -430,6 +437,8 @@ struct TessellationItemAssociator<'a> {
     typed: &'a mut HashSet<u64>,
     geometry: &'a GeometryData,
     placements: &'a mut BTreeMap<u64, Vec<Transform>>,
+    body_context_items: &'a mut BTreeSet<u64>,
+    detached_annotation: bool,
     declare_containers: bool,
     claim_containers: bool,
     active: BTreeSet<u64>,
@@ -459,6 +468,9 @@ impl TessellationItemAssociator<'_> {
         )
         .is_some()
         {
+            if !self.detached_annotation {
+                self.body_context_items.insert(id);
+            }
             self.declared_items.insert(id);
             self.item_bodies
                 .entry(id)
