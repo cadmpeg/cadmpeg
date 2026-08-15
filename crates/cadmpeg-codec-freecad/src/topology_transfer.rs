@@ -1680,12 +1680,27 @@ fn edge_endpoint_uses(
     edge: usize,
     children: &[TextShapeUse],
 ) -> Result<(&TextShapeUse, &TextShapeUse), CodecError> {
-    let start = children
-        .iter()
-        .rfind(|child| child.orientation == TextOrientation::Forward);
-    let end = children
-        .iter()
-        .rfind(|child| child.orientation == TextOrientation::Reversed);
+    let mut start = None;
+    let mut end = None;
+    for child in children {
+        match child.orientation {
+            TextOrientation::Forward => {
+                if start.replace(child).is_some() {
+                    return Err(CodecError::Malformed(format!(
+                        "edge TShape {edge} has multiple forward endpoint uses"
+                    )));
+                }
+            }
+            TextOrientation::Reversed => {
+                if end.replace(child).is_some() {
+                    return Err(CodecError::Malformed(format!(
+                        "edge TShape {edge} has multiple reversed endpoint uses"
+                    )));
+                }
+            }
+            TextOrientation::Internal | TextOrientation::External => {}
+        }
+    }
     start.zip(end).ok_or_else(|| {
         CodecError::Malformed(format!(
             "edge TShape {edge} does not have both forward and reversed endpoint uses"

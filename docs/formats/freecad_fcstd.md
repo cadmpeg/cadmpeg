@@ -215,11 +215,11 @@ use is a distinct neutral occurrence. Repeated root uses of the same shape at th
 retain their serialized root order as an occurrence discriminator; they do not share body,
 region, shell, face, loop, coedge, edge, vertex, or point identity.
 
-An edge endpoint accessor visits the edge's direct child uses in serialized order. A `Forward`
-vertex replaces the start vertex and a `Reversed` vertex replaces the end vertex. Thus the last
-child of each orientation supplies the endpoint. `Internal` and `External` children do not supply
-endpoints. Closed and degenerate edges still require both oriented uses; the uses can reference the
-same vertex. An edge transferred to neutral topology without both endpoint orientations is invalid.
+An edge endpoint accessor visits the edge's direct child uses in serialized order. Exactly one
+`Forward` vertex supplies the start vertex and exactly one `Reversed` vertex supplies the end
+vertex. `Internal` and `External` children do not supply endpoints. Closed and degenerate edges
+still require both oriented uses; the uses can reference the same vertex. Duplicate endpoint
+orientations and an edge without both endpoint orientations are invalid.
 
 Edge geometry access follows serialized representation order. The first 3D-curve representation
 supplies the exact neutral carrier and parameter range. Only when no 3D curve exists does the first

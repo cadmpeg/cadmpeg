@@ -24,7 +24,6 @@ These items have a Conflict part and need a decision.
 - GP-04. Topology-color shape-property association
 - PT-02. Element-map position to neutral-occurrence order
 - PT-03. Element-map carrier and owner selection
-- XT-01. Edge endpoint child selection
 - XT-02. Edge representation selection and uniqueness
 - XT-03. Non-manifold radial order
 - DP-01. Forward declared dependencies
@@ -143,18 +142,6 @@ These items have a Conflict part and need a decision.
 rejection prevents a source-order choice but does not resolve the legal cardinality.
 
 ## 4. Exact-topology transfer
-
-### XT-01. Edge endpoint child selection
-
-**Question.** What child-use cardinality and orientation combinations define the start and end vertices of normal, closed, degenerate, and malformed edge records?
-
-**Known.** Exact-shape records retain the complete ordered and oriented topology graph. Neutral edges require explicit start and end vertex identities.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/topology_transfer.rs:1674-1688` uses `rfind` for the last `Forward` and last `Reversed` child. It rejects only when one orientation is absent. Duplicate orientations silently select the last child; a valid endpoint rule for that case is not established.
-
-**Need.** We must define the valid endpoint child forms. The decoder must handle each valid form explicitly and reject a form that cannot establish both endpoint identities.
-
-**Note.** Commit `63d07acec` wrote the last-child rule into the specification and tested that rule with synthetic records. No FreeCAD/OCCT source or independent file establishes duplicate-orientation precedence.
 
 ### XT-02. Edge representation selection and uniqueness
 

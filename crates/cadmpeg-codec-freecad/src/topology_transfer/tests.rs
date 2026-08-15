@@ -48,7 +48,7 @@ fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
 }
 
 #[test]
-fn endpoint_selection_matches_the_last_oriented_direct_children() {
+fn endpoint_selection_requires_unique_oriented_direct_children() {
     let children = [
         TextShapeUse {
             shape: 1,
@@ -61,22 +61,43 @@ fn endpoint_selection_matches_the_last_oriented_direct_children() {
             location: 0,
         },
         TextShapeUse {
-            shape: 3,
-            orientation: TextOrientation::Forward,
-            location: 0,
-        },
-        TextShapeUse {
             shape: 4,
             orientation: TextOrientation::Reversed,
             location: 0,
         },
     ];
     let (start, end) = edge_endpoint_uses(9, &children).expect("endpoint uses");
-    assert_eq!(start.shape, 3);
+    assert_eq!(start.shape, 1);
     assert_eq!(end.shape, 4);
 
     assert!(matches!(
-        edge_endpoint_uses(9, &children[..3]),
+        edge_endpoint_uses(9, &children[..2]),
+        Err(CodecError::Malformed(_))
+    ));
+    let duplicate_forward = [
+        children[0].clone(),
+        TextShapeUse {
+            shape: 3,
+            orientation: TextOrientation::Forward,
+            location: 0,
+        },
+        children[2].clone(),
+    ];
+    assert!(matches!(
+        edge_endpoint_uses(9, &duplicate_forward),
+        Err(CodecError::Malformed(_))
+    ));
+    let duplicate_reversed = [
+        children[0].clone(),
+        children[2].clone(),
+        TextShapeUse {
+            shape: 5,
+            orientation: TextOrientation::Reversed,
+            location: 0,
+        },
+    ];
+    assert!(matches!(
+        edge_endpoint_uses(9, &duplicate_reversed),
         Err(CodecError::Malformed(_))
     ));
 }
