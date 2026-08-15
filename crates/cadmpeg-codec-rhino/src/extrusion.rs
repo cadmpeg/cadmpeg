@@ -337,8 +337,27 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
         .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))?;
     let start = evaluate_profile_point(&curve, domain[0], offset)?;
     let end = evaluate_profile_point(&curve, domain[1], offset)?;
-    if !curve.periodic && !points_coincident(start, end) {
-        return Ok(0);
+    if !source_periodic(&curve) {
+        if !points_coincident(start, end) {
+            return Ok(0);
+        }
+        let one_third = evaluate_profile_point(
+            &curve,
+            domain[0] + (domain[1] - domain[0]) / 3.0,
+            offset,
+        )?;
+        let two_thirds = evaluate_profile_point(
+            &curve,
+            domain[0] + 2.0 * (domain[1] - domain[0]) / 3.0,
+            offset,
+        )?;
+        if points_coincident(start, one_third)
+            || points_coincident(start, two_thirds)
+            || points_coincident(end, one_third)
+            || points_coincident(end, two_thirds)
+        {
+            return Ok(0);
+        }
     }
 
     let degree = usize::try_from(curve.degree)
@@ -351,23 +370,28 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
     if span_count == 0 {
         return Err(error(offset, "extrusion profile has no nonempty spans"));
     }
-    let mut samples_per_span = degree.max(4);
-    while span_count.checked_mul(samples_per_span).ok_or_else(|| {
-        error(
-            offset,
-            "extrusion profile orientation sample count overflow",
-        )
-    })? < 17
-    {
-        samples_per_span = samples_per_span.checked_mul(2).ok_or_else(|| {
+    let mut samples_per_span = degree;
+    if samples_per_span <= 1 {
+        samples_per_span = 1;
+    } else if samples_per_span < 4 {
+        samples_per_span = 4;
+        while span_count.checked_mul(samples_per_span).ok_or_else(|| {
             error(
                 offset,
                 "extrusion profile orientation sample count overflow",
             )
-        })?;
+        })? < 17
+        {
+            samples_per_span = samples_per_span.checked_mul(2).ok_or_else(|| {
+                error(
+                    offset,
+                    "extrusion profile orientation sample count overflow",
+                )
+            })?;
+        }
     }
 
-    let mut previous = start;
+    let mut previous = end;
     let mut twice_area = 0.0;
     for pair in curve.knots.windows(2) {
         let span_start = pair[0].max(domain[0]);
@@ -375,7 +399,7 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
         if span_start >= span_end {
             continue;
         }
-        for sample in 1..=samples_per_span {
+        for sample in 0..samples_per_span {
             let fraction = sample as f64 / samples_per_span as f64;
             let parameter = span_start + fraction * (span_end - span_start);
             let current = evaluate_profile_point(&curve, parameter, offset)?;
@@ -383,11 +407,32 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
             previous = current;
         }
     }
-    twice_area += (previous.x - start.x) * (previous.y + start.y);
-    if !twice_area.is_finite() || twice_area == 0.0 {
-        return Err(error(offset, "extrusion profile orientation is degenerate"));
+    let final_point = evaluate_profile_point(&curve, domain[1], offset)?;
+    twice_area += (previous.x - final_point.x) * (previous.y + final_point.y);
+    if !twice_area.is_finite() {
+        return Err(error(offset, "extrusion profile orientation is invalid"));
     }
-    Ok(if twice_area > 0.0 { 1 } else { -1 })
+    Ok(if twice_area > 0.0 {
+        1
+    } else if twice_area < 0.0 {
+        -1
+    } else {
+        0
+    })
+}
+
+fn source_periodic(curve: &NurbsCurve) -> bool {
+    if !curve.periodic || curve.degree <= 1 {
+        return false;
+    }
+    let degree = curve.degree as usize;
+    curve.control_points.len() >= degree
+        && (0..degree).all(|offset| {
+            points_coincident(
+                curve.control_points[degree - 1 - offset],
+                curve.control_points[curve.control_points.len() - 1 - offset],
+            )
+        })
 }
 
 fn evaluate_profile_point(
