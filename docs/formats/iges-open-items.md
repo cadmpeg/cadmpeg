@@ -564,9 +564,9 @@ from a conformant file.
 
 **Known.** `scripts/prepare-iges-freecad-golden.py` materializes the checked-in writer profile. `scripts/verify-iges-freecad.py` imports each file, refuses an import that gives no object or whose shapes are null or invalid, and can require a complete manifest of topology counts, bounding-box coordinates, and scalar measures with explicit tolerances. `scripts/iges-freecad-expectations.json` covers finite points, curves, trimmed surfaces, and B-rep solids; unbounded analytic surfaces use topology counts only.
 
-**Note.** The gate is wired into no CI job and no repository test, and it needs a manual FreeCAD environment. A report path records each run, but no result artifact is committed.
+**Note.** `.github/workflows/iges-freecad.yml` runs the gate on pull requests, main pushes, scheduled runs, and manual dispatch, then uploads the report. The script still needs an external FreeCAD runtime, and no result artifact is committed to the repository.
 
-**Need.** Run the complete writable geometry profile with the manifest in an independent native environment and retain the report as a CI artifact or accepted evidence. Expand the manifest when the writable profile grows.
+**Need.** Require one successful workflow run for the complete writable geometry profile and retain its report artifact as evidence. Expand the manifest when the writable profile grows.
 
 ### EV-03. The fixture builders and the decoder share one author
 
