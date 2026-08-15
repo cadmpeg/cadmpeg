@@ -395,8 +395,8 @@ pub(crate) mod tests {
                 10.0,
                 &mut hatch,
             )
-            .expect("first duplicate hatch extension");
-            assert_eq!(hatch.basepoint, [20.0, 30.0]);
+            .expect("duplicate hatch extensions");
+            assert_eq!(hatch.basepoint, [40.0, 50.0]);
         });
     }
 
