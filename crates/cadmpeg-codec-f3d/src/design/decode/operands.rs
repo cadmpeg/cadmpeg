@@ -2618,10 +2618,13 @@ fn parse_body_recipe_operand_frame(
     let asset_id_at = cursor.checked_add(15)?;
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_id_at, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    let selector_tail = bytes.get(after_context_id + 4..after_context_id + 8)?;
+    let selector_tail_is_valid =
+        selector_tail == [0; 4] || (header.class_tag == "367" && selector_tail == [1, 0, 0, 0]);
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
+        || !selector_tail_is_valid
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
     {
         return None;

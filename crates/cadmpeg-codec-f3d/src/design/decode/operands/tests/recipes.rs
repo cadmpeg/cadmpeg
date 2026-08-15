@@ -215,6 +215,100 @@ fn body_recipe_operand_decodes_counted_reference_table() {
 }
 
 #[test]
+fn class_367_body_recipe_operand_decodes_scale_member_frame() {
+    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    let mut bytes = Vec::new();
+    header(&mut bytes, *b"367", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&301u64.to_le_bytes());
+    bytes.extend_from_slice(&33u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&103u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
+    lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    header(&mut bytes, *b"264", 100);
+    header(&mut bytes, *b"404", 101);
+    header(&mut bytes, *b"416", 102);
+    header(&mut bytes, *b"424", 103);
+    let recipe_at = bytes.len();
+    bytes.extend_from_slice(b"body_recipe_data");
+    let next_at = bytes.len();
+    header(&mut bytes, *b"280", 104);
+
+    let group = DesignConstructionOperandGroup {
+        id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
+        scope_record_index: 80,
+        scope_reference_ordinal: 1,
+        record_index: 90,
+        byte_offset: 0,
+        class_tag: "287".into(),
+        members: vec![100],
+        lost_edge_references: Vec::new(),
+        member_offsets: vec![21],
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 0,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: Vec::new(),
+            trailing_record_offsets: Vec::new(),
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 0,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+        },
+        role: 0x0000_0004_0000_0000,
+        extrude_role: None,
+        extrude_face_role: None,
+        role_offset: 0,
+        paired_class_tag: "264".into(),
+        paired_byte_offset: 0,
+    };
+    let record = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#100".into(),
+        byte_offset: 0,
+        class_tag: "367".into(),
+        record_index: 100,
+    };
+    let recipe = ConstructionRecipe {
+        id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
+        byte_offset: recipe_at as u64,
+        record_index_offset: None,
+        kind: ConstructionRecipeKind::Body,
+        design_id: Some("301".into()),
+        design_id_offset: None,
+        design_selector: Some(crate::records::ConstructionRecipeSelector {
+            value: 6,
+            byte_offset: 0,
+        }),
+        recipe_index: 0,
+        record_index: 0,
+    };
+
+    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+        .expect("class-367 body recipe operand");
+    assert_eq!(operand.references.len(), 1);
+    assert_eq!(operand.references[0].design_reference, 301);
+    assert_eq!(operand.references[0].form, 33);
+    assert_eq!(operand.nested_record_index, 103);
+    assert_eq!(operand.next_byte_offset, next_at as u64);
+}
+
+#[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> u64 {
         let offset = u64::try_from(bytes.len()).expect("generated frame length fits u64");
