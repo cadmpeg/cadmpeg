@@ -26,10 +26,44 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use super::{cluster_boundary_positions, BoundaryVertexClusterError};
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.75, 0.0, 0.0),
+        Point3::new(1.5, 0.0, 0.0),
+    ];
+
+    assert_eq!(
+        cluster_boundary_positions(&points, 1.0),
+        Err(BoundaryVertexClusterError::NonTransitive)
+    );
+}
+
+#[test]
+fn boundary_vertex_clustering_uses_canonical_representatives() {
+    let points = [
+        Point3::new(10.25, 0.0, 0.0),
+        Point3::new(0.5, 0.0, 0.0),
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
+    ];
+    let clusters = cluster_boundary_positions(&points, 1.0).unwrap();
+
+    assert_eq!(
+        clusters
+            .iter()
+            .map(|cluster| cluster.representative)
+            .collect::<Vec<_>>(),
+        vec![Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
+    );
+}
 
 #[test]
 fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {

@@ -123,16 +123,6 @@ from a conformant file.
 
 **Note.** Candidate checks prevent silent transfer of a wrong range or endpoint, but they do not establish the source ownership rule. The codec now refuses conflicting composite candidates instead of selecting one by storage order.
 
-### TP-10. Tolerance vertex merging depends on the first representative
-
-**Question.** How are boundary endpoints clustered when one point is within tolerance of more than one existing vertex?
-
-**Known.** `entities/trimming.rs:89-117` returns the first vertex whose position is within tolerance and otherwise creates a vertex at the current endpoint. The function is called for every boundary segment endpoint at `entities/trimming.rs:757-771`. It does not choose the nearest representative, compute a transitive cluster, or record a merge ambiguity.
-
-**Need.** We need a deterministic clustering rule and a loss or refusal policy for non-transitive tolerance neighborhoods. Topology must not depend on the order of boundary segments without an explicit rule.
-
-**Note.** Hostile sweep 2026-08-15: if A and B are farther apart than tolerance while C is within tolerance of both, source order determines whether C joins A or B. This can change vertex identity and sewing topology.
-
 ## 6. Product structure, annotation, and presentation
 
 ## 7. Write path

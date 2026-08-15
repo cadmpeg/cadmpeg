@@ -21,6 +21,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone)]
@@ -53,6 +54,18 @@ enum BoundaryEdgeSelectionError {
     PcurveDisagreement,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BoundaryVertexClusterError {
+    InvalidTolerance,
+    NonTransitive,
+}
+
+#[derive(Debug, PartialEq)]
+struct BoundaryVertexCluster {
+    representative: Point3,
+    members: Vec<usize>,
+}
+
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
     record.integer(index).and_then(|value| {
         let sequence = u32::try_from(value).ok()?;
@@ -81,40 +94,108 @@ fn topology_sewing_tolerance(global: &Global, points: impl Iterator<Item = Point
     global.minimum_resolution_mm().max(coordinate_quantum)
 }
 
+fn point_order(left: Point3, right: Point3) -> Ordering {
+    left.x
+        .total_cmp(&right.x)
+        .then_with(|| left.y.total_cmp(&right.y))
+        .then_with(|| left.z.total_cmp(&right.z))
+}
+
+fn find_cluster_root(parents: &mut [usize], index: usize) -> usize {
+    if parents[index] == index {
+        return index;
+    }
+    let root = find_cluster_root(parents, parents[index]);
+    parents[index] = root;
+    root
+}
+
+fn cluster_boundary_positions(
+    positions: &[Point3],
+    tolerance: f64,
+) -> Result<Vec<BoundaryVertexCluster>, BoundaryVertexClusterError> {
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return Err(BoundaryVertexClusterError::InvalidTolerance);
+    }
+    let mut parents = (0..positions.len()).collect::<Vec<_>>();
+    for (left_index, left) in positions.iter().enumerate() {
+        for (right_index, right) in positions.iter().enumerate().skip(left_index + 1) {
+            if !close(*left, *right, tolerance) {
+                continue;
+            }
+            let left_root = find_cluster_root(&mut parents, left_index);
+            let right_root = find_cluster_root(&mut parents, right_index);
+            if left_root != right_root {
+                parents[right_root] = left_root;
+            }
+        }
+    }
+    let mut members_by_root = BTreeMap::<usize, Vec<usize>>::new();
+    for index in 0..positions.len() {
+        let root = find_cluster_root(&mut parents, index);
+        members_by_root.entry(root).or_default().push(index);
+    }
+    let mut clusters = Vec::with_capacity(members_by_root.len());
+    for members in members_by_root.into_values() {
+        if members.iter().enumerate().any(|(offset, left)| {
+            members
+                .iter()
+                .skip(offset + 1)
+                .any(|right| !close(positions[*left], positions[*right], tolerance))
+        }) {
+            return Err(BoundaryVertexClusterError::NonTransitive);
+        }
+        let representative = members
+            .iter()
+            .copied()
+            .min_by(|left, right| {
+                point_order(positions[*left], positions[*right]).then_with(|| left.cmp(right))
+            })
+            .map(|index| positions[index])
+            .ok_or(BoundaryVertexClusterError::NonTransitive)?;
+        clusters.push(BoundaryVertexCluster {
+            representative,
+            members,
+        });
+    }
+    clusters.sort_by_key(|cluster| cluster.members[0]);
+    Ok(clusters)
+}
+
+fn create_boundary_vertices(
+    candidate: &mut ModelDraft,
+    stem: &str,
+    boundary: usize,
+    positions: &[Point3],
+    tolerance: f64,
+) -> Result<Vec<VertexId>, BoundaryVertexClusterError> {
+    let clusters = cluster_boundary_positions(positions, tolerance)?;
+    let mut vertex_ids = (0..positions.len())
+        .map(|_| None)
+        .collect::<Vec<Option<VertexId>>>();
+    for (index, cluster) in clusters.into_iter().enumerate() {
+        let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
+        let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
+        candidate.model_mut().points.push(Point {
+            source_object: None,
+            id: point_id.clone(),
+            position: cluster.representative,
+        });
+        candidate.model_mut().vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point_id,
+            tolerance: Some(tolerance),
+        });
+        for member in cluster.members {
+            vertex_ids[member] = Some(vertex_id.clone());
+        }
+    }
+    Ok(vertex_ids.into_iter().flatten().collect())
+}
+
 fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
     let point_id = &index.vertices(&id.0)?.point;
     index.points(&point_id.0).map(|point| point.position)
-}
-
-fn face_vertex(
-    candidate: &mut ModelDraft,
-    vertices: &mut Vec<(Point3, VertexId)>,
-    stem: &str,
-    boundary: usize,
-    position: Point3,
-    tolerance: f64,
-) -> VertexId {
-    if let Some((_, id)) = vertices
-        .iter()
-        .find(|(existing, _)| close(*existing, position, tolerance))
-    {
-        return id.clone();
-    }
-    let index = vertices.len();
-    let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
-    let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
-    candidate.model_mut().points.push(Point {
-        source_object: None,
-        id: point_id.clone(),
-        position,
-    });
-    candidate.model_mut().vertices.push(Vertex {
-        id: vertex_id.clone(),
-        point: point_id,
-        tolerance: Some(tolerance),
-    });
-    vertices.push((position, vertex_id.clone()));
-    vertex_id
 }
 
 pub(super) fn pcurve_geometry(
@@ -749,27 +830,38 @@ pub(super) fn project(
             let coedge_ids = (0..items.len())
                 .map(|index| CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}:{index}")))
                 .collect::<Vec<_>>();
-            let mut local_vertices = Vec::new();
+            let endpoint_positions = items
+                .iter()
+                .flat_map(|item| [item.start, item.end])
+                .collect::<Vec<_>>();
+            let vertex_ids = match create_boundary_vertices(
+                &mut candidate,
+                &stem,
+                boundary_index,
+                &endpoint_positions,
+                sewing_tolerance,
+            ) {
+                Ok(vertex_ids) => vertex_ids,
+                Err(BoundaryVertexClusterError::InvalidTolerance) => {
+                    losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
+                    valid = false;
+                    break;
+                }
+                Err(BoundaryVertexClusterError::NonTransitive) => {
+                    losses.push(entity_loss(
+                        entry,
+                        "boundary endpoint tolerance neighborhoods are non-transitive",
+                    ));
+                    valid = false;
+                    break;
+                }
+            };
             for (segment_index, item) in items.into_iter().enumerate() {
                 let edge_id = EdgeId(format!(
                     "iges:model:edge#{stem}:{boundary_index}:{segment_index}"
                 ));
-                let start_vertex = face_vertex(
-                    &mut candidate,
-                    &mut local_vertices,
-                    &stem,
-                    boundary_index,
-                    item.start,
-                    sewing_tolerance,
-                );
-                let end_vertex = face_vertex(
-                    &mut candidate,
-                    &mut local_vertices,
-                    &stem,
-                    boundary_index,
-                    item.end,
-                    sewing_tolerance,
-                );
+                let start_vertex = vertex_ids[segment_index * 2].clone();
+                let end_vertex = vertex_ids[segment_index * 2 + 1].clone();
                 candidate.model_mut().edges.push(Edge {
                     id: edge_id.clone(),
                     curve: Some(item.model_curve),
