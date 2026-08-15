@@ -97,6 +97,12 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
     );
+    derived_intersection_curves.extend(transfer_carrier_intersection_curves(
+        scan,
+        ir,
+        annotations,
+        &nurbs_boundary_curves.endpoint_witnesses,
+    ));
     let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
         scan,
         ir,
@@ -512,4 +518,127 @@ pub(super) fn transfer_and_record_scanned_geometry(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{CurveId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::AnnotationBuilder;
+
+    use super::transfer_and_record_scanned_geometry;
+
+    #[test]
+    fn intersections_revisit_carriers_proven_by_topology_bound_planes() {
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        scan.surfaces.rows = vec![
+            crate::surface::SurfaceRow {
+                id: 5,
+                type_byte: 0x22,
+                kind: crate::surface::SurfaceKind::Plane,
+                feature_id: 1,
+                reversed: false,
+                boundary_type: 1,
+                next_surface: 0,
+                offset: 10,
+            },
+            crate::surface::SurfaceRow {
+                id: 6,
+                type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+                kind: crate::surface::SurfaceKind::Cylinder,
+                feature_id: 1,
+                reversed: false,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 11,
+            },
+        ];
+        scan.curves.topology_rows = vec![
+            crate::curve::CurveTopologyRow {
+                id: 10,
+                type_byte: 0,
+                feature_id: 1,
+                directions: [0; 2],
+                faces: [5, 0],
+                next_edges: [10, 0],
+                offset: 20,
+            },
+            crate::curve::CurveTopologyRow {
+                id: 12,
+                type_byte: 0,
+                feature_id: 1,
+                directions: [0; 2],
+                faces: [5, 6],
+                next_edges: [12, 12],
+                offset: 21,
+            },
+        ];
+        scan.topology.loops.push(crate::topology::Loop {
+            face_id: 5,
+            half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id: 10,
+                side: 0,
+            }],
+        });
+
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.curves.push(Curve {
+            id: CurveId("creo:visibgeom:curve#10".to_string()),
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 4.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 5.0,
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 5.0,
+            },
+            source_object: None,
+        });
+
+        let arena = DecodeArena::new();
+        let bytes = [0_u8];
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("test decode context");
+        let mut annotations = AnnotationBuilder::new();
+        let mut coverage = BTreeMap::new();
+        transfer_and_record_scanned_geometry(&ctx, &scan, &mut ir, &mut annotations, &mut coverage)
+            .expect("synthetic geometry transfer");
+
+        let curve = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == CurveId("creo:visibgeom:curve#12".to_string()))
+            .expect("plane-cylinder intersection curve");
+        let CurveGeometry::Circle {
+            center,
+            axis,
+            radius,
+            ..
+        } = &curve.geometry
+        else {
+            panic!("expected exact plane-cylinder circle");
+        };
+        assert_eq!(*center, Point3::new(0.0, 0.0, 4.0));
+        assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(*radius, 5.0);
+        assert_eq!(
+            coverage.get("transferred_topology_bound_plane_surface_count"),
+            Some(&1)
+        );
+    }
 }
