@@ -29,7 +29,7 @@ The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates impleme
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
+`decode`, `export`, and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. A codec-level decode failure with an explicit report is a `decode`-stage `decode_failed` refusal; an I/O failure remains an operational exit. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
 
 Status 0 is success. Status 1 is semantic failure or a non-empty diff. Status 2 is operational failure.
 

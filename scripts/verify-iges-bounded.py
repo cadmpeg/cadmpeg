@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Run the bounded IGES decode, validation, and optional round-trip gate.
 
-Each input receives an independent timeout for every command. A non-zero
-initial decode exit is a terminal, classified refusal. A timeout, crash,
-launcher failure, missing output, validation failure, conversion failure, or
-generated-file validation failure fails the gate. ``--roundtrip`` adds
-conversion to IGES 5.3 and decode plus validation of the generated file.
+Each input receives an independent timeout for every command. An initial
+decode exit is accepted only when it is exit code 1 and the command wrote a
+schema-versioned decode refusal report. A timeout, crash, launcher failure,
+unclassified decode exit, missing output, validation failure, conversion
+failure, or generated-file validation failure fails the gate. ``--roundtrip``
+adds conversion to IGES 5.3 and decode plus validation of the generated file.
 
 Temporary decoded artifacts are created below ``$HOME/side2/tmp/iges-l9`` by
 default. Set ``--scratch`` when a CI runner needs another dedicated scratch
@@ -85,6 +86,33 @@ def run_command(command: Sequence[str], timeout: float, stderr_path: Path) -> Co
     return CommandResult(list(command), status, elapsed_ms, returncode, detail)
 
 
+def load_decode_refusal(report_path: Path) -> tuple[dict[str, object] | None, str | None]:
+    """Read and validate the v6 refusal envelope emitted by ``decode``."""
+
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return None, f"decode refusal report is unavailable or invalid: {error}"
+    if not isinstance(payload, dict):
+        return None, "decode refusal report is not a JSON object"
+    if payload.get("schema_version") != 6:
+        return None, "decode refusal report does not use schema_version 6"
+    if payload.get("command") != "decode":
+        return None, "decode refusal report command is not decode"
+    if payload.get("status") != "refused":
+        return None, "decode refusal report status is not refused"
+    refusal = payload.get("refusal")
+    if not isinstance(refusal, dict):
+        return None, "decode refusal report has no refusal object"
+    if refusal.get("stage") != "decode":
+        return None, "decode refusal report refusal stage is not decode"
+    for field in ("code", "message"):
+        value = refusal.get(field)
+        if not isinstance(value, str) or not value:
+            return None, f"decode refusal report refusal.{field} is empty or not text"
+    return refusal, None
+
+
 def input_files(root: Path) -> list[Path]:
     return sorted(
         (
@@ -110,6 +138,7 @@ def verify_file(
         temporary = Path(directory)
         cadir = temporary / "decoded.cadir.json"
         decode_stderr = temporary / "decode.stderr"
+        decode_report = temporary / "decode.report.json"
         decode_command = [
             cadmpeg,
             "decode",
@@ -119,6 +148,8 @@ def verify_file(
             "--output",
             str(cadir),
             "--force",
+            "--report",
+            str(decode_report),
         ]
         decode = run_command(decode_command, timeout, decode_stderr)
         result: dict[str, object] = {
@@ -131,8 +162,19 @@ def verify_file(
             result["status"] = f"decode_{decode.status}"
             return result
         if decode.returncode != 0:
-            result["gate_pass"] = True
-            result["status"] = "decode_refused"
+            refusal, report_error = load_decode_refusal(decode_report)
+            if decode.returncode == 1 and refusal is not None:
+                result["gate_pass"] = True
+                result["status"] = "decode_refused"
+                result["refusal"] = refusal
+            else:
+                result["status"] = (
+                    "decode_unclassified_refusal"
+                    if decode.returncode == 1
+                    else "decode_error"
+                )
+                if report_error is not None:
+                    result["classification_error"] = report_error
             return result
         if not cadir.is_file() or cadir.stat().st_size == 0:
             result["status"] = "decode_missing_output"
@@ -181,6 +223,7 @@ def verify_file(
 
             redecoded = temporary / "redecoded.cadir.json"
             redecode_stderr = temporary / "redecode.stderr"
+            redecode_report = temporary / "redecode.report.json"
             redecode_command = [
                 cadmpeg,
                 "decode",
@@ -190,6 +233,8 @@ def verify_file(
                 "--output",
                 str(redecoded),
                 "--force",
+                "--report",
+                str(redecode_report),
             ]
             redecode = run_command(redecode_command, timeout, redecode_stderr)
             result["redecode"] = asdict(redecode)

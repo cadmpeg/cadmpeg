@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
@@ -201,7 +202,30 @@ pub fn decode(
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let outcome = loader::load_artifact(&catalogs.inputs, path, args.options(), forced)?;
+    let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let Some(report_path) = report_path else {
+                return Err(error);
+            };
+            let Some(refusal) = decode_failure_refusal(&error) else {
+                return Err(error);
+            };
+            write_command_report(
+                path,
+                Some(report_path),
+                force,
+                "decode",
+                CommandReportBody {
+                    decode_report: None,
+                    validation_report: None,
+                    export: None,
+                    refusal: Some(&refusal),
+                },
+            )?;
+            return Err(refusal.into());
+        }
+    };
     print_load_notices(&outcome.notices);
     let loaded = &outcome.document;
     export_ir(
@@ -233,6 +257,16 @@ pub fn decode(
         },
     )?;
     Ok(())
+}
+
+fn decode_failure_refusal(error: &anyhow::Error) -> Option<ConversionRefusal> {
+    let codec_error = error.downcast_ref::<CodecError>()?;
+    if matches!(codec_error, CodecError::Io(_)) {
+        return None;
+    }
+    Some(ConversionRefusal::DecodeFailed {
+        message: format!("decode failed: {error:#}"),
+    })
 }
 
 /// Load and validate CADIR, printing a human-readable or JSON report.

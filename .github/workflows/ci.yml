@@ -138,6 +138,7 @@ jobs:
         # unoptimized debug binary.
         run: |
           set -euo pipefail
+          python3 -m unittest -v scripts/test_verify_iges_bounded.py
           mkdir -p "$HOME/side2/tmp/iges-l9"
           cargo build -q --release -p cadmpeg --no-default-features --features iges
           python3 scripts/verify-iges-bounded.py \

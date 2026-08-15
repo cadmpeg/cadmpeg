@@ -643,6 +643,39 @@ fn garbage_reports_supported_formats() {
 }
 
 #[test]
+fn iges_decode_report_classifies_codec_refusal() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("malformed.igs");
+    let report = dir.path().join("decode-report.json");
+    fs::write(&input, b"not an IGES file").unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "decode",
+            input.to_str().unwrap(),
+            "--input-format",
+            "iges",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("decode failed"));
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["command"], "decode");
+    assert_eq!(value["status"], "refused");
+    assert_eq!(value["refusal"]["stage"], "decode");
+    assert_eq!(value["refusal"]["code"], "decode_failed");
+    assert!(value["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("IGES"));
+}
+
+#[test]
 fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
     let dir = tempdir().unwrap();
     let input = minimal_rhino_archive(dir.path(), "empty.3dm", "50");
