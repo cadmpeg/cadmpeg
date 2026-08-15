@@ -6,8 +6,9 @@ use super::super::feature_history::{
     resolved_feature_dimension_parameter,
 };
 use super::super::sketch::{
-    resolved_section_points, section_line_fixed_coordinate, section_segment_rows,
-    section_type5_radius_arc, unique_section_skamp_segment,
+    resolved_section_coordinates, section_line_fixed_coordinate,
+    section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
+    unique_section_skamp_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use super::{
@@ -594,6 +595,7 @@ pub(in super::super) fn section_dimension_constraints(
         return Vec::new();
     };
     let segments = section_segment_rows(definition);
+    let segment_refs = segments.iter().collect::<Vec<_>>();
     let known_entities = section_entity_external_ids(definition);
     relations
         .rows
@@ -774,39 +776,33 @@ pub(in super::super) fn section_dimension_constraints(
                                     }
                                 }
                             }
-                            let points = resolved_section_points(definition);
-                            if let (Some(first_point), Some(second_point)) =
-                                (points.get(&first_id), points.get(&second_id))
-                            {
-                                let scale = first_point
-                                    .iter()
-                                    .chain(second_point)
-                                    .map(|coordinate| coordinate.abs())
-                                    .fold(1.0, f64::max);
-                                let same_u =
-                                    (first_point[0] - second_point[0]).abs() <= 1e-9 * scale;
-                                let same_v =
-                                    (first_point[1] - second_point[1]).abs() <= 1e-9 * scale;
-                                if same_u != same_v {
-                                    if let (Some(first), Some(second)) = (
-                                        section_point_locus(definition, sketch, first_id),
-                                        section_point_locus(definition, sketch, second_id),
-                                    ) {
-                                        return Some(if same_u {
-                                            SketchConstraintDefinition::VerticalDistance {
-                                                first,
-                                                second,
-                                                parameter,
-                                            }
-                                        } else {
-                                            SketchConstraintDefinition::HorizontalDistance {
-                                                first,
-                                                second,
-                                                parameter,
-                                            }
-                                        });
-                                    }
-                                }
+                            let coordinate = section_linear_distance_coordinate(
+                                definition,
+                                &segment_refs,
+                                first_id,
+                                second_id,
+                                &resolved_section_coordinates(definition),
+                                &[],
+                                &BTreeSet::new(),
+                            );
+                            if let (Some(coordinate), Some(first), Some(second)) = (
+                                coordinate,
+                                section_point_locus(definition, sketch, first_id),
+                                section_point_locus(definition, sketch, second_id),
+                            ) {
+                                return Some(match coordinate {
+                                    0 => SketchConstraintDefinition::HorizontalDistance {
+                                        first,
+                                        second,
+                                        parameter,
+                                    },
+                                    1 => SketchConstraintDefinition::VerticalDistance {
+                                        first,
+                                        second,
+                                        parameter,
+                                    },
+                                    _ => return None,
+                                });
                             }
                         }
                     }

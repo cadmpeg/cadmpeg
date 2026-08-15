@@ -4835,6 +4835,64 @@
             (Some("c[3]"), 1),
         ]
     );
+    let mut special_endpoint_dimension = definition.clone();
+    let special_segments = special_endpoint_dimension
+        .segments
+        .as_mut()
+        .expect("segments");
+    special_segments.rows.clear();
+    special_segments.circle_rows.clear();
+    special_segments.point_rows.clear();
+    special_segments.centered_line_rows.clear();
+    special_segments.reference_line_rows = vec![crate::feature::FeatureReferenceLineSegment {
+        directions: [None; 3],
+        point_ids: [Some(1), Some(4)],
+        vertical_horizontal: None,
+        external_id: 101,
+        offset: 91,
+    }];
+    special_segments.bounded_curve_rows = vec![crate::feature::FeatureBoundedCurveSegment {
+        directions: [None; 3],
+        point_ids: [5, 6],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 102,
+        offset: 92,
+    }];
+    special_segments.conic_rows.clear();
+    special_segments.opaque_rows.clear();
+    special_segments.declared_count = 2;
+    let special_relation = &mut special_endpoint_dimension
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0];
+    special_relation.relation_type = 0;
+    special_relation.operand_vectors = Some([
+        [Some(1), Some(5), None, Some(1)],
+        [Some(1), Some(1), Some(0), Some(1)],
+        [Some(15), Some(16), Some(15), Some(1)],
+    ]);
+    assert_eq!(
+        section_dimension_constraints(
+            &special_endpoint_dimension,
+            &SketchId("creo:model:sketch#917".into()),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::HorizontalDistance {
+            first: SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:101".to_string(),
+            )),
+            second: SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:102".to_string(),
+            )),
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
     vector_native.relations.as_mut().expect("relations").rows[0].used = 34;
     let stored_state =
         section_dimension_constraints(&vector_native, &SketchId("creo:model:sketch#917".into()));

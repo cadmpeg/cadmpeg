@@ -335,11 +335,12 @@ fixtures, scores above L1 remain blocked.
 - Signed type-zero linear dimensions select their measured coordinate from a
   unique spanning line, or from one equal endpoint coordinate on uniquely
   incident section entities when no segment spans the pair. Standalone type-1
-  point rows supply whole-point loci for this proof. Stored and uniquely joined
-  saved endpoint coordinates both participate in that axis proof. A pair of
-  separate incident lines does not select an axis. The selected equation can
-  derive a missing ordinate; ambiguous endpoint or orientation evidence does
-  not derive one.
+  point rows supply whole-point loci for this proof. Type-12 bounded curves,
+  type-25 reference lines, and validated type-47 centered lines supply their
+  ordered endpoint loci as well. Stored and uniquely joined saved endpoint
+  coordinates both participate in that axis proof. A pair of separate incident
+  lines does not select an axis. The selected equation can derive a missing
+  ordinate; ambiguous endpoint or orientation evidence does not derive one.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and

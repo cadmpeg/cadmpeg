@@ -67,6 +67,57 @@ pub(in super::super) fn section_point_locus(
                 )
             }),
     );
+    candidates.extend(
+        segments
+            .centered_line_rows
+            .iter()
+            .filter(|segment| unique_entities.contains(&segment.external_id))
+            .flat_map(|segment| {
+                let entity = sketch_entity_id(sketch, segment.external_id);
+                [
+                    (0, SketchLocus::Start(entity.clone())),
+                    (1, SketchLocus::End(entity)),
+                ]
+                .into_iter()
+                .filter_map(move |(candidate, locus)| {
+                    (candidate == point_id).then_some((segment.offset, locus))
+                })
+            }),
+    );
+    candidates.extend(
+        segments
+            .reference_line_rows
+            .iter()
+            .filter(|segment| unique_entities.contains(&segment.external_id))
+            .flat_map(|segment| {
+                let entity = sketch_entity_id(sketch, segment.external_id);
+                [
+                    (segment.point_ids[0], SketchLocus::Start(entity.clone())),
+                    (segment.point_ids[1], SketchLocus::End(entity)),
+                ]
+                .into_iter()
+                .filter_map(move |(candidate, locus)| {
+                    (candidate == Some(point_id)).then_some((segment.offset, locus))
+                })
+            }),
+    );
+    candidates.extend(
+        segments
+            .bounded_curve_rows
+            .iter()
+            .filter(|segment| unique_entities.contains(&segment.external_id))
+            .flat_map(|segment| {
+                let entity = sketch_entity_id(sketch, segment.external_id);
+                [
+                    (segment.point_ids[0], SketchLocus::Start(entity.clone())),
+                    (segment.point_ids[1], SketchLocus::End(entity)),
+                ]
+                .into_iter()
+                .filter_map(move |(candidate, locus)| {
+                    (candidate == point_id).then_some((segment.offset, locus))
+                })
+            }),
+    );
     candidates
         .into_iter()
         .min_by_key(|(offset, _)| *offset)
@@ -1007,5 +1058,111 @@ mod tests {
                 "creo:featdefs:sketch_entity#917:12".to_string(),
             )))
         );
+    }
+
+    #[test]
+    fn endpoint_carriers_supply_ordered_point_loci() {
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 3,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: Vec::new(),
+                circle_rows: Vec::new(),
+                point_rows: Vec::new(),
+                centered_line_rows: vec![crate::feature::FeatureCenteredLineSegment {
+                    center_id: 20,
+                    external_id: 30,
+                    offset: 30,
+                }],
+                reference_line_rows: vec![crate::feature::FeatureReferenceLineSegment {
+                    directions: [None; 3],
+                    point_ids: [Some(7), Some(8)],
+                    vertical_horizontal: None,
+                    external_id: 31,
+                    offset: 10,
+                }],
+                bounded_curve_rows: vec![crate::feature::FeatureBoundedCurveSegment {
+                    directions: [None; 3],
+                    point_ids: [9, 10],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 32,
+                    offset: 20,
+                }],
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId("creo:model:sketch#917".to_string());
+        assert_eq!(
+            section_point_locus(&definition, &sketch, 0),
+            Some(SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:30".to_string(),
+            )))
+        );
+        assert_eq!(
+            section_point_locus(&definition, &sketch, 1),
+            Some(SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:30".to_string(),
+            )))
+        );
+        assert_eq!(
+            section_point_locus(&definition, &sketch, 7),
+            Some(SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:31".to_string(),
+            )))
+        );
+        assert_eq!(
+            section_point_locus(&definition, &sketch, 8),
+            Some(SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:31".to_string(),
+            )))
+        );
+        assert_eq!(
+            section_point_locus(&definition, &sketch, 9),
+            Some(SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:32".to_string(),
+            )))
+        );
+        assert_eq!(
+            section_point_locus(&definition, &sketch, 10),
+            Some(SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:32".to_string(),
+            )))
+        );
+
+        let mut ambiguous = definition;
+        ambiguous
+            .segments
+            .as_mut()
+            .expect("segments")
+            .reference_line_rows
+            .push(crate::feature::FeatureReferenceLineSegment {
+                directions: [None; 3],
+                point_ids: [Some(7), Some(8)],
+                vertical_horizontal: None,
+                external_id: 31,
+                offset: 40,
+            });
+        assert_eq!(section_point_locus(&ambiguous, &sketch, 7), None);
     }
 }
