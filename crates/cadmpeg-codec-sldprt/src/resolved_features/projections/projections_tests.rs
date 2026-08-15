@@ -302,6 +302,137 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
 }
 
 #[test]
+fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
+    let native_feature = |id: &str, source_id: &str| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some(source_id.into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: id.into(),
+        kind: "Feature".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            native_feature("producer-native", "10"),
+            native_feature("thread-native", "20"),
+        ],
+    };
+    let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        id: FeatureId(id.into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: Some(native_ref.into()),
+    };
+    let mut features = vec![
+        feature(
+            "producer",
+            "producer-native",
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved,
+            },
+        ),
+        feature(
+            "thread",
+            "thread-native",
+            FeatureDefinition::CosmeticThread {
+                face: FaceSelection::Unresolved,
+                diameter: None,
+                extent: None,
+            },
+        ),
+    ];
+    let mut face_signature = [0; 12];
+    face_signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
+    let mut first_tail = face_signature;
+    first_tail[8..12].copy_from_slice(&11_u32.to_le_bytes());
+    let mut second_tail = face_signature;
+    second_tail[8..12].copy_from_slice(&12_u32.to_le_bytes());
+    let selection = |id: &str, tail: [u8; 12]| FeatureInputSurfaceSelection {
+        id: id.into(),
+        parent: id.into(),
+        ordinal: 0,
+        offset: 0,
+        selector: 0,
+        object_name_ref: "name".into(),
+        feature_ref: "thread-native".into(),
+        producer_feature_refs: vec!["producer-native".into()],
+        terminal_feature_ref: Some("producer-native".into()),
+        components: vec![
+            FeatureInputComponentPathEntry {
+                instance: Some(1),
+                type_signature: face_signature,
+                local_id: Some(7),
+            },
+            FeatureInputComponentPathEntry {
+                instance: Some(2),
+                type_signature: tail,
+                local_id: Some(8),
+            },
+        ],
+    };
+    let lane = |id: &str, selection| FeatureInputLane {
+        id: id.into(),
+        configuration: Some(id.into()),
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: vec![selection],
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    project_compact_surface_selections(
+        &mut features,
+        std::slice::from_ref(&history),
+        &[
+            lane("one", selection("one", first_tail)),
+            lane("two", selection("two", second_tail)),
+        ],
+    );
+
+    assert!(matches!(
+        &features[1].definition,
+        FeatureDefinition::CosmeticThread {
+            face: FaceSelection::Generated { faces, native },
+            ..
+        } if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
+            feature: FeatureId("producer".into()),
+            local_id: "7".into(),
+        }] && native == "sldprt:feature-input:surface-component-ids:7,8"
+    ));
+}
+
+#[test]
 fn compact_surface_selection_binds_surface_operation_face_slot() {
     let mut signature = [0; 12];
     signature[4..8].copy_from_slice(&10_u32.to_le_bytes());

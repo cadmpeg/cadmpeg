@@ -953,7 +953,15 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
-        let Some(selection) = surface_selection_consensus(feature_selections) else {
+        let first_component = matches!(
+            &feature.definition,
+            FeatureDefinition::CosmeticThread { .. }
+        );
+        let Some(selection) = (if first_component {
+            cosmetic_thread_surface_selection_consensus(feature_selections)
+        } else {
+            surface_selection_consensus(feature_selections)
+        }) else {
             continue;
         };
         if let FeatureDefinition::DatumOffsetPlane {
@@ -1024,8 +1032,6 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
-        let first_component =
-            matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
         let slot = match &mut feature.definition {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::Shell { removed_faces, .. } => SelectionSlot::Face(removed_faces),
@@ -1391,6 +1397,26 @@ fn surface_selection_consensus<'a>(
     selections
         .iter()
         .all(|selection| same_surface_selection_semantics(first, selection))
+        .then_some(first)
+}
+
+/// Configuration lanes repeat a cosmetic-thread cylinder reference, but only
+/// its first typed component identifies the attached face.  The remaining
+/// components retain the owning path and can vary with the lane's instance
+/// path.  Reject only when the attached-face component itself disagrees.
+fn cosmetic_thread_surface_selection_consensus<'a>(
+    selections: &[&'a FeatureInputSurfaceSelection],
+) -> Option<&'a FeatureInputSurfaceSelection> {
+    let first = selections.first().copied()?;
+    let first_component = first.components.first()?;
+    selections
+        .iter()
+        .all(|selection| {
+            selection.components.first().is_some_and(|component| {
+                component.local_id == first_component.local_id
+                    && component.type_signature[4..8] == first_component.type_signature[4..8]
+            })
+        })
         .then_some(first)
 }
 
