@@ -636,6 +636,12 @@ the tessellation, retains its source item association, and records a
 representation name, item set, and context for the same ownership rules. Its
 accuracy-specific record remains source-native while the supported tessellated
 items transfer.
+`SHAPE_REPRESENTATION_WITH_PARAMETERS` uses the inherited representation name,
+item set, and context. Its item set contains descriptive representation items,
+directions, measure representation items, and placements. The reader applies
+its context to reachable item units and uses its item set for inherited
+representation membership, including validation properties. Unsupported item
+semantics remain source-native.
 Tessellated indices are one-based. PNINDEX maps local points to shared
 coordinates. Triangle and fan indices address local points in listed order. A
 triangle strip alternates the first two indices for each odd triangle so

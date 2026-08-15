@@ -425,7 +425,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if record
             .partials
             .iter()
-            .any(|partial| partial.name.ends_with("REPRESENTATION"))
+            .any(|partial| super::representation::is_representation_name(&partial.name))
         {
             if let Some(items) = representation_items(record) {
                 point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
@@ -2150,7 +2150,7 @@ pub(super) fn associate_free_representation_members(
         record
             .partials
             .iter()
-            .any(|partial| partial.name.ends_with("REPRESENTATION"))
+            .any(|partial| super::representation::is_representation_name(&partial.name))
     }) {
         let Some(items) = representation_items(representation) else {
             continue;
@@ -2789,7 +2789,7 @@ fn retained_surface_curve_ids(
         record
             .partials
             .iter()
-            .any(|partial| partial.name.ends_with("REPRESENTATION"))
+            .any(|partial| super::representation::is_representation_name(&partial.name))
     }) {
         let Some(items) = representation_items(representation) else {
             continue;
@@ -2982,22 +2982,17 @@ fn same_scale(left: f64, right: f64) -> bool {
 }
 
 fn is_representation_record(record: &RawRecord) -> bool {
-    record.partials.iter().any(|partial| {
-        partial.name == "REPRESENTATION"
-            || partial.name.ends_with("_REPRESENTATION")
-            || partial.name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
-    })
+    record
+        .partials
+        .iter()
+        .any(|partial| super::representation::is_representation_name(&partial.name))
 }
 
 fn representation_context(record: &RawRecord) -> Option<u64> {
     record
         .partials
         .iter()
-        .filter(|partial| {
-            partial.name == "REPRESENTATION"
-                || partial.name.ends_with("_REPRESENTATION")
-                || partial.name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
-        })
+        .filter(|partial| super::representation::is_representation_name(&partial.name))
         .flat_map(|partial| partial.parameters.iter().rev())
         .find_map(Value::reference)
 }

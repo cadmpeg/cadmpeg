@@ -154,6 +154,27 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
 }
 
 #[test]
+fn parser_recovers_omitted_shape_representation_with_parameters_name() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SHAPE_REPRESENTATION_WITH_PARAMETERS((#2),#3);#2=KNOWN();#3=KNOWN();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) =
+        crate::parse::parse(source).expect("recover omitted parameterized shape name");
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::OmittedEntityName
+    );
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::String(Vec::new()),
+            crate::parse::Value::List(vec![crate::parse::Value::Reference(2)]),
+            crate::parse::Value::Reference(3),
+        ]
+    );
+}
+
+#[test]
 fn omitted_geometry_names_preserve_intersection_curve_topology() {
     let mut source =
         String::from_utf8(include_bytes!("../../../tests/fixtures/ap214_sheet.p21").to_vec())

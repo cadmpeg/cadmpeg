@@ -540,6 +540,7 @@ fn has_named_carrier(name: &str) -> bool {
             | "SHELL"
             | "SHAPE_DIMENSION_REPRESENTATION"
             | "SHAPE_REPRESENTATION"
+            | "SHAPE_REPRESENTATION_WITH_PARAMETERS"
             | "SPHERICAL_SURFACE"
             | "SUBEDGE"
             | "SUBFACE"
