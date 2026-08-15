@@ -2885,11 +2885,11 @@ pub(crate) fn optional_embedded_surface_with_bounds(
         }
         return Some((Some(surface), bounds));
     }
-    // Inline `spline { <subtype> }` support scope whose construction grammar
-    // the embedded decoder does not type, including nested revision-gated
-    // subtypes: resolve the scope's solved surface cache (following nested
-    // subtype-table references) and consume the scope, then read the four
-    // optional bound fields.
+    // Inline `spline { <subtype> }` support scope: resolve a solved surface
+    // cache when present, or validate the procedural surface construction when
+    // the support is cacheless. A cacheless procedural support has no neutral
+    // SurfaceGeometry carrier, but it still makes its paired native pcurve
+    // slot eligible.
     cur.set_pos(saved);
     if kind == Some("spline") {
         cur.take_ident()?;
@@ -2898,13 +2898,21 @@ pub(crate) fn optional_embedded_surface_with_bounds(
         }
         if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
             let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?;
-            let surface = owned_surface_cache_resolving_refs(scope, table)?;
+            let surface = if let Some(surface) = owned_surface_cache_resolving_refs(scope, table) {
+                Some(SurfaceGeometry::Nurbs(surface))
+            } else if crate::nurbs::proc_surface::procedural_surface_resolving_refs(scope, table)
+                .is_some()
+            {
+                None
+            } else {
+                return None;
+            };
             cur.set_pos(cur.pos() + scope.len());
             let mut bounds = [None; 4];
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?;
             }
-            return Some((Some(SurfaceGeometry::Nurbs(surface)), bounds));
+            return Some((surface, bounds));
         }
     }
     cur.set_pos(saved);

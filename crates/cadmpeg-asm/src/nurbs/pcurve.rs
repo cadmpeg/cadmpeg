@@ -1495,7 +1495,7 @@ mod width_tests {
     }
 
     #[test]
-    fn intersection_selector_keeps_pcurve_for_cacheless_surface_support() {
+    fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_forms() {
         for int_width in [4usize, 8] {
             let mut support = vec![0x0f];
             push_ident(&mut support, "helix_spl_line");
@@ -1515,50 +1515,60 @@ mod width_tests {
             push_vector(&mut support, [5.0, 6.0, 7.0]);
             support.push(0x10);
 
-            let mut record = vec![0x0f];
-            push_ident(&mut record, "int_int_cur");
-            push_int(&mut record, 0x04, 22_507, int_width);
-            push_int(&mut record, 0x15, 0, int_width);
-            record.extend_from_slice(&curve_block(int_width));
-            push_f64(&mut record, 1.0e-6);
-            push_ident(&mut record, "spline");
-            record.push(0x0b);
-            record.extend_from_slice(&[0x0f]);
-            push_ident(&mut record, "ref");
-            push_int(&mut record, 0x04, 0, int_width);
-            record.push(0x10);
-            record.extend_from_slice(&[0x0b; 4]);
-            push_ident(&mut record, "null_surface");
-            record.extend_from_slice(&pcurve_block(int_width));
-            push_ident(&mut record, "nullbs");
-            record.extend_from_slice(&[0x0b, 0x0b]);
-            for _ in 0..4 {
-                push_int(&mut record, 0x04, 0, int_width);
-            }
-            record.push(0x10);
+            for inline in [false, true] {
+                let form = if inline { "inline" } else { "reference" };
+                let mut record = vec![0x0f];
+                push_ident(&mut record, "int_int_cur");
+                push_int(&mut record, 0x04, 22_507, int_width);
+                push_int(&mut record, 0x15, 0, int_width);
+                record.extend_from_slice(&curve_block(int_width));
+                push_f64(&mut record, 1.0e-6);
+                push_ident(&mut record, "spline");
+                record.push(0x0b);
+                if inline {
+                    record.extend_from_slice(&support);
+                } else {
+                    record.extend_from_slice(&[0x0f]);
+                    push_ident(&mut record, "ref");
+                    push_int(&mut record, 0x04, 0, int_width);
+                    record.push(0x10);
+                }
+                record.extend_from_slice(&[0x0b; 4]);
+                push_ident(&mut record, "null_surface");
+                record.extend_from_slice(&pcurve_block(int_width));
+                push_ident(&mut record, "nullbs");
+                record.extend_from_slice(&[0x0b, 0x0b]);
+                for _ in 0..4 {
+                    push_int(&mut record, 0x04, 0, int_width);
+                }
+                record.push(0x10);
 
-            let mut active = support;
-            active.extend_from_slice(&record);
-            let toks = lex_test_span(&record, int_width);
-            let table = test_table(&active, int_width);
-            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
-                .unwrap_or_else(|| panic!("cacheless support intersection at width {int_width}"));
-            let context = decoded
-                .embedded_intersection
-                .as_ref()
-                .map(|(context, _)| context)
-                .expect("typed intersection context");
-            assert_eq!(context.support_present, [true, false]);
-            assert!(context.surfaces[0].is_none());
-            assert!(context.pcurves[0].is_some());
-            assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
-                    .is_some()
-            );
-            assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
-                    .is_none()
-            );
+                let mut active = support.clone();
+                active.extend_from_slice(&record);
+                let toks = lex_test_span(&record, int_width);
+                let table = test_table(&active, int_width);
+                let decoded =
+                    crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
+                        .unwrap_or_else(|| {
+                            panic!("cacheless support intersection at {int_width}: {form}")
+                        });
+                let context = decoded
+                    .embedded_intersection
+                    .as_ref()
+                    .map(|(context, _)| context)
+                    .expect("typed intersection context");
+                assert_eq!(context.support_present, [true, false]);
+                assert!(context.surfaces[0].is_none());
+                assert!(context.pcurves[0].is_some());
+                assert!(
+                    crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
+                        .is_some()
+                );
+                assert!(
+                    crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
+                        .is_none()
+                );
+            }
         }
     }
 
