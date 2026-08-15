@@ -454,6 +454,21 @@ fn decode_types_scalar_and_string_property_forms() {
 }
 
 #[test]
+fn decode_rejects_descending_drilled_hole_layer_range() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(invalid_drilled_hole_layer_order_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
 fn decode_types_grid_group_and_lep_property_forms() {
     let decode = |bytes| {
         IgesCodec
@@ -811,6 +826,26 @@ fn decode_types_bounded_predefined_associativity_roles() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_label_display_without_leader() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(label_display_without_leader_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    let label_display = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|associativity| associativity.fields()["kind"] == "label_display")
+        .unwrap();
+    assert!(label_display.fields()["placements"][0]["leader"].is_null());
 }
 
 #[test]
@@ -1315,12 +1350,29 @@ fn decode_rejects_wrong_typed_network_instance_type_flag() {
         )
         .unwrap();
     assert!(
-        result.report().losses.iter().any(|loss| loss
-            .message
-            .contains("network instance placement or connection list is invalid")),
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_wrong_typed_network_definition_type_flag() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(wrong_typed_network_definition_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]

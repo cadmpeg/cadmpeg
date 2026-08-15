@@ -343,6 +343,32 @@ pub(crate) fn bounded_associativity_forms_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn label_display_without_leader_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00000000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "LABELED".into(),
+            status: "00000000",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 5,
+            label: "LABELDSP".into(),
+            status: "00000200",
+            parameters: "402,1,1,1,2,3,0,0,3;".into(),
+        },
+    ])
+}
+
 pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
     let suffix = if back_pointers { ",1,3,0" } else { "" };
     owned_test_file(&[
@@ -766,6 +792,25 @@ pub(crate) fn wrong_typed_network_instance_file() -> Vec<u8> {
             label: "NETINST".into(),
             status: "00000000",
             parameters: "420,1,1,2,3,2,,,1HX,2HU1,0,0;".into(),
+        },
+    ])
+}
+
+pub(crate) fn wrong_typed_network_definition_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "NETWORK".into(),
+            status: "00000200",
+            parameters: "320,0,3HNET,0,1HX,2HR1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "NETINST".into(),
+            status: "00000000",
+            parameters: "420,1,1,2,3,2,,,,2HU1,0,0;".into(),
         },
     ])
 }

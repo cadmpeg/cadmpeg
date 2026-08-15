@@ -62,9 +62,7 @@ fn decode_rejects_file_duplicate_drawing_sheet_ids() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss
-                .message
-                .contains("property value layout, attachment, or owner kind is invalid"))
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
             .count(),
         2,
         "{:#?}",

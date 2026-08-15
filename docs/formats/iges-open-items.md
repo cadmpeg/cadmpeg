@@ -337,46 +337,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `4c91d071e` made the source tables explicit but did not provide independent table evidence.
 
-### PS-05. Type 420 accepts a wrong-typed type flag and Type 320 does not
-
-**Question.** Does the Type 420 type flag have a default, and may a non-integer token satisfy it?
-
-**Known.** `structure.rs:1959` accepts a missing or non-integer token through `is_none_or`, while the corresponding Type 320 field rejects it. The documentation does not settle defaulting or token type.
-
-**Need.** We need the default, token type, and allowed values for both fields, with one consistent malformed-token policy.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `d11d59213` reconciled local behavior but did not establish the format rule.
-
-### PS-06. Type 402 Form 5 requires a non-null leader pointer
-
-**Question.** May a Type 402 Form 5 label placement have no leader?
-
-**Known.** `structure.rs:573-594` requires a non-null leader pointer, while other nullable pointers accept zero explicitly. The current documentation states the leader requirement.
-
-**Need.** We need the nullability of the Form 5 leader field from the format source or independent producer files.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `45cddb592` added the requirement and fixture coverage, but no independent evidence establishes it.
-
-### PS-07. Type 406 Form 33 requires a file-global unique identity
-
-**Question.** Must a Type 406 Form 33 sheet identifier be unique across the file?
-
-**Known.** `structure.rs:1033-1045` rejects duplicate `(number, name)` pairs across the file. A separate path enforces at most one identifier per drawing owner. The current documentation states both policies.
-
-**Need.** We need the identity scope and duplicate behavior from the format source or independent producer evidence.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `9d0164b00` added a file-global uniqueness rule and self-authored duplicates, but did not establish that scope.
-
-### PS-08. Type 406 Form 6 requires an ordered layer pair
-
-**Question.** Must the Type 406 Form 6 layer numbers be in ascending order?
-
-**Known.** `structure.rs:320-324` requires `upper >= lower`. The current documentation calls this an ordered pair.
-
-**Need.** We need the field definitions and order rule for the Form 6 layer pair.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `7d7a4c288` added the check and fixture, but no independent source establishes the ordering requirement.
-
 ## 7. Write path
 
 ### WR-01. An unclassified loop is written as an inner loop
