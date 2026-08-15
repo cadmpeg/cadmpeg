@@ -772,6 +772,8 @@ named opaque, or source-native identity. A terminal source-typed target with no
 neutral identity owns
 an identity-only `NativeRecord` in the STEP `drawing_targets` arena; its
 source id and complete source type remain available for the relationship.
+`INVISIBILITY` targeting a transferred drawing entity sets its `visible=false`;
+it does not change the visibility of that entity's relationships or contents.
 Representation-context relationships without a neutral target retain their raw
 source reference with an explicit loss. An annotation plane transfers through its
 plane carrier, and a mapped item transfers through the items of its mapped

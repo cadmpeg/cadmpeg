@@ -148,6 +148,34 @@ fn complex_draughting_callout_reads_inherited_name() {
 }
 
 #[test]
+fn draughting_callout_visibility_is_transferred_from_invisibility() {
+    let result = decode_inline(
+        "#1=DRAUGHTING_CALLOUT('Callout',());
+#2=INVISIBILITY((#1));",
+    );
+    let callout = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAUGHTING_CALLOUT")
+        .expect("draughting callout");
+    assert_eq!(callout.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #2 targets unsupported item #1")
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#2"));
+}
+
+#[test]
 fn drawing_associations_preserve_shape_aspects_and_placeholders() {
     let result = decode_inline(
         "#1=REPRESENTATION_CONTEXT('','');

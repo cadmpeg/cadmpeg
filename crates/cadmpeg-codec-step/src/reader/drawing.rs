@@ -96,6 +96,34 @@ pub(super) fn decode(
         };
     }
 
+    let drawing_ids = candidates
+        .iter()
+        .map(|(id, _)| *id)
+        .collect::<BTreeSet<_>>();
+    let hidden_drawing_ids = exchange
+        .records
+        .values()
+        .filter(|record| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "INVISIBILITY")
+        })
+        .filter_map(|record| {
+            record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "INVISIBILITY")
+                .and_then(|partial| partial.parameters.first())
+        })
+        .flat_map(|items| {
+            let mut targets = Vec::new();
+            collect_references(items, &mut targets);
+            targets
+        })
+        .filter(|id| drawing_ids.contains(id))
+        .collect::<BTreeSet<_>>();
+
     let drawing_identities = candidates
         .iter()
         .map(|(id, name)| (*id, drawing_identity(*id, name)))
@@ -170,6 +198,7 @@ pub(super) fn decode(
                 kind: drawing_kind(name),
                 runtime_type: name.into(),
                 order: u32::try_from(order).unwrap_or(u32::MAX),
+                visible: hidden_drawing_ids.contains(&id).then_some(false),
                 relationships,
                 template: None,
                 position: None,
@@ -203,6 +232,14 @@ pub(super) fn decode(
         losses,
         notes: Vec::new(),
     }
+}
+
+pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
+    let Some(name) = drawing_type(record) else {
+        return false;
+    };
+    required_parameter_count(name)
+        .is_none_or(|count| source_parameters(record, name).len() >= count)
 }
 
 fn referenced_target_ids(exchange: &Exchange, candidates: &[(u64, &str)]) -> BTreeSet<u64> {

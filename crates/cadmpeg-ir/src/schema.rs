@@ -539,7 +539,7 @@ impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id.0; id, fea
 impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id.0; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
 impl_entity_schema!(crate::products::Occurrence, Occurrence, id.0; id, prototype, parent, ordinal, transform, prototype_transform, scale, name, linked_subelements, visible, element_component, claim_child, copy_on_change, copy_on_change_source, copy_on_change_group, copy_on_change_touched, link_transform, native_ref);
 impl_entity_schema!(crate::products::AssemblyJoint, AssemblyJoint, id.0; id, kind, operands, frames, offset_frames, suppressed, detached, angle, translation_offset, distance, distance2, angular_limits, linear_limits, properties, native_ref);
-impl_entity_schema!(crate::drawings::Drawing, Drawing, id.0; id, object, kind, runtime_type, order, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
+impl_entity_schema!(crate::drawings::Drawing, Drawing, id.0; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
 impl_entity_schema!(
     crate::semantic_annotations::SemanticAnnotation,
     SemanticAnnotation,
