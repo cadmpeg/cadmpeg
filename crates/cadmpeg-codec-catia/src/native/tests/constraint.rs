@@ -629,6 +629,24 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
     assert_eq!(nominal.framing, CatiaRangeNominalFraming::DCToken81DB);
     assert_eq!(nominal.bits, nominal_bits);
     assert_eq!(nominal.evaluation_opcode_offset, 4);
+
+    let d8_nominal_bits = 12.7_f64.to_bits();
+    let mut d8_suffix = vec![0x84, 0x96, 0x82, 0xd8, 0xe6];
+    d8_suffix.extend_from_slice(&d8_nominal_bits.to_le_bytes());
+    d8_suffix.extend_from_slice(&[0x81, 0xdb]);
+    let d8_native = crate::native::CatiaNative::decode(&standard_catpart_with_range_interval(
+        &encoded_range,
+        &d8_suffix,
+    ));
+    let d8_range = d8_native.entity_records[0]
+        .range_interval
+        .as_ref()
+        .expect("complete D8/81 DB Range interval");
+    let d8_nominal = d8_range.nominal.as_ref().expect("finite D8 nominal");
+    assert_eq!(d8_nominal.framing, CatiaRangeNominalFraming::D8Token81DB);
+    assert_eq!(d8_nominal.bits, d8_nominal_bits);
+    assert_eq!(d8_nominal.evaluation_opcode_offset, 4);
+
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode range interval");

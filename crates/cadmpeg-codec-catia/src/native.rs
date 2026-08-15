@@ -1534,6 +1534,8 @@ pub struct CatiaRangeInterval {
 pub enum CatiaRangeNominalFraming {
     /// Prefix code `D8` and trailer `81 93`.
     D8Token8193,
+    /// Prefix code `D8` and trailer `81 DB`.
+    D8Token81DB,
     /// Prefix code `DC` and trailer `81 DB`.
     DCToken81DB,
 }
@@ -3245,6 +3247,7 @@ fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaR
     }
     let framing = match (suffix.prefix_code, suffix.trailer) {
         (0xd8, CatiaEntitySuffixTrailer::Token8193) => CatiaRangeNominalFraming::D8Token8193,
+        (0xd8, CatiaEntitySuffixTrailer::Token81DB) => CatiaRangeNominalFraming::D8Token81DB,
         (0xdc, CatiaEntitySuffixTrailer::Token81DB) => CatiaRangeNominalFraming::DCToken81DB,
         _ => return None,
     };
