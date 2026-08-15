@@ -9,10 +9,10 @@ use crate::settings::{plane, utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
-const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
+pub(crate) const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
     0x8a, 0xd5, 0xb9, 0xfc, 0x0d, 0x5c, 0x47, 0xfb, 0xad, 0xfd, 0x74, 0xc2, 0x8b, 0x6f, 0x66, 0x1e,
 ]);
-const V5_ANGULAR_EXTRA: Uuid = Uuid::from_canonical([
+pub(crate) const V5_ANGULAR_EXTRA: Uuid = Uuid::from_canonical([
     0xa6, 0x8b, 0x15, 0x1f, 0xc7, 0x78, 0x4a, 0x6e, 0xbc, 0xb4, 0x23, 0xdd, 0xd1, 0x83, 0x56, 0x77,
 ]);
 pub(crate) const LINEAR: Uuid = Uuid::from_canonical([
@@ -1845,7 +1845,7 @@ pub(crate) mod tests {
         let mut angular = angular;
         apply_userdata(
             &angular_extension,
-            &[angular_descriptor],
+            std::slice::from_ref(&angular_descriptor),
             archive,
             10.0,
             &mut angular,
@@ -1853,6 +1853,32 @@ pub(crate) mod tests {
         .expect("required invariant");
         assert!(matches!(
             angular.definition,
+            Definition::Angular {
+                first_extension_offset: 25.0,
+                second_extension_offset: 40.0,
+                ..
+            }
+        ));
+
+        let second_extension =
+            anonymous(0, &[9.0_f64.to_le_bytes(), 11.0_f64.to_le_bytes()].concat());
+        let second_start = angular_extension.len();
+        let mut combined = angular_extension.clone();
+        combined.extend(second_extension);
+        let mut second_descriptor = angular_descriptor.clone();
+        second_descriptor.range = second_start..combined.len();
+        second_descriptor.payload_range = second_start..combined.len();
+        let mut duplicate_angular = angular;
+        apply_userdata(
+            &combined,
+            &[angular_descriptor, second_descriptor],
+            archive,
+            10.0,
+            &mut duplicate_angular,
+        )
+        .expect("first duplicate extension");
+        assert!(matches!(
+            duplicate_angular.definition,
             Definition::Angular {
                 first_extension_offset: 25.0,
                 second_extension_offset: 40.0,

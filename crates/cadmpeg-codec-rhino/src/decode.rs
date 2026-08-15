@@ -974,6 +974,20 @@ impl<'a> DecodeContext<'a> {
                 self.archive(),
             ) {
                 Ok(mut dimension) => {
+                    for (class, label) in [
+                        (crate::dimensions::V5_DIM_EXTRA, "dimension"),
+                        (crate::dimensions::V5_ANGULAR_EXTRA, "angular dimension"),
+                    ] {
+                        let count = duplicate_userdata_count(&object.userdata, class);
+                        if count > 1 {
+                            self.typed_losses.push(
+                                RhinoLossCode::DuplicateRecordResolved.note(format!(
+                                    "{label} object at offset {} has {count} matching userdata records; first serialized record wins",
+                                    object.range.start
+                                )),
+                            );
+                        }
+                    }
                     if let Err(error) = crate::dimensions::apply_userdata(
                         self.scan.data,
                         &object.userdata,
@@ -1083,6 +1097,16 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
+        let duplicate_count =
+            duplicate_userdata_count(&object.userdata, crate::hatch::V5_HATCH_EXTRA);
+        if duplicate_count > 1 {
+            self.typed_losses.push(
+                RhinoLossCode::DuplicateRecordResolved.note(format!(
+                    "hatch object at offset {} has {duplicate_count} matching userdata records; first serialized record wins",
+                    object.range.start
+                )),
+            );
+        }
         if let Err(error) =
             crate::hatch::apply_userdata(self.scan.data, &object.userdata, scale, &mut hatch)
         {
@@ -2355,6 +2379,8 @@ impl<'a> DecodeContext<'a> {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
             } else if warning.contains(" has invalid color source ") {
                 RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
+            } else if duplicate_resolution_diagnostic(warning) {
+                RhinoLossCode::DuplicateRecordResolved.note(warning.clone())
             } else {
                 RhinoLossCode::ContainerScanDiagnostic.note(warning.clone())
             }
@@ -3277,6 +3303,22 @@ fn object_geometry_archive(archive: ArchiveVersion) -> bool {
 
 fn integrity_diagnostic(message: &str) -> bool {
     message.contains("CRC mismatch") || message.contains("checksum mismatch")
+}
+
+fn duplicate_resolution_diagnostic(message: &str) -> bool {
+    message.starts_with("duplicate layer index ")
+        || message.starts_with("duplicate layer UUID ")
+        || message.starts_with("duplicate singleton metadata record ")
+}
+
+fn duplicate_userdata_count(
+    userdata: &[crate::objects::UserdataDescriptor],
+    class: crate::wire::Uuid,
+) -> usize {
+    userdata
+        .iter()
+        .filter(|value| value.class_uuid == class)
+        .count()
 }
 
 #[cfg(test)]

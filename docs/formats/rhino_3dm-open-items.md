@@ -162,16 +162,6 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 **Need.** We need a second fixture tier that mirrors the example-file structure, plus a per-archive-version transfer measurement that defines the support claim.
 
-### NS-01. Brep mesh-side wrapper version byte
-
-**Question.** What is the first byte of a Brep mesh-side wrapper body?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/brep.rs:733-780` now reads the first byte as face-zero presence, with no version field. `rhino_3dm.md` §19.4 "For Brep minor at least 1, each mesh-side wrapper" still documents a packed version byte `0x00` before the presence entries.
-
-**Note.** Reopened. The decoder change is consistent with the openNURBS rule, but the settled specification still records the removed byte. The closure is therefore incomplete and would mislead the next implementation pass.
-
-**Need.** The wrapper body starts at the presence byte of face 0. The decoder and `rhino_3dm.md` must state that rule, and cache degradation must remain a typed loss.
-
 ### RS-01. Trailing bytes in a bounded chunk
 
 **Question.** What does a bounded chunk with unread trailing bytes mean?
@@ -214,26 +204,6 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 
 ## 4. Hostile sweep findings recorded on 2026-08-10
 
-### SW-01. Duplicate layer index resolution
-
-**Question.** Which layer record owns an archive layer index when the index occurs more than once?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:1273-1317` retains every layer record and emits only a duplicate-index warning. `crates/cadmpeg-codec-rhino/src/objects.rs:1377-1390` builds a map with `layers.entry(layer.index).or_insert(layer)`, so the first record supplies object identity, color, visibility, and name.
-
-**Note.** Duplicate indexes may be malformed, but the scanner already accepts and reports them; the resolver has no source-backed owner rule.
-
-**Need.** We need the openNURBS duplicate-index behavior or an independent corpus case, then a deterministic owner rule with an ambiguity loss when the source does not identify one. If two layer records share an index and the later record carries the authoritative name or appearance, objects that reference the index resolve to the first record. Reordering the two records changes object identity without changing the reference. No ambiguity loss is emitted.
-
-### SW-02. Duplicate singleton metadata selection
-
-**Question.** Which metadata record owns a singleton property or setting when the file contains more than one?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:1273-1303` assigns `writer_version` on each matching property in table iteration order. `settings.rs:1357-1432` assigns `units`, current layer, current material, current color, font, and dimstyle each time a matching setting is read. There is no duplicate check or ambiguity loss for these fields.
-
-**Note.** The normal table model treats these fields as singletons, but the decoder has no source-backed response to a duplicate and no diagnostic that identifies which value won.
-
-**Need.** We need independent reader behavior for duplicate singleton records, or a settled reject/first/last policy with a typed ambiguity diagnostic. If two unit records disagree, the later record silently changes coordinate scaling. If two writer-version records disagree, the later record changes version gates. Reordering the records changes the decoded document without a stated ownership rule.
-
 ### SW-03. Instance transform ownership inferred from topology
 
 **Question.** Which decoded entities from one instance-definition member receive the instance transform?
@@ -263,13 +233,3 @@ The following items were removed by `b8c98b9c5` and were reopened by the QA pass
 **Note.** Seam and mate records may be required to carry equivalent curves, but the current code does not verify that rule and the V1 ledger did not record the first-wins selection.
 
 **Need.** We need the V1 seam/mate ownership rule and an independent pair of records with different curve copies to establish whether one is authoritative or disagreement is malformed. If two trims in one union group contain different model-space curve copies, source order selects the edge geometry and endpoints. A stale or transformed second copy is silently discarded, with no consistency check or loss.
-
-### SW-06. First-match selection of built-in userdata extensions
-
-**Question.** Which built-in userdata extension owns a dimension or hatch when duplicate class UUIDs occur?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/dimensions.rs:945-985` selects the first matching angular or dimension extension with `.find`. `crates/cadmpeg-codec-rhino/src/hatch.rs:255-264` selects the first matching V5 hatch extension. Later matching records are ignored without a warning or loss.
-
-**Note.** The extensions may be singleton by source convention, but no uniqueness rule is documented and the implementation does not detect duplicates.
-
-**Need.** We need the source uniqueness or precedence rule for these built-in userdata classes, plus an ambiguity loss when a file supplies more than one conflicting extension. If a dimension or hatch contains two extension records with different offsets, arrow data, or base-point data, changing userdata order changes the decoded presentation while the discarded record leaves no trace.

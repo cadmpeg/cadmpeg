@@ -37,6 +37,8 @@ pub enum RhinoLossCode {
     MeshNgonGroupingDropped,
     /// A stored enumeration value was retained but could not select a neutral value.
     EnumerationValueDegraded,
+    /// A duplicate source record was resolved by the format's ownership rule.
+    DuplicateRecordResolved,
     /// A stored quad was converted to neutral triangles.
     MeshQuadTopologyTriangulated,
     /// Embedded history geometry could not be decoded.
@@ -99,6 +101,7 @@ impl RhinoLossCode {
         Self::PresentationRecordDropped,
         Self::MeshNgonGroupingDropped,
         Self::EnumerationValueDegraded,
+        Self::DuplicateRecordResolved,
         Self::MeshQuadTopologyTriangulated,
         Self::HistoryEmbeddedGeometryDropped,
         Self::DimensionOverrideDropped,
@@ -136,6 +139,7 @@ impl RhinoLossCode {
             Self::PresentationRecordDropped => "presentation.record-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
             Self::EnumerationValueDegraded => "container.enumeration-value-degraded",
+            Self::DuplicateRecordResolved => "container.duplicate-record-resolved",
             Self::MeshQuadTopologyTriangulated => "mesh.quad-topology-triangulated",
             Self::HistoryEmbeddedGeometryDropped => "history.embedded-geometry-dropped",
             Self::DimensionOverrideDropped => "dimension.override-dropped",
@@ -192,6 +196,7 @@ impl RhinoLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::EnumerationValueDegraded => LossTaxonomy::DecodeDiagnostic,
+            Self::DuplicateRecordResolved => LossTaxonomy::DecodeDiagnostic,
             Self::HistoryEmbeddedGeometryDropped => LossTaxonomy::GeometryNotTransferred,
             Self::DimensionOverrideDropped => LossTaxonomy::PmiOmitted,
             Self::HistoryDependencyDropped => LossTaxonomy::ReferenceGraphNotClosed,
@@ -260,6 +265,7 @@ mod tests {
                 "presentation.record-dropped",
                 "mesh.ngon-grouping-dropped",
                 "container.enumeration-value-degraded",
+                "container.duplicate-record-resolved",
                 "mesh.quad-topology-triangulated",
                 "history.embedded-geometry-dropped",
                 "dimension.override-dropped",

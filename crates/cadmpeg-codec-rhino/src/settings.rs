@@ -1293,9 +1293,35 @@ pub(crate) fn parse_metadata(
     let mut metadata = DocumentMetadata::default();
     let mut indexes = BTreeSet::new();
     let mut ids = BTreeSet::new();
+    let mut property_singletons = BTreeSet::new();
+    let mut setting_singletons = BTreeSet::new();
     for table in tables {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
+            let singleton = match table_type {
+                PROPERTIES => matches!(
+                    record.typecode,
+                    WRITER_VERSION | REVISION_HISTORY | NOTES | APPLICATION | AS_FILE_NAME
+                ),
+                SETTINGS => matches!(
+                    record.typecode,
+                    UNITS
+                        | CURRENT_LAYER
+                        | CURRENT_MATERIAL
+                        | CURRENT_COLOR
+                        | CURRENT_WIRE_DENSITY
+                        | CURRENT_FONT
+                        | CURRENT_DIMSTYLE
+                        | MODEL_URL
+                ),
+                _ => false,
+            };
+            let duplicate_singleton = singleton
+                && match table_type {
+                    PROPERTIES => property_singletons.contains(&record.typecode),
+                    SETTINGS => setting_singletons.contains(&record.typecode),
+                    _ => false,
+                };
             let result = if table_type == PROPERTIES {
                 match record.typecode {
                     WRITER_VERSION if record.short => {
@@ -1329,11 +1355,16 @@ pub(crate) fn parse_metadata(
                 match parse_layer(data, record, archive, writer_version, warnings) {
                     Ok(layer) => {
                         if !indexes.insert(layer.index) {
-                            warnings.push(format!("duplicate layer index {}", layer.index));
+                            warnings.push(format!(
+                                "duplicate layer index {}; first record owns archive references",
+                                layer.index
+                            ));
                         }
                         if let Some(id) = layer.id {
                             if !ids.insert(id) {
-                                warnings.push(format!("duplicate layer UUID {id}"));
+                                warnings.push(format!(
+                                    "duplicate layer UUID {id}; first record owns archive identity"
+                                ));
                             }
                         }
                         metadata.layers.push(layer);
@@ -1344,6 +1375,23 @@ pub(crate) fn parse_metadata(
             } else {
                 Ok(())
             };
+            if result.is_ok() && singleton {
+                match table_type {
+                    PROPERTIES => {
+                        property_singletons.insert(record.typecode);
+                    }
+                    SETTINGS => {
+                        setting_singletons.insert(record.typecode);
+                    }
+                    _ => {}
+                }
+                if duplicate_singleton {
+                    warnings.push(format!(
+                        "duplicate singleton metadata record {:#x}; later record wins",
+                        record.typecode
+                    ));
+                }
+            }
             if let Err(error) = result {
                 warnings.push(format!(
                     "metadata record {:#x} at {} degraded: {}",

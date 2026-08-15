@@ -20,7 +20,7 @@ pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
 ]);
 const MAX_LOOPS: usize = 1 << 20;
-const V5_HATCH_EXTRA: Uuid = Uuid::from_canonical([
+pub(crate) const V5_HATCH_EXTRA: Uuid = Uuid::from_canonical([
     0x3f, 0xf7, 0x00, 0x7c, 0x3d, 0x04, 0x46, 0x3f, 0x84, 0xe3, 0x13, 0x2a, 0xce, 0xb9, 0x10, 0x62,
 ]);
 
@@ -353,7 +353,28 @@ pub(crate) mod tests {
                 payload_range: 0..extra.len(),
                 unknown_version: false,
             };
-            apply_userdata(&extra, &[descriptor], 10.0, &mut hatch).expect("hatch extra");
+            apply_userdata(&extra, std::slice::from_ref(&descriptor), 10.0, &mut hatch)
+                .expect("hatch extra");
+            assert_eq!(hatch.basepoint, [20.0, 30.0]);
+
+            let mut second = 1_i32.to_le_bytes().to_vec();
+            second.extend(0_i32.to_le_bytes());
+            second.extend([0; 16]);
+            second.extend(4.0_f64.to_le_bytes());
+            second.extend(5.0_f64.to_le_bytes());
+            let second_start = extra.len();
+            let mut combined = extra.clone();
+            combined.extend(second);
+            let mut second_descriptor = descriptor.clone();
+            second_descriptor.range = second_start..combined.len();
+            second_descriptor.payload_range = second_start..combined.len();
+            apply_userdata(
+                &combined,
+                &[descriptor, second_descriptor],
+                10.0,
+                &mut hatch,
+            )
+            .expect("first duplicate hatch extension");
             assert_eq!(hatch.basepoint, [20.0, 30.0]);
         });
     }

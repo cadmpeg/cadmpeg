@@ -307,8 +307,11 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         embedded_linetype: None,
         embedded_section_style: None,
     };
+    let mut duplicate_layer = layer.clone();
+    duplicate_layer.name = "Later layer".to_string();
+    duplicate_layer.color = [90, 80, 70, 255];
     let mut metadata = settings::DocumentMetadata::default();
-    metadata.layers.push(layer);
+    metadata.layers.extend([layer, duplicate_layer]);
     let mut attributes = crate::objects::parse_attributes(
         &fixed_attributes(1, 0, None),
         0..fixed_attributes(1, 0, None).len(),
@@ -329,6 +332,15 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
             .expect("required invariant")
             .effective_color,
         None
+    );
+    assert_eq!(
+        material[0]
+            .identity
+            .as_ref()
+            .expect("required invariant")
+            .layer_name
+            .as_deref(),
+        Some("Layer")
     );
 
     attributes.color_source = 3;

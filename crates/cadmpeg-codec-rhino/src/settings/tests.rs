@@ -335,3 +335,37 @@ fn parses_selector_widths_from_their_serialized_forms() {
     assert_eq!(settings_value.current_font, Some(7));
     assert_eq!(settings_value.current_dimstyle, Some(9));
 }
+
+#[test]
+fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
+    let table = crate::container::Table {
+        typecode: 0x1000_0015,
+        range: 0..0,
+        body: 0..0,
+        records: vec![
+            crate::container::Record {
+                typecode: 0xa000_0038,
+                range: 0..0,
+                body: 0..0,
+                short: true,
+                value: 3,
+            },
+            crate::container::Record {
+                typecode: 0xa000_0038,
+                range: 0..0,
+                body: 0..0,
+                short: true,
+                value: 7,
+            },
+        ],
+        record_count: 2,
+        object_typecodes: std::collections::BTreeMap::new(),
+    };
+    let mut warnings = Vec::new();
+    let metadata = settings::parse_metadata(&[], ArchiveVersion::V5, &[table], &mut warnings);
+    assert_eq!(metadata.settings.current_layer, Some(7));
+    assert_eq!(
+        warnings,
+        vec!["duplicate singleton metadata record 0xa0000038; later record wins"]
+    );
+}

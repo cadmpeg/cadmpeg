@@ -244,6 +244,10 @@ minor version can append fields before the bounded end. Unread suffix bytes are
 skipped at the bounded end. Array and element readers that define major version
 1 accept every nonnegative minor version.
 
+Properties and settings are read in table order. A repeated singleton record
+replaces the preceding value; the last successfully read occurrence owns the
+field.
+
 Stored Boolean integers and bytes use zero for false and a nonzero value for
 true. Presence and enumeration fields that define a separate numeric grammar
 retain that grammar. An enumeration value outside its defined set is retained
@@ -631,6 +635,12 @@ reference through nested definitions to the referenced definition geometry.
 
 A class userdata chunk begins with a packed version byte.
 
+An object accepts one userdata item for each item UUID. A duplicate item UUID
+is rejected by attachment, so the first serialized item owns the object state.
+Built-in extension readers that select by class UUID use the first serialized
+matching item; later matching items remain bounded source records and do not
+replace it.
+
 Major `1` fields:
 
 ```text
@@ -950,6 +960,11 @@ minor >= 15: item 35 embedded section style, item 36 obsolete clipping type
 
 The extension stream is item byte, payload, next item byte, terminated by item
 zero. Layer visibility and lock state are independent.
+
+The archive layer index is the object-reference key. If two layer records use
+one archive index, component registration assigns a new index to the later
+record. References to the original index therefore resolve to the first
+record.
 
 ### 8.4 Rendering attributes
 
