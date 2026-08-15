@@ -5,16 +5,18 @@ use super::super::sketch_transfer::{feature_recipe_effect, feature_schema_class}
 use super::super::uniqueness::unique_feature_profile_ref;
 use super::{
     feature_reference_name, filled_surface_feature_definition, knit_surface_feature_definition,
-    numbered_feature_name_has_family, preceding_features_establish_body, schema_feature_definition,
-    section_sweep_boolean_operation, sweep_output_kind, sweep_solid, thicken_feature_definition,
+    linear_extrusion_extent_and_direction, numbered_feature_name_has_family,
+    preceding_features_establish_body, schema_feature_definition, section_sweep_boolean_operation,
+    sweep_output_kind, sweep_solid, thicken_feature_definition,
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection,
+    BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, PatternForm, PatternKind,
     ProfileRef, RevolutionConstruction, Termination,
 };
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
 
@@ -132,26 +134,6 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     })
 }
 
-pub(in super::super) fn extrude_feature_definition(
-    profile: ProfileRef,
-    op: BooleanOp,
-    solid: Option<bool>,
-) -> IrFeatureDefinition {
-    IrFeatureDefinition::Extrude {
-        profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-        start: cadmpeg_ir::features::ExtrudeStart::default(),
-        extent: unresolved_extrude_extent(),
-        op,
-        direction_source: None,
-        solid,
-        face_maker: None,
-        inner_wire_taper: None,
-        length_along_profile_normal: None,
-        allow_multi_profile_faces: None,
-    }
-}
-
 pub(in super::super) fn extrude_feature_definition_with_profile(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -166,7 +148,28 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
     } else {
         op
     };
-    extrude_feature_definition(profile, op, sweep_solid(output_kind))
+    let (direction, extent) = linear_extrusion_extent_and_direction(scan, ir, feature_id).map_or(
+        (ExtrudeDirection::ProfileNormal, unresolved_extrude_extent()),
+        |(extent, direction)| {
+            (
+                ExtrudeDirection::Explicit(Vector3::new(direction[0], direction[1], direction[2])),
+                extent,
+            )
+        },
+    );
+    IrFeatureDefinition::Extrude {
+        profile,
+        direction,
+        start: cadmpeg_ir::features::ExtrudeStart::default(),
+        extent,
+        op,
+        direction_source: None,
+        solid: sweep_solid(output_kind),
+        face_maker: None,
+        inner_wire_taper: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
+    }
 }
 
 pub(in super::super) fn revolve_feature_definition_with_profile(

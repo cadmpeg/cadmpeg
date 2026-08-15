@@ -41,7 +41,7 @@ use super::{
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,
+    Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, Length, ProfileRef,
     RadiusForm, RadiusSpec, RevolutionConstruction, Termination,
 };
@@ -108,6 +108,59 @@ pub(in super::super) fn thicken_feature_definition(
         thickness: offset.map(|(magnitude, _)| Length(magnitude)),
         side: offset.map(|(_, side)| side),
     }
+}
+
+pub(in super::super) fn linear_extrusion_extent_and_direction(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let transforms = scan
+        .features
+        .section_transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let definition = match transforms.as_slice() {
+        [transform] => {
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+        }
+        [] => unique_owned_feature_definition(&scan.features.definitions, feature_id),
+        _ => None,
+    };
+    let section = definition.and_then(|definition| definition.section_3d.as_ref());
+    let unique_transform = match transforms.as_slice() {
+        [] => Some(None),
+        [transform] => Some(Some(*transform)),
+        _ => None,
+    };
+    if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
+        if let Some(extent) =
+            generated_arc_cylinder_extent(scan, definition, transform).or_else(|| {
+                feature_plane_equations(scan, feature_id).and_then(|planes| {
+                    extrusion_extent_and_direction(transform.origin, transform.normal, planes)
+                })
+            })
+        {
+            return Some(extent);
+        }
+    }
+    generated_cap_plane_extent(scan, ir, feature_id)
+        .or_else(|| {
+            unique_transform.and_then(|transform| {
+                generated_bounded_cylinder_extent(scan, ir, feature_id, transform)
+            })
+        })
+        .or_else(|| {
+            unique_transform.and_then(|transform| {
+                generated_nurbs_translation_extent(scan, ir, feature_id, transform)
+            })
+        })
+        .or_else(|| {
+            (transforms.is_empty())
+                .then_some(())
+                .and_then(|()| generated_rectilinear_plane_extent(scan, ir, feature_id, section))
+        })
 }
 
 pub(in super::super) fn schema_feature_definition(
@@ -480,7 +533,6 @@ pub(in super::super) fn schema_feature_definition(
             [] => unique_owned_feature_definition(&scan.features.definitions, feature_id),
             _ => None,
         };
-        let section = definition.and_then(|definition| definition.section_3d.as_ref());
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
@@ -491,37 +543,7 @@ pub(in super::super) fn schema_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        let unique_transform = match transforms.as_slice() {
-            [] => Some(None),
-            [transform] => Some(Some(*transform)),
-            _ => None,
-        };
-        let extent_and_direction =
-            if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
-                generated_arc_cylinder_extent(scan, definition, transform).or_else(|| {
-                    feature_plane_equations(scan, feature_id).and_then(|planes| {
-                        extrusion_extent_and_direction(transform.origin, transform.normal, planes)
-                    })
-                })
-            } else {
-                None
-            }
-            .or_else(|| generated_cap_plane_extent(scan, ir, feature_id))
-            .or_else(|| {
-                unique_transform.and_then(|transform| {
-                    generated_bounded_cylinder_extent(scan, ir, feature_id, transform)
-                })
-            })
-            .or_else(|| {
-                unique_transform.and_then(|transform| {
-                    generated_nurbs_translation_extent(scan, ir, feature_id, transform)
-                })
-            })
-            .or_else(|| {
-                (transforms.is_empty()).then_some(()).and_then(|()| {
-                    generated_rectilinear_plane_extent(scan, ir, feature_id, section)
-                })
-            });
+        let extent_and_direction = linear_extrusion_extent_and_direction(scan, ir, feature_id);
         let construction = extent_and_direction.map(|(extent, direction)| {
             (
                 Some(Vector3::new(direction[0], direction[1], direction[2])),

@@ -71,6 +71,11 @@ fixtures, scores above L1 remain blocked.
   or one-circle B-reps when the section transform agrees with the carrier
   direction. Complete NURBS-translation carriers provide the same span to
   generated NURBS feature surfaces when their profile is supported.
+- Named `Protrusion`, `Cut`, and `Extrude` operations use the same independent
+  generated-cap, positional-cylinder, NURBS-translation, and rectilinear
+  carrier proofs as schema-backed linear sweeps. A resolved proof transfers
+  its explicit model-space direction and one-sided, symmetric, or two-sided
+  blind extent even when the profile remains unresolved.
 - Rectilinear generated-plane fallback uses the uniquely owned section's
   `plane_flip`/section-`flip` parity for cap polarity; Boolean operation does not
   select the sweep direction, and missing section or cap evidence remains
