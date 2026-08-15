@@ -42,6 +42,7 @@ use crate::wire::records::ConsolidatedRecord;
 const EPS_PARAM_RESOLUTION_SPAN: f64 = 1e-7;
 const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
 const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
+const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -4348,28 +4349,47 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         })
         .collect();
     for (edge, support) in supports.iter().enumerate() {
-        if resolved[edge].is_empty()
-            && matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-            )
-        {
-            let count = candidates[edge].len();
-            if count
-                .checked_mul(count.saturating_sub(1))
-                .and_then(|value| value.checked_div(2))
-                .is_some_and(|relations| relations <= MAX_PAIR_RELATIONS_PER_EDGE)
-            {
-                resolved[edge] = candidates[edge]
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(left, &start)| {
-                        candidates[edge][left + 1..]
-                            .iter()
-                            .map(move |&end| [start, end])
-                    })
-                    .collect();
+        let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
+            support.geometry
+        else {
+            continue;
+        };
+        let count = candidates[edge].len();
+        if count < 2 {
+            continue;
+        }
+        let include_full_circle_seams = count == 2
+            && if let [start, end] = candidates[edge].as_slice() {
+                if let (Some(start), Some(end)) = (
+                    ir.model.points.get(*start).map(|point| point.position),
+                    ir.model.points.get(*end).map(|point| point.position),
+                ) {
+                    let midpoint = Point3::new(
+                        (start.x + end.x) * 0.5,
+                        (start.y + end.y) * 0.5,
+                        (start.z + end.z) * 0.5,
+                    );
+                    midpoint.distance(center) <= EPS_ANTIPODAL_CIRCLE
+                        && (start.distance(end) - 2.0 * radius).abs() <= EPS_ANTIPODAL_CIRCLE
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+        let relation_count = count
+            .checked_mul(count.saturating_sub(1))
+            .and_then(|value| value.checked_div(2))
+            .and_then(|value| value.checked_add(usize::from(include_full_circle_seams)));
+        if relation_count.is_some_and(|relations| relations <= MAX_PAIR_RELATIONS_PER_EDGE) {
+            let mut pairs = Vec::with_capacity(relation_count.unwrap_or_default());
+            for (left, &start) in candidates[edge].iter().enumerate() {
+                let first_end = left + usize::from(!include_full_circle_seams);
+                for &end in &candidates[edge][first_end..] {
+                    pairs.push([start, end]);
+                }
             }
+            resolved[edge] = pairs;
         }
     }
     let mut line_groups = HashMap::<[usize; 2], Vec<usize>>::new();

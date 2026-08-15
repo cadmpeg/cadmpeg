@@ -1177,6 +1177,57 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
 }
 
 #[test]
+fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
+    let mut ir = CadIr::empty(Units::default());
+    for (index, position) in [Point3::new(5.0, 0.0, 0.0), Point3::new(-5.0, 0.0, 0.0)]
+        .into_iter()
+        .enumerate()
+    {
+        ir.model.points.push(Point {
+            id: PointId(format!("p{index}")),
+            position,
+            source_object: None,
+        });
+    }
+    for index in 0..2 {
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("s{index}")),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+    }
+    let bindings = [
+        (SurfaceId("s0".to_string()), true, 0),
+        (SurfaceId("s1".to_string()), true, 0),
+    ];
+    let indices = [
+        (SurfaceId("s0".to_string()), 0),
+        (SurfaceId("s1".to_string()), 1),
+    ]
+    .into_iter()
+    .collect();
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            radius: 5.0,
+        },
+    };
+
+    let choices =
+        resolve_standard_endpoint_pairs(&ir, &bindings, &indices, &[support], &[vec![0, 1]])
+            .expect("endpoint option pass");
+
+    assert_eq!(choices, [vec![[0, 0], [0, 1], [1, 1]]]);
+}
+
+#[test]
 fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
     let mut ir = CadIr::empty(Units::default());
     for (index, position) in [
