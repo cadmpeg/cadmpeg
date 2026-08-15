@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use crate::families::standard::records::{StandardFaceBounds, StandardSurfaceRecord};
 use crate::test_support::{
     a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
-    fbb_only_quad_topology_stream, le_f32, le_f64, standard_quad_topology_stream,
+    compact_standard_triangle_topology_stream, fbb_only_quad_topology_stream, le_f32, le_f64,
+    standard_quad_topology_stream,
 };
 
 #[test]
@@ -161,6 +162,28 @@ fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
     );
     assert!(boundary.coedges.iter().all(|use_| !use_.reversed));
     assert_eq!(topology.logical_vertex_count(), 4);
+}
+
+#[test]
+fn compact_standard_topology_recovers_a_triangle_boundary_and_vertices() {
+    let bytes = compact_standard_triangle_topology_stream();
+    let topology = crate::families::standard::fbb::parse_standard(&bytes)
+        .expect("valid compact standard topology");
+
+    assert_eq!(topology.face_count(), 1);
+    assert_eq!(topology.edge_rows().len(), 3);
+    assert_eq!(topology.vertex_points().len(), 3);
+    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 3);
+    assert_eq!(
+        crate::families::standard::fbb::standard_edge_count(&bytes),
+        Some(3)
+    );
+    assert_eq!(
+        crate::families::standard::fbb::standard_vertex_points(&bytes)
+            .expect("compact standard vertex table")
+            .len(),
+        3
+    );
 }
 
 #[test]

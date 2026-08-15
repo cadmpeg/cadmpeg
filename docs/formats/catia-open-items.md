@@ -300,7 +300,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row?
 
-**Known.** `catia.md` §5.4 "Standard `u16be` edge rows are handle sequences" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation.
+**Known.** `catia.md` §5.4 "Full-form standard `u16be` edge rows are handle sequences" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation.
 
 **Need.** We must know the allocation relation for byte-faithful writing.
 

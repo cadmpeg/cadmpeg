@@ -39,6 +39,24 @@ pub(crate) fn standard_quad_topology_stream() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn compact_standard_triangle_topology_stream() -> Vec<u8> {
+    let mut bytes = vec![0x01, 0x41, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00, 0, 1, 2];
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
+    bytes.extend_from_slice(&[0x01, 0x01, 0x03]);
+    for handles in [[0, 1], [1, 2], [2, 0]] {
+        bytes.extend_from_slice(&[0x02, 0x02, handles[0], handles[1]]);
+    }
+    bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
+    bytes.extend_from_slice(&[0x01, 0x06, 0x03]);
+    for xyz in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in xyz {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
 pub(crate) fn fbb_only_quad_topology_stream() -> Vec<u8> {
     let standard = standard_quad_topology_stream();
     let fbb_start = standard
