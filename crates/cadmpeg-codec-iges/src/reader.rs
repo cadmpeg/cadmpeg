@@ -128,10 +128,8 @@ fn decode_with_occurrence_limits(
         }
     } else {
         charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
-        entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)
+        entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)?
     };
-    let projected_entities = ir.model.entity_count() as u64;
-    charge_entities(ctx, projected_entities, "iges_projected_entities")?;
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let product_occurrence_expansion = native::store(
         &mut ir,
@@ -145,11 +143,6 @@ fn decode_with_occurrence_limits(
             product_occurrence_depth_limit,
         ),
         ctx,
-    )?;
-    charge_entities(
-        ctx,
-        (ir.model.entity_count() as u64).saturating_sub(projected_entities),
-        "iges_native_entities",
     )?;
     ir.finalize();
     let document_digest = match ctx {

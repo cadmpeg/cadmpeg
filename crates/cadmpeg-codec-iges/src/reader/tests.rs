@@ -68,6 +68,11 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         "iges_directory_entries",
     );
     assert_refusal(
+        |limits| limits.max_entities = 1,
+        ResourceDimension::Entities,
+        "iges_geometry_primitives",
+    );
+    assert_refusal(
         |limits| limits.max_collection_items = 0,
         ResourceDimension::CollectionItems,
         "iges_cards",
