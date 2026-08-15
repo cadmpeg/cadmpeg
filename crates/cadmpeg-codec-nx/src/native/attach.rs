@@ -3165,6 +3165,14 @@ fn attach_feature_operations(
             .then(|| {
                 delete_body_feature_definition(
                     body_references.get(label.id.as_str()).copied(),
+                    offset_store_bodies_by_operation
+                        .get(label.id.as_str())
+                        .and_then(|uses| match uses.as_slice() {
+                            [(object_index, data_block)] => {
+                                Some((*object_index, data_block.as_str()))
+                            }
+                            _ => None,
+                        }),
                     &body_alias_roots,
                     &bodies_by_object_index,
                 )
@@ -7328,22 +7336,34 @@ pub(crate) fn boolean_feature_definition(
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
     body_object_index: Option<u32>,
+    offset_store_body: Option<(u32, &str)>,
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
-    let body = body_object_index?;
-    let selection = feature_body_selection(
-        &[body],
-        body_alias_roots,
-        bodies_by_object_index,
-        format!("nx:om-object-index#{body}"),
-    )
-    .selection;
+    let selection = if let Some(body) = body_object_index {
+        feature_body_selection(
+            &[body],
+            body_alias_roots,
+            bodies_by_object_index,
+            format!("nx:om-object-index#{body}"),
+        )
+        .selection
+    } else if let Some((object_index, data_block)) = offset_store_body {
+        BodySelection::Local {
+            bodies: vec![data_block.to_string()],
+            native: format!("nx:om-object-index#{object_index}"),
+        }
+    } else {
+        return None;
+    };
     let bodies = match selection {
-        BodySelection::Native(native) => BodySelection::Local {
-            bodies: vec![format!("nx:om-body-object#{body}")],
-            native,
-        },
+        BodySelection::Native(native) => {
+            let body = body_object_index.expect("native DELETE selection has a body index");
+            BodySelection::Local {
+                bodies: vec![format!("nx:om-body-object#{body}")],
+                native,
+            }
+        }
         selection => selection,
     };
     Some(FeatureDefinition::DeleteBody {
