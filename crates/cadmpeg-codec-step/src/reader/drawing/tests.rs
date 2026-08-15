@@ -124,6 +124,30 @@ fn complex_draughting_model_reads_inherited_representation_attributes() {
 }
 
 #[test]
+fn complex_draughting_callout_reads_inherited_name() {
+    let result = decode_inline(
+        "#1=(DRAUGHTING_CALLOUT((#2)) DRAUGHTING_ELEMENTS() GEOMETRIC_REPRESENTATION_ITEM() LEADER_DIRECTED_CALLOUT() REPRESENTATION_ITEM('Callout'));
+#2=ITEM('opaque');",
+    );
+    let callout = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAUGHTING_CALLOUT")
+        .expect("complex draughting callout");
+    assert_eq!(callout.parameters["name"], "Callout");
+    assert!(callout.relationships["contents"]
+        .iter()
+        .any(|target| target.target.as_deref() == Some("step:data:item#2")));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::DrawingRecordTooFewParameters.kind() }));
+}
+
+#[test]
 fn drawing_relationship_with_multiple_product_views_is_not_retargeted() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');

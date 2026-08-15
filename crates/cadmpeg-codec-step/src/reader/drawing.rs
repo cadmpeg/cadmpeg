@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP drawing definitions, revisions, sheets, views, and their relations.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 
@@ -143,7 +144,7 @@ pub(super) fn decode(
         add_reference_fields(
             &mut relationships,
             name,
-            parameters,
+            parameters.as_ref(),
             id,
             &target_context,
             &mut losses,
@@ -216,24 +217,40 @@ fn required_parameter_count(name: &str) -> Option<usize> {
     }
 }
 
-fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> &'a [Value] {
+fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> Cow<'a, [Value]> {
     let direct = record
         .partials
         .iter()
         .find(|partial| partial.name == name)
         .map(|partial| partial.parameters.as_slice());
+    if name == "DRAUGHTING_CALLOUT" {
+        if let Some(parameters) = direct.filter(|parameters| parameters.len() >= 2) {
+            return Cow::Borrowed(parameters);
+        }
+        let mut parameters = Vec::new();
+        if let Some(value) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "REPRESENTATION_ITEM")
+            .and_then(|partial| partial.parameters.first())
+        {
+            parameters.push(value.clone());
+        }
+        parameters.extend(direct.unwrap_or_default().iter().cloned());
+        return Cow::Owned(parameters);
+    }
     if let Some(parameters) = direct.filter(|parameters| !parameters.is_empty()) {
-        return parameters;
+        return Cow::Borrowed(parameters);
     }
     if matches!(
         name,
         "DRAUGHTING_MODEL" | "PRESENTATION_VIEW" | "DRAWING_SHEET_REVISION"
     ) {
         if let Some(parameters) = representation::parameters(record) {
-            return parameters;
+            return Cow::Borrowed(parameters);
         }
     }
-    direct.unwrap_or_default()
+    Cow::Borrowed(direct.unwrap_or_default())
 }
 
 fn parameter_key(name: &str, index: usize) -> String {
@@ -338,7 +355,7 @@ fn add_sheet_revision_usages(
                 id,
                 value_reference(parameters.first()?)?,
                 value_reference(parameters.get(1)?)?,
-                parameters.get(2),
+                parameters.get(2).cloned(),
             ))
         })
         .collect::<Vec<_>>();
@@ -368,7 +385,7 @@ fn add_sheet_revision_usages(
             if let Some(sequence) = sequence.and_then(|value| {
                 value_text(
                     target_context.exchange,
-                    value,
+                    &value,
                     losses,
                     usage_id,
                     "drawing sheet revision usage sequence",
