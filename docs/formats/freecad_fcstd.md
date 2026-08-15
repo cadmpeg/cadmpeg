@@ -24,9 +24,11 @@ used by decoded documents before encoding. This permits general extension-object
 parametric core objects without requiring a source archive; unsupported semantics must be supplied
 as named records or rejected, never silently approximated.
 
-Schema 2 has a `Features` declaration section and a `FeatureData` value section. Schema 3 and
-schema 4 have an `Objects` declaration section and an `ObjectData` value section. The section and
-record names are part of the schema grammar and are not interchangeable.
+Schema 2 has one `Features` declaration section and one `FeatureData` value section. Schema 3 and
+schema 4 have one `Objects` declaration section and one `ObjectData` value section. The section and
+record names are part of the schema grammar and are not interchangeable. The root attributes use
+the canonical spellings `SchemaVersion`, `FileVersion`, and `ProgramVersion`; lowercase aliases and
+duplicate section elements are invalid.
 
 Recovery directories, unpacked project trees, backups, and unrelated ZIP archives are not FCStd
 documents.
@@ -73,6 +75,9 @@ Property runtime type and value tag select a property-value grammar.
 Document properties and object properties use the same `Properties` container in schemas 2, 3,
 and 4. `Properties.Count` equals the number of `Property` records. An optional
 `TransientCount` equals the number of `_Property` records. Each record has a `name` and `type`.
+Property names are unique across both record kinds within one container. A property family is
+selected by an exact registered runtime type. An unregistered runtime type does not select a family
+from a substring of its name.
 A `Property` contains its runtime-type-specific value XML. A `_Property` has no persisted value.
 Status and dynamic-property metadata are optional record attributes. Property container dispatch
 does not depend on `SchemaVersion`, `FileVersion`, or `ProgramVersion`.
@@ -472,7 +477,7 @@ does not infer fields, record boundaries, or neutral values from those bytes. Th
 third-party properties to remain byte-exact without confusing coincidental payload bytes with a
 core mesh, point, shape, list, or asset grammar.
 
-One mesh-kernel property contains one `Mesh` value. The value has zero or one non-empty `file`
+`Mesh::PropertyMeshKernel` contains one `Mesh` value. The value has zero or one non-empty `file`
 attribute. A non-empty attribute identifies the property's only binary side entry. A `Mesh` value
 without a side entry contains inline XML mesh data and remains in the native property record. The
 current typed binary record begins with the
@@ -484,7 +489,7 @@ bounded, point indices must resolve, coordinates and bounds must be finite, and 
 truncated bytes are invalid. Neighbour indices and the complete entry bytes remain native even
 when only the indexed triangle mesh is projected neutrally.
 
-One point-kernel property contains one `Points` value. Its zero or one non-empty `file` attribute
+`Points::PropertyPointKernel` contains one `Points` value. Its zero or one non-empty `file` attribute
 identifies the property's only side entry. The entry contains a little-endian 32-bit point count
 followed by ordered float32 XYZ triples. The `Points` value carries the sixteen finite row-major
 transform scalars. Neutral points are transformed once into model space and retain the

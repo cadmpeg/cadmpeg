@@ -45,13 +45,9 @@ pub fn parse_with_context(
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
     let root = xml.root_element();
-    let schema = root
-        .attribute("SchemaVersion")
-        .or_else(|| root.attribute("schemaVersion"))
-        .map(str::to_owned)
-        .ok_or_else(|| {
-            CodecError::Malformed("Document element has no SchemaVersion attribute".into())
-        })?;
+    let schema = canonical_attribute(root, "SchemaVersion", "schemaVersion")?.ok_or_else(|| {
+        CodecError::Malformed("Document element has no SchemaVersion attribute".into())
+    })?;
     let (declarations_tag, data_tag, record_tag) = match schema.as_str() {
         "2" => ("Features", "FeatureData", "Feature"),
         "3" | "4" => ("Objects", "ObjectData", "Object"),
@@ -61,16 +57,8 @@ pub fn parse_with_context(
             )));
         }
     };
-    let objects_node = root
-        .children()
-        .find(|node| node.has_tag_name(declarations_tag))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!("Document.xml has no {declarations_tag} section"))
-        })?;
-    let data_node = root
-        .children()
-        .find(|node| node.has_tag_name(data_tag))
-        .ok_or_else(|| CodecError::Malformed(format!("Document.xml has no {data_tag} section")))?;
+    let objects_node = unique_section(root, declarations_tag)?;
+    let data_node = unique_section(root, data_tag)?;
 
     let declared_count = objects_node
         .attribute("Count")
@@ -91,6 +79,16 @@ pub fn parse_with_context(
     }
 
     let dependencies_enabled = schema != "2" && objects_node.attribute("Dependencies").is_some();
+    let mut saw_object_declaration = false;
+    for child in objects_node.children().filter(roxmltree::Node::is_element) {
+        if child.has_tag_name(record_tag) {
+            saw_object_declaration = true;
+        } else if saw_object_declaration && child.has_tag_name("ObjectDeps") {
+            return Err(CodecError::Malformed(
+                "ObjectDeps records must precede object declarations".into(),
+            ));
+        }
+    }
     let dependency_nodes = objects_node
         .children()
         .filter(|node| node.has_tag_name("ObjectDeps"))
@@ -365,6 +363,15 @@ fn parse_properties(
         .children()
         .filter(|node| node.has_tag_name("_Property"))
         .collect::<Vec<_>>();
+    let mut property_names = HashSet::new();
+    for node in transient_nodes.iter().chain(nodes.iter()) {
+        let name = required_attr(*node, "name")?;
+        if !property_names.insert(name.clone()) {
+            return Err(CodecError::Malformed(format!(
+                "duplicate property name {name} for {owner}"
+            )));
+        }
+    }
     let declared = container
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -451,7 +458,7 @@ fn parse_properties(
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
-        let links = if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
+        let links = if link_grammar(&type_name).is_some() {
             parse_link_targets(node, &type_name)?
         } else {
             Vec::new()
@@ -463,9 +470,8 @@ fn parse_properties(
                     .attributes
                     .iter()
                     .filter(|(name, _)| {
-                        (matches!(name.as_str(), "file" | "File")
-                            && !type_name.contains("PropertyXLink"))
-                            || (type_name.contains("PropertyFile")
+                        (matches!(name.as_str(), "file" | "File") && !is_xlink_type(&type_name))
+                            || (classify_property(&type_name) == PropertyFamily::File
                                 && matches!(name.as_str(), "name" | "Name"))
                     })
                     .map(|(_, value)| value.clone())
@@ -689,57 +695,119 @@ fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Resul
 }
 
 fn classify_property(type_name: &str) -> PropertyFamily {
-    if type_name.contains("PropertyPythonObject") {
-        PropertyFamily::PythonObject
-    } else if type_name.contains("PropertyExpression") {
-        PropertyFamily::Expression
-    } else if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
-        PropertyFamily::Link
-    } else if type_name.contains("PropertyFile") {
-        PropertyFamily::File
-    } else if type_name.contains("PropertyPartShape")
-        || type_name.contains("PropertyGeometry")
-        || type_name.contains("PropertyMesh")
-        || type_name.contains("PropertyPoint")
-    {
-        PropertyFamily::Geometry
-    } else if type_name.contains("PropertyPlacement") || type_name.contains("PropertyTransform") {
-        PropertyFamily::Placement
-    } else if type_name.contains("PropertyMatrix") {
-        PropertyFamily::Matrix
-    } else if type_name.contains("PropertyVector") {
-        PropertyFamily::Vector
-    } else if type_name.contains("PropertyEnumeration") {
-        PropertyFamily::Enumeration
-    } else if type_name.contains("PropertyQuantity")
-        || type_name.contains("PropertyLength")
-        || type_name.contains("PropertyDistance")
-        || type_name.contains("PropertyAngle")
-        || type_name.contains("PropertyArea")
-        || type_name.contains("PropertyVolume")
-        || type_name.contains("PropertySpeed")
-        || type_name.contains("PropertyAcceleration")
-        || type_name.contains("PropertyPressure")
-        || type_name.contains("PropertyForce")
-    {
-        PropertyFamily::Quantity
-    } else if type_name.contains("PropertyMap") {
-        PropertyFamily::Map
-    } else if type_name.contains("List") {
-        PropertyFamily::List
-    } else if type_name.contains("PropertyString")
-        || type_name.contains("PropertyPath")
-        || type_name.contains("PropertyUUID")
-    {
-        PropertyFamily::String
-    } else if type_name.contains("PropertyBool")
-        || type_name.contains("PropertyInteger")
-        || type_name.contains("PropertyFloat")
-        || type_name.contains("PropertyPercent")
-    {
-        PropertyFamily::Scalar
-    } else {
-        PropertyFamily::Unknown
+    match type_name {
+        "App::PropertyPythonObject" => PropertyFamily::PythonObject,
+        "App::PropertyExpression" | "App::PropertyExpressionEngine" => PropertyFamily::Expression,
+        "App::PropertyLink"
+        | "App::PropertyLinkChild"
+        | "App::PropertyLinkGlobal"
+        | "App::PropertyLinkHidden"
+        | "App::PropertyLinkList"
+        | "App::PropertyLinkListChild"
+        | "App::PropertyLinkListGlobal"
+        | "App::PropertyLinkListHidden"
+        | "App::PropertyLinkSub"
+        | "App::PropertyLinkSubChild"
+        | "App::PropertyLinkSubGlobal"
+        | "App::PropertyLinkSubHidden"
+        | "App::PropertyLinkSubList"
+        | "App::PropertyLinkSubListChild"
+        | "App::PropertyLinkSubListGlobal"
+        | "App::PropertyLinkSubListHidden"
+        | "App::PropertyXLink"
+        | "App::PropertyXLinkList"
+        | "App::PropertyXLinkSub"
+        | "App::PropertyXLinkSubHidden"
+        | "App::PropertyXLinkSubList" => PropertyFamily::Link,
+        "App::PropertyFile" | "App::PropertyFileIncluded" => PropertyFamily::File,
+        "Part::PropertyPartShape"
+        | "Part::PropertyGeometryList"
+        | "Mesh::PropertyMeshKernel"
+        | "Points::PropertyPointKernel" => PropertyFamily::Geometry,
+        "App::PropertyPlacement" | "App::PropertyPlacementList" => PropertyFamily::Placement,
+        "App::PropertyMatrix" => PropertyFamily::Matrix,
+        "App::PropertyVector" | "App::PropertyVectorList" => PropertyFamily::Vector,
+        "App::PropertyEnumeration" => PropertyFamily::Enumeration,
+        "App::PropertyAcceleration"
+        | "App::PropertyAngle"
+        | "App::PropertyArea"
+        | "App::PropertyDistance"
+        | "App::PropertyForce"
+        | "App::PropertyLength"
+        | "App::PropertyPressure"
+        | "App::PropertyQuantity"
+        | "App::PropertyQuantityConstraint"
+        | "App::PropertySpeed"
+        | "App::PropertyVolume" => PropertyFamily::Quantity,
+        "App::PropertyMap" => PropertyFamily::Map,
+        "App::PropertyBoolList"
+        | "App::PropertyFloatList"
+        | "App::PropertyIntegerList"
+        | "App::PropertyStringList"
+        | "Part::PropertyTopoShapeList"
+        | "Sketcher::PropertyConstraintList"
+        | "TechDraw::PropertyCenterLineList"
+        | "TechDraw::PropertyCosmeticEdgeList"
+        | "TechDraw::PropertyCosmeticVertexList"
+        | "TechDraw::PropertyGeomFormatList" => PropertyFamily::List,
+        "App::PropertyPath"
+        | "App::PropertyString"
+        | "App::PropertyUUID"
+        | "Path::PropertyPath" => PropertyFamily::String,
+        "App::PropertyBool"
+        | "App::PropertyFloat"
+        | "App::PropertyFloatConstraint"
+        | "App::PropertyInteger"
+        | "App::PropertyIntegerConstraint"
+        | "App::PropertyPercent" => PropertyFamily::Scalar,
+        _ => PropertyFamily::Unknown,
+    }
+}
+
+fn is_xlink_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyXLink"
+            | "App::PropertyXLinkList"
+            | "App::PropertyXLinkSub"
+            | "App::PropertyXLinkSubHidden"
+            | "App::PropertyXLinkSubList"
+    )
+}
+
+fn canonical_attribute(
+    root: roxmltree::Node<'_, '_>,
+    canonical: &str,
+    alias: &str,
+) -> Result<Option<String>, CodecError> {
+    match (root.attribute(canonical), root.attribute(alias)) {
+        (Some(_), Some(_)) => Err(CodecError::Malformed(format!(
+            "Document element has both {canonical} and {alias} attributes"
+        ))),
+        (Some(value), None) => Ok(Some(value.to_owned())),
+        (None, Some(_)) => Err(CodecError::Malformed(format!(
+            "Document element uses unsupported {alias}; expected {canonical}"
+        ))),
+        (None, None) => Ok(None),
+    }
+}
+
+fn unique_section<'a, 'input>(
+    root: roxmltree::Node<'a, 'input>,
+    tag: &str,
+) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
+    let sections = root
+        .children()
+        .filter(|node| node.has_tag_name(tag))
+        .collect::<Vec<_>>();
+    match sections.as_slice() {
+        [section] => Ok(*section),
+        [] => Err(CodecError::Malformed(format!(
+            "Document.xml has no {tag} section"
+        ))),
+        _ => Err(CodecError::Malformed(format!(
+            "Document.xml has duplicate {tag} sections"
+        ))),
     }
 }
 

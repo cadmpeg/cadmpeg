@@ -415,3 +415,48 @@ fn rejects_inconsistent_object_dependency_envelopes() {
         ));
     }
 }
+
+#[test]
+fn rejects_ambiguous_persistence_carriers() {
+    let cases = [
+        r#"<Document schemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="4" schemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="0"/><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><ObjectDeps Name="B" Count="0"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="2"><Property name="Same" type="App::PropertyString"/><Property name="Same" type="App::PropertyString"/></Properties></Object></ObjectData></Document>"#,
+    ];
+
+    for document in cases {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default()
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
+fn unknown_property_runtime_names_do_not_select_a_family_by_substring() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="1"><Property name="Custom" type="Vendor::PropertyLinkAndPropertyString"><Link value="A"/></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("unknown property runtime type is retained");
+    let property = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties")
+        .into_iter()
+        .find(|property| property.name == "Custom")
+        .expect("custom property");
+    assert_eq!(property.family, crate::native::PropertyFamily::Unknown);
+    assert!(property.links.is_empty());
+}

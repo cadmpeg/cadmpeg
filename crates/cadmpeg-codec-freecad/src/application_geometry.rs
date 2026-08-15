@@ -25,11 +25,11 @@ pub(crate) fn transfer(
 ) -> Result<bool, CodecError> {
     let mut transferred = false;
     for property in properties {
-        let typed = property.type_name.contains("PropertyMeshKernel")
-            || property.type_name.contains("PropertyPointKernel");
-        if !typed {
-            continue;
-        }
+        let geometry_kind = match property.type_name.as_str() {
+            "Mesh::PropertyMeshKernel" => GeometryKind::Mesh,
+            "Points::PropertyPointKernel" => GeometryKind::Points,
+            _ => continue,
+        };
         if property.side_entries.len() > 1 {
             return Err(CodecError::Malformed(format!(
                 "geometry property {} references more than one side entry",
@@ -48,17 +48,23 @@ pub(crate) fn transfer(
                     property.id
                 ))
             })?;
-        if property.type_name.contains("PropertyMeshKernel") {
+        if geometry_kind == GeometryKind::Mesh {
             ir.model
                 .tessellations
                 .push(parse_mesh(property, &entry.data)?);
             transferred = true;
-        } else if property.type_name.contains("PropertyPointKernel") {
+        } else if geometry_kind == GeometryKind::Points {
             ir.model.points.extend(parse_points(property, &entry.data)?);
             transferred = true;
         }
     }
     Ok(transferred)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GeometryKind {
+    Mesh,
+    Points,
 }
 
 fn association(property: &PropertyRecord) -> SourceObjectAssociation {
@@ -441,5 +447,35 @@ pub(crate) mod tests {
                     if message.contains("references more than one side entry")
             ));
         }
+    }
+
+    #[test]
+    fn does_not_decode_custom_runtime_names_as_application_geometry() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Geometry"/></Objects>
+<ObjectData Count="1"><Object name="Geometry"><Properties Count="1"><Property name="Payload" type="Vendor::PropertyMeshKernelAndPropertyPointKernel"><Mesh file="payload"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("payload", b"not a geometry payload"),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect("custom application property is retained");
+        assert!(result.ir().model.tessellations.is_empty());
+        assert!(result.ir().model.points.is_empty());
+        let property = result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("namespace")
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .expect("properties")
+            .into_iter()
+            .find(|property| property.name == "Payload")
+            .expect("property");
+        assert_eq!(property.family, crate::native::PropertyFamily::Unknown);
     }
 }

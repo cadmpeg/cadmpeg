@@ -20,12 +20,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 These items have a Conflict part and need a decision.
 
-- LP-07. Schema aliases and duplicate section selection
 - AR-03. Typed geometry side-entry cardinality
 - GP-04. Topology-color shape-property association
 - GP-05. GUI provider and property duplicate selection
-- PG-01. `ObjectDeps` framing and uniqueness
-- PG-03. Property identity and runtime-family selection
 - PT-01. `StringHasher2` association
 - PT-02. Element-map position to neutral-occurrence order
 - PT-03. Element-map carrier and owner selection
@@ -44,23 +41,8 @@ These items have a Conflict part and need a decision.
 - BR-01. Text B-rep header and table selection
 - AT-01. Attachment frame carrier precedence
 - JN-01. Joint kind and enumeration carrier selection
-- AG-01. Kernel-property runtime dispatch
 
-## 1. Legacy persistence
-
-### LP-07. Schema aliases and duplicate section selection
-
-**Question.** Which schema attribute spelling and declaration/data sections are authoritative, and are duplicate sections valid?
-
-**Known.** FreeCAD document persistence uses `SchemaVersion` to select the envelope. A schema envelope has one declaration section and one data section.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/persistence.rs:39-64` accepts either `SchemaVersion` or `schemaVersion`, chooses the first when both are present, and takes the first matching declaration and data section. Conflicting aliases or duplicate sections can make source order select one graph while silently discarding another.
-
-**Need.** We must establish exact attribute spelling, section cardinality, and duplicate handling from FreeCAD source and malformed fixtures. Conflicting or duplicate structural carriers must be rejected rather than selected by order.
-
-**Note.** The first-candidate paths are direct; the producer's malformed-input policy remains unverified.
-
-## 2. Auxiliary records
+## 1. Auxiliary records
 
 ### AR-01. Application-specific side-entry framing
 
@@ -104,7 +86,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** Commit `a5882797a` fixed the internal representation but did not establish whether sharing is valid in FreeCAD output. An implementation choice is not evidence for the format rule.
 
-## 3. GUI properties
+## 2. GUI properties
 
 ### GP-01. Other GUI property grammars
 
@@ -150,33 +132,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** The selection paths and the disagreement are present in the code read; valid producer cardinality is still unknown.
 
-## 4. Persistence graph
-
-### PG-01. `ObjectDeps` framing and uniqueness
-
-**Question.** What count, ordering, and uniqueness invariants govern the `ObjectDeps` records when the `Objects` section enables dependency records?
-
-**Known.** FreeCAD's writer emits one `ObjectDeps` record for each object, with one `Dep` count per record. The dependency records precede object declarations in the document envelope.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/persistence.rs:82-138` validates dependency names and child counts, and `:185-193` validates the filtered dependency order. It does not require the physical `ObjectDeps` block to precede every `Object` element. A dependency block after an object can pass the filtered ordinal checks.
-
-**Need.** The current schema must validate dependency-record count, child count, object coverage, name uniqueness, physical ordering, and `AllowPartial` retention before it builds the object graph.
-
-**Note.** Commit `40fa0adbd` added synthetic framing tests and changed the specification, but the decoder still accepts a source-order violation. The official FreeCAD reader/writer establishes the ordering; the implementation does not enforce all of it.
-
-### PG-03. Property identity and runtime-family selection
-
-**Question.** Are property names unique within one owner, and which exact runtime type selects a property family when names or type tokens conflict?
-
-**Known.** `persistence.rs` retains property order, name, exact type, values, and raw XML. Neutral projections look up properties by owner and name.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/persistence.rs:346-477` checks `Properties.Count` but does not reject duplicate `Property` names. The generated native ids at `:382` and `:454` collide for duplicate names. `classify_property` at `:669-721` dispatches by ordered substring tests, so a custom type containing multiple family tokens receives the first family. Downstream `.find` calls then select one duplicate by source order.
-
-**Need.** We must establish FreeCAD property-name uniqueness and the exact runtime-type registry. A conflicting duplicate or multi-family type must be rejected or retained without a semantic family choice.
-
-**Note.** The duplicate identity collision and ordered substring dispatch are direct code paths. The producer invariant requires primary source or independent malformed fixtures.
-
-## 5. Persistent topology identity
+## 3. Persistent topology identity
 
 ### PT-01. `StringHasher2` association
 
@@ -214,7 +170,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** The first-candidate paths are direct; no source rule for duplicate carriers was found.
 
-## 6. Exact-topology transfer
+## 4. Exact-topology transfer
 
 ### XT-01. Edge endpoint child selection
 
@@ -252,7 +208,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** Commit `63d07acec` changed the neutral fallback and stated that the source has no radial order. No producer source or independent non-manifold witness was cited.
 
-## 7. Design projection
+## 5. Design projection
 
 ### DP-01. Forward declared dependencies
 
@@ -302,7 +258,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** The alternative order and first-child choices are direct code paths; valid extension naming and carrier cardinality are unknown.
 
-## 8. Product structure
+## 6. Product structure
 
 ### PR-01. Product membership and record identity selection
 
@@ -316,7 +272,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** The first/last choices and their inconsistent maps are direct; the valid FreeCAD cardinalities are not established.
 
-## 9. Semantic annotations
+## 7. Semantic annotations
 
 ### SA-01. Runtime-type to annotation-kind mapping
 
@@ -342,7 +298,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** Commit `57371f57d` improved runtime-type filtering but retained first-property and first-value selection. The exact property registry and precedence remain unverified.
 
-## 10. TechDraw projection
+## 8. TechDraw projection
 
 ### DG-01. TechDraw runtime-type classification
 
@@ -368,7 +324,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** The code has separate first-wins and last-wins paths; producer uniqueness remains unverified.
 
-## 11. Text B-rep
+## 9. Text B-rep
 
 ### BR-01. Text B-rep header and table selection
 
@@ -382,7 +338,7 @@ These items have a Conflict part and need a decision.
 
 **Note.** Valid OCCT text B-rep output normally has one header and one table, but the decoder has no uniqueness check for repeated markers.
 
-## 12. Attachment and assembly
+## 10. Attachment and assembly
 
 ### AT-01. Attachment frame carrier precedence
 
@@ -407,17 +363,3 @@ These items have a Conflict part and need a decision.
 **Need.** We must establish joint runtime grammars, carrier cardinality, and grounded/joint-type precedence from FreeCAD source or independent saved documents.
 
 **Note.** The selection is direct, but the producer may forbid the conflicting forms.
-
-## 13. Typed application geometry
-
-### AG-01. Kernel-property runtime dispatch
-
-**Question.** Which exact runtime types select mesh or point-kernel decoding?
-
-**Known.** Mesh and point side entries have different binary payload grammars and neutral arenas.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/application_geometry.rs:25-56` uses substring checks and tests `PropertyMeshKernel` before `PropertyPointKernel`. A custom or compound runtime type containing both tokens is decoded as mesh; its point payload is not considered.
-
-**Need.** We must establish the exact runtime-type registry and value grammar. Unknown or multi-family types must remain opaque or be rejected.
-
-**Note.** The dispatch order is direct; no exact registry evidence was found.
