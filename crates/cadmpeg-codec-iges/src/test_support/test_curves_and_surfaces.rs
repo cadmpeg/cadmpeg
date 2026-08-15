@@ -1275,12 +1275,36 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
-    for (sequence, parameter_start, kind, label) in [
-        (1, 1, 116, "LOCATION"),
-        (3, 2, 123, "AXIS"),
-        (5, 3, 123, "REFDIR"),
-        (7, 4, entity_type, "SURFACE"),
-    ] {
+    let include_axis = !(entity_type == 196 && form == 0);
+    let include_reference = form == 1;
+    let surface_sequence = if include_reference {
+        7
+    } else if include_axis {
+        5
+    } else {
+        3
+    };
+    let surface_parameter_start = if include_reference {
+        4
+    } else if include_axis {
+        3
+    } else {
+        2
+    };
+    let mut directory_entries = vec![(1, 1, 116, "LOCATION")];
+    if include_axis {
+        directory_entries.push((3, 2, 123, "AXIS"));
+    }
+    if include_reference {
+        directory_entries.push((5, 3, 123, "REFDIR"));
+    }
+    directory_entries.push((
+        surface_sequence,
+        surface_parameter_start,
+        entity_type,
+        "SURFACE",
+    ));
+    for (sequence, parameter_start, kind, label) in directory_entries {
         let kind = kind.to_string();
         let parameter_start = parameter_start.to_string();
         let surface_form = form.to_string();
@@ -1294,7 +1318,7 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
                 "0",
                 "0",
                 "0",
-                if sequence == 7 {
+                if sequence == surface_sequence {
                     "00000000"
                 } else {
                     "00010000"
@@ -1308,7 +1332,11 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
                 "0",
                 "0",
                 "1",
-                if sequence == 7 { &surface_form } else { "0" },
+                if sequence == surface_sequence {
+                    &surface_form
+                } else {
+                    "0"
+                },
                 "",
                 "",
                 label,
@@ -1318,8 +1346,12 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
         ));
     }
     bytes.extend(parameter_card(b"116,1,2,3,0;", 1, 1));
-    bytes.extend(parameter_card(b"123,0,0,1;", 3, 2));
-    bytes.extend(parameter_card(b"123,1,0,0;", 5, 3));
+    if include_axis {
+        bytes.extend(parameter_card(b"123,0,0,1;", 3, 2));
+    }
+    if include_reference {
+        bytes.extend(parameter_card(b"123,1,0,0;", 5, 3));
+    }
     let parameters = match (entity_type, form) {
         (190, 0) => "190,1,3;",
         (190, 1) => "190,1,3,5;",
@@ -1333,10 +1365,19 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
         (198, 1) => "198,1,3,4,1,5;",
         _ => unreachable!(),
     };
-    bytes.extend(parameter_card(parameters.as_bytes(), 7, 4));
+    bytes.extend(parameter_card(
+        parameters.as_bytes(),
+        surface_sequence,
+        surface_parameter_start,
+    ));
     let global_cards = global.len().div_ceil(72);
     bytes.extend(card(
-        format!("S0000001G{global_cards:07}D0000008P0000004").as_bytes(),
+        format!(
+            "S0000001G{global_cards:07}D{:07}P{:07}",
+            surface_sequence + 1,
+            surface_parameter_start,
+        )
+        .as_bytes(),
         b'T',
         1,
     ));

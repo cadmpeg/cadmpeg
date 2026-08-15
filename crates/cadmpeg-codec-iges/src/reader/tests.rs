@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -52,7 +53,7 @@ fn decode_refuses_a_transformation_chain_over_its_projection_limit() {
 }
 
 #[test]
-fn transfer_ledger_does_not_claim_a_loss_for_a_native_only_direction() {
+fn transfer_ledger_reports_an_unprojected_native_only_direction() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(direction_file()),
@@ -60,10 +61,14 @@ fn transfer_ledger_does_not_claim_a_loss_for_a_native_only_direction() {
         )
         .unwrap();
 
-    assert!(result.report().losses.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityRetainedUnprojected.kind()));
     assert_eq!(
         result.report().transfer_ledger.entries[0].note.as_deref(),
-        Some("native record retained; no standalone neutral projection was required")
+        Some("native record retained; semantic projection omitted with an attributed loss")
     );
 }
 

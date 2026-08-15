@@ -153,6 +153,7 @@ fn decode_with_occurrence_limits(
         entities::geometry::Projection {
             handled: BTreeSet::default(),
             decoded: BTreeSet::default(),
+            consumed: BTreeSet::default(),
             losses: Vec::new(),
         }
     } else {
@@ -217,29 +218,33 @@ fn decode_with_occurrence_limits(
         ));
     }
     if !options.container_only {
-        losses.extend(
-            directory
-                .iter()
-                .filter(|entry| {
-                    entry.entity_type != 0
-                        && (!crate::profile::envelope_a_admits(entry.entity_type, entry.form)
-                            || !projection.handled.contains(&entry.sequence))
-                })
-                .map(|entry| {
-                    let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
-                        IgesLossCode::EntityRetainedUnprojected.note(format!(
-                            "IGES entity type {} form {} retained without neutral projection",
-                            entry.entity_type, entry.form
-                        ))
-                    } else {
-                        IgesLossCode::EntityOutsideEnvelope.note(format!(
-                            "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
-                            entry.entity_type, entry.form
-                        ))
-                    };
-                    note.with_provenance(entry.loss_provenance())
-                }),
-        );
+        let generic_losses = directory
+            .iter()
+            .filter(|entry| entry.entity_type != 0)
+            .filter(|entry| {
+                if !crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+                    return true;
+                }
+                !projection.decoded.contains(&entry.sequence)
+                    && !projection.consumed.contains(&entry.sequence)
+                    && !loss_is_attributed_to(&losses, entry.sequence)
+            })
+            .map(|entry| {
+                let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+                    IgesLossCode::EntityRetainedUnprojected.note(format!(
+                        "IGES entity type {} form {} retained without neutral projection",
+                        entry.entity_type, entry.form
+                    ))
+                } else {
+                    IgesLossCode::EntityOutsideEnvelope.note(format!(
+                        "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
+                        entry.entity_type, entry.form
+                    ))
+                };
+                note.with_provenance(entry.loss_provenance())
+            })
+            .collect::<Vec<_>>();
+        losses.extend(generic_losses);
         charge_work(
             ctx,
             ir.model.entity_count() as u64,
@@ -271,6 +276,8 @@ fn decode_with_occurrence_limits(
             "native record retained; semantic projection emitted"
         } else if attributed_loss {
             "native record retained; semantic projection omitted with an attributed loss"
+        } else if projection.consumed.contains(&entry.sequence) {
+            "native record retained; record was consumed as construction support"
         } else if projection.handled.contains(&entry.sequence) {
             "native record retained; no standalone neutral projection was required"
         } else {

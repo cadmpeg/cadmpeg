@@ -710,6 +710,7 @@ pub(super) fn project(
     Projection {
         handled,
         decoded,
+        consumed: BTreeSet::default(),
         losses,
     }
 }

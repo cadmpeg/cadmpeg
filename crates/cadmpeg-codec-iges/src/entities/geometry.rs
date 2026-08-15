@@ -411,7 +411,109 @@ pub(crate) fn enforce_transform_depth(
 pub(crate) struct Projection {
     pub(crate) handled: BTreeSet<u32>,
     pub(crate) decoded: BTreeSet<u32>,
+    /// Source records consumed as construction data without a standalone
+    /// neutral entity.
+    pub(crate) consumed: BTreeSet<u32>,
     pub(crate) losses: Vec<LossNote>,
+}
+
+fn positive_sequence(value: i64) -> Option<u32> {
+    u32::try_from(value)
+        .ok()
+        .filter(|sequence| sequence % 2 == 1)
+}
+
+fn consumed_support_sequences(
+    directory: &[DirectoryEntry],
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> BTreeSet<u32> {
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+    let mut transform_sequences = BTreeSet::new();
+    for entry in directory {
+        if let Some(sequence) = positive_sequence(entry.transform).filter(|sequence| {
+            entries
+                .get(sequence)
+                .is_some_and(|target| target.entity_type == 124)
+        }) {
+            transform_sequences.insert(sequence);
+        }
+    }
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
+    {
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            continue;
+        };
+        let Some(count) = record.count(1) else {
+            continue;
+        };
+        for index in 0..count.min(record.tokens.len()) {
+            if let Some(sequence) = record
+                .integer(2 + count + index)
+                .and_then(positive_sequence)
+                .filter(|sequence| {
+                    entries
+                        .get(sequence)
+                        .is_some_and(|target| target.entity_type == 124)
+                })
+            {
+                transform_sequences.insert(sequence);
+            }
+        }
+    }
+    let mut direction_sequences = BTreeSet::new();
+    for entry in directory.iter().filter(|entry| {
+        matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
+    }) {
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            continue;
+        };
+        let indices: &[usize] = match (entry.entity_type, entry.form) {
+            (190 | 192 | 194 | 198, 0) => &[2],
+            (190, 1) => &[2, 3],
+            (192, 1) => &[2, 4],
+            (194 | 198, 1) => &[2, 5],
+            (196, 0) => &[],
+            (196, 1) => &[3, 4],
+            _ => &[],
+        };
+        for index in indices {
+            if let Some(sequence) =
+                record
+                    .integer(*index)
+                    .and_then(positive_sequence)
+                    .filter(|sequence| {
+                        entries
+                            .get(sequence)
+                            .is_some_and(|target| target.entity_type == 123 && target.form == 0)
+                    })
+            {
+                direction_sequences.insert(sequence);
+            }
+        }
+    }
+
+    let mut consumed = direction_sequences;
+    while let Some(sequence) = transform_sequences.pop_first() {
+        if !consumed.insert(sequence) {
+            continue;
+        }
+        let Some(entry) = entries.get(&sequence).copied() else {
+            continue;
+        };
+        if let Some(parent) = positive_sequence(entry.transform).filter(|parent| {
+            entries
+                .get(parent)
+                .is_some_and(|target| target.entity_type == 124)
+        }) {
+            transform_sequences.insert(parent);
+        }
+    }
+    consumed
 }
 
 fn admit_projected_entities(
@@ -469,6 +571,7 @@ pub(crate) fn project_geometry(
         .collect::<BTreeMap<_, _>>();
     let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
+    let consumed = consumed_support_sequences(directory, &records);
     let mut losses = Vec::new();
     handled.extend(
         directory
@@ -1229,6 +1332,7 @@ pub(crate) fn project_geometry(
     Ok(Projection {
         handled,
         decoded,
+        consumed,
         losses,
     })
 }

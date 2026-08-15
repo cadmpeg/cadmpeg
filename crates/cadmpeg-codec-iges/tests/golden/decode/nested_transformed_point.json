@@ -2217,13 +2217,13 @@
       "entries": [
         {
           "disposition": "retained",
-          "note": "native record retained; no standalone neutral projection was required",
+          "note": "native record retained; record was consumed as construction support",
           "source": "D1",
           "target": "iges:entity:directory#1"
         },
         {
           "disposition": "retained",
-          "note": "native record retained; no standalone neutral projection was required",
+          "note": "native record retained; record was consumed as construction support",
           "source": "D3",
           "target": "iges:entity:directory#3"
         },

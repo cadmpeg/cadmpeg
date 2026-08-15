@@ -27,6 +27,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -146,7 +147,15 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
         .unwrap();
 
     assert!(!result.report().geometry_transferred);
-    assert!(result.report().losses.is_empty());
+    assert_eq!(result.report().losses.len(), 1);
+    let loss = &result.report().losses[0];
+    assert_eq!(loss.code, IgesLossCode::EntityRetainedUnprojected.kind());
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D1")
+    );
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas["directions"].len(), 1);
     let direction_fields = native.arenas["directions"][0].fields();

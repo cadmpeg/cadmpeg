@@ -30,7 +30,7 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 #[test]
-fn every_admitted_entity_form_routes_to_a_typed_decoder() {
+fn every_admitted_entity_form_routes_to_a_typed_decoder_or_native_retention_loss() {
     let matrix_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
     let source = std::fs::read_to_string(matrix_path).unwrap();
@@ -78,7 +78,16 @@ fn every_admitted_entity_form_routes_to_a_typed_decoder() {
         })
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
-    assert!(generic_fallthroughs.is_empty(), "{generic_fallthroughs:#?}");
+    assert_eq!(
+        generic_fallthroughs,
+        vec![
+            "IGES entity type 124 form 0 retained without neutral projection",
+            "IGES entity type 124 form 1 retained without neutral projection",
+            "IGES entity type 124 form 10 retained without neutral projection",
+            "IGES entity type 124 form 11 retained without neutral projection",
+            "IGES entity type 124 form 12 retained without neutral projection",
+        ]
+    );
 }
 
 #[test]

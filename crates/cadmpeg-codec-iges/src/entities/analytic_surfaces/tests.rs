@@ -39,12 +39,22 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
+            let surface_id = format!(
+                "iges:model:surface#D{}",
+                if form == 1 {
+                    7
+                } else if entity_type == 196 {
+                    3
+                } else {
+                    5
+                }
+            );
             let surface = result
                 .ir()
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| surface.id.0 == "iges:model:surface#D7")
+                .find(|surface| surface.id.0 == surface_id)
                 .unwrap();
             match (entity_type, &surface.geometry) {
                 (190, cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. }) => {
