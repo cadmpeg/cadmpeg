@@ -4380,7 +4380,7 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         let relation_count = count
             .checked_mul(count.saturating_sub(1))
             .and_then(|value| value.checked_div(2))
-            .and_then(|value| value.checked_add(usize::from(include_full_circle_seams)));
+            .and_then(|value| value.checked_add(if include_full_circle_seams { count } else { 0 }));
         if relation_count.is_some_and(|relations| relations <= MAX_PAIR_RELATIONS_PER_EDGE) {
             let mut pairs = Vec::with_capacity(relation_count.unwrap_or_default());
             for (left, &start) in candidates[edge].iter().enumerate() {
