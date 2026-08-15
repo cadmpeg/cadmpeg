@@ -324,27 +324,20 @@ fn minimum_resolution_is_required_and_cannot_be_negative() {
 }
 
 #[test]
-fn non_utf8_global_identifiers_are_preserved_as_exact_hex_attributes() {
-    let mut bytes = point_file();
-    let product = bytes
-        .windows(9)
-        .position(|window| window == b"7Hproduct")
-        .expect("sender product");
-    bytes[product + 5] = 0xff;
-    let file_name = bytes
-        .windows(10)
-        .position(|window| window == b"8Hpart.igs")
-        .expect("native file name");
-    bytes[file_name + 4] = 0xfe;
+fn global_hollerith_values_reject_non_printable_ascii() {
+    for byte in [0x00, 0x1f, 0x7f, 0x80, 0xff] {
+        let mut bytes = point_file();
+        let product = bytes
+            .windows(9)
+            .position(|window| window == b"7Hproduct")
+            .expect("sender product");
+        bytes[product + 5] = byte;
 
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let attributes = &result.ir().source.as_ref().unwrap().attributes;
-    assert_eq!(attributes["sender_product_bytes_hex"], "70726fff756374");
-    assert_eq!(attributes["native_file_name_bytes_hex"], "7061fe742e696773");
-    assert!(!attributes.contains_key("sender_product"));
-    assert!(!attributes.contains_key("native_file_name"));
+        assert!(matches!(
+            IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
+            Err(CodecError::Malformed(_))
+        ));
+    }
 }
 
 #[test]

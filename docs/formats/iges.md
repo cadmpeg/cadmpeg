@@ -36,7 +36,7 @@ Semantic output represents a plane as the parameterized Plane Surface Type 190 F
 
 Generated analytic frames accept normalized axis dot-product residuals through `1e-6`. The writer keeps the primary axis, removes its component from the reference axis, normalizes the repaired reference, and derives the third axis by a right-handed cross product. A placement's supplied third axis must have the same handedness and a cross-product residual through `1e-6`. Larger skew is malformed and is refused before output. The repair bound is a writer convention for finite-precision neutral frames, not an IGES file tolerance.
 
-Global Hollerith values are byte strings. The source image and physical-card arena retain every byte. A sender-product or native-file-name payload that is valid UTF-8 becomes the corresponding source attribute. Any other payload becomes `sender_product_bytes_hex` or `native_file_name_bytes_hex` with lowercase hexadecimal bytes, so metadata is not silently removed.
+Global strings are Hollerith strings containing printable ASCII characters. Spaces, parameter delimiters, and record delimiters are valid string data. A control byte or a non-ASCII byte makes the Global record malformed. Accepted sender-product and native-file-name strings become the corresponding source attributes.
 
 ## Directory Entry section
 

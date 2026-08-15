@@ -14,16 +14,6 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn bytes_hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
-    for byte in bytes {
-        encoded.push(char::from(DIGITS[usize::from(byte >> 4)]));
-        encoded.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
-    }
-    encoded
-}
-
 fn source_meta(global: &global::Global) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("representation".into(), "fixed-ascii".into());
@@ -45,13 +35,9 @@ fn source_meta(global: &global::Global) -> SourceMeta {
     }
     if let Some(value) = global.sender_product() {
         attributes.insert("sender_product".into(), value);
-    } else if let Some(value) = global.sender_product_bytes() {
-        attributes.insert("sender_product_bytes_hex".into(), bytes_hex(value));
     }
     if let Some(value) = global.native_file_name() {
         attributes.insert("native_file_name".into(), value);
-    } else if let Some(value) = global.native_file_name_bytes() {
-        attributes.insert("native_file_name_bytes_hex".into(), bytes_hex(value));
     }
     SourceMeta {
         format: "iges".into(),

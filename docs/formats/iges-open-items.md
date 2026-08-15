@@ -67,16 +67,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `35dd9c3f2` validated one project interpretation but supplied no independent source for positivity, zero semantics, or the cross-consumer policy.
 
-### GL-04. Byte encoding of Global Hollerith values
-
-**Question.** What character encoding do Global Hollerith values use?
-
-**Known.** `global.rs:16-21` attempts UTF-8 conversion for sender-product and native-file-name values. The raw byte fields are now retained separately, and `reader.rs` exposes them as hexadecimal attributes when text conversion fails.
-
-**Need.** We need the permitted character set and a retention rule for non-UTF-8 values. Raw-byte preservation does not decide whether a producer's byte sequence is valid IGES text.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `35dd9c3f2` added raw-byte retention and a test, but the test and fields do not establish the format character-set rule. This is a format question, not only a lossless-storage question.
-
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ### DR-04. One malformed subfigure definition promotes its instances to assembly roots

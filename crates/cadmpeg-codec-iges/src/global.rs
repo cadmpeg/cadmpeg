@@ -88,6 +88,14 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize)>, Cod
     let payload = bytes
         .get(payload_start..payload_end)
         .ok_or_else(|| malformed("Hollerith payload is truncated"))?;
+    if payload
+        .iter()
+        .any(|byte| !byte.is_ascii() || byte.is_ascii_control())
+    {
+        return Err(malformed(
+            "Hollerith string contains a non-ASCII or control character",
+        ));
+    }
     Ok(Some((payload.to_vec(), payload_end)))
 }
 
@@ -508,16 +516,8 @@ impl Global {
         self.values.get(2).and_then(Value::string)
     }
 
-    pub(crate) fn sender_product_bytes(&self) -> Option<&[u8]> {
-        self.values.get(2).and_then(Value::string_bytes)
-    }
-
     pub(crate) fn native_file_name(&self) -> Option<String> {
         self.values.get(3).and_then(Value::string)
-    }
-
-    pub(crate) fn native_file_name_bytes(&self) -> Option<&[u8]> {
-        self.values.get(3).and_then(Value::string_bytes)
     }
 
     pub(crate) fn units_name(&self) -> Option<String> {
