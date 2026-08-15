@@ -90,9 +90,7 @@ pub(crate) struct CardScan<'a> {
 }
 
 fn take_line(input: &[u8]) -> Option<(&[u8], &[u8])> {
-    let ending_at = input
-        .iter()
-        .position(|byte| matches!(byte, b'\r' | b'\n'))?;
+    let ending_at = memchr::memchr2(b'\r', b'\n', input)?;
     let ending_len =
         usize::from(input[ending_at] == b'\r' && input.get(ending_at + 1) == Some(&b'\n')) + 1;
     Some((&input[..ending_at], &input[ending_at + ending_len..]))
@@ -145,9 +143,7 @@ fn physical_lines(
     let mut start = 0_usize;
     let mut terminated = false;
     while start < source.len() {
-        let relative_end = source[start..]
-            .iter()
-            .position(|byte| matches!(byte, b'\r' | b'\n'));
+        let relative_end = memchr::memchr2(b'\r', b'\n', &source[start..]);
         let (payload_end, ending, next) = match relative_end {
             Some(relative) => {
                 let end = start
