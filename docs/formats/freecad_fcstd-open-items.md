@@ -237,22 +237,6 @@ producer evidence for that alias is recorded.
 **Note.** This pass settled the current producer runtime-name/carrier-tag mapping and rejects a
 registered name paired with another known carrier. The historical point alias remains open.
 
-### DP-08. Sketch placement silently defaults incomplete components
-
-**Question.** Which placement components are mandatory before a sketch frame is transferred to
-neutral geometry?
-
-**Known.** A persisted placement supplies the sketch origin and basis after quaternion
-normalization. Invalid geometry remains attributable native data.
-
-**Conflict.** design.rs:1416-1460 selects Placement or AttachmentOffset without a runtime-type
-gate, defaults missing or unparsable Px, Py, Pz, and quaternion components, and
-design.rs:1463-1467 turns a zero quaternion into the canonical basis. The fallback creates a
-neutral frame for incomplete placement data without a finding or native-only decision.
-
-**Need.** Require the complete placement carrier and finite nonzero rotation, or retain the
-affected sketch geometry native with an explicit loss.
-
 ## 6. Product structure
 
 ### PR-03. Product named carrier runtime types and cardinality

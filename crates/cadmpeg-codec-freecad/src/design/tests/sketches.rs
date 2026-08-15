@@ -119,6 +119,23 @@ fn rejects_declared_geometry_with_the_wrong_carrier_tag() {
 }
 
 #[test]
+fn rejects_incomplete_present_sketch_placement() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("incomplete placement");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn rejects_malformed_constraint_operand_lists() {
     for document in [
         r#"<Document SchemaVersion="4" FileVersion="1">

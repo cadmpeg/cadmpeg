@@ -268,6 +268,10 @@ first/last-parameter bound names identify the same conic interval. A persisted p
 the sketch origin, normal, and in-plane axis by applying
 its normalized quaternion to the canonical sketch basis. Attachment support and mapping mode remain
 linked source state when their complete support-frame composition is not resolved.
+When a `Placement` or `AttachmentOffset` carrier is present, its runtime type is
+`App::PropertyPlacement` and it has exactly one `PropertyPlacement` value. That value has finite
+`Px`, `Py`, and `Pz` plus either finite `Q0` through `Q3` or finite `A`, `Ox`, `Oy`, and `Oz`
+components; a zero quaternion or an invalid axis-angle rotation is not a sketch frame.
 Sketch geometry dispatch uses exact runtime names. `Part::GeomLine` and `Part::GeomLineSegment`
 select lines; `Part::GeomCircle` selects circles; `Part::GeomArcOfCircle` selects bounded arcs;
 `Part::GeomEllipse` and `Part::GeomArcOfEllipse` select ellipses; `Part::GeomHyperbola` and

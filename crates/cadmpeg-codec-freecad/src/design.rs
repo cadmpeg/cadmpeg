@@ -281,12 +281,12 @@ pub(crate) fn transfer(
             };
             let profile_normal = profile_target(&owned)
                 .and_then(|(_, target)| objects.iter().find(|object| object.id == target))
-                .map(|profile_object| {
+                .and_then(|profile_object| {
                     let profile_properties = properties_by_owner
                         .get(profile_object.id.as_str())
                         .map(Vec::as_slice)
                         .unwrap_or_default();
-                    sketch_frame(profile_properties).1
+                    sketch_frame(profile_properties).ok().map(|frame| frame.1)
                 });
             extrusion_definition(
                 &object.type_name,
@@ -1300,7 +1300,7 @@ fn parse_sketch(
     }
     let (constraints, parameters) = parse_constraints(object, properties, &id, &entities)?;
     let profiles = build_profiles(&entities, &constraints);
-    let (origin, normal, u_axis) = sketch_frame(properties);
+    let (origin, normal, u_axis) = sketch_frame(properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
@@ -1453,8 +1453,9 @@ fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeome
     })
 }
 
-fn sketch_frame(properties: &[&PropertyRecord]) -> (Point3, Vector3, Vector3) {
-    placement_frame(properties).map_or_else(
+fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
+    validate_sketch_placement(properties)?;
+    Ok(placement_frame(properties).map_or_else(
         || {
             (
                 Point3::new(0.0, 0.0, 0.0),
@@ -1463,7 +1464,7 @@ fn sketch_frame(properties: &[&PropertyRecord]) -> (Point3, Vector3, Vector3) {
             )
         },
         |(origin, normal, x_axis, _)| (origin, normal, x_axis),
-    )
+    ))
 }
 
 fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
@@ -1475,29 +1476,89 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
                 .iter()
                 .find(|value| value.tag == "PropertyPlacement")
         })?;
-    let component = |name: &str, default: f64| {
+    let component = |name: &str| {
         value
             .attributes
             .get(name)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(default)
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite())
     };
-    let quaternion = [
-        component("Q0", 0.0),
-        component("Q1", 0.0),
-        component("Q2", 0.0),
-        component("Q3", 1.0),
-    ];
+    let quaternion = if value.attributes.contains_key("A") {
+        let axis = [component("Ox")?, component("Oy")?, component("Oz")?];
+        let angle = component("A")?;
+        let axis_norm = axis
+            .iter()
+            .map(|component| component * component)
+            .sum::<f64>()
+            .sqrt();
+        if axis_norm <= f64::EPSILON {
+            if angle.abs() <= f64::EPSILON {
+                [0.0, 0.0, 0.0, 1.0]
+            } else {
+                return None;
+            }
+        } else {
+            let half_angle = angle / 2.0;
+            let scale = half_angle.sin() / axis_norm;
+            [
+                axis[0] * scale,
+                axis[1] * scale,
+                axis[2] * scale,
+                half_angle.cos(),
+            ]
+        }
+    } else {
+        [
+            component("Q0")?,
+            component("Q1")?,
+            component("Q2")?,
+            component("Q3")?,
+        ]
+    };
+    if quaternion
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>()
+        <= f64::EPSILON
+    {
+        return None;
+    }
     Some((
-        Point3::new(
-            component("Px", 0.0),
-            component("Py", 0.0),
-            component("Pz", 0.0),
-        ),
+        Point3::new(component("Px")?, component("Py")?, component("Pz")?),
         rotate_vector(quaternion, [0.0, 0.0, 1.0]),
         rotate_vector(quaternion, [1.0, 0.0, 0.0]),
         rotate_vector(quaternion, [0.0, 1.0, 0.0]),
     ))
+}
+
+fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), CodecError> {
+    let Some(property) =
+        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
+    else {
+        return Ok(());
+    };
+    let error = if property.type_name != "App::PropertyPlacement" {
+        Some(format!(
+            "sketch {} placement carrier has runtime type {}",
+            property.name, property.type_name
+        ))
+    } else if property.values.len() != 1 || property.values[0].tag != "PropertyPlacement" {
+        Some(format!(
+            "sketch {} placement carrier requires one PropertyPlacement value",
+            property.name
+        ))
+    } else if placement_frame(properties).is_none() {
+        Some(format!(
+            "sketch {} placement carrier has incomplete or invalid components",
+            property.name
+        ))
+    } else {
+        None
+    };
+    if let Some(message) = error {
+        return Err(CodecError::Malformed(message));
+    }
+    Ok(())
 }
 
 fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 {
