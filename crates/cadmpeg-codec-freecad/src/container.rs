@@ -160,7 +160,7 @@ fn classify(name: &str) -> &'static str {
     }
 }
 
-fn canonical_attribute(
+pub(crate) fn canonical_attribute(
     root: roxmltree::Node<'_, '_>,
     canonical: &str,
     alias: &str,

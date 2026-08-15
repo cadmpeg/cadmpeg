@@ -31,7 +31,7 @@ pub(crate) fn transfer(
             if support.is_none() && mode.is_none() && placement.is_none() && offset.is_none() {
                 return Ok(None);
             }
-            let effective_frame = placement.or(offset).unwrap_or(IDENTITY);
+            let effective_frame = effective_frame(placement, offset);
             Ok(Some(AttachmentRecord {
                 id: crate::native::native_id("attachment", &object.name),
                 object: object.id.clone(),
@@ -44,6 +44,18 @@ pub(crate) fn transfer(
         })
         .collect::<Result<Vec<_>, CodecError>>()
         .map(|records| records.into_iter().flatten().collect())
+}
+
+pub(crate) fn effective_frame(
+    placement: Option<[[f64; 4]; 4]>,
+    offset: Option<[[f64; 4]; 4]>,
+) -> [[f64; 4]; 4] {
+    match (placement, offset) {
+        (Some(placement), Some(offset)) => crate::product::multiply(placement, offset),
+        (Some(placement), None) => placement,
+        (None, Some(offset)) => offset,
+        (None, None) => IDENTITY,
+    }
 }
 
 fn unique_property<'a>(

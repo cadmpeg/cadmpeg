@@ -55,9 +55,14 @@ pub(crate) fn transfer(
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid GuiDocument.xml: {error}")))?;
     let root = xml.root_element();
-    let schema_version = root
-        .attribute("SchemaVersion")
-        .and_then(|value| value.parse().ok());
+    let schema_version =
+        crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
+            .map(|value| {
+                value.parse::<u32>().map_err(|_| {
+                    CodecError::Malformed("GuiDocument.xml SchemaVersion is not an integer".into())
+                })
+            })
+            .transpose()?;
     let camera_count = root
         .children()
         .filter(|node| node.has_tag_name("Camera"))
@@ -377,18 +382,7 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), Co
         let camera_state = camera_states
             .next()
             .filter(|_| camera_states.next().is_none());
-        let camera = camera_state.map(|state| CameraState {
-            position: state
-                .values
-                .iter()
-                .find(|value| value.tag == "Position")
-                .and_then(|value| vector3(&value.attributes)),
-            orientation: state
-                .attributes
-                .get("orientation")
-                .and_then(|value| parse_vector::<4>(value)),
-            properties: state.attributes.clone(),
-        });
+        let camera = camera_state.map(camera_state_value).transpose()?;
         ir.model.presentation_documents.push(PresentationDocument {
             id: PresentationId("fcstd:presentation:document#0".into()),
             schema_version: document.schema_version,
@@ -486,21 +480,59 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
     })
 }
 
-fn vector3(attributes: &BTreeMap<String, String>) -> Option<[f64; 3]> {
-    Some([
-        attributes.get("x")?.parse().ok()?,
-        attributes.get("y")?.parse().ok()?,
-        attributes.get("z")?.parse().ok()?,
+fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError> {
+    let position_value = state.values.iter().find(|value| value.tag == "Position");
+    let position = position_value
+        .map(|value| vector3(&value.attributes))
+        .transpose()
+        .map_err(|()| CodecError::Malformed("GUI camera Position is invalid".into()))?;
+    let orientation = state
+        .attributes
+        .get("orientation")
+        .map(|value| parse_vector::<4>(value))
+        .transpose()
+        .map_err(|()| CodecError::Malformed("GUI camera orientation is invalid".into()))?;
+    if position.is_some_and(|value| value.iter().any(|component| !component.is_finite())) {
+        return Err(CodecError::Malformed(
+            "GUI camera Position contains a non-finite component".into(),
+        ));
+    }
+    if orientation.is_some_and(|value| value.iter().any(|component| !component.is_finite())) {
+        return Err(CodecError::Malformed(
+            "GUI camera orientation contains a non-finite component".into(),
+        ));
+    }
+    if position.is_some_and(|value| value.iter().all(|component| *component == 0.0)) {
+        return Err(CodecError::Malformed(
+            "GUI camera Position must be nonzero".into(),
+        ));
+    }
+    if orientation.is_some_and(|value| value.iter().all(|component| *component == 0.0)) {
+        return Err(CodecError::Malformed(
+            "GUI camera orientation must be nonzero".into(),
+        ));
+    }
+    Ok(CameraState {
+        position,
+        orientation,
+        properties: state.attributes.clone(),
+    })
+}
+
+fn vector3(attributes: &BTreeMap<String, String>) -> Result<[f64; 3], ()> {
+    Ok([
+        attributes.get("x").ok_or(())?.parse().map_err(|_| ())?,
+        attributes.get("y").ok_or(())?.parse().map_err(|_| ())?,
+        attributes.get("z").ok_or(())?.parse().map_err(|_| ())?,
     ])
 }
 
-fn parse_vector<const N: usize>(value: &str) -> Option<[f64; N]> {
+fn parse_vector<const N: usize>(value: &str) -> Result<[f64; N], ()> {
     let values = value
         .split_whitespace()
-        .map(str::parse)
-        .collect::<Result<Vec<f64>, _>>()
-        .ok()?;
-    values.try_into().ok()
+        .map(|value| value.parse::<f64>().map_err(|_| ()))
+        .collect::<Result<Vec<f64>, _>>()?;
+    values.try_into().map_err(|_| ())
 }
 
 fn transfer_edge_appearance(

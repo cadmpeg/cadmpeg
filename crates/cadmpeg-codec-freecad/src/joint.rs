@@ -35,6 +35,29 @@ pub(crate) fn transfer(
                 object.id
             )));
         }
+        if let Some(property) = grounded_property {
+            let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
+                && property.links.len() == 1
+                && property.links[0].subelements.iter().all(String::is_empty);
+            if !matches!(
+                property.type_name.as_str(),
+                "App::PropertyLinkGlobal" | "App::PropertyLink"
+            ) && !legacy_empty_sub
+            {
+                return Err(CodecError::Malformed(format!(
+                    "joint property {} has the wrong runtime type for ObjectToGround",
+                    property.id
+                )));
+            }
+        }
+        if let Some(property) = joint_type_property {
+            if property.type_name != "App::PropertyEnumeration" {
+                return Err(CodecError::Malformed(format!(
+                    "joint property {} has the wrong runtime type for JointType",
+                    property.id
+                )));
+            }
+        }
         let grounded = grounded_property.is_some();
         let joint_type = joint_type_property.map(enumeration_value).transpose()?;
         if !grounded && joint_type.is_none() {
@@ -502,7 +525,7 @@ pub(crate) mod tests {
 <ObjectData Count="2">
  <Object name="BasePlate"><Properties Count="0"/></Object>
  <Object name="Ground"><Properties Count="2">
-  <Property name="ObjectToGround" type="App::PropertyLink"><Link value="BasePlate"/></Property>
+  <Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="BasePlate"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="7" Py="8" Pz="9" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -526,12 +549,34 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn rejects_wrong_runtime_types_for_joint_carriers() {
+        for property in [
+            r#"<Property name="ObjectToGround" type="App::PropertyString"><String value="Base"/></Property>"#,
+            r#"<Property name="JointType" type="App::PropertyInteger"><Integer value="0"/></Property>"#,
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="1">{property}</Properties></Object></ObjectData>
+</Document>"#
+            );
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
     fn rejects_ambiguous_joint_kind_and_scalar_carriers() {
         let documents = [
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
 <ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="3">
-<Property name="ObjectToGround" type="App::PropertyLink"><Link value="Base"/></Property>
+<Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="Base"/></Property>
 <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
 <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
 </Properties></Object></ObjectData></Document>"#,
@@ -549,7 +594,7 @@ pub(crate) mod tests {
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
 <ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="2">
-<Property name="ObjectToGround" type="App::PropertyLink"><Link value="Base"/></Property>
+<Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="Base"/></Property>
 <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
 </Properties></Object></ObjectData></Document>"#,
         ];

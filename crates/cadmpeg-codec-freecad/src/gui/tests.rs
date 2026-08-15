@@ -114,6 +114,31 @@ fn requires_one_camera_in_schema_one_gui_document() {
 }
 
 #[test]
+fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui_documents = [
+        r#"<Document schemaVersion="1"><ViewProviderData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera><Position x="NaN" y="1" z="2"/></Camera></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera><Position x="0" y="0" z="0"/></Camera></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera orientation="NaN 0 0 1"/></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera orientation="0 0 0 0"/></Document>"#,
+    ];
+    for gui in gui_documents {
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid GUI schema or camera value");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn rejects_ambiguous_gui_containers_and_names() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>

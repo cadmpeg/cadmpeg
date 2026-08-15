@@ -45,9 +45,10 @@ pub fn parse_with_context(
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
     let root = xml.root_element();
-    let schema = canonical_attribute(root, "SchemaVersion", "schemaVersion")?.ok_or_else(|| {
-        CodecError::Malformed("Document element has no SchemaVersion attribute".into())
-    })?;
+    let schema = crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
+        .ok_or_else(|| {
+            CodecError::Malformed("Document element has no SchemaVersion attribute".into())
+        })?;
     let (declarations_tag, data_tag, record_tag) = match schema.as_str() {
         "2" => ("Features", "FeatureData", "Feature"),
         "3" | "4" => ("Objects", "ObjectData", "Object"),
@@ -254,15 +255,26 @@ pub fn parse_with_context(
 
     let mut properties = Vec::new();
     let mut extensions = Vec::new();
-    if let Some(document_properties) = root.children().find(|node| node.has_tag_name("Properties"))
-    {
-        parse_properties(
-            text,
-            document_properties,
-            &crate::native::native_id("document", "0"),
-            &mut properties,
-            ctx,
-        )?;
+    let document_properties = root
+        .children()
+        .filter(|node| node.has_tag_name("Properties"))
+        .collect::<Vec<_>>();
+    match document_properties.as_slice() {
+        [] => {}
+        [document_properties] => {
+            parse_properties(
+                text,
+                *document_properties,
+                &crate::native::native_id("document", "0"),
+                &mut properties,
+                ctx,
+            )?;
+        }
+        _ => {
+            return Err(CodecError::Malformed(
+                "Document.xml has multiple root Properties containers".into(),
+            ));
+        }
     }
     for object in &objects {
         let data = data_by_name.get(&object.name).ok_or_else(|| {
@@ -773,23 +785,6 @@ pub(crate) fn is_xlink_type(type_name: &str) -> bool {
             | "App::PropertyXLinkSubHidden"
             | "App::PropertyXLinkSubList"
     )
-}
-
-fn canonical_attribute(
-    root: roxmltree::Node<'_, '_>,
-    canonical: &str,
-    alias: &str,
-) -> Result<Option<String>, CodecError> {
-    match (root.attribute(canonical), root.attribute(alias)) {
-        (Some(_), Some(_)) => Err(CodecError::Malformed(format!(
-            "Document element has both {canonical} and {alias} attributes"
-        ))),
-        (Some(value), None) => Ok(Some(value.to_owned())),
-        (None, Some(_)) => Err(CodecError::Malformed(format!(
-            "Document element uses unsupported {alias}; expected {canonical}"
-        ))),
-        (None, None) => Ok(None),
-    }
 }
 
 fn unique_section<'a, 'input>(

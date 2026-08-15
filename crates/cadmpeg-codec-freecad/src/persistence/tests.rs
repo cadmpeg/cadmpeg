@@ -79,6 +79,21 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
 }
 
 #[test]
+fn rejects_duplicate_root_property_containers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Properties Count="1"><Property name="First" type="App::PropertyString"><String value="one"/></Property></Properties>
+<Properties Count="1"><Property name="Second" type="App::PropertyString"><String value="two"/></Property></Properties>
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("duplicate root Properties containers");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 pub(crate) fn legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts() {
     let cases = [
         r#"<Document SchemaVersion="2"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,

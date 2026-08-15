@@ -44,7 +44,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
     assert_eq!(attachments[0].supports[0].subelements, ["Face1"]);
     assert_eq!(attachments[0].placement.expect("placement")[0][3], 10.0);
     assert_eq!(attachments[0].offset.expect("offset")[0][3], 2.0);
-    assert_eq!(attachments[0].effective_frame[0][3], 10.0);
+    assert_eq!(attachments[0].effective_frame[0][3], 12.0);
     let sketch = result.ir().model.sketches.first().expect("sketch");
     assert_eq!(
         sketch

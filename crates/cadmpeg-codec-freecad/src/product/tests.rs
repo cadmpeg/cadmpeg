@@ -431,6 +431,7 @@ fn rejects_overlapping_product_membership_for_neutral_projection() {
 fn product_runtime_dispatch_requires_exact_registered_types() {
     for (runtime_type, expected) in [
         ("Assembly::AssemblyObject", Some("part")),
+        ("Assembly::AssemblyLink", Some("part")),
         ("App::Part", Some("part")),
         ("App::DocumentObjectGroup", Some("group")),
         ("App::LinkGroup", Some("link_group")),
@@ -448,6 +449,26 @@ fn product_runtime_dispatch_requires_exact_registered_types() {
     ] {
         assert_eq!(product_kind(runtime_type), None, "{runtime_type}");
     }
+}
+
+#[test]
+fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyInteger"><Integer value="2"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("wrong copy-on-change carrier type");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]

@@ -450,12 +450,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .chain(std::iter::once(&attachment.effective_frame))
             .flat_map(|matrix| matrix.iter().flatten())
             .any(|value| !value.is_finite());
-        let effective_mismatch = attachment.placement.or(attachment.offset).unwrap_or([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]) != attachment.effective_frame;
+        let effective_mismatch =
+            crate::attachment::effective_frame(attachment.placement, attachment.offset)
+                != attachment.effective_frame;
         if !object_ids.contains(attachment.object.as_str())
             || missing_support
             || non_finite

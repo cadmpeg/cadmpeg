@@ -45,8 +45,9 @@ size, entry count, nesting depth, and expansion ratio are bounded before allocat
 decompression.
 
 `Document.xml` is the authoritative application object and property graph. `GuiDocument.xml` is a
-presentation graph. Other entries acquire meaning only from typed references in either graph;
-unreferenced entries remain named archive records.
+presentation graph. Both XML roots use the canonical `SchemaVersion` spelling; the lowercase
+`schemaVersion` alias is invalid. Other entries acquire meaning only from typed references in
+either graph; unreferenced entries remain named archive records.
 
 Each side-entry reference names one ZIP member. The member's complete uncompressed byte sequence
 is one payload, and the ZIP member boundary is the only generic side-entry framing. A property
@@ -84,7 +85,8 @@ envelope. It selects versioned side-entry details such as string tables and comp
 Property runtime type and value tag select a property-value grammar.
 
 Document properties and object properties use the same `Properties` container in schemas 2, 3,
-and 4. `Properties.Count` equals the number of `Property` records. An optional
+and 4. The document root has at most one direct `Properties` container; duplicate root
+containers are invalid. `Properties.Count` equals the number of `Property` records. An optional
 `TransientCount` equals the number of `_Property` records. Each record has a `name` and `type`.
 Property names are unique across both record kinds within one container. A property family is
 selected by an exact registered runtime type. An unregistered runtime type does not select a family
@@ -333,9 +335,9 @@ cells, and overlapping merged ranges are validated.
 ## 9. Product structure
 
 The native `product_nodes` arena retains groups, parts, link groups, and placed link objects exactly
-as application records. Product dispatch uses the exact runtime registry: `Assembly::AssemblyObject`
-and `App::Part` are parts, `App::DocumentObjectGroup` is a group, `App::LinkGroup` is a link group,
-and `App::Link` and `App::LinkElement` are occurrences. Other runtime types remain native and do
+as application records. Product dispatch uses the exact runtime registry: `Assembly::AssemblyObject`,
+`Assembly::AssemblyLink`, and `App::Part` are parts, `App::DocumentObjectGroup` is a group,
+`App::LinkGroup` is a link group, and `App::Link` and `App::LinkElement` are occurrences. Other runtime types remain native and do
 not enter the product arena. CADIR components separate reusable definitions from occurrences.
 Ordered container membership resolves to component or occurrence ids, and each link-array element
 becomes its own occurrence with a stable array index, scale, local transform, and transform
@@ -378,8 +380,11 @@ spreadsheet objects; they are not treated as the authoritative identity of their
 
 Link semantics remain distinct from placement. Prototype subelement paths, tree-child claiming,
 base and per-element scale, explicit element objects, and per-element visibility are retained on
-neutral occurrences. Copy-on-change is typed as disabled, enabled, owned, tracking, or an explicit
-future native policy, with its source, ownership group, and touched state resolved independently.
+neutral occurrences. `LinkCopyOnChange` is valid for neutral transfer only when its exact runtime
+type is `App::PropertyEnumeration`; a same-named property of another runtime type remains native
+and does not alter occurrence semantics. Copy-on-change is typed as disabled, enabled, owned,
+tracking, or an explicit future native policy, with its source, ownership group, and touched state
+resolved independently.
 All array-valued fields must either be absent or match `ElementCount`.
 A present zero `ElementCount` requires every array-valued field to be empty. The link retains its
 single scalar occurrence. An absent `ElementCount` permits one scalar link occurrence or infers a
@@ -398,8 +403,11 @@ targets with each target's ordered subelement path, and both connector-local fra
 linear, limit-enable, detach, and suppression values remain independently named parameters. Nested
 `Sub` elements belong to their enclosing cross-link and are not separate object references. Joint
 Python proxy payloads remain inert native properties; decoding never imports their module. A joint
-has exactly one kind carrier: `ObjectToGround` or `JointType`. Both carriers are invalid. A
-`JointType` property has exactly one selected `Integer`; its zero-based index selects the matching
+has exactly one kind carrier: `ObjectToGround` or `JointType`. Both carriers are invalid. The
+canonical `ObjectToGround` runtime type is `App::PropertyLinkGlobal`. Legacy `App::PropertyLink`
+and `App::PropertyLinkSub` carriers are accepted only with one object target and no nonempty
+subelement; all other runtime types are invalid. `JointType` is exactly
+`App::PropertyEnumeration` and has exactly one selected `Integer`; its zero-based index selects the matching
 ordered `Enum` value when present, and an out-of-range index remains the numeric native family.
 Each named scalar joint parameter has at most one root value; duplicate values are invalid.
 Each connector-frame and connector-offset carrier is an `App::PropertyPlacement` property with at
@@ -461,7 +469,8 @@ does not inherit a format-wide placeholder loss.
 ## 11. Presentation and application records
 
 Format-neutral document and view presentation arenas represent GUI state. A GUI archive produces
-one document presentation record; a headless archive produces none. The neutral document record
+one document presentation record; a headless archive produces none. The GUI root accepts the
+canonical `SchemaVersion` attribute only; the lowercase alias is invalid. The neutral document record
 contains the schema version, one camera, ordered document state, and resolved display-asset
 references. GUI schema 1 has exactly one direct `Camera` element. Its `settings` attribute is the
 serialized camera state. GUI schema 1 does not serialize an active view; an `active` root attribute
@@ -699,9 +708,9 @@ the ordered many-reference relation and can contain more than one property or GU
 
 Native namespace version 11 adds attachment records. Support links retain ordered object and
 subelement identity separately from the map mode. The persisted resolved `Placement` and local
-`AttachmentOffset` remain distinct matrices. Neutral geometry uses the resolved placement when it
-is present and otherwise the offset; the decoder never multiplies both speculatively. Validation
-checks support identity, finite matrices, and this effective-frame rule. Each named attachment
+`AttachmentOffset` remain distinct matrices. Neutral geometry composes them as
+`Placement × AttachmentOffset` when both are present, and uses the sole present matrix otherwise.
+Validation checks support identity, finite matrices, and this effective-frame rule. Each named attachment
 carrier occurs at most once. `MapMode` has at most one text value, and each placement carrier is an
 `App::PropertyPlacement` property with at most one `PropertyPlacement` value containing finite
 position and quaternion or axis-angle components.

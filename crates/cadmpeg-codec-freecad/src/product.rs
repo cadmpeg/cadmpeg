@@ -74,10 +74,18 @@ pub(crate) fn transfer(
                 })
                 .unwrap_or_default(),
             claim_child: scalar(&owned, "LinkClaimChild").and_then(parse_bool),
-            copy_on_change: owned
-                .iter()
-                .find(|property| property.name == "LinkCopyOnChange")
-                .and_then(|property| enumeration_value(property)),
+            copy_on_change: unique_property(&owned, "LinkCopyOnChange")?
+                .map(|property| {
+                    if property.type_name != "App::PropertyEnumeration" {
+                        return Err(CodecError::Malformed(format!(
+                            "product property {} has the wrong runtime type for LinkCopyOnChange",
+                            property.id
+                        )));
+                    }
+                    Ok(enumeration_value(property))
+                })
+                .transpose()?
+                .flatten(),
             copy_on_change_source: linked_object(&owned, "LinkCopyOnChangeSource"),
             copy_on_change_group: linked_object(&owned, "LinkCopyOnChangeGroup"),
             copy_on_change_touched: scalar(&owned, "LinkCopyOnChangeTouched").and_then(parse_bool),
@@ -504,7 +512,7 @@ pub(crate) fn identity() -> [[f64; 4]; 4] {
     ]
 }
 
-fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
+pub(crate) fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
     std::array::from_fn(|row| {
         std::array::from_fn(|column| {
             (0..4)
@@ -678,7 +686,7 @@ fn read_real(view: View<'_>, offset: usize, width: usize) -> f64 {
 
 fn product_kind(kind: &str) -> Option<&'static str> {
     match kind {
-        "Assembly::AssemblyObject" | "App::Part" => Some("part"),
+        "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part" => Some("part"),
         "App::DocumentObjectGroup" => Some("group"),
         "App::LinkGroup" => Some("link_group"),
         "App::Link" | "App::LinkElement" => Some("occurrence"),

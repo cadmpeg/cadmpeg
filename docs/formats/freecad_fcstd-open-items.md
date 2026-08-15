@@ -90,58 +90,7 @@ neutral presentation field.
 neutral meaning; no producer source or independent file establishes that every such type is
 opaque.
 
-### GP-06. GUI camera derived-value admission
-
-**Question.** Which numeric and geometric invariants must the GUI camera parser enforce before it
-creates derived position and orientation fields?
-
-**Known.** GUI schema 1 has one direct Camera. A decoded camera position and orientation must be
-finite and nonzero when present.
-
-**Conflict.** gui.rs:380-389 and 489-504 parse floating-point attributes and vectors without
-finite or nonzero checks. A schema-1 Camera with NaN coordinates or a zero orientation can
-therefore produce a neutral camera state that violates the specification.
-
-**Need.** Reject or retain invalid camera values before neutral transfer. Apply the position and
-orientation checks independently.
-
-### GP-07. GUI schema attribute dispatch
-
-**Question.** Are schema-version aliases invalid, and must the schema-1 camera rule apply only
-after canonical attribute validation?
-
-**Known.** FreeCAD writes the canonical SchemaVersion attribute. GUI schema 1 requires exactly
-one direct Camera.
-
-**Conflict.** gui.rs:58-68 reads only SchemaVersion and does not reject schemaVersion. A root with
-schemaVersion=1 and no canonical attribute leaves schema_version unset and bypasses the schema-1
-camera cardinality check.
-
-**Need.** Use the canonical attribute rule shared by the document envelope, and reject aliases
-or conflicting attributes before applying schema-specific cardinality rules.
-
-**Note.** A hostile GuiDocument.xml with only the lowercase alias and zero or multiple Camera
-elements is accepted past this gate. The existing GUI cardinality closure does not cover
-attribute dispatch.
-
 ## 3. Persistence graph
-
-### PG-04. Document property-container cardinality
-
-**Question.** Can Document.xml contain more than one root-level Properties container?
-
-**Known.** FreeCAD Document::Save writes one document PropertyContainer. Property names are
-unique within that container.
-
-**Conflict.** persistence.rs:255-265 selects the first root-level Properties element with find.
-Later root-level Properties elements are ignored rather than rejected or retained.
-
-**Need.** Enforce one root-level document Properties container and preserve the full property
-graph when the input violates that cardinality.
-
-**Note.** A hostile document with two root-level Properties containers loses every property in
-the second container while decode still succeeds. The source writer and reader establish the
-normal one-container form; the PG-03 closure did not validate root-container cardinality.
 
 ## 4. Persistent topology identity
 
@@ -318,43 +267,6 @@ decode still succeeds.
 
 ## 7. Product structure
 
-### PR-01. Product runtime registry and membership
-
-**Question.** Which exact runtime types and cardinality rules govern product records, container
-membership, and linked prototypes?
-
-**Known.** The specification names the exact product registry and retains other runtime types as
-native records.
-
-**Conflict.** product.rs product_kind admits App::Part, App::Link, App::LinkElement, and the
-listed group types, but omits Assembly::AssemblyLink. FreeCAD AssemblyLink is a subclass of
-App::Part and is a standard product carrier. A valid AssemblyLink therefore does not enter the
-product transfer path as its application-defined product type.
-
-**Need.** Establish the complete exact product registry, including AssemblyLink, and define
-membership and prototype cardinality from producer source.
-
-**Note.** AssemblyLink.h and AssemblyLink.cpp identify the runtime type and its App::Part
-inheritance. The current exact-name closure is incomplete for that standard producer type.
-
-### PR-02. Product carrier runtime types
-
-**Question.** Which runtime type must each named product carrier have before its value enters a
-neutral occurrence?
-
-**Known.** FreeCAD defines LinkCopyOnChange as App::PropertyEnumeration and defines the related
-link-copy carriers by their declared property types.
-
-**Conflict.** product.rs:77-88 and the copy_on_change projection select properties by name.
-enumeration_value is then applied without checking the declared runtime type. A property with
-the name LinkCopyOnChange and an Integer value can enter the copy-on-change policy.
-
-**Need.** Enforce the exact runtime type for every product carrier before projecting its value.
-Retain or reject a wrong-type carrier without interpreting its child value.
-
-**Note.** A hostile property with a valid-looking integer but the wrong runtime type changes
-occurrence semantics while remaining a successful decode.
-
 ## 8. Semantic annotations
 
 ### SA-01. Runtime-type to annotation-kind mapping
@@ -455,41 +367,3 @@ neutral transfer.
 direction behavior. The current path permits a hostile value that violates the specification.
 
 ## 10. Attachment and assembly
-
-### AT-01. Attachment frame carrier composition
-
-**Question.** How do Placement and AttachmentOffset combine when both are present, and which
-property/value is authoritative when repeated?
-
-**Known.** Attachment records retain support, map mode, placement, offset, and an effective frame.
-Placement and AttachmentOffset are distinct carriers.
-
-**Conflict.** attachment.rs:27-34 assigns effective_frame = placement.or(offset), so
-AttachmentOffset is ignored whenever Placement exists. FreeCAD AttachExtension.cpp applies the
-attachment offset separately while computing the attached placement.
-
-**Need.** Implement or specify the producer composition and property cardinality. Do not select
-one carrier by presence when both participate in the frame.
-
-**Note.** The current neutral frame is not equivalent to the FreeCAD attachment computation for
-objects with both carriers.
-
-### JN-02. Joint carrier runtime types
-
-**Question.** Which runtime type must ObjectToGround and JointType have before their values define
-a joint?
-
-**Known.** FreeCAD defines JointType as App::PropertyEnumeration and ObjectToGround as
-App::PropertyLinkGlobal. Joint kind cardinality and the out-of-range enumeration rule are
-separate from runtime-type admission.
-
-**Conflict.** joint.rs:25-40 selects carriers by name and joint.rs:264-300 reads their child
-values without checking the declared runtime type. A wrong-type property with the expected name
-can create a grounded or enumerated joint.
-
-**Need.** Enforce exact runtime types for joint carriers and retain or reject wrong-type values
-without semantic interpretation.
-
-**Note.** The source JointObject.py property declarations support the type requirement. The
-existing JN-01 closure establishes one kind carrier and one Integer value, but not runtime-type
-admission.
