@@ -741,17 +741,28 @@ fn census_surface(
 pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
-    let topology_version = if text.contains("CASCADE Topology V1, (c) Matra-Datavision") {
-        1
-    } else if text.contains("CASCADE Topology V2, (c) Matra-Datavision") {
-        2
-    } else if text.contains("CASCADE Topology V3, (c) Open Cascade") {
-        3
-    } else {
-        return Err(CodecError::Malformed(
-            "text B-rep has no supported topology header".into(),
-        ));
-    };
+    let headers = [
+        ("CASCADE Topology V1, (c) Matra-Datavision", 1),
+        ("CASCADE Topology V2, (c) Matra-Datavision", 2),
+        ("CASCADE Topology V3, (c) Open Cascade", 3),
+    ];
+    let mut topology_version = None;
+    for (header, version) in headers {
+        let count = text.matches(header).count();
+        if count > 1 {
+            return Err(CodecError::Malformed(
+                "text B-rep has duplicate topology headers".into(),
+            ));
+        }
+        if count == 1 && topology_version.replace(version).is_some() {
+            return Err(CodecError::Malformed(
+                "text B-rep has multiple topology headers".into(),
+            ));
+        }
+    }
+    let topology_version = topology_version.ok_or_else(|| {
+        CodecError::Malformed("text B-rep has no supported topology header".into())
+    })?;
     let tokens = text.split_ascii_whitespace().collect::<Vec<_>>();
     let mut section_counts = BTreeMap::new();
     let mut previous_section = None;
@@ -765,10 +776,20 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         "Triangulations",
         "TShapes",
     ] {
-        let index = tokens
+        let mut section_tokens = tokens
             .iter()
-            .position(|token| *token == section)
-            .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {section} table")))?;
+            .enumerate()
+            .filter(|(_, token)| **token == section);
+        let Some((index, _)) = section_tokens.next() else {
+            return Err(CodecError::Malformed(format!(
+                "text B-rep has no {section} table"
+            )));
+        };
+        if section_tokens.next().is_some() {
+            return Err(CodecError::Malformed(
+                "text B-rep has duplicate section markers".into(),
+            ));
+        }
         let count = tokens
             .get(index + 1)
             .and_then(|value| value.parse::<usize>().ok())
@@ -4622,6 +4643,21 @@ pub(crate) mod tests {
             .expect_err("out-of-order table")
             .to_string()
             .contains("out of order"));
+    }
+
+    #[test]
+    fn rejects_duplicate_text_headers_and_section_markers() {
+        let duplicate_header = b"CASCADE Topology V1, (c) Matra-Datavision\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        assert!(matches!(
+            parse_text(duplicate_header),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_section = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        assert!(matches!(
+            parse_text(duplicate_section),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 
     #[test]

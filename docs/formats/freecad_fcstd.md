@@ -157,6 +157,11 @@ rejected before table parsing. Successfully parsed payloads emit a machine-deriv
 recursive 2D curve, 3D curve, surface, polygon, triangulation, and topology family. Native
 validation recomputes that census from the retained shape tables and rejects any mismatch.
 
+Every text shape set has exactly one supported topology header and exactly one marker for each
+`Locations`, `Curve2ds`, `Curves`, `Polygon3D`, `PolygonOnTriangulations`, `Surfaces`,
+`Triangulations`, and `TShapes` table. The markers occur in that order. Duplicate or missing
+markers are invalid.
+
 Polygon carriers are also transferred as bounded neutral geometry. An edge without an exact 3D
 curve uses its stored 3D polygon or polygon-on-triangulation nodes as a polyline, retaining explicit
 parameters when present and scaling the chordal deflection with the carrier location. A face

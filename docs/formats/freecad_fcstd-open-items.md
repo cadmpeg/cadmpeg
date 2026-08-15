@@ -37,7 +37,6 @@ These items have a Conflict part and need a decision.
 - SA-02. Annotation scalar and position property selection
 - DG-01. TechDraw runtime-type classification
 - DG-02. Drawing link and parameter selection
-- BR-01. Text B-rep header and table selection
 - AT-01. Attachment frame carrier precedence
 - JN-01. Joint kind and enumeration carrier selection
 
@@ -311,20 +310,6 @@ rejection prevents a source-order choice but does not resolve the legal cardinal
 **Need.** We must establish the TechDraw property definitions, cardinalities, and precedence from FreeCAD source or independent saved documents.
 
 **Note.** The code has separate first-wins and last-wins paths; producer uniqueness remains unverified.
-
-## 9. Text B-rep
-
-### BR-01. Text B-rep header and table selection
-
-**Question.** What uniqueness and framing rules govern the text B-rep topology header and section markers?
-
-**Known.** The parser requires one supported topology version and the ordered tables `Locations`, `Curve2ds`, `Curves`, `Polygon3D`, `PolygonOnTriangulations`, `Surfaces`, `Triangulations`, and `TShapes`.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/brep.rs:736-749` selects the first header marker found by whole-text `contains` checks. At `:753-782` and `:784-787`, each section count comes from the first token occurrence. A concatenated or embedded payload with repeated markers can select an earlier version or table while later markers carry the actual records.
-
-**Need.** We must establish the producer framing and reject duplicate or embedded header/table markers instead of accepting the first occurrence.
-
-**Note.** Valid OCCT text B-rep output normally has one header and one table, but the decoder has no uniqueness check for repeated markers.
 
 ## 10. Attachment and assembly
 
