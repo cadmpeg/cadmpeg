@@ -1308,6 +1308,12 @@ impl OccurrenceExpansion<'_, '_> {
     }
 }
 
+fn charge_native_entities(ctx: Option<&DecodeContext<'_>>, count: u64) -> Result<(), CodecError> {
+    ctx.map_or(Ok(()), |ctx| {
+        ctx.charge_entities(count, "iges_native_entities")
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn store(
     ir: &mut CadIr,
@@ -1319,6 +1325,7 @@ pub(crate) fn store(
     limits: ProductOccurrenceLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ProductOccurrenceExpansion, CodecError> {
+    charge_native_entities(ctx, scan.lines.len() as u64)?;
     let cards = scan
         .lines
         .iter()
@@ -1366,6 +1373,7 @@ pub(crate) fn store(
             }
         }
     }
+    charge_native_entities(ctx, directory.len() as u64)?;
     let mut entities = directory
         .iter()
         .map(|entry| {
@@ -4448,8 +4456,6 @@ pub(crate) fn store(
             .unwrap_or_default();
     }
     let native_entity_count = [
-        cards.len(),
-        entities.len(),
         directions.len(),
         transforms.len(),
         copious_data.len(),
