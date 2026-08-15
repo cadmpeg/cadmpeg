@@ -45,26 +45,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-03. The boundary between entity parameters and trailing pointer groups
-
-**Question.** Where does an entity's own parameter list stop and its trailing pointer groups start?
-
-**Known.** `parameter.rs:172-184` collects structurally closed candidates and accepts a fully valid boundary only when exactly one candidate remains. `parameter.rs:231-242` orders candidates by token start. `native.rs:1460-1463` stores no trailing groups when multiple fully valid candidates exist, and `native.rs:1527-1551` then emits no association or property links. `reader.rs:217-225` reports ambiguity only for required Type 402 Form 1 and 14 routes. The Parameter Data section of `iges.md` states that the earliest target-valid suffix is selected.
-
-**Need.** The implementation must select the documented earliest valid suffix or retain every candidate and emit an attributed ambiguity for every affected entity. A normal entity with two fully valid suffix shapes currently loses its links without a loss.
-
-**Note.** Reopened by the 2026-08-16 audit. The specification now states an earliest-suffix rule, but the selection branch rejects multiple fully valid candidates. The existing ambiguity test preserves the contradictory behavior, and ordinary entities have no ambiguity loss.
-
-### PH-04. A physical line longer than 80 bytes
-
-**Question.** How does a physical line with more than 80 payload bytes divide into records?
-
-**Known.** `card.rs:162-208` checks the first 80 bytes of an overlong pre-Terminate line, emits a fixed card when its header is `T`, and retains the bytes after column 80 as an unsequenced physical record; a non-`T` header is malformed. The Physical representation section of `iges.md` states the fixed 80-byte rule and permits an opaque remainder only after Terminate.
-
-**Need.** We need the fixed-record division rule for overlong input, including the status of an overlong Terminate line. The rule must distinguish a valid card with a post-Terminate remainder from a malformed pre-Terminate line.
-
-**Note.** Reopened by the 2026-08-16 audit. The code accepts an overlong Terminate line before the `terminated` state is set, while the Physical representation section calls every pre-Terminate overlong physical line malformed. The existing test asserts the opposite behavior. The closure did not settle the rule from the IGES specification or from an exporter-authored witness file.
-
 ### PH-05. Disagreement between the declared and actual Parameter Data card count
 
 **Question.** Is the Directory Entry card count or the set of back-pointers authoritative?

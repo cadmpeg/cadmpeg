@@ -175,12 +175,10 @@ pub(crate) fn analyze_trailing_pointer_groups(
         .filter_map(|candidate| groups_for_candidate(record, directory, *candidate))
         .filter(|groups| groups.fully_valid);
     let first_valid = valid_groups.next();
-    let groups = match (first_valid, valid_groups.next()) {
-        (Some(groups), None) => Some(groups),
-        (None, None) if candidates.len() == 1 => {
-            groups_for_candidate(record, directory, candidates[0])
-        }
-        _ => None,
+    let groups = match first_valid {
+        Some(groups) => Some(groups),
+        None if candidates.len() == 1 => groups_for_candidate(record, directory, candidates[0]),
+        None => None,
     };
     TrailingPointerAnalysis {
         candidate_count: candidates.len(),

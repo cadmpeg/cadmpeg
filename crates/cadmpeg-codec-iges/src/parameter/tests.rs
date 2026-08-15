@@ -29,8 +29,37 @@ use cadmpeg_ir::CadIr;
 use super::{
     analyze_trailing_pointer_groups, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
 };
+use crate::directory::{DirectoryEntry, Status};
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+fn directory_target(sequence: u32, entity_type: i64) -> DirectoryEntry {
+    DirectoryEntry {
+        source_offset: 0,
+        sequence,
+        entity_type,
+        parameter_start: 1,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 0,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 1,
+        form: 0,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    }
+}
 
 #[test]
 fn blank_parameter_field_is_an_omitted_value() {
@@ -219,12 +248,15 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
 }
 
 #[test]
-fn ambiguous_trailing_pointer_group_boundary_is_not_guessed() {
+fn earliest_valid_trailing_pointer_group_boundary_wins() {
+    let association = directory_target(1, 402);
+    let property = directory_target(9, 406);
+    let directory = BTreeMap::from([(1, &association), (9, &property)]);
     let record = ParameterRecord {
         directory_sequence: 1,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: [116, 1, 0, 2, 7, 9]
+        tokens: [116, 1, 2, 3, 2, 1, 1, 1, 9]
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
@@ -234,8 +266,12 @@ fn ambiguous_trailing_pointer_group_boundary_is_not_guessed() {
         comment: Vec::new(),
     };
 
-    let analysis = analyze_trailing_pointer_groups(&record, &BTreeMap::new());
-    assert_eq!(analysis.candidate_count, 2);
-    assert!(analysis.groups.is_none());
-    assert!(trailing_pointer_groups(&record, &BTreeMap::new()).is_none());
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 3);
+    let groups = analysis.groups.expect("earliest valid group");
+    assert_eq!(groups.token_start, 4);
+    assert_eq!(groups.associations, vec![1, 1]);
+    assert_eq!(groups.properties, vec![9]);
+    assert_eq!(groups.association_pointers.len(), 2);
+    assert_eq!(trailing_pointer_groups(&record, &directory), Some(groups));
 }
