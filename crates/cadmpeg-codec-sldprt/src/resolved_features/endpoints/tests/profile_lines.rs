@@ -21,6 +21,97 @@ use cadmpeg_ir::math::Point2;
 use std::collections::HashMap;
 
 #[test]
+fn legacy_compact_84_construction_line_uses_direct_point_ids() {
+    let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+    payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[27..29].copy_from_slice(&2u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&7u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&10u16.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+    payload[80..84].copy_from_slice(&4u32.to_le_bytes());
+    payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    let entity = |id: &str, object_index, coordinates_m, kind| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", Some(1), None, SketchInputKind::LineOrCircle);
+    let impostor = entity(
+        "impostor",
+        Some(7),
+        Some([2.0, 0.0]),
+        SketchInputKind::LineOrCircle,
+    );
+    let first = entity("first", Some(7), Some([0.0, 0.0]), SketchInputKind::Point);
+    let second = entity("second", Some(10), Some([1.0, 0.0]), SketchInputKind::Point);
+    let markers = [&curve, &impostor, &first, &second];
+
+    assert_eq!(
+        legacy_compact_84_construction_line_endpoint_indices(&payload, 0),
+        Some([7, 10])
+    );
+    assert!(marker_is_selected_construction_line(&payload, 0));
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+
+    payload[5..13].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
+    assert_eq!(
+        legacy_compact_84_construction_line_endpoint_indices(&payload, 0),
+        Some([7, 10])
+    );
+
+    payload[21] = 1;
+    assert_eq!(
+        legacy_compact_84_construction_line_endpoint_indices(&payload, 0),
+        None
+    );
+    payload[21] = 0;
+    payload[39] = 1;
+    assert_eq!(
+        legacy_compact_84_construction_line_endpoint_indices(&payload, 0),
+        None
+    );
+    payload[39] = 0;
+
+    payload[72..76].fill(0);
+    payload[76..80].copy_from_slice(&4u32.to_le_bytes());
+    payload[80..84].copy_from_slice(&4u32.to_le_bytes());
+    assert_eq!(
+        legacy_compact_84_construction_line_endpoint_indices(&payload, 0),
+        Some([7, 10])
+    );
+
+    payload[80..84].copy_from_slice(&5u32.to_le_bytes());
+    assert_eq!(
+        legacy_compact_84_construction_line_endpoint_indices(&payload, 0),
+        None
+    );
+    assert!(!marker_is_selected_construction_line(&payload, 0));
+}
+
+#[test]
 fn compact_legacy_wide_selected_axis_indexes_the_coordinate_roster() {
     let mut payload = vec![0; 92 + LEGACY_SKETCH_MARKER.len()];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);

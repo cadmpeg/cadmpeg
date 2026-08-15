@@ -29,6 +29,7 @@ use cadmpeg_ir::sketches::SketchGeometry;
 use std::collections::{HashMap, HashSet};
 
 use crate::layout::compact_legacy_68_profile_variant_curve as legacy_68;
+use crate::layout::compact_legacy_84_construction_line as legacy_84;
 use crate::layout::compact_legacy_90_geometry_line as legacy_90;
 use crate::layout::compact_legacy_terminal_diameter_circle as diam_circ;
 use crate::layout::extended_geometry_104_indexed_arc as geom_104;
@@ -53,6 +54,7 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     wide_indexed_curve_endpoint_indices,
     compact_indexed_curve_endpoint_indices,
     direct_indexed_curve_endpoint_indices,
+    legacy_compact_84_construction_line_endpoint_indices,
     extended_compact_84_construction_line_endpoint_indices,
     extended_shifted_construction_line_endpoint_indices,
     extended_geometry_locus_construction_line_endpoint_indices,
@@ -386,6 +388,8 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
         return Vec::new();
     };
     let selected_construction = marker_is_selected_construction_line(payload, offset);
+    let point_object_construction =
+        legacy_compact_84_construction_line_endpoint_indices(payload, offset).is_some();
     let boundary_relation =
         extended_wide_horizontal_relation_endpoint_indices(payload, offset).is_some();
     if curve.coordinates_m.is_some()
@@ -492,7 +496,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                         marker.feature_ref == curve.feature_ref
                             && marker.object_index == Some(index)
                             && marker.coordinates_m.is_some()
-                            && (selected_construction
+                            && ((!point_object_construction && selected_construction)
                                 || matches!(
                                     marker.kind,
                                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
@@ -4700,6 +4704,69 @@ pub(super) fn direct_indexed_curve_endpoint_indices(
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
+pub(super) fn legacy_compact_84_construction_line_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if payload.get(offset + legacy_84::MARKER..offset + legacy_84::HEADER)
+        != Some(LEGACY_SKETCH_MARKER)
+        || (payload.get(offset + legacy_84::HEADER..offset + legacy_84::SHARED_SELECTOR)
+            != Some(&[0xff; 8])
+            && payload.get(offset + legacy_84::HEADER..offset + legacy_84::SHARED_SELECTOR)
+                != Some(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]))
+        || payload.get(offset + legacy_84::SHARED_SELECTOR..offset + legacy_84::NATIVE_KIND)
+            != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || payload.get(offset + legacy_84::NATIVE_KIND + 4..offset + legacy_84::PROFILE_LOCUS)
+            != Some(&[0; 2])
+        || payload.get(offset + legacy_84::NATIVE_KIND..offset + legacy_84::NATIVE_KIND + 4)
+            != Some(&legacy_84::NATIVE_KIND_VALUE.to_le_bytes())
+        || payload.get(offset + legacy_84::PROFILE_LOCUS..offset + legacy_84::ROLE)
+            != Some(&[0x04, 0x00, 0x02, 0x00])
+        || payload.get(offset + legacy_84::ROLE..offset + legacy_84::STATE_AT_29)
+            != Some(&legacy_84::ROLE_VALUE.to_le_bytes())
+        || payload.get(offset + legacy_84::STATE_AT_29..offset + legacy_84::SELECTOR)
+            != Some(&legacy_84::STATE_AT_29_VALUE.to_le_bytes())
+        || payload.get(offset + legacy_84::SELECTOR..offset + legacy_84::SELECTOR + 8)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        || payload.get(offset + legacy_84::SELECTOR + 8..offset + legacy_84::STATE_VALUE)
+            != Some(&[0; 9])
+        || payload.get(offset + legacy_84::STATE_VALUE..offset + legacy_84::ENDPOINT_FIRST)
+            != Some(&legacy_84::STATE_VALUE_VALUE.to_le_bytes())
+        || payload
+            .get(offset + legacy_84::ZERO_ENDPOINT_PREFIX..offset + legacy_84::SIGNED_SELECTOR)
+            != Some(&legacy_84::ZERO_ENDPOINT_PREFIX_VALUE)
+        || payload.get(offset + legacy_84::SIGNED_SELECTOR..offset + legacy_84::TRAILER_STATE)
+            != Some(&legacy_84::SIGNED_SELECTOR_VALUE.to_le_bytes())
+        || !offset
+            .checked_add(legacy_84::LEN)
+            .is_some_and(|next| sketch_marker_prefix_at(payload, next))
+    {
+        return None;
+    }
+    let endpoints = [
+        View::u16_le_at(payload, offset + legacy_84::ENDPOINT_FIRST).map(u32::from)?,
+        View::u16_le_at(payload, offset + legacy_84::ENDPOINT_SECOND).map(u32::from)?,
+    ];
+    if endpoints.contains(&0) || endpoints[0] == endpoints[1] {
+        return None;
+    }
+    let identities = [
+        View::u32_le_at(payload, offset + legacy_84::IDENTITY_FIRST)?,
+        View::u32_le_at(payload, offset + legacy_84::IDENTITY_SECOND)?,
+    ];
+    let valid_identity_trailer =
+        match payload.get(offset + legacy_84::TRAILER_STATE..offset + legacy_84::IDENTITY_FIRST) {
+            Some([0x00, 0x00, 0x01, 0x00]) => {
+                identities == [0, identities[1]] && identities[1] != 0 && identities[1] != u32::MAX
+            }
+            Some([0x00, 0x00, 0x00, 0x00]) => {
+                identities[0] != 0 && identities[0] != u32::MAX && identities[0] == identities[1]
+            }
+            _ => false,
+        };
+    valid_identity_trailer.then_some(endpoints)
+}
+
 pub(super) fn extended_compact_indexed_curve_endpoint_indices(
     payload: &[u8],
     offset: usize,
@@ -5046,6 +5113,7 @@ pub(super) fn marker_is_selected_construction_line(payload: &[u8], offset: usize
     if (packed_compact_legacy_curve_endpoint_indices(payload, offset).is_some()
         && marker_profile_curve_role(payload, offset) == Some(2))
         || compact_legacy_short_role_two_curve_endpoint_indices(payload, offset).is_some()
+        || legacy_compact_84_construction_line_endpoint_indices(payload, offset).is_some()
         || alternate_current_selected_axis_endpoint_indices(payload, offset).is_some()
         || extended_profile_roster_construction_line_endpoint_indices(payload, offset).is_some()
         || extended_shifted_construction_line_endpoint_indices(payload, offset).is_some()

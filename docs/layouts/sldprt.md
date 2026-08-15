@@ -869,6 +869,39 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_legacy_84_construction_line`
+
+Spec §2 · layout: byte offsets · size: 84 B
+
+The endpoint fields are direct feature-local point-object identifiers.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A compact-legacy 84-byte construction line |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is either eight `ff` bytes or |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | A coordinate-bearing marker has the 12-byte prefix |
+| 17 | 4 | `native_kind` | `u32` | little | spec | A compact-legacy 84-byte construction line has value u32 `2` · value `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `2` · value `2` |
+| 29 | 2 | `state_at_29` | `u16` | little | spec | zero state at marker +29 · value `0` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 0c 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct nonzero u16 point-object identifiers at marker +56 and marker +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct nonzero u16 point-object identifiers at marker +56 and marker +58 |
+| 60 | 4 | `zero_endpoint_prefix` | `bytes[4]` | little | spec | Marker +60 is zero u32 · value `[0, 0, 0, 0]` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 stores f64 `-1` · value `-1.0` |
+| 72 | 4 | `trailer_state` | `bytes[4]` | little | spec | State `00 00 01 00` at marker +72 pairs with zero at marker +76 |
+| 76 | 4 | `identity_first` | `u32` | little | spec | State `00 00 00 00` pairs with the same nonzero, non-null u32 identity at marker +76 and marker +80 |
+| 80 | 4 | `identity_second` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +80 |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `compact_legacy_68_profile_variant_curve`
 
 Spec §2 · layout: byte offsets · size: 68 B
