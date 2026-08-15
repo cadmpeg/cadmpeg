@@ -1823,7 +1823,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
             .position(|candidate| std::ptr::eq(candidate, entry))
             .expect("OM entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (ordinal, definition) in section.types.into_iter().enumerate() {
+        for (ordinal, definition) in section.types.iter().cloned().enumerate() {
             let (layout_prefix, schema_fingerprint, layout_terminal) =
                 class_layout_fields(definition.registry_suffix);
             definitions.insert(
@@ -1852,7 +1852,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
             .expect("indexed entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
-        for (ordinal, definition) in section.types.into_iter().enumerate() {
+        for (ordinal, definition) in section.types.iter().cloned().enumerate() {
             let (layout_prefix, schema_fingerprint, layout_terminal) =
                 class_layout_fields(definition.registry_suffix);
             definitions
@@ -1899,7 +1899,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
             .position(|candidate| std::ptr::eq(candidate, entry))
             .expect("OM entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (ordinal, definition) in section.fields.into_iter().enumerate() {
+        for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             definitions.insert(
                 (entry_index, definition.offset),
                 FieldDefinition {
@@ -1923,7 +1923,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
             .expect("indexed entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
-        for (ordinal, definition) in section.fields.into_iter().enumerate() {
+        for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| FieldDefinition {
@@ -2070,7 +2070,8 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
             source_blocks.extend(
                 section
                     .records
-                    .into_iter()
+                    .iter()
+                    .cloned()
                     .map(|block| (DataBlockRole::Column, block)),
             );
             source_blocks
@@ -2196,13 +2197,15 @@ pub fn data_block_control_class_references(
                 .om_sections()
                 .into_iter()
                 .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
-                .flat_map(|(_, section)| section.types)
+                .flat_map(|(_, section)| section.types.iter().cloned().collect::<Vec<_>>())
                 .chain(
                     container
                         .indexed_om_sections()
                         .into_iter()
                         .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
-                        .flat_map(|(_, section)| section.types),
+                        .flat_map(|(_, section)| {
+                            section.types.iter().cloned().collect::<Vec<_>>()
+                        }),
                 )
             {
                 registry.entry(definition.offset).or_insert(definition);
@@ -2447,7 +2450,7 @@ pub fn data_block_references(
             if let Some(control) = section.control {
                 source_blocks.push(control);
             }
-            source_blocks.extend(section.records);
+            source_blocks.extend(section.records.iter().cloned());
             source_blocks
                 .into_iter()
                 .enumerate()

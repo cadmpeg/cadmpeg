@@ -2,6 +2,7 @@
 //! Frame NX object-model entities using external boundary and identity arrays.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use cadmpeg_core::decode::View;
 
@@ -990,9 +991,9 @@ pub struct IndexedSection<'a> {
     /// Absolute offset of the object-id table or offset-only identity metadata.
     pub object_id_table_offset: usize,
     /// Length-framed class definitions preceding the entity index.
-    pub types: Vec<TypeDefinition<'a>>,
+    pub types: Arc<[TypeDefinition<'a>]>,
     /// Length-framed member definitions preceding the entity index.
-    pub fields: Vec<FieldDefinition<'a>>,
+    pub fields: Arc<[FieldDefinition<'a>]>,
     /// Store-level control block bounded by slot zero in an offset-only index.
     pub control: Option<EntityRecord<'a>>,
     /// Contiguous column-storage region after the control block.
@@ -1001,7 +1002,7 @@ pub struct IndexedSection<'a> {
     /// delimit logical field lanes within this region.
     pub column_storage: Option<&'a [u8]>,
     /// Entity records following the reserved zero-offset slot.
-    pub records: Vec<EntityRecord<'a>>,
+    pub records: Arc<[EntityRecord<'a>]>,
 }
 
 /// Byte ranges needed to materialize one indexed section without rescanning
@@ -1121,19 +1122,26 @@ impl IndexedSectionLayout {
                 .types
                 .iter()
                 .map(|layout| materialize_type_definition(bytes, layout))
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             fields: self
                 .fields
                 .iter()
                 .map(|layout| materialize_field_definition(bytes, layout))
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             control: self.control.as_ref().map(materialize_record),
             column_storage: self.column_storage.map(|range| {
                 bytes
                     .get(range.start..range.end)
                     .expect("cached indexed column storage remains in source")
             }),
-            records: self.records.iter().map(materialize_record).collect(),
+            records: self
+                .records
+                .iter()
+                .map(materialize_record)
+                .collect::<Vec<_>>()
+                .into(),
         }
     }
 }
@@ -6051,11 +6059,11 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 base,
                 entity_index_offset: index_start,
                 object_id_table_offset: table,
-                types,
-                fields,
+                types: types.into(),
+                fields: fields.into(),
                 control: None,
                 column_storage: None,
-                records,
+                records: records.into(),
             });
         }
     }
@@ -6127,8 +6135,8 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             base: 0,
             entity_index_offset: index_start,
             object_id_table_offset: offsets[0],
-            types: type_definitions(bytes, 0, index_start),
-            fields: all_field_definitions(bytes, 0, index_start),
+            types: type_definitions(bytes, 0, index_start).into(),
+            fields: all_field_definitions(bytes, 0, index_start).into(),
             control: Some(EntityRecord {
                 object_id: None,
                 object_id_offset: None,
@@ -6136,7 +6144,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 bytes: &bytes[offsets[0]..offsets[1]],
             }),
             column_storage: Some(&bytes[offsets[1]..*offsets.last().expect("nonempty offsets")]),
-            records,
+            records: records.into(),
         });
     }
     out

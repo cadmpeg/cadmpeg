@@ -189,7 +189,7 @@ impl Region {
     }
 }
 
-impl Container<'_> {
+impl<'a> Container<'a> {
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
     pub fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
         let entry = self
@@ -344,7 +344,7 @@ impl Container<'_> {
 
     /// Locate indexed NX object-model sections in catalogued file entries.
     pub fn indexed_om_sections(&self) -> Vec<(&DirEntry, crate::om::IndexedSection<'_>)> {
-        let layouts = self.indexed_section_layouts.get_or_init(|| {
+        let cache = self.indexed_section_layouts.get_or_init(|| {
             let mut layouts = Vec::new();
             let mut seen = std::collections::BTreeSet::new();
             for (entry_index, entry) in self.entries.iter().enumerate() {
@@ -364,9 +364,41 @@ impl Container<'_> {
                     }
                 }
             }
-            layouts
+            let materialized = if let Cow::Borrowed(bytes) = &self.data {
+                let bytes: &'a [u8] = *bytes;
+                Some(
+                    layouts
+                        .iter()
+                        .filter_map(|(entry_index, layout)| {
+                            let entry = self.entries.get(*entry_index)?;
+                            let (offset, size) = entry.file_span?;
+                            let (offset, size) =
+                                (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                            let payload = bytes.get(offset..offset.saturating_add(size))?;
+                            Some((*entry_index, layout.materialize(payload)))
+                        })
+                        .collect(),
+                )
+            } else {
+                None
+            };
+            IndexedSectionCache {
+                layouts,
+                materialized,
+            }
         });
-        layouts
+        if let Some(materialized) = cache.materialized.as_ref() {
+            return materialized
+                .iter()
+                .filter_map(|(entry_index, section)| {
+                    self.entries
+                        .get(*entry_index)
+                        .map(|entry| (entry, section.clone()))
+                })
+                .collect();
+        }
+        cache
+            .layouts
             .iter()
             .filter_map(|(entry_index, layout)| {
                 let entry = self.entries.get(*entry_index)?;
@@ -703,10 +735,19 @@ pub struct Container<'a> {
     /// Enumerated directory entries from both regions, in serialized order.
     pub entries: Vec<DirEntry>,
     /// Cached source ranges for indexed object-model sections.
-    pub(crate) indexed_section_layouts: OnceLock<Vec<(usize, crate::om::IndexedSectionLayout)>>,
+    pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
     /// Cached operation-label layouts for size-framed object-model sections.
     pub(crate) om_operation_label_layouts:
         OnceLock<Vec<(usize, usize, Vec<crate::om::OperationLabelLayout>)>>,
+}
+
+/// Parsed indexed sections retained when their source bytes are borrowed from
+/// the container input. Owned test inputs use the layout fallback because
+/// their bytes do not have the container's input lifetime.
+#[derive(Debug, Clone)]
+pub(crate) struct IndexedSectionCache<'a> {
+    layouts: Vec<(usize, crate::om::IndexedSectionLayout)>,
+    materialized: Option<Vec<(usize, crate::om::IndexedSection<'a>)>>,
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].

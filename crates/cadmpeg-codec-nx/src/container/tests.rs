@@ -86,6 +86,24 @@ fn container_cached_operation_labels_preserve_section_materialization() {
 }
 
 #[test]
+fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
+    let file = prt_with_indexed_om_section();
+    let container = container::scan_bytes(file.as_slice()).unwrap();
+    let first = container.indexed_om_sections();
+    let second = container.indexed_om_sections();
+    assert!(!first.is_empty());
+    assert_eq!(first, second);
+    assert!(std::sync::Arc::ptr_eq(
+        &first[0].1.types,
+        &second[0].1.types
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        &first[0].1.records,
+        &second[0].1.records
+    ));
+}
+
+#[test]
 fn container_rejects_incomplete_counted_directories() {
     let mut header = single_part_prt();
     header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());
