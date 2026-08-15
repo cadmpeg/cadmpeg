@@ -57,16 +57,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-07. Orthonormality gates refuse foreign frames instead of repairing them
-
-**Question.** What frame perturbation must the writer accept?
-
-**Known.** `writer.rs` uses `FRAME_REPAIR_DOT_LIMIT = 1e-6` in `orthonormal_pair`; the current writer repairs only within that project-selected bound and rejects larger residuals.
-
-**Need.** We need a source or producer-derived bound for representational frame noise, and a rule for repair versus refusal.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `dc2bd137a` added the repair threshold and synthetic boundary tests, but no external evidence establishes the bound.
-
 ### WR-10. Fixed protocol constants with no IR source
 
 **Question.** What are the correct `PREF`, creation-method, and hierarchy values for generated records?

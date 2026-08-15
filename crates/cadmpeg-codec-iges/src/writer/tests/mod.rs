@@ -310,7 +310,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
 fn orthonormal_pair_repairs_float32_scale_frame_noise() {
     let (axis, reference) = orthonormal_pair(
         Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, 3.0e-8),
+        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT * 0.03),
         "test frame",
     )
     .expect("float32-scale skew is representation noise");
@@ -319,10 +319,20 @@ fn orthonormal_pair_repairs_float32_scale_frame_noise() {
 }
 
 #[test]
+fn orthonormal_pair_accepts_the_declared_repair_bound() {
+    orthonormal_pair(
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT),
+        "test frame",
+    )
+    .expect("the declared frame policy bound is admissible");
+}
+
+#[test]
 fn orthonormal_pair_refuses_skew_beyond_the_repair_bound() {
     let error = orthonormal_pair(
         Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, 1.1e-6),
+        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT * 1.1),
         "test frame",
     )
     .expect_err("material skew must not be silently changed");
