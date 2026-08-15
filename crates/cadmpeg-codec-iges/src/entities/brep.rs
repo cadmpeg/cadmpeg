@@ -9,7 +9,7 @@ use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::ModelDraft;
-use cadmpeg_ir::geometry::Pcurve;
+use cadmpeg_ir::geometry::{CurveGeometry, Pcurve};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -122,6 +122,28 @@ fn topology_vertex(
             vertex_id
         })
         .clone()
+}
+
+fn source_edge_for_vertices<'a>(
+    ir: &'a CadIr,
+    curve_id: &CurveId,
+    curve_geometry: &CurveGeometry,
+    natural_start: Point3,
+    natural_end: Point3,
+    tolerance: f64,
+) -> Option<&'a Edge> {
+    ir.model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+        .find(|edge| {
+            edge.param_range.is_some_and(|range| {
+                evaluation::curve(curve_geometry, range[0])
+                    .is_some_and(|point| evaluation::distance(point, natural_start) <= tolerance)
+                    && evaluation::curve(curve_geometry, range[1])
+                        .is_some_and(|point| evaluation::distance(point, natural_end) <= tolerance)
+            })
+        })
 }
 
 #[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
@@ -866,40 +888,40 @@ pub(super) fn project(
                         } else {
                             let curve_id =
                                 CurveId(format!("iges:model:curve#D{}", edge_definition.curve));
-                            let Some(source_edge) = ir
+                            if !ir
                                 .model
                                 .edges
                                 .iter()
-                                .find(|edge| edge.curve.as_ref() == Some(&curve_id))
-                            else {
+                                .any(|edge| edge.curve.as_ref() == Some(&curve_id))
+                            {
                                 valid = false;
                                 break;
-                            };
-                            let curve_agrees = source_edge.param_range.is_some_and(|range| {
-                                ir.model
-                                    .curves
-                                    .iter()
-                                    .find(|curve| curve.id == curve_id)
-                                    .is_some_and(|curve| {
-                                        let evaluated_start =
-                                            evaluation::curve(&curve.geometry, range[0]);
-                                        let evaluated_end =
-                                            evaluation::curve(&curve.geometry, range[1]);
-                                        evaluated_start.is_some_and(|point| {
-                                            evaluation::distance(point, natural_start) <= tolerance
-                                        }) && evaluated_end.is_some_and(|point| {
-                                            evaluation::distance(point, natural_end) <= tolerance
-                                        })
-                                    })
-                            });
-                            if !curve_agrees {
+                            }
+                            let Some(curve) =
+                                ir.model.curves.iter().find(|curve| curve.id == curve_id)
+                            else {
                                 losses.push(entity_loss(
                                     entry,
                                     "edge curve endpoints disagree with the vertex-list points",
                                 ));
                                 valid = false;
                                 break;
-                            }
+                            };
+                            let Some(source_edge) = source_edge_for_vertices(
+                                ir,
+                                &curve_id,
+                                &curve.geometry,
+                                natural_start,
+                                natural_end,
+                                tolerance,
+                            ) else {
+                                losses.push(entity_loss(
+                                    entry,
+                                    "edge curve endpoints disagree with the vertex-list points",
+                                ));
+                                valid = false;
+                                break;
+                            };
                             let id = EdgeId(format!(
                                 "iges:model:edge#{stem}:D{}:{}",
                                 edge_key.0,

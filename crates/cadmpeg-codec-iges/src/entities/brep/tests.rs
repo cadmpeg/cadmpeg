@@ -29,6 +29,51 @@ use cadmpeg_ir::CadIr;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
+const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
+    let curve_id = CurveId("curve".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.edges.extend([
+        Edge {
+            id: EdgeId("wrong-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("wrong-start".into()),
+            end: VertexId("wrong-end".into()),
+            param_range: Some([10.0, 11.0]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("matching-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("matching-start".into()),
+            end: VertexId("matching-end".into()),
+            param_range: Some([0.0, 2.0]),
+            tolerance: None,
+        },
+    ]);
+
+    let source_edge = super::source_edge_for_vertices(
+        &ir,
+        &curve_id,
+        &ir.model.curves[0].geometry,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        EPS_EDGE_ENDPOINT_MATCH,
+    )
+    .expect("matching edge occurrence");
+    assert_eq!(source_edge.id.0, "matching-occurrence");
+}
+
 #[test]
 fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
     for (end_x, decoded) in [("1.000999", true), ("1.001001", false)] {
