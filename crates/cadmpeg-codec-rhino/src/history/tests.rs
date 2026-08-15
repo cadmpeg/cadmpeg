@@ -79,6 +79,18 @@ fn projection_counts_dependency_on_later_producer() {
 }
 
 #[test]
+fn projection_counts_dependency_with_ambiguous_producers() {
+    let records = [
+        record(1, 11, &[], &[40]),
+        record(2, 12, &[], &[40]),
+        record(3, 13, &[40], &[41]),
+    ];
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
+    assert!(ir.model.features[2].dependencies.is_empty());
+}
+
+#[test]
 fn unstored_evaluation_intervals_remain_absent() {
     let mut bytes = 7_i32.to_le_bytes().to_vec();
     bytes.extend(1_i32.to_le_bytes());
