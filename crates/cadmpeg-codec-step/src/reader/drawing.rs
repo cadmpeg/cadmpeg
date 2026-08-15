@@ -210,11 +210,33 @@ fn required_parameter_count(name: &str) -> Option<usize> {
 }
 
 fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> &'a [Value] {
-    record
+    let direct = record
         .partials
         .iter()
         .find(|partial| partial.name == name)
-        .map_or(&[], |partial| partial.parameters.as_slice())
+        .map(|partial| partial.parameters.as_slice());
+    if let Some(parameters) = direct.filter(|parameters| !parameters.is_empty()) {
+        return parameters;
+    }
+    if matches!(
+        name,
+        "DRAUGHTING_MODEL" | "PRESENTATION_VIEW" | "DRAWING_SHEET_REVISION"
+    ) {
+        if let Some(parameters) = representation_parameters(record) {
+            return parameters;
+        }
+    }
+    direct.unwrap_or_default()
+}
+
+fn representation_parameters(record: &RawRecord) -> Option<&[Value]> {
+    record.partials.iter().find_map(|partial| {
+        if partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION") {
+            (!partial.parameters.is_empty()).then_some(partial.parameters.as_slice())
+        } else {
+            None
+        }
+    })
 }
 
 fn parameter_key(name: &str, index: usize) -> String {
@@ -604,13 +626,8 @@ fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64>
 }
 
 fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    record
-        .partials
-        .iter()
-        .find(|partial| {
-            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
-        })
-        .and_then(|partial| partial.parameters.get(1))
+    representation_parameters(record)
+        .and_then(|parameters| parameters.get(1))
         .and_then(|value| match value {
             Value::List(values) => Some(values),
             _ => None,

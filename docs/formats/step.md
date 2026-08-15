@@ -689,6 +689,8 @@ links a sheet revision to its drawing revision and carries the sheet sequence.
 `PRESENTATION_VIEW` carries a named view, its ordered items, and presentation
 context. `PRESENTATION_SIZE` links a sheet revision to its presentation size.
 `DRAUGHTING_MODEL` carries a presentation model with its items and context;
+in a complex instance, these attributes come from its inherited
+`REPRESENTATION` partial.
 `DRAUGHTING_MODEL_ITEM_ASSOCIATION` links model items to their semantic
 definition. `DRAUGHTING_CALLOUT` carries an ordered callout-content set.
 Each drawing relationship target transfers only when its source record has

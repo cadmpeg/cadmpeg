@@ -99,6 +99,31 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
 }
 
 #[test]
+fn complex_draughting_model_reads_inherited_representation_attributes() {
+    let result = decode_inline(
+        "#1=REPRESENTATION_CONTEXT('','');
+#2=(CHARACTERIZED_REPRESENTATION() DRAUGHTING_MODEL() REPRESENTATION('Drawing model',(#3),#1) SHAPE_REPRESENTATION() TESSELLATED_SHAPE_REPRESENTATION());
+#3=ITEM('opaque');",
+    );
+    let model = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAUGHTING_MODEL")
+        .expect("complex draughting model");
+    assert_eq!(model.parameters["name"], "Drawing model");
+    assert_eq!(model.parameters["presentation_context"], "#1");
+    assert!(model.relationships["items"]
+        .iter()
+        .any(|target| target.target.as_deref() == Some("step:data:item#3")));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DrawingRecordTooFewParameters.kind()
+            && loss.message.contains("#2")
+    }));
+}
+
+#[test]
 fn drawing_relationship_with_multiple_product_views_is_not_retargeted() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
@@ -139,7 +164,7 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
 #5=ANNOTATION_PLANE('annotation plane',(),#4,());
 #6=REPRESENTATION_CONTEXT('','');
 #7=DRAUGHTING_MODEL('Annotation model',(#5),#6);
-#8=SHAPE_REPRESENTATION('mapped plane',(#4),#6);
+#8=(CHARACTERIZED_REPRESENTATION() REPRESENTATION('mapped plane',(#4),#6) SHAPE_REPRESENTATION());
 #9=REPRESENTATION_MAP(#3,#8);
 #10=MAPPED_ITEM('mapped annotation',#9,#3);
 #11=DRAUGHTING_MODEL('Mapped model',(#10),#6);
