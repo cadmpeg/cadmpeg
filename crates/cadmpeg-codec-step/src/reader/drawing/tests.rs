@@ -212,8 +212,9 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("ambiguous drawing model");
     assert!(!ambiguous_model.relationships.contains_key("items"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
+        loss.code == StepLossCode::DrawingRelationshipTargetAmbiguous.kind()
             && loss.message.contains("#17")
+            && loss.message.contains("multiple neutral identities")
     }));
     let cyclic_model = result
         .ir()
@@ -230,5 +231,33 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DrawingRelationshipUntypedTarget.kind()
             && (loss.message.contains("#5") || loss.message.contains("#10"))
+    }));
+}
+
+#[test]
+fn drawing_relationships_resolve_mapped_brep_carriers() {
+    let source = include_str!("../../../tests/fixtures/ap242_vertex_loop.p21");
+    let records = source
+        .split_once("DATA;\n")
+        .and_then(|(_, source)| source.split_once("ENDSEC;"))
+        .map(|(records, _)| {
+            format!(
+                "{records}#20=REPRESENTATION_MAP(#6,#19);\n#21=MAPPED_ITEM('mapped body',#20,#6);\n#22=DRAUGHTING_MODEL('mapped body',(#21),#2);"
+            )
+        })
+        .expect("vertex-loop fixture DATA section");
+    let result = decode_inline(&records);
+    let model = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.parameters.get("name") == Some(&"mapped body".into()))
+        .expect("mapped body drawing model");
+    assert!(!model.relationships.contains_key("items"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DrawingRelationshipTargetAmbiguous.kind()
+            && loss.message.contains("#21")
+            && loss.message.contains("multiple neutral identities")
     }));
 }

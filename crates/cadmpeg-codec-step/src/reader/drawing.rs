@@ -43,9 +43,15 @@ impl TargetContext<'_> {
         )
     }
 
-    fn ambiguous(&self, id: u64) -> Option<&BTreeSet<String>> {
-        self.target_identities
+    fn ambiguous(&self, id: u64) -> Option<BTreeSet<String>> {
+        if let Some(identities) = self
+            .target_identities
             .get(&id)
+            .filter(|identities| identities.len() > 1)
+        {
+            return Some(identities.clone());
+        }
+        wrapper_target_identities(id, self.target_identities, self.exchange)
             .filter(|identities| identities.len() > 1)
     }
 }
@@ -292,7 +298,7 @@ fn add_reference_fields(
                             &format!("drawing #{source_id} {name}"),
                             role,
                             target_id,
-                            identities,
+                            &identities,
                         );
                     } else {
                         losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
@@ -352,7 +358,7 @@ fn add_sheet_revision_usages(
                     &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
                     "drawing_revision",
                     revision_id,
-                    identities,
+                    &identities,
                 );
             } else {
                 losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
@@ -386,7 +392,7 @@ fn add_sheet_revision_usages(
                     &format!("drawing revision #{revision_id} usage #{usage_id}"),
                     "sheet_revision",
                     sheet_id,
-                    identities,
+                    &identities,
                 );
             } else {
                 losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
@@ -424,7 +430,7 @@ fn add_draughting_model_associations(
                         &format!("draughting model #{model_id} association #{association_id}"),
                         "semantic_definition",
                         definition_id,
-                        target_context
+                        &target_context
                             .ambiguous(definition_id)
                             .expect("ambiguity checked above"),
                     );
@@ -454,7 +460,7 @@ fn add_draughting_model_associations(
                         &format!("draughting model #{model_id} association #{association_id}"),
                         "associated_items",
                         item_id,
-                        target_context
+                        &target_context
                             .ambiguous(item_id)
                             .expect("ambiguity checked above"),
                     );
@@ -498,14 +504,21 @@ fn target_for(
             subelements: Vec::new(),
         });
     }
-    if let Some(identity) = wrapper_target_identity(id, target_identities, exchange) {
-        return Some(DrawingTarget {
-            target: Some(identity),
-            external_document: None,
-            external_object: None,
-            is_null: false,
-            subelements: Vec::new(),
-        });
+    if let Some(identities) = wrapper_target_identities(id, target_identities, exchange) {
+        if identities.len() == 1 {
+            return Some(DrawingTarget {
+                target: Some(
+                    identities
+                        .into_iter()
+                        .next()
+                        .expect("one wrapper target identity"),
+                ),
+                external_document: None,
+                external_object: None,
+                is_null: false,
+                subelements: Vec::new(),
+            });
+        }
     }
     if known_typed.contains(&id) {
         return None;
@@ -519,11 +532,11 @@ fn target_for(
     })
 }
 
-fn wrapper_target_identity(
+fn wrapper_target_identities(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
     exchange: &Exchange,
-) -> Option<String> {
+) -> Option<BTreeSet<String>> {
     if target_identities.contains_key(&id) {
         return None;
     }
@@ -536,11 +549,7 @@ fn wrapper_target_identity(
         &mut active,
         &mut identities,
     );
-    if !cyclic && identities.len() == 1 {
-        identities.into_iter().next()
-    } else {
-        None
-    }
+    (!cyclic && !identities.is_empty()).then_some(identities)
 }
 
 fn collect_wrapper_targets(
