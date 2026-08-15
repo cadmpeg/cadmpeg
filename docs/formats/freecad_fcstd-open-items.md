@@ -16,13 +16,6 @@ Each item has an identifier. Use the identifier in commit messages and in code c
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## Decision queue
-
-These items have a Conflict part and need a decision.
-
-- DP-02. Sketch profile seed order
-- DP-03. Sketch profile junction ambiguity and tolerance
-
 ## 1. Auxiliary records
 
 ### AR-01. Application-specific side-entry framing
@@ -76,29 +69,3 @@ These items have a Conflict part and need a decision.
 **Need.** We must know the value semantics to transfer the property to the correct neutral presentation field.
 
 **Note.** The opaque/native fallback in `6d9430a69` is not semantic evidence. The item remains open for any unregistered GUI type; no FreeCAD source or independent files establish that the type has no neutral meaning.
-
-## 3. Design projection
-
-### DP-02. Sketch profile seed order
-
-**Question.** Which non-construction entity starts each oriented sketch profile chain?
-
-**Known.** Sketch entities retain persisted source order and native identity. Profile chains must be deterministic and attributable.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/design.rs:2260-2304` selects the smallest in-memory entity index. The current code no longer uses lexicographic decimal ids, but no producer evidence establishes that the first persisted entity is the profile seed when multiple disconnected chains exist.
-
-**Need.** Profile construction must keep the persisted entity ordinal as data and use a producer-defined seed rule for each chain.
-
-**Note.** Commit `cc7953ac4` fixed the decimal-string ordering defect and added synthetic profile tests. The tests do not establish the source rule for disconnected profiles, so the item remains open.
-
-### DP-03. Sketch profile junction ambiguity and tolerance
-
-**Question.** What endpoint tolerance connects two sketch entities, and what happens when more than one unused entity meets the current endpoint?
-
-**Known.** Constraints and persisted geometry can produce coincident endpoints. A neutral profile chain asserts one ordered continuation and orientation at every junction.
-
-**Conflict.** `crates/cadmpeg-codec-freecad/src/design.rs:2269-2349` uses coordinate proximity in addition to coincident constraints and takes the first remaining candidate during chain growth. `near` at `:2427-2434` uses `64 * f64::EPSILON * max_coordinate_scale`; no FreeCAD tolerance or admissible profile topology supports this value.
-
-**Need.** We must establish the endpoint equivalence rule and the admissible profile topology. An ambiguous junction must use constraint identity, an explicit source order rule, or an attributable refusal instead of a first match.
-
-**Note.** Commit `e024f02dd` added ambiguity handling and a scale formula, but the boundary still rests on an uncited constant. Exact and synthetic ambiguous cases do not verify the numeric boundary.

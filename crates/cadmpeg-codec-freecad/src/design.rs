@@ -2275,42 +2275,19 @@ fn build_profiles(
     entities: &[SketchEntity],
     constraints: &[SketchConstraint],
 ) -> Vec<Vec<SketchEntityUse>> {
-    let mut unused = entities
+    let profile_entities = entities
         .iter()
         .enumerate()
         .filter(|(_, entity)| !entity.construction)
         .map(|(index, _)| index)
         .collect::<BTreeSet<_>>();
-    let endpoint = |index: usize, start: bool| {
-        endpoints(&entities[index]).map(|points| if start { points.0 } else { points.1 })
-    };
-    let equivalent = |first: (usize, bool), second: (usize, bool)| {
-        constraints.iter().any(|constraint| {
-            if constraint.active == Some(false) {
-                return false;
-            }
-            let SketchConstraintDefinition::CoincidentLoci { loci } = &constraint.definition else {
-                return false;
-            };
-            loci.iter()
-                .any(|locus| endpoint_matches(locus, &entities[first.0].id, first.1))
-                && loci
-                    .iter()
-                    .any(|locus| endpoint_matches(locus, &entities[second.0].id, second.1))
-        }) || endpoint(first.0, first.1)
-            .zip(endpoint(second.0, second.1))
-            .is_some_and(|(first, second)| near(first, second))
-    };
+    let mut unused = profile_entities.clone();
+    let explicit_relations = explicit_endpoint_relations(&profile_entities, entities, constraints);
     let mut ambiguous = BTreeSet::new();
     for &entity in &unused {
         for start in [true, false] {
-            let matches = unused
-                .iter()
-                .copied()
-                .filter(|candidate| *candidate != entity)
-                .flat_map(|candidate| [(candidate, true), (candidate, false)])
-                .filter(|candidate| equivalent((entity, start), *candidate))
-                .collect::<Vec<_>>();
+            let matches =
+                endpoint_candidates((entity, start), &unused, &explicit_relations, entities);
             if matches.len() > 1 {
                 ambiguous.insert(entity);
                 ambiguous.extend(matches.into_iter().map(|(candidate, _)| candidate));
@@ -2334,21 +2311,18 @@ fn build_profiles(
         let mut head = (first, true);
         let mut tail = (first, false);
         loop {
-            let next = unused.iter().find_map(|index| {
-                if ambiguous.contains(index) {
-                    return None;
-                }
-                endpoints(&entities[*index])?;
-                if equivalent(tail, (*index, true)) {
-                    Some((*index, false, (*index, false)))
-                } else if equivalent(tail, (*index, false)) {
-                    Some((*index, true, (*index, true)))
-                } else {
-                    None
-                }
-            });
-            let Some((index, reversed, next_tail)) = next else {
+            let candidates = endpoint_candidates(tail, &unused, &explicit_relations, entities)
+                .into_iter()
+                .filter(|(index, _)| !ambiguous.contains(index))
+                .collect::<Vec<_>>();
+            let Some((index, candidate_start)) = (candidates.len() == 1).then(|| candidates[0])
+            else {
                 break;
+            };
+            let (reversed, next_tail) = if candidate_start {
+                (false, (index, false))
+            } else {
+                (true, (index, true))
             };
             unused.remove(&index);
             chain.push(SketchEntityUse {
@@ -2358,21 +2332,18 @@ fn build_profiles(
             tail = next_tail;
         }
         loop {
-            let previous = unused.iter().find_map(|index| {
-                if ambiguous.contains(index) {
-                    return None;
-                }
-                endpoints(&entities[*index])?;
-                if equivalent((*index, false), head) {
-                    Some((*index, false, (*index, true)))
-                } else if equivalent((*index, true), head) {
-                    Some((*index, true, (*index, false)))
-                } else {
-                    None
-                }
-            });
-            let Some((index, reversed, next_head)) = previous else {
+            let candidates = endpoint_candidates(head, &unused, &explicit_relations, entities)
+                .into_iter()
+                .filter(|(index, _)| !ambiguous.contains(index))
+                .collect::<Vec<_>>();
+            let Some((index, candidate_start)) = (candidates.len() == 1).then(|| candidates[0])
+            else {
                 break;
+            };
+            let (reversed, next_head) = if candidate_start {
+                (true, (index, false))
+            } else {
+                (false, (index, true))
             };
             unused.remove(&index);
             chain.insert(
@@ -2389,12 +2360,78 @@ fn build_profiles(
     profiles
 }
 
-fn endpoint_matches(locus: &SketchLocus, entity: &SketchEntityId, start: bool) -> bool {
-    matches!(
-        (locus, start),
-        (SketchLocus::Start(candidate), true) | (SketchLocus::End(candidate), false)
-            if candidate == entity
-    )
+fn endpoint_candidates(
+    endpoint: (usize, bool),
+    available: &BTreeSet<usize>,
+    explicit_relations: &BTreeMap<(usize, bool), BTreeSet<(usize, bool)>>,
+    entities: &[SketchEntity],
+) -> Vec<(usize, bool)> {
+    if let Some(explicit) = explicit_relations.get(&endpoint) {
+        return explicit
+            .iter()
+            .copied()
+            .filter(|(candidate, _)| available.contains(candidate))
+            .collect();
+    }
+    available
+        .iter()
+        .copied()
+        .filter(|candidate| *candidate != endpoint.0)
+        .flat_map(|candidate| [(candidate, true), (candidate, false)])
+        .filter(|candidate| !explicit_relations.contains_key(candidate))
+        .filter(|candidate| {
+            endpoint_point(endpoint, entities)
+                .zip(endpoint_point(*candidate, entities))
+                .is_some_and(|(first, second)| endpoints_match_by_roundoff(first, second))
+        })
+        .collect()
+}
+
+fn explicit_endpoint_relations(
+    profile_entities: &BTreeSet<usize>,
+    entities: &[SketchEntity],
+    constraints: &[SketchConstraint],
+) -> BTreeMap<(usize, bool), BTreeSet<(usize, bool)>> {
+    let entity_indices = entities
+        .iter()
+        .enumerate()
+        .map(|(index, entity)| (entity.id.0.as_str(), index))
+        .collect::<HashMap<_, _>>();
+    let mut relations = BTreeMap::new();
+    for constraint in constraints {
+        if constraint.active == Some(false) {
+            continue;
+        }
+        let SketchConstraintDefinition::CoincidentLoci { loci } = &constraint.definition else {
+            continue;
+        };
+        let endpoints = loci
+            .iter()
+            .filter_map(|locus| match locus {
+                SketchLocus::Start(entity) => {
+                    Some((entity_indices.get(entity.0.as_str()).copied()?, true))
+                }
+                SketchLocus::End(entity) => {
+                    Some((entity_indices.get(entity.0.as_str()).copied()?, false))
+                }
+                _ => None,
+            })
+            .filter(|(entity, _)| profile_entities.contains(entity))
+            .collect::<BTreeSet<_>>();
+        for first in endpoints.iter().copied() {
+            relations.entry(first).or_insert_with(BTreeSet::new).extend(
+                endpoints
+                    .iter()
+                    .copied()
+                    .filter(|candidate| *candidate != first),
+            );
+        }
+    }
+    relations
+}
+
+fn endpoint_point(endpoint: (usize, bool), entities: &[SketchEntity]) -> Option<Point2> {
+    endpoints(&entities[endpoint.0]).map(|points| if endpoint.1 { points.0 } else { points.1 })
 }
 
 fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
@@ -2442,14 +2479,16 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
     }
 }
 
-fn near(a: Point2, b: Point2) -> bool {
+const SKETCH_ENDPOINT_ROUNDING_ULPS: f64 = 64.0;
+
+fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
     let scale =
         a.u.abs()
             .max(a.v.abs())
             .max(b.u.abs())
             .max(b.v.abs())
             .max(1.0);
-    (a.u - b.u).hypot(a.v - b.v) <= 64.0 * f64::EPSILON * scale
+    (a.u - b.u).hypot(a.v - b.v) <= SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * scale
 }
 
 fn profile_ref(
@@ -5097,8 +5136,8 @@ mod profile_tests {
             entity(
                 "test:entity#line",
                 SketchGeometry::Line {
-                    start: Point2::new(0.0, 1.0),
-                    end: Point2::new(0.0, 0.0),
+                    start: Point2::new(-1.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
                 },
             ),
             entity(
@@ -5110,10 +5149,17 @@ mod profile_tests {
                     end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
                 },
             ),
+            entity(
+                "test:entity#line-after-arc",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 1.0),
+                    end: Point2::new(1.0, 1.0),
+                },
+            ),
         ];
         let profiles = build_profiles(&entities, &[]);
         assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), 2);
+        assert_eq!(profiles[0].len(), 3);
     }
 
     #[test]
@@ -5182,6 +5228,77 @@ mod profile_tests {
 
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 2);
+    }
+
+    #[test]
+    fn explicit_endpoint_relations_precede_nearby_geometry() {
+        let entities = [
+            entity(
+                "test:entity#anchor",
+                SketchGeometry::Line {
+                    start: Point2::new(-1.0, 0.0),
+                    end: Point2::new(0.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#nearby",
+                SketchGeometry::Line {
+                    start: Point2::new(32.0 * f64::EPSILON, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#constrained",
+                SketchGeometry::Line {
+                    start: Point2::new(2.0, 0.0),
+                    end: Point2::new(3.0, 0.0),
+                },
+            ),
+        ];
+        let constraint = SketchConstraint {
+            id: SketchConstraintId("test:constraint#explicit-precedence".into()),
+            sketch: entities[0].sketch.clone(),
+            definition: SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::End(entities[0].id.clone()),
+                    SketchLocus::Start(entities[2].id.clone()),
+                ],
+            },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        };
+
+        let profiles = build_profiles(&entities, &[constraint]);
+
+        assert_eq!(profiles.len(), 2);
+        assert_eq!(profiles[0].len(), 2);
+        assert_eq!(profiles[0][0].entity, entities[0].id);
+        assert_eq!(profiles[0][1].entity, entities[2].id);
+        assert_eq!(
+            profiles[1],
+            vec![SketchEntityUse {
+                entity: entities[1].id.clone(),
+                reversed: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn endpoint_roundoff_uses_a_bounded_scale() {
+        let exact = Point2::new(1.0, 0.0);
+        let inside = Point2::new(1.0 + 32.0 * f64::EPSILON, 0.0);
+        let outside = Point2::new(1.0 + 128.0 * f64::EPSILON, 0.0);
+
+        assert!(endpoints_match_by_roundoff(exact, inside));
+        assert!(!endpoints_match_by_roundoff(exact, outside));
     }
 
     #[test]

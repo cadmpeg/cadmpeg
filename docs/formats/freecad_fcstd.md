@@ -248,10 +248,12 @@ serialization-dependent radial cycle.
 ## 8. Design-history transfer
 
 Construction objects retain source order and native identity independently of their cached shape.
-Planar sketch geometry is transferred in persisted entity order. Non-construction line segments
-are connected into deterministic oriented profile chains. Each chain starts with the earliest
-unused non-construction entity by numeric persisted position and grows from both endpoints. Points,
-lines, circles, ellipses, hyperbolas, parabolas, their bounded arc forms, and rational or
+Planar sketch geometry is transferred in persisted entity order. The one-based position of each
+`Geometry` element in `GeometryList` is its numeric persisted entity position. Non-construction
+line, circular-arc, and elliptical-arc entities are connected into deterministic oriented profile
+chains. Each chain starts with the earliest unused non-construction entity by that position and
+grows from both endpoints. Points, lines, circles, ellipses, hyperbolas, parabolas, their bounded
+arc forms, and rational or
 non-rational B-splines retain
 canonical millimetre/radian values and parameter bounds. Both start/end-angle and legacy
 first/last-parameter bound names identify the same conic interval. A persisted placement supplies
@@ -272,11 +274,14 @@ neutral entity retains the target document, object, and subelements as an unreso
 reference. Constraints can address its entity, endpoint, and center loci without inventing solved
 coordinates.
 
-Two bounded endpoints connect when an active coincident-loci constraint identifies them or their
-solved coordinates differ by at most 64 binary64 machine epsilons at the coordinate scale. The
-coordinate scale is the maximum absolute endpoint coordinate or one. If one endpoint connects to
-more than one endpoint of other non-construction entities, all incident entities remain separate
-single-entity profiles. The decoder does not select one branch by record order.
+An active coincident-loci constraint between two non-construction endpoints is authoritative. If an
+endpoint has one or more such relations, only those relations are profile candidates. Otherwise,
+two bounded endpoints connect when their solved coordinates differ by at most 64 binary64 machine
+epsilons at the coordinate scale. The coordinate scale is the maximum absolute endpoint
+coordinate or one; the bound covers endpoint evaluation roundoff and is not a persisted FreeCAD
+tolerance. If one endpoint connects to more than one endpoint under the selected relation, all
+incident entities remain separate single-entity profiles. The decoder does not select one branch
+by record order.
 
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
