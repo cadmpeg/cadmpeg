@@ -63,7 +63,7 @@ from a conformant file.
 
 **Need.** We need the fixed-record division rule for overlong input, including the status of an overlong Terminate line. The rule must distinguish a valid card with a post-Terminate remainder from a malformed pre-Terminate line.
 
-**Note.** Reopened by the 2026-08-16 audit. The code, tests, and specification settle one project behavior together. No independent format or producer evidence establishes the accepted overlong-Terminate case.
+**Note.** Reopened by the 2026-08-16 audit. The code accepts an overlong Terminate line before the `terminated` state is set, while the Physical representation section calls every pre-Terminate overlong physical line malformed. The existing test asserts the opposite behavior. No independent format or producer evidence establishes which rule is correct.
 
 ### PH-05. Disagreement between the declared and actual Parameter Data card count
 
@@ -153,7 +153,7 @@ from a conformant file.
 
 **Question.** What native list state is exposed after a nested counted sequence stops before its declared width?
 
-**Known.** `parameter.rs:148-156` returns `None` when a fixed-width count does not fit the remaining tokens. In contrast, `native.rs:2623-2648` pushes a Type 302 class before breaking on an invalid item count, `native.rs:3062-3133` pushes a Type 322 descriptor before breaking on an invalid value count, and `native.rs:3257-3346` clamps Type 406 list counts and can retain partial independent-variable lists. `entities/structure.rs:1265-1308` and its Type 322 validation report some parent losses, but the native records have no per-list malformed state.
+**Known.** `parameter.rs:148-156` returns `None` when a fixed-width count does not fit the remaining tokens. In contrast, `native.rs:1811-1850` pushes a Type 310 glyph before breaking on an invalid motion count; `native.rs:2106-2162` uses one Type 184 count to locate both member items and later transforms; `native.rs:2275-2336` uses a Type 320 member count to locate later type, designator, template, and connection fields; `native.rs:2623-2648` pushes a Type 302 class before breaking; `native.rs:3062-3133` pushes a Type 322 descriptor before breaking; and `native.rs:3257-3346` clamps Type 406 list counts and can retain partial independent-variable lists. `native.rs:1648-1668` also computes Type 106 tuple availability from all remaining tokens rather than an entity-specific parameter end. `entities/structure.rs:1265-1308` and its Type 322 validation report some parent losses, but the native records have no per-list malformed state.
 
 **Need.** An incomplete nested list must be empty or carry an explicit malformed state. A valid first item followed by an oversized declared count must not look like a complete shorter list to native consumers.
 
@@ -200,6 +200,16 @@ from a conformant file.
 **Need.** We need the precedence of flags, values, and derived ranges for every Type 126 form, plus the required behavior for inconsistent records.
 
 **Note.** Reopened by the 2026-08-16 audit. The consistency checks improve failure reporting, but they do not establish which fields are authoritative in a conformant file.
+
+### GE-18. Native Type 106 tuples use a fallback width for invalid interpretation flags
+
+**Question.** What typed native tuple state is valid when Type 106 IP is absent, outside `1..=3`, or disagrees with the Directory form?
+
+**Known.** `native.rs:1637-1646` reads IP and maps every value other than `1`, `2`, or `3` to tuple start `3` and width `1`. `native.rs:1651-1668` then emits tuples with that fabricated one-value layout. `entities/copious.rs:152-187` and `entities/copious.rs:232-245` reject an invalid or form-disagreeing IP and record an entity loss. The Geometry section of `iges.md` states that IP and Directory form are redundant required constraints, that disagreement is malformed, and that IP does not override form semantics.
+
+**Need.** An invalid interpretation must retain raw tokens and an explicit empty or malformed typed state. It must not produce one-component tuples that a native consumer can mistake for a valid layout.
+
+**Note.** New finding from the 2026-08-16 hostile selection and substitution sweep. The semantic projection rejects the record, but the retained native arena fabricates a tuple layout without a native loss or malformed discriminator.
 
 ## 5. Surfaces and topology
 
