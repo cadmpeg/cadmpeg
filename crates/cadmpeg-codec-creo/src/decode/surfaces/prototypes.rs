@@ -260,7 +260,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let point = Point3::new(origin[0], origin[1], origin[2]);
                 let axis = Vector3::new(axis[0], axis[1], axis[2]);
                 let reference = Vector3::new(reference[0], reference[1], reference[2]);
-                let radii = match (
+                let prototype_radii = match (
                     prototype_scalar(record, "radius1")
                         .filter(|radius| radius.is_finite() && *radius >= 0.0),
                     prototype_scalar(record, "radius2")
@@ -269,6 +269,12 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     (Some(radius1), Some(radius2)) => Some([radius1, radius2]),
                     _ => None,
                 };
+                let radii =
+                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                        .filter(|parameter| parameter.offset == row.offset)
+                        .and_then(|parameter| parameter.torus_radius_overrides(row.type_byte))
+                        .map(|overrides| [overrides.radius1, overrides.radius2])
+                        .or(prototype_radii);
                 let Some([radius1, radius2]) = radii else {
                     continue;
                 };
@@ -343,3 +349,6 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     }
     transferred
 }
+
+#[cfg(test)]
+mod tests;

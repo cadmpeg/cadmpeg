@@ -219,6 +219,9 @@ fixtures, scores above L1 remain blocked.
 - Named `gsec3d_ptr` fields stay inside the span through their first
   `p_saved_result` close, or the next `gsec3d_ptr`/definition boundary when the
   close is absent; nested `ref_planes` identifiers use their typed field.
+- A complete tagged type-26 radius trailer on the first prototype-associated
+  row overrides the prototype radii while retaining the prototype local-system
+  placement; an overridden zero major radius transfers as a sphere.
 - Positional `gsec3d_ptr` reference rows retain all six row fields, and the
   geometrically selected orientation plane supplies its own `ref_type`,
   `seg_id`, and `flip_flag`.
