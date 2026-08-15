@@ -34,6 +34,142 @@ use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 use super::*;
 
 #[test]
+fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
+    let curve_id = CurveId("line".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: PointId("wrong-start-point".into()),
+            position: Point3::new(10.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("wrong-end-point".into()),
+            position: Point3::new(11.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("matching-start-point".into()),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("matching-end-point".into()),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: VertexId("wrong-start".into()),
+            point: PointId("wrong-start-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("wrong-end".into()),
+            point: PointId("wrong-end-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("matching-start".into()),
+            point: PointId("matching-start-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("matching-end".into()),
+            point: PointId("matching-end-point".into()),
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.extend([
+        Edge {
+            id: EdgeId("wrong-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("wrong-start".into()),
+            end: VertexId("wrong-end".into()),
+            param_range: Some([5.0, 6.0]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("matching-occurrence".into()),
+            curve: Some(curve_id),
+            start: VertexId("matching-start".into()),
+            end: VertexId("matching-end".into()),
+            param_range: Some([0.0, 2.0]),
+            tolerance: None,
+        },
+    ]);
+
+    let (carrier, range) = bounded_nurbs_for_curve(&ir, &CurveId("line".into()), None)
+        .expect("the curve-valid edge occurrence");
+    assert_eq!(range, [0.0, 1.0]);
+    assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(carrier.control_points[1], Point3::new(2.0, 0.0, 0.0));
+}
+
+#[test]
+fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
+    let curve_id = CurveId("line".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    for (index, end) in [(0, 1.0), (1, 2.0)] {
+        let start_point = PointId(format!("start-point-{index}"));
+        let end_point = PointId(format!("end-point-{index}"));
+        let start_vertex = VertexId(format!("start-{index}"));
+        let end_vertex = VertexId(format!("end-{index}"));
+        ir.model.points.extend([
+            Point {
+                id: start_point.clone(),
+                position: Point3::new(index as f64, 0.0, 0.0),
+                source_object: None,
+            },
+            Point {
+                id: end_point.clone(),
+                position: Point3::new(end, 0.0, 0.0),
+                source_object: None,
+            },
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: start_vertex.clone(),
+                point: start_point,
+                tolerance: None,
+            },
+            Vertex {
+                id: end_vertex.clone(),
+                point: end_point,
+                tolerance: None,
+            },
+        ]);
+        ir.model.edges.push(Edge {
+            id: EdgeId(format!("edge-{index}")),
+            curve: Some(curve_id.clone()),
+            start: start_vertex,
+            end: end_vertex,
+            param_range: Some([index as f64, end]),
+            tolerance: None,
+        });
+    }
+
+    assert!(bounded_nurbs_for_curve(&ir, &curve_id, None).is_none());
+}
+
+#[test]
 fn rational_linear_degree_elevation_preserves_the_curve() {
     let mut curve = NurbsCurve {
         degree: 1,

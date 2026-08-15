@@ -49,7 +49,7 @@ struct CompositeEdge {
 #[derive(Default)]
 struct CompositeIndex {
     curve_positions: BTreeMap<CurveId, usize>,
-    edges: BTreeMap<CurveId, CompositeEdge>,
+    edges: BTreeMap<CurveId, Vec<CompositeEdge>>,
     vertex_points: BTreeMap<VertexId, Point3>,
 }
 
@@ -62,23 +62,19 @@ impl CompositeIndex {
             .enumerate()
             .map(|(index, curve)| (curve.id.clone(), index))
             .collect();
-        let edges = ir
-            .model
-            .edges
-            .iter()
-            .filter_map(|edge| {
-                edge.curve.clone().map(|curve| {
-                    (
-                        curve,
-                        CompositeEdge {
-                            start: edge.start.clone(),
-                            end: edge.end.clone(),
-                            param_range: edge.param_range,
-                        },
-                    )
-                })
-            })
-            .collect();
+        let mut edges = BTreeMap::new();
+        for edge in &ir.model.edges {
+            if let Some(curve) = &edge.curve {
+                edges
+                    .entry(curve.clone())
+                    .or_insert_with(Vec::new)
+                    .push(CompositeEdge {
+                        start: edge.start.clone(),
+                        end: edge.end.clone(),
+                        param_range: edge.param_range,
+                    });
+            }
+        }
         let points = ir
             .model
             .points
@@ -111,7 +107,7 @@ impl CompositeIndex {
         endpoints: [(VertexId, Point3); 2],
     ) {
         self.curve_positions.insert(curve_id.clone(), curve_index);
-        self.edges.insert(curve_id, edge);
+        self.edges.entry(curve_id).or_default().push(edge);
         for (vertex, point) in endpoints {
             self.vertex_points.insert(vertex, point);
         }
@@ -133,6 +129,70 @@ fn point_for_vertex(ir: &CadIr, id: &VertexId, index: Option<&CompositeIndex>) -
         .iter()
         .find(|candidate| candidate.id == *point)
         .map(|candidate| candidate.position)
+}
+
+fn composite_edge_endpoints_agree(
+    ir: &CadIr,
+    index: Option<&CompositeIndex>,
+    left: &CompositeEdge,
+    right: &CompositeEdge,
+    tolerance: f64,
+) -> bool {
+    match (
+        point_for_vertex(ir, &left.start, index),
+        point_for_vertex(ir, &right.start, index),
+        point_for_vertex(ir, &left.end, index),
+        point_for_vertex(ir, &right.end, index),
+    ) {
+        (Some(left_start), Some(right_start), Some(left_end), Some(right_end)) => {
+            left_start.distance(right_start) <= tolerance
+                && left_end.distance(right_end) <= tolerance
+        }
+        (None, None, None, None) => true,
+        _ => false,
+    }
+}
+
+fn select_composite_edge(
+    ir: &CadIr,
+    index: Option<&CompositeIndex>,
+    geometry: &CurveGeometry,
+    candidates: &[CompositeEdge],
+    tolerance: f64,
+) -> Option<CompositeEdge> {
+    let usable = candidates
+        .iter()
+        .filter(|edge| {
+            let Some(range) = edge.param_range else {
+                return false;
+            };
+            if !matches!(geometry, CurveGeometry::Line { .. }) {
+                return true;
+            }
+            let (Some(start), Some(end)) = (
+                point_for_vertex(ir, &edge.start, index),
+                point_for_vertex(ir, &edge.end, index),
+            ) else {
+                return false;
+            };
+            let (Some(evaluated_start), Some(evaluated_end)) = (
+                cadmpeg_ir::eval::curve_point(geometry, range[0]),
+                cadmpeg_ir::eval::curve_point(geometry, range[1]),
+            ) else {
+                return false;
+            };
+            evaluated_start.distance(start) <= tolerance && evaluated_end.distance(end) <= tolerance
+        })
+        .collect::<Vec<_>>();
+    let first = usable.first()?;
+    usable
+        .iter()
+        .skip(1)
+        .all(|candidate| {
+            candidate.param_range == first.param_range
+                && composite_edge_endpoints_agree(ir, index, candidate, first, tolerance)
+        })
+        .then(|| (*first).clone())
 }
 
 fn elevate_linear_bezier_to_degree(
@@ -530,19 +590,27 @@ fn bounded_nurbs_for_id(
         let range = [0.0, *concatenated.boundaries.last()?];
         return Some((concatenated.nurbs, range));
     }
-    let edge = index
+    let edge_candidates = index
         .and_then(|index| index.edges.get(curve_id).cloned())
-        .or_else(|| {
+        .unwrap_or_else(|| {
             ir.model
                 .edges
                 .iter()
-                .find(|edge| edge.curve.as_ref() == Some(curve_id))
+                .filter(|edge| edge.curve.as_ref() == Some(curve_id))
                 .map(|edge| CompositeEdge {
                     start: edge.start.clone(),
                     end: edge.end.clone(),
                     param_range: edge.param_range,
                 })
-        })?;
+                .collect()
+        });
+    let edge = select_composite_edge(
+        ir,
+        index,
+        &curve.geometry,
+        &edge_candidates,
+        join_tolerance.unwrap_or(0.0),
+    )?;
     let interval = edge.param_range?;
     match &curve.geometry {
         CurveGeometry::Nurbs(nurbs) => Some((nurbs.clone(), interval)),
@@ -661,8 +729,12 @@ fn curve_endpoints(
     ir: &CadIr,
     curve_id: &CurveId,
     index: &CompositeIndex,
+    tolerance: f64,
 ) -> Option<(Point3, Point3)> {
-    let edge = index.edges.get(curve_id)?;
+    let curve_position = index.curve_positions.get(curve_id)?;
+    let curve = ir.model.curves.get(*curve_position)?;
+    let candidates = index.edges.get(curve_id)?;
+    let edge = select_composite_edge(ir, Some(index), &curve.geometry, candidates, tolerance)?;
     Some((
         point_for_vertex(ir, &edge.start, Some(index))?,
         point_for_vertex(ir, &edge.end, Some(index))?,
@@ -688,7 +760,7 @@ fn project_native_composite(
     }
     let endpoints = child_curves
         .iter()
-        .map(|curve_id| curve_endpoints(ir, curve_id, index))
+        .map(|curve_id| curve_endpoints(ir, curve_id, index, join_tolerance))
         .collect::<Option<Vec<_>>>()?;
     let start = endpoints.first()?.0;
     let end = endpoints.last()?.1;
