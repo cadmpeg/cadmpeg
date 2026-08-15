@@ -71,6 +71,52 @@ fn terminal_intervals(
     ]
 }
 
+type IntervalVector = [DeclaredInterval; 3];
+
+fn interval_dot(left: IntervalVector, right: IntervalVector) -> DeclaredInterval {
+    left.into_iter()
+        .zip(right)
+        .fold(DeclaredInterval::around(0.0, 0.0), |sum, (left, right)| {
+            sum.add(left.multiply(right))
+        })
+}
+
+fn interval_unit_tangent(vector: IntervalVector) -> Option<IntervalVector> {
+    let speed_squared = interval_dot(vector, vector);
+    let inverse_speed = speed_squared.sqrt()?.reciprocal()?;
+    Some(vector.map(|component| component.multiply(inverse_speed)))
+}
+
+fn interval_curvature(
+    derivative: IntervalVector,
+    second_derivative: IntervalVector,
+) -> Option<IntervalVector> {
+    let speed_squared = interval_dot(derivative, derivative);
+    let inverse_speed_fourth = speed_squared.multiply(speed_squared).reciprocal()?;
+    let derivative_second_dot = interval_dot(derivative, second_derivative);
+    Some(std::array::from_fn(|index| {
+        second_derivative[index]
+            .multiply(speed_squared)
+            .subtract(derivative[index].multiply(derivative_second_dot))
+            .multiply(inverse_speed_fourth)
+    }))
+}
+
+fn intervals_overlap(left: IntervalVector, right: IntervalVector) -> bool {
+    left.into_iter()
+        .zip(right)
+        .all(|(left, right)| left.overlaps(right))
+}
+
+fn points_within_resolution(left: Point3, right: Point3, resolution: f64) -> bool {
+    let distance = left.distance(right);
+    if resolution == 0.0 {
+        distance == 0.0
+    } else {
+        distance < resolution
+    }
+}
+
 fn surface_point_close(left: Point3, right: Point3) -> bool {
     let close = |left: f64, right: f64| {
         (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
@@ -297,7 +343,10 @@ pub(super) fn project(
         let mut control_points = Vec::with_capacity(segment_count * 3 + 1);
         let mut continuous = true;
         let precision = global.real_precision();
-        let mut previous_terminal = None;
+        let resolution = global.minimum_resolution_mm();
+        let mut previous_terminal_point = None;
+        let mut previous_terminal_tangent = None;
+        let mut previous_terminal_curvature = None;
         for (segment, values) in coefficients.chunks_exact(12).enumerate() {
             let width = breakpoints[segment + 1] - breakpoints[segment];
             let width_interval =
@@ -332,6 +381,13 @@ pub(super) fn project(
                     precision,
                 ),
             ];
+            if !values
+                .chunks_exact(4)
+                .any(|component| component[1] != 0.0 || component[2] != 0.0 || component[3] != 0.0)
+            {
+                continuous = false;
+                break;
+            }
             if dimensions == 2
                 && (1..4).any(|power| {
                     !declared_interval(
@@ -343,18 +399,6 @@ pub(super) fn project(
                     .contains(0.0)
                 })
             {
-                continuous = false;
-                break;
-            }
-            let starts = [0, 4, 8].map(|offset| {
-                declared_interval(record, segment_start + offset, values[offset], precision)
-            });
-            if previous_terminal.is_some_and(|previous: [DeclaredInterval; 3]| {
-                previous
-                    .into_iter()
-                    .zip(starts)
-                    .any(|(left, right)| !left.overlaps(right))
-            }) {
                 continuous = false;
                 break;
             }
@@ -373,6 +417,76 @@ pub(super) fn project(
             let x = coordinate(0);
             let y = coordinate(4);
             let z = coordinate(8);
+            let start_point =
+                transform.point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor));
+            let end_point =
+                transform.point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor));
+            if previous_terminal_point.is_some_and(|previous| {
+                !points_within_resolution(previous, start_point, resolution)
+            }) {
+                continuous = false;
+                break;
+            }
+            let starts = [0, 4, 8].map(|offset| {
+                [0, 1, 2, 3].map(|order| {
+                    declared_interval(
+                        record,
+                        segment_start + offset + order,
+                        values[offset + order],
+                        precision,
+                    )
+                })
+            });
+            if continuity >= 1 && segment > 0 {
+                let start_derivative = starts.map(|component| component[1]);
+                let Some(start_tangent) = interval_unit_tangent(start_derivative) else {
+                    continuous = false;
+                    break;
+                };
+                let Some(previous_tangent) = previous_terminal_tangent else {
+                    continuous = false;
+                    break;
+                };
+                if !intervals_overlap(previous_tangent, start_tangent) {
+                    continuous = false;
+                    break;
+                }
+                if continuity >= 2 {
+                    let start_second_derivative = starts.map(|component| component[2].scale(2.0));
+                    let Some(start_curvature) =
+                        interval_curvature(start_derivative, start_second_derivative)
+                    else {
+                        continuous = false;
+                        break;
+                    };
+                    let Some(previous_curvature) = previous_terminal_curvature else {
+                        continuous = false;
+                        break;
+                    };
+                    if !intervals_overlap(previous_curvature, start_curvature) {
+                        continuous = false;
+                        break;
+                    }
+                }
+            }
+            if segment + 1 < segment_count && continuity >= 1 {
+                let terminal_derivative = intervals.map(|component| component[1]);
+                previous_terminal_tangent = interval_unit_tangent(terminal_derivative);
+                if previous_terminal_tangent.is_none() {
+                    continuous = false;
+                    break;
+                }
+                if continuity >= 2 {
+                    let terminal_second_derivative =
+                        intervals.map(|component| component[2].scale(2.0));
+                    previous_terminal_curvature =
+                        interval_curvature(terminal_derivative, terminal_second_derivative);
+                    if previous_terminal_curvature.is_none() {
+                        continuous = false;
+                        break;
+                    }
+                }
+            }
             let bezier = (0..4)
                 .map(|index| {
                     transform.point(Point3::new(
@@ -387,12 +501,12 @@ pub(super) fn project(
             } else {
                 control_points.extend_from_slice(&bezier[1..]);
             }
-            previous_terminal = Some([intervals[0][0], intervals[1][0], intervals[2][0]]);
+            previous_terminal_point = Some(end_point);
         }
         if !continuous {
             losses.push(entity_loss(
                 entry,
-                "spline segments violate planar or positional continuity",
+                "spline segments violate declared continuity, planarity, or non-degeneracy",
             ));
             continue;
         }

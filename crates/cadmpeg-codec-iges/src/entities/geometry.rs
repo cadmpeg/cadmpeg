@@ -120,6 +120,22 @@ impl DeclaredInterval {
         self.multiply(Self::around(factor, 0.0))
     }
 
+    pub(crate) fn reciprocal(self) -> Option<Self> {
+        if self.contains(0.0) {
+            return None;
+        }
+        let lower = 1.0 / self.lower;
+        let upper = 1.0 / self.upper;
+        Some(Self::outward(lower.min(upper), lower.max(upper)))
+    }
+
+    pub(crate) fn sqrt(self) -> Option<Self> {
+        if self.upper < 0.0 {
+            return None;
+        }
+        Some(Self::outward(self.lower.max(0.0).sqrt(), self.upper.sqrt()))
+    }
+
     pub(crate) fn contains(self, value: f64) -> bool {
         self.lower <= value && value <= self.upper
     }

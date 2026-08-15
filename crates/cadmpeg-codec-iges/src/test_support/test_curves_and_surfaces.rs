@@ -603,9 +603,18 @@ pub(crate) fn parametric_spline_curve_file() -> Vec<u8> {
 }
 
 pub(crate) fn parametric_spline_curve_file_with_parameters(parameters: &[u8]) -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    parametric_spline_curve_file_with_parameters_and_resolution(parameters, "0.001")
+}
+
+pub(crate) fn parametric_spline_curve_file_with_parameters_and_resolution(
+    parameters: &[u8],
+    resolution: &str,
+) -> Vec<u8> {
+    let global = format!(
+        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,{resolution},1000.0,6Hauthor,3Horg,11,0,0H,0H;"
+    );
     let parameter_count = parameters.len().div_ceil(64);
-    let mut bytes = fixed_ascii_with_global(global);
+    let mut bytes = fixed_ascii_with_global(global.as_bytes());
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
         ["112", "1", "0", "0", "0", "0", "0", "0", "00000000"],

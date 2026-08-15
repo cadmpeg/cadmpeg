@@ -91,16 +91,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `8d4e832c4` replaced the old threshold with a more principled calculation, but did not supply external evidence for the format tolerance.
 
-### GE-03. Type 112 segment continuity
-
-**Question.** What continuity tolerance applies between adjacent Type 112 segments?
-
-**Known.** `splines.rs` uses Global real-precision intervals for adjacent endpoint comparisons. The fixtures exercise the selected interval, not an independently specified producer boundary.
-
-**Need.** We need the continuity rule and its numeric tolerance from the format or independent producer output.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `2481439ee` established an internal interval calculation, not conformance evidence.
-
 ### GE-07. The curve parameter-domain convention
 
 **Question.** Which parameter domain does each supported curve entity provide?
