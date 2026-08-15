@@ -15,6 +15,8 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = 1.0e-12;
+
 pub(super) struct ConicProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
@@ -132,7 +134,9 @@ pub(super) fn project(
             .max(coeff_e.abs())
             .max(coeff_f.abs())
             .max(1.0);
-        let zero = |value: f64| value.abs() <= coefficient_scale * 1.0e-12;
+        let zero = |value: f64| {
+            value.abs() <= coefficient_scale * CONIC_STANDARD_POSITION_RELATIVE_EPSILON
+        };
         if !zero(*coeff_b) || (!zero(*coeff_d) && !zero(*coeff_e)) {
             losses.push(entity_loss(
                 entry,

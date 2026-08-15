@@ -243,16 +243,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `fa5bddc17` improved numeric consistency checks, but it did not establish which fields are authoritative in a conformant file.
 
-### GE-15. Type 104 standard-position coefficients use an undocumented tolerance
-
-**Question.** What tolerance defines a zero cross-term or center term for a Type 104 conic in standard position?
-
-**Known.** `entities/conics.rs:127-141` scales all six conic coefficients by their maximum absolute value, clamps the scale to one, and treats a coefficient as zero when its absolute value is at most `scale * 1.0e-12`. The current specification states the standard-position requirement but does not state this coefficient tolerance.
-
-**Need.** We need source or independent producer evidence for the coefficient tolerance, or a project-policy classification and an explicit loss/refusal contract for near-standard conics.
-
-**Note.** Hostile sweep 2026-08-15: a small cross-term or center term can change admission at the private threshold. This gate is distinct from the Type 104 endpoint tolerance in GE-09.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles

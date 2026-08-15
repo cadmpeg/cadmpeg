@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -126,6 +127,39 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
                 "{point_name}: {:?}",
                 result.report().losses
             );
+        }
+    }
+}
+
+#[test]
+fn decode_applies_the_scale_relative_standard_position_gate() {
+    for (cross_term, decoded) in [
+        (super::CONIC_STANDARD_POSITION_RELATIVE_EPSILON, true),
+        (
+            super::CONIC_STANDARD_POSITION_RELATIVE_EPSILON * 1.0001,
+            false,
+        ),
+    ] {
+        let parameters = format!("104,0.25,{cross_term},1,0,0,-1,0,2,0,0,1;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(1, parameters.as_bytes())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.ir().model.curves.len(), usize::from(decoded));
+        if decoded {
+            assert!(result.report().losses.is_empty());
+        } else {
+            assert_eq!(result.report().losses.len(), 1);
+            assert_eq!(
+                result.report().losses[0].code,
+                IgesLossCode::EntityNotProjected.kind()
+            );
+            assert!(result.report().losses[0]
+                .message
+                .contains("standard position"));
         }
     }
 }
