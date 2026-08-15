@@ -1233,6 +1233,8 @@ fn axis_relation_point_loci(
         return None;
     }
     let mut loci = Vec::new();
+    // Forward relation links are the solver handle's explicit operands. Reverse
+    // incidences describe owners and are only a fallback for incomplete links.
     collect_axis_relation_point_loci(
         relation,
         sketch,
@@ -1241,12 +1243,35 @@ fn axis_relation_point_loci(
         loci_by_marker,
         &mut HashSet::new(),
         &mut loci,
+        false,
+    );
+    loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    loci.dedup();
+    if loci.len() == 2 {
+        return loci.try_into().ok();
+    }
+    if loci.len() > 2 {
+        return None;
+    }
+    loci.clear();
+    collect_axis_relation_point_loci(
+        relation,
+        sketch,
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+        &mut HashSet::new(),
+        &mut loci,
+        true,
     );
     loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     loci.dedup();
     loci.try_into().ok()
 }
 
+// The collector keeps the sketch, marker indexes, and locus indexes separate
+// because each lookup has a distinct ownership boundary.
+#[allow(clippy::too_many_arguments)]
 fn collect_axis_relation_point_loci(
     relation: &SketchInputEntity,
     sketch: &SketchId,
@@ -1255,6 +1280,7 @@ fn collect_axis_relation_point_loci(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     visited: &mut HashSet<String>,
     loci: &mut Vec<SketchLocus>,
+    include_reverse_owners: bool,
 ) {
     if !visited.insert(relation.id.clone()) {
         return;
@@ -1286,23 +1312,26 @@ fn collect_axis_relation_point_loci(
                 loci_by_marker,
                 visited,
                 loci,
+                include_reverse_owners,
             ),
             _ => {}
         }
     }
-    for owner in relation_owner_markers(relation, markers_by_id) {
-        if matches!(
-            owner.kind,
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-        ) {
-            append_axis_relation_point_locus(
-                &owner.id,
-                sketch,
-                sketch_entities,
-                markers_by_id,
-                loci_by_marker,
-                loci,
-            );
+    if include_reverse_owners {
+        for owner in relation_owner_markers(relation, markers_by_id) {
+            if matches!(
+                owner.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                append_axis_relation_point_locus(
+                    &owner.id,
+                    sketch,
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                    loci,
+                );
+            }
         }
     }
 }

@@ -182,6 +182,12 @@ fn axis_relation_expands_intermediate_relation_handle() {
             entity_ref: second.id.clone(),
         },
     ];
+    let mut reverse_owner = marker("reverse-owner", Some([3.0, 4.0]));
+    reverse_owner.offset = 3;
+    reverse_owner.links = vec![SketchInputLink {
+        local_id: 9,
+        entity_ref: distance.id.clone(),
+    }];
     let mut horizontal = marker("horizontal", None);
     horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
     horizontal.local_id = Some(13);
@@ -200,6 +206,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
         (first.id.as_str(), &first),
         (second.id.as_str(), &second),
         (distance.id.as_str(), &distance),
+        (reverse_owner.id.as_str(), &reverse_owner),
         (horizontal.id.as_str(), &horizontal),
     ]);
     let loci = HashMap::from([
@@ -210,6 +217,12 @@ fn axis_relation_expands_intermediate_relation_handle() {
         (
             second.id.clone(),
             vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+        ),
+        (
+            reverse_owner.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId(
+                "reverse-owner-point".into(),
+            ))],
         ),
     ]);
 
