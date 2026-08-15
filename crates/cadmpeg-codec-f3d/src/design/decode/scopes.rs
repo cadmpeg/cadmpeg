@@ -35,6 +35,7 @@ use crate::layout::coil_compact_placement_owner_identity_frame as coil_owner_ide
 use crate::layout::coil_compact_scope_discriminators as coil_compact;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
+use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
 use crate::layout::combine_compact_operation_prefix as combine_compact;
 use crate::layout::combine_extended_reference_operation_prefix as combine_extended;
 use crate::layout::combine_external_selector_prefix as combine_external;
@@ -5816,8 +5817,9 @@ struct CoilDiscriminators {
 /// it appends a marked reference to the owning scope and has a 233-byte span.
 /// The explicit form has the same fixed envelope plus 128 matrix bytes and a
 /// 341-byte span. The legacy 427-byte scope form has a class-395 identity
-/// carrier with a 186-byte span. A malformed or ambiguous carrier leaves the
-/// complete placement native.
+/// carrier with a 186-byte span. The modern 427-byte scope form has a
+/// class-450 matrix carrier with a 315-byte span. A malformed or ambiguous
+/// carrier leaves the complete placement native.
 fn exact_coil_placement(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -5834,6 +5836,7 @@ fn exact_coil_placement(
         scope.reference_members.len(),
     ) {
         ("393", "258", 427, 8) => {}
+        ("353", "259", 427, 8) => {}
         (_, _, 411, 7) if matches!(scope.coil_extent, Some(DesignCoilExtent::Spiral)) => {}
         (_, _, 432 | 442, 8) => {}
         _ => return None,
@@ -5884,6 +5887,32 @@ fn exact_coil_placement(
                 ) =>
         {
             (identity_matrix(), None)
+        }
+        coil_modern_matrix::LEN
+            if transform_class_tag == "450"
+                && transform_paired_class_tag == "259"
+                && exact_coil_modern_placement_matrix_frame(
+                    bytes,
+                    transform_start,
+                    transform_paired,
+                    selection_record_index,
+                    transform_record_index,
+                    scope.record_index,
+                ) =>
+        {
+            let values = f64s_at(
+                bytes,
+                transform_start.checked_add(coil_modern_matrix::MATRIX)?,
+                16,
+            )?;
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.into_iter().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            (
+                transform,
+                Some(u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?).ok()?),
+            )
         }
         coil_identity::LEN
             if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
@@ -5978,6 +6007,70 @@ fn exact_coil_placement(
         transform,
         transform_offset,
     })
+}
+
+fn exact_coil_modern_placement_matrix_frame(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    selection_record_index: u32,
+    transform_record_index: u32,
+    scope_record_index: u32,
+) -> bool {
+    paired_at.checked_sub(start) == Some(coil_modern_matrix::LEN)
+        && bytes.get(start + 11..start + coil_modern_matrix::MATRIX) == Some(&[0; 39][..])
+        && bytes.get(
+            start + coil_modern_matrix::MATRIX + 16 * 8..start + coil_modern_matrix::CONSTANT_512,
+        ) == Some(&[0; 26][..])
+        && View::u32_le_at(bytes, start + coil_modern_matrix::CONSTANT_512) == Some(512)
+        && bytes.get(
+            start + coil_modern_matrix::CONSTANT_512 + 4..start + coil_modern_matrix::CONSTANT_256,
+        ) == Some(&[0; 4][..])
+        && View::u32_le_at(bytes, start + coil_modern_matrix::CONSTANT_256) == Some(256)
+        && bytes.get(
+            start + coil_modern_matrix::CONSTANT_256 + 4
+                ..start + coil_modern_matrix::SELECTION_REFERENCE,
+        ) == Some(&[0; 1][..])
+        && marked_record_reference(bytes, start + coil_modern_matrix::SELECTION_REFERENCE)
+            == Some(selection_record_index)
+        && bytes.get(
+            start + coil_modern_matrix::SELECTION_REFERENCE + 11
+                ..start + coil_modern_matrix::SELECTION_FLAG,
+        ) == Some(&[0; 2][..])
+        && View::u32_le_at(bytes, start + coil_modern_matrix::SELECTION_FLAG) == Some(1)
+        && marked_record_reference(bytes, start + coil_modern_matrix::AUXILIARY_REFERENCE)
+            == transform_record_index.checked_add(25)
+        && bytes.get(
+            start + coil_modern_matrix::AUXILIARY_REFERENCE + 11
+                ..start + coil_modern_matrix::CONSTANT_1024,
+        ) == Some(&[0; 3][..])
+        && View::u64_le_at(bytes, start + coil_modern_matrix::CONSTANT_1024) == Some(1024)
+        && View::u64_le_at(bytes, start + coil_modern_matrix::IDENTITY_LANE_PREFIX)
+            == Some(0x7000_0000_0000_0000)
+        && bytes.get(
+            start + coil_modern_matrix::IDENTITY_LANE_PREFIX + 8
+                ..start + coil_modern_matrix::IDENTITY_LANE,
+        ) == Some(&[0; 4][..])
+        && View::u64_le_at(bytes, start + coil_modern_matrix::IDENTITY_LANE)
+            .is_some_and(|value| value >> 56 == 0x70)
+        && bytes.get(
+            start + coil_modern_matrix::IDENTITY_LANE + 8
+                ..start + coil_modern_matrix::SUCCESSOR_REFERENCE,
+        ) == Some(&[0; 3][..])
+        && marked_record_reference(bytes, start + coil_modern_matrix::SUCCESSOR_REFERENCE)
+            == transform_record_index.checked_add(2)
+        && bytes.get(
+            start + coil_modern_matrix::SUCCESSOR_REFERENCE + 11
+                ..start + coil_modern_matrix::PREDECESSOR_REFERENCE,
+        ) == Some(&[0; 2][..])
+        && marked_record_reference(bytes, start + coil_modern_matrix::PREDECESSOR_REFERENCE)
+            == transform_record_index.checked_add(1)
+        && bytes.get(
+            start + coil_modern_matrix::PREDECESSOR_REFERENCE + 11
+                ..start + coil_modern_matrix::OWNER_REFERENCE,
+        ) == Some(&[0; 1][..])
+        && marked_record_reference(bytes, start + coil_modern_matrix::OWNER_REFERENCE)
+            == Some(scope_record_index)
 }
 
 fn exact_coil_legacy_identity_frame(

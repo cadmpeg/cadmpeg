@@ -2877,6 +2877,57 @@ source = "spec"
 anchor = "the asset UUID's UTF-16 code-unit count at offset 36"
 
 [[record]]
+name = "coil_modern_selection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The modern eight-reference new-body form uses a 41-byte selection prefix"
+size = 41
+note = "Offsets are relative to the class-286 first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed selection header occupies the first 11 bytes."
+
+[[record.gap]]
+offset = 11
+size = 11
+note = "The modern selection prefix stores zero bytes at offsets 11 through 21."
+
+[[record.field]]
+name = "nested_selection_marker"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "offset 22 is u8 `1`"
+
+[[record.field]]
+name = "nested_record_index"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "offset 23 is the nested record index"
+
+[[record.gap]]
+offset = 27
+size = 6
+note = "The modern selection prefix stores zero bytes at offsets 27 through 32."
+
+[[record.field]]
+name = "asset_presence"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "offset 33 is u32 `1`"
+
+[[record.field]]
+name = "asset_uuid_length"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "offset 37 is the asset UUID's UTF-16 code-unit count"
+
+[[record]]
 name = "coil_compact_face_selection_prefix"
 kind = "byte"
 section = "3.1"
@@ -3181,6 +3232,153 @@ anchor = "stores u8 `1` at offset 65"
 offset = 66
 size = 147
 note = "The identity form omits the explicit matrix block and retains the remaining carrier bytes natively."
+
+[[record]]
+name = "coil_modern_placement_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The modern eight-reference new-body form is a class-`353` scope paired with class `259`"
+size = 315
+note = "Offsets are relative to the class-450 second placement carrier's primary indexed header. The matrix is row-major and its translation values are in centimetres."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed carrier header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 39
+note = "Bytes 11 through 49 are zero."
+
+[[record.field]]
+name = "matrix"
+offset = 50
+type = "f64[16]"
+source = "spec"
+anchor = "sixteen row-major f64 matrix values begin at offset 50"
+
+[[record.gap]]
+offset = 178
+size = 26
+note = "Bytes 178 through 203 are zero."
+
+[[record.field]]
+name = "constant_512"
+offset = 204
+type = "u32"
+source = "spec"
+anchor = "offset 204 is u32 `512`"
+
+[[record.gap]]
+offset = 208
+size = 4
+note = "Bytes 208 through 211 are zero."
+
+[[record.field]]
+name = "constant_256"
+offset = 212
+type = "u32"
+source = "spec"
+anchor = "offset 212 is u32 `256`"
+
+[[record.gap]]
+offset = 216
+size = 1
+note = "One zero byte precedes the first marked reference."
+
+[[record.field]]
+name = "selection_reference"
+offset = 217
+type = "bytes[11]"
+source = "spec"
+anchor = "A marked reference at offset 217 names the first placement reference"
+
+[[record.gap]]
+offset = 228
+size = 2
+note = "Bytes 228 and 229 are zero."
+
+[[record.field]]
+name = "selection_flag"
+offset = 230
+type = "u32"
+source = "spec"
+anchor = "offset 230 is u32 `1`"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 234
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference at offset 234 names the transform record plus 25"
+
+[[record.gap]]
+offset = 245
+size = 3
+note = "Three zero bytes precede the u64 constant."
+
+[[record.field]]
+name = "constant_1024"
+offset = 248
+type = "u64"
+source = "spec"
+anchor = "offset 248 is u64 `1024`"
+
+[[record.field]]
+name = "identity_lane_prefix"
+offset = 256
+type = "u64"
+source = "spec"
+anchor = "offset 256 is u64 `0x7000000000000000`"
+
+[[record.gap]]
+offset = 264
+size = 4
+note = "Bytes 264 through 267 are zero."
+
+[[record.field]]
+name = "identity_lane"
+offset = 268
+type = "u64"
+source = "spec"
+anchor = "offset 268 is a nonzero u64 whose most-significant byte is `0x70`"
+
+[[record.gap]]
+offset = 276
+size = 3
+note = "Bytes 276 through 278 are zero."
+
+[[record.field]]
+name = "successor_reference"
+offset = 279
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 279, 292, and 304 name"
+
+[[record.gap]]
+offset = 290
+size = 2
+note = "Bytes 290 through 291 are zero."
+
+[[record.field]]
+name = "predecessor_reference"
+offset = 292
+type = "bytes[11]"
+source = "spec"
+anchor = "the transform record plus two, the transform record plus one"
+
+[[record.gap]]
+offset = 303
+size = 1
+note = "Byte 303 is zero."
+
+[[record.field]]
+name = "owner_reference"
+offset = 304
+type = "bytes[11]"
+source = "spec"
+anchor = "and the owning Coil scope"
 
 [[record]]
 name = "coil_compact_placement_owner_identity_frame"

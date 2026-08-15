@@ -16,7 +16,9 @@ use super::{
     POINT_DATA_TYPE_GUID,
 };
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_selection;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
+use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
     DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
@@ -196,6 +198,90 @@ fn compact_coil_placement_fixture(
         304,
         305,
     ];
+    (bytes, scope, transform_start)
+}
+
+fn modern_coil_matrix_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
+    fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
+        bytes[offset] = 1;
+        bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
+        bytes[offset + 5..offset + 11].fill(0);
+    }
+
+    fn u64_at(bytes: &mut [u8], offset: usize, value: u64) {
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    let (mut bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
+    bytes.insert(coil_persist_selection::NESTED_SELECTION_MARKER, 0);
+    let transform_start = transform_start + 1;
+    bytes[4..7].copy_from_slice(b"286");
+    bytes.truncate(transform_start);
+    indexed_header(&mut bytes, *b"450", 200);
+    bytes.resize(transform_start + coil_modern_matrix::LEN, 0);
+    let transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let offset = transform_start + coil_modern_matrix::MATRIX + ordinal * 8;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[transform_start + coil_modern_matrix::CONSTANT_512
+        ..transform_start + coil_modern_matrix::CONSTANT_512 + 4]
+        .copy_from_slice(&512u32.to_le_bytes());
+    bytes[transform_start + coil_modern_matrix::CONSTANT_256
+        ..transform_start + coil_modern_matrix::CONSTANT_256 + 4]
+        .copy_from_slice(&256u32.to_le_bytes());
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::SELECTION_REFERENCE,
+        100,
+    );
+    bytes[transform_start + coil_modern_matrix::SELECTION_FLAG
+        ..transform_start + coil_modern_matrix::SELECTION_FLAG + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::AUXILIARY_REFERENCE,
+        225,
+    );
+    u64_at(
+        &mut bytes,
+        transform_start + coil_modern_matrix::CONSTANT_1024,
+        1024,
+    );
+    u64_at(
+        &mut bytes,
+        transform_start + coil_modern_matrix::IDENTITY_LANE_PREFIX,
+        0x7000_0000_0000_0000,
+    );
+    u64_at(
+        &mut bytes,
+        transform_start + coil_modern_matrix::IDENTITY_LANE,
+        0x703e_0000_0000_0001,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::SUCCESSOR_REFERENCE,
+        202,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::PREDECESSOR_REFERENCE,
+        201,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::OWNER_REFERENCE,
+        scope.record_index,
+    );
+    indexed_header(&mut bytes, *b"259", 200);
+    scope.class_tag = "353".into();
+    scope.paired_class_tag = "259".into();
+    scope.frame_length = 427;
     (bytes, scope, transform_start)
 }
 
@@ -422,6 +508,54 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
             ])
         );
     }
+}
+
+#[test]
+fn modern_coil_placement_accepts_class_450_matrix_frame() {
+    let (bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
+    let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+        .expect("modern Coil matrix placement");
+    assert_eq!(placement.selection_record_index, 100);
+    assert_eq!(placement.selection_class_tag, "286");
+    assert_eq!(placement.transform_record_index, 200);
+    assert_eq!(placement.transform_class_tag, "450");
+    assert_eq!(
+        placement.transform,
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+    assert_eq!(
+        placement.transform_offset,
+        Some((transform_start + coil_modern_matrix::MATRIX) as u64)
+    );
+}
+
+#[test]
+fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
+    let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
+    bytes[transform_start + coil_modern_matrix::CONSTANT_512 + 1] = 0;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+
+    let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
+    bytes[transform_start + coil_modern_matrix::IDENTITY_LANE + 7] = 0;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+
+    let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
+    bytes[transform_start + coil_modern_matrix::OWNER_REFERENCE + 1] = 0;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
 }
 
 #[test]

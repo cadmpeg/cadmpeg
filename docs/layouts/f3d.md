@@ -966,6 +966,25 @@ Unstated regions:
 - `11..21` (10 B): The persistent prefix stores zero bytes at offsets 11 through 20.
 - `26..32` (6 B): The persistent prefix stores zero bytes at offsets 26 through 31.
 
+## `coil_modern_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 41 B
+
+Offsets are relative to the class-286 first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 22 | 1 | `nested_selection_marker` | `u8` | little | spec | offset 22 is u8 `1` |
+| 23 | 4 | `nested_record_index` | `u32` | little | spec | offset 23 is the nested record index |
+| 33 | 4 | `asset_presence` | `u32` | little | spec | offset 33 is u32 `1` |
+| 37 | 4 | `asset_uuid_length` | `u32` | little | spec | offset 37 is the asset UUID's UTF-16 code-unit count |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed selection header occupies the first 11 bytes.
+- `11..22` (11 B): The modern selection prefix stores zero bytes at offsets 11 through 21.
+- `27..33` (6 B): The modern selection prefix stores zero bytes at offsets 27 through 32.
+
 ## `coil_compact_face_selection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 42 B
@@ -1047,6 +1066,41 @@ Unstated regions:
 
 - `0..55` (55 B): The fixed placement envelope precedes the identity marker block.
 - `66..213` (147 B): The identity form omits the explicit matrix block and retains the remaining carrier bytes natively.
+
+## `coil_modern_placement_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 315 B
+
+Offsets are relative to the class-450 second placement carrier's primary indexed header. The matrix is row-major and its translation values are in centimetres.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 50 | 128 | `matrix` | `f64[16]` | little | spec | sixteen row-major f64 matrix values begin at offset 50 |
+| 204 | 4 | `constant_512` | `u32` | little | spec | offset 204 is u32 `512` |
+| 212 | 4 | `constant_256` | `u32` | little | spec | offset 212 is u32 `256` |
+| 217 | 11 | `selection_reference` | `bytes[11]` | little | spec | A marked reference at offset 217 names the first placement reference |
+| 230 | 4 | `selection_flag` | `u32` | little | spec | offset 230 is u32 `1` |
+| 234 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | a marked reference at offset 234 names the transform record plus 25 |
+| 248 | 8 | `constant_1024` | `u64` | little | spec | offset 248 is u64 `1024` |
+| 256 | 8 | `identity_lane_prefix` | `u64` | little | spec | offset 256 is u64 `0x7000000000000000` |
+| 268 | 8 | `identity_lane` | `u64` | little | spec | offset 268 is a nonzero u64 whose most-significant byte is `0x70` |
+| 279 | 11 | `successor_reference` | `bytes[11]` | little | spec | Marked references at offsets 279, 292, and 304 name |
+| 292 | 11 | `predecessor_reference` | `bytes[11]` | little | spec | the transform record plus two, the transform record plus one |
+| 304 | 11 | `owner_reference` | `bytes[11]` | little | spec | and the owning Coil scope |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
+- `11..50` (39 B): Bytes 11 through 49 are zero.
+- `178..204` (26 B): Bytes 178 through 203 are zero.
+- `208..212` (4 B): Bytes 208 through 211 are zero.
+- `216..217` (1 B): One zero byte precedes the first marked reference.
+- `228..230` (2 B): Bytes 228 and 229 are zero.
+- `245..248` (3 B): Three zero bytes precede the u64 constant.
+- `264..268` (4 B): Bytes 264 through 267 are zero.
+- `276..279` (3 B): Bytes 276 through 278 are zero.
+- `290..292` (2 B): Bytes 290 through 291 are zero.
+- `303..304` (1 B): Byte 303 is zero.
 
 ## `coil_compact_placement_owner_identity_frame`
 

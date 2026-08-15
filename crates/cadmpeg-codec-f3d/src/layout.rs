@@ -1342,6 +1342,26 @@ pub(crate) mod coil_compact_persistent_selection_prefix {
     pub(crate) const ASSET_UUID_LENGTH: usize = 36;
 }
 
+/// Byte offsets for the `coil_modern_selection_prefix` record.
+///
+/// Spec §3.1. Record length 41 B.
+///
+/// ```text
+/// Offsets are relative to the class-286 first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length.
+/// ```
+pub(crate) mod coil_modern_selection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 41;
+    /// Offset of `nested_selection_marker` (`u8`). Spec §3.1.
+    pub(crate) const NESTED_SELECTION_MARKER: usize = 22;
+    /// Offset of `nested_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const NESTED_RECORD_INDEX: usize = 23;
+    /// Offset of `asset_presence` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ASSET_PRESENCE: usize = 33;
+    /// Offset of `asset_uuid_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ASSET_UUID_LENGTH: usize = 37;
+}
+
 /// Byte offsets for the `coil_compact_face_selection_prefix` record.
 ///
 /// Spec §3.1. Record length 42 B.
@@ -1428,6 +1448,42 @@ pub(crate) mod coil_compact_placement_identity_frame {
     pub(crate) const IDENTITY_ZERO_RUN: usize = 56;
     /// Offset of `identity_marker` (`u8`). Spec §3.1.
     pub(crate) const IDENTITY_MARKER: usize = 65;
+}
+
+/// Byte offsets for the `coil_modern_placement_matrix_frame` record.
+///
+/// Spec §3.1. Record length 315 B.
+///
+/// ```text
+/// Offsets are relative to the class-450 second placement carrier's primary indexed header. The matrix is row-major and its translation values are in centimetres.
+/// ```
+pub(crate) mod coil_modern_placement_matrix_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 315;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 50;
+    /// Offset of `constant_512` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_512: usize = 204;
+    /// Offset of `constant_256` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_256: usize = 212;
+    /// Offset of `selection_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SELECTION_REFERENCE: usize = 217;
+    /// Offset of `selection_flag` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SELECTION_FLAG: usize = 230;
+    /// Offset of `auxiliary_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AUXILIARY_REFERENCE: usize = 234;
+    /// Offset of `constant_1024` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_1024: usize = 248;
+    /// Offset of `identity_lane_prefix` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const IDENTITY_LANE_PREFIX: usize = 256;
+    /// Offset of `identity_lane` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const IDENTITY_LANE: usize = 268;
+    /// Offset of `successor_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SUCCESSOR_REFERENCE: usize = 279;
+    /// Offset of `predecessor_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PREDECESSOR_REFERENCE: usize = 292;
+    /// Offset of `owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 304;
 }
 
 /// Byte offsets for the `coil_compact_placement_owner_identity_frame` record.

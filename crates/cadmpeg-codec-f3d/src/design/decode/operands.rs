@@ -15,6 +15,7 @@ use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
+use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::sketch_profile_region_member as region_member;
@@ -2229,6 +2230,17 @@ pub(crate) fn parse_entity_selection_prefix(
         && View::u32_le_at(bytes, start + coil_persist_sel::ASSET_PRESENCE)? == 1
     {
         start.checked_add(coil_persist_sel::ASSET_UUID_LENGTH)?
+    } else if bytes.get(start + 11..start + coil_modern_sel::NESTED_SELECTION_MARKER)? == [0; 11]
+        && bytes.get(start + coil_modern_sel::NESTED_SELECTION_MARKER) == Some(&1)
+        && View::u32_le_at(bytes, start + coil_modern_sel::NESTED_RECORD_INDEX)?
+            == record_index.checked_add(3)?
+        && bytes.get(
+            start + coil_modern_sel::NESTED_RECORD_INDEX + 4
+                ..start + coil_modern_sel::ASSET_PRESENCE,
+        )? == [0; 6]
+        && View::u32_le_at(bytes, start + coil_modern_sel::ASSET_PRESENCE)? == 1
+    {
+        start.checked_add(coil_modern_sel::ASSET_UUID_LENGTH)?
     } else if bytes.get(start + 11..start + coil_face_sel::NESTED_SELECTION_MARKER)? == [0; 12]
         && bytes.get(start + coil_face_sel::NESTED_SELECTION_MARKER) == Some(&1)
         && View::u32_le_at(bytes, start + coil_face_sel::NESTED_RECORD_INDEX)?
