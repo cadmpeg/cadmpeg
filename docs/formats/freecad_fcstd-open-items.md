@@ -182,16 +182,18 @@ neutral numeric boundary or the full admissible profile topology.
 multi-constraint junctions. An ambiguous junction must use constraint identity, an explicit
 source-order rule, or an attributable refusal.
 
-**Note.** The closure adds ambiguity handling and a scale formula, but the boundary remains a
-decoder policy without producer evidence. Reopened.
+**Note.** This pass settled the producer-side absence of a generic junction tolerance and
+tie-break. The neutral junction policy remains open.
 
 ### DP-05. Dependency-cycle ordinal fallback
 
 **Question.** What neutral projection applies when feature dependencies, parents, or expressions
 form a cycle?
 
-**Known.** The native graph retains cycles. The neutral graph must use a stable maximal subset whose
-targets precede their consumers, or carry an explicit blocking loss.
+**Known.** The native graph retains cycles. FreeCAD can persist `First -> Second` and
+`Second -> First` as two `ObjectDeps` records and matching `PropertyLink` values. The neutral graph
+must use a stable maximal subset whose targets precede their consumers, or carry an explicit
+blocking loss.
 
 **Conflict.** design.rs:679-688 marks all remaining objects cycle-affected, assigns ordinals by
 source order, and design.rs:450-456 removes edges whose targets are not earlier. The specification
@@ -201,8 +203,9 @@ discard are the correct neutral result.
 **Need.** Define a cycle projection that is stable and preserves the maximal admissible subset, or
 refuse with an explicit loss. Do not source-order a cycle and silently discard its edges.
 
-**Note.** Native retention and the blocking feature.cyclic-history loss are a safety improvement.
-They do not establish the neutral relation. Reopened after the history closure.
+**Note.** This pass settled that the producer persists directed dependency cycles. Native retention
+and the blocking feature.cyclic-history loss are a safety improvement, but they do not establish
+the neutral relation. The projection remains open.
 
 ### DP-07. Legacy point carrier provenance
 

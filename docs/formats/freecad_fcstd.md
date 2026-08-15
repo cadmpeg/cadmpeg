@@ -79,7 +79,8 @@ enabled section contains exactly `Objects.Count` `ObjectDeps` elements before th
 declarations, in the same order and with the same names. Each `ObjectDeps.Count` equals its number
 of `Dep` children. `ObjectDeps` names are unique. An optional `AllowPartial` is a positive integer
 and remains attached to its object. A section without `Dependencies` contains no `ObjectDeps`
-elements.
+elements. Dependency records preserve directed edges; the native envelope does not require the
+dependency graph to be acyclic.
 
 ## 3. Version dispatch
 
