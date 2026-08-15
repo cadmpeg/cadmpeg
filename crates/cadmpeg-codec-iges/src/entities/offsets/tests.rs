@@ -29,6 +29,90 @@ use cadmpeg_ir::CadIr;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
+const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn offset_source_range_uses_the_unique_curve_endpoint_match() {
+    let source_id = CurveId("source".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: source_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: PointId("wrong-start-point".into()),
+            position: Point3::new(10.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("wrong-end-point".into()),
+            position: Point3::new(11.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("matching-start-point".into()),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("matching-end-point".into()),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: VertexId("wrong-start".into()),
+            point: PointId("wrong-start-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("wrong-end".into()),
+            point: PointId("wrong-end-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("matching-start".into()),
+            point: PointId("matching-start-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("matching-end".into()),
+            point: PointId("matching-end-point".into()),
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.extend([
+        Edge {
+            id: EdgeId("wrong-occurrence".into()),
+            curve: Some(source_id.clone()),
+            start: VertexId("wrong-start".into()),
+            end: VertexId("wrong-end".into()),
+            param_range: Some([5.0, 6.0]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("matching-occurrence".into()),
+            curve: Some(source_id.clone()),
+            start: VertexId("matching-start".into()),
+            end: VertexId("matching-end".into()),
+            param_range: Some([0.0, 2.0]),
+            tolerance: None,
+        },
+    ]);
+
+    let source = &ir.model.curves[0];
+    assert_eq!(
+        super::source_parameter_range(&ir, &source_id, &source.geometry, EPS_OFFSET_ENDPOINT_MATCH,),
+        Some([0.0, 2.0])
+    );
+}
+
 #[test]
 fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
     let result = IgesCodec

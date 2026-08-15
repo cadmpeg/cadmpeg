@@ -30,11 +30,6 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 
 fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
     let curve = CurveId(format!("iges:model:curve#D{sequence}"));
-    let edge = ir
-        .model
-        .edges
-        .iter()
-        .find(|edge| edge.curve.as_ref() == Some(&curve))?;
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let point_id = &ir
             .model
@@ -48,9 +43,22 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
             .find(|item| item.id == *point_id)
             .map(|item| item.position)
     };
-    let start = point(&edge.start)?;
-    let end = point(&edge.end)?;
-    Some(super::evaluation::distance(start, end) <= tolerance)
+    let mut result = None;
+    for edge in ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(&curve))
+    {
+        let start = point(&edge.start)?;
+        let end = point(&edge.end)?;
+        let closed = super::evaluation::distance(start, end) <= tolerance;
+        if result.is_some_and(|previous| previous != closed) {
+            return None;
+        }
+        result = Some(closed);
+    }
+    result
 }
 
 #[derive(Clone, Copy)]

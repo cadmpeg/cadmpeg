@@ -108,6 +108,49 @@ fn source_parameter_map(
     SourceParameterMap::new(native, neutral)
 }
 
+fn source_parameter_range(
+    ir: &CadIr,
+    source_id: &CurveId,
+    geometry: &CurveGeometry,
+    tolerance: f64,
+) -> Option<[f64; 2]> {
+    let point_position = |vertex: &VertexId| {
+        let point_id = ir
+            .model
+            .vertices
+            .iter()
+            .find(|item| item.id == *vertex)?
+            .point
+            .clone();
+        ir.model
+            .points
+            .iter()
+            .find(|item| item.id == point_id)
+            .map(|point| point.position)
+    };
+    let candidates = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(source_id))
+        .filter_map(|edge| {
+            let range = edge.param_range?;
+            let start = point_position(&edge.start)?;
+            let end = point_position(&edge.end)?;
+            let evaluated_start = cadmpeg_ir::eval::curve_point(geometry, range[0])?;
+            let evaluated_end = cadmpeg_ir::eval::curve_point(geometry, range[1])?;
+            (evaluated_start.distance(start) <= tolerance
+                && evaluated_end.distance(end) <= tolerance)
+                .then_some(range)
+        })
+        .collect::<Vec<_>>();
+    let range = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| *candidate == range)
+        .then_some(range)
+}
+
 #[allow(clippy::many_single_char_names)]
 pub(super) fn project(
     ir: &mut CadIr,
@@ -202,11 +245,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset source curve is missing"));
             continue;
         };
-        let source_range = ir.model.edges.iter().find_map(|edge| {
-            (edge.curve.as_ref() == Some(&source_id))
-                .then_some(edge.param_range)
-                .flatten()
-        });
+        let source_range = source_parameter_range(
+            ir,
+            &source_id,
+            &source.geometry,
+            global.minimum_resolution_mm(),
+        );
         let Some(source_range) = source_range else {
             losses.push(entity_loss(
                 entry,

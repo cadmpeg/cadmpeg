@@ -30,6 +30,76 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
+const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;
+
+#[test]
+fn profile_closure_rejects_conflicting_edge_occurrences() {
+    let curve_id = CurveId("iges:model:curve#D1".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: PointId("closed-point".into()),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("open-point".into()),
+            position: Point3::new(1.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: VertexId("closed-start".into()),
+            point: PointId("closed-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("closed-end".into()),
+            point: PointId("closed-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("open-start".into()),
+            point: PointId("closed-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("open-end".into()),
+            point: PointId("open-point".into()),
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.extend([
+        Edge {
+            id: EdgeId("closed-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("closed-start".into()),
+            end: VertexId("closed-end".into()),
+            param_range: Some([0.0, 1.0]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("open-occurrence".into()),
+            curve: Some(curve_id),
+            start: VertexId("open-start".into()),
+            end: VertexId("open-end".into()),
+            param_range: Some([0.0, 1.0]),
+            tolerance: None,
+        },
+    ]);
+
+    assert_eq!(super::profile_closed(&ir, 1, EPS_PROFILE_CLOSURE), None);
+}
+
 #[test]
 fn decode_types_all_csg_primitive_solids_and_defaults() {
     let result = IgesCodec
