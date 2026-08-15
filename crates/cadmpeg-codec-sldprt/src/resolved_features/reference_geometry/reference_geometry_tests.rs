@@ -998,6 +998,17 @@ fn fixed_reference_plane_uses_all_three_stored_basis_vectors() {
     frame[73..81].copy_from_slice(&1.0f64.to_le_bytes());
     assert_eq!(fixed_reference_plane_frame(&frame), None);
     assert_eq!(fixed_reference_plane_frame(&frame[..96]), None);
+
+    frame[81..89].fill(0);
+    frame[89..97].fill(0);
+    assert_eq!(
+        explicit_reference_plane_frame(&frame),
+        Ok(Some((
+            Point3::new(374.0, -250.0, 125.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        )))
+    );
 }
 
 #[test]

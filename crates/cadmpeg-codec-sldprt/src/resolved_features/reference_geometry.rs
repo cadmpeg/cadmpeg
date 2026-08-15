@@ -2361,7 +2361,9 @@ fn fixed_reference_plane_frame_candidates(
                 .all(|(matrix_offset, _)| matrix_offset != offset)
         })
         .filter_map(|(offset, bytes)| {
-            fixed_reference_plane_frame(bytes).map(|frame| (offset, frame))
+            fixed_reference_plane_frame(bytes)
+                .or_else(|| repeated_normal_reference_plane_frame(bytes))
+                .map(|frame| (offset, frame))
         })
         .collect()
 }
@@ -2533,6 +2535,7 @@ pub(super) fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Ve
         .enumerate()
         .filter_map(|(offset, bytes)| {
             fixed_reference_plane_frame(bytes)
+                .or_else(|| repeated_normal_reference_plane_frame(bytes))
                 .is_some()
                 .then_some(offset..offset + fixed_plane::LEN)
         })
