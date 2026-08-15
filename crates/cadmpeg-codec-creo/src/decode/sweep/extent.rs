@@ -549,12 +549,16 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        let [Surface {
-            geometry: SurfaceGeometry::Plane { origin, normal, .. },
-            ..
-        }] = surfaces.as_slice()
-        else {
-            return None;
+        let (origin, normal) = match surfaces.as_slice() {
+            [Surface {
+                geometry: SurfaceGeometry::Plane { origin, normal, .. },
+                ..
+            }] => (*origin, *normal),
+            [Surface {
+                geometry: SurfaceGeometry::Unknown { .. },
+                ..
+            }] => continue,
+            _ => return None,
         };
         let plane = canonical_plane(PlaneEquation {
             origin: [origin.x, origin.y, origin.z],

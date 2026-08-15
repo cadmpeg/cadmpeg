@@ -69,8 +69,9 @@ fixtures, scores above L1 remain blocked.
 - Generated cap-plane tables and complete positional-cylinder carriers provide
   blind extrusion spans to generated feature surfaces and first additive linear
   or one-circle B-reps when the section transform agrees with the carrier
-  direction. Complete NURBS-translation carriers provide the same span to
-  generated NURBS feature surfaces when their profile is supported. Retained
+  direction. Complete NURBS-translation and rectilinear-plane carriers provide
+  the same span to generated NURBS or plane feature surfaces when their profile
+  is supported. Retained
   unknown rows in the same plane, cylinder, or extrusion family do not
   invalidate this proof; every materialized carrier and cap must still agree.
 - Named `Protrusion`, `Cut`, and `Extrude` operations use the same independent

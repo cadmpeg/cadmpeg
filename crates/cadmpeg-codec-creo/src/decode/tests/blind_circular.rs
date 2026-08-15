@@ -1798,6 +1798,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([
+        row(37, false),
         row(31, false),
         row(32, true),
         row(33, true),
@@ -1816,6 +1817,11 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     };
     let mut ir = CadIr::empty(Units::default());
     ir.model.surfaces.extend([
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#37".to_string()),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        },
         plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
         plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
         plane(33, Point3::new(4.0, 48.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
