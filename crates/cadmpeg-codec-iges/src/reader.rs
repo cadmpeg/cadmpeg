@@ -6,7 +6,9 @@ use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, DecodeMode};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
-use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::{
+    document_local_sha256_with_charge, sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
+};
 use cadmpeg_ir::report::{DecodeReport, LossNote, Severity, TransferDisposition, TransferLedger};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
@@ -150,7 +152,14 @@ fn decode_with_occurrence_limits(
         "iges_native_entities",
     )?;
     ir.finalize();
-    let document_digest = crate::document_digest(&ir);
+    let document_digest = match ctx {
+        Some(ctx) => {
+            document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
+                ctx.charge_work(bytes, "iges_document_digest")
+            })?
+        }
+        None => crate::document_digest(&ir),
+    };
     if let Some(source) = &mut ir.source {
         source
             .attributes
