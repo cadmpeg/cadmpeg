@@ -41,6 +41,8 @@ pub enum IgesLossCode {
     EntityOutsideEnvelope,
     /// An entity was not projected; the instance message names the reason.
     EntityNotProjected,
+    /// A boundary pcurve leaves the finite parameter domain of its support surface.
+    BoundaryPcurveOutsideSupportDomain,
     /// A Directory Entry pointer did not resolve to the expected target.
     PointerUnresolved,
     /// Directory display, font, or color data was not projected.
@@ -72,6 +74,7 @@ impl IgesLossCode {
         Self::EntityRetainedUnprojected,
         Self::EntityOutsideEnvelope,
         Self::EntityNotProjected,
+        Self::BoundaryPcurveOutsideSupportDomain,
         Self::PointerUnresolved,
         Self::DisplayDataNotProjected,
         Self::DrawingPropertyAmbiguous,
@@ -94,6 +97,9 @@ impl IgesLossCode {
             Self::EntityRetainedUnprojected => "entity.retained-unprojected",
             Self::EntityOutsideEnvelope => "entity.outside-envelope",
             Self::EntityNotProjected => "entity.not-projected",
+            Self::BoundaryPcurveOutsideSupportDomain => {
+                "topology.boundary-pcurve-outside-support-domain"
+            }
             Self::PointerUnresolved => "graph.pointer-unresolved",
             Self::DisplayDataNotProjected => "presentation.display-data-not-projected",
             Self::DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
@@ -121,6 +127,7 @@ impl IgesLossCode {
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
+            | Self::BoundaryPcurveOutsideSupportDomain
             | Self::PointerUnresolved
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
@@ -141,6 +148,7 @@ impl IgesLossCode {
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
+            Self::BoundaryPcurveOutsideSupportDomain => LossTaxonomy::SourceTopologyInvalid,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::DisplayDataNotProjected => LossTaxonomy::MaterialNotTransferred,
             Self::DrawingPropertyAmbiguous
@@ -197,6 +205,7 @@ mod tests {
                 "entity.retained-unprojected",
                 "entity.outside-envelope",
                 "entity.not-projected",
+                "topology.boundary-pcurve-outside-support-domain",
                 "graph.pointer-unresolved",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",

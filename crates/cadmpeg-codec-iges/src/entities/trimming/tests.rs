@@ -26,11 +26,151 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
-use super::{cluster_boundary_positions, BoundaryVertexClusterError};
+use super::{
+    cluster_boundary_positions, pcurve_within_declared_bounds, BoundaryVertexClusterError,
+};
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn pcurve_bounds_use_the_active_nurbs_subrange() {
+    let geometry = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        weights: None,
+        periodic: false,
+    };
+    let bounds = Some([Some(0.2), Some(0.8), None, None]);
+
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.2, 0.8],
+        bounds,
+        [false, false]
+    ));
+    assert!(!pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 1.0],
+        bounds,
+        [false, false]
+    ));
+}
+
+#[test]
+fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
+    let geometry = PcurveGeometry::Nurbs {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(2.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.2, 0.0),
+            Point2::new(0.3, 0.0),
+            Point2::new(0.4, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    let bounds = Some([Some(0.0), Some(1.0), None, None]);
+
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.5, 1.0],
+        bounds,
+        [false, false]
+    ));
+    assert!(!pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 0.5],
+        bounds,
+        [false, false]
+    ));
+}
+
+#[test]
+fn pcurve_bounds_keep_partial_domains_and_periodic_seams() {
+    let geometry = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],
+        weights: None,
+        periodic: false,
+    };
+
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 1.0],
+        Some([Some(0.0), Some(1.0), None, None]),
+        [false, false]
+    ));
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 1.0],
+        Some([Some(0.0), Some(1.0), Some(0.0), Some(1.0)]),
+        [false, true]
+    ));
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 1.0],
+        None,
+        [false, false]
+    ));
+}
+
+#[test]
+fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(subrange_nurbs_surface_boundary_file(2)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D9"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind() }));
+    let coedge = result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.0 == "iges:model:coedge#D9:0:0")
+        .expect("trimmed boundary coedge");
+    assert!(coedge.pcurves.is_empty());
+}
+
+#[test]
+fn decode_rejects_an_out_of_domain_parameter_preferred_type_142() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(subrange_nurbs_surface_boundary_file(3)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D9"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind() }));
+}
 
 #[test]
 fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {

@@ -6,10 +6,11 @@ use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
+use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -52,6 +53,17 @@ enum BoundaryEdgeSelectionError {
     MissingEndpoints,
     Ambiguous,
     PcurveDisagreement,
+}
+
+fn boundary_parameter_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
+    IgesLossCode::BoundaryPcurveOutsideSupportDomain
+        .note(format!(
+            "IGES entity type {} form {}: {}",
+            entry.entity_type,
+            entry.form,
+            message.into()
+        ))
+        .with_provenance(entry.loss_provenance())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,6 +245,314 @@ pub(super) fn pcurve_geometry(
         },
         range,
     ))
+}
+
+#[derive(Clone)]
+struct HomogeneousPcurveSpan {
+    domain: [f64; 2],
+    controls: Vec<[f64; 4]>,
+}
+
+type HomogeneousPcurveSplit = (Vec<[f64; 4]>, Vec<[f64; 4]>);
+
+fn insert_homogeneous_pcurve_knot(
+    degree: usize,
+    knots: &mut Vec<f64>,
+    controls: &mut Vec<[f64; 4]>,
+    knot: f64,
+) -> Option<()> {
+    let count = controls.len();
+    let span = knots
+        .windows(2)
+        .position(|pair| pair[0] <= knot && knot < pair[1])?;
+    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
+    if multiplicity >= degree {
+        return Some(());
+    }
+    let left_end = span.checked_sub(degree)?;
+    let tail_start = span.checked_sub(multiplicity)?;
+    let mut inserted = (0..count.checked_add(1)?)
+        .map(|_| [0.0; 4])
+        .collect::<Vec<_>>();
+    inserted[..=left_end].copy_from_slice(&controls[..=left_end]);
+    inserted[tail_start + 1..].copy_from_slice(&controls[tail_start..]);
+    for index in left_end + 1..=tail_start {
+        let denominator = knots[index + degree] - knots[index];
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let alpha = (knot - knots[index]) / denominator;
+        inserted[index] = std::array::from_fn(|axis| {
+            alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
+        });
+    }
+    knots.insert(span + 1, knot);
+    *controls = inserted;
+    Some(())
+}
+
+fn homogeneous_pcurve_spans(
+    degree: usize,
+    knots: &[f64],
+    mut controls: Vec<[f64; 4]>,
+) -> Option<Vec<HomogeneousPcurveSpan>> {
+    if degree == 0
+        || degree >= controls.len()
+        || knots.len() != controls.len().checked_add(degree)?.checked_add(1)?
+        || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
+    let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
+    if domain[0] >= domain[1] {
+        return None;
+    }
+    let mut knots = knots.to_vec();
+    let mut internal = knots
+        .get(degree + 1..controls.len())?
+        .iter()
+        .copied()
+        .filter(|knot| domain[0] < *knot && *knot < domain[1])
+        .collect::<Vec<_>>();
+    internal.sort_by(f64::total_cmp);
+    internal.dedup();
+    for knot in internal {
+        while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
+            insert_homogeneous_pcurve_knot(degree, &mut knots, &mut controls, knot)?;
+        }
+    }
+    let mut spans = Vec::new();
+    for span in degree..controls.len() {
+        let &start = knots.get(span)?;
+        let &end = knots.get(span + 1)?;
+        if start >= end {
+            continue;
+        }
+        spans.push(HomogeneousPcurveSpan {
+            domain: [start, end],
+            controls: controls.get(span.checked_sub(degree)?..=span)?.to_vec(),
+        });
+    }
+    (!spans.is_empty()).then_some(spans)
+}
+
+fn split_homogeneous_pcurve(
+    controls: &[[f64; 4]],
+    parameter: f64,
+) -> Option<HomogeneousPcurveSplit> {
+    if controls.is_empty() || !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
+        return None;
+    }
+    let mut levels = vec![controls.to_vec()];
+    while levels.last()?.len() > 1 {
+        let next = levels
+            .last()?
+            .windows(2)
+            .map(|pair| {
+                std::array::from_fn(|axis| {
+                    (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
+                })
+            })
+            .collect::<Vec<_>>();
+        levels.push(next);
+    }
+    let left = levels.iter().map(|level| level[0]).collect::<Vec<_>>();
+    let right = levels
+        .iter()
+        .rev()
+        .map(|level| *level.last().expect("nonempty de Casteljau level"))
+        .collect::<Vec<_>>();
+    Some((left, right))
+}
+
+fn restrict_homogeneous_pcurve(
+    controls: &[[f64; 4]],
+    start: f64,
+    end: f64,
+) -> Option<Vec<[f64; 4]>> {
+    if start > end {
+        let mut restricted = restrict_homogeneous_pcurve(controls, end, start)?;
+        restricted.reverse();
+        return Some(restricted);
+    }
+    if start == end {
+        let point = split_homogeneous_pcurve(controls, start)?
+            .0
+            .into_iter()
+            .last()?;
+        return Some(std::iter::once(point).collect());
+    }
+    let left = split_homogeneous_pcurve(controls, end)?.0;
+    if start == 0.0 {
+        return Some(left);
+    }
+    let relative_start = start / end;
+    split_homogeneous_pcurve(&left, relative_start).map(|(_, right)| right)
+}
+
+fn pcurve_within_declared_bounds(
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    bounds: Option<[Option<f64>; 4]>,
+    periodic: [bool; 2],
+) -> bool {
+    let Some(bounds) = bounds else {
+        return true;
+    };
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        ..
+    } = geometry
+    else {
+        return false;
+    };
+    let Some(degree) = usize::try_from(*degree).ok() else {
+        return false;
+    };
+    if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
+        return false;
+    }
+    if weights
+        .as_ref()
+        .is_some_and(|weights| weights.len() != control_points.len())
+    {
+        return false;
+    }
+    let Some(controls) = control_points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            let weight = weights
+                .as_ref()
+                .map_or(Some(1.0), |weights| weights.get(index).copied())?;
+            (weight.is_finite() && weight > 0.0).then_some([
+                weight,
+                weight * point.u,
+                weight * point.v,
+                0.0,
+            ])
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let Some(spans) = homogeneous_pcurve_spans(degree, knots, controls) else {
+        return false;
+    };
+    let Some(first_span) = spans.first() else {
+        return false;
+    };
+    let Some(last_span) = spans.last() else {
+        return false;
+    };
+    if range[0] < first_span.domain[0] || range[1] > last_span.domain[1] {
+        return false;
+    }
+    let in_bound = |value: f64, lower: Option<f64>, upper: Option<f64>| {
+        value.is_finite()
+            && lower.is_none_or(|lower| lower.is_finite() && value >= lower)
+            && upper.is_none_or(|upper| upper.is_finite() && value <= upper)
+    };
+    let expand_periodic =
+        |lower: Option<f64>, upper: Option<f64>, periodic: bool| match (lower, upper, periodic) {
+            (Some(lower), Some(upper), true) => {
+                let period = upper - lower;
+                (period.is_finite() && period > 0.0)
+                    .then_some((Some(lower - period), Some(upper + period)))
+            }
+            _ => Some((lower, upper)),
+        };
+    let Some((u_lower, u_upper)) = expand_periodic(bounds[0], bounds[1], periodic[0]) else {
+        return false;
+    };
+    let Some((v_lower, v_upper)) = expand_periodic(bounds[2], bounds[3], periodic[1]) else {
+        return false;
+    };
+    let mut covered = false;
+    for span in spans {
+        let start = range[0].max(span.domain[0]);
+        let end = range[1].min(span.domain[1]);
+        if start >= end {
+            continue;
+        }
+        covered = true;
+        let width = span.domain[1] - span.domain[0];
+        if !width.is_finite() || width <= 0.0 {
+            return false;
+        }
+        let local_start = (start - span.domain[0]) / width;
+        let local_end = (end - span.domain[0]) / width;
+        let Some(restricted) = restrict_homogeneous_pcurve(&span.controls, local_start, local_end)
+        else {
+            return false;
+        };
+        if restricted.iter().any(|control| {
+            let weight = control[0];
+            !weight.is_finite()
+                || weight <= 0.0
+                || !in_bound(control[1] / weight, u_lower, u_upper)
+                || !in_bound(control[2] / weight, v_lower, v_upper)
+        }) {
+            return false;
+        }
+    }
+    covered
+}
+
+fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
+    match surface {
+        SurfaceGeometry::Nurbs(surface) => [surface.u_periodic, surface.v_periodic],
+        _ => [false, false],
+    }
+}
+
+fn surface_parameter_bounds(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+) -> Option<[Option<f64>; 4]> {
+    fn visit(
+        index: &ModelIndex<'_>,
+        surface_id: &SurfaceId,
+        visiting: &mut BTreeSet<SurfaceId>,
+    ) -> Option<[Option<f64>; 4]> {
+        if !visiting.insert(surface_id.clone()) {
+            return None;
+        }
+        let procedural = index.procedural_surface_for_surface(&surface_id.0)?;
+        let bounds = match &procedural.definition {
+            ProceduralSurfaceDefinition::Ruled { .. }
+            | ProceduralSurfaceDefinition::Extrusion { .. } => procedural
+                .record_bounds
+                .map(|bounds| [bounds[0], bounds[1], Some(0.0), Some(1.0)]),
+            ProceduralSurfaceDefinition::Revolution {
+                angular_interval, ..
+            } => procedural.record_bounds.map(|bounds| {
+                [
+                    bounds[0],
+                    bounds[1],
+                    Some(angular_interval[0]),
+                    Some(angular_interval[1]),
+                ]
+            }),
+            _ => procedural.record_bounds,
+        };
+        if let Some(bounds) = bounds {
+            return Some(bounds);
+        }
+        let support = match &procedural.definition {
+            ProceduralSurfaceDefinition::Offset { support, .. }
+            | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => support,
+            ProceduralSurfaceDefinition::Replica { source, .. } => source,
+            _ => return None,
+        };
+        visit(index, support, visiting)
+    }
+
+    visit(index, surface_id, &mut BTreeSet::new())
 }
 
 fn pcurves_agree(
@@ -696,6 +1016,8 @@ pub(super) fn project(
         let region_id = RegionId(format!("iges:model:region#{stem}"));
         let shell_id = ShellId(format!("iges:model:shell#{stem}"));
         let face_id = FaceId(format!("iges:model:face#{stem}"));
+        let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
+        let periodic_parameters = periodic_surface_parameters(&support_geometry);
         let mut loop_ids = Vec::new();
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
@@ -752,6 +1074,28 @@ pub(super) fn project(
                     }
                     None => Vec::new(),
                 };
+                if pcurves.iter().any(|(geometry, range)| {
+                    !pcurve_within_declared_bounds(
+                        geometry,
+                        *range,
+                        support_parameter_bounds,
+                        periodic_parameters,
+                    )
+                }) {
+                    if segment.parameter_curves_authoritative {
+                        losses.push(boundary_parameter_loss(
+                            entry,
+                            "boundary parameter curve leaves the declared support parameter bounds",
+                        ));
+                        valid = false;
+                        break;
+                    }
+                    losses.push(boundary_parameter_loss(
+                        entry,
+                        "alternate boundary parameter curve leaves the declared support parameter bounds; model-space curve retained",
+                    ));
+                    pcurves.clear();
+                }
                 let (source_edge, start, end, pcurves_agree) = match select_boundary_edge(
                     candidates,
                     &carrier_index,

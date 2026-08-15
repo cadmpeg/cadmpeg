@@ -1200,6 +1200,49 @@ pub(crate) fn parameter_domain_trimmed_surface_file(trimmed_surface_parameters: 
     ])
 }
 
+pub(crate) fn subrange_nurbs_surface_boundary_file(preference: i64) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 128,
+            form: 0,
+            label: "SURFACE".into(),
+            status: "00010000",
+            parameters:
+                "128,1,1,1,1,0,0,1,0,0,0,0,1,1,-1,-1,1,1,1,1,1,1,0,-1,0,1,-1,0,0,1,0,1,1,0,0.2,0.8,-1,1;"
+                    .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "MODEL".into(),
+            status: "00010000",
+            parameters: "106,1,5,0,0.2,0.2,0.8,0.2,0.8,0.8,0.2,0.8,0.2,0.2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 2,
+            label: "PCURVE".into(),
+            status: "00010500",
+            parameters:
+                "126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,0.2,0.2,0,0.1,0.5,0,0.2,0.2,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "ONSURF".into(),
+            status: "00010000",
+            parameters: format!("142,0,1,5,3,{preference};"),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "TRIMMED".into(),
+            status: "00000000",
+            parameters: "144,1,1,0,7;".into(),
+        },
+    ])
+}
+
 pub(crate) fn independent_boundary_entities_file(include_failing_owner: bool) -> Vec<u8> {
     let mut entities = vec![
         OwnedTestEntity {

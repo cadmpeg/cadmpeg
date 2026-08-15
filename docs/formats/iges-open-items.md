@@ -83,16 +83,6 @@ from a conformant file.
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `6bb0de35f` supplied a formula and synthetic boundary tests, but no external evidence supports using one value for these five roles.
 
-### TP-03. Declared surface parameter subranges are discarded with no loss
-
-**Question.** Must a Type 141/142 surface-boundary use retain its declared surface parameter subrange?
-
-**Known.** `trimming.rs` projects model curves and uses the neutral edge range; the declared surface parameter bounds are not retained in the native-to-IR path. The current documentation calls this intentional.
-
-**Need.** We need the source semantics of the parameter subrange and a decision whether projection may discard it, must preserve it, or must report a loss.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `8ddb25d46` added bounds handling and tests, but it did not establish whether the bounds are authoritative for the boundary use.
-
 ### TP-06. Type 180 Form 1 requires a direct Type 186 operand
 
 **Question.** Does a Type 180 Form 1 Boolean tree accept a Type 186 solid directly, or through a complete operand subtree?
