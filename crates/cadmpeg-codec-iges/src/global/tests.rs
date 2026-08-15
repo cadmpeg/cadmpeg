@@ -160,7 +160,7 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
     assert!((parsed.minimum_resolution_mm() - 0.0254).abs() <= f64::EPSILON * 64.0);
     assert_eq!(parsed.maximum_coordinate_mm(), 0.0);
 
-    for index in [2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 17, 18] {
+    for index in [3, 4, 5, 6, 7, 8, 9, 10, 16, 17, 18] {
         let mut fields = valid_global_fields();
         fields[index].clear();
         assert!(
@@ -169,6 +169,16 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
             index + 1
         );
     }
+}
+
+#[test]
+fn omitted_sender_product_is_retained_as_null_for_reader_compatibility() {
+    let mut fields = valid_global_fields();
+    fields[2].clear();
+
+    let parsed = parse_global_fields(&fields).unwrap();
+
+    assert_eq!(parsed.sender_product(), None);
 }
 
 #[test]
