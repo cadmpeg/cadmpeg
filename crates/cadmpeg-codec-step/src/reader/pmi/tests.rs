@@ -258,6 +258,7 @@ fn datum_target_transfers_form_and_identification() {
             PmiDefinition::DatumTarget {
                 form: actual_form,
                 identification: actual_id,
+                ..
             } if actual_form == &form && actual_id == identification
         ));
     }
@@ -1007,6 +1008,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         PmiDefinition::DatumTarget {
             form: DatumTargetForm::Circle,
             identification,
+            ..
         } if identification == "A"
     ));
     assert!(datum_target.targets.iter().any(|target| matches!(
@@ -1093,6 +1095,7 @@ fn datum_target_writes_and_round_trips() {
         PmiDefinition::DatumTarget {
             form: DatumTargetForm::Circle,
             identification,
+            ..
         } if identification == "A"
     ));
 
@@ -1120,6 +1123,7 @@ fn datum_target_writes_and_round_trips() {
         PmiDefinition::DatumTarget {
             form: DatumTargetForm::Circle,
             identification,
+            ..
         } if annotation.name.as_deref() == Some("datum target")
             && annotation
                 .targets

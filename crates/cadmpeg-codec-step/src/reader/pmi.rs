@@ -140,6 +140,7 @@ pub(super) fn decode(
             PmiDefinition::DatumTarget {
                 form: datum_target_form(&form),
                 identification,
+                basis: Vec::new(),
             },
         );
         typed.insert(id);

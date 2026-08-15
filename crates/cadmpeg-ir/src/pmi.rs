@@ -5,7 +5,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{BodyId, EdgeId, FaceId, OccurrenceId, PmiId, ProductDefinitionId, VertexId};
+use crate::ids::{
+    BodyId, EdgeId, FaceId, OccurrenceId, PmiId, PointId, ProductDefinitionId, VertexId,
+};
 use crate::transform::Transform;
 
 /// A model object qualified by an annotation.
@@ -32,6 +34,11 @@ pub enum PmiTarget {
     Vertex {
         /// Qualified vertex.
         vertex: VertexId,
+    },
+    /// Geometric point.
+    Point {
+        /// Qualified point.
+        point: PointId,
     },
     /// Product prototype.
     Product {
@@ -203,6 +210,9 @@ pub enum PmiDefinition {
         form: DatumTargetForm,
         /// Target identifier shown with the datum target.
         identification: String,
+        /// Shape aspects that provide the datum-target basis.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        basis: Vec<PmiTarget>,
     },
     /// Geometric tolerance, zone units, modifiers, and optional datum system.
     GeometricTolerance {

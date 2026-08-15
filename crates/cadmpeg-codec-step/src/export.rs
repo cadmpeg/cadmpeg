@@ -2577,6 +2577,7 @@ impl<'a> Builder<'a> {
             PmiTarget::Face { face } => self.face_step_refs.get(face.as_str()).copied(),
             PmiTarget::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
             PmiTarget::Vertex { vertex } => self.vertex_refs.get(vertex.as_str()).copied(),
+            PmiTarget::Point { point } => self.point_refs.get(point.as_str()).copied(),
             PmiTarget::Product { .. }
             | PmiTarget::Occurrence { .. }
             | PmiTarget::ShapeAspect { .. } => None,
@@ -2615,6 +2616,7 @@ impl<'a> Builder<'a> {
             let PmiDefinition::DatumTarget {
                 form,
                 identification,
+                ..
             } = &annotation.definition
             else {
                 continue;
@@ -2648,6 +2650,7 @@ impl<'a> Builder<'a> {
             let PmiDefinition::DatumTarget {
                 form,
                 identification,
+                ..
             } = &annotation.definition
             else {
                 continue;
