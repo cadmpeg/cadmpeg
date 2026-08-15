@@ -290,6 +290,92 @@ fn axis_relation_expands_intermediate_relation_handle() {
 }
 
 #[test]
+fn axis_relation_prefers_forward_points_over_reverse_owners() {
+    let sketch = SketchId("axis-sketch".into());
+    let first = marker("first-point", Some([0.0, 1.0]));
+    let mut second = marker("second-point", Some([2.0, 1.0]));
+    second.offset = 1;
+    let mut horizontal = marker("horizontal", None);
+    horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    horizontal.offset = 2;
+    horizontal.links = vec![
+        SketchInputLink {
+            local_id: 8,
+            entity_ref: first.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 9,
+            entity_ref: second.id.clone(),
+        },
+    ];
+    let mut reverse_first = marker("reverse-first", Some([3.0, 4.0]));
+    reverse_first.kind = SketchInputKind::Point;
+    reverse_first.offset = 3;
+    reverse_first.links = vec![SketchInputLink {
+        local_id: 10,
+        entity_ref: horizontal.id.clone(),
+    }];
+    let mut reverse_second = marker("reverse-second", Some([5.0, 6.0]));
+    reverse_second.kind = SketchInputKind::Point;
+    reverse_second.offset = 4;
+    reverse_second.links = reverse_first.links.clone();
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (horizontal.id.as_str(), &horizontal),
+        (reverse_first.id.as_str(), &reverse_first),
+        (reverse_second.id.as_str(), &reverse_second),
+    ]);
+    let first_entity = SketchEntity {
+        id: SketchEntityId("first-entity".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(first.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 1.0),
+        },
+    };
+    let second_entity = SketchEntity {
+        id: SketchEntityId("second-entity".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(second.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(2.0, 1.0),
+        },
+    };
+    let entities = [first_entity.clone(), second_entity.clone()];
+    let loci = HashMap::from([
+        (
+            first.id.clone(),
+            vec![SketchLocus::Entity(first_entity.id.clone())],
+        ),
+        (
+            second.id.clone(),
+            vec![SketchLocus::Entity(second_entity.id.clone())],
+        ),
+    ]);
+
+    assert_eq!(
+        typed_marker_relation_definition_in_sketch(
+            &horizontal,
+            &sketch,
+            &entities,
+            &markers,
+            &loci,
+        ),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(first_entity.id),
+            second: SketchLocus::Entity(second_entity.id),
+        })
+    );
+}
+
+#[test]
 fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
     let sketch = SketchId("sketch".into());
     let first_id = SketchEntityId("first-entity".into());

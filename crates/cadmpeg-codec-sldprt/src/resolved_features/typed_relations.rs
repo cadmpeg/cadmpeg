@@ -166,11 +166,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             return Some(SketchConstraintDefinition::Fixed { entity });
         }
     }
-    if matches!(kind, Horizontal | Vertical)
-        && relation_owner_markers(marker, markers_by_id).is_empty()
-    {
+    if matches!(kind, Horizontal | Vertical) {
         // Point targets disambiguate these operands when a local/object index
         // happens to collide with the relation handle's index.
+        // Forward point links are explicit operands. Reverse incidences are
+        // ownership metadata and must not suppress those operands.
         let point_links = marker
             .links
             .iter()
