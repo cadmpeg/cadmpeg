@@ -6,7 +6,8 @@
                   [--format table|tsv|json] [--limit N] FILE_OR_DIR...
 
     FILE_OR_DIR    *.cadir.json file(s) and/or dirs (globs *.cadir.json)
-    --list NAME    list to scan: model.<NAME> or native.sldprt.arenas.<NAME>;
+    --list NAME    list to scan: model.<NAME> or native.<codec>.arenas.<NAME>
+                   (codec — sldprt, catia, ... — is auto-detected per file);
                    bare NAME ok if unambiguous, else use model.X / arenas.X.
                    OMIT --list to print available lists + lengths per file.
     --where P=V    filter records: dotted PATH equals str(V); repeatable, ANDed.
@@ -40,6 +41,12 @@ Examples (tmp dirs churn; glob for a live *.cadir.json dir if these are gone):
         --where input_class=moMirrorPattern_c --sort ordinal \\
         --join arenas.feature_input_names:parent=id:name,ordinal \\
         ~/side2/tmp/sldprt-l6/sweep-v15/8c6727f13ec417ce.cadir.json
+    # works for any codec's arenas (catia shown): records of one class joined
+    # to their entity records:
+    python3 scripts/cadir-grep.py --list arenas.object_graph_records \\
+        --where class_name=2DPoint \\
+        --join arenas.entity_records:id=entity_record \\
+        ~/side2/tmp/catia/20260815-ancestor-dependencies/
 
 Notes: JSON true/false/null match as both Python (True/False/None) and JSON
 spellings. Dotted paths may index lists: lanes[0].names, points[-1] (absent /
@@ -114,11 +121,21 @@ def stem(path):
 
 
 def sides(doc):
-    """Return (model_lists, arena_lists) as dicts of name -> list."""
+    """Return (model_lists, arena_lists) as dicts of name -> list.
+
+    Arenas come from native.<codec>.arenas; the codec key (sldprt, catia,
+    ...) is auto-detected: first sorted key whose value has a dict "arenas".
+    """
     model = doc.get("model")
     model = model if isinstance(model, dict) else {}
-    arenas = ((doc.get("native") or {}).get("sldprt") or {}).get("arenas")
-    arenas = arenas if isinstance(arenas, dict) else {}
+    native = doc.get("native")
+    native = native if isinstance(native, dict) else {}
+    arenas = {}
+    for key in sorted(native):
+        val = native[key]
+        if isinstance(val, dict) and isinstance(val.get("arenas"), dict):
+            arenas = val["arenas"]
+            break
     model = {k: v for k, v in model.items() if isinstance(v, list)}
     arenas = {k: v for k, v in arenas.items() if isinstance(v, list)}
     return model, arenas
