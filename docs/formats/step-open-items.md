@@ -1129,13 +1129,3 @@ selection.
 **Need.** We need a malformed wrapper file with one invalid placement reference and an expected loss or source-native disposition that prevents coordinate substitution.
 
 **Note.** A tessellated leaf below a malformed repositioning wrapper can be emitted at the inherited or identity placement with no loss. The decoded coordinates then look valid but are silently in the wrong frame.
-
-### DR-02. Placeholder association fallback
-
-**Question.** Which source reference is the placeholder occurrence when a drawing association has no direct placeholder parameter?
-
-**Known.** crates/cadmpeg-codec-step/src/reader/drawing.rs:767-783 first checks parameter 5. If it is absent, it collects references from both association partials and ANNOTATION_PLACEHOLDER_OCCURRENCE, then takes next. The fallback does not distinguish the association's model and item references from the placeholder reference.
-
-**Need.** We need a complex association with the placeholder carried by a separate partial, plus an order-permuted copy, and the source attribute mapping for that representation.
-
-**Note.** If the direct parameter is absent, the first collected reference can be a draughting-model or associated-item reference. Reordering references can attach the annotation to the wrong placeholder without a loss.

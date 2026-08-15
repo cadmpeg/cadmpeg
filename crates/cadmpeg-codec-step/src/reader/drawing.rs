@@ -769,17 +769,9 @@ fn association_placeholder_reference(record: &RawRecord, parameters: &[Value]) -
         record
             .partials
             .iter()
-            .filter(|partial| {
-                partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER"
-                    || partial.name == "ANNOTATION_PLACEHOLDER_OCCURRENCE"
-            })
-            .flat_map(|partial| partial.parameters.iter())
-            .flat_map(|value| {
-                let mut references = Vec::new();
-                collect_references(value, &mut references);
-                references
-            })
-            .next()
+            .find(|partial| partial.name == "ANNOTATION_PLACEHOLDER_OCCURRENCE")
+            .and_then(|partial| partial.parameters.first())
+            .and_then(value_reference)
     })
 }
 
